@@ -1231,3 +1231,395 @@ SCCA_DDOS_TYPES = {
     "gcp-armor",
     "ibm-cis",
 }
+
+# ── AWS Well-Architected Security Pillar ───────────────────────────────────────
+# 7 areas, 57 best practices (SEC01-SEC11). Risk levels from the official
+# Security Pillar whitepaper (November 2024). Used by cloud_architecture.py
+# for WA Security posture analysis and by compliance.py for audit rules.
+# Reference: https://docs.aws.amazon.com/wellarchitected/latest/security-pillar/
+
+WA_SECURITY_AREAS = {
+    "foundations": {
+        "name": "Security Foundations",
+        "code": "SEC01",
+        "description": "Operating your workload securely — multi-account strategy, "
+                       "threat modeling, control objectives, and automated guardrails.",
+    },
+    "identity": {
+        "name": "Identity and Access Management (Identity)",
+        "code": "SEC02",
+        "description": "Strong sign-in mechanisms, temporary credentials, "
+                       "centralized identity provider, secret management.",
+    },
+    "permissions": {
+        "name": "Identity and Access Management (Permissions)",
+        "code": "SEC03",
+        "description": "Least privilege access, permission guardrails, "
+                       "lifecycle management, cross-account analysis.",
+    },
+    "detection": {
+        "name": "Detection",
+        "code": "SEC04",
+        "description": "Service and application logging, centralized findings, "
+                       "correlation, and automated remediation.",
+    },
+    "network": {
+        "name": "Infrastructure Protection (Networks)",
+        "code": "SEC05",
+        "description": "Network layers, traffic flow control, inspection-based "
+                       "protection, and automated network controls.",
+    },
+    "compute": {
+        "name": "Infrastructure Protection (Compute)",
+        "code": "SEC06",
+        "description": "Vulnerability management, hardened images, reduced manual "
+                       "access, software integrity, and compute automation.",
+    },
+    "data_classification": {
+        "name": "Data Protection (Classification)",
+        "code": "SEC07",
+        "description": "Data classification scheme, sensitivity-based controls, "
+                       "automated identification, and lifecycle management.",
+    },
+    "data_at_rest": {
+        "name": "Data Protection (At Rest)",
+        "code": "SEC08",
+        "description": "Key management (FIPS 140-3 L3), enforced encryption, "
+                       "automated data-at-rest protection, access control.",
+    },
+    "data_in_transit": {
+        "name": "Data Protection (In Transit)",
+        "code": "SEC09",
+        "description": "Key and certificate management, enforced TLS 1.2+, "
+                       "authenticated network communications (mTLS, IPsec).",
+    },
+    "incident_response": {
+        "name": "Incident Response",
+        "code": "SEC10",
+        "description": "IR plans, forensic capabilities, playbooks, pre-provisioned "
+                       "access, simulations, and post-incident learning.",
+    },
+    "app_security": {
+        "name": "Application Security",
+        "code": "SEC11",
+        "description": "Security training, automated SAST/DAST, pen testing, "
+                       "code reviews, dependency management, DevSecOps culture.",
+    },
+}
+
+WA_SECURITY_BEST_PRACTICES = [
+    # ── SEC01: Security Foundations ──────────────────────────────────────────
+    {"id": "SEC01-BP01", "area": "foundations", "title": "Separate workloads using accounts",
+     "risk": "high", "description": "Use AWS Organizations/Control Tower multi-account strategy; isolate production, dev, test in separate accounts."},
+    {"id": "SEC01-BP02", "area": "foundations", "title": "Secure account root user and properties",
+     "risk": "high", "description": "Disable root programmatic access, enable MFA, do not use root for daily tasks."},
+    {"id": "SEC01-BP03", "area": "foundations", "title": "Identify and validate control objectives",
+     "risk": "high", "description": "Define control objectives from compliance requirements (NIST 800-53, SOC2, PCI-DSS, ISO 27001)."},
+    {"id": "SEC01-BP04", "area": "foundations", "title": "Stay up to date with security threats",
+     "risk": "high", "description": "Subscribe to threat intelligence (MITRE ATT&CK, CVEs, OWASP Top 10); use GuardDuty/Inspector auto-updated feeds."},
+    {"id": "SEC01-BP05", "area": "foundations", "title": "Reduce security management scope",
+     "risk": "medium", "description": "Use managed services (RDS, EKS, Lambda) to shift security responsibility to CSP."},
+    {"id": "SEC01-BP06", "area": "foundations", "title": "Automate deployment of standard security controls",
+     "risk": "medium", "description": "Use IaC (CloudFormation/Terraform), CI/CD pipelines, Service Catalog; version-control security configs."},
+    {"id": "SEC01-BP07", "area": "foundations", "title": "Identify threats using a threat model",
+     "risk": "high", "description": "Use STRIDE model; maintain living threat model; use AWS Threat Composer tool."},
+    {"id": "SEC01-BP08", "area": "foundations", "title": "Evaluate new security services regularly",
+     "risk": "low", "description": "Subscribe to AWS security blogs/RSS, attend re:Inforce, consult TAM."},
+
+    # ── SEC02: Identity Management ──────────────────────────────────────────
+    {"id": "SEC02-BP01", "area": "identity", "title": "Use strong sign-in mechanisms",
+     "risk": "high", "description": "Require MFA for all human identities; enforce strong password policies per NIST 800-63."},
+    {"id": "SEC02-BP02", "area": "identity", "title": "Use temporary credentials",
+     "risk": "high", "description": "Use IAM roles and STS for temp credentials; eliminate long-term access keys."},
+    {"id": "SEC02-BP03", "area": "identity", "title": "Store and use secrets securely",
+     "risk": "high", "description": "Use Secrets Manager for secrets; auto-rotate; never hardcode credentials."},
+    {"id": "SEC02-BP04", "area": "identity", "title": "Rely on a centralized identity provider",
+     "risk": "high", "description": "Use IAM Identity Center (SSO) with external IdP (SAML/OIDC); federate workforce access."},
+    {"id": "SEC02-BP05", "area": "identity", "title": "Audit and rotate credentials periodically",
+     "risk": "high", "description": "Use IAM Access Analyzer to find unused credentials; auto-rotate via Secrets Manager."},
+    {"id": "SEC02-BP06", "area": "identity", "title": "Employ user groups and attributes",
+     "risk": "high", "description": "Use IAM groups and ABAC (attribute-based access control) for scalable permissions."},
+
+    # ── SEC03: Permissions Management ───────────────────────────────────────
+    {"id": "SEC03-BP01", "area": "permissions", "title": "Define access requirements",
+     "risk": "high", "description": "Document who/what needs access to which resources under what conditions."},
+    {"id": "SEC03-BP02", "area": "permissions", "title": "Grant least privilege access",
+     "risk": "high", "description": "Start with minimum permissions; use IAM Access Analyzer policy generation to right-size."},
+    {"id": "SEC03-BP03", "area": "permissions", "title": "Establish emergency access process",
+     "risk": "high", "description": "Pre-provision break-glass access; document and test emergency access procedures."},
+    {"id": "SEC03-BP04", "area": "permissions", "title": "Reduce permissions continuously",
+     "risk": "high", "description": "Use IAM Access Analyzer to identify unused permissions; remove regularly."},
+    {"id": "SEC03-BP05", "area": "permissions", "title": "Define permission guardrails for your organization",
+     "risk": "high", "description": "Use SCPs and permission boundaries; define security invariants across organization."},
+    {"id": "SEC03-BP06", "area": "permissions", "title": "Manage access based on lifecycle",
+     "risk": "high", "description": "Integrate IAM with HR systems; auto-revoke on role change/termination."},
+    {"id": "SEC03-BP07", "area": "permissions", "title": "Analyze public and cross-account access",
+     "risk": "high", "description": "Use IAM Access Analyzer to detect public/cross-account resource sharing."},
+    {"id": "SEC03-BP08", "area": "permissions", "title": "Share resources securely within organization",
+     "risk": "high", "description": "Use AWS Resource Access Manager (RAM) for controlled cross-account sharing."},
+    {"id": "SEC03-BP09", "area": "permissions", "title": "Share resources securely with third party",
+     "risk": "high", "description": "Use IAM roles with external ID for third-party access; limit scope and duration."},
+
+    # ── SEC04: Detection ────────────────────────────────────────────────────
+    {"id": "SEC04-BP01", "area": "detection", "title": "Configure service and application logging",
+     "risk": "high", "description": "Enable CloudTrail, VPC Flow Logs, S3/ELB access logs; centralize in Security Lake."},
+    {"id": "SEC04-BP02", "area": "detection", "title": "Capture logs and findings in standardized locations",
+     "risk": "high", "description": "Aggregate in central security account; use Security Hub, CloudWatch, S3 buckets."},
+    {"id": "SEC04-BP03", "area": "detection", "title": "Correlate and enrich security alerts",
+     "risk": "high", "description": "Use Detective for investigation; Security Hub for aggregation; enrich with GuardDuty findings."},
+    {"id": "SEC04-BP04", "area": "detection", "title": "Initiate remediation for non-compliant resources",
+     "risk": "high", "description": "Use AWS Config rules + remediation actions; EventBridge + Lambda for auto-remediation."},
+
+    # ── SEC05: Infrastructure Protection (Networks) ─────────────────────────
+    {"id": "SEC05-BP01", "area": "network", "title": "Create network layers",
+     "risk": "medium", "description": "Use public/private subnets, security groups, NACLs; isolate workload tiers."},
+    {"id": "SEC05-BP02", "area": "network", "title": "Control traffic flow within network layers",
+     "risk": "high", "description": "Use security groups as primary control; restrict inter-layer traffic to required paths."},
+    {"id": "SEC05-BP03", "area": "network", "title": "Implement inspection-based protection",
+     "risk": "high", "description": "Use Network Firewall, WAF for L3-L7 inspection; deploy intrusion detection."},
+    {"id": "SEC05-BP04", "area": "network", "title": "Automate network protection",
+     "risk": "high", "description": "Use Firewall Manager for consistent policy; auto-deploy network controls via IaC."},
+
+    # ── SEC06: Infrastructure Protection (Compute) ──────────────────────────
+    {"id": "SEC06-BP01", "area": "compute", "title": "Perform vulnerability management",
+     "risk": "high", "description": "Use Inspector for continuous vulnerability scanning; Systems Manager for patching."},
+    {"id": "SEC06-BP02", "area": "compute", "title": "Provision compute from hardened images",
+     "risk": "high", "description": "Use hardened AMIs; ECR for trusted container images; validate image signatures."},
+    {"id": "SEC06-BP03", "area": "compute", "title": "Reduce manual management and interactive access",
+     "risk": "high", "description": "Use Systems Manager Session Manager instead of SSH/RDP; eliminate bastion hosts."},
+    {"id": "SEC06-BP04", "area": "compute", "title": "Validate software integrity",
+     "risk": "high", "description": "Use AWS Signer for code signing; verify artifact integrity in CI/CD pipeline."},
+    {"id": "SEC06-BP05", "area": "compute", "title": "Automate compute protection",
+     "risk": "high", "description": "Auto-replace non-compliant instances; use immutable infrastructure patterns."},
+
+    # ── SEC07: Data Protection (Classification) ─────────────────────────────
+    {"id": "SEC07-BP01", "area": "data_classification", "title": "Understand your data classification scheme",
+     "risk": "high", "description": "Define data sensitivity levels; tag resources with classification."},
+    {"id": "SEC07-BP02", "area": "data_classification", "title": "Apply data protection controls based on sensitivity",
+     "risk": "high", "description": "Match encryption, access control, retention to classification level."},
+    {"id": "SEC07-BP03", "area": "data_classification", "title": "Automate identification and classification",
+     "risk": "high", "description": "Use Macie for automated sensitive data discovery in S3; tag automatically."},
+    {"id": "SEC07-BP04", "area": "data_classification", "title": "Define scalable data lifecycle management",
+     "risk": "medium", "description": "Automate retention, archival, deletion; use S3 lifecycle policies."},
+
+    # ── SEC08: Data Protection (At Rest) ────────────────────────────────────
+    {"id": "SEC08-BP01", "area": "data_at_rest", "title": "Implement secure key management",
+     "risk": "high", "description": "Use KMS (FIPS 140-3 L3 HSMs); CloudHSM for dedicated HSMs."},
+    {"id": "SEC08-BP02", "area": "data_at_rest", "title": "Enforce encryption at rest",
+     "risk": "high", "description": "Enable default encryption on all storage (S3, EBS, RDS, DynamoDB)."},
+    {"id": "SEC08-BP03", "area": "data_at_rest", "title": "Automate data at rest protection",
+     "risk": "high", "description": "Use KMS key policies, S3 bucket policies, SCPs to enforce encryption."},
+    {"id": "SEC08-BP04", "area": "data_at_rest", "title": "Enforce access control",
+     "risk": "low", "description": "Use IAM policies, S3 bucket policies, KMS key policies for fine-grained access."},
+
+    # ── SEC09: Data Protection (In Transit) ─────────────────────────────────
+    {"id": "SEC09-BP01", "area": "data_in_transit", "title": "Implement secure key and certificate management",
+     "risk": "high", "description": "Use Private CA or ACM for TLS certificates; automate renewal."},
+    {"id": "SEC09-BP02", "area": "data_in_transit", "title": "Enforce encryption in transit",
+     "risk": "medium", "description": "Require TLS 1.2+ everywhere; use HTTPS endpoints; enforce via resource policies."},
+    {"id": "SEC09-BP03", "area": "data_in_transit", "title": "Authenticate network communications",
+     "risk": "high", "description": "Use VPN/DX with IPsec; mTLS for service-to-service; VPC PrivateLink."},
+
+    # ── SEC10: Incident Response ────────────────────────────────────────────
+    {"id": "SEC10-BP01", "area": "incident_response", "title": "Identify key personnel and external resources",
+     "risk": "high", "description": "Document IR team; establish AWS Support/partner contacts."},
+    {"id": "SEC10-BP02", "area": "incident_response", "title": "Develop incident management plans",
+     "risk": "medium", "description": "Create runbooks/playbooks; define escalation paths; align with NIST CSF."},
+    {"id": "SEC10-BP03", "area": "incident_response", "title": "Prepare forensic capabilities",
+     "risk": "medium", "description": "Pre-configure forensic account; enable EBS snapshots, memory capture."},
+    {"id": "SEC10-BP04", "area": "incident_response", "title": "Develop and test IR playbooks",
+     "risk": "high", "description": "Create playbooks for credential exposure, ransomware, DDoS; run tabletop exercises."},
+    {"id": "SEC10-BP05", "area": "incident_response", "title": "Pre-provision access",
+     "risk": "high", "description": "Configure break-glass roles before incidents; use cross-account roles."},
+    {"id": "SEC10-BP06", "area": "incident_response", "title": "Pre-deploy tools",
+     "risk": "medium", "description": "Deploy Detective, Security Hub, GuardDuty before incidents occur."},
+    {"id": "SEC10-BP07", "area": "incident_response", "title": "Run simulations",
+     "risk": "medium", "description": "Conduct tabletop, purple team, and red team exercises."},
+    {"id": "SEC10-BP08", "area": "incident_response", "title": "Establish framework for learning from incidents",
+     "risk": "medium", "description": "Conduct post-incident reviews; feed lessons into threat model and controls."},
+
+    # ── SEC11: Application Security ─────────────────────────────────────────
+    {"id": "SEC11-BP01", "area": "app_security", "title": "Train for application security",
+     "risk": "medium", "description": "Security training for developers; OWASP awareness; secure coding practices."},
+    {"id": "SEC11-BP02", "area": "app_security", "title": "Automate testing throughout development lifecycle",
+     "risk": "medium", "description": "SAST/DAST in CI/CD pipeline; use CodeGuru Reviewer, Inspector for scanning."},
+    {"id": "SEC11-BP03", "area": "app_security", "title": "Perform regular penetration testing",
+     "risk": "medium", "description": "Schedule pen tests; follow AWS penetration testing policy."},
+    {"id": "SEC11-BP04", "area": "app_security", "title": "Conduct code reviews",
+     "risk": "medium", "description": "Mandatory security-focused code reviews; use CodeGuru Reviewer."},
+    {"id": "SEC11-BP05", "area": "app_security", "title": "Centralize services for packages and dependencies",
+     "risk": "medium", "description": "Use CodeArtifact/ECR as private registries; scan dependencies for vulnerabilities."},
+    {"id": "SEC11-BP06", "area": "app_security", "title": "Deploy software programmatically",
+     "risk": "medium", "description": "No manual deployments; use CodePipeline/CodeBuild; immutable deployments."},
+    {"id": "SEC11-BP07", "area": "app_security", "title": "Regularly assess security of pipelines",
+     "risk": "medium", "description": "Audit CI/CD pipeline permissions; ensure pipeline integrity."},
+    {"id": "SEC11-BP08", "area": "app_security", "title": "Build program embedding security ownership in teams",
+     "risk": "medium", "description": "Security champions in each team; shift-left security; DevSecOps culture."},
+]
+
+# ── WA Security Pillar — CSP Service Mapping ───────────────────────────────────
+# Maps each security area to native services across all 5 CSPs.
+
+WA_SECURITY_CSP_MAPPING = {
+    "foundations": {
+        "aws": ["Organizations", "Control Tower", "IAM", "CloudFormation", "Service Catalog", "Artifact"],
+        "azure": ["Management Groups", "Azure Landing Zones", "Entra ID", "Bicep/ARM", "Azure Policy"],
+        "gcp": ["Organization Policy", "Assured Workloads", "Cloud IAM", "Deployment Manager"],
+        "oci": ["Compartments", "Landing Zones", "IAM Policies", "Resource Manager"],
+        "ibm": ["Enterprise Account", "IAM", "Schematics"],
+    },
+    "identity": {
+        "aws": ["IAM", "IAM Identity Center", "STS", "Secrets Manager", "Directory Service", "Cognito"],
+        "azure": ["Entra ID", "Key Vault (Secrets)", "Managed Identity", "Conditional Access"],
+        "gcp": ["Cloud IAM", "Cloud Identity", "Secret Manager", "Workforce Identity Federation"],
+        "oci": ["Identity Domains", "Vault (Secrets)", "Instance Principal"],
+        "ibm": ["IAM", "App ID", "Secrets Manager"],
+    },
+    "permissions": {
+        "aws": ["IAM Policies", "SCPs", "Permission Boundaries", "IAM Access Analyzer", "RAM"],
+        "azure": ["Azure RBAC", "Azure Policy", "PIM", "Entra ID Governance"],
+        "gcp": ["IAM Roles", "Organization Policies", "Policy Analyzer", "Recommender"],
+        "oci": ["IAM Policies", "Compartment Policies", "Tag-Based Access"],
+        "ibm": ["IAM Policies", "Resource Groups", "Access Groups"],
+    },
+    "detection": {
+        "aws": ["GuardDuty", "Security Hub", "CloudTrail", "Config", "Detective", "Security Lake", "CloudWatch"],
+        "azure": ["Defender for Cloud", "Sentinel", "Monitor", "Activity Log", "Policy"],
+        "gcp": ["Security Command Center", "Cloud Audit Logs", "Cloud Monitoring", "Chronicle"],
+        "oci": ["Cloud Guard", "Audit", "Logging Analytics", "Events"],
+        "ibm": ["SCC", "Activity Tracker", "Log Analysis", "Monitoring"],
+    },
+    "network": {
+        "aws": ["VPC", "Security Groups", "NACLs", "WAF", "Shield", "Network Firewall", "Firewall Manager", "PrivateLink"],
+        "azure": ["VNet", "NSG", "Azure Firewall", "WAF", "DDoS Protection", "Private Link", "Firewall Manager"],
+        "gcp": ["VPC", "Firewall Rules", "Cloud Armor", "Private Service Connect", "Hierarchical Firewall"],
+        "oci": ["VCN", "Security Lists", "NSGs", "Network Firewall", "WAF", "Service Gateway"],
+        "ibm": ["VPC", "Security Groups", "ACLs", "CIS WAF/DDoS", "Virtual Private Endpoints"],
+    },
+    "compute": {
+        "aws": ["Inspector", "Systems Manager", "EC2 Image Builder", "Signer", "ECR", "Nitro Enclaves"],
+        "azure": ["Defender for Servers", "Update Management", "ACR", "Trusted Signing"],
+        "gcp": ["Artifact Analysis", "Container Scanning", "OS Config", "Binary Authorization"],
+        "oci": ["Vulnerability Scanning", "OS Management Hub", "Container Registry"],
+        "ibm": ["SCC VA", "Container Registry", "Code Engine"],
+    },
+    "data_at_rest": {
+        "aws": ["KMS", "CloudHSM", "S3 Encryption", "EBS Encryption", "RDS Encryption", "Backup"],
+        "azure": ["Key Vault", "Managed HSM", "Storage Encryption", "Disk Encryption"],
+        "gcp": ["Cloud KMS", "Cloud HSM", "CMEK", "Cloud Storage Encryption"],
+        "oci": ["Vault", "Dedicated HSM", "Object Storage Encryption", "Block Volume Encryption"],
+        "ibm": ["Key Protect", "HPCS", "Cloud Object Storage Encryption"],
+    },
+    "data_in_transit": {
+        "aws": ["ACM", "Private CA", "CloudFront TLS", "ELB TLS", "PrivateLink", "VPN/DX IPsec"],
+        "azure": ["App Service Certs", "Front Door TLS", "Private Link", "ExpressRoute IPsec"],
+        "gcp": ["Certificate Manager", "CA Service", "Cloud CDN TLS", "Interconnect MACsec"],
+        "oci": ["Certificates Service", "LB TLS", "FastConnect IPsec"],
+        "ibm": ["Certificate Manager", "CIS TLS", "Direct Link IPsec"],
+    },
+    "incident_response": {
+        "aws": ["Detective", "Security Hub", "GuardDuty", "Incident Manager", "EventBridge", "Lambda"],
+        "azure": ["Sentinel", "Defender", "Logic Apps", "Event Grid"],
+        "gcp": ["Chronicle SIEM", "SCC", "Eventarc", "Cloud Functions"],
+        "oci": ["Cloud Guard", "Events", "Functions", "Notifications"],
+        "ibm": ["QRadar", "SCC", "Event Notifications", "Code Engine"],
+    },
+    "app_security": {
+        "aws": ["Inspector", "CodeGuru", "CodePipeline", "CodeBuild", "Signer", "ECR", "CodeArtifact"],
+        "azure": ["DevOps", "Defender for DevOps", "ACR", "Trusted Signing"],
+        "gcp": ["Cloud Build", "Artifact Registry", "Binary Authorization", "Container Analysis"],
+        "oci": ["DevOps Service", "Container Registry", "Vulnerability Scanning"],
+        "ibm": ["Tekton", "Container Registry", "Code Engine"],
+    },
+}
+
+# ── WA Security Pillar Design Principles ───────────────────────────────────────
+
+WA_SECURITY_DESIGN_PRINCIPLES = [
+    "Implement a strong identity foundation",
+    "Maintain traceability",
+    "Apply security at all layers",
+    "Automate security best practices",
+    "Protect data in transit and at rest",
+    "Keep people away from data",
+    "Prepare for security events",
+]
+
+# ── WA Security Pillar — NDC Compliance Rules ─────────────────────────────────
+# Checked by compliance.py when wa_security regime is selected.
+
+WA_SECURITY_COMPLIANCE_RULES = [
+    # ── Foundations ──
+    {"id": "WA-SEC01-001", "title": "Multi-account / multi-VPC isolation",
+     "severity": "CAT1", "category": "foundations", "regimes": ["wa_security"],
+     "description": "Workloads should be separated into distinct VPCs/accounts for blast-radius containment (SEC01-BP01).",
+     "check": "multi_vpc_isolation", "wa_ref": "SEC01-BP01"},
+    {"id": "WA-SEC01-002", "title": "Automated security controls via IaC",
+     "severity": "CAT2", "category": "foundations", "regimes": ["wa_security"],
+     "description": "Security controls should be deployed via IaC, not manual configuration (SEC01-BP06).",
+     "check": "iac_deployed", "wa_ref": "SEC01-BP06"},
+
+    # ── Identity ──
+    {"id": "WA-SEC02-001", "title": "Centralized identity provider",
+     "severity": "CAT1", "category": "identity", "regimes": ["wa_security"],
+     "description": "Topology should include a centralized identity service (IAM Identity Center, Entra ID, etc.) for SSO/federation (SEC02-BP04).",
+     "check": "has_identity_service", "wa_ref": "SEC02-BP04"},
+
+    # ── Detection ──
+    {"id": "WA-SEC04-001", "title": "Centralized logging and monitoring",
+     "severity": "CAT1", "category": "detection", "regimes": ["wa_security"],
+     "description": "Topology must include centralized logging (CloudTrail, Sentinel, SCC) and monitoring services (SEC04-BP01).",
+     "check": "has_centralized_logging", "wa_ref": "SEC04-BP01"},
+    {"id": "WA-SEC04-002", "title": "Threat detection service enabled",
+     "severity": "CAT1", "category": "detection", "regimes": ["wa_security"],
+     "description": "GuardDuty/Defender/Cloud Guard should be present for automated threat detection (SEC04-BP03).",
+     "check": "has_threat_detection", "wa_ref": "SEC04-BP03"},
+    {"id": "WA-SEC04-003", "title": "Compliance monitoring (Config/Policy)",
+     "severity": "CAT2", "category": "detection", "regimes": ["wa_security"],
+     "description": "AWS Config or equivalent should monitor resource compliance continuously (SEC04-BP04).",
+     "check": "has_config_monitoring", "wa_ref": "SEC04-BP04"},
+
+    # ── Network ──
+    {"id": "WA-SEC05-001", "title": "Network layer segmentation",
+     "severity": "CAT1", "category": "network", "regimes": ["wa_security"],
+     "description": "Topology must have distinct network layers (public/private subnets) with security groups (SEC05-BP01).",
+     "check": "has_network_layers", "wa_ref": "SEC05-BP01"},
+    {"id": "WA-SEC05-002", "title": "Network traffic inspection (firewall/WAF)",
+     "severity": "CAT1", "category": "network", "regimes": ["wa_security"],
+     "description": "Network Firewall or WAF should inspect traffic at L3-L7 (SEC05-BP03).",
+     "check": "has_network_firewall", "wa_ref": "SEC05-BP03"},
+    {"id": "WA-SEC05-003", "title": "DDoS protection at perimeter",
+     "severity": "CAT2", "category": "network", "regimes": ["wa_security"],
+     "description": "Shield/DDoS Protection/Cloud Armor should protect internet-facing resources (SEC05-BP03).",
+     "check": "has_ddos_protection", "wa_ref": "SEC05-BP03"},
+    {"id": "WA-SEC05-004", "title": "VPC Flow Logs enabled",
+     "severity": "CAT2", "category": "network", "regimes": ["wa_security"],
+     "description": "VPC/VNet flow logs should capture traffic metadata for analysis (SEC04-BP01).",
+     "check": "has_flow_logs", "wa_ref": "SEC04-BP01"},
+
+    # ── Data Protection ──
+    {"id": "WA-SEC08-001", "title": "Key management service (FIPS 140-2/3)",
+     "severity": "CAT1", "category": "data_at_rest", "regimes": ["wa_security"],
+     "description": "FIPS-validated KMS must manage encryption keys for all data at rest (SEC08-BP01).",
+     "check": "has_kms", "wa_ref": "SEC08-BP01"},
+    {"id": "WA-SEC09-001", "title": "Encryption in transit (TLS/IPsec)",
+     "severity": "CAT1", "category": "data_in_transit", "regimes": ["wa_security"],
+     "description": "All network links should use encrypted transport (TLS 1.2+, IPsec, MACsec) (SEC09-BP02).",
+     "check": "encryption_on_links", "wa_ref": "SEC09-BP02"},
+
+    # ── Incident Response ──
+    {"id": "WA-SEC10-001", "title": "Pre-deployed investigation tools",
+     "severity": "CAT2", "category": "incident_response", "regimes": ["wa_security"],
+     "description": "Detective/Sentinel/SIEM should be deployed before incidents occur (SEC10-BP06).",
+     "check": "has_centralized_logging", "wa_ref": "SEC10-BP06"},
+]
+
+# ── WA Security Node Type Detection Sets ───────────────────────────────────────
+
+WA_THREAT_DETECTION_TYPES = {
+    "aws-guardduty", "az-defender", "gcp-scc", "oci-cloudguard", "ibm-scc",
+}
+
+WA_CONFIG_MONITORING_TYPES = {
+    "aws-config", "aws-securityhub", "az-policy", "gcp-orgpolicy", "oci-cloudguard", "ibm-scc",
+}

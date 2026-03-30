@@ -3860,6 +3860,79 @@ TEMPLATES = [
             ]
         }),
     },
+    # 38 ─ AWS Well-Architected Security Baseline
+    {
+        "id": "tpl-wa-security-baseline",
+        "name": "AWS Well-Architected Security Baseline",
+        "category": "Well-Architected",
+        "description": "Defense-in-depth architecture aligned to the AWS Well-Architected Security Pillar (SEC01-SEC11). VPC with public/private subnets, ALB at edge, Network Firewall for inspection, WAF + Shield for perimeter protection, GuardDuty + Security Hub + Config + Inspector for detection, CloudTrail + CloudWatch for logging, KMS + Secrets Manager for data protection, IAM Identity Center for identity, and VPC Flow Logs for network visibility.",
+        "tags": json.dumps(["well-architected", "security-pillar", "defense-in-depth", "sec01-sec11", "aws"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                # VPC and subnets
+                _node("vpc", "Production VPC", "aws-vpc", 500, 60,
+                      {"config": {"cidr": "10.0.0.0/16", "flow_logs_enabled": True}}),
+                _node("pub-sub", "Public Subnet", "aws-subnet", 300, 160,
+                      {"config": {"cidr": "10.0.1.0/24", "tier": "public"}}),
+                _node("app-sub", "App Subnet (Private)", "aws-subnet", 500, 160,
+                      {"config": {"cidr": "10.0.10.0/24", "tier": "private"}}),
+                _node("data-sub", "Data Subnet (Private)", "aws-subnet", 700, 160,
+                      {"config": {"cidr": "10.0.20.0/24", "tier": "private"}}),
+                # Edge / Perimeter (SEC05)
+                _node("alb", "Application LB", "aws-alb", 300, 260),
+                _node("waf", "WAF (Regional)", "aws-waf", 150, 260),
+                _node("shield", "Shield Advanced", "aws-shield", 150, 360),
+                _node("nfw", "Network Firewall", "aws-nfw", 500, 260,
+                      {"config": {"stateful_inspection": True}}),
+                # Detection (SEC04)
+                _node("gd", "GuardDuty", "aws-guardduty", 800, 260),
+                _node("sechub", "Security Hub (NIST 800-53)", "aws-securityhub", 800, 360),
+                _node("config", "AWS Config", "aws-config", 1000, 260),
+                _node("inspector", "Inspector", "aws-inspector", 1000, 360),
+                # Logging (SEC04)
+                _node("ct", "CloudTrail", "aws-ct", 800, 460),
+                _node("cw", "CloudWatch", "aws-cloudwatch", 1000, 460),
+                _node("flowlogs", "VPC Flow Logs", "aws-flowlogs", 500, 460),
+                # Data Protection (SEC07/08/09)
+                _node("kms", "KMS (FIPS 140-2)", "aws-kms", 700, 560,
+                      {"config": {"fips_validated": True}}),
+                _node("secrets", "Secrets Manager", "aws-secretsmanager", 900, 560),
+                # Identity (SEC02/03)
+                _node("idc", "IAM Identity Center", "aws-idc", 300, 560),
+                # Network visibility
+                _node("vpce", "VPC Endpoints (S3, SSM)", "aws-privatelink", 500, 560),
+            ],
+            "edges": [
+                # VPC structure
+                _edge("vpc", "pub-sub", "", ""),
+                _edge("vpc", "app-sub", "", ""),
+                _edge("vpc", "data-sub", "", ""),
+                # Edge chain
+                _edge("waf", "alb", "L7 Filter", "HTTPS"),
+                _edge("shield", "alb", "DDoS Protect", ""),
+                _edge("alb", "app-sub", "Forward", "HTTPS"),
+                # Inspection
+                _edge("nfw", "vpc", "Inspection", ""),
+                _edge("nfw", "pub-sub", "Ingress Inspection", ""),
+                # Detection
+                _edge("gd", "sechub", "Findings", ""),
+                _edge("config", "sechub", "Compliance", ""),
+                _edge("inspector", "sechub", "Vuln Findings", ""),
+                # Logging
+                _edge("ct", "cw", "Trail Logs", ""),
+                _edge("flowlogs", "cw", "Flow Data", ""),
+                _edge("vpc", "flowlogs", "VPC Flow Logs", ""),
+                # Data protection
+                _edge("kms", "data-sub", "Encryption Keys", ""),
+                _edge("secrets", "app-sub", "Secrets", ""),
+                # Identity
+                _edge("idc", "vpc", "IAM Auth", "SAML"),
+                # Private endpoints
+                _edge("vpce", "app-sub", "PrivateLink", ""),
+                _edge("vpce", "data-sub", "PrivateLink", ""),
+            ]
+        }),
+    },
 ]
 
 

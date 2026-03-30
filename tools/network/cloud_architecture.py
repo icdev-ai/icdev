@@ -846,6 +846,196 @@ def detect_landing_zone_pattern(nodes: list[dict], edges: list[dict]) -> dict:
     }
 
 
+# ── WA Security Pillar Analysis ────────────────────────────────────────────────
+
+def analyze_wa_security(nodes: list[dict], edges: list[dict]) -> dict:
+    """Analyze a topology against the AWS Well-Architected Security Pillar.
+
+    Evaluates 11 areas (SEC01-SEC11) based on the presence of security
+    services, network segmentation, encryption, and identity controls.
+
+    Returns:
+        Dict with area_scores, overall_score, rating, findings, recommendations.
+    """
+    from tools.network.constants import (
+        SCCA_FIREWALL_TYPES, SCCA_IDENTITY_TYPES, SCCA_LOGGING_TYPES,
+        SCCA_KMS_TYPES, SCCA_SCANNING_TYPES, SCCA_DDOS_TYPES,
+        WA_THREAT_DETECTION_TYPES, WA_CONFIG_MONITORING_TYPES,
+    )
+
+    node_types = {n["id"]: n.get("type", "") for n in nodes}
+    type_set = set(node_types.values())
+
+    # Detect capabilities
+    vpc_count = sum(1 for t in type_set if t in {
+        "aws-vpc", "az-vnet", "gcp-vpc", "oci-vcn", "ibm-vpc"})
+    has_firewall = bool(type_set & SCCA_FIREWALL_TYPES)
+    has_waf = bool(type_set & {"aws-waf", "az-appgw", "az-front", "oci-waf", "gcp-armor", "ibm-cis"})
+    has_ddos = bool(type_set & SCCA_DDOS_TYPES)
+    has_identity = bool(type_set & SCCA_IDENTITY_TYPES)
+    has_logging = bool(type_set & SCCA_LOGGING_TYPES)
+    has_kms = bool(type_set & SCCA_KMS_TYPES)
+    has_scanning = bool(type_set & SCCA_SCANNING_TYPES)
+    has_threat_detection = bool(type_set & WA_THREAT_DETECTION_TYPES)
+    has_config_monitoring = bool(type_set & WA_CONFIG_MONITORING_TYPES)
+    has_flow_logs = bool(type_set & {"aws-flowlogs", "az-flowlogs", "gcp-flowlogs", "oci-flowlogs", "ibm-flowlogs"})
+    has_hub = bool(type_set & _TRANSIT_HUB_TYPES)
+    has_dx = bool(type_set & _DX_TYPES)
+    has_vpn = bool(type_set & _VPN_TYPES)
+    has_subnets = bool(type_set & {"aws-subnet", "az-subnet", "gcp-subnet", "oci-subnet", "ibm-subnet"})
+
+    findings = []
+    recommendations = []
+
+    # Score each area (0-100)
+    area_scores = {}
+
+    # SEC01: Foundations
+    s = 0
+    if vpc_count >= 2:
+        s += 50
+    else:
+        findings.append("[SEC01] Single VPC — no workload isolation")
+        recommendations.append("[SEC01] Separate workloads into multiple VPCs/accounts (SEC01-BP01)")
+    if has_hub:
+        s += 50
+    else:
+        findings.append("[SEC01] No transit hub for centralized governance")
+        recommendations.append("[SEC01] Add Transit Gateway/vWAN for centralized network control")
+    area_scores["foundations"] = s
+
+    # SEC02/03: Identity & Permissions
+    s = 100 if has_identity else 0
+    if not has_identity:
+        findings.append("[SEC02] No centralized identity service (SSO/AD/Entra)")
+        recommendations.append("[SEC02] Add IAM Identity Center or Entra ID for federated access (SEC02-BP04)")
+    area_scores["identity"] = s
+
+    # SEC04: Detection
+    s = 0
+    max_d = 4
+    if has_logging:
+        s += 1
+    else:
+        findings.append("[SEC04] No centralized logging service")
+        recommendations.append("[SEC04] Add CloudTrail/Sentinel/SCC for centralized logging (SEC04-BP01)")
+    if has_threat_detection:
+        s += 1
+    else:
+        findings.append("[SEC04] No threat detection service (GuardDuty/Defender)")
+        recommendations.append("[SEC04] Add GuardDuty/Defender/Cloud Guard for threat detection (SEC04-BP03)")
+    if has_config_monitoring:
+        s += 1
+    else:
+        findings.append("[SEC04] No compliance monitoring (Config/Policy)")
+        recommendations.append("[SEC04] Add AWS Config or equivalent for compliance tracking (SEC04-BP04)")
+    if has_flow_logs:
+        s += 1
+    else:
+        findings.append("[SEC04] No VPC flow logs for traffic analysis")
+        recommendations.append("[SEC04] Enable flow logs on all VPCs/VNets (SEC04-BP01)")
+    area_scores["detection"] = round(s / max_d * 100)
+
+    # SEC05/06: Infrastructure Protection
+    s = 0
+    max_i = 4
+    if has_subnets:
+        s += 1
+    else:
+        findings.append("[SEC05] No subnet segmentation (network layers)")
+        recommendations.append("[SEC05] Create public/private subnet layers (SEC05-BP01)")
+    if has_firewall or has_waf:
+        s += 1
+    else:
+        findings.append("[SEC05] No network inspection (firewall/WAF)")
+        recommendations.append("[SEC05] Add Network Firewall or WAF for L3-L7 inspection (SEC05-BP03)")
+    if has_ddos:
+        s += 1
+    else:
+        findings.append("[SEC05] No DDoS protection")
+        recommendations.append("[SEC05] Add Shield/DDoS Protection/Cloud Armor (SEC05-BP03)")
+    if has_scanning:
+        s += 1
+    else:
+        findings.append("[SEC06] No vulnerability scanning service")
+        recommendations.append("[SEC06] Add Inspector/Defender/VSS for vulnerability management (SEC06-BP01)")
+    area_scores["infrastructure"] = round(s / max_i * 100)
+
+    # SEC07/08/09: Data Protection
+    s = 0
+    max_dp = 2
+    if has_kms:
+        s += 1
+    else:
+        findings.append("[SEC08] No key management service (KMS)")
+        recommendations.append("[SEC08] Add KMS/Key Vault for FIPS 140-2 encryption (SEC08-BP01)")
+    encrypted_links = sum(1 for e in edges if (e.get("protocol") or "").lower() in
+                          ("ipsec", "tls", "macsec", "bgp", "https"))
+    total_links = len(edges) or 1
+    if encrypted_links / total_links >= 0.3 or has_dx or has_vpn:
+        s += 1
+    else:
+        findings.append("[SEC09] Few encrypted links detected in topology")
+        recommendations.append("[SEC09] Use TLS/IPsec/MACsec on all network connections (SEC09-BP02)")
+    area_scores["data_protection"] = round(s / max_dp * 100)
+
+    # SEC10: Incident Response (logging + threat detection covers pre-deployment)
+    s = 0
+    if has_logging and has_threat_detection:
+        s = 100
+    elif has_logging or has_threat_detection:
+        s = 50
+        findings.append("[SEC10] Partial IR tooling — need both logging AND threat detection")
+        recommendations.append("[SEC10] Deploy Detective/Sentinel + GuardDuty/Defender before incidents (SEC10-BP06)")
+    else:
+        findings.append("[SEC10] No IR tooling pre-deployed")
+        recommendations.append("[SEC10] Pre-deploy threat detection and logging services (SEC10-BP06)")
+    area_scores["incident_response"] = s
+
+    # Overall weighted score
+    weights = {
+        "foundations": 0.10, "identity": 0.15, "detection": 0.25,
+        "infrastructure": 0.25, "data_protection": 0.15, "incident_response": 0.10,
+    }
+    overall = sum(area_scores.get(a, 0) * w for a, w in weights.items())
+    overall = round(max(0, min(100, overall)))
+
+    if overall >= 85:
+        rating = "WELL-ARCHITECTED"
+    elif overall >= 65:
+        rating = "PARTIALLY ALIGNED"
+    elif overall >= 40:
+        rating = "SIGNIFICANT GAPS"
+    else:
+        rating = "NOT ALIGNED"
+
+    return {
+        "wa_security_score": overall,
+        "wa_security_rating": rating,
+        "area_scores": area_scores,
+        "total_best_practices": 57,
+        "findings": findings,
+        "recommendations": recommendations,
+        "design_principles_applicable": 7,
+    }
+
+
+def get_wa_security_summary() -> dict:
+    """Return a summary of all WA Security Pillar best practices with risk distribution."""
+    from tools.network.constants import WA_SECURITY_BEST_PRACTICES, WA_SECURITY_AREAS
+
+    risk_counts = {"high": 0, "medium": 0, "low": 0}
+    for bp in WA_SECURITY_BEST_PRACTICES:
+        risk_counts[bp["risk"]] = risk_counts.get(bp["risk"], 0) + 1
+
+    return {
+        "total_areas": len(WA_SECURITY_AREAS),
+        "total_best_practices": len(WA_SECURITY_BEST_PRACTICES),
+        "risk_distribution": risk_counts,
+        "areas": {k: v["name"] for k, v in WA_SECURITY_AREAS.items()},
+    }
+
+
 # ── CLI Entry Point ──────────────────────────────────────────────────────────
 
 def main():
@@ -869,6 +1059,8 @@ def main():
     elif "--landing-zones" in sys.argv:
         from tools.network.constants import LANDING_ZONE_PATTERNS
         print(json.dumps(LANDING_ZONE_PATTERNS, indent=2, default=str))
+    elif "--wa-security" in sys.argv:
+        print(json.dumps(get_wa_security_summary(), indent=2))
     elif "--egress-compare" in sys.argv:
         gb = 1000.0
         for i, arg in enumerate(sys.argv):
@@ -888,6 +1080,7 @@ def main():
                 "scca_compliance",
                 "scca_mapping",
                 "landing_zone_detection",
+                "wa_security_analysis",
             ],
             "csps": ["aws", "azure", "gcp", "oci", "ibm"],
             "equivalence_services": len(CSP_EQUIVALENCE),
@@ -896,6 +1089,7 @@ def main():
             "antipatterns": len(CLOUD_NETWORKING_ANTIPATTERNS),
             "scca_components": 4,
             "landing_zone_patterns": 5,
+            "wa_security_best_practices": 57,
         }, indent=2))
     else:
         print("ICDEV Network Canvas — Cloud Architecture Engine")
@@ -906,9 +1100,11 @@ def main():
         print(f"  Egress pricing models: {len(CLOUD_EGRESS_PRICING)} CSPs")
         print("  SCCA components: 4")
         print("  Landing zone patterns: 5")
+        print("  WA Security best practices: 57")
         print("\nFlags: --json, --equivalence-matrix, --resiliency-tiers,")
         print("       --antipatterns, --patterns, --egress-compare [--gb N],")
-        print("       --scca-matrix, --scca-components, --landing-zones")
+        print("       --scca-matrix, --scca-components, --landing-zones,")
+        print("       --wa-security")
 
 
 if __name__ == "__main__":

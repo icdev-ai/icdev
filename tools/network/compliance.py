@@ -9,9 +9,11 @@ No Flask dependency — takes graph data and returns results.
 """
 from collections import deque
 
+from tools.network.constants import WA_SECURITY_COMPLIANCE_RULES
+
 
 # ── Compliance Regimes & Rule Definitions ─────────────────────────────────────
-# 7 regimes with crosswalk mapping. Each rule is deterministic (no LLM needed).
+# 8 regimes with crosswalk mapping. Each rule is deterministic (no LLM needed).
 
 COMPLIANCE_REGIMES = {
     "fisma_high": {"name": "FISMA High", "framework": "NIST 800-53 Rev 5", "baseline": "High"},
@@ -21,6 +23,7 @@ COMPLIANCE_REGIMES = {
     "cjis": {"name": "CJIS Security Policy", "framework": "FBI CJIS", "baseline": "5.9.1"},
     "icd503": {"name": "ICD 503 (IC)", "framework": "ODNI ICD 503", "baseline": "Full"},
     "cnss1253": {"name": "CNSS 1253 (NSS)", "framework": "CNSS", "baseline": "High"},
+    "wa_security": {"name": "Well-Architected Security Pillar", "framework": "AWS Well-Architected", "baseline": "SEC01-SEC11"},
 }
 
 # Crosswalk: rule_id -> list of regimes it applies to
@@ -184,7 +187,7 @@ COMPLIANCE_RULES = [
      "regimes": ["fisma_high", "stig", "cjis", "cnss1253"],
      "description": "Internet-facing cloud resources must have DDoS protection enabled (Shield/DDoS Protection/Cloud Armor) per NIST SC-5 (denial of service protection).",
      "check": "ddos_protection"},
-]
+] + WA_SECURITY_COMPLIANCE_RULES
 
 # Encryptor speed ratings (Mbps) for NET-ENC-003
 ENCRYPTOR_RATINGS = {

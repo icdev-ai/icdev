@@ -2556,6 +2556,394 @@ def generate_zta_security(project_path: str, project_config: dict = None) -> lis
 
 
 # ---------------------------------------------------------------------------
+# WA Security Baseline Module (Well-Architected Security Pillar)
+# ---------------------------------------------------------------------------
+
+WA_SECURITY_MAIN = """\
+{{ cui_header }}
+# WA Security Baseline — Per-Account Security Foundation
+# AWS Well-Architected Security Pillar (SEC01-SEC11)
+# Deploys: GuardDuty, Security Hub (NIST 800-53), Config recorder + rules,
+#          Inspector, CloudWatch alarms, VPC Flow Logs, S3 access logging
+
+# ---------------------------------------------------------------
+# GuardDuty — Threat Detection (SEC04)
+# ---------------------------------------------------------------
+resource "aws_guardduty_detector" "this" {
+  enable = true
+
+  datasources {
+    s3_logs {
+      enable = true
+    }
+    kubernetes {
+      audit_logs {
+        enable = true
+      }
+    }
+    malware_protection {
+      scan_ec2_instance_with_findings {
+        ebs_volumes {
+          enable = true
+        }
+      }
+    }
+  }
+
+  tags = merge(var.common_tags, {
+    Name           = "${{var.project_name}}-${{var.environment}}-guardduty"
+    Classification = "CUI"
+    ManagedBy      = "icdev"
+  })
+}
+
+# ---------------------------------------------------------------
+# Security Hub with NIST 800-53 (SEC01/SEC04)
+# ---------------------------------------------------------------
+resource "aws_securityhub_account" "this" {}
+
+resource "aws_securityhub_standards_subscription" "nist_800_53" {
+  standards_arn = "arn:aws-us-gov:securityhub:${{var.region}}::standards/nist-800-53/v/5.0.0"
+
+  depends_on = [aws_securityhub_account.this]
+}
+
+# ---------------------------------------------------------------
+# AWS Config — Compliance Monitoring (SEC04)
+# ---------------------------------------------------------------
+resource "aws_config_configuration_recorder" "this" {
+  name     = "${{var.project_name}}-${{var.environment}}-wa-config"
+  role_arn = aws_iam_role.config.arn
+
+  recording_group {
+    all_supported                 = true
+    include_global_resource_types = true
+  }
+}
+
+resource "aws_iam_role" "config" {
+  name = "${{var.project_name}}-${{var.environment}}-wa-config-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action    = "sts:AssumeRole"
+        Effect    = "Allow"
+        Principal = { Service = "config.amazonaws.com" }
+      }
+    ]
+  })
+
+  tags = merge(var.common_tags, {
+    Classification = "CUI"
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "config" {
+  role       = aws_iam_role.config.name
+  policy_arn = "arn:aws-us-gov:iam::aws:policy/service-role/AWS_ConfigRole"
+}
+
+resource "aws_s3_bucket" "config" {
+  bucket        = "${{var.project_name}}-${{var.environment}}-wa-config-${{var.region}}"
+  force_destroy = false
+
+  tags = merge(var.common_tags, {
+    Name           = "${{var.project_name}}-wa-config-bucket"
+    Classification = "CUI"
+    ManagedBy      = "icdev"
+  })
+}
+
+resource "aws_s3_bucket_versioning" "config" {
+  bucket = aws_s3_bucket.config.id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "config" {
+  bucket                  = aws_s3_bucket.config.id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "config" {
+  bucket = aws_s3_bucket.config.id
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "aws:kms"
+    }
+  }
+}
+
+resource "aws_config_delivery_channel" "this" {
+  name           = "${{var.project_name}}-${{var.environment}}-wa-config-channel"
+  s3_bucket_name = aws_s3_bucket.config.id
+
+  depends_on = [aws_config_configuration_recorder.this]
+}
+
+resource "aws_config_configuration_recorder_status" "this" {
+  name       = aws_config_configuration_recorder.this.name
+  is_enabled = true
+
+  depends_on = [aws_config_delivery_channel.this]
+}
+
+# Config rules for security baseline
+resource "aws_config_config_rule" "root_mfa" {
+  name = "${{var.project_name}}-${{var.environment}}-root-mfa"
+
+  source {
+    owner             = "AWS"
+    source_identifier = "ROOT_ACCOUNT_MFA_ENABLED"
+  }
+
+  depends_on = [aws_config_configuration_recorder_status.this]
+
+  tags = merge(var.common_tags, {
+    WA_Reference = "SEC02-BP01"
+  })
+}
+
+resource "aws_config_config_rule" "s3_encryption" {
+  name = "${{var.project_name}}-${{var.environment}}-s3-encryption"
+
+  source {
+    owner             = "AWS"
+    source_identifier = "S3_BUCKET_SERVER_SIDE_ENCRYPTION_ENABLED"
+  }
+
+  depends_on = [aws_config_configuration_recorder_status.this]
+
+  tags = merge(var.common_tags, {
+    WA_Reference = "SEC08-BP02"
+  })
+}
+
+resource "aws_config_config_rule" "ebs_encryption" {
+  name = "${{var.project_name}}-${{var.environment}}-ebs-encryption"
+
+  source {
+    owner             = "AWS"
+    source_identifier = "ENCRYPTED_VOLUMES"
+  }
+
+  depends_on = [aws_config_configuration_recorder_status.this]
+
+  tags = merge(var.common_tags, {
+    WA_Reference = "SEC08-BP02"
+  })
+}
+
+# ---------------------------------------------------------------
+# Inspector — Vulnerability Management (SEC06)
+# ---------------------------------------------------------------
+resource "aws_inspector2_enabler" "this" {
+  account_ids    = [data.aws_caller_identity.current.account_id]
+  resource_types = ["EC2", "ECR", "LAMBDA"]
+}
+
+data "aws_caller_identity" "current" {}
+
+# ---------------------------------------------------------------
+# CloudWatch Alarms — Security Monitoring (SEC04)
+# ---------------------------------------------------------------
+resource "aws_cloudwatch_metric_alarm" "guardduty_findings" {
+  alarm_name          = "${{var.project_name}}-${{var.environment}}-guardduty-findings"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "FindingCount"
+  namespace           = "AWS/GuardDuty"
+  period              = 300
+  statistic           = "Sum"
+  threshold           = 0
+  alarm_description   = "GuardDuty finding detected — investigate immediately"
+  treat_missing_data  = "notBreaching"
+
+  tags = merge(var.common_tags, {
+    Classification = "CUI"
+    WA_Reference   = "SEC04-BP03"
+  })
+}
+
+# ---------------------------------------------------------------
+# VPC Flow Logs (SEC05 — Network Visibility)
+# ---------------------------------------------------------------
+resource "aws_cloudwatch_log_group" "flow_logs" {
+  name              = "/aws/vpc/${{var.project_name}}-${{var.environment}}/flow-logs"
+  retention_in_days = 365
+
+  tags = merge(var.common_tags, {
+    Classification = "CUI"
+    WA_Reference   = "SEC04-BP01"
+  })
+}
+
+resource "aws_iam_role" "flow_logs" {
+  name = "${{var.project_name}}-${{var.environment}}-wa-flow-log-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action    = "sts:AssumeRole"
+        Effect    = "Allow"
+        Principal = { Service = "vpc-flow-logs.amazonaws.com" }
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy" "flow_logs" {
+  name = "${{var.project_name}}-${{var.environment}}-wa-flow-log-policy"
+  role = aws_iam_role.flow_logs.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents",
+          "logs:DescribeLogGroups",
+          "logs:DescribeLogStreams"
+        ]
+        Effect   = "Allow"
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+# ---------------------------------------------------------------
+# S3 Access Logging (SEC07/SEC08)
+# ---------------------------------------------------------------
+resource "aws_s3_bucket" "access_logs" {
+  bucket        = "${{var.project_name}}-${{var.environment}}-wa-access-logs-${{var.region}}"
+  force_destroy = false
+
+  tags = merge(var.common_tags, {
+    Name           = "${{var.project_name}}-wa-access-logs"
+    Classification = "CUI"
+    ManagedBy      = "icdev"
+    WA_Reference   = "SEC07-BP02"
+  })
+}
+
+resource "aws_s3_bucket_versioning" "access_logs" {
+  bucket = aws_s3_bucket.access_logs.id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "access_logs" {
+  bucket                  = aws_s3_bucket.access_logs.id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "access_logs" {
+  bucket = aws_s3_bucket.access_logs.id
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "aws:kms"
+    }
+  }
+}
+"""
+
+WA_SECURITY_VARIABLES = """\
+{{ cui_header }}
+variable "project_name" {
+  description = "Project identifier for resource naming"
+  type        = string
+}
+
+variable "environment" {
+  description = "Deployment environment (dev, staging, prod)"
+  type        = string
+}
+
+variable "region" {
+  description = "AWS GovCloud region"
+  type        = string
+  default     = "us-gov-west-1"
+}
+
+variable "common_tags" {
+  description = "Common tags applied to all resources"
+  type        = map(string)
+  default     = {}
+}
+"""
+
+WA_SECURITY_OUTPUTS = """\
+{{ cui_header }}
+output "guardduty_detector_id" {
+  description = "GuardDuty detector ID"
+  value       = aws_guardduty_detector.this.id
+}
+
+output "securityhub_arn" {
+  description = "Security Hub account ARN"
+  value       = aws_securityhub_account.this.arn
+}
+
+output "config_recorder_name" {
+  description = "AWS Config recorder name"
+  value       = aws_config_configuration_recorder.this.name
+}
+"""
+
+
+def generate_wa_security(project_path: str, project_config: dict = None) -> list:
+    """Generate WA Security Baseline Terraform module.
+
+    Creates a single per-account security baseline module for
+    AWS Well-Architected Security Pillar (SEC01-SEC11):
+      - wa-security-baseline: GuardDuty, Security Hub (NIST 800-53),
+        Config recorder + rules, Inspector, CloudWatch alarms,
+        VPC Flow Logs, S3 access logging
+
+    Lighter than SCCA modules — meant to be applied to every AWS account.
+
+    Args:
+        project_path: Target project directory.
+        project_config: Optional project configuration dict.
+
+    Returns:
+        List of generated file paths.
+    """
+    ctx = {"cui_header": _cui_header()}
+    files = []
+
+    modules = [
+        ("wa-security-baseline", [
+            ("main.tf", WA_SECURITY_MAIN),
+            ("variables.tf", WA_SECURITY_VARIABLES),
+            ("outputs.tf", WA_SECURITY_OUTPUTS),
+        ]),
+    ]
+
+    for module_name, templates in modules:
+        tf_dir = Path(project_path) / "terraform" / "modules" / module_name
+        for filename, template in templates:
+            p = _write(tf_dir / filename, _render(template, ctx))
+            files.append(str(p))
+
+    return files
+
+
+# ---------------------------------------------------------------------------
 # CSP Dispatcher (Phase 38 — D225)
 # ---------------------------------------------------------------------------
 
@@ -2604,6 +2992,8 @@ def generate_for_csp(project_path: str, project_config: dict = None,
         files.extend(generate_ecr(project_path))
         if config.get("scca"):
             files.extend(generate_scca(project_path, config))
+        if config.get("wa_security"):
+            files.extend(generate_wa_security(project_path, config))
         return files
 
     generator_map = {
@@ -2635,7 +3025,7 @@ def main():
     parser.add_argument(
         "--components",
         default="base,rds,ecr,vpc",
-        help="Comma-separated components: base,rds,ecr,vpc,bedrock_iam,agent_networking,scca,zta_security",
+        help="Comma-separated components: base,rds,ecr,vpc,bedrock_iam,agent_networking,scca,wa_security,zta_security",
     )
     parser.add_argument("--project-name", default="icdev-project", help="Project name for resource naming")
     parser.add_argument("--environment", default="dev", choices=["dev", "staging", "prod"], help="Target environment")
@@ -2670,6 +3060,7 @@ def main():
         "bedrock_iam": lambda: generate_bedrock_iam(args.project_path, config),
         "agent_networking": lambda: generate_agent_networking(args.project_path, config),
         "scca": lambda: generate_scca(args.project_path, config),
+        "wa_security": lambda: generate_wa_security(args.project_path, config),
         "zta_security": lambda: generate_zta_security(args.project_path, config),
     }
 
