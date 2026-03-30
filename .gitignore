@@ -64,6 +64,8 @@ playwright/
 
 # Vendored binaries (downloaded via setup, not committed)
 vendor/
+# But keep dashboard static vendor (JS/CSS libs for air-gap)
+!tools/dashboard/static/vendor/
 
 # Generated projects (created by project_create.py)
 # projects/  # Uncomment to ignore generated projects
