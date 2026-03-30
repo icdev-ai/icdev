@@ -1572,3 +1572,11 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Cloud Architecture | tools\network\cloud_architecture.py | Auto-registered: network/cloud_architecture.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Deploy Catalog | tools\pipeline\deploy_catalog.py | Auto-registered: pipeline/deploy_catalog.py | --json | JSON |
+| Deploy Generator | tools\pipeline\deploy_generator.py | Auto-registered: pipeline/deploy_generator.py | --json | JSON |
+| E2E Devops Canvas | tools\testing\e2e_devops_canvas.py | Auto-registered: testing/e2e_devops_canvas.py | --json | JSON |
