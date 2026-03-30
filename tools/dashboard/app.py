@@ -1538,11 +1538,25 @@ def create_app() -> Flask:
     def api_tour_steps():
         """Return tour step definitions for the onboarding walkthrough.
 
-        Steps are served from config so admins can customize content
-        without modifying JavaScript source. tour.js fetches this
-        endpoint on init and falls back to built-in defaults if
-        the fetch fails (air-gap safe).
+        Steps are served from DB (tour_config table) first, falling back
+        to built-in defaults. tour.js fetches this endpoint on init and
+        falls back to built-in defaults if the fetch fails (air-gap safe).
         """
+        # Try DB first
+        conn = _get_db()
+        try:
+            rows = conn.execute(
+                "SELECT selector, title, description FROM tour_config ORDER BY sort_order"
+            ).fetchall()
+            if rows:
+                db_steps = [{"selector": r["selector"], "title": r["title"], "desc": r["description"]} for r in rows]
+                return jsonify({"steps": db_steps, "version": 2, "source": "db", "classification": DEFAULT_CLASSIFICATION})
+        except Exception:
+            pass  # Table may not exist yet — fall through to defaults
+        finally:
+            conn.close()
+
+        # Built-in defaults
         steps = [
             {
                 "selector": ".navbar",
@@ -4465,7 +4479,21 @@ def create_app() -> Flask:
 
     @app.route("/api/page-agent/message", methods=["POST"])
     def api_page_agent_message():
-        """Process a Page Agent copilot message — navigation, search, or contextual help."""
+        """Process a Page Agent copilot message — navigation, search, or contextual help.
+
+        Route map loaded from DB (page_agent_routes) with fallback to
+        _PAGE_AGENT_ROUTE_MAP hardcoded dict.
+        """
+        # Load custom routes from DB if available
+        try:
+            conn = _get_db()
+            rows = conn.execute("SELECT keyword, route FROM page_agent_routes").fetchall()
+            conn.close()
+            if rows:
+                for r in rows:
+                    _PAGE_AGENT_ROUTE_MAP[r["keyword"]] = r["route"]
+        except Exception:
+            pass  # Table may not exist — use defaults
         try:
             data = flask_request.get_json(force=True) if flask_request.is_json else {}
             message = data.get("message", "").strip()
@@ -4866,7 +4894,19 @@ def create_app() -> Flask:
         try:
             return jsonify(_genesis_run(app_key, ["--status", "--json"]))
         except Exception as exc:
-            return jsonify({"error": str(exc)}), 500
+            # DB fallback: query genesis_runs for last known status
+            try:
+                conn = _get_db()
+                row = conn.execute(
+                    "SELECT * FROM genesis_runs WHERE app_key = ? ORDER BY started_at DESC LIMIT 1",
+                    (app_key,),
+                ).fetchone()
+                conn.close()
+                if row:
+                    return jsonify({"status": "cached", "app": app_key, "last_run": dict(row), "daemon_error": str(exc)})
+            except Exception:
+                pass
+            return jsonify({"error": str(exc), "app": app_key}), 500
 
 
     @app.route("/api/genesis/all-status", methods=["GET"])
@@ -4894,7 +4934,20 @@ def create_app() -> Flask:
         if name not in allowed:
             return jsonify({"error": f"Unknown reflex: {name}"}), 400
         try:
-            return jsonify(_genesis_run(app_key, ["--reflex", name, "--json"], timeout=300))
+            result = _genesis_run(app_key, ["--reflex", name, "--json"], timeout=300)
+            # Log to DB for audit trail
+            try:
+                conn = _get_db()
+                conn.execute(
+                    "INSERT INTO audit_trail (event_type, entity_type, entity_id, details, created_at) "
+                    "VALUES (?, ?, ?, ?, datetime('now'))",
+                    ("genesis_reflex", "genesis", app_key, json.dumps({"reflex": name})),
+                )
+                conn.commit()
+                conn.close()
+            except Exception:
+                pass
+            return jsonify(result)
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
 
@@ -5085,7 +5138,16 @@ def create_app() -> Flask:
         app_key = flask_request.args.get("app", "icdev")
         cfg = _genesis_app(app_key)
         if not cfg.get("promoter"):
-            return jsonify({"error": "No promoter configured for this app", "auto_promoted": 0}), 400
+            # DB fallback: check for pending GKPs directly
+            try:
+                conn = _get_db()
+                pending = conn.execute(
+                    "SELECT COUNT(*) FROM genesis_knowledge_packets WHERE status = 'pending'"
+                ).fetchone()[0]
+                conn.close()
+                return jsonify({"error": "No promoter configured", "auto_promoted": 0, "pending_gkps": pending}), 400
+            except Exception:
+                return jsonify({"error": "No promoter configured for this app", "auto_promoted": 0}), 400
         try:
             import subprocess as _sp
             _utf8_env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONPATH": cfg["root"]}
@@ -5235,7 +5297,7 @@ def create_app() -> Flask:
 
     @app.route("/api/review-board/status", methods=["GET"])
     def api_review_board_status():
-        """Review Board JSON status."""
+        """Review Board JSON status — daemon CLI with DB fallback."""
         try:
             import subprocess as _sp
             _utf8_env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
@@ -5246,9 +5308,22 @@ def create_app() -> Flask:
             )
             if result.returncode == 0 and result.stdout.strip():
                 return jsonify(json.loads(result.stdout))
-            return jsonify({"error": "no_output", "stderr": result.stderr[:300]}), 500
+        except Exception:
+            pass
+        # DB fallback: query review_board_findings for summary
+        conn = _get_db()
+        try:
+            total = conn.execute("SELECT COUNT(*) FROM review_board_findings").fetchone()[0]
+            by_sev = {}
+            for row in conn.execute(
+                "SELECT severity, COUNT(*) as cnt FROM review_board_findings GROUP BY severity"
+            ).fetchall():
+                by_sev[row["severity"]] = row["cnt"]
+            return jsonify({"status": "db_fallback", "total_findings": total, "by_severity": by_sev})
         except Exception as exc:
-            return jsonify({"error": str(exc)}), 500
+            return jsonify({"error": str(exc), "status": "unavailable"}), 500
+        finally:
+            conn.close()
 
     @app.route("/api/review-board/findings", methods=["GET"])
     def api_review_board_findings():
@@ -5277,7 +5352,7 @@ def create_app() -> Flask:
 
     @app.route("/api/review-board/reflex/<name>", methods=["POST"])
     def api_review_board_run_reflex(name):
-        """Run a single Review Board reflex on-demand."""
+        """Run a single Review Board reflex on-demand — daemon CLI with audit trail."""
         allowed = ["sre", "qa", "security", "perf", "ux", "docs", "product"]
         if name not in allowed:
             return jsonify({"error": f"Unknown reflex: {name}"}), 400
@@ -5289,6 +5364,18 @@ def create_app() -> Flask:
                 capture_output=True, text=True, timeout=300, cwd=str(BASE_DIR),
                 env=_utf8_env,
             )
+            # Log to audit trail
+            try:
+                conn = _get_db()
+                conn.execute(
+                    "INSERT INTO audit_trail (event_type, entity_type, entity_id, details, created_at) "
+                    "VALUES (?, ?, ?, ?, datetime('now'))",
+                    ("review_board_reflex", "review_board", name, json.dumps({"returncode": result.returncode})),
+                )
+                conn.commit()
+                conn.close()
+            except Exception:
+                pass
             if result.returncode == 0 and result.stdout.strip():
                 return jsonify(json.loads(result.stdout))
             return jsonify({"status": "completed", "stdout": result.stdout[:500]}), 200
