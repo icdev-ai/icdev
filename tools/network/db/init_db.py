@@ -4352,6 +4352,226 @@ TEMPLATES = [
             ]
         }),
     },
+    # 46 ─ SCCA Disaster Recovery & Continuity
+    {
+        "id": "tpl-scca-dr-continuity",
+        "name": "SCCA Disaster Recovery & Continuity",
+        "category": "SCCA / Landing Zone",
+        "description": "SCCA-compliant disaster recovery architecture with dual-region VDSS/VDMS replicas, cross-region TGW peering, S3 cross-region replication for immutable logs, mission VPC failover with Route 53 health checks, and BCAP redundant connectivity. Supports RTO <4h / RPO <1h for IL4/IL5 workloads.",
+        "tags": json.dumps(["scca", "disaster-recovery", "dr", "continuity", "dual-region", "failover", "route53", "crr", "rto-4h", "rpo-1h"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                # Primary Region (us-gov-west-1)
+                _node("pri-tgw", "TGW Primary (us-gov-west-1)", "aws-tgw", 100, 60),
+                _node("pri-nfw", "Network Firewall (Primary)", "aws-nfw", 100, 200),
+                _node("pri-vdms", "VDMS VPC (Primary)", "aws-vpc", 280, 60,
+                      {"config": {"cidr": "10.1.0.0/16", "flow_logs_enabled": True}}),
+                _node("pri-ad", "Managed AD (Primary)", "aws-ad", 280, 200),
+                _node("pri-sechub", "Security Hub (Primary)", "aws-securityhub", 280, 340),
+                _node("pri-mission", "Mission VPC (Primary)", "aws-vpc", 100, 380,
+                      {"config": {"cidr": "10.10.0.0/16", "flow_logs_enabled": True}}),
+                _node("pri-app", "App Subnet", "aws-subnet", 100, 500),
+                _node("pri-data", "Data Subnet (RDS Multi-AZ)", "aws-subnet", 280, 500),
+                _node("pri-s3", "Log Bucket (Primary)", "server", 280, 640,
+                      {"config": {"versioning": True, "crr_enabled": True}}),
+                # DR Region (us-gov-east-1)
+                _node("dr-tgw", "TGW DR (us-gov-east-1)", "aws-tgw", 640, 60),
+                _node("dr-nfw", "Network Firewall (DR)", "aws-nfw", 640, 200),
+                _node("dr-vdms", "VDMS VPC (DR)", "aws-vpc", 820, 60,
+                      {"config": {"cidr": "10.2.0.0/16", "flow_logs_enabled": True}}),
+                _node("dr-ad", "Managed AD (DR Replica)", "aws-ad", 820, 200),
+                _node("dr-sechub", "Security Hub (DR)", "aws-securityhub", 820, 340),
+                _node("dr-mission", "Mission VPC (DR Standby)", "aws-vpc", 640, 380,
+                      {"config": {"cidr": "10.20.0.0/16", "flow_logs_enabled": True}}),
+                _node("dr-app", "App Subnet (Standby)", "aws-subnet", 640, 500),
+                _node("dr-data", "Data Subnet (RDS Read Replica)", "aws-subnet", 820, 500),
+                _node("dr-s3", "Log Bucket (DR Replica)", "server", 820, 640,
+                      {"config": {"versioning": True, "crr_target": True}}),
+                # Shared / Cross-Region
+                _node("r53", "Route 53 (Health Check + Failover)", "aws-r53", 460, 60,
+                      {"config": {"routing_policy": "failover", "health_check": True}}),
+                _node("tgw-peer", "TGW Peering (Cross-Region)", "aws-tgw", 460, 200,
+                      {"config": {"purpose": "Cross-region TGW peering for DR failover"}}),
+                _node("bcap-pri", "BCAP (Primary Path)", "firewall", 460, 500),
+                _node("bcap-dr", "BCAP (DR Path)", "firewall", 460, 640),
+            ],
+            "edges": [
+                # Primary internal
+                _edge("pri-tgw", "pri-nfw", "Inspection", ""),
+                _edge("pri-tgw", "pri-vdms", "Attach", ""),
+                _edge("pri-tgw", "pri-mission", "Attach", ""),
+                _edge("pri-vdms", "pri-ad", "Directory", ""),
+                _edge("pri-vdms", "pri-sechub", "Findings", ""),
+                _edge("pri-mission", "pri-app", "", ""),
+                _edge("pri-mission", "pri-data", "", ""),
+                _edge("pri-vdms", "pri-s3", "Log Export", ""),
+                # DR internal
+                _edge("dr-tgw", "dr-nfw", "Inspection", ""),
+                _edge("dr-tgw", "dr-vdms", "Attach", ""),
+                _edge("dr-tgw", "dr-mission", "Attach", ""),
+                _edge("dr-vdms", "dr-ad", "Directory", ""),
+                _edge("dr-vdms", "dr-sechub", "Findings", ""),
+                _edge("dr-mission", "dr-app", "", ""),
+                _edge("dr-mission", "dr-data", "", ""),
+                _edge("dr-vdms", "dr-s3", "Log Export", ""),
+                # Cross-region
+                _edge("pri-tgw", "tgw-peer", "Peering", "BGP"),
+                _edge("tgw-peer", "dr-tgw", "Peering", "BGP"),
+                _edge("pri-s3", "dr-s3", "S3 CRR", "TLS"),
+                _edge("pri-ad", "dr-ad", "AD Replication", ""),
+                # DNS
+                _edge("r53", "pri-mission", "Primary", ""),
+                _edge("r53", "dr-mission", "Failover", ""),
+                # BCAP
+                _edge("bcap-pri", "pri-tgw", "DX", "BGP"),
+                _edge("bcap-dr", "dr-tgw", "DX", "BGP"),
+            ]
+        }),
+    },
+    # 47 ─ SCCA Cost-Optimized (Shared Services)
+    {
+        "id": "tpl-scca-cost-optimized",
+        "name": "SCCA Cost-Optimized (Shared Services)",
+        "category": "SCCA / Landing Zone",
+        "description": "Cost-optimized SCCA architecture with shared VDSS/VDMS serving multiple mission VPCs. Consolidates security stack (single Network Firewall, shared AD, shared Security Hub) across 3 mission owners to reduce per-mission cost. Transit Gateway route tables isolate mission traffic while sharing inspection path. Suitable for IL4 workloads with moderate security requirements.",
+        "tags": json.dumps(["scca", "cost-optimized", "shared-services", "multi-mission", "il4", "consolidated", "transit-gateway"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                # Shared VDSS/VDMS (top)
+                _node("tgw", "Transit Gateway (Shared)", "aws-tgw", 400, 60,
+                      {"config": {"route_tables": ["shared-security", "mission-1", "mission-2", "mission-3"]}}),
+                _node("nfw", "Network Firewall (Shared)", "aws-nfw", 200, 60,
+                      {"config": {"purpose": "Single NFW serves all missions — cost savings ~60%"}}),
+                _node("waf", "WAF (Shared Rules)", "aws-waf", 200, 200),
+                _node("shield", "Shield Advanced (Org)", "aws-shield", 400, 200,
+                      {"config": {"purpose": "Org-wide Shield — $3K/mo covers all accounts"}}),
+                _node("ad", "Managed AD (Shared)", "aws-ad", 600, 60),
+                _node("sechub", "Security Hub (Aggregator)", "aws-securityhub", 600, 200),
+                _node("kms", "KMS (Shared CMK)", "aws-kms", 400, 340),
+                _node("ct", "CloudTrail (Org Trail)", "aws-ct", 600, 340),
+                # Mission VPC 1
+                _node("m1-vpc", "Mission 1 VPC", "aws-vpc", 100, 500,
+                      {"config": {"cidr": "10.1.0.0/16", "flow_logs_enabled": True, "owner": "Team Alpha"}}),
+                _node("m1-app", "M1 App Subnet", "aws-subnet", 100, 640),
+                # Mission VPC 2
+                _node("m2-vpc", "Mission 2 VPC", "aws-vpc", 400, 500,
+                      {"config": {"cidr": "10.2.0.0/16", "flow_logs_enabled": True, "owner": "Team Bravo"}}),
+                _node("m2-app", "M2 App Subnet", "aws-subnet", 400, 640),
+                # Mission VPC 3
+                _node("m3-vpc", "Mission 3 VPC", "aws-vpc", 700, 500,
+                      {"config": {"cidr": "10.3.0.0/16", "flow_logs_enabled": True, "owner": "Team Charlie"}}),
+                _node("m3-app", "M3 App Subnet", "aws-subnet", 700, 640),
+                # Connectivity
+                _node("dx", "Direct Connect (Shared)", "aws-dx", 200, 340,
+                      {"config": {"bandwidth": "10G", "bfd_enabled": True}}),
+                _node("vpn", "VPN Backup", "aws-vpn", 100, 200),
+                # Cost annotations
+                _node("cost-note", "Cost Savings Notes", "server", 700, 340,
+                      {"config": {"note": "Shared NFW saves ~$0.40/GB vs per-VPC; shared Shield $3K vs $15K; shared AD $0.09/hr vs $0.45/hr"}}),
+            ],
+            "edges": [
+                # Hub
+                _edge("tgw", "nfw", "Inspection", ""),
+                _edge("nfw", "waf", "L7", ""),
+                _edge("tgw", "shield", "DDoS", ""),
+                # Shared services
+                _edge("tgw", "ad", "Directory", ""),
+                _edge("tgw", "sechub", "Findings", ""),
+                _edge("sechub", "ct", "Trail Logs", ""),
+                _edge("tgw", "kms", "Encryption", ""),
+                # Missions
+                _edge("tgw", "m1-vpc", "TGW Attach", ""),
+                _edge("tgw", "m2-vpc", "TGW Attach", ""),
+                _edge("tgw", "m3-vpc", "TGW Attach", ""),
+                _edge("m1-vpc", "m1-app", "", ""),
+                _edge("m2-vpc", "m2-app", "", ""),
+                _edge("m3-vpc", "m3-app", "", ""),
+                # Connectivity
+                _edge("dx", "tgw", "DX", "BGP"),
+                _edge("vpn", "tgw", "Backup", "IPSec"),
+                # Cost references
+                _edge("cost-note", "shield", "Ref", ""),
+                _edge("cost-note", "nfw", "Ref", ""),
+            ]
+        }),
+    },
+    # 48 ─ DevSecOps Pipeline in SCCA Network
+    {
+        "id": "tpl-devsecops-scca",
+        "name": "DevSecOps Pipeline in SCCA Network",
+        "category": "SCCA / Landing Zone",
+        "description": "Secure CI/CD pipeline deployed within an SCCA-compliant network. Container build pipeline (CodePipeline → CodeBuild → ECR → EKS) isolated in a DevTools VPC behind VDSS inspection. SAST/DAST scanning gates, SBOM generation, image signing (AWS Signer), and artifact scanning before promotion to mission VPC. All traffic routes through TGW and Network Firewall.",
+        "tags": json.dumps(["scca", "devsecops", "cicd", "pipeline", "sast", "sbom", "container", "eks", "security-gate", "supply-chain"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                # VDSS Inspection (top-left)
+                _node("tgw", "Transit Gateway", "aws-tgw", 100, 60),
+                _node("nfw", "Network Firewall", "aws-nfw", 100, 200),
+                # Security Services (top-right)
+                _node("sechub", "Security Hub", "aws-securityhub", 400, 60),
+                _node("inspector", "Inspector (CVE Scan)", "aws-inspector", 600, 60),
+                _node("guardduty", "GuardDuty", "aws-guardduty", 400, 200),
+                _node("kms", "KMS (Artifact Signing)", "aws-kms", 600, 200),
+                # DevTools VPC (center — pipeline flow)
+                _node("dev-vpc", "DevTools VPC", "aws-vpc", 300, 380,
+                      {"config": {"cidr": "10.50.0.0/16", "flow_logs_enabled": True, "purpose": "CI/CD pipeline"}}),
+                _node("codecommit", "CodeCommit (Source)", "server", 100, 380,
+                      {"config": {"purpose": "Git repository — air-gap safe"}}),
+                _node("codebuild", "CodeBuild (Build + SAST)", "server", 100, 520,
+                      {"config": {"purpose": "Build container + run bandit/ruff/SAST"}}),
+                _node("ecr", "ECR (Signed Images)", "server", 300, 520,
+                      {"config": {"purpose": "Container registry — image scanning enabled", "scan_on_push": True}}),
+                _node("signer", "AWS Signer (Integrity)", "server", 500, 520,
+                      {"config": {"purpose": "Code signing for artifact integrity"}}),
+                _node("sbom", "SBOM Generator", "server", 300, 660,
+                      {"config": {"purpose": "CycloneDX SBOM for supply chain compliance"}}),
+                # Gate (promotion checkpoint)
+                _node("gate", "Security Gate (Pass/Fail)", "firewall", 500, 380,
+                      {"config": {"purpose": "Blocks deploy if: CAT1 STIG, critical CVE, unsigned image, missing SBOM"}}),
+                # Mission VPC (right — deployment target)
+                _node("mission-vpc", "Mission VPC (Prod)", "aws-vpc", 700, 380,
+                      {"config": {"cidr": "10.10.0.0/16", "flow_logs_enabled": True}}),
+                _node("eks", "EKS Cluster (Prod)", "server", 700, 520,
+                      {"config": {"purpose": "Production Kubernetes — hardened, read-only rootfs"}}),
+                _node("alb", "ALB (Internal)", "aws-alb", 700, 660),
+                # Logging
+                _node("ct", "CloudTrail (Pipeline Audit)", "aws-ct", 100, 660),
+                _node("flowlogs", "VPC Flow Logs", "aws-flowlogs", 500, 660),
+            ],
+            "edges": [
+                # Pipeline flow
+                _edge("codecommit", "codebuild", "Source", ""),
+                _edge("codebuild", "ecr", "Push Image", ""),
+                _edge("ecr", "signer", "Sign", ""),
+                _edge("ecr", "sbom", "Generate SBOM", ""),
+                _edge("signer", "gate", "Verify", ""),
+                _edge("gate", "mission-vpc", "Promote", ""),
+                # VPC
+                _edge("dev-vpc", "codecommit", "Attach", ""),
+                _edge("dev-vpc", "codebuild", "Attach", ""),
+                _edge("dev-vpc", "ecr", "Attach", ""),
+                _edge("dev-vpc", "signer", "Attach", ""),
+                _edge("dev-vpc", "sbom", "Attach", ""),
+                # Security
+                _edge("inspector", "ecr", "CVE Scan", ""),
+                _edge("inspector", "gate", "Findings", ""),
+                _edge("sechub", "gate", "Compliance", ""),
+                _edge("guardduty", "sechub", "Threats", ""),
+                # Mission
+                _edge("mission-vpc", "eks", "", ""),
+                _edge("eks", "alb", "Ingress", ""),
+                # Network
+                _edge("tgw", "nfw", "Inspection", ""),
+                _edge("tgw", "dev-vpc", "Attach", ""),
+                _edge("tgw", "mission-vpc", "Attach", ""),
+                # Audit
+                _edge("codebuild", "ct", "Build Log", ""),
+                _edge("dev-vpc", "flowlogs", "Logging", ""),
+                # Signing
+                _edge("kms", "signer", "Signing Key", ""),
+            ]
+        }),
+    },
 ]
 
 
