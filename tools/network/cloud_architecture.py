@@ -545,6 +545,307 @@ def analyze_cloud_topology(nodes: list[dict], edges: list[dict]) -> dict:
     }
 
 
+# ── SCCA Compliance Analysis ───────────────────────────────────────────────────
+
+def analyze_scca_compliance(nodes: list[dict], edges: list[dict]) -> dict:
+    """Analyze a topology for SCCA (Secure Cloud Computing Architecture) compliance.
+
+    Detects which SCCA components (BCAP, VDSS, VDMS, TCCM) are present,
+    scores overall SCCA readiness, and returns findings with recommendations.
+
+    Returns:
+        Dict with component_status, score, findings, and recommendations.
+    """
+    from tools.network.constants import (
+        SCCA_FIREWALL_TYPES, SCCA_IDENTITY_TYPES, SCCA_LOGGING_TYPES,
+        SCCA_KMS_TYPES, SCCA_SCANNING_TYPES, SCCA_DDOS_TYPES,
+    )
+
+    node_types = {n["id"]: n.get("type", "") for n in nodes}
+    type_set = set(node_types.values())
+
+    has_dx = bool(type_set & _DX_TYPES)
+    has_firewall = bool(type_set & SCCA_FIREWALL_TYPES)
+    has_waf = bool(type_set & {"aws-waf", "az-appgw", "az-front", "oci-waf", "gcp-armor", "ibm-cis"})
+    has_ddos = bool(type_set & SCCA_DDOS_TYPES)
+    has_hub = bool(type_set & _TRANSIT_HUB_TYPES)
+    has_flow_logs = bool(type_set & {"aws-flowlogs", "az-flowlogs", "gcp-flowlogs", "oci-flowlogs", "ibm-flowlogs"})
+    has_identity = bool(type_set & SCCA_IDENTITY_TYPES)
+    has_logging = bool(type_set & SCCA_LOGGING_TYPES)
+    has_kms = bool(type_set & SCCA_KMS_TYPES)
+    has_scanning = bool(type_set & SCCA_SCANNING_TYPES)
+
+    # Component scoring
+    components = {
+        "bcap": {
+            "present": has_dx,
+            "score": 100 if has_dx else 0,
+            "findings": [] if has_dx else ["No dedicated interconnect (DX/ER/IC/FC/DL) to DISN/BCAP"],
+            "recommendations": [] if has_dx else ["Add dedicated circuit for DISN connectivity (FRD §2.1.1)"],
+        },
+        "vdss": {
+            "present": has_firewall,
+            "score": 0,
+            "findings": [],
+            "recommendations": [],
+        },
+        "vdms": {
+            "present": has_logging or has_kms or has_scanning,
+            "score": 0,
+            "findings": [],
+            "recommendations": [],
+        },
+        "tccm": {
+            "present": has_identity,
+            "score": 0,
+            "findings": [],
+            "recommendations": [],
+        },
+    }
+
+    # VDSS scoring
+    vdss_score = 0
+    vdss_max = 6
+    if has_firewall:
+        vdss_score += 1
+    else:
+        components["vdss"]["findings"].append("No network firewall for IDS/IPS inspection")
+        components["vdss"]["recommendations"].append("Add Network Firewall/Azure FW for stateful inspection (FRD §2.1.2.7)")
+    if has_waf:
+        vdss_score += 1
+    else:
+        components["vdss"]["findings"].append("No WAF for application-layer filtering")
+        components["vdss"]["recommendations"].append("Add WAF for HTTP inspection (FRD §2.1.2.4)")
+    if has_ddos:
+        vdss_score += 1
+    else:
+        components["vdss"]["findings"].append("No DDoS protection at perimeter")
+        components["vdss"]["recommendations"].append("Add Shield/DDoS Protection/Cloud Armor (FRD §2.1.2.1)")
+    if has_hub:
+        vdss_score += 1
+    else:
+        components["vdss"]["findings"].append("No transit hub for centralized traffic routing")
+        components["vdss"]["recommendations"].append("Add TGW/vWAN/DRG for east-west inspection (FRD §2.1.2.8)")
+    if has_flow_logs:
+        vdss_score += 1
+    else:
+        components["vdss"]["findings"].append("No VPC/VNet flow logs for traffic monitoring")
+        components["vdss"]["recommendations"].append("Enable Flow Logs on all VPCs/VNets (FRD §2.1.2.16)")
+    # Check east-west inspection: firewall connected to transit hub
+    if has_firewall and has_hub:
+        adj = _build_adj(edges)
+        fw_ids = [nid for nid, ntype in node_types.items() if ntype in SCCA_FIREWALL_TYPES]
+        hub_ids = [nid for nid, ntype in node_types.items() if ntype in _TRANSIT_HUB_TYPES]
+        ew_ok = any(h in adj.get(f, set()) for f in fw_ids for h in hub_ids)
+        if ew_ok:
+            vdss_score += 1
+        else:
+            components["vdss"]["findings"].append("Firewall not connected to transit hub — east-west traffic may bypass inspection")
+            components["vdss"]["recommendations"].append("Connect firewall to TGW/vWAN/DRG for all inter-VPC traffic inspection")
+    components["vdss"]["score"] = round(vdss_score / vdss_max * 100)
+
+    # VDMS scoring
+    vdms_score = 0
+    vdms_max = 4
+    if has_logging:
+        vdms_score += 1
+    else:
+        components["vdms"]["findings"].append("No centralized logging/SIEM service")
+        components["vdms"]["recommendations"].append("Add SecurityHub/Sentinel/SCC for SIEM (FRD §2.1.3.7)")
+    if has_kms:
+        vdms_score += 1
+    else:
+        components["vdms"]["findings"].append("No FIPS 140-2 key management service")
+        components["vdms"]["recommendations"].append("Add KMS/Key Vault/OCI Vault for encryption key management (FRD §2.1.2.13)")
+    if has_scanning:
+        vdms_score += 1
+    else:
+        components["vdms"]["findings"].append("No vulnerability scanning (ACAS equivalent)")
+        components["vdms"]["recommendations"].append("Add Inspector/Defender/Cloud Guard for continuous monitoring (FRD §2.1.3.1)")
+    if has_identity:
+        vdms_score += 1
+    else:
+        components["vdms"]["findings"].append("No identity/directory service for CAC/MFA")
+        components["vdms"]["recommendations"].append("Add Managed AD/Entra ID/Identity Domains for CAC auth (FRD §2.1.3.3)")
+    components["vdms"]["score"] = round(vdms_score / vdms_max * 100)
+
+    # TCCM scoring
+    tccm_score = 0
+    tccm_max = 2
+    if has_identity:
+        tccm_score += 1
+    else:
+        components["tccm"]["findings"].append("No centralized IAM/SSO service")
+        components["tccm"]["recommendations"].append("Add IAM Identity Center/Entra ID for RBAC (FRD §2.1.4.6)")
+    has_audit = bool(type_set & {"aws-ct", "oci-audit", "az-monitor", "gcp-scc", "ibm-scc"})
+    if has_audit:
+        tccm_score += 1
+    else:
+        components["tccm"]["findings"].append("No API audit trail service")
+        components["tccm"]["recommendations"].append("Add CloudTrail/OCI Audit for API activity logging (FRD §2.1.4.2)")
+    components["tccm"]["score"] = round(tccm_score / tccm_max * 100)
+
+    # Overall score
+    weights = {"bcap": 0.15, "vdss": 0.40, "vdms": 0.30, "tccm": 0.15}
+    overall = sum(components[c]["score"] * weights[c] for c in weights)
+    overall = round(max(0, min(100, overall)))
+
+    if overall >= 90:
+        rating = "SCCA COMPLIANT"
+    elif overall >= 70:
+        rating = "PARTIALLY COMPLIANT"
+    elif overall >= 40:
+        rating = "SIGNIFICANT GAPS"
+    else:
+        rating = "NON-COMPLIANT"
+
+    # Aggregate
+    all_findings = []
+    all_recommendations = []
+    for c in ("bcap", "vdss", "vdms", "tccm"):
+        for f in components[c]["findings"]:
+            all_findings.append(f"[{c.upper()}] {f}")
+        for r in components[c]["recommendations"]:
+            all_recommendations.append(f"[{c.upper()}] {r}")
+
+    return {
+        "scca_score": overall,
+        "scca_rating": rating,
+        "components": components,
+        "findings": all_findings,
+        "recommendations": all_recommendations,
+        "components_present": sum(1 for c in components.values() if c["present"]),
+        "components_total": 4,
+    }
+
+
+def get_scca_mapping(component: str, target_csp: str) -> dict:
+    """Look up the CSP-native services for a SCCA component.
+
+    Args:
+        component: SCCA component key ('bcap', 'vdss', 'vdms', 'tccm').
+        target_csp: Target CSP ('aws', 'azure', 'gcp', 'oci', 'ibm').
+
+    Returns:
+        Dict with component info, services, node_types, and note.
+    """
+    from tools.network.constants import SCCA_CSP_MAPPING, SCCA_COMPONENTS
+
+    comp_info = SCCA_COMPONENTS.get(component)
+    if not comp_info:
+        return {"error": f"Unknown SCCA component: {component}"}
+    mapping = SCCA_CSP_MAPPING.get(component, {})
+    csp_info = mapping.get(target_csp, {})
+    return {
+        "component": component,
+        "name": comp_info["name"],
+        "acronym": comp_info["acronym"],
+        "disa_ref": comp_info["disa_ref"],
+        "target_csp": target_csp,
+        "services": csp_info.get("services", []),
+        "node_types": csp_info.get("node_types", []),
+        "note": csp_info.get("note", ""),
+    }
+
+
+def get_scca_matrix() -> list[dict]:
+    """Return the full SCCA-to-CSP service mapping matrix.
+
+    Returns list of dicts, one per SCCA component, with services for all CSPs.
+    """
+    from tools.network.constants import SCCA_CSP_MAPPING, SCCA_COMPONENTS
+
+    matrix = []
+    for comp_key, mapping in SCCA_CSP_MAPPING.items():
+        comp_info = SCCA_COMPONENTS.get(comp_key, {})
+        row = {
+            "component": comp_key,
+            "name": comp_info.get("name", ""),
+            "acronym": comp_info.get("acronym", ""),
+            "description": mapping.get("description", ""),
+        }
+        for csp in ("aws", "azure", "gcp", "oci", "ibm"):
+            csp_info = mapping.get(csp, {})
+            row[f"{csp}_services"] = csp_info.get("services", [])
+            row[f"{csp}_note"] = csp_info.get("note", "")
+        matrix.append(row)
+    return matrix
+
+
+def detect_landing_zone_pattern(nodes: list[dict], edges: list[dict]) -> dict:
+    """Detect which Landing Zone pattern a topology follows.
+
+    Analyzes multi-account/VPC structure, transit hub usage, and centralized
+    security services to classify the topology as a recognized LZ pattern.
+
+    Returns:
+        Dict with detected_pattern, csp, confidence, and details.
+    """
+    from tools.network.constants import LANDING_ZONE_PATTERNS
+
+    node_types = {n["id"]: n.get("type", "") for n in nodes}
+    type_set = set(node_types.values())
+    labels = {n["id"]: (n.get("label") or "").lower() for n in nodes}
+    all_labels = " ".join(labels.values())
+
+    # Count VPCs/VNets/VCNs per CSP
+    vpc_counts = {
+        "aws": sum(1 for t in node_types.values() if t == "aws-vpc"),
+        "azure": sum(1 for t in node_types.values() if t == "az-vnet"),
+        "gcp": sum(1 for t in node_types.values() if t == "gcp-vpc"),
+        "oci": sum(1 for t in node_types.values() if t in ("oci-vcn",)),
+        "ibm": sum(1 for t in node_types.values() if t == "ibm-vpc"),
+    }
+
+    # Determine primary CSP
+    primary_csp = max(vpc_counts, key=vpc_counts.get) if any(vpc_counts.values()) else None
+    if not primary_csp or vpc_counts[primary_csp] < 2:
+        return {
+            "detected_pattern": None,
+            "csp": primary_csp,
+            "confidence": 0,
+            "details": "Fewer than 2 VPCs/VNets — not a landing zone topology",
+        }
+
+    # Check for transit hub
+    has_hub = bool(type_set & _TRANSIT_HUB_TYPES)
+
+    # Check for SCCA indicators
+    scca = analyze_scca_compliance(nodes, edges)
+    has_scca = scca["components_present"] >= 3
+
+    # Label-based hints
+    lz_hints = any(kw in all_labels for kw in ("landing zone", "shared services", "log archive",
+                                                 "audit", "network account", "hub"))
+
+    # Confidence scoring
+    confidence = 0
+    if vpc_counts[primary_csp] >= 3:
+        confidence += 30
+    if has_hub:
+        confidence += 25
+    if has_scca:
+        confidence += 25
+    if lz_hints:
+        confidence += 20
+    confidence = min(100, confidence)
+
+    pattern_info = LANDING_ZONE_PATTERNS.get(primary_csp, {})
+
+    return {
+        "detected_pattern": pattern_info.get("name") if confidence >= 50 else None,
+        "csp": primary_csp,
+        "network_pattern": pattern_info.get("network_pattern", "unknown"),
+        "confidence": confidence,
+        "vpc_count": vpc_counts[primary_csp],
+        "has_transit_hub": has_hub,
+        "has_scca_components": has_scca,
+        "scca_score": scca["scca_score"],
+        "reference": pattern_info.get("reference", ""),
+        "details": pattern_info.get("description", ""),
+    }
+
+
 # ── CLI Entry Point ──────────────────────────────────────────────────────────
 
 def main():
@@ -560,6 +861,14 @@ def main():
         print(json.dumps(CLOUD_NETWORKING_ANTIPATTERNS, indent=2))
     elif "--patterns" in sys.argv:
         print(json.dumps(HYBRID_CONNECTIVITY_PATTERNS, indent=2, default=str))
+    elif "--scca-matrix" in sys.argv:
+        print(json.dumps(get_scca_matrix(), indent=2))
+    elif "--scca-components" in sys.argv:
+        from tools.network.constants import SCCA_COMPONENTS
+        print(json.dumps(SCCA_COMPONENTS, indent=2))
+    elif "--landing-zones" in sys.argv:
+        from tools.network.constants import LANDING_ZONE_PATTERNS
+        print(json.dumps(LANDING_ZONE_PATTERNS, indent=2, default=str))
     elif "--egress-compare" in sys.argv:
         gb = 1000.0
         for i, arg in enumerate(sys.argv):
@@ -576,12 +885,17 @@ def main():
                 "connectivity_patterns",
                 "antipattern_detection",
                 "cost_estimation",
+                "scca_compliance",
+                "scca_mapping",
+                "landing_zone_detection",
             ],
             "csps": ["aws", "azure", "gcp", "oci", "ibm"],
             "equivalence_services": len(CSP_EQUIVALENCE),
             "resiliency_tiers": len(RESILIENCY_TIERS),
             "connectivity_patterns": len(HYBRID_CONNECTIVITY_PATTERNS),
             "antipatterns": len(CLOUD_NETWORKING_ANTIPATTERNS),
+            "scca_components": 4,
+            "landing_zone_patterns": 5,
         }, indent=2))
     else:
         print("ICDEV Network Canvas — Cloud Architecture Engine")
@@ -590,8 +904,11 @@ def main():
         print(f"  Connectivity patterns: {len(HYBRID_CONNECTIVITY_PATTERNS)}")
         print(f"  Anti-patterns: {len(CLOUD_NETWORKING_ANTIPATTERNS)}")
         print(f"  Egress pricing models: {len(CLOUD_EGRESS_PRICING)} CSPs")
+        print("  SCCA components: 4")
+        print("  Landing zone patterns: 5")
         print("\nFlags: --json, --equivalence-matrix, --resiliency-tiers,")
-        print("       --antipatterns, --patterns, --egress-compare [--gb N]")
+        print("       --antipatterns, --patterns, --egress-compare [--gb N],")
+        print("       --scca-matrix, --scca-components, --landing-zones")
 
 
 if __name__ == "__main__":

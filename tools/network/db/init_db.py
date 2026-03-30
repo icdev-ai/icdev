@@ -3490,6 +3490,376 @@ TEMPLATES = [
             ]
         }),
     },
+    # 33 ─ AWS SCCA Multi-Account (VDSS / VDMS / TCCM with LZA)
+    {
+        "id": "tpl-scca-aws",
+        "name": "AWS SCCA Multi-Account (GovCloud)",
+        "category": "SCCA / Landing Zone",
+        "description": "AWS SCCA Multi-Account reference architecture using Landing Zone Accelerator (LZA). VDSS account with inspection VPC and Network Firewall, VDMS account with managed services, Transit Gateway shared via RAM, Direct Connect primary/secondary with VPN backup, and Mission VPC with app/data subnets. IL4/IL5 GovCloud deployment.",
+        "tags": json.dumps(["scca", "aws", "govcloud", "multi-account", "disa", "vdss", "vdms", "tccm", "il4", "il5", "landing-zone"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                # VDSS Account — Inspection / Perimeter
+                _node("vdss-vpc", "VDSS Inspection VPC", "aws-vpc", 200, 60,
+                      {"config": {"cidr": "10.0.0.0/16", "flow_logs_enabled": True}}),
+                _node("nfw", "Network Firewall", "aws-nfw", 200, 160),
+                _node("waf", "WAF (Regional)", "aws-waf", 400, 60),
+                _node("shield", "Shield Advanced", "aws-shield", 400, 160),
+                _node("gd-vdss", "GuardDuty", "aws-guardduty", 600, 60),
+                # VDMS Account — Management / Shared Services
+                _node("vdms-vpc", "VDMS Mgmt VPC", "aws-vpc", 800, 60,
+                      {"config": {"cidr": "10.10.0.0/16", "flow_logs_enabled": True}}),
+                _node("ad", "Managed AD (DS)", "aws-directory", 800, 160),
+                _node("ssm", "Systems Manager", "aws-ssm", 1000, 60),
+                _node("inspector", "Inspector", "aws-inspector", 1000, 160),
+                _node("sechub", "Security Hub", "aws-sechub", 800, 260),
+                _node("config", "AWS Config", "aws-config", 1000, 260),
+                _node("ct", "CloudTrail (Org)", "aws-cloudtrail", 1200, 60),
+                _node("kms", "KMS (FIPS 140-2)", "aws-kms", 1200, 160),
+                # Network Hub — Transit
+                _node("tgw", "Transit Gateway (RAM)", "aws-tgw", 600, 360,
+                      {"config": {"asn": "64512", "auto_accept_shared": True}}),
+                _node("dxgw", "DX Gateway", "aws-dx-gw", 600, 460),
+                # Log Archive Account
+                _node("log-s3", "S3 Log Bucket (Immutable)", "aws-s3", 200, 360,
+                      {"config": {"versioning": True, "object_lock": True}}),
+                _node("cw-logs", "CloudWatch Logs", "aws-cloudwatch", 200, 460),
+                # Mission VPC
+                _node("mission-vpc", "Mission VPC", "aws-vpc", 600, 560,
+                      {"config": {"cidr": "10.20.0.0/16", "flow_logs_enabled": True}}),
+                _node("app-sub", "App Subnet", "aws-subnet", 500, 660),
+                _node("data-sub", "Data Subnet", "aws-subnet", 700, 660),
+                _node("vpce", "VPC Endpoints (S3, SSM)", "aws-privatelink", 900, 560),
+                # Connectivity — Direct Connect + VPN
+                _node("dx-pri", "DX Primary (10G)", "aws-dx", 400, 760,
+                      {"config": {"bfd_enabled": True, "bandwidth": "10G",
+                                  "vif_type": "transit", "location": "Equinix DC5"}}),
+                _node("dx-sec", "DX Secondary (10G)", "aws-dx", 800, 760,
+                      {"config": {"bfd_enabled": True, "bandwidth": "10G",
+                                  "vif_type": "transit", "location": "CoreSite VA1"}}),
+                _node("vpn-bk", "VPN Backup", "aws-vpn", 600, 760,
+                      {"config": {"tunnels": 2, "ecmp": True}}),
+                _node("mmr-a", "MMR Equinix DC5", "meet-me-room", 400, 860),
+                _node("mmr-b", "MMR CoreSite VA1", "meet-me-room", 800, 860),
+                _node("br1", "Border RTR 1", "router", 400, 960,
+                      {"config": {"asn": "65001", "bfd_enabled": True}}),
+                _node("br2", "Border RTR 2", "router", 800, 960,
+                      {"config": {"asn": "65001", "bfd_enabled": True}}),
+            ],
+            "edges": [
+                # VDSS inspection chain
+                _edge("vdss-vpc", "nfw", "Inspection", ""),
+                _edge("vdss-vpc", "waf", "L7 Filter", ""),
+                _edge("vdss-vpc", "shield", "DDoS", ""),
+                _edge("vdss-vpc", "gd-vdss", "Threat Intel", ""),
+                # VDMS management
+                _edge("vdms-vpc", "ad", "Directory", "LDAPS"),
+                _edge("vdms-vpc", "ssm", "Mgmt Plane", ""),
+                _edge("vdms-vpc", "inspector", "Vuln Scan", ""),
+                _edge("sechub", "config", "Compliance", ""),
+                _edge("sechub", "gd-vdss", "Findings", ""),
+                _edge("ct", "log-s3", "Trail Logs", ""),
+                _edge("ct", "kms", "Encryption", ""),
+                # TGW hub connections (RAM shared)
+                _edge("tgw", "vdss-vpc", "RAM Attach", ""),
+                _edge("tgw", "vdms-vpc", "RAM Attach", ""),
+                _edge("tgw", "mission-vpc", "RAM Attach", ""),
+                _edge("tgw", "dxgw", "DX GW Assoc", ""),
+                _edge("tgw", "nfw", "Inspection Route", ""),
+                # Logging
+                _edge("cw-logs", "log-s3", "Export", ""),
+                _edge("mission-vpc", "cw-logs", "VPC Flow Logs", ""),
+                # Mission VPC internals
+                _edge("mission-vpc", "app-sub", "", ""),
+                _edge("mission-vpc", "data-sub", "", ""),
+                _edge("mission-vpc", "vpce", "PrivateLink", ""),
+                # DX via DX Gateway
+                _edge("dxgw", "dx-pri", "Transit VIF + BFD", "BGP"),
+                _edge("dxgw", "dx-sec", "Transit VIF + BFD", "BGP"),
+                _edge("tgw", "vpn-bk", "VPN Backup", "IPSec"),
+                # Colocation
+                _edge("dx-pri", "mmr-a", "DX Handoff", ""),
+                _edge("dx-sec", "mmr-b", "DX Handoff", ""),
+                # On-prem
+                _edge("mmr-a", "br1", "10GbE + BFD", "BGP"),
+                _edge("mmr-b", "br2", "10GbE + BFD", "BGP"),
+                _edge("vpn-bk", "br1", "IPSec", "IPSec"),
+                _edge("vpn-bk", "br2", "IPSec", "IPSec"),
+            ]
+        }),
+    },
+    # 34 ─ Azure SACA Hub-Spoke (VDSS / VDMS)
+    {
+        "id": "tpl-scca-azure",
+        "name": "Azure SACA Hub-Spoke",
+        "category": "SCCA / Landing Zone",
+        "description": "Azure Secure Azure Computing Architecture (SACA) hub-spoke topology. Hub VNet with Azure Firewall, App Gateway WAF, and Bastion; identity via Entra ID and Key Vault; Sentinel/Defender monitoring; Prod and Dev spoke VNets peered to hub; ExpressRoute to BCAP with VPN backup. IL4/IL5 Azure Government.",
+        "tags": json.dumps(["scca", "saca", "azure", "government", "hub-spoke", "vdss", "vdms", "il4", "il5"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                # Hub VNet — VDSS perimeter
+                _node("hub-vnet", "Hub VNet", "azure-vnet", 500, 60,
+                      {"config": {"cidr": "10.0.0.0/16", "flow_logs_enabled": True}}),
+                _node("az-fw", "Azure Firewall (Premium)", "azure-firewall", 300, 160,
+                      {"config": {"sku": "Premium", "idps_mode": "Alert and Deny"}}),
+                _node("agw-waf", "App Gateway + WAF v2", "azure-appgw", 500, 160),
+                _node("bastion", "Azure Bastion", "azure-bastion", 700, 160),
+                _node("ddos", "DDoS Protection Plan", "azure-ddos", 900, 60),
+                # Identity — VDMS
+                _node("entra", "Entra ID (CAC/PIV)", "azure-entra", 200, 260),
+                _node("kv", "Key Vault (FIPS 140-2 L3)", "azure-keyvault", 400, 260,
+                      {"config": {"sku": "premium", "purge_protection": True}}),
+                # Monitoring
+                _node("sentinel", "Microsoft Sentinel", "azure-sentinel", 600, 260),
+                _node("defender", "Defender for Cloud", "azure-defender", 800, 260),
+                _node("monitor", "Azure Monitor", "azure-monitor", 1000, 260),
+                # Shared services
+                _node("policy", "Azure Policy", "azure-policy", 200, 60),
+                _node("nsg", "NSG (Hub)", "azure-nsg", 900, 160),
+                # Spoke VNet — Prod
+                _node("spoke-prod", "Spoke VNet (Prod)", "azure-vnet", 300, 460,
+                      {"config": {"cidr": "10.1.0.0/16", "flow_logs_enabled": True}}),
+                _node("prod-app", "Prod App Subnet", "azure-subnet", 200, 560),
+                _node("prod-data", "Prod Data Subnet", "azure-subnet", 400, 560),
+                # Spoke VNet — Dev
+                _node("spoke-dev", "Spoke VNet (Dev)", "azure-vnet", 700, 460,
+                      {"config": {"cidr": "10.2.0.0/16", "flow_logs_enabled": True}}),
+                _node("dev-app", "Dev App Subnet", "azure-subnet", 700, 560),
+                # Connectivity
+                _node("er", "ExpressRoute to BCAP", "azure-expressroute", 400, 660,
+                      {"config": {"bandwidth": "10G", "peering": "private",
+                                  "fastpath_enabled": True}}),
+                _node("vpn-gw", "VPN Gateway (Backup)", "azure-vpn", 700, 660,
+                      {"config": {"sku": "VpnGw2AZ", "active_active": True}}),
+                # On-prem / BCAP
+                _node("bcap", "BCAP / On-Prem Edge", "router", 400, 760,
+                      {"config": {"asn": "65100", "bfd_enabled": True}}),
+                _node("onprem-fw", "On-Prem Firewall", "firewall", 700, 760),
+            ],
+            "edges": [
+                # Hub internals
+                _edge("hub-vnet", "az-fw", "Forced Tunnel", ""),
+                _edge("hub-vnet", "agw-waf", "L7 Ingress", ""),
+                _edge("hub-vnet", "bastion", "Mgmt Plane", ""),
+                _edge("hub-vnet", "nsg", "NSG Rules", ""),
+                _edge("hub-vnet", "ddos", "DDoS", ""),
+                # Identity & security
+                _edge("hub-vnet", "entra", "AAD Auth", "SAML"),
+                _edge("hub-vnet", "kv", "Secrets", "TLS"),
+                _edge("sentinel", "defender", "Threat Feed", ""),
+                _edge("sentinel", "monitor", "Diagnostics", ""),
+                _edge("policy", "hub-vnet", "Governance", ""),
+                _edge("policy", "spoke-prod", "Governance", ""),
+                _edge("policy", "spoke-dev", "Governance", ""),
+                # Hub-Spoke peering
+                _edge("hub-vnet", "spoke-prod", "VNet Peering", ""),
+                _edge("hub-vnet", "spoke-dev", "VNet Peering", ""),
+                # Spoke internals
+                _edge("spoke-prod", "prod-app", "", ""),
+                _edge("spoke-prod", "prod-data", "", ""),
+                _edge("spoke-dev", "dev-app", "", ""),
+                # Spoke traffic through hub firewall
+                _edge("spoke-prod", "az-fw", "UDR Forced Tunnel", ""),
+                _edge("spoke-dev", "az-fw", "UDR Forced Tunnel", ""),
+                # Connectivity
+                _edge("hub-vnet", "er", "ER Circuit", "BGP"),
+                _edge("hub-vnet", "vpn-gw", "VPN Backup", "IPSec"),
+                _edge("er", "bcap", "ExpressRoute Private", "BGP"),
+                _edge("vpn-gw", "onprem-fw", "IPSec Tunnel", "IPSec"),
+            ]
+        }),
+    },
+    # 35 ─ OCI SCCA Landing Zone (SCCAv1)
+    {
+        "id": "tpl-scca-oci",
+        "name": "OCI SCCA Landing Zone",
+        "category": "SCCA / Landing Zone",
+        "description": "Oracle Cloud Infrastructure SCCA Landing Zone (SCCAv1) reference architecture. VDSS VCN with OCI Network Firewall and WAF, VDMS VCN with Cloud Guard and Vault, Workload VCN with app/data subnets, DRG hub for east-west routing, FastConnect primary with VPN backup. IL4/IL5.",
+        "tags": json.dumps(["scca", "oci", "oracle", "drg", "vdss", "vdms", "il4", "il5", "landing-zone"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                # VDSS VCN — Perimeter
+                _node("vdss-vcn", "VDSS VCN", "oci-vcn", 200, 60,
+                      {"config": {"cidr": "10.0.0.0/16"}}),
+                _node("oci-nfw", "OCI Network Firewall", "oci-nfw", 200, 160),
+                _node("oci-waf", "OCI WAF", "oci-waf", 400, 60),
+                _node("oci-ddos", "DDoS Protection", "oci-ddos", 400, 160),
+                _node("oci-lb", "Load Balancer", "oci-lb", 600, 60),
+                _node("oci-nsg", "NSG (VDSS)", "oci-nsg", 600, 160),
+                # VDMS VCN — Management
+                _node("vdms-vcn", "VDMS VCN", "oci-vcn", 800, 60,
+                      {"config": {"cidr": "10.10.0.0/16"}}),
+                _node("cg", "Cloud Guard", "oci-cloudguard", 800, 160),
+                _node("vault", "OCI Vault (HSM)", "oci-vault", 1000, 60,
+                      {"config": {"key_type": "AES-256", "hsm_backed": True}}),
+                _node("vscan", "Vulnerability Scanning", "oci-vscan", 1000, 160),
+                _node("iddom", "Identity Domains (CAC)", "oci-identity", 800, 260),
+                _node("audit", "Audit Service", "oci-audit", 1000, 260),
+                # Hub — DRG
+                _node("drg", "Dynamic Routing Gateway", "oci-drg", 500, 360,
+                      {"config": {"type": "DRGv2"}}),
+                # Workload VCN
+                _node("wl-vcn", "Workload VCN", "oci-vcn", 500, 460,
+                      {"config": {"cidr": "10.20.0.0/16"}}),
+                _node("wl-app", "App Subnet", "oci-subnet", 400, 560),
+                _node("wl-data", "Data Subnet", "oci-subnet", 600, 560),
+                # Connectivity
+                _node("fc", "FastConnect (10G)", "oci-fastconnect", 300, 660,
+                      {"config": {"bandwidth": "10G", "redundancy": "HA"}}),
+                _node("vpn-oci", "IPSec VPN Backup", "oci-vpn", 700, 660,
+                      {"config": {"tunnels": 2}}),
+                # On-prem
+                _node("cpe", "CPE (On-Prem Edge)", "router", 500, 760,
+                      {"config": {"asn": "65200", "bfd_enabled": True}}),
+            ],
+            "edges": [
+                # VDSS internals
+                _edge("vdss-vcn", "oci-nfw", "Inspection", ""),
+                _edge("vdss-vcn", "oci-waf", "L7 Filter", ""),
+                _edge("vdss-vcn", "oci-ddos", "DDoS", ""),
+                _edge("vdss-vcn", "oci-lb", "Ingress", ""),
+                _edge("vdss-vcn", "oci-nsg", "SL/NSG Rules", ""),
+                # VDMS internals
+                _edge("vdms-vcn", "cg", "Posture Mgmt", ""),
+                _edge("vdms-vcn", "vault", "Key Mgmt", ""),
+                _edge("vdms-vcn", "vscan", "Vuln Scan", ""),
+                _edge("vdms-vcn", "iddom", "IAM", ""),
+                _edge("audit", "vdms-vcn", "Audit Logs", ""),
+                # DRG hub
+                _edge("drg", "vdss-vcn", "VCN Attach", ""),
+                _edge("drg", "vdms-vcn", "VCN Attach", ""),
+                _edge("drg", "wl-vcn", "VCN Attach", ""),
+                # Workload internals
+                _edge("wl-vcn", "wl-app", "", ""),
+                _edge("wl-vcn", "wl-data", "", ""),
+                # Connectivity
+                _edge("drg", "fc", "FastConnect", "BGP"),
+                _edge("drg", "vpn-oci", "IPSec VPN", "IPSec"),
+                _edge("fc", "cpe", "10GbE + BFD", "BGP"),
+                _edge("vpn-oci", "cpe", "IPSec Tunnel", "IPSec"),
+            ]
+        }),
+    },
+    # 36 ─ GCP Assured Workloads (IL4/IL5)
+    {
+        "id": "tpl-scca-gcp",
+        "name": "GCP Assured Workloads (IL4/IL5)",
+        "category": "SCCA / Landing Zone",
+        "description": "GCP IL4 Assured Workloads reference architecture. Shared VPC in a host project with Cloud Router and Cloud NAT, Cloud Armor for L7 protection, Security Command Center, Cloud KMS with EKM, Org Policy constraints, service project (Prod) with app/data subnets, Cloud Interconnect for dedicated connectivity, and Assured Workloads folder for compliance boundary.",
+        "tags": json.dumps(["scca", "gcp", "assured-workloads", "shared-vpc", "il4", "il5"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                # Governance
+                _node("aw-folder", "Assured Workloads Folder", "gcp-folder", 500, 60,
+                      {"config": {"compliance_regime": "IL4", "restriction": "us-regions-only"}}),
+                # Host Project — Shared VPC
+                _node("host-proj", "Host Project", "gcp-project", 300, 160),
+                _node("shared-vpc", "Shared VPC", "gcp-vpc", 300, 260,
+                      {"config": {"cidr": "10.0.0.0/16", "flow_logs_enabled": True}}),
+                _node("cloud-rtr", "Cloud Router", "gcp-router", 100, 360,
+                      {"config": {"asn": "16550"}}),
+                _node("cloud-nat", "Cloud NAT", "gcp-nat", 100, 260),
+                # Security
+                _node("armor", "Cloud Armor", "gcp-armor", 700, 160),
+                _node("scc", "Security Command Center", "gcp-scc", 700, 260),
+                _node("cloud-kms", "Cloud KMS (EKM)", "gcp-kms", 900, 160,
+                      {"config": {"protection_level": "HSM", "ekm_enabled": True}}),
+                _node("org-policy", "Org Policy", "gcp-orgpolicy", 900, 260),
+                # Service Project — Prod
+                _node("svc-proj", "Service Project (Prod)", "gcp-project", 500, 360),
+                _node("prod-app", "Prod App Subnet", "gcp-subnet", 400, 460),
+                _node("prod-data", "Prod Data Subnet", "gcp-subnet", 600, 460),
+                # Logging
+                _node("log-sink", "Log Sink (Cloud Logging)", "gcp-logging", 900, 360),
+                # Connectivity
+                _node("interconnect", "Cloud Interconnect (Dedicated)", "gcp-interconnect", 300, 560,
+                      {"config": {"bandwidth": "10G", "redundancy": "HA"}}),
+                _node("onprem-rtr", "On-Prem Router", "router", 300, 660,
+                      {"config": {"asn": "65300", "bfd_enabled": True}}),
+            ],
+            "edges": [
+                # Governance
+                _edge("aw-folder", "host-proj", "Compliance Boundary", ""),
+                _edge("aw-folder", "svc-proj", "Compliance Boundary", ""),
+                _edge("org-policy", "aw-folder", "Constraints", ""),
+                # Host project
+                _edge("host-proj", "shared-vpc", "Shared VPC Host", ""),
+                _edge("shared-vpc", "cloud-rtr", "Dynamic Routes", "BGP"),
+                _edge("shared-vpc", "cloud-nat", "Egress NAT", ""),
+                # Security
+                _edge("shared-vpc", "armor", "L7 WAF", ""),
+                _edge("scc", "shared-vpc", "Threat Detection", ""),
+                _edge("cloud-kms", "svc-proj", "CMEK", ""),
+                _edge("scc", "log-sink", "Findings", ""),
+                # Service project (shared VPC consumer)
+                _edge("shared-vpc", "svc-proj", "Subnet Sharing", ""),
+                _edge("svc-proj", "prod-app", "", ""),
+                _edge("svc-proj", "prod-data", "", ""),
+                # Connectivity
+                _edge("cloud-rtr", "interconnect", "Cloud Interconnect", "BGP"),
+                _edge("interconnect", "onprem-rtr", "Dedicated 10GbE", "BGP"),
+            ]
+        }),
+    },
+    # 37 ─ IBM Cloud DoD VPC Landing Zone
+    {
+        "id": "tpl-scca-ibm",
+        "name": "IBM Cloud DoD VPC Landing Zone",
+        "category": "SCCA / Landing Zone",
+        "description": "IBM Cloud VPC Landing Zone for DoD workloads. Management VPC with Bastion and monitoring, Workload VPC with app/data subnets, Transit Gateway for VPC interconnect, Direct Link for dedicated on-prem connectivity, Security and Compliance Center (SCC), Key Protect and HPCS for key management, and App ID for identity. FedRAMP High.",
+        "tags": json.dumps(["scca", "ibm", "vpc", "transit-gateway", "fedramp-high"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                # Management VPC
+                _node("mgmt-vpc", "Management VPC", "ibm-vpc", 200, 60,
+                      {"config": {"cidr": "10.0.0.0/16", "flow_logs_enabled": True}}),
+                _node("bastion", "Bastion (Teleport)", "ibm-vsi", 200, 160),
+                _node("monitoring", "IBM Monitoring", "ibm-monitoring", 200, 260),
+                # Workload VPC
+                _node("wl-vpc", "Workload VPC", "ibm-vpc", 600, 60,
+                      {"config": {"cidr": "10.10.0.0/16", "flow_logs_enabled": True}}),
+                _node("wl-app", "App Subnet", "ibm-subnet", 500, 160),
+                _node("wl-data", "Data Subnet", "ibm-subnet", 700, 160),
+                # Security
+                _node("scc", "Security & Compliance Center", "ibm-scc", 400, 360),
+                _node("kp", "Key Protect", "ibm-keyprotect", 600, 360,
+                      {"config": {"fips_validated": True}}),
+                _node("hpcs", "HPCS (FIPS 140-2 L4)", "ibm-hpcs", 800, 360,
+                      {"config": {"protection_level": "HSM", "fips_level": "L4"}}),
+                # Network
+                _node("tgw", "Transit Gateway", "ibm-tgw", 400, 160),
+                _node("dl", "Direct Link (Dedicated)", "ibm-directlink", 400, 460,
+                      {"config": {"bandwidth": "10G", "redundancy": "HA"}}),
+                # Identity
+                _node("appid", "App ID (MFA/SSO)", "ibm-appid", 800, 60),
+                # On-prem
+                _node("onprem-rtr", "On-Prem Router", "router", 400, 560,
+                      {"config": {"asn": "65400", "bfd_enabled": True}}),
+            ],
+            "edges": [
+                # Management VPC internals
+                _edge("mgmt-vpc", "bastion", "SSH Jump", "SSH"),
+                _edge("mgmt-vpc", "monitoring", "Sysdig/LogDNA", ""),
+                # Workload VPC internals
+                _edge("wl-vpc", "wl-app", "", ""),
+                _edge("wl-vpc", "wl-data", "", ""),
+                _edge("wl-vpc", "appid", "IAM Auth", "OIDC"),
+                # Transit Gateway connects VPCs
+                _edge("tgw", "mgmt-vpc", "TGW Attach", ""),
+                _edge("tgw", "wl-vpc", "TGW Attach", ""),
+                # Security
+                _edge("scc", "mgmt-vpc", "Compliance Scan", ""),
+                _edge("scc", "wl-vpc", "Compliance Scan", ""),
+                _edge("kp", "wl-vpc", "Envelope Encryption", ""),
+                _edge("hpcs", "kp", "Root Key", ""),
+                # Connectivity
+                _edge("tgw", "dl", "Direct Link", "BGP"),
+                _edge("dl", "onprem-rtr", "Dedicated 10GbE", "BGP"),
+                # Cross-VPC management
+                _edge("bastion", "wl-app", "SSH Mgmt", "SSH"),
+            ]
+        }),
+    },
 ]
 
 

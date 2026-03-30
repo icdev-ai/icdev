@@ -346,7 +346,205 @@ def to_ansible_inventory(graph: dict, name: str, boundaries: list[dict] | None =
 
 
 # ---------------------------------------------------------------------------
-# 2. Terraform HCL skeleton
+# 2. SCCA-aware Terraform (NDC → DevOps IaC bridge)
+# ---------------------------------------------------------------------------
+
+_SCCA_CSP_PREFIXES: dict[str, str] = {
+    "aws-": "aws",
+    "az-":  "azure",
+    "gcp-": "gcp",
+    "oci-": "oci",
+    "ibm-": "ibm",
+}
+
+
+def _detect_primary_csp(nodes: list[dict]) -> str:
+    """Detect the dominant CSP from node types (same logic as cloud_architecture._node_csp)."""
+    counts: dict[str, int] = {}
+    for n in nodes:
+        ntype = n.get("type", "")
+        for prefix, csp in _SCCA_CSP_PREFIXES.items():
+            if ntype.startswith(prefix):
+                counts[csp] = counts.get(csp, 0) + 1
+                break
+    if not counts:
+        return "aws"  # default for DoD workloads
+    return max(counts, key=counts.get)
+
+
+def _extract_topology_values(nodes: list[dict]) -> dict:
+    """Extract infrastructure values from topology node configs.
+
+    Scans nodes for VPC CIDRs, DX bandwidth, BFD settings, and region.
+    """
+    cidrs: list[str] = []
+    dx_bandwidth: str = "1Gbps"
+    bfd_enabled: bool = False
+    bfd_interval: int = 300
+    region: str = ""
+
+    for n in nodes:
+        ntype = n.get("type", "")
+        cfg = n.get("config") or {}
+
+        # VPC CIDRs
+        if ntype in ("aws-vpc", "az-vnet", "gcp-vpc", "oci-vcn", "ibm-vpc"):
+            cidr = cfg.get("cidr") or cfg.get("cidr_block", "")
+            if cidr:
+                cidrs.append(cidr)
+
+        # DX / ExpressRoute bandwidth
+        if ntype in ("aws-dx", "az-er", "gcp-ic", "oci-fc", "ibm-dl"):
+            bw = cfg.get("bandwidth", "")
+            if bw:
+                dx_bandwidth = bw
+
+        # BFD from routers
+        if ntype in ("router", "gcp-router"):
+            if cfg.get("bfd") or cfg.get("bfd_enabled"):
+                bfd_enabled = True
+                bfd_interval = int(cfg.get("bfd_interval", 300))
+
+        # Region from cloud-region nodes or config
+        if ntype == "cloud-region" or ntype.endswith("-region"):
+            region = cfg.get("region") or n.get("label", "")
+        elif not region and cfg.get("region"):
+            region = cfg["region"]
+
+    return {
+        "cidrs": cidrs or ["10.0.0.0/16"],
+        "dx_bandwidth": dx_bandwidth,
+        "bfd_enabled": bfd_enabled,
+        "bfd_interval": bfd_interval,
+        "region": region,
+    }
+
+
+_SCCA_DEFAULT_REGIONS: dict[str, str] = {
+    "aws": "us-gov-west-1",
+    "azure": "usgovvirginia",
+    "gcp": "us-east4",
+    "oci": "us-langley-1",
+    "ibm": "us-south",
+}
+
+
+def to_scca_terraform(
+    nodes: list[dict],
+    edges: list[dict],
+    csp: str = "auto",
+    il_level: str = "IL4",
+) -> dict:
+    """Generate SCCA-aware Terraform from an NDC topology.
+
+    Bridges the Network Design Canvas topology to IaC generation by:
+    1. Detecting the primary CSP from node types
+    2. Running SCCA compliance analysis
+    3. Generating a main.tf that calls SCCA modules
+    4. Generating terraform.tfvars with values extracted from the topology
+
+    Args:
+        nodes:    List of topology node dicts.
+        edges:    List of topology edge dicts.
+        csp:      Target CSP ('auto' to detect, or 'aws', 'azure', etc.).
+        il_level: Impact level — 'IL2', 'IL4', 'IL5', or 'IL6'.
+
+    Returns:
+        Dict with terraform_main, terraform_vars, scca_compliance, csp, il_level.
+    """
+    # Lazy import to avoid circular dependencies
+    from tools.network.cloud_architecture import analyze_scca_compliance
+
+    # 1. Detect CSP
+    detected_csp = csp if csp != "auto" else _detect_primary_csp(nodes)
+
+    # 2. SCCA compliance analysis
+    compliance = analyze_scca_compliance(nodes, edges)
+    score = compliance["scca_score"]
+    rating = compliance["scca_rating"]
+
+    # 3. Extract values from topology
+    topo = _extract_topology_values(nodes)
+    region = topo["region"] or _SCCA_DEFAULT_REGIONS.get(detected_csp, "us-east-1")
+    cidrs_hcl = ", ".join(f'"{c}"' for c in topo["cidrs"])
+
+    # 4. Generate main.tf
+    terraform_main = textwrap.dedent(f"""\
+        # CUI // SP-CTI — Generated from ICDEV Network Design Canvas topology
+        # SCCA Score: {score}/100 ({rating})
+        # CSP: {detected_csp.upper()} | IL: {il_level} | Region: {region}
+        # Generated: {_now_utc()} by ICDEV™ NDC → IaC Bridge
+
+        module "scca_network" {{
+          source       = "./modules/scca-network"
+          project_name = var.project_name
+          environment  = var.environment
+          il_level     = var.il_level
+          vpc_cidrs    = [{cidrs_hcl}]
+          region       = var.region
+          dx_bandwidth = var.dx_bandwidth
+          bfd_enabled  = {str(topo["bfd_enabled"]).lower()}
+          bfd_interval = {topo["bfd_interval"]}
+        }}
+
+        module "scca_security" {{
+          source       = "./modules/scca-security"
+          project_name = var.project_name
+          environment  = var.environment
+          il_level     = var.il_level
+          vpc_id       = module.scca_network.vpc_id
+          tgw_id       = module.scca_network.tgw_id
+        }}
+
+        module "scca_logging" {{
+          source       = "./modules/scca-logging"
+          project_name = var.project_name
+          environment  = var.environment
+          il_level     = var.il_level
+          vpc_id       = module.scca_network.vpc_id
+        }}
+
+        module "scca_identity" {{
+          source       = "./modules/scca-identity"
+          project_name = var.project_name
+          environment  = var.environment
+          il_level     = var.il_level
+        }}
+
+        module "mission_vpc" {{
+          source       = "./modules/scca-mission-vpc"
+          project_name = var.project_name
+          environment  = var.environment
+          il_level     = var.il_level
+          tgw_id       = module.scca_network.tgw_id
+          vpc_cidrs    = [{cidrs_hcl}]
+          region       = var.region
+        }}
+    """)
+
+    # 5. Generate terraform.tfvars
+    terraform_vars = textwrap.dedent(f"""\
+        # CUI // SP-CTI — Terraform variables extracted from NDC topology
+        # Generated: {_now_utc()} by ICDEV™ NDC → IaC Bridge
+
+        project_name = "icdev-scca"
+        environment  = "staging"
+        il_level     = "{il_level}"
+        region       = "{region}"
+        dx_bandwidth = "{topo["dx_bandwidth"]}"
+    """)
+
+    return {
+        "terraform_main": terraform_main,
+        "terraform_vars": terraform_vars,
+        "scca_compliance": compliance,
+        "csp": detected_csp,
+        "il_level": il_level,
+    }
+
+
+# ---------------------------------------------------------------------------
+# 3. Terraform HCL skeleton
 # ---------------------------------------------------------------------------
 
 _PROVIDER_BLOCKS: dict[str, str] = {

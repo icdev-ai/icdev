@@ -97,6 +97,16 @@ CLOUD_OBJECTS_EXTENDED = {
         {"type": "aws-gwlb", "label": "Gateway LB", "icon": "GLB", "desc": "AWS Gateway Load Balancer — transparent inline inspection (L3 bump-in-wire)"},
         {"type": "aws-localzone", "label": "Local Zone", "icon": "LZ", "desc": "AWS Local Zone — edge compute for ultra-low latency (<10ms)"},
         {"type": "aws-outpost", "label": "Outposts", "icon": "OP", "desc": "AWS Outposts — AWS infrastructure on-premises (hybrid cloud)"},
+        {"type": "aws-guardduty", "label": "GuardDuty", "icon": "GD", "desc": "AWS GuardDuty — threat detection across EC2/IAM/S3/network"},
+        {"type": "aws-securityhub", "label": "Security Hub", "icon": "SH", "desc": "AWS Security Hub — centralized compliance and findings aggregator"},
+        {"type": "aws-inspector", "label": "Inspector", "icon": "INS", "desc": "Amazon Inspector — automated vulnerability scanning (OS/network)"},
+        {"type": "aws-config", "label": "Config", "icon": "CFG", "desc": "AWS Config — resource compliance tracking and drift detection"},
+        {"type": "aws-ad", "label": "Managed AD", "icon": "AD", "desc": "AWS Managed Microsoft AD — CAC/PIV/PKI integration for DoD"},
+        {"type": "aws-kms", "label": "KMS", "icon": "KMS", "desc": "AWS KMS — FIPS 140-2 key management with CMK support"},
+        {"type": "aws-privateca", "label": "Private CA", "icon": "PCA", "desc": "AWS Private CA — internal PKI for TLS/mutual TLS certificates"},
+        {"type": "aws-ssm", "label": "Systems Mgr", "icon": "SSM", "desc": "AWS Systems Manager — patch management, config compliance, remote access"},
+        {"type": "aws-ct", "label": "CloudTrail", "icon": "CT", "desc": "AWS CloudTrail — API audit logging with org trail support"},
+        {"type": "aws-idc", "label": "IAM Identity Center", "icon": "IDC", "desc": "AWS IAM Identity Center — SSO/RBAC for multi-account"},
     ],
     "azure": [
         {"type": "az-er-global", "label": "ER Global Reach", "icon": "EGR", "desc": "Azure ExpressRoute Global Reach — connect on-prem sites via Microsoft backbone"},
@@ -106,6 +116,12 @@ CLOUD_OBJECTS_EXTENDED = {
         {"type": "az-flowlogs", "label": "VNet Flow Logs", "icon": "FLG", "desc": "Azure VNet Flow Logs — VNet-level traffic capture with analytics"},
         {"type": "az-stack", "label": "Stack HCI", "icon": "HCI", "desc": "Azure Stack HCI — hyperconverged Azure on-premises"},
         {"type": "az-crosslb", "label": "Cross-region LB", "icon": "XLB", "desc": "Azure Cross-region Load Balancer — global L4 load balancing"},
+        {"type": "az-defender", "label": "Defender", "icon": "DEF", "desc": "Microsoft Defender for Cloud — CSPM + workload protection"},
+        {"type": "az-sentinel", "label": "Sentinel", "icon": "SEN", "desc": "Microsoft Sentinel — cloud-native SIEM/SOAR"},
+        {"type": "az-keyvault", "label": "Key Vault", "icon": "KV", "desc": "Azure Key Vault — FIPS 140-2 L2/L3 key and secret management"},
+        {"type": "az-entra", "label": "Entra ID", "icon": "EID", "desc": "Microsoft Entra ID — identity platform with CAC/PIV certificate auth"},
+        {"type": "az-monitor", "label": "Monitor", "icon": "MON", "desc": "Azure Monitor — metrics, logs, diagnostics for all resources"},
+        {"type": "az-policy", "label": "Policy", "icon": "POL", "desc": "Azure Policy — governance guardrails at management group scope"},
     ],
     "gcp": [
         {"type": "gcp-psc", "label": "Private Svc Connect", "icon": "PSC", "desc": "GCP Private Service Connect — private access to Google/custom services"},
@@ -114,6 +130,10 @@ CLOUD_OBJECTS_EXTENDED = {
         {"type": "gcp-gfe", "label": "Global LB", "icon": "GFE", "desc": "GCP Global External Application LB — single anycast IP across all regions"},
         {"type": "gcp-gdc", "label": "Distributed Cloud", "icon": "GDC", "desc": "Google Distributed Cloud — sovereign/air-gapped deployment (IL6/SECRET)"},
         {"type": "gcp-flowlogs", "label": "Flow Logs", "icon": "FLG", "desc": "GCP VPC Flow Logs — configurable sampling rate, direct BigQuery export"},
+        {"type": "gcp-scc", "label": "Security CC", "icon": "SCC", "desc": "GCP Security Command Center — threat detection and compliance"},
+        {"type": "gcp-kms", "label": "Cloud KMS", "icon": "KMS", "desc": "GCP Cloud KMS + Cloud HSM — FIPS 140-2 L3 key management"},
+        {"type": "gcp-assured", "label": "Assured Workloads", "icon": "AW", "desc": "GCP Assured Workloads — IL4/IL5 compliance controls via org policies"},
+        {"type": "gcp-orgpolicy", "label": "Org Policy", "icon": "OPL", "desc": "GCP Organization Policy — resource constraints and governance"},
     ],
     "oci": [
         {"type": "oci-ddos", "label": "DDoS Protection", "icon": "DDP", "desc": "OCI DDoS Protection — always-on, FREE for all customers (unique among CSPs)"},
@@ -121,11 +141,21 @@ CLOUD_OBJECTS_EXTENDED = {
         {"type": "oci-flowlogs", "label": "Flow Logs", "icon": "FLG", "desc": "OCI VCN Flow Logs — subnet or VNIC level capture"},
         {"type": "oci-dedicated", "label": "Dedicated Region", "icon": "DR", "desc": "OCI Dedicated Region Cloud@Customer — full OCI on-premises"},
         {"type": "oci-fd", "label": "Fault Domain", "icon": "FD", "desc": "OCI Fault Domain — three-tier isolation (Region > AD > FD)"},
+        {"type": "oci-cloudguard", "label": "Cloud Guard", "icon": "CG", "desc": "OCI Cloud Guard — threat detection, security zones, responder recipes"},
+        {"type": "oci-vault", "label": "Vault", "icon": "VLT", "desc": "OCI Vault — HSM-backed key management (FIPS 140-2 L3, ~$11K/mo dedicated)"},
+        {"type": "oci-vss", "label": "Vuln Scanning", "icon": "VSS", "desc": "OCI Vulnerability Scanning Service — host/container scanning"},
+        {"type": "oci-identity", "label": "Identity Domains", "icon": "IDM", "desc": "OCI Identity Domains — CAC/PIV via X.509 + SAML federation"},
+        {"type": "oci-audit", "label": "Audit", "icon": "AUD", "desc": "OCI Audit — immutable API activity log (NIST AU controls)"},
+        {"type": "oci-nfw", "label": "Network Firewall", "icon": "NFW", "desc": "OCI Network Firewall — Palo Alto PaaS, IDS/IPS + threat prevention (~$3.6K/mo)"},
     ],
     "ibm": [
         {"type": "ibm-satellite", "label": "Satellite", "icon": "SAT", "desc": "IBM Cloud Satellite — extend IBM services to any infrastructure"},
         {"type": "ibm-cis", "label": "CIS", "icon": "CIS", "desc": "IBM Cloud Internet Services — Cloudflare-powered CDN/WAF/DDoS/DNS"},
         {"type": "ibm-flowlogs", "label": "Flow Logs", "icon": "FLG", "desc": "IBM Cloud Flow Logs for VPC — instance NIC or subnet capture"},
+        {"type": "ibm-scc", "label": "SCC", "icon": "SCC", "desc": "IBM Security & Compliance Center — posture monitoring with profiles"},
+        {"type": "ibm-keyprotect", "label": "Key Protect", "icon": "KP", "desc": "IBM Key Protect — managed key lifecycle with BYOK support"},
+        {"type": "ibm-hpcs", "label": "HPCS", "icon": "HSM", "desc": "IBM Hyper Protect Crypto Services — FIPS 140-2 L4 HSM (highest available)"},
+        {"type": "ibm-appid", "label": "App ID", "icon": "AID", "desc": "IBM Cloud App ID — identity and access management with SAML federation"},
     ],
 }
 
@@ -805,4 +835,399 @@ BOM_COSTS = {
     # Colocation facility objects
     "meet-me-room": 0, "cross-connect": 300, "demarc": 0, "cage": 0, "cabinet": 2500,
     # Cloud objects are OpEx, not CapEx — zero hardware cost
+}
+
+# ── SCCA (Secure Cloud Computing Architecture) ────────────────────────────────
+# DoD DISA SCCA defines 4 functional components mandatory for any DoD cloud
+# deployment connecting to DISN. References:
+#   - DISA SCCA Functional Requirements Document (FRD) v2.9
+#   - AWS Prescriptive Guidance: Secure Architecture for DoD
+#   - Azure SACA (Secure Azure Computing Architecture)
+#   - OCI SCCA Landing Zone Reference Architecture
+
+SCCA_COMPONENTS = {
+    "bcap": {
+        "name": "Boundary Cloud Access Point",
+        "acronym": "BCAP",
+        "description": "Protects DISN from cloud-originating attacks. Provides network boundary "
+                       "security between DoD networks and commercial cloud. Typically operated "
+                       "by DISA using Cloud Native Access Point (CNAP) reference design.",
+        "disa_ref": "FRD §2.1.1",
+        "operator": "DISA or DoD Component",
+    },
+    "vdss": {
+        "name": "Virtual Datacenter Security Stack",
+        "acronym": "VDSS",
+        "description": "Bulk security operations for DoD mission-owner applications in cloud. "
+                       "Provides inbound access controls, perimeter protections, WAF, DDoS, "
+                       "IDS/IPS, SSL/TLS inspection, and PPSM enforcement.",
+        "disa_ref": "FRD §2.1.2",
+        "requirements": [
+            {"id": "2.1.2.1", "title": "Virtual separation of management/user/data traffic"},
+            {"id": "2.1.2.2", "title": "Encryption for segmentation of management traffic"},
+            {"id": "2.1.2.3", "title": "Reverse proxy for access requests"},
+            {"id": "2.1.2.4", "title": "Application-layer inspection/filtering (HTTP)"},
+            {"id": "2.1.2.5", "title": "Block unauthorized application-layer traffic"},
+            {"id": "2.1.2.6", "title": "IDS — monitor/detect/report malicious activities"},
+            {"id": "2.1.2.7", "title": "IPS — stop/block detected malicious activity"},
+            {"id": "2.1.2.8", "title": "Inspect/filter traffic between mission VPCs"},
+            {"id": "2.1.2.9", "title": "SSL/TLS break and inspection"},
+            {"id": "2.1.2.10", "title": "Ports/Protocols/Services Management (PPSM)"},
+            {"id": "2.1.2.11", "title": "Monitoring — log files and event data"},
+            {"id": "2.1.2.12", "title": "SIEM — feed security data to archiving system"},
+            {"id": "2.1.2.13", "title": "FIPS 140-2 encryption key management for WAF SSL/TLS"},
+            {"id": "2.1.2.14", "title": "Detect application session hijacking"},
+            {"id": "2.1.2.15", "title": "DoD DMZ extension for internet-facing applications"},
+            {"id": "2.1.2.16", "title": "Full packet capture capability"},
+            {"id": "2.1.2.17", "title": "Network packet flow metrics/statistics"},
+            {"id": "2.1.2.18", "title": "Inspect traffic entering/exiting each mission VPC"},
+        ],
+    },
+    "vdms": {
+        "name": "Virtual Datacenter Managed Services",
+        "acronym": "VDMS",
+        "description": "Host security and shared datacenter services. Provides ACAS continuous "
+                       "monitoring, HBSS endpoint security, identity services (CAC), patch "
+                       "management, directory services, and centralized logging.",
+        "disa_ref": "FRD §2.1.3",
+        "requirements": [
+            {"id": "2.1.3.1", "title": "ACAS continuous monitoring"},
+            {"id": "2.1.3.2", "title": "HBSS endpoint security"},
+            {"id": "2.1.3.3", "title": "Identity services — CAC two-factor auth"},
+            {"id": "2.1.3.4", "title": "Configuration and patch management"},
+            {"id": "2.1.3.5", "title": "Directory, federation, DHCP, DNS"},
+            {"id": "2.1.3.6", "title": "Separate management network"},
+            {"id": "2.1.3.7", "title": "System/security/app event logging and archiving"},
+            {"id": "2.1.3.8", "title": "Exchange privileged user auth attributes with CSP IAM"},
+            {"id": "2.1.3.9", "title": "Implement TCCM technical capabilities"},
+        ],
+    },
+    "tccm": {
+        "name": "Trusted Cloud Credential Manager",
+        "acronym": "TCCM",
+        "description": "Credential management, RBAC enforcement, and least-privilege access. "
+                       "Appointed by Authorizing Official (AO). Develops Cloud Credential "
+                       "Management Plan (CCMP) and validates before DISN connection.",
+        "disa_ref": "FRD §2.1.4",
+        "requirements": [
+            {"id": "2.1.4.1", "title": "Develop Cloud Credential Management Plan (CCMP)"},
+            {"id": "2.1.4.2", "title": "Collect/audit/archive customer portal activity logs"},
+            {"id": "2.1.4.3", "title": "Forward activity log alerts to DoD privileged users"},
+            {"id": "2.1.4.4", "title": "Create log repository access accounts for BCP/MCP"},
+            {"id": "2.1.4.5", "title": "Recover/control portal credentials before DISN connectivity"},
+            {"id": "2.1.4.6", "title": "Create/issue/revoke RBAC least-privileged portal credentials"},
+        ],
+    },
+}
+
+# ── SCCA Component-to-CSP Service Mapping ──────────────────────────────────────
+# Maps each SCCA functional component to native services across all 5 CSPs.
+# Used by cloud_architecture.py for SCCA compliance analysis and by NDC
+# templates for generating CSP-specific SCCA topologies.
+
+SCCA_CSP_MAPPING = {
+    "bcap": {
+        "description": "Boundary protection — DISN-to-cloud connectivity with IDS/IPS",
+        "aws": {"services": ["Direct Connect", "Transit Gateway", "CloudFront", "Shield", "WAF"],
+                "node_types": ["aws-dx", "aws-tgw", "aws-cloudfront", "aws-shield", "aws-waf"],
+                "note": "DISA operates BCAP; customer uses DX/TGW to connect"},
+        "azure": {"services": ["ExpressRoute", "Azure Front Door", "DDoS Protection"],
+                  "node_types": ["az-er", "az-front", "az-ddos"],
+                  "note": "DISA Gen 2/3 BCAPs with ExpressRoute circuits"},
+        "gcp": {"services": ["Dedicated Interconnect", "Cloud Armor"],
+                "node_types": ["gcp-ic", "gcp-armor"],
+                "note": "MACsec or VPN-over-Interconnect encryption"},
+        "oci": {"services": ["FastConnect", "Load Balancer", "WAF"],
+                "node_types": ["oci-fc", "oci-lb", "oci-waf"],
+                "note": "CAP mapped to LB + WAF at boundary"},
+        "ibm": {"services": ["Direct Link", "Transit Gateway", "CIS"],
+                "node_types": ["ibm-dl", "ibm-tg", "ibm-cis"],
+                "note": "FedRAMP High authorized; BCAP integration via Direct Link"},
+    },
+    "vdss": {
+        "description": "Security stack — firewall, IDS/IPS, WAF, DDoS, traffic inspection",
+        "aws": {"services": ["Network Firewall", "WAF", "Shield Advanced", "GuardDuty",
+                             "VPC Flow Logs", "Gateway LB"],
+                "node_types": ["aws-nfw", "aws-waf", "aws-shield", "aws-guardduty",
+                               "aws-flowlogs", "aws-gwlb"],
+                "note": "Network Firewall in centralized inspection VPC behind TGW"},
+        "azure": {"services": ["Azure Firewall", "App Gateway WAF", "Front Door WAF",
+                               "DDoS Protection", "Network Watcher"],
+                  "node_types": ["az-fw", "az-appgw", "az-front", "az-ddos", "az-netwatcher"],
+                  "note": "Azure FW or NVAs (Palo Alto/F5/Citrix) in hub VNet"},
+        "gcp": {"services": ["VPC Firewall Rules", "Cloud Armor", "Packet Mirroring"],
+                "node_types": ["gcp-armor", "gcp-flowlogs"],
+                "note": "No centralized inline firewall; Cloud Armor at regional LB"},
+        "oci": {"services": ["Network Firewall", "WAF", "DDoS Protection"],
+                "node_types": ["oci-nfw", "oci-waf", "oci-ddos"],
+                "note": "OCI Network FW (Palo Alto PaaS) in VDSS VCN hub"},
+        "ibm": {"services": ["VPC Security Groups", "Network ACLs", "CIS WAF/DDoS"],
+                "node_types": ["ibm-cis"],
+                "note": "Fortigate NVAs for inline inspection; CIS for edge"},
+    },
+    "vdms": {
+        "description": "Managed services — vulnerability scanning, patching, logging, identity",
+        "aws": {"services": ["Inspector", "Security Hub", "Config", "Systems Manager",
+                             "CloudTrail", "CloudWatch Logs", "Managed AD", "KMS",
+                             "Secrets Manager", "Private CA"],
+                "node_types": ["aws-inspector", "aws-securityhub", "aws-config", "aws-ssm",
+                               "aws-ct", "aws-ad", "aws-kms", "aws-privateca"],
+                "note": "ACAS via Inspector+SecurityHub; HBSS via third-party on EC2"},
+        "azure": {"services": ["Defender for Cloud", "Sentinel", "Monitor", "Key Vault",
+                               "Entra ID", "Update Management"],
+                  "node_types": ["az-defender", "az-sentinel", "az-monitor", "az-keyvault",
+                                 "az-entra"],
+                  "note": "Defender for CSPM + workload protection; Sentinel for SIEM"},
+        "gcp": {"services": ["Security Command Center", "Cloud KMS", "Cloud Logging",
+                             "Cloud Audit Logs", "OS Config"],
+                "node_types": ["gcp-scc", "gcp-kms"],
+                "note": "SCC for centralized findings; limited HBSS integration"},
+        "oci": {"services": ["Cloud Guard", "Vault", "Vulnerability Scanning",
+                             "Identity Domains", "Audit", "Logging Analytics"],
+                "node_types": ["oci-cloudguard", "oci-vault", "oci-vss",
+                               "oci-identity", "oci-audit"],
+                "note": "Cloud Guard responder recipes for auto-remediation"},
+        "ibm": {"services": ["Security & Compliance Center", "Key Protect",
+                             "Hyper Protect Crypto", "Log Analysis", "Activity Tracker"],
+                "node_types": ["ibm-scc", "ibm-keyprotect", "ibm-hpcs"],
+                "note": "SCC profiles for posture monitoring; HPCS is FIPS 140-2 L4"},
+    },
+    "tccm": {
+        "description": "Credential management — IAM, SSO, RBAC, MFA, audit trail",
+        "aws": {"services": ["IAM", "IAM Identity Center", "Managed AD", "CloudTrail"],
+                "node_types": ["aws-idc", "aws-ad", "aws-ct"],
+                "note": "IAM Identity Center for SSO/RBAC across org accounts"},
+        "azure": {"services": ["Entra ID", "RBAC", "Conditional Access", "Monitor"],
+                  "node_types": ["az-entra", "az-monitor"],
+                  "note": "Entra ID with CAC/PIV certificate-based auth"},
+        "gcp": {"services": ["Cloud IAM", "Workforce Identity Federation",
+                             "Organization Policy", "Cloud Audit Logs"],
+                "node_types": ["gcp-orgpolicy"],
+                "note": "Workforce Identity Federation for CAC via IdP"},
+        "oci": {"services": ["IAM Policies", "Identity Domains", "Audit"],
+                "node_types": ["oci-identity", "oci-audit"],
+                "note": "CAC/PIV via X.509 certificates in Identity Domains"},
+        "ibm": {"services": ["IBM Cloud IAM", "App ID", "Activity Tracker"],
+                "node_types": ["ibm-appid"],
+                "note": "SAML federation via App ID; Activity Tracker for audit"},
+    },
+}
+
+# ── Landing Zone Patterns per CSP ──────────────────────────────────────────────
+# Multi-account/subscription/compartment structures with SCCA-compliant network
+# topology patterns. Used by NDC template generation and IaC generators.
+
+LANDING_ZONE_PATTERNS = {
+    "aws": {
+        "name": "AWS Landing Zone Accelerator (LZA)",
+        "network_pattern": "tgw_hub_spoke",
+        "description": "CDK-based multi-account architecture via Control Tower + Organizations. "
+                       "Transit Gateway hub with Network Firewall inspection VPC. "
+                       "Config-driven: accounts-config.yaml, network-config.yaml, security-config.yaml.",
+        "reference": "https://aws.amazon.com/solutions/implementations/landing-zone-accelerator-on-aws/",
+        "account_structure": [
+            {"name": "Management", "purpose": "Organizations root, Control Tower, billing"},
+            {"name": "LogArchive", "ou": "Security", "purpose": "Immutable log aggregation — CloudTrail, VPC Flow Logs, Config"},
+            {"name": "Audit", "ou": "Security", "purpose": "SecurityHub aggregator, GuardDuty delegated admin, Config aggregator"},
+            {"name": "Network", "ou": "Infrastructure", "purpose": "Transit Gateway, Network Firewall, NAT, VPC Endpoints, DX/VPN"},
+            {"name": "SharedServices", "ou": "Infrastructure", "purpose": "Managed AD, Secrets Manager, Private CA, SNS"},
+            {"name": "VDSS", "ou": "Workloads", "purpose": "Boundary security — WAF, Shield, IDS/IPS rules"},
+            {"name": "VDMS", "ou": "Workloads", "purpose": "HBSS, ACAS, patching, authentication"},
+            {"name": "MissionApp", "ou": "Workloads", "purpose": "Core workloads — multi-tier applications"},
+        ],
+        "il_tiers": {
+            "IL4": {"region": "us-gov-west-1", "encryption": "AES-256 + KMS CMK", "isolation": "shared accounts OK"},
+            "IL5": {"region": "us-gov-west-1", "encryption": "FIPS 140-2 L1 KMS", "isolation": "separate accounts required"},
+            "IL6": {"region": "aws-secret", "encryption": "FIPS 140-2 L2 + CloudHSM", "isolation": "air-gapped, NSA Type 1"},
+        },
+    },
+    "azure": {
+        "name": "Azure Mission Landing Zone (MLZ)",
+        "network_pattern": "hub_spoke_vnet",
+        "description": "Hub-spoke VNet topology with Azure Firewall or NVAs in hub. "
+                       "Management groups for governance. MLZ Terraform or SCCA Enclave Starter.",
+        "reference": "https://github.com/Azure/missionlz",
+        "account_structure": [
+            {"name": "Hub Subscription", "purpose": "VDSS+VDMS — Azure Firewall/NVA, Bastion, identity, monitoring"},
+            {"name": "Identity Subscription", "purpose": "Entra ID, Conditional Access, CAC/PIV auth"},
+            {"name": "Logging Subscription", "purpose": "Log Analytics workspace, Sentinel, long-term retention"},
+            {"name": "Spoke Subscription(s)", "purpose": "Mission workloads — one per mission owner"},
+        ],
+        "il_tiers": {
+            "IL4": {"region": "usgovvirginia", "encryption": "AES-256 + Key Vault", "isolation": "shared subscriptions OK"},
+            "IL5": {"region": "usgovvirginia", "encryption": "FIPS 140-2 L2 Key Vault", "isolation": "dedicated infrastructure"},
+            "IL6": {"region": "Azure Government Secret", "encryption": "FIPS 140-2 L3 + mHSM", "isolation": "air-gapped, physically isolated"},
+        },
+    },
+    "gcp": {
+        "name": "GCP Assured Workloads",
+        "network_pattern": "shared_vpc",
+        "description": "Software-defined community cloud via Assured Workloads folders. "
+                       "Organization policies enforce data residency and personnel controls. "
+                       "Shared VPC for centralized network governance.",
+        "reference": "https://github.com/GCP-Architecture-Guides/csa-il4-assured-workload",
+        "account_structure": [
+            {"name": "Organization", "purpose": "Org-level policies, billing, IAM"},
+            {"name": "Assured Workloads Folder", "purpose": "IL4/IL5 compliance controls via org policies"},
+            {"name": "Host Project", "purpose": "Shared VPC host — centralized network, firewall rules"},
+            {"name": "Service Project(s)", "purpose": "Workload projects using Shared VPC subnets"},
+        ],
+        "il_tiers": {
+            "IL4": {"region": "us-central1/us-east4", "encryption": "Cloud KMS", "isolation": "Assured Workloads folder"},
+            "IL5": {"region": "us-central1/us-east4", "encryption": "Cloud HSM (FIPS 140-2 L3)", "isolation": "Assured Workloads + EKM"},
+            "IL6": {"region": "N/A", "encryption": "N/A", "isolation": "Not available — use Google Distributed Cloud"},
+        },
+    },
+    "oci": {
+        "name": "OCI SCCA Landing Zone",
+        "network_pattern": "drg_hub_spoke",
+        "description": "Turnkey SCCA deployment via Terraform. VDSS/VDMS/Workload compartments "
+                       "with DRG hub. Two variants: SCCAv1 (self-deploy) and SCCAv2 (managed broker). "
+                       "Includes Network Firewall, Cloud Guard, Vault, and identity isolation.",
+        "reference": "https://github.com/oci-landing-zones/oci-scca-landingzone",
+        "account_structure": [
+            {"name": "VDSS Compartment", "purpose": "Network Firewall, WAF, DDoS, boundary security"},
+            {"name": "VDMS Compartment", "purpose": "Cloud Guard, Vault, VSS, Identity Domains, logging"},
+            {"name": "Workload Compartment(s)", "purpose": "Mission VCNs — one per mission owner"},
+            {"name": "Logging Compartment", "purpose": "OCI Audit + Logging Analytics aggregation"},
+        ],
+        "il_tiers": {
+            "IL4": {"region": "OC2/OC3 Government", "encryption": "AES-256 + OCI Vault", "isolation": "compartment isolation"},
+            "IL5": {"region": "OC2/OC3 Government", "encryption": "Dedicated HSM Vault (~$11K/mo)", "isolation": "dedicated VCNs"},
+            "IL6": {"region": "National Security regions", "encryption": "Classified HSM", "isolation": "air-gapped classified environment"},
+        },
+    },
+    "ibm": {
+        "name": "IBM Cloud VPC Landing Zone",
+        "network_pattern": "transit_gw",
+        "description": "Management + Workload VPCs connected via Transit Gateway. "
+                       "Security & Compliance Center for posture monitoring. "
+                       "FedRAMP High authorized but no formal SCCA landing zone published.",
+        "reference": "https://github.com/terraform-ibm-modules/terraform-ibm-landing-zone-vpc",
+        "account_structure": [
+            {"name": "Management VPC", "purpose": "Control plane — bastion, monitoring, security tools"},
+            {"name": "Workload VPC", "purpose": "Application workloads — compute, storage, databases"},
+            {"name": "Edge VPC", "purpose": "Optional — VPN/Direct Link termination, edge security"},
+        ],
+        "il_tiers": {
+            "IL4": {"region": "us-south/us-east", "encryption": "Key Protect + BYOK", "isolation": "resource group isolation"},
+            "IL5": {"region": "N/A", "encryption": "HPCS (FIPS 140-2 L4)", "isolation": "Not formally documented for IL5"},
+            "IL6": {"region": "N/A", "encryption": "N/A", "isolation": "Not available"},
+        },
+    },
+}
+
+# ── SCCA Compliance Rules for NDC Audit ────────────────────────────────────────
+# Checked by compliance.py when SCCA regime is selected. Each rule maps to a
+# specific SCCA FRD requirement and checks the topology for required components.
+
+SCCA_COMPLIANCE_RULES = [
+    # ── BCAP ──
+    {"id": "SCCA-BCAP-001", "title": "Dedicated interconnect to DISN/BCAP",
+     "severity": "CAT1", "category": "bcap", "regimes": ["scca"],
+     "description": "Topology must include a dedicated circuit (DX/ER/IC/FC/DL) connecting to DISA BCAP or DoD network (FRD §2.1.1).",
+     "check": "has_dedicated_interconnect"},
+    # ── VDSS ──
+    {"id": "SCCA-VDSS-001", "title": "Network firewall for traffic inspection",
+     "severity": "CAT1", "category": "vdss", "regimes": ["scca"],
+     "description": "VDSS requires centralized firewall for IDS/IPS, SSL/TLS inspection, and PPSM enforcement (FRD §2.1.2.7-2.1.2.10).",
+     "check": "has_network_firewall"},
+    {"id": "SCCA-VDSS-002", "title": "WAF for application-layer filtering",
+     "severity": "CAT2", "category": "vdss", "regimes": ["scca"],
+     "description": "VDSS requires WAF for HTTP inspection and blocking unauthorized application traffic (FRD §2.1.2.4-2.1.2.5).",
+     "check": "has_waf"},
+    {"id": "SCCA-VDSS-003", "title": "DDoS protection",
+     "severity": "CAT2", "category": "vdss", "regimes": ["scca"],
+     "description": "VDSS requires DDoS protection at the perimeter (FRD §2.1.2.1).",
+     "check": "has_ddos_protection"},
+    {"id": "SCCA-VDSS-004", "title": "VPC Flow Logs enabled",
+     "severity": "CAT2", "category": "vdss", "regimes": ["scca"],
+     "description": "Full packet flow metrics and statistics required for all VPCs (FRD §2.1.2.16-2.1.2.17).",
+     "check": "has_flow_logs"},
+    {"id": "SCCA-VDSS-005", "title": "East-west traffic inspection between mission VPCs",
+     "severity": "CAT1", "category": "vdss", "regimes": ["scca"],
+     "description": "All inter-VPC traffic must transit through VDSS firewall for inspection (FRD §2.1.2.8, 2.1.2.18).",
+     "check": "east_west_through_firewall"},
+    {"id": "SCCA-VDSS-006", "title": "Transit hub for centralized routing",
+     "severity": "CAT2", "category": "vdss", "regimes": ["scca"],
+     "description": "SCCA requires centralized routing via transit hub (TGW/vWAN/DRG) to enforce inspection (FRD §2.1.2.8).",
+     "check": "has_transit_hub"},
+    # ── VDMS ──
+    {"id": "SCCA-VDMS-001", "title": "Centralized logging and SIEM",
+     "severity": "CAT1", "category": "vdms", "regimes": ["scca"],
+     "description": "VDMS requires centralized security event logging and archiving to a SIEM system (FRD §2.1.3.7).",
+     "check": "has_centralized_logging"},
+    {"id": "SCCA-VDMS-002", "title": "Key management service (FIPS 140-2)",
+     "severity": "CAT1", "category": "vdms", "regimes": ["scca"],
+     "description": "FIPS 140-2 validated encryption key management required for all data at rest and WAF SSL/TLS (FRD §2.1.2.13).",
+     "check": "has_kms"},
+    {"id": "SCCA-VDMS-003", "title": "Identity and directory service with CAC/MFA",
+     "severity": "CAT1", "category": "vdms", "regimes": ["scca"],
+     "description": "VDMS requires identity services with CAC two-factor authentication (FRD §2.1.3.3).",
+     "check": "has_identity_service"},
+    {"id": "SCCA-VDMS-004", "title": "Vulnerability scanning (ACAS equivalent)",
+     "severity": "CAT2", "category": "vdms", "regimes": ["scca"],
+     "description": "Continuous monitoring via vulnerability scanning equivalent to ACAS (FRD §2.1.3.1).",
+     "check": "has_vuln_scanning"},
+    {"id": "SCCA-VDMS-005", "title": "Patch management service",
+     "severity": "CAT2", "category": "vdms", "regimes": ["scca"],
+     "description": "Configuration and patch management required across all workloads (FRD §2.1.3.4).",
+     "check": "has_patch_management"},
+    # ── TCCM ──
+    {"id": "SCCA-TCCM-001", "title": "Centralized IAM with SSO",
+     "severity": "CAT1", "category": "tccm", "regimes": ["scca"],
+     "description": "TCCM requires centralized IAM with SSO and RBAC least-privileged credentials (FRD §2.1.4.6).",
+     "check": "has_centralized_iam"},
+    {"id": "SCCA-TCCM-002", "title": "API audit trail (CloudTrail/Audit equivalent)",
+     "severity": "CAT1", "category": "tccm", "regimes": ["scca"],
+     "description": "All portal/API activity must be logged, audited, and archived (FRD §2.1.4.2).",
+     "check": "has_api_audit_trail"},
+]
+
+# ── SCCA Node Type Detection Sets ─────────────────────────────────────────────
+# Used by cloud_architecture.py to detect SCCA components in a topology.
+
+SCCA_FIREWALL_TYPES = {
+    "firewall", "aws-nfw", "az-fw", "oci-nfw", "gcp-armor",
+    "aws-waf", "az-appgw", "az-front",
+}
+
+SCCA_IDENTITY_TYPES = {
+    "aws-ad", "aws-idc", "aws-privateca",
+    "az-entra",
+    "oci-identity",
+    "gcp-orgpolicy",
+    "ibm-appid",
+}
+
+SCCA_LOGGING_TYPES = {
+    "aws-ct", "aws-securityhub", "aws-config", "aws-guardduty",
+    "az-sentinel", "az-defender", "az-monitor",
+    "gcp-scc",
+    "oci-audit", "oci-cloudguard",
+    "ibm-scc",
+}
+
+SCCA_KMS_TYPES = {
+    "aws-kms",
+    "az-keyvault",
+    "gcp-kms",
+    "oci-vault",
+    "ibm-keyprotect", "ibm-hpcs",
+}
+
+SCCA_SCANNING_TYPES = {
+    "aws-inspector", "aws-ssm",
+    "az-defender",
+    "gcp-scc",
+    "oci-vss", "oci-cloudguard",
+    "ibm-scc",
+}
+
+SCCA_DDOS_TYPES = {
+    "aws-shield",
+    "az-ddos",
+    "oci-ddos",
+    "gcp-armor",
+    "ibm-cis",
 }

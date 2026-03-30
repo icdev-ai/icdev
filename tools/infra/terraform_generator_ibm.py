@@ -322,6 +322,307 @@ def generate(project_name: str = "icdev", environment: str = "production",
     }
 
 
+# ---------------------------------------------------------------------------
+# SCCA (Secure Cloud Computing Architecture) module — IBM Cloud
+# ---------------------------------------------------------------------------
+SCCA_IBM_MAIN = """\
+{{ cui_header }}
+# -------------------------------------------------------
+# SCCA IBM Cloud — Management VPC, Workload VPC, Transit Gateway, Direct Link
+# -------------------------------------------------------
+
+# Resource Group data source
+data "ibm_resource_group" "scca" {
+  name = var.resource_group
+}
+
+# --- Management VPC ---
+
+resource "ibm_is_vpc" "mgmt" {
+  name           = "$${var.project_name}-scca-mgmt-vpc"
+  resource_group = data.ibm_resource_group.scca.id
+
+  tags = ["Classification:CUI", "ManagedBy:icdev", "Role:Management"]
+}
+
+resource "ibm_is_subnet" "mgmt_subnet" {
+  name            = "$${var.project_name}-scca-mgmt-subnet"
+  vpc             = ibm_is_vpc.mgmt.id
+  zone            = "$${var.region}-1"
+  total_ipv4_address_count = 256
+  resource_group  = data.ibm_resource_group.scca.id
+}
+
+# --- Workload VPC ---
+
+resource "ibm_is_vpc" "workload" {
+  name           = "$${var.project_name}-scca-workload-vpc"
+  resource_group = data.ibm_resource_group.scca.id
+
+  tags = ["Classification:CUI", "ManagedBy:icdev", "Role:Workload"]
+}
+
+resource "ibm_is_subnet" "workload_subnet" {
+  name            = "$${var.project_name}-scca-workload-subnet"
+  vpc             = ibm_is_vpc.workload.id
+  zone            = "$${var.region}-1"
+  total_ipv4_address_count = 256
+  resource_group  = data.ibm_resource_group.scca.id
+}
+
+# --- Transit Gateway ---
+
+resource "ibm_tg_gateway" "scca" {
+  name           = "$${var.project_name}-scca-tgw"
+  location       = var.region
+  global         = false
+  resource_group = data.ibm_resource_group.scca.id
+}
+
+resource "ibm_tg_connection" "mgmt" {
+  gateway      = ibm_tg_gateway.scca.id
+  network_type = "vpc"
+  name         = "mgmt-vpc-connection"
+  network_id   = ibm_is_vpc.mgmt.resource_crn
+}
+
+resource "ibm_tg_connection" "workload" {
+  gateway      = ibm_tg_gateway.scca.id
+  network_type = "vpc"
+  name         = "workload-vpc-connection"
+  network_id   = ibm_is_vpc.workload.resource_crn
+}
+
+# --- Security Groups (deny-all default, allow-internal) ---
+
+resource "ibm_is_security_group" "mgmt_deny_all" {
+  name           = "$${var.project_name}-scca-mgmt-deny-all-sg"
+  vpc            = ibm_is_vpc.mgmt.id
+  resource_group = data.ibm_resource_group.scca.id
+}
+
+resource "ibm_is_security_group_rule" "mgmt_allow_internal_inbound" {
+  group     = ibm_is_security_group.mgmt_deny_all.id
+  direction = "inbound"
+  remote    = ibm_is_vpc.mgmt.default_security_group_crn
+
+  tcp {
+    port_min = 1
+    port_max = 65535
+  }
+}
+
+resource "ibm_is_security_group" "workload_deny_all" {
+  name           = "$${var.project_name}-scca-workload-deny-all-sg"
+  vpc            = ibm_is_vpc.workload.id
+  resource_group = data.ibm_resource_group.scca.id
+}
+
+resource "ibm_is_security_group_rule" "workload_allow_internal_inbound" {
+  group     = ibm_is_security_group.workload_deny_all.id
+  direction = "inbound"
+  remote    = ibm_is_vpc.workload.default_security_group_crn
+
+  tcp {
+    port_min = 1
+    port_max = 65535
+  }
+}
+
+# --- Direct Link Gateway ---
+
+resource "ibm_dl_gateway" "scca" {
+  name                  = "$${var.project_name}-scca-dl"
+  type                  = "dedicated"
+  speed_mbps            = 1000
+  bgp_asn               = 64999
+  cross_connect_router  = "xcr01.dal09"
+  location_name         = "dal09"
+  global                = false
+  resource_group        = data.ibm_resource_group.scca.id
+}
+"""
+
+SCCA_IBM_SECURITY = """\
+{{ cui_header }}
+# -------------------------------------------------------
+# SCCA IBM Cloud — Security (SCC, Key Protect, Activity Tracker)
+# -------------------------------------------------------
+
+# --- Security & Compliance Center ---
+
+resource "ibm_scc_instance_settings" "scca" {
+  event_notifications {
+    instance_crn = ""
+  }
+  object_storage {
+    bucket            = "$${var.project_name}-scca-scc-results"
+    bucket_location   = var.region
+    instance_crn      = ibm_resource_instance.cos_scca.crn
+  }
+}
+
+resource "ibm_scc_profile_attachment" "dod_scc" {
+  profile_id = "nist-800-53-rev5"
+  name       = "$${var.project_name}-scca-scc-attachment"
+
+  scope {
+    environment = "ibm-cloud"
+
+    properties {
+      name  = "scope_id"
+      value = data.ibm_resource_group.scca.id
+    }
+    properties {
+      name  = "scope_type"
+      value = "account.resource_group"
+    }
+  }
+
+  schedule = "daily"
+  status   = "enabled"
+}
+
+# --- COS for SCC results ---
+
+resource "ibm_resource_instance" "cos_scca" {
+  name              = "$${var.project_name}-scca-cos"
+  service           = "cloud-object-storage"
+  plan              = "standard"
+  location          = "global"
+  resource_group_id = data.ibm_resource_group.scca.id
+}
+
+# --- Key Protect ---
+
+resource "ibm_resource_instance" "key_protect_scca" {
+  name              = "$${var.project_name}-scca-kp"
+  service           = "kms"
+  plan              = "tiered-pricing"
+  location          = var.region
+  resource_group_id = data.ibm_resource_group.scca.id
+}
+
+resource "ibm_kms_key" "scca_root" {
+  instance_id  = ibm_resource_instance.key_protect_scca.guid
+  key_name     = "$${var.project_name}-scca-root-key"
+  standard_key = false
+}
+
+# --- Activity Tracker ---
+
+resource "ibm_resource_instance" "activity_tracker" {
+  name              = "$${var.project_name}-scca-at"
+  service           = "logdnaat"
+  plan              = "30-day"
+  location          = var.region
+  resource_group_id = data.ibm_resource_group.scca.id
+
+  parameters = {
+    service_supertenant    = "activity-tracker"
+    associated_logging_crn = ""
+  }
+}
+"""
+
+SCCA_IBM_VARIABLES = """\
+{{ cui_header }}
+# -------------------------------------------------------
+# SCCA IBM Cloud — Variables
+# -------------------------------------------------------
+variable "ibmcloud_api_key" {
+  description = "IBM Cloud API key"
+  type        = string
+  sensitive   = true
+}
+
+variable "region" {
+  description = "IBM Cloud region"
+  type        = string
+  default     = "us-south"
+}
+
+variable "resource_group" {
+  description = "IBM Cloud resource group name"
+  type        = string
+  default     = "Default"
+}
+
+variable "project_name" {
+  description = "Project identifier"
+  type        = string
+}
+
+variable "il_level" {
+  description = "DoD Impact Level (IL4, IL5, IL6)"
+  type        = string
+  default     = "IL4"
+
+  validation {
+    condition     = contains(["IL4", "IL5", "IL6"], var.il_level)
+    error_message = "IL level must be IL4, IL5, or IL6."
+  }
+}
+"""
+
+SCCA_IBM_OUTPUTS = """\
+{{ cui_header }}
+# -------------------------------------------------------
+# SCCA IBM Cloud — Outputs
+# -------------------------------------------------------
+output "mgmt_vpc_id" {
+  description = "Management VPC ID"
+  value       = ibm_is_vpc.mgmt.id
+}
+
+output "workload_vpc_id" {
+  description = "Workload VPC ID"
+  value       = ibm_is_vpc.workload.id
+}
+
+output "transit_gw_id" {
+  description = "Transit Gateway ID"
+  value       = ibm_tg_gateway.scca.id
+}
+
+output "key_protect_id" {
+  description = "Key Protect instance ID"
+  value       = ibm_resource_instance.key_protect_scca.id
+}
+"""
+
+
+def generate_scca_ibm(project_path: str, project_config: dict = None) -> list:
+    """Generate SCCA (Secure Cloud Computing Architecture) Terraform module for IBM Cloud.
+
+    Produces terraform/ibm/modules/scca-ibm/ with main.tf (Management VPC,
+    Workload VPC, Transit Gateway, Direct Link), security.tf, variables.tf,
+    and outputs.tf.
+
+    Args:
+        project_path: Target project directory.
+        project_config: Optional configuration dict.
+
+    Returns:
+        List of absolute file paths generated.
+    """
+    config = project_config or {}
+    project_name = config.get("project_name", "icdev")
+    tf_dir = Path(project_path) / "terraform" / "ibm" / "modules" / "scca-ibm"
+    ctx = {"cui_header": _cui_header(), "project_name": project_name}
+
+    files = []
+    for name, template in [
+        ("main.tf", SCCA_IBM_MAIN),
+        ("security.tf", SCCA_IBM_SECURITY),
+        ("variables.tf", SCCA_IBM_VARIABLES),
+        ("outputs.tf", SCCA_IBM_OUTPUTS),
+    ]:
+        p = _write(tf_dir / name, _render(template, ctx))
+        files.append(str(p))
+    return files
+
+
 def run_cli():
     """CLI entry point."""
     parser = argparse.ArgumentParser(
