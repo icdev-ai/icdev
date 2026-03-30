@@ -892,6 +892,19 @@ def create_app() -> Flask:
         app.register_blueprint(chat_api)
     app.register_blueprint(studio_api)
 
+    # ---- SRE API Blueprint ----
+    try:
+        from tools.dashboard.api.sre import sre_api
+        app.register_blueprint(sre_api)
+        app.logger.info("SRE API registered at /api/sre/")
+    except ImportError as exc:
+        app.logger.warning("SRE API failed to register: %s", exc)
+
+    # ---- SRE Dashboard Page ----
+    @app.route("/sre")
+    def sre_dashboard_page():
+        return render_template("sre/dashboard.html")
+
     # ---- Network Design Canvas Blueprint ----
     if _HAS_NETWORK:
         try:
