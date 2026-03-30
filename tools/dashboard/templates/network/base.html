@@ -87,7 +87,7 @@
             <a href="/network/enterprise" class="mega-item">Enterprise</a>
             <a href="/network/global" class="mega-item">Global</a>
             <a href="/network/global/canvas" class="mega-item">Global Canvas</a>
-            <a href="/network/map" class="mega-item">Map</a>
+            {% if config.get("NETWORK_MAP_ENABLED", "true")|lower in ["1", "true", "yes"] %}<a href="/network/map" class="mega-item">Map</a>{% endif %}
             <a href="/network/charts" class="mega-item">Charts &amp; Analytics</a>
           </div>
         </div>

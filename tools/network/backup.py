@@ -20,10 +20,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 APP_DIR = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(APP_DIR))
+_ICDEV_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(_ICDEV_ROOT))
 from tools.db.init_db import get_connection, DB_PATH  # noqa: E402
 
-ICDEV_DB = Path("c:/Users/schuo/Downloads/ICDev/data/icdev.db")
+ICDEV_DB = _ICDEV_ROOT / "data" / "icdev.db"
 BACKUP_DIR = APP_DIR / "backups"
 
 

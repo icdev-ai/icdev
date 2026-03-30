@@ -25,6 +25,10 @@ python-dotenv>=1.0       # .env file loading
 numpy>=1.26              # Embedding math
 rank_bm25>=0.2           # BM25 keyword search
 
+# === Network Design Canvas ===
+defusedxml>=0.7          # Safe XML parsing for STIG import (XXE protection)
+networkx>=3.2            # Graph analysis for topology NL query engine
+
 # === Security Scanning ===
 # bandit>=1.7             # Python SAST (install per project)
 # pip-audit>=2.6          # Dependency auditing (install per project)

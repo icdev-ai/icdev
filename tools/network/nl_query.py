@@ -22,8 +22,19 @@ import os
 import re
 from typing import Any
 
-import networkx as nx
-import requests
+try:
+    import networkx as nx
+    _HAS_NETWORKX = True
+except ImportError:
+    nx = None
+    _HAS_NETWORKX = False
+
+try:
+    import requests
+    _HAS_REQUESTS = True
+except ImportError:
+    requests = None
+    _HAS_REQUESTS = False
 
 logger = logging.getLogger(__name__)
 
@@ -640,6 +651,12 @@ def _llm_query(question: str, graph: TopologyGraphAdapter,
             "think": False,
         },
     }
+    if not _HAS_REQUESTS:
+        return {
+            "answer": "LLM query requires the 'requests' package. "
+                      "Install it with: pip install requests",
+            "data": {}, "engine": "llm_unavailable",
+        }
     try:
         resp = requests.post(
             f"{_OLLAMA_HOST}/api/chat",
@@ -898,6 +915,11 @@ def answer_query(topology_id: str, question: str,
     if not question:
         return {"answer": "Please enter a question.", "data": {},
                 "engine": "none", "intent": "none", "query_id": ""}
+
+    if not _HAS_NETWORKX:
+        return {"answer": "Natural language query requires the 'networkx' package. "
+                "Install it with: pip install networkx",
+                "data": {}, "engine": "none", "intent": "none", "query_id": ""}
 
     # Load topology from DB
     row = conn.execute(

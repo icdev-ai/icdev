@@ -776,12 +776,14 @@ def create_network_blueprint():
         ).fetchall()
         topologies = [_row_to_dict(r) for r in topo_rows]
         conn.close()
+        airgap = os.environ.get("NETWORK_AIRGAP", "").lower() in ("1", "true", "yes")
         return render_template(
             "network/netbox.html",
             cfg=cfg,
             cached_counts=cached_counts,
             sync_log=sync_log,
             topologies=topologies,
+            airgap_mode=airgap,
         )
 
     @bp.route("/projects")
@@ -2694,6 +2696,10 @@ def create_network_blueprint():
     @bp.route("/map")
     @nc_login_required
     def nc_map_view():
+        if os.environ.get("NETWORK_MAP_ENABLED", "true").lower() not in ("1", "true", "yes"):
+            return render_template("network/index.html",
+                                   flash_msg="Map view is disabled in air-gap mode. "
+                                   "Set NETWORK_MAP_ENABLED=true to enable.")
         return render_template("network/map.html")
 
     # ══════════════════════════════════════════════════════════════════════

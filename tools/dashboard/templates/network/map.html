@@ -1,8 +1,8 @@
 {% extends "network/base.html" %}
 {% block title %}Network Map — Network Design Canvas{% endblock %}
 {% block head %}
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet/leaflet.css') }}"/>
+<script src="{{ url_for('static', filename='vendor/leaflet/leaflet.js') }}"></script>
 <style>
   .main-content { padding: 0; display: flex; flex-direction: column; }
   #map-container { flex: 1; min-height: 500px; background: #1a1a2e; }
@@ -41,10 +41,14 @@ const map = L.map('map-container', {
   preferCanvas: true,
 });
 
-// Dark tile layer
-L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-  attribution: '&copy; <a href="https://www.openstreetmap.org/">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>',
+// Tile layer — configurable for air-gap deployments.
+// Set NETWORK_MAP_TILE_URL env var to point to a local tile server,
+// or leave default for internet-connected environments.
+const tileUrl = '{{ config.get("NETWORK_MAP_TILE_URL", "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png") }}';
+L.tileLayer(tileUrl, {
+  attribution: 'Map tiles',
   maxZoom: 19,
+  errorTileUrl: '',  // Suppress broken-image icons in air-gap
 }).addTo(map);
 
 const siteMarkers = L.layerGroup().addTo(map);

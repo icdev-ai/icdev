@@ -12,6 +12,14 @@
   </div>
 </div>
 
+<!-- Air-gap notice (shown when NETWORK_AIRGAP=true) -->
+{% if airgap_mode %}
+<div class="panel" style="padding:10px 16px;margin-bottom:12px;background:rgba(241,196,15,0.1);border:1px solid rgba(241,196,15,0.4);font-size:12px;color:#f1c40f;">
+  <strong>Air-Gap Mode:</strong> NetBox integration requires network access to an external NetBox instance and is unavailable in disconnected environments.
+  Topology data can be imported/exported via JSON, draw.io, or Visio files instead.
+</div>
+{% endif %}
+
 <!-- Status Banner -->
 <div id="nb-banner" class="panel" style="padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;gap:12px;
   {% if cfg.configured %}background:rgba(155,89,182,0.08);border:1px solid rgba(155,89,182,0.3);{% else %}background:rgba(231,76,60,0.08);border:1px solid rgba(231,76,60,0.3);{% endif %}">
