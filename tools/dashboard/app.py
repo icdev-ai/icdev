@@ -4952,9 +4952,9 @@ def create_app() -> Flask:
             try:
                 conn = _get_db()
                 conn.execute(
-                    "INSERT INTO audit_trail (event_type, entity_type, entity_id, details, created_at) "
-                    "VALUES (?, ?, ?, ?, datetime('now'))",
-                    ("genesis_reflex", "genesis", app_key, json.dumps({"reflex": name})),
+                    "INSERT INTO audit_trail (event_type, action, details, created_at) "
+                    "VALUES (?, ?, ?, datetime('now'))",
+                    ("config_changed", f"genesis_reflex:{name}", json.dumps({"app": app_key, "reflex": name})),
                 )
                 conn.commit()
                 conn.close()
@@ -5381,9 +5381,9 @@ def create_app() -> Flask:
             try:
                 conn = _get_db()
                 conn.execute(
-                    "INSERT INTO audit_trail (event_type, entity_type, entity_id, details, created_at) "
-                    "VALUES (?, ?, ?, ?, datetime('now'))",
-                    ("review_board_reflex", "review_board", name, json.dumps({"returncode": result.returncode})),
+                    "INSERT INTO audit_trail (event_type, action, details, created_at) "
+                    "VALUES (?, ?, ?, datetime('now'))",
+                    ("config_changed", f"review_board_reflex:{name}", json.dumps({"returncode": result.returncode})),
                 )
                 conn.commit()
                 conn.close()

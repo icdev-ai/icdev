@@ -1580,3 +1580,11 @@
 | Deploy Catalog | tools\pipeline\deploy_catalog.py | Auto-registered: pipeline/deploy_catalog.py | --json | JSON |
 | Deploy Generator | tools\pipeline\deploy_generator.py | Auto-registered: pipeline/deploy_generator.py | --json | JSON |
 | E2E Devops Canvas | tools\testing\e2e_devops_canvas.py | Auto-registered: testing/e2e_devops_canvas.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Antipattern Detector | tools\pipeline\antipattern_detector.py | Auto-registered: pipeline/antipattern_detector.py | --json | JSON |
+| Iac Validator | tools\pipeline\iac_validator.py | Auto-registered: pipeline/iac_validator.py | --json | JSON |
+| Seed Runbooks | tools\sre\seed_runbooks.py | Auto-registered: sre/seed_runbooks.py | --json | JSON |
