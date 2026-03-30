@@ -5347,29 +5347,35 @@ def init_db():
                 except Exception:
                     pass  # Column might already exist with different syntax
 
-        # Seed templates
+        # Seed templates (upsert — inserts new templates even if some already exist)
         cur = conn.cursor()
         cur.execute("SELECT COUNT(*) FROM nc_templates")
         count = cur.fetchone()[0]
-        if count == 0:
-            for t in TEMPLATES:
+        added = 0
+        for t in TEMPLATES:
+            cur.execute("SELECT 1 FROM nc_templates WHERE id=?", (t["id"],))
+            if not cur.fetchone():
                 conn.execute(
-                    "INSERT OR IGNORE INTO nc_templates (id, name, category, description, graph_json, tags) "
+                    "INSERT INTO nc_templates (id, name, category, description, graph_json, tags) "
                     "VALUES (?,?,?,?,?,?)",
                     (t["id"], t["name"], t["category"], t["description"],
                      t["graph_json"], t["tags"])
                 )
+                added += 1
+        if added:
             conn.commit()
-            print(f"[init_db] Seeded {len(TEMPLATES)} templates.")
+            print(f"[init_db] Seeded {added} new templates (total: {count + added}).")
         else:
-            print(f"[init_db] Templates already seeded ({count} rows).")
+            print(f"[init_db] All {count} templates up to date.")
 
-        # Seed enclave snippets
+        # Seed enclave snippets (upsert — inserts new snippets even if some already exist)
         snip_count = conn.execute("SELECT COUNT(*) FROM nc_enclave_snippets").fetchone()[0]
-        if snip_count == 0:
-            for s in ENCLAVE_SNIPPETS:
+        snip_added = 0
+        for s in ENCLAVE_SNIPPETS:
+            exists = conn.execute("SELECT 1 FROM nc_enclave_snippets WHERE id=?", (s["id"],)).fetchone()
+            if not exists:
                 conn.execute(
-                    "INSERT OR IGNORE INTO nc_enclave_snippets "
+                    "INSERT INTO nc_enclave_snippets "
                     "(id, name, category, description, classification_level, impact_level, "
                     " graph_json, stig_controls, tags) "
                     "VALUES (?,?,?,?,?,?,?,?,?)",
@@ -5377,10 +5383,12 @@ def init_db():
                      s["classification_level"], s["impact_level"],
                      s["graph_json"], s["stig_controls"], s["tags"])
                 )
+                snip_added += 1
+        if snip_added:
             conn.commit()
-            print(f"[init_db] Seeded {len(ENCLAVE_SNIPPETS)} enclave snippets.")
+            print(f"[init_db] Seeded {snip_added} new enclave snippets (total: {snip_count + snip_added}).")
         else:
-            print(f"[init_db] Enclave snippets already seeded ({snip_count} rows).")
+            print(f"[init_db] All {snip_count} enclave snippets up to date.")
 
         # Seed default admin user (password: admin — MUST change on first login)
         import hashlib
