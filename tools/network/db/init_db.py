@@ -4116,6 +4116,242 @@ TEMPLATES = [
             ]
         }),
     },
+    # 43 ─ SCCA IL6 SECRET Multi-Enclave
+    {
+        "id": "tpl-scca-il6-secret",
+        "name": "SCCA IL6 SECRET Multi-Enclave",
+        "category": "SCCA / Landing Zone",
+        "description": "IL6 SECRET SCCA architecture for AWS Secret Region or Azure Government Secret. Air-gapped with no internet gateway, NSA Type 1 encryption, Cross-Domain Solution (CDS) for classification boundaries, CloudHSM/mHSM for FIPS 140-2 L3, HBSS endpoint security, and SIPRNet demarcation. All traffic encrypted with Type 1 encryptors.",
+        "tags": json.dumps(["scca", "il6", "secret", "air-gapped", "type-1", "cds", "cross-domain", "cloudhsm", "hbss", "siprnet"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                # Classification Boundary (left column)
+                _node("sipr-border", "SIPRNet Border Router", "router", 60, 60,
+                      {"config": {"asn": "65500", "bfd_enabled": True}}),
+                _node("type1-a", "Type 1 Encryptor (KG-175D)", "encryptor", 60, 180,
+                      {"config": {"encryption": "NSA Type 1", "speed_mbps": 10000}}),
+                _node("cds", "Cross-Domain Solution", "firewall", 60, 300,
+                      {"config": {"classification_high": "SECRET", "classification_low": "CUI"}}),
+                _node("guard", "Content Guard / Filter", "firewall", 60, 420),
+                # VDSS Enclave (center-left)
+                _node("vdss-vpc", "VDSS Enclave (SECRET)", "aws-vpc", 300, 60,
+                      {"config": {"cidr": "10.100.0.0/16", "flow_logs_enabled": True, "classification": "SECRET"}}),
+                _node("nfw", "Network Firewall (IDS/IPS)", "aws-nfw", 300, 180),
+                _node("waf", "WAF (L7 Inspection)", "aws-waf", 300, 300),
+                _node("gwlb", "Gateway LB (Inline)", "aws-gwlb", 300, 420),
+                # VDMS Enclave (center)
+                _node("vdms-vpc", "VDMS Enclave (SECRET)", "aws-vpc", 540, 60,
+                      {"config": {"cidr": "10.101.0.0/16", "flow_logs_enabled": True}}),
+                _node("hsm", "CloudHSM (FIPS 140-2 L3)", "aws-kms", 540, 180,
+                      {"config": {"fips_level": "140-2 L3", "dedicated": True}}),
+                _node("ad", "Managed AD (CAC/PIV)", "aws-ad", 540, 300),
+                _node("ssm", "Systems Manager (HBSS)", "aws-ssm", 540, 420),
+                _node("ct", "CloudTrail (Org Trail)", "aws-ct", 540, 540),
+                # Hub
+                _node("tgw", "Transit Gateway (Isolated)", "aws-tgw", 420, 660),
+                # Mission Enclave (center-right)
+                _node("mission-vpc", "Mission VPC (SECRET)", "aws-vpc", 660, 60,
+                      {"config": {"cidr": "10.200.0.0/16", "flow_logs_enabled": True, "classification": "SECRET"}}),
+                _node("app-sub", "App Subnet (Private)", "aws-subnet", 660, 180),
+                _node("data-sub", "Data Subnet (Isolated)", "aws-subnet", 660, 300),
+                _node("ep-ssm", "VPC Endpoint (SSM)", "aws-gw-ep", 660, 420),
+                _node("ep-kms", "VPC Endpoint (KMS)", "aws-gw-ep", 660, 540),
+                # Log Archive (right)
+                _node("log-vpc", "Log Archive (Immutable)", "aws-vpc", 840, 60,
+                      {"config": {"cidr": "10.250.0.0/16"}}),
+                _node("s3-logs", "S3 Log Bucket (WORM)", "server", 840, 180,
+                      {"config": {"mfa_delete": True, "versioning": True, "object_lock": True}}),
+                _node("guardduty", "GuardDuty (SECRET)", "aws-guardduty", 840, 300),
+                _node("sechub", "Security Hub", "aws-securityhub", 840, 420),
+                # On-prem
+                _node("onprem-fw", "On-Prem SECRET FW", "firewall", 60, 660),
+            ],
+            "edges": [
+                # Classification boundary chain
+                _edge("sipr-border", "type1-a", "Encrypted", "Type 1"),
+                _edge("type1-a", "cds", "SECRET→CUI boundary", ""),
+                _edge("cds", "guard", "Content filter", ""),
+                _edge("guard", "vdss-vpc", "Inspected", ""),
+                # VDSS inspection chain
+                _edge("vdss-vpc", "nfw", "Inspection", ""),
+                _edge("nfw", "waf", "L7 Filter", ""),
+                _edge("waf", "gwlb", "Inline", ""),
+                # VDMS management
+                _edge("vdms-vpc", "hsm", "Key Mgmt", ""),
+                _edge("vdms-vpc", "ad", "Directory", "LDAPS"),
+                _edge("vdms-vpc", "ssm", "Endpoint Mgmt", ""),
+                _edge("vdms-vpc", "ct", "Audit Trail", ""),
+                # TGW hub connections
+                _edge("tgw", "vdss-vpc", "Isolated Attach", ""),
+                _edge("tgw", "vdms-vpc", "Isolated Attach", ""),
+                _edge("tgw", "mission-vpc", "Isolated Attach", ""),
+                _edge("tgw", "log-vpc", "Isolated Attach", ""),
+                _edge("gwlb", "tgw", "Inspection Route", ""),
+                # Mission VPC internals
+                _edge("mission-vpc", "app-sub", "", ""),
+                _edge("mission-vpc", "data-sub", "", ""),
+                _edge("mission-vpc", "ep-ssm", "PrivateLink", ""),
+                _edge("mission-vpc", "ep-kms", "PrivateLink", ""),
+                # Log Archive
+                _edge("log-vpc", "s3-logs", "WORM Logs", ""),
+                _edge("log-vpc", "guardduty", "Threat Intel", ""),
+                _edge("log-vpc", "sechub", "Findings", ""),
+                # On-prem connectivity
+                _edge("sipr-border", "onprem-fw", "10GbE", "OSPF"),
+                _edge("onprem-fw", "tgw", "IPSec", "IPSec"),
+            ]
+        }),
+    },
+    # 44 ─ DISA BCAP / CNAP Reference Design
+    {
+        "id": "tpl-scca-bcap-cnap",
+        "name": "DISA BCAP / CNAP Reference Design",
+        "category": "SCCA / Landing Zone",
+        "description": "DISA Cloud Native Access Point (CNAP) reference design — boundary protection between DISN and commercial cloud. Shows BCAP firewall chain, IDS/IPS sensors, traffic aggregation, multi-CSP gateway, and TCCM credential validation at boundary. Based on DISA SCCA FRD §2.1.1.",
+        "tags": json.dumps(["scca", "bcap", "cnap", "disa", "disn", "boundary", "ids-ips", "tccm", "multi-csp", "colocation"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                # DISN Side
+                _node("disn-rtr", "DISN Router", "router", 60, 200,
+                      {"config": {"asn": "65000", "network": "DISN"}}),
+                _node("disn-fw", "DISN Perimeter FW", "firewall", 60, 350),
+                # BCAP Zone
+                _node("bcap-fw-ext", "BCAP External Firewall", "firewall", 300, 100),
+                _node("bcap-ids", "BCAP IDS/IPS Sensor", "firewall", 300, 250,
+                      {"config": {"mode": "inline", "signatures": "DoD"}}),
+                _node("bcap-proxy", "Reverse Proxy / TLS Termination", "load-balancer", 300, 400),
+                _node("bcap-fw-int", "BCAP Internal Firewall", "firewall", 300, 550),
+                _node("tccm-gate", "TCCM Credential Gate", "aws-idc", 300, 700,
+                      {"config": {"purpose": "Validate cloud credentials before DISN connectivity"}}),
+                _node("bcap-log", "BCAP Syslog Collector", "server", 480, 100),
+                _node("bcap-mgmt", "BCAP Management (OOB)", "server", 480, 250),
+                # Cloud Gateway
+                _node("dx-a", "DX / ER Circuit A", "aws-dx", 600, 150,
+                      {"config": {"bandwidth": "10G", "bfd_enabled": True}}),
+                _node("dx-b", "DX / ER Circuit B (Diverse)", "aws-dx", 600, 350,
+                      {"config": {"bandwidth": "10G", "bfd_enabled": True, "location": "Diverse Path"}}),
+                _node("vpn-backup", "VPN Backup (IPSec)", "aws-vpn", 600, 550),
+                # Cloud Side
+                _node("tgw-aws", "AWS TGW (GovCloud)", "aws-tgw", 800, 150),
+                _node("vwan-az", "Azure vWAN (Gov)", "az-vwan", 800, 350),
+                _node("drg-oci", "OCI DRG (Gov)", "oci-drg", 800, 550),
+                # Colocation
+                _node("mmr", "Meet-Me Room (Equinix)", "meet-me-room", 480, 400),
+                _node("xconn-a", "Cross-Connect A", "cross-connect", 480, 550),
+                _node("xconn-b", "Cross-Connect B", "cross-connect", 480, 700),
+                # Monitoring
+                _node("siem", "DoD SIEM (Splunk/ArcSight)", "server", 800, 700),
+            ],
+            "edges": [
+                # DISN to BCAP
+                _edge("disn-rtr", "disn-fw", "10GbE", "OSPF"),
+                _edge("disn-fw", "bcap-fw-ext", "Perimeter", ""),
+                # BCAP inspection chain
+                _edge("bcap-fw-ext", "bcap-ids", "Inline Inspection", ""),
+                _edge("bcap-ids", "bcap-proxy", "TLS Termination", ""),
+                _edge("bcap-proxy", "bcap-fw-int", "Inspected", ""),
+                _edge("bcap-fw-int", "tccm-gate", "Credential Check", ""),
+                # BCAP logging
+                _edge("bcap-fw-ext", "bcap-log", "Syslog", ""),
+                _edge("bcap-ids", "bcap-log", "Alert Feed", ""),
+                _edge("bcap-log", "siem", "SIEM Feed", "TLS"),
+                _edge("bcap-mgmt", "bcap-ids", "OOB Mgmt", "SSH"),
+                # TCCM to colocation
+                _edge("tccm-gate", "mmr", "Authorized", ""),
+                _edge("mmr", "xconn-a", "", ""),
+                _edge("mmr", "xconn-b", "", ""),
+                # Cross-connects to cloud
+                _edge("xconn-a", "dx-a", "SMF", ""),
+                _edge("xconn-b", "dx-b", "SMF", ""),
+                _edge("tccm-gate", "vpn-backup", "IPSec Backup", "IPSec"),
+                # Cloud side
+                _edge("dx-a", "tgw-aws", "Transit VIF", "BGP"),
+                _edge("dx-b", "vwan-az", "ER Circuit", "BGP"),
+                _edge("vpn-backup", "drg-oci", "IPSec", "IPSec"),
+            ]
+        }),
+    },
+    # 45 ─ Multi-Cloud SCCA (AWS + Azure)
+    {
+        "id": "tpl-scca-multicloud-aws-azure",
+        "name": "Multi-Cloud SCCA (AWS + Azure)",
+        "category": "SCCA / Landing Zone",
+        "description": "Coordinated SCCA deployment spanning AWS GovCloud and Azure Government. Shared BCAP boundary, unified TCCM credential federation (IAM Identity Center ↔ Entra ID), cross-CSP logging aggregation, and dual VDSS stacks with synchronized security policies. Connected via Megaport/Equinix Fabric cloud peering.",
+        "tags": json.dumps(["scca", "multi-cloud", "aws", "azure", "govcloud", "government", "megaport", "federation", "vdss", "vdms", "tccm"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                # AWS Side
+                _node("aws-tgw", "AWS Transit Gateway", "aws-tgw", 60, 100),
+                _node("aws-nfw", "AWS Network Firewall", "aws-nfw", 60, 250),
+                _node("aws-waf", "AWS WAF", "aws-waf", 60, 400),
+                _node("aws-gd", "GuardDuty", "aws-guardduty", 240, 100),
+                _node("aws-sh", "Security Hub", "aws-securityhub", 240, 250),
+                _node("aws-ct", "CloudTrail", "aws-ct", 240, 400),
+                _node("aws-kms", "KMS (GovCloud)", "aws-kms", 240, 550),
+                _node("aws-idc", "IAM Identity Center", "aws-idc", 60, 550),
+                _node("aws-mission", "AWS Mission VPC", "aws-vpc", 360, 100,
+                      {"config": {"cidr": "10.1.0.0/16", "flow_logs_enabled": True}}),
+                _node("aws-app", "App Subnet", "aws-subnet", 360, 250),
+                _node("aws-data", "Data Subnet", "aws-subnet", 360, 400),
+                # Cloud Peering Bridge (center)
+                _node("peering", "Cloud Peering (Megaport)", "cloud-peering", 480, 300,
+                      {"config": {"provider": "Megaport", "bandwidth": "10G"}}),
+                _node("unified-log", "Unified Log Aggregator", "server", 480, 500,
+                      {"config": {"purpose": "Cross-CSP SIEM correlation"}}),
+                # Azure Side
+                _node("az-vwan", "Azure Virtual WAN", "az-vwan", 900, 100),
+                _node("az-fw", "Azure Firewall Premium", "az-fw", 900, 250),
+                _node("az-appgw", "App Gateway WAF", "az-appgw", 900, 400),
+                _node("az-def", "Defender for Cloud", "az-defender", 720, 100),
+                _node("az-sen", "Sentinel", "az-sentinel", 720, 250),
+                _node("az-mon", "Monitor", "az-monitor", 720, 400),
+                _node("az-kv", "Key Vault (Gov)", "az-keyvault", 720, 550),
+                _node("az-entra", "Entra ID (Federation)", "az-entra", 900, 550),
+                _node("az-mission", "Azure Mission VNet", "az-vnet", 600, 100,
+                      {"config": {"cidr": "10.2.0.0/16", "flow_logs_enabled": True}}),
+                _node("az-app", "App Subnet", "az-subnet", 600, 250),
+                _node("az-data", "Data Subnet", "az-subnet", 600, 400),
+                # BCAP (bottom center)
+                _node("bcap", "DISA BCAP (Shared)", "firewall", 480, 700,
+                      {"config": {"purpose": "Shared DISN boundary for both CSPs"}}),
+            ],
+            "edges": [
+                # AWS internal
+                _edge("aws-tgw", "aws-nfw", "Inspection", ""),
+                _edge("aws-nfw", "aws-waf", "L7 Filter", ""),
+                _edge("aws-tgw", "aws-mission", "TGW Attach", ""),
+                _edge("aws-mission", "aws-app", "", ""),
+                _edge("aws-mission", "aws-data", "", ""),
+                # AWS security
+                _edge("aws-tgw", "aws-gd", "Threat Intel", ""),
+                _edge("aws-tgw", "aws-sh", "Findings", ""),
+                _edge("aws-sh", "aws-ct", "Trail Logs", ""),
+                _edge("aws-mission", "aws-kms", "Encryption Keys", ""),
+                # Azure internal
+                _edge("az-vwan", "az-fw", "Inspection", ""),
+                _edge("az-fw", "az-appgw", "L7 Filter", ""),
+                _edge("az-vwan", "az-mission", "VNet Attach", ""),
+                _edge("az-mission", "az-app", "", ""),
+                _edge("az-mission", "az-data", "", ""),
+                # Azure security
+                _edge("az-vwan", "az-def", "Threat Intel", ""),
+                _edge("az-def", "az-sen", "Alerts", ""),
+                _edge("az-sen", "az-mon", "Log Analytics", ""),
+                _edge("az-mission", "az-kv", "Encryption Keys", ""),
+                # Bridge — Cloud Peering
+                _edge("aws-tgw", "peering", "Cloud Peering", "BGP"),
+                _edge("peering", "az-vwan", "Cloud Peering", "BGP"),
+                # Federation
+                _edge("aws-idc", "az-entra", "SAML Federation", "SAML"),
+                # Logging
+                _edge("aws-ct", "unified-log", "Log Feed", "TLS"),
+                _edge("az-mon", "unified-log", "Log Feed", "TLS"),
+                # BCAP
+                _edge("bcap", "aws-tgw", "DX", "BGP"),
+                _edge("bcap", "az-vwan", "ER", "BGP"),
+            ]
+        }),
+    },
 ]
 
 
@@ -4526,6 +4762,275 @@ ENCLAVE_SNIPPETS = [
                 _edge("sl-siem", "sl-alerts", "Triggered Alerts", ""),
                 _edge("sl-siem", "sl-archive", "Raw Log Archive", ""),
                 _edge("sl-trail", "sl-archive", "Trail Backup", ""),
+            ],
+        }),
+    },
+    # 8 ─ SCCA Mission Spoke VPC
+    {
+        "id": "snip-scca-mission-spoke",
+        "name": "SCCA Mission Spoke VPC",
+        "category": "SCCA",
+        "description": (
+            "Reusable SCCA mission owner spoke VPC/VNet/VCN pattern. "
+            "Private-only subnets (no IGW), TGW/DRG attachment routing all egress "
+            "through VDSS inspection, VPC endpoints for AWS services, flow logs enabled. "
+            "Drag onto any SCCA landing zone template and connect to the transit hub."
+        ),
+        "classification_level": "CUI",
+        "impact_level": "IL5",
+        "stig_controls": json.dumps([
+            "SC-7", "SC-7(3)", "AC-4", "AU-2", "AU-12", "SC-8",
+        ]),
+        "tags": json.dumps(["scca", "mission", "spoke", "vpc", "reusable", "no-igw", "tgw-attachment"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                _node("mvpc", "Mission VPC", "aws-vpc", 200, 60, {
+                    "config": {
+                        "cidr": "10.x.0.0/16",
+                        "flow_logs_enabled": True,
+                        "internet_gateway": False,
+                    }
+                }),
+                _node("app", "App Subnet (Private)", "aws-subnet", 100, 200, {
+                    "config": {"tier": "application"}
+                }),
+                _node("data", "Data Subnet (Isolated)", "aws-subnet", 300, 200, {
+                    "config": {"tier": "database"}
+                }),
+                _node("ep-s3", "VPC Endpoint (S3)", "aws-gw-ep", 100, 340),
+                _node("ep-ssm", "VPC Endpoint (SSM)", "aws-gw-ep", 300, 340),
+                _node("tgw-att", "TGW Attachment", "aws-tgw", 200, 460, {
+                    "config": {
+                        "note": "Connect to SCCA Transit Gateway; default route 0.0.0.0/0 \u2192 TGW",
+                    }
+                }),
+                _node("flowlog", "VPC Flow Logs", "aws-flowlogs", 400, 60),
+            ],
+            "edges": [
+                _edge("mvpc", "app", "Subnet", ""),
+                _edge("mvpc", "data", "Subnet", ""),
+                _edge("mvpc", "ep-s3", "Endpoint", ""),
+                _edge("mvpc", "ep-ssm", "Endpoint", ""),
+                _edge("mvpc", "tgw-att", "TGW Attach", ""),
+                _edge("mvpc", "flowlog", "Logging", ""),
+                _edge("app", "data", "App\u2192DB", ""),
+            ],
+        }),
+    },
+    # 9 ─ SCCA VDSS Security Stack
+    {
+        "id": "snip-scca-vdss-stack",
+        "name": "SCCA VDSS Security Stack",
+        "category": "SCCA",
+        "description": (
+            "Virtual Datacenter Security Stack (VDSS) building block per DISA FRD \u00a72.1.2. "
+            "Includes network firewall (IDS/IPS), WAF (L7), DDoS protection, "
+            "Gateway LB for inline inspection, and flow logs. "
+            "Satisfies FRD requirements 2.1.2.1 through 2.1.2.18."
+        ),
+        "classification_level": "CUI",
+        "impact_level": "IL5",
+        "stig_controls": json.dumps([
+            "SC-7", "SC-7(3)", "SC-5", "SI-3", "SI-4", "AU-2", "AU-12", "SC-8",
+        ]),
+        "tags": json.dumps(["scca", "vdss", "firewall", "ids-ips", "waf", "ddos", "ppsm", "frd-2.1.2"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                _node("vdss-vpc", "VDSS VPC", "aws-vpc", 200, 60, {
+                    "config": {
+                        "cidr": "10.100.0.0/16",
+                        "flow_logs_enabled": True,
+                        "purpose": "VDSS",
+                    }
+                }),
+                _node("nfw", "Network Firewall (IDS/IPS)", "aws-nfw", 100, 200, {
+                    "config": {
+                        "inspection": "stateful",
+                        "tls_inspection": True,
+                        "ppsm": True,
+                    }
+                }),
+                _node("waf", "WAF (HTTP Inspection)", "aws-waf", 300, 200, {
+                    "config": {
+                        "managed_rules": [
+                            "AWSManagedRulesCommonRuleSet",
+                            "AWSManagedRulesKnownBadInputsRuleSet",
+                        ],
+                    }
+                }),
+                _node("shield", "Shield Advanced", "aws-shield", 200, 340),
+                _node("gwlb", "Gateway LB (Inline)", "aws-gwlb", 200, 460, {
+                    "config": {
+                        "purpose": "Transparent bump-in-wire for third-party appliances",
+                    }
+                }),
+                _node("flowlog", "VPC Flow Logs", "aws-flowlogs", 400, 60),
+                _node("tgw-att", "TGW Attachment", "aws-tgw", 200, 580, {
+                    "config": {
+                        "note": "All mission VPC traffic routes through VDSS for inspection",
+                    }
+                }),
+                _node("pcap", "Packet Capture (S3)", "server", 400, 200, {
+                    "config": {
+                        "purpose": "Full packet capture per FRD \u00a72.1.2.16",
+                    }
+                }),
+            ],
+            "edges": [
+                _edge("vdss-vpc", "nfw", "Inspection", ""),
+                _edge("vdss-vpc", "waf", "L7", ""),
+                _edge("vdss-vpc", "shield", "DDoS", ""),
+                _edge("nfw", "gwlb", "Inline", ""),
+                _edge("waf", "gwlb", "Inline", ""),
+                _edge("gwlb", "tgw-att", "To Hub", ""),
+                _edge("vdss-vpc", "flowlog", "Logging", ""),
+                _edge("nfw", "pcap", "Capture", ""),
+            ],
+        }),
+    },
+    # 10 ─ SCCA VDMS Managed Services
+    {
+        "id": "snip-scca-vdms-services",
+        "name": "SCCA VDMS Managed Services",
+        "category": "SCCA",
+        "description": (
+            "Virtual Datacenter Managed Services (VDMS) building block per DISA FRD \u00a72.1.3. "
+            "Includes ACAS-equivalent scanning (Inspector), HBSS endpoint security (SSM), "
+            "identity/CAC auth (Managed AD), patch management, KMS, and centralized logging "
+            "(CloudTrail + Security Hub). Satisfies FRD requirements 2.1.3.1 through 2.1.3.9."
+        ),
+        "classification_level": "CUI",
+        "impact_level": "IL5",
+        "stig_controls": json.dumps([
+            "RA-5", "SI-2", "IA-2", "IA-5", "SC-12", "SC-13", "AU-2", "AU-12", "CM-6",
+        ]),
+        "tags": json.dumps(["scca", "vdms", "acas", "hbss", "cac-piv", "identity", "logging", "siem", "frd-2.1.3"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                _node("vdms-vpc", "VDMS VPC", "aws-vpc", 200, 60, {
+                    "config": {
+                        "cidr": "10.101.0.0/16",
+                        "flow_logs_enabled": True,
+                        "purpose": "VDMS",
+                    }
+                }),
+                _node("inspector", "Inspector (ACAS)", "aws-inspector", 60, 200, {
+                    "config": {
+                        "purpose": "Continuous vulnerability scanning per FRD \u00a72.1.3.1",
+                    }
+                }),
+                _node("ssm", "Systems Manager (HBSS)", "aws-ssm", 200, 200, {
+                    "config": {
+                        "purpose": "Endpoint security + patch management per FRD \u00a72.1.3.2/2.1.3.4",
+                    }
+                }),
+                _node("ad", "Managed AD (CAC/PIV)", "aws-ad", 340, 200, {
+                    "config": {
+                        "edition": "Enterprise",
+                        "mfa": "CAC/PIV",
+                        "purpose": "Identity per FRD \u00a72.1.3.3",
+                    }
+                }),
+                _node("kms", "KMS (FIPS 140-2)", "aws-kms", 60, 340, {
+                    "config": {
+                        "fips": "140-2",
+                        "purpose": "Key management per FRD \u00a72.1.2.13",
+                    }
+                }),
+                _node("ct", "CloudTrail (Org)", "aws-ct", 200, 340, {
+                    "config": {
+                        "purpose": "API audit logging per FRD \u00a72.1.3.7",
+                    }
+                }),
+                _node("sechub", "Security Hub (SIEM)", "aws-securityhub", 340, 340, {
+                    "config": {
+                        "standards": ["NIST-800-53-v5"],
+                        "purpose": "SIEM per FRD \u00a72.1.2.12",
+                    }
+                }),
+                _node("config", "AWS Config", "aws-config", 200, 460, {
+                    "config": {
+                        "purpose": "Compliance monitoring per FRD \u00a72.1.3.1",
+                    }
+                }),
+            ],
+            "edges": [
+                _edge("vdms-vpc", "inspector", "Scanning", ""),
+                _edge("vdms-vpc", "ssm", "Management", ""),
+                _edge("vdms-vpc", "ad", "Identity", ""),
+                _edge("vdms-vpc", "kms", "Keys", ""),
+                _edge("vdms-vpc", "ct", "Audit", ""),
+                _edge("vdms-vpc", "sechub", "SIEM", ""),
+                _edge("inspector", "sechub", "Findings", ""),
+                _edge("ssm", "sechub", "Compliance", ""),
+                _edge("ct", "sechub", "Events", ""),
+                _edge("sechub", "config", "Compliance", ""),
+            ],
+        }),
+    },
+    # 11 ─ SCCA TCCM Credential Management
+    {
+        "id": "snip-scca-tccm-credentials",
+        "name": "SCCA TCCM Credential Management",
+        "category": "SCCA",
+        "description": (
+            "Trusted Cloud Credential Manager (TCCM) building block per DISA FRD \u00a72.1.4. "
+            "Includes centralized IAM/SSO (IAM Identity Center), RBAC with least-privilege "
+            "permission sets, API audit trail (CloudTrail), credential rotation "
+            "(Secrets Manager), and break-glass emergency access. "
+            "Satisfies FRD requirements 2.1.4.1 through 2.1.4.6."
+        ),
+        "classification_level": "CUI",
+        "impact_level": "IL5",
+        "stig_controls": json.dumps([
+            "AC-2", "AC-6", "IA-2", "IA-5", "AU-2", "AU-12",
+        ]),
+        "tags": json.dumps(["scca", "tccm", "iam", "sso", "rbac", "credentials", "audit", "break-glass", "frd-2.1.4"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                _node("idc", "IAM Identity Center (SSO)", "aws-idc", 200, 60, {
+                    "config": {
+                        "purpose": "Centralized SSO/RBAC per FRD \u00a72.1.4.6",
+                        "mfa": "enforced",
+                    }
+                }),
+                _node("ad", "Directory Service (CAC)", "aws-ad", 60, 200, {
+                    "config": {
+                        "federation": "SAML 2.0",
+                        "purpose": "CAC/PIV authentication",
+                    }
+                }),
+                _node("ct", "CloudTrail (Audit)", "aws-ct", 340, 200, {
+                    "config": {
+                        "purpose": "Portal activity logging per FRD \u00a72.1.4.2",
+                        "org_trail": True,
+                    }
+                }),
+                _node("secrets", "Secrets Manager", "server", 60, 340, {
+                    "config": {
+                        "purpose": "Credential rotation per FRD \u00a72.1.4.5",
+                        "auto_rotate": True,
+                    }
+                }),
+                _node("breakglass", "Break-Glass Role", "server", 340, 340, {
+                    "config": {
+                        "purpose": "Emergency access per FRD \u00a72.1.4.6",
+                        "requires_approval": True,
+                    }
+                }),
+                _node("alerts", "CloudWatch Alerts", "server", 200, 460, {
+                    "config": {
+                        "purpose": "Forward activity alerts per FRD \u00a72.1.4.3",
+                    }
+                }),
+            ],
+            "edges": [
+                _edge("idc", "ad", "Federation", "SAML"),
+                _edge("idc", "ct", "Audit Trail", ""),
+                _edge("idc", "secrets", "Credential Mgmt", ""),
+                _edge("idc", "breakglass", "Emergency", ""),
+                _edge("ct", "alerts", "Alert Fwd", ""),
+                _edge("alerts", "idc", "Notification", ""),
             ],
         }),
     },
