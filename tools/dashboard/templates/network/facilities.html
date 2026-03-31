@@ -35,7 +35,7 @@
 <div id="rack-modal" class="modal" style="display:none;"><div class="modal-content"><h3>Add Rack</h3><form onsubmit="return addRack(event)"><div class="form-grid">
   <label>Facility <select name="facility_id" id="rack-fac-select"></select></label>
   <label>Rack Name <input name="rack_name" required placeholder="Row-A Rack-12"></label>
-  <label>Total RU <input name="total_ru" type="number" value="42"></label>
+  <label>Total RU <select name="total_ru"><option value="48">48U</option><option value="42" selected>42U</option><option value="40">40U</option><option value="24">24U</option><option value="12">12U</option></select></label>
   <label>Used RU <input name="used_ru" type="number" value="0"></label>
   <label>Max Power (kW) <input name="max_power_kw" type="number" step="0.1" value="5.0"></label>
   <label>Current Power (kW) <input name="current_power_kw" type="number" step="0.1" value="0"></label>

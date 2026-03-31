@@ -77,6 +77,17 @@
     <div class="panel-header"><h2 class="panel-title" id="findings-title">Findings</h2></div>
     <div id="findings-table"></div>
   </section>
+
+  <!-- Remediation Plan -->
+  <section class="panel panel-wide" id="remediation-section" style="display:none;">
+    <div class="panel-header">
+      <h2 class="panel-title">Remediation Plan</h2>
+      <span id="remediation-risk-badge" style="padding:2px 10px;border-radius:4px;font-size:0.75rem;font-weight:bold;"></span>
+    </div>
+    <div id="remediation-summary" style="padding:0.75rem 1rem;font-size:0.85rem;color:var(--text-dim);border-bottom:1px solid var(--border);"></div>
+    <div id="remediation-stats" class="stats-bar" style="padding:0.5rem 1rem;"></div>
+    <div id="remediation-phases" style="padding:0.5rem 1rem;"></div>
+  </section>
 </div>
 
 <!-- STIG Import Results (populated by JS) -->
@@ -236,9 +247,65 @@ function showResults(d) {
     document.getElementById('findings-table').innerHTML = '<p style="padding:1rem;color:#27ae60;font-weight:bold;">All checks passed — no findings.</p>';
   }
 
+  // Remediation plan
+  renderRemediationPlan(d.remediation_plan);
+
   // Render topology diagram with compliance coloring
   renderComplianceDiagram(d);
   document.getElementById('audit-results').scrollIntoView({behavior: 'smooth'});
+}
+
+function renderRemediationPlan(plan) {
+  const section = document.getElementById('remediation-section');
+  if (!plan || !plan.phases || !plan.phases.length) {
+    section.style.display = 'none';
+    return;
+  }
+  section.style.display = 'block';
+
+  // Risk badge
+  const badge = document.getElementById('remediation-risk-badge');
+  const riskColors = {CRITICAL:'#e74c3c', HIGH:'#f39c12', MODERATE:'#f1c40f', LOW:'#27ae60'};
+  badge.textContent = `Risk: ${plan.overall_risk}`;
+  badge.style.background = riskColors[plan.overall_risk] || '#888';
+  badge.style.color = plan.overall_risk === 'MODERATE' ? '#222' : '#fff';
+
+  // Summary
+  document.getElementById('remediation-summary').textContent = plan.summary;
+
+  // Stats bar
+  document.getElementById('remediation-stats').innerHTML = `
+    <div class="stat-card"><div class="stat-value">${plan.total_actions}</div><div class="stat-label">Total Actions</div></div>
+    <div class="stat-card"><div class="stat-value" style="color:#27ae60">${plan.auto_fixable}</div><div class="stat-label">Auto-Fixable</div></div>
+    <div class="stat-card"><div class="stat-value">${plan.estimated_effort}</div><div class="stat-label">Est. Effort</div></div>
+    <div class="stat-card"><div class="stat-value">${plan.phases.length}</div><div class="stat-label">Phases</div></div>
+  `;
+
+  // Phases
+  let html = '';
+  plan.phases.forEach(p => {
+    const priColor = p.priority === 'CRITICAL' ? '#e74c3c' : p.priority === 'HIGH' ? '#f39c12' : '#5dade2';
+    html += `<div style="margin-bottom:1rem;border:1px solid var(--border);border-radius:6px;overflow:hidden;">
+      <div style="padding:0.6rem 1rem;background:rgba(${p.priority==='CRITICAL'?'231,76,60':p.priority==='HIGH'?'243,156,18':'93,173,226'},0.12);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;">
+        <span style="font-weight:700;color:${priColor};">Phase ${p.phase}</span>
+        <span style="font-size:0.85rem;color:var(--text);">${p.name}</span>
+        <span style="margin-left:auto;font-size:0.75rem;color:var(--text-dim);">${p.actions.length} actions &middot; ~${p.total_effort_hours}h &middot; ${p.auto_fixable_count} auto-fixable</span>
+      </div>
+      <div style="font-size:0.8rem;color:var(--text-dim);padding:0.4rem 1rem;border-bottom:1px solid var(--border);">${p.description}</div>
+      <table class="data-table" style="margin:0;"><thead><tr><th style="width:100px;">Rule</th><th style="width:60px;">Sev</th><th>Remediation Step</th><th style="width:60px;">Effort</th><th style="width:50px;">Fix</th></tr></thead><tbody>`;
+    p.actions.forEach(a => {
+      const sevColor = a.severity === 'CAT1' ? '#e74c3c' : a.severity === 'CAT2' ? '#f39c12' : '#5dade2';
+      html += `<tr>
+        <td><strong>${a.rule_id}</strong><br><span style="font-size:0.7rem;color:var(--text-dim);">${a.title}</span></td>
+        <td><span style="color:${sevColor};font-weight:bold;">${a.severity}</span></td>
+        <td style="font-size:0.8rem;">${a.remediation_step}</td>
+        <td style="text-align:center;">${a.effort_hours}h</td>
+        <td>${a.auto_fixable ? '<button class="btn btn-primary" style="font-size:0.65rem;padding:1px 6px;" onclick="applyFixFromAudit(this,\'' + a.rule_id + '\')">Fix</button>' : '—'}</td>
+      </tr>`;
+    });
+    html += '</tbody></table></div>';
+  });
+  document.getElementById('remediation-phases').innerHTML = html;
 }
 
 function renderComplianceDiagram(d) {

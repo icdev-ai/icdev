@@ -589,6 +589,13 @@ def run_compliance_audit(topology_id: str, graph: dict, regimes: list,
             "score_pct": round(passed / max(total, 1) * 100, 1),
         }
 
+    cat1 = sum(1 for f in findings if f["severity"] == "CAT1")
+    cat2 = sum(1 for f in findings if f["severity"] == "CAT2")
+    cat3 = sum(1 for f in findings if f["severity"] == "CAT3")
+
+    # ── Remediation plan ─────────────────────────────────────────────────
+    remediation_plan = _build_remediation_plan(findings, scores, classification)
+
     return {
         "topology_id": topology_id,
         "classification": classification,
@@ -596,9 +603,160 @@ def run_compliance_audit(topology_id: str, graph: dict, regimes: list,
         "findings": findings,
         "scores": scores,
         "total_findings": len(findings),
-        "cat1_count": sum(1 for f in findings if f["severity"] == "CAT1"),
-        "cat2_count": sum(1 for f in findings if f["severity"] == "CAT2"),
-        "cat3_count": sum(1 for f in findings if f["severity"] == "CAT3"),
+        "cat1_count": cat1,
+        "cat2_count": cat2,
+        "cat3_count": cat3,
+        "remediation_plan": remediation_plan,
+    }
+
+
+def _build_remediation_plan(findings: list, scores: dict, classification: str) -> dict:
+    """Build a prioritized remediation plan from audit findings.
+
+    Groups findings by severity, assigns priority phases, estimates effort,
+    and generates actionable steps for each finding.
+
+    Returns:
+        Dict with phases, summary, estimated_effort, and overall_risk.
+    """
+    if not findings:
+        return {
+            "phases": [],
+            "summary": "No findings — topology is fully compliant.",
+            "estimated_effort": "None",
+            "overall_risk": "LOW",
+            "total_actions": 0,
+        }
+
+    # Effort estimates per fix action type (hours)
+    effort_map = {
+        "add_node": 2, "add_encryptor": 4, "add_firewall_inline": 4,
+        "add_redundant_link": 3, "add_diverse_path": 6,
+        "upgrade_encryptor": 8, "set_config": 1,
+    }
+
+    # Build prioritized phases
+    phase_1 = []  # CAT1 — immediate (0-48h)
+    phase_2 = []  # CAT2 — short-term (1-2 weeks)
+    phase_3 = []  # CAT3 — planned (30 days)
+
+    seen_rules = set()
+    for f in findings:
+        if f["rule_id"] in seen_rules:
+            continue
+        seen_rules.add(f["rule_id"])
+
+        fix = f.get("fix_action")
+        fix_type = fix.get("action") if fix else None
+        effort_h = effort_map.get(fix_type, 2)
+
+        action = {
+            "rule_id": f["rule_id"],
+            "title": f["title"],
+            "severity": f["severity"],
+            "description": f["description"],
+            "affected": f.get("affected_entity", ""),
+            "regimes": f.get("regimes", []),
+            "effort_hours": effort_h,
+            "auto_fixable": fix is not None,
+            "fix_action": fix_type,
+        }
+
+        # Generate human-readable remediation step
+        if fix_type == "add_node":
+            node_label = fix.get("label", "security device")
+            action["remediation_step"] = f"Add {node_label} to the topology and connect to the appropriate network segment."
+        elif fix_type == "add_encryptor":
+            action["remediation_step"] = "Deploy a FIPS 140-2 validated encryptor on the affected link. Verify encryption grade matches classification level."
+        elif fix_type == "add_firewall_inline":
+            action["remediation_step"] = "Insert a firewall between the WAN/internet boundary and internal network. Configure stateful inspection rules and IDS/IPS policies."
+        elif fix_type == "add_redundant_link":
+            action["remediation_step"] = "Add a redundant uplink from the affected switch to a second distribution/core switch for failover."
+        elif fix_type == "add_diverse_path":
+            action["remediation_step"] = "Provision a physically diverse circuit path through a different conduit or provider for geographic redundancy."
+        elif fix_type == "upgrade_encryptor":
+            action["remediation_step"] = "Replace or upgrade the encryptor to meet the required encryption grade for the current classification level."
+        elif fix_type == "set_config":
+            key = fix.get("key", "setting")
+            val = fix.get("value", "enabled")
+            action["remediation_step"] = f"Update configuration: set '{key}' to '{val}' on the affected device."
+        else:
+            action["remediation_step"] = f"Address finding: {f['description']}"
+
+        if f["severity"] == "CAT1":
+            phase_1.append(action)
+        elif f["severity"] == "CAT2":
+            phase_2.append(action)
+        else:
+            phase_3.append(action)
+
+    phases = []
+    if phase_1:
+        phases.append({
+            "phase": 1,
+            "name": "Immediate — Critical (0-48 hours)",
+            "priority": "CRITICAL",
+            "description": "CAT1 findings that deny or disrupt system capability. Must be resolved before ATO.",
+            "actions": phase_1,
+            "total_effort_hours": sum(a["effort_hours"] for a in phase_1),
+            "auto_fixable_count": sum(1 for a in phase_1 if a["auto_fixable"]),
+        })
+    if phase_2:
+        phases.append({
+            "phase": 2,
+            "name": "Short-Term — High (1-2 weeks)",
+            "priority": "HIGH",
+            "description": "CAT2 findings that degrade system capability. Should be resolved for full compliance.",
+            "actions": phase_2,
+            "total_effort_hours": sum(a["effort_hours"] for a in phase_2),
+            "auto_fixable_count": sum(1 for a in phase_2 if a["auto_fixable"]),
+        })
+    if phase_3:
+        phases.append({
+            "phase": 3,
+            "name": "Planned — Medium (30 days)",
+            "priority": "MEDIUM",
+            "description": "CAT3 findings — minor issues. Can be tracked in POAM for next review cycle.",
+            "actions": phase_3,
+            "total_effort_hours": sum(a["effort_hours"] for a in phase_3),
+            "auto_fixable_count": sum(1 for a in phase_3 if a["auto_fixable"]),
+        })
+
+    total_effort = sum(p["total_effort_hours"] for p in phases)
+    total_actions = sum(len(p["actions"]) for p in phases)
+    auto_fixable = sum(p["auto_fixable_count"] for p in phases)
+
+    # Overall risk assessment
+    lowest_score = min((s["score_pct"] for s in scores.values()), default=100)
+    cat1_count = len(phase_1)
+    if cat1_count >= 3 or lowest_score < 30:
+        risk = "CRITICAL"
+    elif cat1_count >= 1 or lowest_score < 50:
+        risk = "HIGH"
+    elif lowest_score < 70:
+        risk = "MODERATE"
+    else:
+        risk = "LOW"
+
+    # Summary text
+    summary_parts = []
+    if phase_1:
+        summary_parts.append(f"{len(phase_1)} critical finding{'s' if len(phase_1) != 1 else ''} requiring immediate attention")
+    if phase_2:
+        summary_parts.append(f"{len(phase_2)} high-priority finding{'s' if len(phase_2) != 1 else ''} for short-term resolution")
+    if phase_3:
+        summary_parts.append(f"{len(phase_3)} medium finding{'s' if len(phase_3) != 1 else ''} for planned remediation")
+    summary = ". ".join(summary_parts) + "."
+    if auto_fixable:
+        summary += f" {auto_fixable} of {total_actions} can be auto-fixed with one click."
+
+    return {
+        "phases": phases,
+        "summary": summary,
+        "estimated_effort": f"{total_effort} hours" if total_effort < 40 else f"{round(total_effort / 8)} days",
+        "overall_risk": risk,
+        "total_actions": total_actions,
+        "auto_fixable": auto_fixable,
     }
 
 
