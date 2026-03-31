@@ -1588,3 +1588,9 @@
 | Antipattern Detector | tools\pipeline\antipattern_detector.py | Auto-registered: pipeline/antipattern_detector.py | --json | JSON |
 | Iac Validator | tools\pipeline\iac_validator.py | Auto-registered: pipeline/iac_validator.py | --json | JSON |
 | Seed Runbooks | tools\sre\seed_runbooks.py | Auto-registered: sre/seed_runbooks.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Security Engine | tools\security_canvas\security_engine.py | Auto-registered: security_canvas/security_engine.py | --json | JSON |

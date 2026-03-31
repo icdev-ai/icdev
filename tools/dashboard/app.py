@@ -116,6 +116,15 @@ if _PIPELINE_ENABLED:
         _HAS_PIPELINE = True
     except ImportError:
         _HAS_PIPELINE = False
+# Security Design Canvas: feature-flagged, air-gap compatible
+_SECURITY_CANVAS_ENABLED = os.environ.get("ICDEV_SECURITY_ENABLED", "true").lower() in ("true", "1", "yes")
+_HAS_SECURITY_CANVAS = False
+if _SECURITY_CANVAS_ENABLED:
+    try:
+        from tools.security_canvas.blueprint import create_security_blueprint
+        _HAS_SECURITY_CANVAS = True
+    except ImportError:
+        _HAS_SECURITY_CANVAS = False
 # D-CHILD-6: GovProposal/CPMP/GovCon conditionally loaded
 _GOVCON_ENABLED = os.environ.get("ICDEV_GOVCON_ENABLED", "true").lower() == "true"
 _HAS_GOVCON = False
@@ -807,6 +816,7 @@ def create_app() -> Flask:
             "govcon_enabled": _HAS_GOVCON and not _AIRGAP_MODE,
             "network_enabled": _HAS_NETWORK,
             "pipeline_enabled": _HAS_PIPELINE,
+            "security_canvas_enabled": _HAS_SECURITY_CANVAS,
             "airgap_mode": _AIRGAP_MODE,
             "route_module_map": _route_map,
         }
@@ -924,6 +934,16 @@ def create_app() -> Flask:
                 app.logger.info("Pipeline Design Canvas registered at /devops/")
         except Exception as exc:
             app.logger.warning("Pipeline Design Canvas failed to register: %s", exc)
+
+    # ---- Security Design Canvas Blueprint ----
+    if _HAS_SECURITY_CANVAS:
+        try:
+            sc_bp = create_security_blueprint()
+            if sc_bp:
+                app.register_blueprint(sc_bp, url_prefix="/security")
+                app.logger.info("Security Design Canvas registered at /security/")
+        except Exception as exc:
+            app.logger.warning("Security Design Canvas failed to register: %s", exc)
 
     # ---- Convenience JSON routes that match the spec ----
 
