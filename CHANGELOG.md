@@ -6,6 +6,22 @@ All notable changes to ICDEV™ are documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.2.8] - 2026-03-31
+
+### Added
+- **Network Design Canvas** — ACAS/Nessus vulnerability scan overlay with host-to-node matching and severity heat maps
+- **Network Design Canvas** — Natural language topology queries powered by deterministic graph algorithms (NetworkX) with local LLM fallback
+- **Network Design Canvas** — Cloud architecture diagram generation for all 6 CSPs
+- **Network Design Canvas** — Compliance audit page with per-device STIG tracking and exportable checklists
+- **Network Design Canvas** — 1,000+ device types, protocols, and interface constants
+- **Network Design Canvas** — Enhanced inventory export (CSV, JSON, YAML) with advanced filtering
+- **IBM Cloud IaC** — New Terraform generator for IBM Cloud (VPC, IKS, KMS, COS, LogDNA, SysDig)
+- **Azure IaC** — Major expansion: AKS, Key Vault, Front Door, Application Gateway, NSG rules
+- **GCP IaC** — Major expansion: GKE, Cloud KMS, Cloud Armor, VPC Service Controls
+- **OCI IaC** — Major expansion: OKE, Vault, WAF, Network Security Groups, Bastion
+- **SRE Operations** — Dashboard, runbook library, incident tracking, toil budgets, SLO monitoring
+- **Pipeline Canvas** — Visual CI/CD pipeline designer with drag-and-drop stages and YAML export
+
 ## [Unreleased]
 
 ### Added

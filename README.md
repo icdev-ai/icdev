@@ -2,7 +2,7 @@
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License">
   <img src="https://img.shields.io/badge/python-3.9%2B-brightgreen" alt="Python 3.9+">
   <img src="https://img.shields.io/badge/compliance%20frameworks-42-orange" alt="Compliance Frameworks">
-  <img src="https://img.shields.io/badge/tools-500%2B-blueviolet" alt="Tools">
+  <img src="https://img.shields.io/badge/tools-530%2B-blueviolet" alt="Tools">
   <img src="https://img.shields.io/badge/agents-15-red" alt="Agents">
   <img src="https://img.shields.io/badge/languages-6-green" alt="Languages">
 </p>
@@ -564,7 +564,7 @@ The bottom line: **you don't need the original developers**. You don't need a te
 | **IBM** | Cloud for Government | watsonx.ai (Granite, Llama) |
 | **Local** | Air-Gapped | Ollama (Llama, Mistral, CodeGemma) |
 
-Generated applications connect to 100+ cloud-provider MCP servers automatically based on target CSP.
+All 6 providers have full **Infrastructure-as-Code generators** — Terraform modules with VPC/VNet/VCN networking, IAM, KMS encryption, container orchestration (EKS/AKS/GKE/OKE/IKS), and compliance-hardened defaults per cloud. Generated applications connect to 100+ cloud-provider MCP servers automatically based on target CSP.
 
 ---
 
@@ -648,6 +648,11 @@ python tools/dashboard/app.py
 | `/govcon` | GovCon Intelligence: SAM.gov scanning, pipeline status, domain distribution |
 | `/govcon/requirements` | Requirement pattern analysis: frequency, domain heatmap, trend detection |
 | `/govcon/capabilities` | ICDEV™ capability coverage: L/M/N grading, gaps, enhancement recommendations |
+| `/network/canvas` | Network Design Canvas: topology builder, drag-and-drop, cloud architecture diagrams |
+| `/network/compliance` | Network compliance audit: STIG findings, ACAS/Nessus vulnerability overlay, heat maps |
+| `/network/facilities` | Facilities management: rack layouts, power/cooling, cable tracking |
+| `/sre` | SRE Operations: runbook library, incident tracking, toil budgets, SLO monitoring |
+| `/pipeline` | Pipeline Canvas: visual CI/CD pipeline design with drag-and-drop stages |
 
 Auth: per-user API keys (SHA-256 hashed), 6 RBAC roles (admin, pm, developer, isso, co, cor). Optional BYOK (bring-your-own LLM keys) with AES-256 encryption.
 
@@ -752,6 +757,10 @@ icdev/
 │   ├── innovation/       # Autonomous self-improvement engine
 │   ├── creative/         # Customer-centric feature discovery
 │   ├── govcon/           # GovCon Intelligence — SAM.gov capture pipeline
+│   ├── network/          # Network Design Canvas — topology, ACAS/Nessus overlay, NL queries, cloud arch
+│   ├── infra/            # IaC generators — Terraform for AWS, Azure, GCP, OCI, IBM Cloud
+│   ├── sre/              # SRE Operations — runbooks, incident tracking, toil budgets, SLO monitoring
+│   ├── pipeline/         # Pipeline Canvas — visual CI/CD pipeline design
 │   └── ...               # 30+ more specialized categories
 ├── args/                 # 30+ YAML/JSON configuration files
 ├── context/              # 42 compliance catalogs, language profiles
@@ -763,6 +772,46 @@ icdev/
 ├── .claude/commands/     # 38 Claude Code slash commands
 └── CLAUDE.md             # Comprehensive architecture documentation
 ```
+
+---
+
+## Network Design Canvas
+
+Interactive topology builder for designing, documenting, and auditing network architectures — from rack-level facilities to cloud-scale deployments.
+
+| Capability | Description |
+|------------|-------------|
+| **Topology Builder** | Drag-and-drop canvas with 200+ device types (routers, switches, firewalls, servers, IoT, OT/ICS) and automatic link routing |
+| **Cloud Architecture** | Generate cloud diagrams for all 6 CSPs — VPC/VNet/VCN, subnets, security groups, load balancers, managed services |
+| **ACAS/Nessus Overlay** | Import `.nessus` scan files, auto-match hosts to topology nodes, render vulnerability heat maps with severity badges |
+| **Natural Language Queries** | Ask plain-English questions about any topology ("What happens if Core-Switch goes down?", "Show all paths between A and B") — powered by deterministic graph algorithms with local LLM fallback |
+| **STIG Compliance Audit** | Per-device STIG finding tracking, CAT I/II/III severity, audit history, exportable checklists |
+| **Inventory Export** | Export device inventory to CSV, JSON, or YAML with filtering by type, location, STIG status |
+| **Facilities Management** | Rack elevation diagrams, power/cooling tracking, cable management |
+
+Air-gap safe — all JavaScript vendored locally (JointJS, D3, Backbone), zero CDN dependencies.
+
+---
+
+## SRE Operations
+
+Site Reliability Engineering dashboard for managing operational excellence:
+
+- **Runbook Library** — searchable runbook catalog with step-by-step procedures, linked to services and alerts
+- **Incident Tracking** — incident lifecycle from detection to postmortem, with timeline and impact analysis
+- **Toil Budgets** — track and reduce toil with per-team budgets and automation ROI tracking
+- **SLO Monitoring** — service level objective tracking with error budget burn-rate alerts
+
+---
+
+## Pipeline Canvas
+
+Visual CI/CD pipeline design tool with drag-and-drop stage composition:
+
+- Design pipelines visually with connected stages (build, test, scan, deploy, gate)
+- Export to GitLab CI and GitHub Actions YAML
+- Compliance gate integration — security scan and approval stages auto-inserted based on impact level
+- Template library for common patterns (TDD, DevSecOps, cATO continuous monitoring)
 
 ---
 
