@@ -1456,6 +1456,12 @@ def create_network_blueprint():
         conn.commit()
         conn.close()
         _audit("UPDATE", "topology", topo_id)
+        # Hook: notify Security Design Canvas of topology change
+        try:
+            from tools.security_canvas.agent import on_ndc_topology_saved
+            on_ndc_topology_saved(topo_id)
+        except Exception:
+            pass  # Security Canvas is optional
         return jsonify({"ok": True})
 
     @bp.route("/api/topologies/<topo_id>", methods=["DELETE"])
