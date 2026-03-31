@@ -63,8 +63,9 @@
 
             <!-- Security & Migration -->
             <li class="nav-dropdown">
-                <a href="#" class="{% if request.path in ['/security-scan', '/migration', '/pr-intel', '/iac', '/stig-manager', '/migration-cost'] %}active{% endif %}">Security</a>
+                <a href="#" class="{% if request.path.startswith('/security') or request.path in ['/migration', '/pr-intel', '/iac', '/stig-manager', '/migration-cost'] %}active{% endif %}">Security</a>
                 <ul class="nav-dropdown-menu">
+                    <li><a href="/security/" style="color:#e94560;font-weight:600;">Security Design Canvas</a></li>
                     <li><a href="/security-scan">Security Scans</a></li>
                     <li><a href="/pr-intel">PR Intelligence</a></li>
                     <li><a href="/stig-manager">STIG Manager</a></li>
