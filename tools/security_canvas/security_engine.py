@@ -488,6 +488,85 @@ def run_security_assessment(design_id: str, graph_data: dict,
                     if not cfg.get("hardening_baseline"):
                         add_finding(rule, labels.get(n["id"], n["id"]), "node")
 
+        # ── VDI Security Checks ────────────────────────────────────────
+        elif check == "vdi_session_policy":
+            # All VDI session hosts must have a session policy control connected
+            vdi_hosts = [n for n in nodes if ntypes.get(n["id"]) == "asset-vdi-host"]
+            if vdi_hosts:
+                for host in vdi_hosts:
+                    neighbors = adj.get(host["id"], set())
+                    has_policy = any(ntypes.get(nb) == "ctrl-session-policy" for nb in neighbors)
+                    if not has_policy:
+                        add_finding(rule, labels.get(host["id"], host["id"]), "node")
+
+        elif check == "vdi_gateway_required":
+            # External users must connect through a VDI gateway — no direct internet to session hosts
+            vdi_hosts = [n for n in nodes if ntypes.get(n["id"]) == "asset-vdi-host"]
+            if vdi_hosts:
+                inet_ids = {n["id"] for n in nodes if ntypes.get(n["id"]) == "boundary-internet"}
+                gw_ids = {n["id"] for n in nodes if ntypes.get(n["id"]) == "ctrl-vdi-gateway"}
+                for host in vdi_hosts:
+                    neighbors = adj.get(host["id"], set())
+                    directly_exposed = bool(neighbors & inet_ids)
+                    has_gateway = bool(neighbors & gw_ids)
+                    if directly_exposed and not has_gateway:
+                        add_finding(rule, labels.get(host["id"], host["id"]), "node")
+                # Also flag if there are VDI hosts but no gateway at all in design
+                if not gw_ids:
+                    add_finding(rule, "design", "design")
+
+        elif check == "vdi_boundary_isolation":
+            # VDI session hosts must reside within a dedicated VDI session zone boundary
+            vdi_hosts = [n for n in nodes if ntypes.get(n["id"]) == "asset-vdi-host"]
+            if vdi_hosts:
+                vdi_boundaries = [b for b in boundaries if b.get("type") == "boundary-vdi-session"]
+                if not vdi_boundaries:
+                    add_finding(rule, "design", "design")
+                else:
+                    # Check each VDI host is contained in a VDI session boundary
+                    vdi_contained = set()
+                    for b in vdi_boundaries:
+                        for cid in b.get("contained_assets", []):
+                            vdi_contained.add(cid)
+                    for host in vdi_hosts:
+                        if host["id"] not in vdi_contained:
+                            add_finding(rule, labels.get(host["id"], host["id"]), "node")
+
+        elif check == "vdi_profile_encrypted":
+            # Profile stores must have KMS/HSM encryption control connected
+            profile_stores = [n for n in nodes if ntypes.get(n["id"]) == "asset-profile-store"]
+            if profile_stores:
+                for ps in profile_stores:
+                    neighbors = adj.get(ps["id"], set())
+                    has_kms = any(ntypes.get(nb) in ("ctrl-kms", "ctrl-encryption") for nb in neighbors)
+                    if not has_kms:
+                        add_finding(rule, labels.get(ps["id"], ps["id"]), "node")
+
+        elif check == "vdi_endpoint_authenticated":
+            # Thin/zero clients must have IdP/MFA control connected
+            thin_clients = [n for n in nodes if ntypes.get(n["id"]) == "asset-thin-client"]
+            if thin_clients:
+                for tc in thin_clients:
+                    neighbors = adj.get(tc["id"], set())
+                    has_idp = any(ntypes.get(nb) == "ctrl-idp" for nb in neighbors)
+                    if not has_idp:
+                        add_finding(rule, labels.get(tc["id"], tc["id"]), "node")
+
+        elif check == "vdi_image_integrity":
+            # VDI session hosts should have image hardening control
+            vdi_hosts = [n for n in nodes if ntypes.get(n["id"]) == "asset-vdi-host"]
+            if vdi_hosts:
+                hardening_ids = {n["id"] for n in nodes if ntypes.get(n["id"]) == "ctrl-image-hardening"}
+                if not hardening_ids:
+                    # No image hardening control in design at all
+                    add_finding(rule, "design", "design")
+                else:
+                    for host in vdi_hosts:
+                        neighbors = adj.get(host["id"], set())
+                        has_hardening = bool(neighbors & hardening_ids)
+                        if not has_hardening:
+                            add_finding(rule, labels.get(host["id"], host["id"]), "node")
+
     # Compute scores
     total_rules = len(rules)
     passed = total_rules - len(findings)

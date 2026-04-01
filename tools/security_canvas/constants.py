@@ -20,6 +20,9 @@ SECURITY_OBJECTS = {
         {"type": "asset-container", "label": "Container / Pod", "icon": "cube", "desc": "Docker container or K8s pod"},
         {"type": "asset-lambda", "label": "Serverless Function", "icon": "bolt", "desc": "Lambda, Cloud Function, or Azure Function"},
         {"type": "asset-registry", "label": "Container Registry", "icon": "archive", "desc": "Image registry (ECR, ACR, Harbor)"},
+        {"type": "asset-vdi-host", "label": "VDI Session Host", "icon": "session-host", "desc": "Virtual desktop session host (RDSH/AVD/Citrix VDA)", "nist_families": ["SC", "CM", "SI"]},
+        {"type": "asset-thin-client", "label": "Thin/Zero Client", "icon": "thin-client", "desc": "Thin or zero client endpoint (IGEL/Wyse/Teradici)", "nist_families": ["IA", "SC", "PE"]},
+        {"type": "asset-profile-store", "label": "Profile Store", "icon": "profile-store", "desc": "User profile container storage (FSLogix/UPM)", "nist_families": ["SC", "AC", "MP"]},
     ],
     "controls": [
         {"type": "ctrl-firewall", "label": "Firewall / WAF", "icon": "shield-alt", "desc": "Network or web application firewall"},
@@ -30,6 +33,9 @@ SECURITY_OBJECTS = {
         {"type": "ctrl-pam", "label": "PAM", "icon": "user-lock", "desc": "Privileged access management"},
         {"type": "ctrl-scanner", "label": "Vulnerability Scanner", "icon": "search", "desc": "SAST, DAST, or infrastructure scanner"},
         {"type": "ctrl-encryption", "label": "Encryptor", "icon": "lock", "desc": "Encryption appliance or TLS terminator"},
+        {"type": "ctrl-session-policy", "label": "Session Policy", "icon": "session-policy", "desc": "VDI session controls — clipboard, USB, printing, watermark, timeout", "nist_controls": ["AC-4", "AC-11", "AC-12", "SC-10"]},
+        {"type": "ctrl-vdi-gateway", "label": "VDI Gateway", "icon": "vdi-gateway", "desc": "Secure remote access gateway for VDI (RD Gateway/Citrix GW/UAG)", "nist_controls": ["AC-17", "SC-7", "SC-8"]},
+        {"type": "ctrl-image-hardening", "label": "Image Hardening", "icon": "image-harden", "desc": "Golden image STIG hardening and integrity verification", "nist_controls": ["CM-2", "CM-6", "SI-7", "SA-10"]},
     ],
     "threats": [
         {"type": "threat-actor", "label": "Threat Actor", "icon": "skull-crossbones", "desc": "External attacker or insider threat"},
@@ -39,6 +45,10 @@ SECURITY_OBJECTS = {
         {"type": "threat-dos", "label": "DoS / DDoS", "icon": "network-wired", "desc": "Denial of service attack"},
         {"type": "threat-supply", "label": "Supply Chain", "icon": "truck", "desc": "Compromised dependency or build system"},
         {"type": "threat-insider", "label": "Insider Threat", "icon": "user-secret", "desc": "Malicious or negligent insider"},
+        {"type": "threat-session-hijack", "label": "Session Hijack", "icon": "session-hijack", "desc": "VDI session takeover via stolen token, credential replay, or MitM", "stride": "S", "mitre": "T1563"},
+        {"type": "threat-clipboard-exfil", "label": "Clipboard Exfil", "icon": "clipboard-exfil", "desc": "Data exfiltration via clipboard copy/paste from virtual desktop", "stride": "I", "mitre": "T1115"},
+        {"type": "threat-gpu-escape", "label": "GPU/VM Escape", "icon": "gpu-escape", "desc": "Breakout from virtual desktop via GPU driver or hypervisor vulnerability", "stride": "E", "mitre": "T1611"},
+        {"type": "threat-profile-tampering", "label": "Profile Tamper", "icon": "profile-tamper", "desc": "Manipulation of roaming profile or FSLogix container to persist malware", "stride": "T", "mitre": "T1547"},
     ],
     "boundaries": [
         {"type": "boundary-network", "label": "Network Zone", "icon": "border-all", "desc": "Network segmentation boundary (VLAN, VPC)"},
@@ -48,6 +58,7 @@ SECURITY_OBJECTS = {
         {"type": "boundary-authorization", "label": "Auth Boundary", "icon": "border-style", "desc": "FedRAMP authorization boundary"},
         {"type": "boundary-enclave", "label": "Enclave", "icon": "lock", "desc": "Classified or isolated enclave"},
         {"type": "boundary-dmz", "label": "DMZ", "icon": "minus-circle", "desc": "Demilitarized zone between trust levels"},
+        {"type": "boundary-vdi-session", "label": "VDI Session Zone", "icon": "vdi-session", "desc": "Trust boundary isolating VDI session hosts from infrastructure", "classification_levels": ["CUI", "SECRET"]},
     ],
 }
 
@@ -210,6 +221,37 @@ SECURITY_ASSESSMENT_RULES = [
 
     # Configuration Hardening (CAT2)
     {"id": "SEC-HARDEN-001", "title": "OS/platform hardened to CIS/STIG baseline", "severity": "CAT2", "category": "configuration", "check": "hardening_baseline"},
+
+    # VDI Security Rules
+    {"id": "SEC-VDI-001", "title": "VDI session policy enforced",
+     "severity": "CAT1", "category": "vdi_security",
+     "description": "All VDI session hosts must have a session policy control (clipboard/USB/print restrictions) — data exfiltration risk without policy enforcement.",
+     "check": "vdi_session_policy"},
+
+    {"id": "SEC-VDI-002", "title": "VDI gateway required for external access",
+     "severity": "CAT1", "category": "vdi_security",
+     "description": "External users must connect through a VDI gateway — no direct RDP/PCoIP from internet to session hosts.",
+     "check": "vdi_gateway_required"},
+
+    {"id": "SEC-VDI-003", "title": "Session hosts in dedicated trust boundary",
+     "severity": "CAT2", "category": "vdi_security",
+     "description": "VDI session hosts must reside within a dedicated VDI session zone boundary, isolated from general compute.",
+     "check": "vdi_boundary_isolation"},
+
+    {"id": "SEC-VDI-004", "title": "Profile store encrypted at rest",
+     "severity": "CAT1", "category": "vdi_security",
+     "description": "FSLogix/UPM profile stores must have KMS/HSM encryption control connected — user profiles contain CUI.",
+     "check": "vdi_profile_encrypted"},
+
+    {"id": "SEC-VDI-005", "title": "Thin clients authenticated before VDI access",
+     "severity": "CAT2", "category": "vdi_security",
+     "description": "Thin/zero client assets must have IdP/MFA control connected — unauthenticated endpoints are session hijack vectors.",
+     "check": "vdi_endpoint_authenticated"},
+
+    {"id": "SEC-VDI-006", "title": "Golden image integrity verified",
+     "severity": "CAT2", "category": "vdi_security",
+     "description": "VDI session hosts should have image hardening control — ensures STIG-compliant golden images and detects drift.",
+     "check": "vdi_image_integrity"},
 ]
 
 # ── NDC → SDC Node Type Mapping ─────────────────────────────────────────────

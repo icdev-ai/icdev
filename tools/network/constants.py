@@ -79,6 +79,36 @@ CLOUD_OBJECTS = {
         {"type": "cage", "label": "Cage/Suite", "icon": "CGE", "desc": "Colocation cage or private suite housing customer equipment"},
         {"type": "cabinet", "label": "Cabinet", "icon": "CAB", "desc": "Equipment cabinet/rack in colocation facility"},
     ],
+    "vdi": [
+        # VDI Infrastructure
+        {"type": "vdi-session-host", "label": "Session Host", "icon": "SH", "desc": "VDI Session Host (RDSH/AVD/Citrix VDA)"},
+        {"type": "vdi-connection-broker", "label": "Connection Broker", "icon": "CB", "desc": "VDI Connection Broker (RDS Broker/Citrix Controller/Horizon CS)"},
+        {"type": "vdi-gateway", "label": "VDI Gateway", "icon": "VGW", "desc": "Remote access gateway (RD Gateway/Citrix Gateway/UAG)"},
+        {"type": "vdi-profile-server", "label": "Profile Server", "icon": "PFS", "desc": "User profile storage (FSLogix/Citrix UPM/VMware DEM)"},
+        {"type": "vdi-gpu-host", "label": "GPU Host", "icon": "GPU", "desc": "GPU-enabled host (vGPU/GPU passthrough for CAD/GIS)"},
+        {"type": "vdi-license-server", "label": "License Server", "icon": "LIC", "desc": "VDI license server (RDS CAL/Citrix/Horizon)"},
+        {"type": "vdi-image-store", "label": "Image Store", "icon": "IMG", "desc": "Golden image repository (Azure Compute Gallery/vSphere Content Library)"},
+        # Endpoints
+        {"type": "thin-client", "label": "Thin Client", "icon": "TC", "desc": "Thin client endpoint (IGEL/HP/Dell Wyse)"},
+        {"type": "zero-client", "label": "Zero Client", "icon": "ZC", "desc": "Zero client (Teradici PCoIP/Dell Wyse 3040)"},
+        {"type": "vdi-web-client", "label": "Web Client", "icon": "WC", "desc": "Browser-based VDI access (HTML5/RD Web)"},
+        # Cloud VDI Services
+        {"type": "avd-hostpool", "label": "AVD Host Pool", "icon": "AHP", "desc": "Azure Virtual Desktop host pool (pooled/personal)"},
+        {"type": "avd-workspace", "label": "AVD Workspace", "icon": "AWS", "desc": "Azure Virtual Desktop workspace + application groups"},
+        {"type": "aws-workspaces", "label": "WorkSpaces", "icon": "WKS", "desc": "Amazon WorkSpaces — managed DaaS (PCoIP/WSP)"},
+        {"type": "aws-appstream", "label": "AppStream 2.0", "icon": "AS2", "desc": "Amazon AppStream 2.0 — app streaming"},
+        {"type": "gcp-vdi", "label": "GCP VDI", "icon": "GVD", "desc": "GCP VDI on Sole-Tenant Nodes / Chrome Enterprise"},
+        {"type": "citrix-cloud", "label": "Citrix Cloud", "icon": "CTX", "desc": "Citrix DaaS — cloud-hosted delivery controller"},
+        {"type": "horizon-cloud", "label": "Horizon Cloud", "icon": "HZN", "desc": "VMware Horizon Cloud on Azure/AWS"},
+    ],
+    "edge_compute": [
+        {"type": "edge-gateway", "label": "Edge Gateway", "icon": "EGW", "desc": "IoT/MEC edge gateway — local compute + store-and-forward"},
+        {"type": "edge-cluster", "label": "Edge Cluster", "icon": "ECL", "desc": "Edge K3s/MicroK8s cluster for DDIL operations"},
+        {"type": "mec-node", "label": "MEC Node", "icon": "MEC", "desc": "Multi-access Edge Computing node (5G/LTE edge)"},
+        {"type": "fog-node", "label": "Fog Node", "icon": "FOG", "desc": "Fog computing node — intermediate processing between edge and cloud"},
+        {"type": "cdn-pop", "label": "CDN PoP", "icon": "CDN", "desc": "Content Delivery Network point of presence"},
+        {"type": "kiosk", "label": "Kiosk", "icon": "KSK", "desc": "Public-facing kiosk/digital signage endpoint"},
+    ],
 }
 
 # ── Extended Cloud Networking Objects (Well-Architected Hybrid Networking) ────

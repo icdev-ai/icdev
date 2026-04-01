@@ -301,6 +301,18 @@ PIPELINE_OBJECTS = {
         {"type": "onprem-colo",         "label": "Colocation",        "icon": "CO",  "desc": "Colocation facility — meet-me room, cross-connects. Design in NDC.", "stage": "deploy_prod"},
         {"type": "onprem-edge",         "label": "Edge Site",         "icon": "ED",  "desc": "Edge / tactical site — K3s, limited connectivity, intermittent cloud access.", "stage": "deploy_prod"},
     ],
+    "desktop_image": [
+        {"type": "img-source",       "label": "Base Image Source",      "icon": "ISO", "desc": "OS base image — Windows Server/10/11 ISO or marketplace image from Iron Bank/Azure Gallery"},
+        {"type": "img-customize",    "label": "Image Customization",    "icon": "CST", "desc": "Packer / Azure Image Builder / EC2 Image Builder — install agents, drivers, apps"},
+        {"type": "img-harden",       "label": "STIG Hardening",         "icon": "STG", "desc": "Apply DISA STIG GPOs — Windows VDI STIG, .NET STIG, browser STIG"},
+        {"type": "img-optimize",     "label": "VDI Optimization",       "icon": "OPT", "desc": "Citrix Optimizer / VMware OSOT / BIS-F — strip unnecessary services for VDI"},
+        {"type": "img-scan",         "label": "Image Security Scan",    "icon": "ISC", "desc": "SCAP compliance scan + vulnerability assessment of golden image before publish"},
+        {"type": "img-sign",         "label": "Image Signing",          "icon": "SGN", "desc": "Cryptographic signing of golden image — integrity verification at deploy time"},
+        {"type": "img-publish",      "label": "Image Publish",          "icon": "PUB", "desc": "Publish to Azure Compute Gallery / vSphere Content Library / AWS AMI"},
+        {"type": "img-deploy-pool",  "label": "Deploy to Host Pool",    "icon": "DHP", "desc": "Rolling deployment of golden image to AVD host pool / Citrix MCS / Horizon pool"},
+        {"type": "img-rollback",     "label": "Image Rollback",         "icon": "RBK", "desc": "Rollback host pool to previous golden image version on failure"},
+        {"type": "img-lifecycle",    "label": "Image Lifecycle",        "icon": "LCY", "desc": "Image version tracking, retention policy, and deprecation schedule"},
+    ],
 }
 
 # ── CSP Service Equivalence (maps generic concepts across CSPs) ──────────────
@@ -519,6 +531,19 @@ PIPELINE_COMPLIANCE_FRAMEWORKS = {
     "cisa_sbd":       {"name": "CISA Secure by Design",        "pledge_goals": 7},
 }
 
+# ── Pipeline Stage Suggestions (next-stage recommendations) ─────────────────
+PIPELINE_STAGE_SUGGESTIONS = {
+    # VDI / Desktop Image pipeline flow
+    "img-source":       ["img-customize"],
+    "img-customize":    ["img-harden", "img-optimize"],
+    "img-harden":       ["img-optimize", "img-scan"],
+    "img-optimize":     ["img-scan"],
+    "img-scan":         ["img-sign"],
+    "img-sign":         ["img-publish"],
+    "img-publish":      ["img-deploy-pool"],
+    "img-deploy-pool":  ["img-rollback", "img-lifecycle"],
+}
+
 # ── Pipeline Compliance Rules (deterministic checks on graph) ────────────────
 PIPELINE_COMPLIANCE_RULES = [
     {"id": "PDC-SSC-001", "title": "Source code requires branch protection",       "severity": "CAT1", "category": "source_integrity",  "frameworks": ["nist_ssdf", "slsa", "dod_devsecops"], "check": "branch_protection"},
@@ -549,6 +574,15 @@ PIPELINE_COMPLIANCE_RULES = [
     {"id": "PDC-SRE-003", "title": "Automated runbooks for common failures",       "severity": "CAT2", "category": "sre",                "frameworks": ["dod_devsecops"],                      "check": "runbooks_present"},
     {"id": "PDC-SRE-004", "title": "Chaos engineering for resilience validation",  "severity": "CAT2", "category": "sre",                "frameworks": ["dod_devsecops"],                      "check": "chaos_present"},
     {"id": "PDC-SRE-005", "title": "DORA metrics tracked for pipeline health",     "severity": "CAT2", "category": "sre",                "frameworks": ["dod_devsecops"],                      "check": "dora_tracked"},
+    # VDI / Desktop Image rules
+    {"id": "PC-VDI-001",  "title": "DISA STIG applied to golden image",            "severity": "CAT1", "category": "desktop_image",       "frameworks": ["dod_devsecops"],                      "check": "img_stig_applied",
+     "description": "Golden images must have applicable DISA STIGs applied before publish (Windows VDI, .NET, Browser STIGs)."},
+    {"id": "PC-VDI-002",  "title": "SCAP scan before publish",                     "severity": "CAT1", "category": "desktop_image",       "frameworks": ["dod_devsecops"],                      "check": "img_scap_scan",
+     "description": "Images must pass SCAP compliance scan with zero CAT1 findings before publishing to gallery."},
+    {"id": "PC-VDI-003",  "title": "Image integrity signing",                      "severity": "CAT2", "category": "desktop_image",       "frameworks": ["slsa"],                               "check": "img_signing",
+     "description": "Published images must be cryptographically signed for integrity verification at deployment time (SLSA L2+)."},
+    {"id": "PC-VDI-004",  "title": "Rolling deployment with health check",         "severity": "CAT2", "category": "desktop_image",       "frameworks": ["dod_devsecops"],                      "check": "img_rolling_deploy",
+     "description": "Host pool image updates must use rolling deployment with session drain and health verification."},
 ]
 
 

@@ -339,6 +339,55 @@ COMPLIANCE_RULES = [
      "regimes": ["dns_bgp", "fisma_high", "stig"],
      "description": "Router nodes with BGP peering edges must have route filtering configured to prevent route leaks and hijacking (RFC 7454 §6).",
      "check": "bgp_route_filter"},
+
+    # ── VDI / Virtual Desktop Infrastructure ──────────────────────────────────
+    {"id": "NET-VDI-001", "title": "Session hosts on dedicated subnet",
+     "severity": "CAT2", "category": "vdi_architecture",
+     "regimes": ["fisma_high", "stig", "zta"],
+     "description": "VDI session hosts must reside on a dedicated subnet, isolated from general-purpose servers (NIST SC-7, AC-4).",
+     "check": "vdi_subnet_isolation"},
+
+    {"id": "NET-VDI-002", "title": "VDI gateway at network boundary",
+     "severity": "CAT1", "category": "vdi_architecture",
+     "regimes": ["fisma_high", "stig", "zta", "cjis"],
+     "description": "External VDI access must traverse a gateway (RD Gateway/Citrix Gateway/UAG) — no direct RDP to session hosts from untrusted zones (NIST SC-7, AC-17).",
+     "check": "vdi_gateway_boundary"},
+
+    {"id": "NET-VDI-003", "title": "VDI sessions use encrypted protocol",
+     "severity": "CAT1", "category": "vdi_encryption",
+     "regimes": ["fisma_high", "stig", "fips", "cjis", "icd503", "cnss1253"],
+     "description": "All VDI session traffic (RDP/PCoIP/BLAST/ICA) must use TLS 1.2+ or FIPS-validated encryption (NIST SC-8, SC-13).",
+     "check": "vdi_session_encryption"},
+
+    {"id": "NET-VDI-004", "title": "Connection broker is redundant",
+     "severity": "CAT2", "category": "vdi_availability",
+     "regimes": ["fisma_high", "stig"],
+     "description": "VDI connection broker must have HA/redundancy — single broker is a SPOF for all virtual desktops (NIST CP-7, SC-36).",
+     "check": "vdi_broker_redundancy"},
+
+    {"id": "NET-VDI-005", "title": "GPU hosts isolated from non-GPU workloads",
+     "severity": "CAT2", "category": "vdi_architecture",
+     "regimes": ["fisma_high", "stig"],
+     "description": "GPU-enabled VDI hosts should be on a dedicated subnet or resource pool to prevent resource contention and enforce vGPU security profiles (NIST CM-7).",
+     "check": "vdi_gpu_isolation"},
+
+    {"id": "NET-VDI-006", "title": "Profile server uses encrypted storage",
+     "severity": "CAT1", "category": "vdi_encryption",
+     "regimes": ["fisma_high", "stig", "fips", "cjis"],
+     "description": "FSLogix/UPM profile containers must reside on encrypted storage (Azure Files + SMB encryption or equivalent) (NIST SC-28).",
+     "check": "vdi_profile_encryption"},
+
+    {"id": "NET-VDI-007", "title": "No direct internet access from session hosts",
+     "severity": "CAT1", "category": "vdi_architecture",
+     "regimes": ["fisma_high", "stig", "zta", "cjis", "icd503"],
+     "description": "VDI session hosts must not have direct internet egress — route through proxy/SASE/SWG (NIST SC-7, AC-4).",
+     "check": "vdi_no_direct_internet"},
+
+    {"id": "NET-VDI-008", "title": "Thin/zero clients use certificate-based auth",
+     "severity": "CAT2", "category": "vdi_authentication",
+     "regimes": ["fisma_high", "stig", "zta", "cjis"],
+     "description": "Thin and zero client devices should use 802.1X or certificate-based device authentication before connecting to VDI infrastructure (NIST IA-3).",
+     "check": "vdi_endpoint_cert_auth"},
 ] + WA_SECURITY_COMPLIANCE_RULES + MCSB_COMPLIANCE_RULES + GCP_SECURITY_COMPLIANCE_RULES + OCI_SECURITY_COMPLIANCE_RULES + IBM_SECURITY_COMPLIANCE_RULES
 
 # Encryptor speed ratings (Mbps) for NET-ENC-003
@@ -1120,6 +1169,153 @@ def run_compliance_audit(topology_id: str, graph: dict, regimes: list,
                                 {"action": "set_config", "target_node": rid,
                                  "key": "route_filtering", "value": True})
                     break  # One finding is enough
+
+    # ── VDI / Virtual Desktop Infrastructure Checks ──────────────────────
+
+    VDI_SESSION_HOST_TYPES = {"vdi-session-host", "avd-hostpool", "aws-workspaces",
+                              "aws-appstream", "gcp-vdi", "horizon-cloud"}
+    VDI_BROKER_TYPES = {"vdi-connection-broker", "citrix-cloud"}
+    VDI_GATEWAY_TYPES = {"vdi-gateway"}
+    VDI_PROFILE_TYPES = {"vdi-profile-server"}
+    VDI_GPU_TYPES = {"vdi-gpu-host"}
+    VDI_ENDPOINT_TYPES = {"thin-client", "zero-client", "vdi-web-client"}
+    VDI_ALL_TYPES = (VDI_SESSION_HOST_TYPES | VDI_BROKER_TYPES | VDI_GATEWAY_TYPES
+                     | VDI_PROFILE_TYPES | VDI_GPU_TYPES | VDI_ENDPOINT_TYPES
+                     | {"vdi-license-server", "vdi-image-store", "avd-workspace"})
+
+    vdi_nodes = [n for n in nodes if node_types.get(n["id"]) in VDI_ALL_TYPES]
+    vdi_session_hosts = [n for n in nodes if node_types.get(n["id"]) in VDI_SESSION_HOST_TYPES]
+    vdi_brokers = [n for n in nodes if node_types.get(n["id"]) in VDI_BROKER_TYPES]
+    vdi_gateways = [n for n in nodes if node_types.get(n["id"]) in VDI_GATEWAY_TYPES]
+    vdi_profiles = [n for n in nodes if node_types.get(n["id"]) in VDI_PROFILE_TYPES]
+    vdi_gpu_hosts = [n for n in nodes if node_types.get(n["id"]) in VDI_GPU_TYPES]
+    vdi_endpoints = [n for n in nodes if node_types.get(n["id"]) in VDI_ENDPOINT_TYPES]
+
+    # NET-VDI-001: Session hosts on dedicated subnet
+    if "NET-VDI-001" in rule_map and vdi_session_hosts:
+        for sh in vdi_session_hosts:
+            neighbors = adj.get(sh["id"], set())
+            # Flag if session host is directly connected to a general-purpose server
+            general_neighbors = [nb for nb in neighbors
+                                 if node_types.get(nb) == "server"
+                                 and nb not in {n["id"] for n in vdi_nodes}]
+            if general_neighbors:
+                add_finding(rule_map["NET-VDI-001"],
+                            f"Session host {label_map.get(sh['id'])} shares subnet with general server(s): "
+                            f"{', '.join(label_map.get(n, n) for n in general_neighbors[:3])}",
+                            "node",
+                            {"action": "add_node", "node_type": "az-subnet",
+                             "label": "VDI Session Host Subnet"})
+                break
+
+    # NET-VDI-002: VDI gateway at network boundary
+    if "NET-VDI-002" in rule_map and vdi_session_hosts:
+        internet_ids = {n["id"] for n in nodes
+                       if "internet" in (n.get("label") or "").lower()
+                       or node_types.get(n["id"]) in {"cloud", "internet-exchange"}}
+        if internet_ids and not vdi_gateways:
+            add_finding(rule_map["NET-VDI-002"],
+                        "VDI session hosts present but no VDI gateway — external users may RDP directly",
+                        "topology",
+                        {"action": "add_node", "node_type": "vdi-gateway",
+                         "label": "VDI Gateway (RD GW / Citrix GW)"})
+        elif internet_ids and vdi_gateways:
+            # Check that session hosts are NOT directly connected to internet
+            for sh in vdi_session_hosts:
+                neighbors = adj.get(sh["id"], set())
+                if neighbors & internet_ids:
+                    add_finding(rule_map["NET-VDI-002"],
+                                f"Session host {label_map.get(sh['id'])} directly connected to internet — must traverse gateway",
+                                "node",
+                                {"action": "add_firewall_inline", "wan_node": sh["id"]})
+                    break
+
+    # NET-VDI-003: VDI sessions use encrypted protocol
+    if "NET-VDI-003" in rule_map and vdi_session_hosts:
+        VDI_ENCRYPTED_PROTOS = {"tls", "rdp-tls", "pcoip", "blast", "ica-tls",
+                                "ipsec", "ipsec esp", "dtls", "wsp"}
+        for sh in vdi_session_hosts:
+            sh_edges = [e for e in edges if sh["id"] in (e["source"], e["target"])]
+            has_encrypted = any(
+                (e.get("protocol") or "").lower() in VDI_ENCRYPTED_PROTOS
+                for e in sh_edges)
+            if not has_encrypted and sh_edges:
+                add_finding(rule_map["NET-VDI-003"],
+                            f"Session host {label_map.get(sh['id'])} — no encrypted VDI protocol on connected edges",
+                            "node",
+                            {"action": "set_config", "target_node": sh["id"],
+                             "key": "protocol_encryption", "value": "TLS 1.2+"})
+                break
+
+    # NET-VDI-004: Connection broker redundancy
+    if "NET-VDI-004" in rule_map and vdi_brokers:
+        if len(vdi_brokers) < 2:
+            add_finding(rule_map["NET-VDI-004"],
+                        f"Single connection broker ({label_map.get(vdi_brokers[0]['id'])}) — no HA/redundancy",
+                        "node",
+                        {"action": "add_node", "node_type": "vdi-connection-broker",
+                         "label": "Connection Broker (HA)"})
+
+    # NET-VDI-005: GPU hosts isolated
+    if "NET-VDI-005" in rule_map and vdi_gpu_hosts:
+        for gpu in vdi_gpu_hosts:
+            neighbors = adj.get(gpu["id"], set())
+            non_vdi_neighbors = [nb for nb in neighbors
+                                 if node_types.get(nb) not in VDI_ALL_TYPES
+                                 and node_types.get(nb) not in FIREWALL_TYPES
+                                 and node_types.get(nb) == "server"]
+            if non_vdi_neighbors:
+                add_finding(rule_map["NET-VDI-005"],
+                            f"GPU host {label_map.get(gpu['id'])} shares segment with non-GPU workloads",
+                            "node",
+                            {"action": "add_node", "node_type": "az-subnet",
+                             "label": "GPU Host Dedicated Subnet"})
+                break
+
+    # NET-VDI-006: Profile server encrypted storage
+    if "NET-VDI-006" in rule_map and vdi_profiles:
+        for ps in vdi_profiles:
+            config = ps.get("config", {})
+            has_encryption = (config.get("encryption") or config.get("smb_encryption")
+                              or config.get("encrypted_storage")
+                              or "encrypt" in (ps.get("label") or "").lower())
+            if not has_encryption:
+                add_finding(rule_map["NET-VDI-006"],
+                            f"Profile server {label_map.get(ps['id'])} — no encrypted storage configured",
+                            "node",
+                            {"action": "set_config", "target_node": ps["id"],
+                             "key": "encrypted_storage", "value": True})
+                break
+
+    # NET-VDI-007: No direct internet from session hosts
+    if "NET-VDI-007" in rule_map and vdi_session_hosts:
+        internet_ids_vdi = {n["id"] for n in nodes
+                           if "internet" in (n.get("label") or "").lower()
+                           or node_types.get(n["id"]) in {"cloud", "internet-exchange"}}
+        for sh in vdi_session_hosts:
+            neighbors = adj.get(sh["id"], set())
+            if neighbors & internet_ids_vdi:
+                add_finding(rule_map["NET-VDI-007"],
+                            f"Session host {label_map.get(sh['id'])} has direct internet access — route through proxy/SASE",
+                            "node",
+                            {"action": "add_firewall_inline", "wan_node": sh["id"]})
+                break
+
+    # NET-VDI-008: Thin/zero client cert auth
+    if "NET-VDI-008" in rule_map and vdi_endpoints:
+        for ep in vdi_endpoints:
+            config = ep.get("config", {})
+            has_cert = (config.get("cert_auth") or config.get("802.1x")
+                        or config.get("certificate_auth")
+                        or "802.1x" in (ep.get("label") or "").lower()
+                        or "cert" in (ep.get("label") or "").lower())
+            if not has_cert:
+                add_finding(rule_map["NET-VDI-008"],
+                            f"Endpoint {label_map.get(ep['id'])} — no certificate-based authentication configured",
+                            "node",
+                            {"action": "set_config", "target_node": ep["id"],
+                             "key": "cert_auth", "value": True})
+                break
 
     # ── Score per regime ──────────────────────────────────────────────────
     total_rules_per_regime = {}
