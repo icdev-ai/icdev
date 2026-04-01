@@ -154,7 +154,8 @@ def move_task(task_id):
     """Move a task to a new status column."""
     data = request.get_json(force=True)
     new_status = data.get("status")
-    if new_status not in ("backlog", "scheduled", "in_progress", "done"):
+    valid = ("backlog", "scheduled", "in_progress", "done", "token_exhausted")
+    if new_status not in valid:
         return jsonify({"error": "Invalid status"}), 400
 
     now = _utcnow()

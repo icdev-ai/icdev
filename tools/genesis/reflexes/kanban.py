@@ -631,6 +631,56 @@ def _check_completed():
     return completed
 
 
+def _check_token_exhausted_tasks() -> list:
+    """Re-promote token_exhausted tasks whose retry delay has elapsed.
+
+    Checks updated_at timestamp — if TOKEN_RETRY_DELAY_SECONDS have passed
+    since the task was parked, move it back to in_progress for re-dispatch.
+
+    Returns list of task dicts ready for retry.
+    """
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM kanban_tasks WHERE status = 'token_exhausted' "
+            "ORDER BY "
+            "CASE priority "
+            "  WHEN 'critical' THEN 0 "
+            "  WHEN 'high' THEN 1 "
+            "  WHEN 'medium' THEN 2 "
+            "  ELSE 3 END, "
+            "updated_at ASC"
+        ).fetchall()
+
+        ready = []
+        now = datetime.now(timezone.utc)
+        for row in rows:
+            task = dict(row)
+            # Parse updated_at to check if delay has elapsed
+            updated = task.get("updated_at")
+            if updated:
+                if isinstance(updated, str):
+                    # Handle ISO format strings
+                    try:
+                        updated = datetime.fromisoformat(
+                            updated.replace("Z", "+00:00")
+                        )
+                    except (ValueError, TypeError):
+                        updated = now  # Can't parse — retry immediately
+                elapsed = (now - updated).total_seconds()
+                if elapsed < TOKEN_RETRY_DELAY_SECONDS:
+                    remaining = TOKEN_RETRY_DELAY_SECONDS - elapsed
+                    logger.debug(
+                        "Token-exhausted task %s: %ds until retry",
+                        task["id"], remaining,
+                    )
+                    continue
+            ready.append(task)
+        return ready
+    finally:
+        conn.close()
+
+
 def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     """Execute the Kanban Executor Reflex."""
     # 1. Check for completed claude subprocesses
@@ -657,6 +707,40 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                 "telegram_commands": len(tg_results),
             },
         }
+
+    # 3b. Check for token-exhausted tasks ready for retry
+    token_retry_tasks = _check_token_exhausted_tasks()
+    if token_retry_tasks:
+        # Re-dispatch the highest-priority token-exhausted task
+        task = token_retry_tasks[0]
+        retry_count = _get_retry_count(task["id"])
+        print(
+            f"  Kanban: retrying token-exhausted task {task['id']} "
+            f"'{task['title'][:40]}' (retry {retry_count}/"
+            f"{TOKEN_MAX_RETRY_COUNT})"
+        )
+        try:
+            _move_task(task["id"], "in_progress")
+            prompt_path = PROMPT_DIR / f"{task['id']}.md"
+            if not prompt_path.exists():
+                prompt_path = _write_prompt_file(task)
+            else:
+                prompt_path = str(prompt_path)
+            _dispatch_to_claude(task, prompt_path)
+            _send_notification(task, event="in_progress")
+            return {
+                "success": True,
+                "metric_value": 1,
+                "details": {
+                    "status": "token_retry",
+                    "task_id": task["id"],
+                    "retry_count": retry_count,
+                    "completed_this_cycle": completed,
+                    "telegram_commands": len(tg_results),
+                },
+            }
+        except Exception as e:
+            print(f"  Kanban: token retry error for {task['id']}: {e}")
 
     # 4. Find due tasks
     due_tasks = _get_due_tasks()

@@ -81,7 +81,16 @@ def main():
             completed = details.get("completed_this_cycle", [])
             running = details.get("running", [])
 
-            if activated or completed or running:
+            if status == "token_retry":
+                retry_count = details.get("retry_count", 0)
+                logger.info(
+                    "Cycle %d: RETRYING token-exhausted task %s "
+                    "(attempt %d)",
+                    cycle,
+                    details.get("task_id", "?"),
+                    retry_count,
+                )
+            elif activated or completed or running:
                 logger.info(
                     "Cycle %d: status=%s activated=%s completed=%s running=%s",
                     cycle, status, activated, len(completed), len(running),
