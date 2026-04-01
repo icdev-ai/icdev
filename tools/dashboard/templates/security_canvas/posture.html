@@ -1,0 +1,51 @@
+{% extends "security_canvas/base.html" %}
+{% block title %}Security Posture — Security Design Canvas{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>Security Posture Overview</h1>
+  <p class="text-muted">Real-time aggregate security posture across all designs</p>
+</div>
+<div style="padding:0 16px 24px;">
+  <div id="posture-loading" style="text-align:center;padding:2rem;color:var(--text-dim);">Loading posture data...</div>
+  <div id="posture-content" class="hidden"></div>
+</div>
+<script>
+fetch('/security/api/posture-summary').then(r => r.json()).then(d => {
+  document.getElementById('posture-loading').classList.add('hidden');
+  const el = document.getElementById('posture-content');
+  el.classList.remove('hidden');
+  const pc = d.overall_posture === 'strong' ? '#27ae60' : d.overall_posture === 'moderate' ? '#f39c12' : d.overall_posture === 'weak' ? '#e67e22' : '#e74c3c';
+  let html = '<div class="stats-bar" style="margin-bottom:20px;">';
+  html += '<div class="stat-card"><div class="stat-value" style="color:' + pc + ';text-transform:uppercase;">' + (d.overall_posture||'unknown') + '</div><div class="stat-label">Overall Posture</div></div>';
+  html += '<div class="stat-card"><div class="stat-value">' + (d.average_risk_score||0).toFixed(1) + '</div><div class="stat-label">Avg Risk Score</div></div>';
+  html += '<div class="stat-card"><div class="stat-value">' + (d.total_designs||0) + '</div><div class="stat-label">Total Designs</div></div>';
+  html += '<div class="stat-card"><div class="stat-value">' + (d.assessed_designs||0) + '</div><div class="stat-label">Assessed</div></div>';
+  html += '</div>';
+  // Grade distribution
+  const dist = d.grade_distribution || {};
+  html += '<h3 style="color:var(--text);margin-bottom:8px;">Grade Distribution</h3>';
+  html += '<div style="display:flex;gap:12px;margin-bottom:20px;">';
+  for (const g of ['A','B','C','D','F']) {
+    const gc = g <= 'B' ? '#27ae60' : g === 'C' ? '#f39c12' : '#e74c3c';
+    const cnt = dist[g] || 0;
+    html += '<div style="flex:1;text-align:center;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:12px;">';
+    html += '<div style="font-size:2rem;font-weight:bold;color:' + gc + ';">' + cnt + '</div>';
+    html += '<div style="font-size:12px;color:var(--text-dim);">Grade ' + g + '</div></div>';
+  }
+  html += '</div>';
+  // Design list
+  html += '<h3 style="color:var(--text);margin-bottom:8px;">All Designs</h3>';
+  html += '<table class="data-table"><thead><tr><th>Design</th><th>Grade</th><th>Risk Score</th><th>Last Assessed</th><th>Actions</th></tr></thead><tbody>';
+  (d.designs || []).forEach(dd => {
+    const gc = dd.grade && dd.grade <= 'B' ? '#27ae60' : dd.grade === 'C' ? '#f39c12' : dd.grade ? '#e74c3c' : 'var(--text-dim)';
+    html += '<tr><td>' + (dd.name||dd.id) + '</td>';
+    html += '<td style="color:' + gc + ';font-weight:bold;font-size:1.2rem;">' + (dd.grade||'N/A') + '</td>';
+    html += '<td>' + (dd.risk_score != null ? dd.risk_score.toFixed(1) : '—') + '</td>';
+    html += '<td style="font-size:11px;color:var(--text-dim);">' + (dd.last_assessed||'Never') + '</td>';
+    html += '<td><a href="/security/canvas/' + dd.id + '" class="btn btn-outline" style="font-size:11px;padding:2px 8px;">Open</a></td></tr>';
+  });
+  html += '</tbody></table>';
+  el.innerHTML = html;
+});
+</script>
+{% endblock %}
