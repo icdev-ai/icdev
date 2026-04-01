@@ -194,6 +194,32 @@ CREATE INDEX IF NOT EXISTS idx_audit_actor ON audit_trail(actor);
 CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_trail(created_at);
 
 -- ============================================================
+-- CONTINUOUS COMPLIANCE EVIDENCE CHAIN (D-CHAIN-1)
+-- Unified PDC/NDC/SDC audit trail snapshots aligned to OSCAL 1.1.2
+-- ============================================================
+CREATE TABLE IF NOT EXISTS compliance_evidence_chain (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    chain_id       TEXT NOT NULL,
+    event_id       TEXT NOT NULL,
+    source         TEXT NOT NULL CHECK (source IN ('pdc', 'ndc', 'sdc', 'icdev')),
+    event_type     TEXT NOT NULL,
+    actor          TEXT,
+    action         TEXT NOT NULL,
+    oscal_controls TEXT DEFAULT '[]',
+    oscal_family   TEXT,
+    evidence_type  TEXT DEFAULT 'audit' CHECK (evidence_type IN ('audit', 'test', 'assessment', 'deployment', 'compliance', 'other')),
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    event_ts       TEXT NOT NULL,
+    details_json   TEXT,
+    created_at     TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_cec_chain ON compliance_evidence_chain(chain_id);
+CREATE INDEX IF NOT EXISTS idx_cec_source ON compliance_evidence_chain(source);
+CREATE INDEX IF NOT EXISTS idx_cec_ts ON compliance_evidence_chain(event_ts);
+CREATE INDEX IF NOT EXISTS idx_cec_family ON compliance_evidence_chain(oscal_family);
+
+-- ============================================================
 -- COMPLIANCE TRACKING
 -- ============================================================
 CREATE TABLE IF NOT EXISTS compliance_controls (
