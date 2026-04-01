@@ -193,6 +193,12 @@ def _get_board_summary() -> str:
         ).fetchall()
         counts = {r["status"]: r["cnt"] for r in rows}
         total = sum(counts.values())
+        token_line = ""
+        token_count = counts.get("token_exhausted", 0)
+        if token_count:
+            token_line = (
+                f"\u23F3 Token Exhausted (waiting): {token_count}\n"
+            )
         return (
             "\U0001F4CA <b>Task Board</b>\n\n"
             f"\U0001F4E5 Backlog: {counts.get('backlog', 0)}\n"
@@ -200,6 +206,7 @@ def _get_board_summary() -> str:
             f"{counts.get('scheduled', 0)}\n"
             f"\u25B6 In Progress: "
             f"{counts.get('in_progress', 0)}\n"
+            f"{token_line}"
             f"\u2705 Done: {counts.get('done', 0)}\n"
             f"\n<b>Total: {total}</b>"
         )
