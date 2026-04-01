@@ -34,6 +34,11 @@ COMPLIANCE_REGIMES = {
     "gcp_security": {"name": "GCP Security Foundations", "source": "Architecture Framework", "scope": "GCP"},
     "oci_security": {"name": "OCI Security Best Practices", "source": "CIS OCI v2.0", "scope": "OCI"},
     "ibm_security": {"name": "IBM Cloud Security & Compliance", "source": "SCC Best Practices v2.0", "scope": "IBM"},
+    "pci_dss": {"name": "PCI-DSS v4.0", "framework": "PCI-DSS", "baseline": "Network Segmentation"},
+    "hipaa": {"name": "HIPAA Security Rule", "framework": "HIPAA", "baseline": "Technical Safeguards"},
+    "iot_ot": {"name": "IoT/OT Security", "framework": "NIST 800-82 / IEC 62443", "baseline": "Zone & Conduit"},
+    "k8s": {"name": "Kubernetes Network Security", "framework": "CIS K8s Benchmark", "baseline": "Network Policy"},
+    "dns_bgp": {"name": "DNS & BGP Security", "framework": "NIST 800-81 / RFC 7454", "baseline": "Routing Security"},
 }
 
 # Crosswalk: rule_id -> list of regimes it applies to
@@ -197,6 +202,143 @@ COMPLIANCE_RULES = [
      "regimes": ["fisma_high", "stig", "cjis", "cnss1253"],
      "description": "Internet-facing cloud resources must have DDoS protection enabled (Shield/DDoS Protection/Cloud Armor) per NIST SC-5 (denial of service protection).",
      "check": "ddos_protection"},
+
+    # ── PCI-DSS Network Segmentation ─────────────────────────────────────────
+    {"id": "NET-PCI-001", "title": "CDE isolated from non-CDE networks",
+     "severity": "CAT1", "category": "pci",
+     "regimes": ["pci_dss"],
+     "description": "Cardholder Data Environment (CDE) nodes must reside in a dedicated boundary/segment, isolated from non-CDE networks (PCI-DSS Req 1.3).",
+     "check": "cde_isolation"},
+
+    {"id": "NET-PCI-002", "title": "Firewall between CDE and untrusted networks",
+     "severity": "CAT1", "category": "pci",
+     "regimes": ["pci_dss"],
+     "description": "A firewall must exist between the CDE boundary and any untrusted network including the internet (PCI-DSS Req 1.3.1).",
+     "check": "cde_firewall"},
+
+    {"id": "NET-PCI-003", "title": "No direct internet access to CDE",
+     "severity": "CAT1", "category": "pci",
+     "regimes": ["pci_dss"],
+     "description": "No direct edge should exist from internet-facing nodes to CDE-labeled nodes without traversing a DMZ/firewall (PCI-DSS Req 1.3.2).",
+     "check": "cde_no_direct_internet"},
+
+    {"id": "NET-PCI-004", "title": "CDE network monitoring enabled",
+     "severity": "CAT2", "category": "pci",
+     "regimes": ["pci_dss"],
+     "description": "IDS/IPS or SIEM must be connected to the CDE zone to monitor for intrusions (PCI-DSS Req 11.4).",
+     "check": "cde_monitoring"},
+
+    {"id": "NET-PCI-005", "title": "Wireless networks isolated from CDE",
+     "severity": "CAT2", "category": "pci",
+     "regimes": ["pci_dss"],
+     "description": "Wireless access points (WAP) must not be in the same segment as CDE nodes — wireless must be isolated from cardholder data (PCI-DSS Req 1.2.3).",
+     "check": "cde_wireless_isolation"},
+
+    {"id": "NET-PCI-006", "title": "CDE access logging enabled",
+     "severity": "CAT2", "category": "pci",
+     "regimes": ["pci_dss"],
+     "description": "A SIEM or centralized log collector must be present in the topology to capture CDE access logs (PCI-DSS Req 10.1).",
+     "check": "cde_logging"},
+
+    # ── HIPAA PHI Network ─────────────────────────────────────────────────────
+    {"id": "NET-HIPAA-001", "title": "PHI data flows encrypted in transit",
+     "severity": "CAT1", "category": "hipaa",
+     "regimes": ["hipaa"],
+     "description": "All network edges touching PHI-labeled nodes must use encryption (IPSec, TLS, MACsec) to protect ePHI in transit (HIPAA §164.312(e)(1)).",
+     "check": "phi_encrypted"},
+
+    {"id": "NET-HIPAA-002", "title": "PHI zone access controlled",
+     "severity": "CAT1", "category": "hipaa",
+     "regimes": ["hipaa"],
+     "description": "A firewall or ACL must exist between the PHI boundary/zone and all other network zones (HIPAA §164.312(a)(1) access control).",
+     "check": "phi_access_control"},
+
+    {"id": "NET-HIPAA-003", "title": "PHI access audit logging",
+     "severity": "CAT1", "category": "hipaa",
+     "regimes": ["hipaa"],
+     "description": "A SIEM or audit logging system must be connected to the PHI zone to record access activity (HIPAA §164.312(b) audit controls).",
+     "check": "phi_audit_logging"},
+
+    {"id": "NET-HIPAA-004", "title": "BAA partner connections encrypted",
+     "severity": "CAT2", "category": "hipaa",
+     "regimes": ["hipaa"],
+     "description": "Connections to external/partner nodes (BAA partners) must use VPN or encrypted links to protect ePHI shared with business associates (HIPAA §164.314(a)).",
+     "check": "baa_encrypted"},
+
+    # ── IoT/OT Zone Security ─────────────────────────────────────────────────
+    {"id": "NET-IOT-001", "title": "OT/ICS network isolated from IT",
+     "severity": "CAT1", "category": "iot_ot",
+     "regimes": ["iot_ot"],
+     "description": "OT/ICS/SCADA devices must reside in a dedicated boundary with no direct edge to IT nodes without a firewall in the path (NIST 800-82 §5.3, IEC 62443 zone model).",
+     "check": "ot_isolation"},
+
+    {"id": "NET-IOT-002", "title": "Data diode or unidirectional gateway for OT egress",
+     "severity": "CAT1", "category": "iot_ot",
+     "regimes": ["iot_ot"],
+     "description": "A data diode or unidirectional gateway node must exist between OT and IT networks to enforce one-way data flow from OT to IT (NIST 800-82 §5.3.1).",
+     "check": "ot_data_diode"},
+
+    {"id": "NET-IOT-003", "title": "IoT device management network separated",
+     "severity": "CAT2", "category": "iot_ot",
+     "regimes": ["iot_ot"],
+     "description": "Management interfaces for IoT/OT devices must be on a separate network segment from production OT traffic (IEC 62443-3-3 SR 5.1).",
+     "check": "iot_mgmt_separated"},
+
+    {"id": "NET-IOT-004", "title": "OT network monitoring",
+     "severity": "CAT2", "category": "iot_ot",
+     "regimes": ["iot_ot"],
+     "description": "IDS/IPS or SIEM must monitor the OT zone for anomalous traffic and potential intrusions (NIST 800-82 §6.2.1).",
+     "check": "ot_monitoring"},
+
+    # ── Kubernetes Network ────────────────────────────────────────────────────
+    {"id": "NET-K8S-001", "title": "Default-deny network policy",
+     "severity": "CAT1", "category": "k8s",
+     "regimes": ["k8s"],
+     "description": "Kubernetes cluster nodes must have network policy enforcement configured (default-deny ingress/egress). Label or config must indicate policy enforcement (CIS K8s 5.3.2).",
+     "check": "k8s_network_policy"},
+
+    {"id": "NET-K8S-002", "title": "Control plane isolated from data plane",
+     "severity": "CAT1", "category": "k8s",
+     "regimes": ["k8s"],
+     "description": "The K8s API server / control plane must be in a separate boundary or segment from worker nodes to limit blast radius (CIS K8s 1.2.1).",
+     "check": "k8s_cp_isolation"},
+
+    {"id": "NET-K8S-003", "title": "Pod-to-pod encryption (mTLS/service mesh)",
+     "severity": "CAT2", "category": "k8s",
+     "regimes": ["k8s"],
+     "description": "A service mesh (Istio, Linkerd) or mTLS must be configured between K8s pods for encrypted east-west traffic (NIST SC-8, ZTA).",
+     "check": "k8s_mtls"},
+
+    {"id": "NET-K8S-004", "title": "Ingress controller with WAF",
+     "severity": "CAT2", "category": "k8s",
+     "regimes": ["k8s"],
+     "description": "The K8s ingress controller must have a WAF or firewall as a neighbor for application-layer protection (CIS K8s 5.3.1).",
+     "check": "k8s_ingress_waf"},
+
+    # ── DNS & BGP Security ────────────────────────────────────────────────────
+    {"id": "NET-DNS-002", "title": "DNSSEC validation enabled",
+     "severity": "CAT2", "category": "dns",
+     "regimes": ["dns_bgp", "fisma_high"],
+     "description": "DNS resolver nodes must have DNSSEC validation enabled to prevent DNS spoofing/cache poisoning (NIST 800-81 §8, SC-20).",
+     "check": "dnssec_enabled"},
+
+    {"id": "NET-DNS-003", "title": "Internal DNS resolvers (not public)",
+     "severity": "CAT2", "category": "dns",
+     "regimes": ["dns_bgp", "fisma_high"],
+     "description": "DNS resolver nodes should not be directly connected to internet-facing nodes — use internal/split-horizon DNS (NIST 800-81 §9).",
+     "check": "dns_internal"},
+
+    {"id": "NET-BGP-001", "title": "BGP authentication (MD5/TCP-AO)",
+     "severity": "CAT2", "category": "routing",
+     "regimes": ["dns_bgp", "fisma_high", "stig"],
+     "description": "BGP-protocol edges must have authentication enabled (MD5 or TCP-AO) to prevent route injection attacks (RFC 7454, NIST SC-23).",
+     "check": "bgp_auth"},
+
+    {"id": "NET-BGP-002", "title": "Route filtering configured",
+     "severity": "CAT2", "category": "routing",
+     "regimes": ["dns_bgp", "fisma_high", "stig"],
+     "description": "Router nodes with BGP peering edges must have route filtering configured to prevent route leaks and hijacking (RFC 7454 §6).",
+     "check": "bgp_route_filter"},
 ] + WA_SECURITY_COMPLIANCE_RULES + MCSB_COMPLIANCE_RULES + GCP_SECURITY_COMPLIANCE_RULES + OCI_SECURITY_COMPLIANCE_RULES + IBM_SECURITY_COMPLIANCE_RULES
 
 # Encryptor speed ratings (Mbps) for NET-ENC-003
@@ -564,6 +706,420 @@ def run_compliance_audit(topology_id: str, graph: dict, regimes: list,
         affected = label_map.get(internet_facing[0]["id"], internet_facing[0]["id"])
         add_finding(rule_map.get("NET-HYB-007", {}), affected, "node",
                     {"action": "add_node", "node_type": "aws-shield", "label": "DDoS Protection"})
+
+    # ── PCI-DSS Network Segmentation Checks ──────────────────────────────
+
+    # Helper: identify CDE nodes by label keywords
+    CDE_KEYWORDS = {"cde", "payment", "card", "cardholder", "pci"}
+    cde_nodes = [n for n in nodes if any(
+        kw in (n.get("label") or "").lower() for kw in CDE_KEYWORDS)]
+    cde_ids = {n["id"] for n in cde_nodes}
+
+    # NET-PCI-001: CDE isolated in dedicated boundary
+    if "NET-PCI-001" in rule_map and cde_nodes:
+        # CDE nodes should share a boundary/group or be exclusively connected
+        non_cde_neighbors = set()
+        for cid in cde_ids:
+            for nb in adj.get(cid, set()):
+                if nb not in cde_ids and node_types.get(nb) not in FIREWALL_TYPES:
+                    non_cde_neighbors.add(nb)
+        if non_cde_neighbors:
+            add_finding(rule_map["NET-PCI-001"],
+                        f"CDE nodes directly connected to non-CDE: {', '.join(label_map.get(n, n) for n in list(non_cde_neighbors)[:3])}",
+                        "topology",
+                        {"action": "add_firewall_inline",
+                         "wan_node": list(non_cde_neighbors)[0]})
+    elif "NET-PCI-001" in rule_map and not cde_nodes and len(nodes) > 3:
+        add_finding(rule_map["NET-PCI-001"],
+                    "No CDE-labeled nodes found — cannot verify CDE isolation",
+                    "topology")
+
+    # NET-PCI-002: Firewall between CDE and untrusted networks
+    if "NET-PCI-002" in rule_map and cde_nodes:
+        wan_and_internet = [n for n in nodes if node_types.get(n["id"]) in WAN_TYPES
+                           or "internet" in (n.get("label") or "").lower()]
+        for wn in wan_and_internet[:3]:
+            for cn in cde_nodes[:3]:
+                if not path_has_type(wn["id"], cn["id"], FIREWALL_TYPES):
+                    add_finding(rule_map["NET-PCI-002"],
+                                f"No firewall between {label_map.get(wn['id'])} and CDE node {label_map.get(cn['id'])}",
+                                "node",
+                                {"action": "add_firewall_inline", "wan_node": wn["id"]})
+                    break
+            else:
+                continue
+            break
+
+    # NET-PCI-003: No direct internet access to CDE
+    if "NET-PCI-003" in rule_map and cde_nodes:
+        internet_nodes = [n for n in nodes if "internet" in (n.get("label") or "").lower()
+                         or node_types.get(n["id"]) in {"cloud", "internet-exchange"}]
+        for inet in internet_nodes:
+            for cid in cde_ids:
+                if cid in adj.get(inet["id"], set()):
+                    add_finding(rule_map["NET-PCI-003"],
+                                f"Direct link from {label_map.get(inet['id'])} to CDE node {label_map.get(cid)}",
+                                "edge")
+                    break
+
+    # NET-PCI-004: CDE monitoring (IDS/SIEM)
+    MONITORING_TYPES = {"siem", "network-tap", "ids", "ips"}
+    if "NET-PCI-004" in rule_map and cde_nodes:
+        cde_has_monitor = False
+        for cid in cde_ids:
+            for nb in adj.get(cid, set()):
+                if (node_types.get(nb) in MONITORING_TYPES
+                        or "siem" in (label_map.get(nb) or "").lower()
+                        or "ids" in (label_map.get(nb) or "").lower()):
+                    cde_has_monitor = True
+                    break
+            if cde_has_monitor:
+                break
+        if not cde_has_monitor:
+            add_finding(rule_map["NET-PCI-004"],
+                        "No IDS/SIEM connected to CDE zone",
+                        "topology",
+                        {"action": "add_node", "node_type": "siem", "label": "CDE SIEM/IDS"})
+
+    # NET-PCI-005: Wireless isolated from CDE
+    if "NET-PCI-005" in rule_map and cde_nodes:
+        wap_nodes = [n for n in nodes if node_types.get(n["id"]) == "wap"]
+        for wap in wap_nodes:
+            for cid in cde_ids:
+                if cid in adj.get(wap["id"], set()):
+                    add_finding(rule_map["NET-PCI-005"],
+                                f"WAP {label_map.get(wap['id'])} directly connected to CDE node {label_map.get(cid)}",
+                                "edge")
+                    break
+
+    # NET-PCI-006: CDE access logging
+    if "NET-PCI-006" in rule_map:
+        has_siem = any(node_types.get(n["id"]) in MONITORING_TYPES
+                       or "siem" in (n.get("label") or "").lower()
+                       or "log" in (n.get("label") or "").lower()
+                       for n in nodes)
+        if not has_siem:
+            add_finding(rule_map["NET-PCI-006"],
+                        "No SIEM or log collector in topology",
+                        "topology",
+                        {"action": "add_node", "node_type": "siem", "label": "SIEM / Log Collector"})
+
+    # ── HIPAA PHI Network Checks ─────────────────────────────────────────
+
+    PHI_KEYWORDS = {"phi", "ephi", "hipaa", "health", "patient", "medical", "ehr", "emr"}
+    phi_nodes = [n for n in nodes if any(
+        kw in (n.get("label") or "").lower() for kw in PHI_KEYWORDS)]
+    phi_ids = {n["id"] for n in phi_nodes}
+
+    # NET-HIPAA-001: PHI data flows encrypted in transit
+    if "NET-HIPAA-001" in rule_map and phi_nodes:
+        for e in edges:
+            src, tgt = e["source"], e["target"]
+            if src in phi_ids or tgt in phi_ids:
+                proto = (e.get("protocol") or "").lower()
+                is_encrypted = (proto in ("ipsec", "ipsec esp", "macsec", "tls", "mtls",
+                                          "gre/ipsec", "dtls")
+                                or node_types.get(src) in ENCRYPTOR_TYPES
+                                or node_types.get(tgt) in ENCRYPTOR_TYPES)
+                if not is_encrypted:
+                    add_finding(rule_map["NET-HIPAA-001"],
+                                f"Unencrypted link to PHI: {label_map.get(src)} — {label_map.get(tgt)}",
+                                "edge",
+                                {"action": "add_encryptor", "target_node": src,
+                                 "encryptor_type": "fips-140-l2"})
+
+    # NET-HIPAA-002: PHI zone access controlled (firewall/ACL)
+    if "NET-HIPAA-002" in rule_map and phi_nodes:
+        phi_has_fw = False
+        for pid in phi_ids:
+            for nb in adj.get(pid, set()):
+                if nb not in phi_ids and node_types.get(nb) in FIREWALL_TYPES:
+                    phi_has_fw = True
+                    break
+            if phi_has_fw:
+                break
+        if not phi_has_fw:
+            add_finding(rule_map["NET-HIPAA-002"],
+                        "No firewall/ACL between PHI zone and other networks",
+                        "topology",
+                        {"action": "add_firewall_inline",
+                         "wan_node": list(phi_ids)[0] if phi_ids else ""})
+
+    # NET-HIPAA-003: PHI access audit logging
+    if "NET-HIPAA-003" in rule_map and phi_nodes:
+        phi_has_siem = False
+        for pid in phi_ids:
+            for nb in adj.get(pid, set()):
+                if (node_types.get(nb) in MONITORING_TYPES
+                        or "siem" in (label_map.get(nb) or "").lower()
+                        or "audit" in (label_map.get(nb) or "").lower()):
+                    phi_has_siem = True
+                    break
+            if phi_has_siem:
+                break
+        if not phi_has_siem:
+            add_finding(rule_map["NET-HIPAA-003"],
+                        "No SIEM/audit logging connected to PHI zone",
+                        "topology",
+                        {"action": "add_node", "node_type": "siem", "label": "PHI Audit SIEM"})
+
+    # NET-HIPAA-004: BAA partner connections encrypted
+    PARTNER_KEYWORDS = {"partner", "baa", "vendor", "external", "third-party", "3rd-party"}
+    if "NET-HIPAA-004" in rule_map and phi_nodes:
+        partner_nodes = [n for n in nodes if any(
+            kw in (n.get("label") or "").lower() for kw in PARTNER_KEYWORDS)]
+        for pn in partner_nodes:
+            for pid in phi_ids:
+                if pid in adj.get(pn["id"], set()):
+                    e_match = next((e for e in edges if
+                                    (e["source"] == pn["id"] and e["target"] == pid) or
+                                    (e["source"] == pid and e["target"] == pn["id"])), None)
+                    if e_match:
+                        proto = (e_match.get("protocol") or "").lower()
+                        if proto not in ("ipsec", "ipsec esp", "tls", "mtls", "macsec",
+                                         "gre/ipsec", "dtls"):
+                            add_finding(rule_map["NET-HIPAA-004"],
+                                        f"Unencrypted BAA link: {label_map.get(pn['id'])} — {label_map.get(pid)}",
+                                        "edge",
+                                        {"action": "add_encryptor", "target_node": pn["id"],
+                                         "encryptor_type": "fips-140-l2"})
+
+    # ── IoT/OT Zone Security Checks ──────────────────────────────────────
+
+    OT_KEYWORDS = {"ot", "ics", "scada", "plc", "hmi", "rtu", "dcs", "sensor", "actuator"}
+    IOT_KEYWORDS = {"iot", "sensor", "device", "edge-device", "gateway"}
+    ot_nodes = [n for n in nodes if any(
+        kw in (n.get("label") or "").lower() or kw in node_types.get(n["id"], "")
+        for kw in OT_KEYWORDS)]
+    ot_ids = {n["id"] for n in ot_nodes}
+    iot_nodes = [n for n in nodes if any(
+        kw in (n.get("label") or "").lower() or kw in node_types.get(n["id"], "")
+        for kw in IOT_KEYWORDS)]
+
+    DATA_DIODE_KEYWORDS = {"data-diode", "diode", "unidirectional", "one-way"}
+
+    # NET-IOT-001: OT/ICS isolated from IT
+    if "NET-IOT-001" in rule_map and ot_nodes:
+        it_nodes_direct = set()
+        for oid in ot_ids:
+            for nb in adj.get(oid, set()):
+                if nb not in ot_ids and node_types.get(nb) not in FIREWALL_TYPES:
+                    # Check if neighbor is an IT-type node (not a firewall/diode)
+                    nb_label = (label_map.get(nb) or "").lower()
+                    nb_is_diode = any(kw in nb_label or kw in node_types.get(nb, "")
+                                      for kw in DATA_DIODE_KEYWORDS)
+                    if not nb_is_diode:
+                        it_nodes_direct.add(nb)
+        if it_nodes_direct:
+            add_finding(rule_map["NET-IOT-001"],
+                        f"OT nodes directly connected to IT without firewall: {', '.join(label_map.get(n, n) for n in list(it_nodes_direct)[:3])}",
+                        "topology",
+                        {"action": "add_firewall_inline",
+                         "wan_node": list(it_nodes_direct)[0]})
+
+    # NET-IOT-002: Data diode for OT egress
+    if "NET-IOT-002" in rule_map and ot_nodes:
+        has_diode = any(
+            any(kw in (n.get("label") or "").lower() or kw in node_types.get(n["id"], "")
+                for kw in DATA_DIODE_KEYWORDS)
+            for n in nodes)
+        if not has_diode:
+            add_finding(rule_map["NET-IOT-002"],
+                        "No data diode / unidirectional gateway between OT and IT",
+                        "topology",
+                        {"action": "add_node", "node_type": "data-diode",
+                         "label": "Data Diode (OT→IT)"})
+
+    # NET-IOT-003: IoT management network separated
+    if "NET-IOT-003" in rule_map and (ot_nodes or iot_nodes):
+        mgmt_segment = any("management" in (n.get("label") or "").lower()
+                           or "mgmt" in (n.get("label") or "").lower()
+                           for n in nodes)
+        if not mgmt_segment:
+            add_finding(rule_map["NET-IOT-003"],
+                        "No dedicated management segment for IoT/OT devices",
+                        "topology",
+                        {"action": "add_node", "node_type": "switch-l3",
+                         "label": "OT Mgmt Switch"})
+
+    # NET-IOT-004: OT network monitoring
+    if "NET-IOT-004" in rule_map and ot_nodes:
+        ot_has_monitor = False
+        for oid in ot_ids:
+            for nb in adj.get(oid, set()):
+                if (node_types.get(nb) in MONITORING_TYPES
+                        or "siem" in (label_map.get(nb) or "").lower()
+                        or "ids" in (label_map.get(nb) or "").lower()):
+                    ot_has_monitor = True
+                    break
+            if ot_has_monitor:
+                break
+        if not ot_has_monitor:
+            add_finding(rule_map["NET-IOT-004"],
+                        "No IDS/SIEM monitoring OT zone",
+                        "topology",
+                        {"action": "add_node", "node_type": "siem", "label": "OT IDS/SIEM"})
+
+    # ── Kubernetes Network Checks ────────────────────────────────────────
+
+    K8S_KEYWORDS = {"k8s", "kubernetes", "kube", "eks", "aks", "gke", "openshift"}
+    K8S_CP_KEYWORDS = {"api-server", "apiserver", "control-plane", "etcd", "kube-api",
+                       "master", "cp-"}
+    K8S_WORKER_KEYWORDS = {"worker", "node-pool", "data-plane", "kubelet"}
+    MESH_KEYWORDS = {"istio", "linkerd", "consul", "service-mesh", "envoy", "mtls"}
+    INGRESS_KEYWORDS = {"ingress", "nginx-ingress", "traefik", "kong", "gateway-api"}
+    WAF_TYPES = FIREWALL_TYPES | {"aws-waf", "gcp-armor", "oci-waf", "az-appgw"}
+
+    k8s_nodes = [n for n in nodes if any(
+        kw in (n.get("label") or "").lower() or kw in node_types.get(n["id"], "")
+        for kw in K8S_KEYWORDS)]
+    k8s_ids = {n["id"] for n in k8s_nodes}
+
+    # NET-K8S-001: Default-deny network policy
+    if "NET-K8S-001" in rule_map and k8s_nodes:
+        has_policy = any(
+            n.get("config", {}).get("network_policy") or
+            n.get("config", {}).get("default_deny") or
+            "network-policy" in (n.get("label") or "").lower() or
+            "netpol" in (n.get("label") or "").lower()
+            for n in k8s_nodes)
+        if not has_policy:
+            add_finding(rule_map["NET-K8S-001"],
+                        "K8s cluster nodes lack network policy enforcement (default-deny)",
+                        "topology",
+                        {"action": "set_config", "target_node": k8s_nodes[0]["id"],
+                         "key": "default_deny", "value": True})
+
+    # NET-K8S-002: Control plane isolated from data plane
+    if "NET-K8S-002" in rule_map and k8s_nodes:
+        cp_nodes = [n for n in k8s_nodes if any(
+            kw in (n.get("label") or "").lower() for kw in K8S_CP_KEYWORDS)]
+        worker_nodes_k8s = [n for n in k8s_nodes if any(
+            kw in (n.get("label") or "").lower() for kw in K8S_WORKER_KEYWORDS)]
+        if cp_nodes and worker_nodes_k8s:
+            # Check firewall/segmentation between CP and workers
+            for cp in cp_nodes[:1]:
+                for wk in worker_nodes_k8s[:1]:
+                    if not path_has_type(cp["id"], wk["id"], FIREWALL_TYPES):
+                        add_finding(rule_map["NET-K8S-002"],
+                                    f"No segmentation between {label_map.get(cp['id'])} and {label_map.get(wk['id'])}",
+                                    "topology",
+                                    {"action": "add_firewall_inline",
+                                     "wan_node": cp["id"]})
+        elif len(k8s_nodes) >= 2 and not cp_nodes:
+            add_finding(rule_map["NET-K8S-002"],
+                        "K8s cluster found but no control plane node labeled — cannot verify isolation",
+                        "topology")
+
+    # NET-K8S-003: Pod-to-pod mTLS / service mesh
+    if "NET-K8S-003" in rule_map and k8s_nodes:
+        has_mesh = any(
+            any(kw in (n.get("label") or "").lower() or kw in node_types.get(n["id"], "")
+                for kw in MESH_KEYWORDS)
+            for n in nodes)
+        # Also check for mTLS protocol on k8s edges
+        if not has_mesh:
+            has_mtls_edge = any(
+                e.get("protocol", "").lower() in ("mtls", "tls")
+                for e in edges
+                if e["source"] in k8s_ids or e["target"] in k8s_ids)
+            if not has_mtls_edge:
+                add_finding(rule_map["NET-K8S-003"],
+                            "No service mesh or mTLS between K8s pods",
+                            "topology",
+                            {"action": "add_node", "node_type": "service-mesh",
+                             "label": "Service Mesh (mTLS)"})
+
+    # NET-K8S-004: Ingress controller with WAF
+    if "NET-K8S-004" in rule_map and k8s_nodes:
+        ingress_nodes = [n for n in nodes if any(
+            kw in (n.get("label") or "").lower() for kw in INGRESS_KEYWORDS)]
+        if ingress_nodes:
+            for ing in ingress_nodes:
+                neighbors = adj.get(ing["id"], set())
+                has_waf_neighbor = any(
+                    node_types.get(nb) in WAF_TYPES
+                    or "waf" in (label_map.get(nb) or "").lower()
+                    for nb in neighbors)
+                if not has_waf_neighbor:
+                    add_finding(rule_map["NET-K8S-004"],
+                                f"Ingress {label_map.get(ing['id'])} has no WAF/firewall neighbor",
+                                "node",
+                                {"action": "add_node", "node_type": "aws-waf",
+                                 "label": "Ingress WAF"})
+        elif k8s_nodes:
+            add_finding(rule_map["NET-K8S-004"],
+                        "No ingress controller found in K8s topology",
+                        "topology")
+
+    # ── DNS & BGP Security Checks ────────────────────────────────────────
+
+    ALL_DNS_TYPES = {"aws-r53", "az-dns", "gcp-dns"}
+    dns_all = [n for n in nodes if node_types.get(n["id"]) in ALL_DNS_TYPES
+               or "dns" in (n.get("label") or "").lower()]
+
+    # NET-DNS-002: DNSSEC validation
+    if "NET-DNS-002" in rule_map and dns_all:
+        for dn in dns_all:
+            config = dn.get("config", {})
+            label_lower = (dn.get("label") or "").lower()
+            has_dnssec = (config.get("dnssec") or config.get("dnssec_enabled")
+                          or "dnssec" in label_lower)
+            if not has_dnssec:
+                add_finding(rule_map["NET-DNS-002"],
+                            f"DNS node {label_map.get(dn['id'])} lacks DNSSEC validation",
+                            "node",
+                            {"action": "set_config", "target_node": dn["id"],
+                             "key": "dnssec_enabled", "value": True})
+                break  # One finding is enough
+
+    # NET-DNS-003: Internal DNS resolvers (not public)
+    if "NET-DNS-003" in rule_map and dns_all:
+        internet_ids = {n["id"] for n in nodes
+                       if "internet" in (n.get("label") or "").lower()
+                       or node_types.get(n["id"]) in {"cloud", "internet-exchange"}}
+        for dn in dns_all:
+            neighbors = adj.get(dn["id"], set())
+            if neighbors & internet_ids:
+                add_finding(rule_map["NET-DNS-003"],
+                            f"DNS node {label_map.get(dn['id'])} directly connected to internet",
+                            "node")
+                break
+
+    # NET-BGP-001: BGP authentication
+    if "NET-BGP-001" in rule_map:
+        bgp_edges = [e for e in edges if (e.get("protocol") or "").lower() in ("bgp", "ebgp", "ibgp")]
+        for be in bgp_edges:
+            config = be.get("config", {})
+            has_auth = (config.get("auth") or config.get("md5") or config.get("tcp_ao")
+                        or config.get("authenticated"))
+            if not has_auth:
+                add_finding(rule_map["NET-BGP-001"],
+                            f"BGP session {label_map.get(be['source'])} — {label_map.get(be['target'])} lacks authentication",
+                            "edge",
+                            {"action": "set_config", "target_node": be["source"],
+                             "key": "bgp_auth", "value": "md5"})
+
+    # NET-BGP-002: Route filtering
+    if "NET-BGP-002" in rule_map:
+        bgp_edges_rf = [e for e in edges if (e.get("protocol") or "").lower() in ("bgp", "ebgp", "ibgp")]
+        bgp_router_ids = set()
+        for be in bgp_edges_rf:
+            bgp_router_ids.add(be["source"])
+            bgp_router_ids.add(be["target"])
+        for rid in bgp_router_ids:
+            rn = next((n for n in nodes if n["id"] == rid), None)
+            if rn:
+                config = rn.get("config", {})
+                has_filter = (config.get("route_filter") or config.get("prefix_list")
+                              or config.get("route_filtering"))
+                if not has_filter:
+                    add_finding(rule_map["NET-BGP-002"],
+                                f"Router {label_map.get(rid)} with BGP lacks route filtering",
+                                "node",
+                                {"action": "set_config", "target_node": rid,
+                                 "key": "route_filtering", "value": True})
+                    break  # One finding is enough
 
     # ── Score per regime ──────────────────────────────────────────────────
     total_rules_per_regime = {}
