@@ -246,6 +246,72 @@ def on_pipeline_saved(
     }
 
 
+def on_pdc_pipeline_saved(
+    pipeline_id: str,
+    pipeline_config: dict,
+) -> dict:
+    """Called after a PDC pipeline is saved. Runs security checks and persists
+    findings to sc_assessments (design_id=NULL — pipeline-level assessment).
+
+    Checks for CI/CD security issues then stores a record so the posture view
+    can surface CAT1 findings from pipeline saves alongside SDC design grades.
+    """
+    # Run pipeline security checks (reuse existing logic)
+    scan = on_pipeline_saved(pipeline_id, pipeline_config)
+    findings = scan.get("findings", [])
+
+    try:
+        from tools.security_canvas.db.init_db import get_connection
+
+        assess_id = str(uuid.uuid4())
+        now = datetime.now(timezone.utc).isoformat()
+        risk_score = float(scan.get("cat1_count", 0) * 5 +
+                          scan.get("cat2_count", 0) * 2 +
+                          scan.get("cat3_count", 0))
+        if risk_score >= 20:
+            grade = "F"
+        elif risk_score >= 15:
+            grade = "D"
+        elif risk_score >= 10:
+            grade = "C"
+        elif risk_score >= 5:
+            grade = "B"
+        else:
+            grade = "A"
+
+        with get_connection() as conn:
+            conn.execute(
+                "INSERT INTO sc_assessments "
+                "(id, design_id, assessment_type, trigger_source, "
+                "source_entity_id, total_threats, total_controls, "
+                "risk_score, posture_grade, findings_json, "
+                "recommendations_json, ran_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                (assess_id, None, "pipeline_scan", "pdc_save",
+                 pipeline_id,
+                 scan.get("cat1_count", 0) + scan.get("cat2_count", 0) + scan.get("cat3_count", 0),
+                 0,
+                 risk_score,
+                 grade,
+                 json.dumps(findings),
+                 json.dumps([]),
+                 now),
+            )
+
+        logger.info(
+            "Security agent: PDC %s assessed (cat1=%s, score=%s, grade=%s)",
+            pipeline_id, scan.get("cat1_count", 0), risk_score, grade,
+        )
+        scan["assessment_id"] = assess_id
+        scan["risk_score"] = risk_score
+        scan["posture_grade"] = grade
+    except Exception as exc:
+        logger.warning("Security agent error on PDC save: %s", exc)
+        scan["error"] = str(exc)
+
+    return scan
+
+
 def auto_assess(design_id: str, trigger_source: str = "auto") -> dict:
     """Core assessment orchestrator. Called by blueprint on design save.
 

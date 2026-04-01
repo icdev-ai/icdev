@@ -268,6 +268,14 @@ def create_pipeline_blueprint():
         conn.commit()
         conn.close()
         _audit("UPDATE", "pipeline", pipe_id, data.get("name", ""))
+        # Hook: notify Security Design Canvas of pipeline change
+        try:
+            from tools.security_canvas.agent import on_pdc_pipeline_saved
+            graph_raw = data.get("graph_json", "{}")
+            graph = json.loads(graph_raw) if isinstance(graph_raw, str) else graph_raw
+            on_pdc_pipeline_saved(pipe_id, graph)
+        except Exception:
+            pass  # Security Canvas is optional
         return jsonify({"updated": True})
 
     @bp.route("/api/pipelines/<pipe_id>", methods=["DELETE"])
