@@ -1594,3 +1594,9 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Security Engine | tools\security_canvas\security_engine.py | Auto-registered: security_canvas/security_engine.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Importers | tools\security_canvas\importers.py | Auto-registered: security_canvas/importers.py | --json | JSON |
