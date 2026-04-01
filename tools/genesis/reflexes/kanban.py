@@ -14,12 +14,13 @@ execute without human approval. The daemon monitors subprocess completion.
 """
 
 import logging
+import re
 import shutil
 import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +65,99 @@ def _count_pending_prompts() -> int:
 MAX_AUTO_PROMOTE = 2
 # Max in-progress tasks at any time (prevents pile-up)
 MAX_IN_PROGRESS = 3
+
+# ── Token exhaustion detection ────────────────────────────────────────────────
+
+# Patterns that indicate Claude CLI hit a token/rate limit (case-insensitive)
+TOKEN_EXHAUSTION_PATTERNS = [
+    r"rate\s*limit",
+    r"token\s*limit",
+    r"usage\s*limit",
+    r"quota\s*exceeded",
+    r"too\s*many\s*requests",
+    r"429",
+    r"exceeded.*(?:daily|hourly|monthly)\s*(?:limit|quota|cap)",
+    r"out\s*of\s*(?:tokens|credits)",
+    r"billing.*limit",
+    r"capacity.*limit",
+    r"max.*turns.*reached",
+    r"conversation.*limit",
+    r"please\s*try\s*again\s*(?:later|in\s*\d+)",
+    r"reset(?:s)?\s*(?:at|in)\s*\d+",
+]
+_TOKEN_RE = re.compile(
+    "|".join(TOKEN_EXHAUSTION_PATTERNS), re.IGNORECASE
+)
+
+# How long to wait before retrying a token-exhausted task (seconds).
+# Claude Max resets at the top of each 5-hour window.
+TOKEN_RETRY_DELAY_SECONDS = 300  # 5 minutes between checks
+TOKEN_MAX_RETRY_COUNT = 60       # Give up after ~5 hours of retries
+
+
+def _detect_token_exhaustion(
+    exit_code: int, output: str
+) -> Tuple[bool, Optional[str]]:
+    """Check if Claude CLI output indicates token/rate-limit exhaustion.
+
+    Returns (is_exhausted, estimated_reset_info).
+    """
+    if not output:
+        return False, None
+
+    # Check the last 2000 chars (error messages usually at end)
+    tail = output[-2000:]
+
+    if _TOKEN_RE.search(tail):
+        # Try to extract a reset time hint
+        reset_match = re.search(
+            r"(?:reset|try again|available)\s*(?:at|in)\s*"
+            r"(\d[\d:hm \-]+)",
+            tail, re.IGNORECASE,
+        )
+        reset_hint = reset_match.group(1).strip() if reset_match else None
+        return True, reset_hint
+
+    # Exit code 1 with very short output is suspicious but not conclusive
+    # Exit code 2 is often used for rate limits by some CLI tools
+    return False, None
+
+
+def _get_retry_count(task_id: str) -> int:
+    """Get the current token-exhaustion retry count for a task."""
+    conn = get_connection()
+    try:
+        task_log = PROMPT_DIR / f"{task_id}.retries"
+        if task_log.exists():
+            try:
+                return int(task_log.read_text(encoding="utf-8").strip())
+            except (ValueError, OSError):
+                return 0
+        return 0
+    finally:
+        conn.close()
+
+
+def _increment_retry_count(task_id: str) -> int:
+    """Increment and return the retry count."""
+    _ensure_prompt_dir()
+    retry_file = PROMPT_DIR / f"{task_id}.retries"
+    count = 0
+    if retry_file.exists():
+        try:
+            count = int(retry_file.read_text(encoding="utf-8").strip())
+        except (ValueError, OSError):
+            count = 0
+    count += 1
+    retry_file.write_text(str(count), encoding="utf-8")
+    return count
+
+
+def _clear_retry_count(task_id: str):
+    """Remove retry counter on success."""
+    retry_file = PROMPT_DIR / f"{task_id}.retries"
+    if retry_file.exists():
+        retry_file.unlink(missing_ok=True)
 
 
 def _get_due_tasks() -> list:
@@ -195,6 +289,7 @@ def _send_notification(task: dict, event: str = "in_progress"):
         "in_progress": "now in progress",
         "done": "completed",
         "failed": "failed (will retry)",
+        "token_exhausted": "paused — Claude token limit hit, will auto-retry",
     }
     label = event_labels.get(event, event)
     title = f"Task {event}: {task['title']}"
@@ -365,90 +460,161 @@ def _check_completed():
         if ret is not None:
             completed.append(task_id)
             prompt_path = PROMPT_DIR / f"{task_id}.md"
-            if ret == 0:
-                # Claude completed — read output log and VERIFY before marking done
-                claude_output = ""
-                task_log = PROMPT_DIR / f"{task_id}.log"
-                try:
-                    if task_log.exists():
-                        claude_output = task_log.read_text(
-                            encoding="utf-8", errors="replace"
-                        ).strip()
-                except Exception:
-                    pass
+            # Read Claude output log
+            claude_output = ""
+            task_log = PROMPT_DIR / f"{task_id}.log"
+            try:
+                if task_log.exists():
+                    claude_output = task_log.read_text(
+                        encoding="utf-8", errors="replace"
+                    ).strip()
+            except Exception:
+                pass
 
+            # Build task dict with title from DB or fallback
+            task_dict = {"id": task_id, "title": task_id}
+            try:
+                task_conn = get_connection()
+                row = task_conn.execute(
+                    "SELECT title, task_type, priority FROM kanban_tasks WHERE id = ?",
+                    (task_id,),
+                ).fetchone()
+                task_conn.close()
+                if row:
+                    task_dict = {
+                        "id": task_id,
+                        "title": row["title"],
+                        "task_type": row["task_type"],
+                        "priority": row["priority"],
+                    }
+            except Exception:
+                pass
+
+            # ── TOKEN EXHAUSTION CHECK (runs for ANY exit code) ───────
+            is_exhausted, reset_hint = _detect_token_exhaustion(
+                ret, claude_output
+            )
+            if is_exhausted:
+                retry_count = _increment_retry_count(task_id)
+                if retry_count >= TOKEN_MAX_RETRY_COUNT:
+                    # Exceeded max retries — move to backlog, give up
+                    _move_task(task_id, "backlog")
+                    _clear_retry_count(task_id)
+                    _send_notification(task_dict, event="failed")
+                    print(
+                        f"  Kanban: {task_id} TOKEN EXHAUSTED — "
+                        f"max retries ({TOKEN_MAX_RETRY_COUNT}) reached, "
+                        f"returning to backlog"
+                    )
+                else:
+                    # Park in token_exhausted — scheduler will retry later
+                    _move_task(task_id, "token_exhausted")
+                    reset_msg = (
+                        f" (reset hint: {reset_hint})"
+                        if reset_hint else ""
+                    )
+                    print(
+                        f"  Kanban: {task_id} TOKEN EXHAUSTED"
+                        f"{reset_msg} — retry {retry_count}/"
+                        f"{TOKEN_MAX_RETRY_COUNT}, will auto-restart"
+                    )
+                    # Notify via Telegram
+                    _send_notification(task_dict, event="token_exhausted")
+                    try:
+                        from tools.notifications.adapters.telegram import (
+                            send as tg_send,
+                        )
+                        eta_minutes = TOKEN_RETRY_DELAY_SECONDS // 60
+                        tg_send(
+                            f"Token limit: {task_dict.get('title', task_id)[:50]}",
+                            (
+                                f"Claude token/rate limit hit on retry "
+                                f"{retry_count}/{TOKEN_MAX_RETRY_COUNT}."
+                                f"{reset_msg}\n"
+                                f"Will auto-retry in ~{eta_minutes} min."
+                            ),
+                            severity="warning",
+                        )
+                    except Exception:
+                        pass
+                # Keep prompt file for retry — don't delete
+                del _running[task_id]
+                completed.append(task_id)
+                continue
+
+            # ── NORMAL SUCCESS PATH ───────────────────────────────────
+            if ret == 0:
                 # VERIFICATION GATE — prevent false positives
-                verified, reason = _verify_task_completed(task_id, claude_output)
+                verified, reason = _verify_task_completed(
+                    task_id, claude_output
+                )
 
                 if verified:
                     try:
                         _move_task(task_id, "done")
                     except Exception:
                         pass
+                    _clear_retry_count(task_id)
                 else:
-                    # NOT VERIFIED — move back to backlog, notify as unverified
                     print(f"  Kanban: {task_id} UNVERIFIED: {reason}")
                     try:
                         _move_task(task_id, "backlog")
                     except Exception:
                         pass
-                # Build task dict with title from DB or fallback
-                task_dict = {"id": task_id, "title": task_id}
-                try:
-                    task_conn = get_connection()
-                    row = task_conn.execute(
-                        "SELECT title, task_type, priority FROM kanban_tasks WHERE id = ?",
-                        (task_id,),
-                    ).fetchone()
-                    task_conn.close()
-                    if row:
-                        task_dict = {
-                            "id": task_id,
-                            "title": row["title"],
-                            "task_type": row["task_type"],
-                            "priority": row["priority"],
-                        }
-                except Exception:
-                    pass
 
                 if verified:
                     _send_notification(task_dict, event="done")
-                    print(f"  Kanban: {task_id} VERIFIED done (exit {ret})")
+                    print(
+                        f"  Kanban: {task_id} VERIFIED done (exit {ret})"
+                    )
                 else:
                     _send_notification(task_dict, event="failed")
                     try:
-                        from tools.notifications.adapters.telegram import send
-                        send(
+                        from tools.notifications.adapters.telegram import (
+                            send as tg_send,
+                        )
+                        tg_send(
                             f"UNVERIFIED: {task_dict.get('title', task_id)[:60]}",
                             f"Task returned to backlog. Reason: {reason}",
                             severity="warning",
                         )
                     except Exception:
                         pass
-                    print(f"  Kanban: {task_id} returned to backlog: {reason}")
+                    print(
+                        f"  Kanban: {task_id} returned to backlog: "
+                        f"{reason}"
+                    )
 
                 # Send Claude's actual answer back via Telegram
                 if claude_output and verified:
                     try:
-                        from tools.notifications.adapters.telegram import send
+                        from tools.notifications.adapters.telegram import (
+                            send as tg_send,
+                        )
                         answer = claude_output[:3800]
-                        send(
+                        tg_send(
                             f"Answer: {task_dict.get('title', task_id)[:60]}",
                             answer,
                             severity="info",
                         )
                     except Exception as tg_exc:
-                        logger.warning("Failed to relay Claude output to Telegram: %s", tg_exc)
+                        logger.warning(
+                            "Failed to relay Claude output to Telegram: %s",
+                            tg_exc,
+                        )
                 if prompt_path.exists():
                     prompt_path.unlink()
-                print(f"  Kanban: {task_id} completed (exit {ret}, verified={verified})")
+                _clear_retry_count(task_id)
+                print(
+                    f"  Kanban: {task_id} completed "
+                    f"(exit {ret}, verified={verified})"
+                )
             else:
-                # Claude failed — move task back to backlog for retry
-                task_log = PROMPT_DIR / f"{task_id}.log"
+                # ── NON-ZERO EXIT (not token exhaustion) ──────────────
                 error_tail = ""
                 try:
-                    if task_log.exists():
-                        lines = task_log.read_text(encoding="utf-8", errors="replace").strip().split("\n")
+                    if claude_output:
+                        lines = claude_output.split("\n")
                         error_tail = "\n".join(lines[-5:])
                 except Exception:
                     pass
@@ -458,10 +624,7 @@ def _check_completed():
                 )
                 try:
                     _move_task(task_id, "backlog")
-                    _send_notification(
-                        {"id": task_id, "title": task_id},
-                        event="failed",
-                    )
+                    _send_notification(task_dict, event="failed")
                 except Exception:
                     pass
             del _running[task_id]
