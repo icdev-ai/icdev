@@ -765,6 +765,26 @@ CREATE TABLE IF NOT EXISTS redaction_audit (
     module TEXT DEFAULT 'unknown',
     classification TEXT DEFAULT 'CUI'
 );
+
+CREATE TABLE IF NOT EXISTS compliance_evidence_chain (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    chain_id       TEXT NOT NULL,
+    event_id       TEXT NOT NULL,
+    source         TEXT NOT NULL,
+    event_type     TEXT NOT NULL,
+    actor          TEXT,
+    action         TEXT NOT NULL,
+    oscal_controls TEXT DEFAULT '[]',
+    oscal_family   TEXT,
+    evidence_type  TEXT DEFAULT 'audit',
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    event_ts       TEXT NOT NULL,
+    details_json   TEXT,
+    created_at     TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_cec_chain ON compliance_evidence_chain(chain_id);
+CREATE INDEX IF NOT EXISTS idx_cec_source ON compliance_evidence_chain(source);
+CREATE INDEX IF NOT EXISTS idx_cec_ts ON compliance_evidence_chain(event_ts);
 """
 
 # ---------------------------------------------------------------------------
