@@ -23,6 +23,7 @@ Usage:
 
 Exit codes: 0 = all checks pass, 1 = at least one check failed
 """
+from __future__ import annotations
 
 import argparse
 import ast

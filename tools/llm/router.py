@@ -5,6 +5,7 @@ Reads args/llm_config.yaml and resolves each ICDEV™ function to a
 provider + model via fallback chain. Probes provider availability
 and caches results.
 """
+from __future__ import annotations
 
 import copy
 import json

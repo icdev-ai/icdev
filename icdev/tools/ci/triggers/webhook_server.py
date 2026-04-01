@@ -1,4 +1,6 @@
 # [TEMPLATE: CUI // SP-CTI]
+from __future__ import annotations
+
 # ICDEV™ Webhook Server — GitHub + GitLab + Slack + Mattermost webhook support
 # Refactored to use EventEnvelope + EventRouter (D132, D133)
 

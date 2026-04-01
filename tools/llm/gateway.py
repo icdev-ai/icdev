@@ -19,6 +19,7 @@ CLI:
     python tools/llm/gateway.py --gate
     python tools/llm/gateway.py --check-text "some prompt" --json
 """
+from __future__ import annotations
 
 import argparse
 import hashlib

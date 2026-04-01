@@ -16,6 +16,7 @@ CLI:
     python tools/redaction/detector.py --list-entities --json
     python tools/redaction/detector.py --health --json
 """
+from __future__ import annotations
 
 import argparse
 import json

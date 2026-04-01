@@ -10,6 +10,7 @@ For each detected language:
 
 CLI: python tools/maintenance/dependency_scanner.py --project-id <id> [--language <lang>] [--offline] [--json]
 """
+from __future__ import annotations
 
 import argparse
 import json

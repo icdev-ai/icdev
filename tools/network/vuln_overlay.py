@@ -9,6 +9,8 @@ Usage:
 
 Schema: nc_vuln_scans, nc_vuln_hosts, nc_vuln_findings (see init_db.py)
 """
+from __future__ import annotations
+
 import ipaddress
 import logging
 import uuid

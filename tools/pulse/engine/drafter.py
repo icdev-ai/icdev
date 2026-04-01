@@ -12,6 +12,7 @@ Pipeline:
 
 FORGE-compliant: LLM calls go through tools/llm/router.py, not direct API.
 """
+from __future__ import annotations
 
 import json
 import logging

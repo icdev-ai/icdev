@@ -4,6 +4,7 @@ Searches YouTube and Vimeo for relevant videos to embed in blog posts.
 No API keys required -- uses web scraping (YouTube), oEmbed (Vimeo),
 and DuckDuckGo site-scoped search as fallback.
 """
+from __future__ import annotations
 
 import json
 import logging

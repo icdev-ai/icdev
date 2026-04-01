@@ -14,6 +14,7 @@ Loaded automatically by ExtensionManager._auto_load_builtins().
 Exports:
     EXTENSION_HOOKS — dict mapping hook point names to handler metadata.
 """
+from __future__ import annotations
 
 import logging
 from tools.db.storage import get_connection

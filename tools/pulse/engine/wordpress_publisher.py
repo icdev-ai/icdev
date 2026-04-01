@@ -26,6 +26,7 @@ Usage:
   # JSON output
   python tools/pulse/engine/wordpress_publisher.py --publish --post-id "post-abc" --json
 """
+from __future__ import annotations
 
 import argparse
 import json

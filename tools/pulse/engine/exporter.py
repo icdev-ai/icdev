@@ -4,6 +4,7 @@ Exports blog posts as:
 - MDX with frontmatter (Hugo/Jekyll/Next.js compatible)
 - Standalone HTML with embedded styles and JSON-LD schema
 """
+from __future__ import annotations
 
 import json
 import logging

@@ -22,6 +22,7 @@ Usage:
     context = {"tool_name": "ssp_generator", "args": {...}}
     modified_ctx = extension_manager.dispatch(ExtensionPoint.TOOL_EXECUTE_BEFORE, context)
 """
+from __future__ import annotations
 
 from icdev._paths import get_project_root
 import importlib.util

@@ -9,6 +9,7 @@ Supports: Struts->Spring Boot, EJB->Spring, WCF->ASP.NET Core gRPC,
 ================================================================================
 CUI // SP-CTI
 """
+from __future__ import annotations
 
 import re
 import sys

@@ -17,6 +17,7 @@ Usage::
     python tools/llm/cost_intelligence.py --alerts --json
     python tools/llm/cost_intelligence.py --gate
 """
+from __future__ import annotations
 
 import argparse
 import json

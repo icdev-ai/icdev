@@ -21,6 +21,7 @@ Usage:
     python tools/modernization/db_migration_planner.py --app-id APP-001 --output-dir .tmp/migration --type validation
     python tools/modernization/db_migration_planner.py --app-id APP-001 --output-dir .tmp/migration --type all --json
 """
+from __future__ import annotations
 
 import argparse
 import json

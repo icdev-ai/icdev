@@ -18,6 +18,7 @@ Architecture Decisions:
   D-GSD-2: Stub detection is advisory-only — never modifies source files (D110)
   D-GSD-3: Results stored in append-only stub_detection_results table (D6)
 """
+from __future__ import annotations
 
 import argparse
 import ast

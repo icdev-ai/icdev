@@ -17,6 +17,7 @@ Usage:
     python tools/saas/platform_db.py --verify
     python tools/saas/platform_db.py --info
 """
+from __future__ import annotations
 
 import argparse
 import hashlib

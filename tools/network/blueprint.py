@@ -11,6 +11,7 @@ Usage in ICDEV dashboard app.py:
     if bp:
         app.register_blueprint(bp, url_prefix="/network")
 """
+from __future__ import annotations
 
 import json
 import logging

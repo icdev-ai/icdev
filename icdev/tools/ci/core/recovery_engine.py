@@ -1,4 +1,6 @@
 # [TEMPLATE: CUI // SP-CTI]
+from __future__ import annotations
+
 # ICDEV™ Recovery Engine — self-recovery from test/lint failures (D134)
 
 """

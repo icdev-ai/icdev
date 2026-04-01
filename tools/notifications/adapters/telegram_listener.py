@@ -21,6 +21,7 @@ Usage:
     python tools/notifications/adapters/telegram_listener.py --poll
     python tools/notifications/adapters/telegram_listener.py --health
 """
+from __future__ import annotations
 
 import json
 import os

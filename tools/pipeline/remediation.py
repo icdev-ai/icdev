@@ -8,6 +8,7 @@ plans from compliance findings.
 No Flask dependency — takes findings list and returns remediation artifacts.
 No LLM dependency — all logic is deterministic.
 """
+from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone, timedelta

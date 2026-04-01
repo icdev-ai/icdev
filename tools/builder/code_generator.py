@@ -9,6 +9,7 @@ Implements:
 - Logs audit trail event (code_generated)
 - CLI: python tools/builder/code_generator.py --project-path PATH --spec "REST API endpoint for users" --language python
 """
+from __future__ import annotations
 
 import argparse
 import json

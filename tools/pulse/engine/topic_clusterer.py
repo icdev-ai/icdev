@@ -3,6 +3,7 @@
 Groups related pain points from research_cache into coherent article themes
 using TF-IDF-like keyword extraction (stdlib only) and keyword overlap scoring.
 """
+from __future__ import annotations
 
 import json
 import logging

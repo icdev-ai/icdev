@@ -9,6 +9,7 @@ Scanner-tier only (zero Claude tokens).
 
 Enhancement §3.6: Stub detection pre-gate using GSD-adapted patterns.
 """
+from __future__ import annotations
 
 import re
 import sys

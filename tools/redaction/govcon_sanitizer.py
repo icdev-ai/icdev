@@ -25,6 +25,7 @@ CLI:
     python tools/redaction/govcon_sanitizer.py --sanitize "text" --show-text --json
     python tools/redaction/govcon_sanitizer.py --health --json
 """
+from __future__ import annotations
 
 import argparse
 import json

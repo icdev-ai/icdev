@@ -22,6 +22,7 @@ Usage:
     python tools/compliance/oscal_tools.py --catalog-list --family AC --json
     python tools/compliance/oscal_tools.py --catalog-stats --json
 """
+from __future__ import annotations
 
 import argparse
 import json

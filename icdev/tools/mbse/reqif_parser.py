@@ -8,6 +8,7 @@ ICDEV™ doors_requirements table.  Uses only Python stdlib xml.etree.ElementTre
 
 CUI // SP-CTI
 """
+from __future__ import annotations
 
 import argparse
 import hashlib

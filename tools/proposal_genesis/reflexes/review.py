@@ -14,6 +14,7 @@ Pipeline: on_demand (triggered after R8 Polish).
 GREEN tier (read-only analysis, writes to pg_proposal_quality_scores).
 Scanner-tier only (zero Claude tokens — fully deterministic).
 """
+from __future__ import annotations
 
 import json
 import sys

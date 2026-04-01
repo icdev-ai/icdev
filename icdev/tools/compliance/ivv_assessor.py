@@ -5,6 +5,7 @@
 Loads IV&V requirements from ivv_requirements.json, performs automated checks
 where possible, stores results in ivv_assessments table, generates findings in
 ivv_findings table, evaluates IV&V gates, applies CUI markings, and logs audit events."""
+from __future__ import annotations
 
 import argparse
 import json

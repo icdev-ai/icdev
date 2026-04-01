@@ -1,4 +1,6 @@
 # CUI // SP-CTI — ICDEV Network Canvas Auto-Discovery
+from __future__ import annotations
+
 # Classification: CUI — Controlled Unclassified Information
 """ICDEV™ Network Canvas — Live Network Auto-Discovery Agent.
 

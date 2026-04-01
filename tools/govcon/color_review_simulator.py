@@ -1,4 +1,6 @@
 # CUI // SP-CTI
+from __future__ import annotations
+
 # ICDEV™ GovCon AI Color Team Review Simulator — Phase 62 (§3.12)
 # Simulates Shipley color team reviews (Blue/Pink/Red/Green/Gold)
 # using deterministic scoring + optional LLM enhancement.

@@ -4,6 +4,7 @@ Scrapes DuckDuckGo HTML search results to find developer pain points
 across Reddit, StackOverflow, HackerNews, LinkedIn, DEV.to, and Medium.
 No API keys required -- uses requests + BeautifulSoup only.
 """
+from __future__ import annotations
 
 import logging
 import os

@@ -15,6 +15,7 @@ Pipeline stages:
 
 FORGE-compliant: LLM calls go through tools/llm/router.py.
 """
+from __future__ import annotations
 
 import json
 import logging

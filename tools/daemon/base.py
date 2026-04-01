@@ -14,6 +14,7 @@ Architecture Decision:
     table names, event prefixes, and reflex lists.  This base extracts the shared
     infrastructure so each daemon only defines its domain-specific behavior.
 """
+from __future__ import annotations
 
 import abc
 import argparse

@@ -17,6 +17,7 @@ CLI:
     python tools/redaction/ner_recognizer.py --extract "John Smith works at DISA" --json
     python tools/redaction/ner_recognizer.py --health --json
 """
+from __future__ import annotations
 
 import argparse
 import json

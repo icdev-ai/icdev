@@ -1,4 +1,6 @@
 # CUI // SP-CTI
+from __future__ import annotations
+
 # ICDEV™ Proposal Genesis — GSA "American AI" Clause Compliance Engine (§3.15)
 # Generates required AI compliance artifacts by wrapping existing ICDEV™ Phase 48/49 tools.
 

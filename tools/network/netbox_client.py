@@ -9,6 +9,7 @@ Usage:
     python tools/network/netbox_client.py --url http://netbox:8000 --token <token> --pull devices --json
     python tools/network/netbox_client.py --url http://netbox:8000 --token <token> --pull all --json
 """
+from __future__ import annotations
 
 import json
 import logging

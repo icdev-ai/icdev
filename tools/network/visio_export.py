@@ -8,6 +8,8 @@ Each canvas node becomes a Visio shape with:
 
 Export also generates companion CSV files for Ops teams.
 """
+from __future__ import annotations
+
 import csv
 import io
 import re

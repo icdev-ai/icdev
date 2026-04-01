@@ -1,4 +1,6 @@
 # [TEMPLATE: CUI // SP-CTI]
+from __future__ import annotations
+
 # ICDEV™ Workflow State Management
 # Adapted from ADW state.py
 
