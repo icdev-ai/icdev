@@ -224,7 +224,7 @@ def _get_task_list() -> str:
             "SELECT id, title, task_type, priority, status, "
             "scheduled_at FROM kanban_tasks "
             "WHERE status IN ('backlog', 'scheduled', "
-            "'in_progress') "
+            "'in_progress', 'token_exhausted') "
             "ORDER BY CASE priority "
             "WHEN 'critical' THEN 0 WHEN 'high' THEN 1 "
             "WHEN 'medium' THEN 2 ELSE 3 END, "
