@@ -4572,6 +4572,204 @@ TEMPLATES = [
             ]
         }),
     },
+    # 49 ─ PCI-DSS v4.0 Network Segmentation
+    {
+        "id": "tpl-pci-dss-network",
+        "name": "PCI-DSS v4.0 Network Segmentation",
+        "category": "Compliance",
+        "description": "PCI-DSS v4.0 cardholder data environment network with explicit CDE boundary, segmentation controls, and monitoring.",
+        "tags": json.dumps(["pci-dss", "compliance", "cde", "segmentation", "payment", "cardholder"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                _node("inet-rtr", "Internet Router", "router", 400, 40),
+                _node("ext-fw", "External Firewall", "firewall", 400, 160),
+                _node("dmz-web", "DMZ Web Server", "server", 200, 280),
+                _node("int-fw", "Internal Firewall", "firewall", 400, 280),
+                _node("cde-sw", "CDE Switch", "switch-l3", 400, 400),
+                _node("pos", "POS Terminal", "server", 200, 520),
+                _node("card-db", "Card Database", "database", 400, 520),
+                _node("qsa", "QSA Audit Server", "server", 600, 520),
+                _node("log-col", "Log Collector", "siem", 600, 280),
+                _node("ids", "IDS/IPS", "firewall", 600, 160),
+            ],
+            "edges": [
+                _edge("inet-rtr", "ext-fw", "Untrusted", ""),
+                _edge("ext-fw", "dmz-web", "DMZ Zone", "HTTPS"),
+                _edge("ext-fw", "int-fw", "Filtered", ""),
+                _edge("ext-fw", "ids", "Mirror", ""),
+                _edge("int-fw", "cde-sw", "CDE Boundary", ""),
+                _edge("cde-sw", "pos", "POS Traffic", "TLS"),
+                _edge("cde-sw", "card-db", "Card Data", "TLS"),
+                _edge("cde-sw", "qsa", "Audit Access", "TLS"),
+                _edge("ids", "log-col", "Alerts", ""),
+                _edge("int-fw", "log-col", "FW Logs", ""),
+                _edge("card-db", "log-col", "DB Audit", "TLS"),
+            ]
+        }),
+    },
+    # 50 ─ HIPAA Network Isolation
+    {
+        "id": "tpl-hipaa-network",
+        "name": "HIPAA Network Isolation",
+        "category": "Compliance",
+        "description": "HIPAA-compliant network with PHI data isolation, encrypted transit, access logging, and BAA partner connectivity.",
+        "tags": json.dumps(["hipaa", "compliance", "phi", "healthcare", "encryption", "baa"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                _node("igw", "Internet Gateway", "router", 400, 40),
+                _node("fw", "Firewall", "firewall", 400, 160),
+                _node("phi-app", "PHI Application Server", "server", 200, 300),
+                _node("phi-db", "PHI Database", "database", 200, 440),
+                _node("vpn-baa", "VPN Gateway (BAA Partner)", "router", 600, 160),
+                _node("audit-log", "Audit Log Server", "siem", 600, 300),
+                _node("enc-gw", "Encryption Gateway", "firewall", 400, 300),
+                _node("nac", "NAC Controller", "server", 400, 440),
+            ],
+            "edges": [
+                _edge("igw", "fw", "Perimeter", ""),
+                _edge("fw", "enc-gw", "Encrypted Transit", "TLS"),
+                _edge("enc-gw", "phi-app", "PHI Access", "TLS"),
+                _edge("phi-app", "phi-db", "PHI Query", "TLS"),
+                _edge("vpn-baa", "fw", "BAA Tunnel", "IPSec"),
+                _edge("fw", "audit-log", "Access Logs", "TLS"),
+                _edge("phi-app", "audit-log", "PHI Access Log", "TLS"),
+                _edge("phi-db", "audit-log", "DB Audit Log", "TLS"),
+                _edge("nac", "fw", "Policy Enforcement", ""),
+                _edge("nac", "phi-app", "Endpoint Validation", ""),
+            ]
+        }),
+    },
+    # 51 ─ Kubernetes CNI Network Architecture
+    {
+        "id": "tpl-k8s-cni",
+        "name": "Kubernetes CNI Network Architecture",
+        "category": "Container",
+        "description": "Kubernetes cluster networking with CNI (Calico/Cilium), network policies, service mesh, and ingress controller.",
+        "tags": json.dumps(["kubernetes", "k8s", "cni", "calico", "cilium", "istio", "service-mesh", "container"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                _node("ingress", "Ingress Controller", "router", 400, 40),
+                _node("api-server", "K8s API Server", "server", 200, 160),
+                _node("coredns", "CoreDNS", "server", 600, 160),
+                _node("cni", "Calico/Cilium CNI", "switch-l3", 400, 280),
+                _node("pod-net", "Pod Network", "cloud", 400, 400),
+                _node("mesh", "Service Mesh (Istio)", "server", 200, 400),
+                _node("ext-lb", "External LB", "router", 400, 520),
+                _node("etcd", "etcd", "database", 600, 400),
+            ],
+            "edges": [
+                _edge("ingress", "cni", "Ingress-to-Pod", "HTTPS"),
+                _edge("cni", "pod-net", "Pod-to-Pod", ""),
+                _edge("pod-net", "mesh", "Service-to-Service", "mTLS"),
+                _edge("api-server", "etcd", "Cluster State", "TLS"),
+                _edge("api-server", "cni", "Network Policy", ""),
+                _edge("coredns", "pod-net", "DNS Resolution", ""),
+                _edge("ingress", "ext-lb", "External Traffic", "HTTPS"),
+                _edge("mesh", "api-server", "Config Sync", "TLS"),
+                _edge("cni", "coredns", "Service Discovery", ""),
+            ]
+        }),
+    },
+    # 52 ─ Post-Quantum Cryptography Transition
+    {
+        "id": "tpl-pqc-transition",
+        "name": "Post-Quantum Cryptography Transition",
+        "category": "Quantum",
+        "description": "Hybrid classical + post-quantum cryptography transition architecture with PQC key exchange, algorithm agility, and migration phases.",
+        "tags": json.dumps(["pqc", "post-quantum", "ml-kem", "ml-dsa", "hybrid-tls", "cryptography", "quantum"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                _node("pqc-gw", "PQC Gateway", "firewall", 400, 40),
+                _node("classical", "Classical Crypto (Legacy)", "server", 200, 180),
+                _node("hybrid-tls", "Hybrid TLS Terminator", "firewall", 400, 180),
+                _node("ml-kem", "ML-KEM Key Exchange", "server", 600, 180),
+                _node("ml-dsa", "ML-DSA Signer", "server", 600, 320),
+                _node("ca", "Certificate Authority", "server", 200, 320),
+                _node("kms", "Key Management Server", "database", 400, 320),
+            ],
+            "edges": [
+                _edge("pqc-gw", "hybrid-tls", "Inbound TLS", "Hybrid-TLS"),
+                _edge("hybrid-tls", "classical", "Classical Fallback", "RSA/ECDH"),
+                _edge("hybrid-tls", "ml-kem", "PQC Key Exchange", "ML-KEM-768"),
+                _edge("ml-kem", "kms", "Key Storage", "TLS"),
+                _edge("ml-dsa", "ca", "PQC Cert Signing", "ML-DSA-65"),
+                _edge("ca", "kms", "Key Material", "TLS"),
+                _edge("ca", "hybrid-tls", "Cert Issuance", ""),
+                _edge("classical", "kms", "Legacy Keys", "TLS"),
+            ]
+        }),
+    },
+    # 53 ─ Distributed Cloud Architecture
+    {
+        "id": "tpl-distributed-cloud",
+        "name": "Distributed Cloud Architecture",
+        "category": "Hybrid",
+        "description": "Multi-site distributed cloud with edge locations, central control plane, and consistent networking across Anthos/Arc/Outposts.",
+        "tags": json.dumps(["distributed-cloud", "hybrid", "edge", "anthos", "arc", "outposts", "sd-wan", "multi-site"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                _node("ctrl", "Central Control Plane", "cloud", 400, 40),
+                _node("edge1", "Edge Location 1", "server", 150, 200),
+                _node("edge2", "Edge Location 2", "server", 650, 200),
+                _node("hub", "Cloud Hub", "cloud", 400, 200),
+                _node("tgw", "Transit Gateway", "router", 400, 340),
+                _node("sdwan", "SD-WAN Controller", "router", 150, 340),
+                _node("glb", "Global LB", "router", 650, 340),
+                _node("mon", "Monitoring", "siem", 400, 460),
+            ],
+            "edges": [
+                _edge("ctrl", "hub", "Control Plane", "TLS"),
+                _edge("ctrl", "edge1", "Policy Push", "TLS"),
+                _edge("ctrl", "edge2", "Policy Push", "TLS"),
+                _edge("hub", "tgw", "Cloud Routing", ""),
+                _edge("tgw", "edge1", "Site Link", "IPSec"),
+                _edge("tgw", "edge2", "Site Link", "IPSec"),
+                _edge("sdwan", "edge1", "WAN Overlay", ""),
+                _edge("sdwan", "edge2", "WAN Overlay", ""),
+                _edge("glb", "edge1", "Traffic Steering", ""),
+                _edge("glb", "edge2", "Traffic Steering", ""),
+                _edge("mon", "ctrl", "Health Check", "TLS"),
+                _edge("mon", "hub", "Metrics", "TLS"),
+            ]
+        }),
+    },
+    # 54 ─ IoT Gateway Security Architecture
+    {
+        "id": "tpl-iot-gateway",
+        "name": "IoT Gateway Security Architecture",
+        "category": "IoT",
+        "description": "IoT device gateway with protocol translation, edge compute, device identity management, and firmware OTA security.",
+        "tags": json.dumps(["iot", "mqtt", "coap", "edge-compute", "ota", "device-identity", "gateway"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                _node("iot1", "IoT Device 1", "server", 100, 40),
+                _node("iot2", "IoT Device 2", "server", 300, 40),
+                _node("iot3", "IoT Device 3", "server", 500, 40),
+                _node("proto-gw", "Protocol Gateway (MQTT/CoAP)", "router", 300, 180),
+                _node("edge", "Edge Compute", "server", 300, 320),
+                _node("cloud", "Cloud Backend", "cloud", 300, 460),
+                _node("dev-id", "Device Identity Service", "server", 600, 180),
+                _node("ota", "Firmware OTA Server", "server", 600, 320),
+                _node("fw", "Firewall", "firewall", 100, 320),
+                _node("siem", "SIEM", "siem", 100, 460),
+            ],
+            "edges": [
+                _edge("iot1", "proto-gw", "Telemetry", "MQTT"),
+                _edge("iot2", "proto-gw", "Telemetry", "MQTT"),
+                _edge("iot3", "proto-gw", "Telemetry", "CoAP"),
+                _edge("proto-gw", "edge", "Translated", "TLS"),
+                _edge("edge", "cloud", "Aggregated Data", "TLS"),
+                _edge("dev-id", "proto-gw", "Auth Token", "TLS"),
+                _edge("dev-id", "iot1", "Identity", ""),
+                _edge("dev-id", "iot2", "Identity", ""),
+                _edge("dev-id", "iot3", "Identity", ""),
+                _edge("ota", "proto-gw", "FW Update", "TLS"),
+                _edge("fw", "edge", "Inspection", ""),
+                _edge("fw", "siem", "Security Logs", "TLS"),
+                _edge("edge", "siem", "Edge Logs", "TLS"),
+            ]
+        }),
+    },
 ]
 
 
@@ -5251,6 +5449,170 @@ ENCLAVE_SNIPPETS = [
                 _edge("idc", "breakglass", "Emergency", ""),
                 _edge("ct", "alerts", "Alert Fwd", ""),
                 _edge("alerts", "idc", "Notification", ""),
+            ],
+        }),
+    },
+    # 11 ─ Kubernetes Network Policy
+    {
+        "id": "snip-k8s-netpol",
+        "name": "Kubernetes Network Policy",
+        "category": "Container",
+        "description": (
+            "Kubernetes NetworkPolicy snippet showing default-deny with explicit "
+            "allow rules between tiers. Ingress controller forwards to frontend pods, "
+            "frontend allowed to backend, backend allowed to database."
+        ),
+        "classification_level": "CUI",
+        "impact_level": "IL4",
+        "stig_controls": json.dumps([
+            "AC-4", "SC-7", "SC-7(5)", "CM-7",
+        ]),
+        "tags": json.dumps(["kubernetes", "k8s", "network-policy", "container", "micro-segmentation"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                _node("np-ingress", "Ingress Controller", "router", 300, 40),
+                _node("np-frontend", "Frontend Pod", "server", 300, 180),
+                _node("np-backend", "Backend Pod", "server", 300, 320),
+                _node("np-db", "Database Pod", "database", 300, 460),
+                _node("np-deny", "Deny-All Default Policy", "firewall", 550, 250),
+            ],
+            "edges": [
+                _edge("np-ingress", "np-frontend", "Allow Ingress", "HTTPS"),
+                _edge("np-frontend", "np-backend", "Allow Frontend→Backend", "gRPC"),
+                _edge("np-backend", "np-db", "Allow Backend→DB", "TCP/5432"),
+                _edge("np-deny", "np-frontend", "Default Deny", ""),
+                _edge("np-deny", "np-backend", "Default Deny", ""),
+                _edge("np-deny", "np-db", "Default Deny", ""),
+            ],
+        }),
+    },
+    # 12 ─ PCI CDE Isolation Zone
+    {
+        "id": "snip-pci-cde-zone",
+        "name": "PCI CDE Isolation Zone",
+        "category": "Compliance",
+        "description": (
+            "Complete PCI-DSS Cardholder Data Environment micro-zone. "
+            "Dedicated CDE firewall isolates POS devices, card processor, "
+            "and HSM for cryptographic key management. All flows encrypted."
+        ),
+        "classification_level": "CUI",
+        "impact_level": "IL4",
+        "stig_controls": json.dumps([
+            "SC-7", "SC-8", "SC-8(1)", "SC-13", "SC-28",
+        ]),
+        "tags": json.dumps(["pci-dss", "cde", "compliance", "hsm", "payment", "segmentation"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                _node("cde-fw", "CDE Firewall", "firewall", 300, 40),
+                _node("cde-sw", "CDE Switch", "switch-l3", 300, 180),
+                _node("pos-dev", "POS Device", "server", 100, 320),
+                _node("card-proc", "Card Processor", "server", 300, 320),
+                _node("hsm", "HSM", "server", 500, 320),
+            ],
+            "edges": [
+                _edge("cde-fw", "cde-sw", "CDE Boundary", ""),
+                _edge("cde-sw", "pos-dev", "POS Traffic", "TLS"),
+                _edge("cde-sw", "card-proc", "Transaction", "TLS"),
+                _edge("card-proc", "hsm", "Key Ops", "TLS"),
+                _edge("pos-dev", "card-proc", "Card Data", "TLS"),
+            ],
+        }),
+    },
+    # 13 ─ HIPAA PHI Data Flow
+    {
+        "id": "snip-hipaa-phi-flow",
+        "name": "HIPAA PHI Data Flow",
+        "category": "Compliance",
+        "description": (
+            "HIPAA-compliant Protected Health Information data flow. "
+            "All PHI flows encrypted end-to-end through an encryption gateway. "
+            "Every access logged to audit logger for HIPAA audit trail requirements."
+        ),
+        "classification_level": "CUI",
+        "impact_level": "IL4",
+        "stig_controls": json.dumps([
+            "SC-8", "SC-8(1)", "SC-28", "AU-2", "AU-12", "AC-3",
+        ]),
+        "tags": json.dumps(["hipaa", "phi", "compliance", "encryption", "audit", "healthcare"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                _node("ehr", "EHR System", "server", 100, 200),
+                _node("phi-db", "PHI Database", "database", 400, 200),
+                _node("enc-gw", "Encryption Gateway", "firewall", 250, 60),
+                _node("audit-log", "Audit Logger", "siem", 250, 340),
+            ],
+            "edges": [
+                _edge("ehr", "enc-gw", "PHI Request", "TLS"),
+                _edge("enc-gw", "phi-db", "Encrypted PHI", "TLS"),
+                _edge("ehr", "audit-log", "Access Log", "TLS"),
+                _edge("phi-db", "audit-log", "Query Log", "TLS"),
+                _edge("enc-gw", "audit-log", "Crypto Log", "TLS"),
+            ],
+        }),
+    },
+    # 14 ─ PQC Hybrid Key Exchange
+    {
+        "id": "snip-pqc-hybrid",
+        "name": "PQC Hybrid Key Exchange",
+        "category": "Quantum",
+        "description": (
+            "Post-quantum hybrid key exchange snippet showing algorithm negotiation. "
+            "Client connects to PQC-TLS terminator which negotiates ML-KEM with the key server "
+            "or falls back to classical ECDH when PQC is unavailable."
+        ),
+        "classification_level": "CUI",
+        "impact_level": "IL5",
+        "stig_controls": json.dumps([
+            "SC-8", "SC-8(1)", "SC-13", "SC-12",
+        ]),
+        "tags": json.dumps(["pqc", "post-quantum", "ml-kem", "hybrid-tls", "key-exchange", "quantum"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                _node("client", "Client", "server", 100, 200),
+                _node("pqc-tls", "PQC-TLS Terminator", "firewall", 300, 200),
+                _node("ml-kem-srv", "ML-KEM Key Server", "server", 500, 100),
+                _node("classical-fb", "Classical Fallback", "server", 500, 300),
+            ],
+            "edges": [
+                _edge("client", "pqc-tls", "TLS ClientHello", "Hybrid-TLS"),
+                _edge("pqc-tls", "ml-kem-srv", "PQC Negotiation", "ML-KEM-768"),
+                _edge("pqc-tls", "classical-fb", "ECDH Fallback", "X25519"),
+                _edge("ml-kem-srv", "pqc-tls", "Encapsulated Key", "ML-KEM-768"),
+            ],
+        }),
+    },
+    # 15 ─ IoT Device Onboarding
+    {
+        "id": "snip-iot-onboarding",
+        "name": "IoT Device Onboarding",
+        "category": "IoT",
+        "description": (
+            "Secure IoT device provisioning flow. New device contacts bootstrap server, "
+            "obtains certificate from CA, registers in device registry, "
+            "and receives policy from policy engine before joining the network."
+        ),
+        "classification_level": "CUI",
+        "impact_level": "IL4",
+        "stig_controls": json.dumps([
+            "IA-3", "IA-5", "CM-2", "CM-8", "SC-17",
+        ]),
+        "tags": json.dumps(["iot", "onboarding", "provisioning", "device-identity", "certificate", "bootstrap"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                _node("new-dev", "New IoT Device", "server", 100, 200),
+                _node("bootstrap", "Bootstrap Server", "server", 300, 100),
+                _node("ca", "Certificate Authority", "server", 500, 100),
+                _node("registry", "Device Registry", "database", 500, 300),
+                _node("policy", "Policy Engine", "server", 300, 300),
+            ],
+            "edges": [
+                _edge("new-dev", "bootstrap", "Discovery", "CoAP"),
+                _edge("bootstrap", "ca", "Cert Request", "TLS"),
+                _edge("ca", "new-dev", "Device Cert", "TLS"),
+                _edge("bootstrap", "registry", "Register", "TLS"),
+                _edge("registry", "policy", "Device Profile", ""),
+                _edge("policy", "new-dev", "Access Policy", "TLS"),
             ],
         }),
     },
