@@ -125,6 +125,42 @@ if _SECURITY_CANVAS_ENABLED:
         _HAS_SECURITY_CANVAS = True
     except ImportError:
         _HAS_SECURITY_CANVAS = False
+# Infrastructure Design Canvas (IDC): feature-flagged
+_INFRA_CANVAS_ENABLED = os.environ.get("ICDEV_INFRA_ENABLED", "true").lower() in ("true", "1", "yes")
+_HAS_INFRA_CANVAS = False
+if _INFRA_CANVAS_ENABLED:
+    try:
+        from tools.infra_canvas.blueprint import infra_bp  # noqa: E402
+        _HAS_INFRA_CANVAS = True
+    except ImportError:
+        _HAS_INFRA_CANVAS = False
+# Data Design Canvas (DDC): feature-flagged
+_DATA_CANVAS_ENABLED = os.environ.get("ICDEV_DATA_CANVAS_ENABLED", "true").lower() in ("true", "1", "yes")
+_HAS_DATA_CANVAS = False
+if _DATA_CANVAS_ENABLED:
+    try:
+        from tools.data_canvas.blueprint import create_data_blueprint  # noqa: E402
+        _HAS_DATA_CANVAS = True
+    except ImportError:
+        _HAS_DATA_CANVAS = False
+# Boundary Design Canvas (BDC): feature-flagged
+_BOUNDARY_CANVAS_ENABLED = os.environ.get("ICDEV_BOUNDARY_ENABLED", "true").lower() in ("true", "1", "yes")
+_HAS_BOUNDARY_CANVAS = False
+if _BOUNDARY_CANVAS_ENABLED:
+    try:
+        from tools.boundary_canvas.blueprint import create_boundary_blueprint  # noqa: E402
+        _HAS_BOUNDARY_CANVAS = True
+    except ImportError:
+        _HAS_BOUNDARY_CANVAS = False
+# Observability Design Canvas (ODC): feature-flagged
+_OBSERVABILITY_CANVAS_ENABLED = os.environ.get("ICDEV_OBSERVABILITY_ENABLED", "true").lower() in ("true", "1", "yes")
+_HAS_OBSERVABILITY_CANVAS = False
+if _OBSERVABILITY_CANVAS_ENABLED:
+    try:
+        from tools.observability_canvas.blueprint import create_observability_blueprint  # noqa: E402
+        _HAS_OBSERVABILITY_CANVAS = True
+    except ImportError:
+        _HAS_OBSERVABILITY_CANVAS = False
 # D-CHILD-6: GovProposal/CPMP/GovCon conditionally loaded
 _GOVCON_ENABLED = os.environ.get("ICDEV_GOVCON_ENABLED", "true").lower() == "true"
 _HAS_GOVCON = False
@@ -944,6 +980,44 @@ def create_app() -> Flask:
                 app.logger.info("Security Design Canvas registered at /security/")
         except Exception as exc:
             app.logger.warning("Security Design Canvas failed to register: %s", exc)
+
+    # ---- Infrastructure Design Canvas Blueprint ----
+    if _HAS_INFRA_CANVAS:
+        try:
+            app.register_blueprint(infra_bp)
+            app.logger.info("Infrastructure Design Canvas registered at /infra/")
+        except Exception as exc:
+            app.logger.warning("Infrastructure Design Canvas failed to register: %s", exc)
+
+    # ---- Data Design Canvas Blueprint ----
+    if _HAS_DATA_CANVAS:
+        try:
+            dd_bp = create_data_blueprint()
+            if dd_bp:
+                app.register_blueprint(dd_bp, url_prefix="/data")
+                app.logger.info("Data Design Canvas registered at /data/")
+        except Exception as exc:
+            app.logger.warning("Data Design Canvas failed to register: %s", exc)
+
+    # ---- Boundary Design Canvas Blueprint ----
+    if _HAS_BOUNDARY_CANVAS:
+        try:
+            bd_bp = create_boundary_blueprint()
+            if bd_bp:
+                app.register_blueprint(bd_bp, url_prefix="/boundary")
+                app.logger.info("Boundary Design Canvas registered at /boundary/")
+        except Exception as exc:
+            app.logger.warning("Boundary Design Canvas failed to register: %s", exc)
+
+    # ---- Observability Design Canvas Blueprint ----
+    if _HAS_OBSERVABILITY_CANVAS:
+        try:
+            od_bp = create_observability_blueprint()
+            if od_bp:
+                app.register_blueprint(od_bp, url_prefix="/observability")
+                app.logger.info("Observability Design Canvas registered at /observability/")
+        except Exception as exc:
+            app.logger.warning("Observability Design Canvas failed to register: %s", exc)
 
     # ---- Convenience JSON routes that match the spec ----
 
