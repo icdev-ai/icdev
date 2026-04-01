@@ -1460,6 +1460,102 @@ def check_maintainability_trend() -> AuditCheck:
         )
 
 
+def check_sa11_complexity_compliance() -> AuditCheck:
+    """CODE-007: SA-11 Complexity Compliance Signal (cyclomatic/cognitive → SA-11 sub-controls).
+
+    Maps cyclomatic and cognitive complexity metrics to NIST SA-11(1), SA-11(3),
+    and SA-11(8) sub-controls as compliance findings in the PDC.
+    """
+    try:
+        sys.path.insert(0, str(PROJECT_ROOT))
+        from tools.compliance.complexity_compliance import run_complexity_compliance  # noqa: PLC0415
+        result = run_complexity_compliance(include_trend=False)
+        sa11_findings = [f for f in result.get("findings", []) if f["control_id"].startswith("SA-11")]
+        blockers = [f for f in sa11_findings if f["severity"] == "blocking" and f["status"] == "fail"]
+        warnings = [f for f in sa11_findings if f["status"] == "warn"]
+        compliant = result.get("sa11_compliant", True)
+        status = "pass" if compliant else ("fail" if blockers else "warn")
+        ctrl_summary = "; ".join(
+            f"{f['control_id']}={f['status']}" for f in sa11_findings
+        )
+        return AuditCheck(
+            check_id="CODE-007", check_name="SA-11 Complexity Compliance",
+            category="code_quality", status=status,
+            severity="warning",
+            message=(
+                f"SA-11 compliance: {len(blockers)} blocking, {len(warnings)} warning(s). "
+                f"Controls: {ctrl_summary}"
+            ),
+            details={
+                "sa11_compliant": compliant,
+                "blocking_count": len(blockers),
+                "warning_count": len(warnings),
+                "functions_scanned": result.get("functions_scanned", 0),
+                "findings": [
+                    {"control_id": f["control_id"], "status": f["status"], "summary": f["summary"]}
+                    for f in sa11_findings
+                ],
+                "nist_controls": ["SA-11(1)", "SA-11(3)", "SA-11(8)"],
+            },
+        )
+    except Exception as e:
+        return AuditCheck(
+            check_id="CODE-007", check_name="SA-11 Complexity Compliance",
+            category="code_quality", status="skip", severity="warning",
+            message=f"SA-11 compliance check unavailable: {e}",
+            details={"error": str(e)},
+        )
+
+
+def check_sa15_complexity_compliance() -> AuditCheck:
+    """CODE-008: SA-15 Complexity Compliance Signal (quality metrics/dev process → SA-15 sub-controls).
+
+    Maps project-wide average cyclomatic/cognitive complexity and trend to NIST SA-15(1),
+    SA-15(7), and SA-15(11) sub-controls as compliance findings in the PDC.
+    Blocking on SA-15(1) quality metric exceedance (avg CC > threshold).
+    """
+    try:
+        sys.path.insert(0, str(PROJECT_ROOT))
+        from tools.compliance.complexity_compliance import run_complexity_compliance  # noqa: PLC0415
+        result = run_complexity_compliance(include_trend=True)
+        sa15_findings = [f for f in result.get("findings", []) if f["control_id"].startswith("SA-15")]
+        blockers = [f for f in sa15_findings if f["severity"] == "blocking" and f["status"] == "fail"]
+        warnings = [f for f in sa15_findings if f["status"] == "warn"]
+        compliant = result.get("sa15_compliant", True)
+        status = "fail" if blockers else ("warn" if warnings else "pass")
+        ctrl_summary = "; ".join(
+            f"{f['control_id']}={f['status']}" for f in sa15_findings
+        )
+        return AuditCheck(
+            check_id="CODE-008", check_name="SA-15 Complexity Compliance",
+            category="code_quality",
+            status=status,
+            severity="blocking",
+            message=(
+                f"SA-15 compliance: {len(blockers)} blocking, {len(warnings)} warning(s). "
+                f"Controls: {ctrl_summary}"
+            ),
+            details={
+                "sa15_compliant": compliant,
+                "blocking_count": len(blockers),
+                "warning_count": len(warnings),
+                "functions_scanned": result.get("functions_scanned", 0),
+                "findings": [
+                    {"control_id": f["control_id"], "status": f["status"], "summary": f["summary"]}
+                    for f in sa15_findings
+                ],
+                "nist_controls": ["SA-15(1)", "SA-15(7)", "SA-15(11)"],
+            },
+        )
+    except Exception as e:
+        return AuditCheck(
+            check_id="CODE-008", check_name="SA-15 Complexity Compliance",
+            category="code_quality", status="skip", severity="blocking",
+            message=f"SA-15 compliance check unavailable: {e}",
+            details={"error": str(e)},
+        )
+
+
 def check_implementation_coherence() -> AuditCheck:
     """CODE-006: Implementation coherence validation.
 
@@ -1727,6 +1823,9 @@ CHECK_REGISTRY: Dict[str, Tuple[Callable, str, str]] = {
     "CODE-004": (check_smell_density, "code_quality", "warning"),
     "CODE-005": (check_maintainability_trend, "code_quality", "warning"),
     "CODE-006": (check_implementation_coherence, "code_quality", "warning"),
+    # Complexity as Compliance Signal — NIST SA-11/SA-15 (Phase 52 extension)
+    "CODE-007": (check_sa11_complexity_compliance, "code_quality", "warning"),
+    "CODE-008": (check_sa15_complexity_compliance, "code_quality", "blocking"),
 }
 
 # Execution order of categories

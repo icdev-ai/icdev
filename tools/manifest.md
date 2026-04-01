@@ -130,6 +130,7 @@
 | Classification Manager | tools/compliance/classification_manager.py | CUI/SECRET/TS markings, IL-to-baseline mapping, cross-domain controls | --impact-level, --classification, --banner, --code-header, --validate | Marking banners, baselines, validation |
 | Crosswalk Engine | tools/compliance/crosswalk_engine.py | Dual-hub crosswalk engine (NIST+ISO 27001): FedRAMP, CMMC, 800-171, IL4/5/6, CJIS, HIPAA, HITRUST, SOC 2, PCI DSS, ISO 27001 | --control, --framework, --project-id, --coverage, --gap-analysis | Crosswalk mappings + coverage |
 | PI Compliance Tracker | tools/compliance/pi_compliance_tracker.py | SAFe PI compliance tracking: start/close PIs, velocity, burndown, reports | --project-id, --start-pi, --velocity, --burndown, --report | PI metrics + reports |
+| Complexity Compliance | tools/compliance/complexity_compliance.py | Maps cyclomatic/cognitive complexity to NIST SA-11(1/3/8) and SA-15(1/7/11) sub-controls as PDC compliance findings. Gates: SA-15(1) blocking on avg CC > 10. | --project-dir, --json, --gate, --no-trend, --control | JSON findings with control_id, severity, evidence |
 
 ## FIPS 199/200 Security Categorization
 | Tool | File | Description | Input | Output |

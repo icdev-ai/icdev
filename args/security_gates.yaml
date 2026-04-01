@@ -842,6 +842,46 @@ stub_detection:
     require_exists_pass: true
     require_substantive_pass: true
 
+# Complexity as Compliance Signal Gates (Phase 52 extension — D338)
+# Maps cyclomatic/cognitive complexity to NIST SA-11 (Developer Testing)
+# and SA-15 (Development Process, Standards, and Tools) sub-controls.
+# Evaluated by CODE-007 (SA-11) and CODE-008 (SA-15) in the PDC.
+complexity_compliance:
+  sa11:
+    # SA-11(1): Static Code Analysis — any function with CC > threshold
+    # SA-11(3): IV&V coverage — % of functions with high CC
+    # SA-11(8): Dynamic Code Analysis — any function with cognitive CC > threshold
+    blocking: []
+    warning:
+      - high_cyclomatic_function_exceeds_sa11_1_threshold
+      - high_cc_pct_exceeds_sa11_3_ivv_threshold
+      - high_cognitive_function_exceeds_sa11_8_threshold
+  sa15:
+    # SA-15(1): Quality Metrics — avg cyclomatic CC exceeds project-wide threshold (BLOCKING)
+    # SA-15(7): Developer Security Testing — avg cognitive CC exceeds threshold
+    # SA-15(11): Lifecycle Signal — cognitive complexity trend degrading
+    blocking:
+      - avg_cyclomatic_violates_sa15_1_quality_metrics
+    warning:
+      - avg_cognitive_exceeds_sa15_7_security_testing_threshold
+      - cognitive_trend_degrading_sa15_11_lifecycle_signal
+  thresholds:
+    sa11:
+      # SA-11(1): max cyclomatic CC per function before static analysis finding
+      max_cyclomatic_per_function: 20
+      # SA-11(3): % of functions above high-CC threshold before IV&V finding
+      max_pct_high_cyclomatic: 5.0
+      high_cyclomatic_threshold: 15
+      # SA-11(8): max cognitive CC per function before dynamic analysis finding
+      max_cognitive_per_function: 25
+    sa15:
+      # SA-15(1): project-wide average cyclomatic CC (blocking if exceeded)
+      max_avg_cyclomatic: 10.0
+      # SA-15(7): project-wide average cognitive CC (warning if exceeded)
+      max_avg_cognitive: 15.0
+      # SA-15(11): minimum trend delta — negative values indicate degradation
+      cognitive_trend_min_delta: -2.0
+
 # GSD-adapted: Context Pressure & Stuck Detection Gate (D-GSD-4/5)
 context_health:
   blocking:
