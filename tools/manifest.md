@@ -1594,9 +1594,17 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Security Engine | tools\security_canvas\security_engine.py | Auto-registered: security_canvas/security_engine.py | --json | JSON |
+| SDC Compliance KG | tools\security_canvas\compliance_kg.py | Builds sdc-compliance-kg: STRIDE→NIST→framework traversable graph | --build / --node-info / --path-from / --stride-coverage / --sdc-ctrl-coverage --json | JSON |
+| SDC NL Query | tools\security_canvas\nl_query.py | Natural language query engine for SDC compliance graph; auto-builds KG if missing | --query "..." --build --json | JSON |
 
 
 ## Auto-Registered (Coherence Fix)
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Importers | tools\security_canvas\importers.py | Auto-registered: security_canvas/importers.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| E2E Security Canvas | tools\testing\e2e_security_canvas.py | Auto-registered: testing/e2e_security_canvas.py | --json | JSON |
