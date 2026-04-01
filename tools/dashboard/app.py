@@ -2485,6 +2485,44 @@ def create_app() -> Flask:
                         )
                     except Exception:
                         pass
+                # OWASP coverage — derive from node types in all pipelines
+                try:
+                    from tools.pipeline.constants import compute_owasp_coverage
+                    all_node_types: list = []
+                    for g_row in pc.execute("SELECT graph_json FROM pipelines").fetchall():
+                        try:
+                            g = json.loads(g_row["graph_json"] or "{}")
+                            for n in g.get("nodes", []):
+                                t = n.get("type") or n.get("data", {}).get("type", "")
+                                if t:
+                                    all_node_types.append(t)
+                        except Exception:
+                            pass
+                    if all_node_types:
+                        owasp = compute_owasp_coverage(all_node_types)
+                        result["pdc"]["owasp_pct"] = int(owasp.get("coverage_pct", 0))
+                except Exception:
+                    pass
+                # SSDF coverage — remediation rate of SSDF framework findings
+                try:
+                    tables_row = pc.execute(
+                        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='pc_compliance_findings'"
+                    ).fetchone()
+                    if tables_row and tables_row[0] > 0:
+                        ssdf_total = pc.execute(
+                            "SELECT COUNT(*) FROM pc_compliance_findings WHERE framework LIKE 'SSDF%'"
+                        ).fetchone()[0]
+                        ssdf_rem = pc.execute(
+                            "SELECT COUNT(*) FROM pc_compliance_findings"
+                            " WHERE framework LIKE 'SSDF%' AND status = 'remediated'"
+                        ).fetchone()[0]
+                        if ssdf_total > 0:
+                            result["pdc"]["ssdf_pct"] = round(ssdf_rem / ssdf_total * 100)
+                        else:
+                            # No findings means passing — treat as 100%
+                            result["pdc"]["ssdf_pct"] = 100
+                except Exception:
+                    pass
                 pc.close()
             except Exception:
                 pass
@@ -2522,6 +2560,35 @@ def create_app() -> Flask:
             })
 
         return jsonify(result)
+
+    @app.route("/api/compliance/evidence-chain")
+    def api_compliance_evidence_chain():
+        """Evidence chain summary — PDC/NDC/SDC audit trail mapped to NIST 800-53."""
+        since_hours = float(flask_request.args.get("since_hours", 168))  # 7 days default
+        project_id = flask_request.args.get("project_id") or None
+        try:
+            from tools.compliance.evidence_chain import build_evidence_chain
+            chain = build_evidence_chain(
+                project_id=project_id,
+                since_hours=since_hours,
+            )
+            # Return lightweight summary (drop full event list for dashboard perf)
+            summary = {
+                "chain_id": chain["chain_id"],
+                "built_at": chain["built_at"],
+                "since_hours": since_hours,
+                "total_events": chain["timeline"]["total_events"],
+                "first_event": chain["timeline"]["first_event"],
+                "last_event": chain["timeline"]["last_event"],
+                "sources": chain["sources"],
+                "coverage": chain["coverage"],
+                "evidence_types": chain["evidence_types"],
+                "gate": chain["gate"],
+                "recent_events": chain["timeline"]["events"][-10:],
+            }
+            return jsonify(summary)
+        except Exception as exc:
+            return jsonify({"error": str(exc), "total_events": 0, "sources": {}}), 200
 
     @app.route("/compliance-debt")
     def compliance_debt_page():

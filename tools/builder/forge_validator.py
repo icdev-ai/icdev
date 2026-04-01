@@ -605,7 +605,7 @@ def _check_atlas(project_dir: Path) -> List[GotchaCheck]:
 
     if build_app.exists():
         content = build_app.read_text(encoding="utf-8", errors="replace")
-        has_atlas = "ATLAS" in content
+        has_atlas = "ANVIL" in content
         checks.append(GotchaCheck(
             check_id="FORGE-10",
             check_name="ANVIL workflow present",
@@ -695,7 +695,7 @@ CHECK_REGISTRY = {
     "claude_md": _check_claude_md,
     "memory": _check_memory,
     "database": _check_database,
-    "atlas": _check_atlas,
+    "anvil": _check_atlas,
     "coherence": _check_coherence,
 }
 

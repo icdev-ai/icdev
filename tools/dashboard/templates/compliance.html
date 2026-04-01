@@ -195,6 +195,45 @@
         </table>
     </div>
 
+    <!-- ====== Evidence Chain ====== -->
+    <h2 style="margin-top:2rem;">Continuous Compliance Evidence Chain</h2>
+    <p style="font-size:0.88rem;color:#666;margin-bottom:0.75rem;">
+        Chronological audit trail aggregating PDC, NDC, and SDC events mapped to NIST 800-53 OSCAL controls (7-day window).
+    </p>
+    <div id="chain-banner" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:0.8rem;margin-bottom:1.2rem;">
+        <div class="card" style="padding:1rem;text-align:center;">
+            <div style="font-size:1.8rem;font-weight:bold;color:#1976d2;" id="chain-total">--</div>
+            <div style="font-size:0.78rem;color:#666;">Total Events</div>
+        </div>
+        <div class="card" style="padding:1rem;text-align:center;">
+            <div style="font-size:1.8rem;font-weight:bold;color:#7b1fa2;" id="chain-pdc">--</div>
+            <div style="font-size:0.78rem;color:#666;">PDC Events</div>
+        </div>
+        <div class="card" style="padding:1rem;text-align:center;">
+            <div style="font-size:1.8rem;font-weight:bold;color:#00796b;" id="chain-ndc">--</div>
+            <div style="font-size:0.78rem;color:#666;">NDC Events</div>
+        </div>
+        <div class="card" style="padding:1rem;text-align:center;">
+            <div style="font-size:1.8rem;font-weight:bold;color:#f57c00;" id="chain-sdc">--</div>
+            <div style="font-size:0.78rem;color:#666;">SDC Events</div>
+        </div>
+        <div class="card" style="padding:1rem;text-align:center;">
+            <div style="font-size:1.8rem;font-weight:bold;color:#388e3c;" id="chain-controls">--</div>
+            <div style="font-size:0.78rem;color:#666;">Controls Covered</div>
+        </div>
+        <div class="card" style="padding:1rem;text-align:center;">
+            <div style="font-size:1.4rem;font-weight:bold;" id="chain-gate">--</div>
+            <div style="font-size:0.78rem;color:#666;">Gate Status</div>
+        </div>
+    </div>
+    <!-- Recent events mini-timeline -->
+    <div id="chain-timeline" style="margin-bottom:2rem;">
+        <div style="font-size:0.82rem;font-weight:600;color:#555;margin-bottom:0.5rem;">Recent Evidence Events</div>
+        <div id="chain-events" style="display:flex;flex-direction:column;gap:0.35rem;">
+            <div style="color:#999;font-size:0.82rem;">Loading evidence chain…</div>
+        </div>
+    </div>
+
     <!-- ====== Compliance Modules Grid ====== -->
     <h2>Compliance Modules</h2>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1rem;margin:1rem 0 2rem;">
@@ -275,6 +314,45 @@ document.addEventListener('DOMContentLoaded', function () {
     }).catch(function () {
         document.getElementById('posture-body').innerHTML =
             '<tr><td colspan="5" style="text-align:center;color:#999;">No compliance data available</td></tr>';
+    });
+
+    // ── Evidence Chain ────────────────────────────────────────────────────────
+    fetch('/api/compliance/evidence-chain').then(r => r.json()).then(function (c) {
+        if (c.total_events !== undefined)
+            document.getElementById('chain-total').textContent = c.total_events;
+        if (c.sources) {
+            document.getElementById('chain-pdc').textContent = (c.sources.pdc || {}).events || 0;
+            document.getElementById('chain-ndc').textContent = (c.sources.ndc || {}).events || 0;
+            document.getElementById('chain-sdc').textContent = (c.sources.sdc || {}).events || 0;
+        }
+        if (c.coverage && c.coverage.control_count !== undefined)
+            document.getElementById('chain-controls').textContent = c.coverage.control_count;
+        if (c.gate) {
+            var gEl = document.getElementById('chain-gate');
+            gEl.textContent = c.gate.pass ? 'PASS' : 'FAIL';
+            gEl.style.color = c.gate.pass ? '#388e3c' : '#d32f2f';
+        }
+        if (c.recent_events && c.recent_events.length) {
+            var evContainer = document.getElementById('chain-events');
+            evContainer.innerHTML = '';
+            var srcColors = { pdc: '#7b1fa2', ndc: '#00796b', sdc: '#f57c00', icdev: '#1976d2' };
+            c.recent_events.slice().reverse().forEach(function (ev) {
+                var col = srcColors[ev.source] || '#555';
+                var ts = (ev.event_ts || '').substring(0, 16).replace('T', ' ');
+                var fams = (ev.oscal_controls || []).slice(0, 3).join(', ');
+                var row = document.createElement('div');
+                row.style.cssText = 'display:flex;align-items:baseline;gap:0.6rem;font-size:0.78rem;padding:0.25rem 0.4rem;border-left:3px solid ' + col + ';background:#fafafa;border-radius:0 3px 3px 0;';
+                row.innerHTML = '<span style="color:#aaa;white-space:nowrap;">' + ts + '</span>'
+                    + '<span style="font-weight:600;color:' + col + ';text-transform:uppercase;font-size:0.68rem;">' + (ev.source || '') + '</span>'
+                    + '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (ev.action || ev.event_type || '') + '</span>'
+                    + '<span style="color:#999;font-size:0.68rem;white-space:nowrap;">' + fams + '</span>';
+                evContainer.appendChild(row);
+            });
+        } else {
+            document.getElementById('chain-events').innerHTML = '<div style="color:#999;font-size:0.82rem;">No evidence events in the last 7 days.</div>';
+        }
+    }).catch(function () {
+        document.getElementById('chain-events').innerHTML = '<div style="color:#999;font-size:0.82rem;">Evidence chain data unavailable.</div>';
     });
 
     // ── Unified posture (canvas cards + heatmap) ─────────────────────────────
