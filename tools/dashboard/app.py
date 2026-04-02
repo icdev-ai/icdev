@@ -139,7 +139,7 @@ _DATA_CANVAS_ENABLED = os.environ.get("ICDEV_DATA_CANVAS_ENABLED", "true").lower
 _HAS_DATA_CANVAS = False
 if _DATA_CANVAS_ENABLED:
     try:
-        from tools.data_canvas.blueprint import create_data_blueprint  # noqa: E402
+        from tools.data_canvas.blueprint import create_data_canvas_blueprint  # noqa: E402
         _HAS_DATA_CANVAS = True
     except ImportError:
         _HAS_DATA_CANVAS = False
@@ -853,6 +853,10 @@ def create_app() -> Flask:
             "network_enabled": _HAS_NETWORK,
             "pipeline_enabled": _HAS_PIPELINE,
             "security_canvas_enabled": _HAS_SECURITY_CANVAS,
+            "infra_canvas_enabled": _HAS_INFRA_CANVAS,
+            "data_canvas_enabled": _HAS_DATA_CANVAS,
+            "boundary_canvas_enabled": _HAS_BOUNDARY_CANVAS,
+            "observability_canvas_enabled": _HAS_OBSERVABILITY_CANVAS,
             "airgap_mode": _AIRGAP_MODE,
             "route_module_map": _route_map,
         }
@@ -992,7 +996,7 @@ def create_app() -> Flask:
     # ---- Data Design Canvas Blueprint ----
     if _HAS_DATA_CANVAS:
         try:
-            dd_bp = create_data_blueprint()
+            dd_bp = create_data_canvas_blueprint()
             if dd_bp:
                 app.register_blueprint(dd_bp, url_prefix="/data")
                 app.logger.info("Data Design Canvas registered at /data/")

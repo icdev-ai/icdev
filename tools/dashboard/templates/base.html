@@ -150,6 +150,50 @@
             </li>
             {% endif %}
 
+            {% if infra_canvas_enabled %}
+            <!-- Infrastructure Design Canvas -->
+            <li class="nav-dropdown">
+                <a href="#" class="{% if '/infra' in request.path %}active{% endif %}">Infra</a>
+                <ul class="nav-dropdown-menu">
+                    <li><a href="/infra/">Dashboard</a></li>
+                    <li><a href="/infra/canvas/new">New Design</a></li>
+                </ul>
+            </li>
+            {% endif %}
+
+            {% if data_canvas_enabled %}
+            <!-- Data Design Canvas -->
+            <li class="nav-dropdown">
+                <a href="#" class="{% if '/data' in request.path %}active{% endif %}">Data</a>
+                <ul class="nav-dropdown-menu">
+                    <li><a href="/data/">Dashboard</a></li>
+                    <li><a href="/data/canvas/new">New Design</a></li>
+                </ul>
+            </li>
+            {% endif %}
+
+            {% if boundary_canvas_enabled %}
+            <!-- Boundary Design Canvas -->
+            <li class="nav-dropdown">
+                <a href="#" class="{% if '/boundary' in request.path %}active{% endif %}">Boundary</a>
+                <ul class="nav-dropdown-menu">
+                    <li><a href="/boundary/">Dashboard</a></li>
+                    <li><a href="/boundary/canvas/new">New Design</a></li>
+                </ul>
+            </li>
+            {% endif %}
+
+            {% if observability_canvas_enabled %}
+            <!-- Observability Design Canvas -->
+            <li class="nav-dropdown">
+                <a href="#" class="{% if '/observability' in request.path %}active{% endif %}">Observability</a>
+                <ul class="nav-dropdown-menu">
+                    <li><a href="/observability/">Dashboard</a></li>
+                    <li><a href="/observability/canvas/new">New Design</a></li>
+                </ul>
+            </li>
+            {% endif %}
+
             <!-- Studio (Phase 72) -->
             <li class="nav-dropdown">
                 <a href="#" class="{% if '/studio' in request.path %}active{% endif %}" style="color: var(--accent-blue-light);">Studio</a>
