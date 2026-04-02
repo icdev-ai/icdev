@@ -4981,53 +4981,110 @@ TEMPLATES = [
             ]
         }),
     },
-    # 18 ─ SCCA Network Architecture (AWS GovCloud)
+    # 18 ─ SCCA Network Architecture (AWS GovCloud) — DoD Multi-Account Reference
     {
         "id": "tpl-scca-aws-govcloud",
         "name": "SCCA Network Architecture (AWS GovCloud)",
         "category": "SCCA / Landing Zone",
-        "description": "DoD SCCA network topology with BCAP, inspection VPC, transit gateway hub, "
-                       "shared services, and IL4/IL5 workload VPCs in AWS GovCloud. "
-                       "Type 1 encryptor on Direct Connect for DISN compliance.",
-        "tags": json.dumps(["scca", "dod", "bcap", "govcloud", "transit-gateway", "il5"]),
+        "description": "DoD SCCA multi-account network topology — Inspection VPC with "
+                       "Network Firewall and IDS/IPS in dual AZs, Transit Gateway hub "
+                       "connecting workload VPCs (Dev/Test/Prod), Shared Services VPC "
+                       "(Active Directory, container registry), External Access VPC "
+                       "(public/private subnets, IGW), Direct Connect and VPN "
+                       "connectivity to on-premises. IL4/IL5 compliant.",
+        "tags": json.dumps(["scca", "dod", "bcap", "govcloud", "transit-gateway",
+                            "il4", "il5", "multi-account", "inspection", "nfw"]),
         "graph_json": json.dumps({
             "nodes": [
-                # BCAP Zone
-                _node("bcap-fw", "BCAP Firewall", "firewall", 100, 100),
-                _node("bcap-rtr", "BCAP Router", "router", 100, 220),
-                _node("bcap-nfw", "Network Firewall", "aws-nfw", 300, 100),
-                # Transit
-                _node("tgw", "Transit Gateway Hub", "aws-tgw", 500, 220),
-                # Inspection VPC
-                _node("insp-vpc", "Inspection VPC", "aws-vpc", 700, 100),
-                _node("gwlb", "Gateway LB (Inline)", "aws-gwlb", 700, 220),
-                # Shared Services
-                _node("shared-vpc", "Shared Services VPC", "aws-vpc", 500, 380),
-                _node("r53", "Route 53 (Private)", "aws-r53", 700, 380),
-                _node("vpc-ep", "VPC Endpoints", "aws-gw-ep", 500, 480),
-                # Workload VPCs
-                _node("il5-vpc", "IL5 Workload VPC", "aws-vpc", 300, 380),
-                _node("il4-vpc", "IL4 Workload VPC", "aws-vpc", 100, 380),
-                # External connectivity
-                _node("dx", "Direct Connect", "aws-dx", 100, 480),
-                _node("encryptor", "Type 1 Encryptor", "encryptor", 100, 340),
-                # Boundary marker for BCAP zone
-                _node("bcap-zone", "BCAP Zone", "cloud", 200, 30, {
-                    "width": 280, "height": 230, "style": "boundary"}),
+                # ── Network Account — Inspection VPC ──
+                _node("insp-vpc", "Inspection VPC", "aws-vpc", 100, 50),
+                _node("fw-sub-a", "Firewall Subnet AZ-A", "aws-subnet", 100, 150),
+                _node("fw-sub-b", "Firewall Subnet AZ-B", "aws-subnet", 300, 150),
+                _node("nfw", "Network Firewall", "aws-nfw", 200, 250),
+                _node("ids-a", "IDS/IPS (AZ-A)", "firewall", 100, 350),
+                _node("ids-b", "IDS/IPS (AZ-B)", "firewall", 300, 350),
+                _node("insp-priv-a", "Private Subnet AZ-A", "aws-subnet", 100, 450),
+                _node("insp-priv-b", "Private Subnet AZ-B", "aws-subnet", 300, 450),
+                _node("insp-tgw-a", "TGW Subnet AZ-A", "aws-subnet", 100, 540),
+                _node("insp-tgw-b", "TGW Subnet AZ-B", "aws-subnet", 300, 540),
+                # ── Transit Gateway Hub ──
+                _node("tgw", "AWS Transit Gateway", "aws-tgw", 500, 350),
+                # ── External Connectivity ──
+                _node("dx", "Direct Connect Gateway", "aws-dx", 500, 100),
+                _node("vpn-gw", "Virtual Private Gateway", "aws-vpn", 700, 100),
+                _node("onprem-rtr", "On-Premises Router", "router", 700, 220),
+                # ── Production Workload VPC ──
+                _node("prod-vpc", "Production Application VPC", "aws-vpc", 700, 350),
+                _node("app-sub-a", "App Subnet AZ-A", "aws-subnet", 700, 450),
+                _node("app-sub-b", "App Subnet AZ-B", "aws-subnet", 900, 450),
+                _node("data-sub-a", "Data Subnet AZ-A", "aws-subnet", 700, 540),
+                _node("data-sub-b", "Data Subnet AZ-B", "aws-subnet", 900, 540),
+                _node("wl-tgw-a", "TGW Subnet AZ-A", "aws-subnet", 700, 630),
+                _node("wl-tgw-b", "TGW Subnet AZ-B", "aws-subnet", 900, 630),
+                # ── Shared Services Account ──
+                _node("ext-vpc", "External Access VPC", "aws-vpc", 100, 700),
+                _node("ext-pub-a", "Public Subnet AZ-A", "aws-subnet", 100, 790),
+                _node("ext-priv-a", "Private Subnet AZ-A", "aws-subnet", 300, 790),
+                _node("ext-igw", "Internet Gateway", "aws-gw-ep", 200, 880),
+                _node("ext-tgw-a", "TGW Subnet AZ-A", "aws-subnet", 100, 880),
+                _node("shared-vpc", "Shared Services VPC", "aws-vpc", 500, 700),
+                _node("shared-priv-a", "Private Subnet AZ-A", "aws-subnet", 500, 790),
+                _node("shared-priv-b", "Private Subnet AZ-B", "aws-subnet", 700, 790),
+                _node("shared-ad", "Active Directory", "server", 500, 880),
+                _node("shared-ecr", "Container Registry", "server", 700, 880),
+                _node("shared-tgw-a", "TGW Subnet AZ-A", "aws-subnet", 500, 960),
+                _node("shared-tgw-b", "TGW Subnet AZ-B", "aws-subnet", 700, 960),
+                # ── Route 53 ──
+                _node("r53", "Route 53 (Private)", "aws-r53", 900, 350),
             ],
             "edges": [
-                _edge("dx", "encryptor", "DISN Circuit", "NSA Type 1"),
-                _edge("encryptor", "bcap-rtr", "Encrypted Link", ""),
-                _edge("bcap-rtr", "bcap-fw", "LAN", ""),
-                _edge("bcap-fw", "bcap-nfw", "Inspection", ""),
-                _edge("bcap-nfw", "tgw", "Filtered Traffic", ""),
-                _edge("tgw", "insp-vpc", "Inspection Route", ""),
-                _edge("tgw", "shared-vpc", "Shared Svc Route", ""),
-                _edge("tgw", "il5-vpc", "Workload Route", ""),
-                _edge("tgw", "il4-vpc", "Workload Route", ""),
-                _edge("gwlb", "insp-vpc", "Inline Inspection", ""),
+                # Inspection VPC internal flow
+                _edge("fw-sub-a", "insp-vpc", "Firewall AZ-A", ""),
+                _edge("fw-sub-b", "insp-vpc", "Firewall AZ-B", ""),
+                _edge("nfw", "fw-sub-a", "Stateful Inspection", ""),
+                _edge("nfw", "fw-sub-b", "Stateful Inspection", ""),
+                _edge("ids-a", "nfw", "IDS Alert Feed", ""),
+                _edge("ids-b", "nfw", "IDS Alert Feed", ""),
+                _edge("insp-priv-a", "ids-a", "Filtered Traffic", ""),
+                _edge("insp-priv-b", "ids-b", "Filtered Traffic", ""),
+                _edge("insp-tgw-a", "insp-priv-a", "TGW Attach AZ-A", ""),
+                _edge("insp-tgw-b", "insp-priv-b", "TGW Attach AZ-B", ""),
+                # Inspection TGW subnets → Transit Gateway
+                _edge("insp-tgw-a", "tgw", "Inspection Route", ""),
+                _edge("insp-tgw-b", "tgw", "Inspection Route", ""),
+                # External connectivity
+                _edge("dx", "tgw", "DISN Circuit", "BGP"),
+                _edge("vpn-gw", "tgw", "VPN Tunnel", "IKEv2"),
+                _edge("onprem-rtr", "dx", "Dedicated 10G", ""),
+                _edge("onprem-rtr", "vpn-gw", "Backup VPN", "IKEv2"),
+                # TGW → Workload VPC
+                _edge("tgw", "wl-tgw-a", "Workload Route", ""),
+                _edge("tgw", "wl-tgw-b", "Workload Route", ""),
+                _edge("wl-tgw-a", "prod-vpc", "TGW Attach", ""),
+                _edge("wl-tgw-b", "prod-vpc", "TGW Attach", ""),
+                # Workload VPC subnets
+                _edge("app-sub-a", "prod-vpc", "App Tier AZ-A", ""),
+                _edge("app-sub-b", "prod-vpc", "App Tier AZ-B", ""),
+                _edge("data-sub-a", "prod-vpc", "Data Tier AZ-A", ""),
+                _edge("data-sub-b", "prod-vpc", "Data Tier AZ-B", ""),
+                # TGW → Shared Services
+                _edge("tgw", "shared-tgw-a", "Shared Svc Route", ""),
+                _edge("tgw", "shared-tgw-b", "Shared Svc Route", ""),
+                _edge("shared-tgw-a", "shared-vpc", "TGW Attach", ""),
+                _edge("shared-tgw-b", "shared-vpc", "TGW Attach", ""),
+                _edge("shared-priv-a", "shared-vpc", "Private AZ-A", ""),
+                _edge("shared-priv-b", "shared-vpc", "Private AZ-B", ""),
+                _edge("shared-ad", "shared-priv-a", "Domain Services", "LDAPS"),
+                _edge("shared-ecr", "shared-priv-b", "Registry Pull", "TLS"),
+                # TGW → External Access
+                _edge("tgw", "ext-tgw-a", "External Route", ""),
+                _edge("ext-tgw-a", "ext-vpc", "TGW Attach", ""),
+                _edge("ext-pub-a", "ext-vpc", "Public AZ-A", ""),
+                _edge("ext-priv-a", "ext-vpc", "Private AZ-A", ""),
+                _edge("ext-igw", "ext-pub-a", "Internet Egress", ""),
+                # DNS
                 _edge("r53", "shared-vpc", "DNS Resolution", ""),
-                _edge("vpc-ep", "shared-vpc", "Private Link", ""),
+                _edge("r53", "prod-vpc", "DNS Resolution", ""),
             ]
         }),
     },
