@@ -4981,6 +4981,142 @@ TEMPLATES = [
             ]
         }),
     },
+    # 18 ─ SCCA Network Architecture (AWS GovCloud)
+    {
+        "id": "tpl-scca-aws-govcloud",
+        "name": "SCCA Network Architecture (AWS GovCloud)",
+        "category": "SCCA / Landing Zone",
+        "description": "DoD SCCA network topology with BCAP, inspection VPC, transit gateway hub, "
+                       "shared services, and IL4/IL5 workload VPCs in AWS GovCloud. "
+                       "Type 1 encryptor on Direct Connect for DISN compliance.",
+        "tags": json.dumps(["scca", "dod", "bcap", "govcloud", "transit-gateway", "il5"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                # BCAP Zone
+                _node("bcap-fw", "BCAP Firewall", "firewall", 100, 100),
+                _node("bcap-rtr", "BCAP Router", "router", 100, 220),
+                _node("bcap-nfw", "Network Firewall", "aws-nfw", 300, 100),
+                # Transit
+                _node("tgw", "Transit Gateway Hub", "aws-tgw", 500, 220),
+                # Inspection VPC
+                _node("insp-vpc", "Inspection VPC", "aws-vpc", 700, 100),
+                _node("gwlb", "Gateway LB (Inline)", "aws-gwlb", 700, 220),
+                # Shared Services
+                _node("shared-vpc", "Shared Services VPC", "aws-vpc", 500, 380),
+                _node("r53", "Route 53 (Private)", "aws-r53", 700, 380),
+                _node("vpc-ep", "VPC Endpoints", "aws-gw-ep", 500, 480),
+                # Workload VPCs
+                _node("il5-vpc", "IL5 Workload VPC", "aws-vpc", 300, 380),
+                _node("il4-vpc", "IL4 Workload VPC", "aws-vpc", 100, 380),
+                # External connectivity
+                _node("dx", "Direct Connect", "aws-dx", 100, 480),
+                _node("encryptor", "Type 1 Encryptor", "encryptor", 100, 340),
+                # Boundary marker for BCAP zone
+                _node("bcap-zone", "BCAP Zone", "cloud", 200, 30, {
+                    "width": 280, "height": 230, "style": "boundary"}),
+            ],
+            "edges": [
+                _edge("dx", "encryptor", "DISN Circuit", "NSA Type 1"),
+                _edge("encryptor", "bcap-rtr", "Encrypted Link", ""),
+                _edge("bcap-rtr", "bcap-fw", "LAN", ""),
+                _edge("bcap-fw", "bcap-nfw", "Inspection", ""),
+                _edge("bcap-nfw", "tgw", "Filtered Traffic", ""),
+                _edge("tgw", "insp-vpc", "Inspection Route", ""),
+                _edge("tgw", "shared-vpc", "Shared Svc Route", ""),
+                _edge("tgw", "il5-vpc", "Workload Route", ""),
+                _edge("tgw", "il4-vpc", "Workload Route", ""),
+                _edge("gwlb", "insp-vpc", "Inline Inspection", ""),
+                _edge("r53", "shared-vpc", "DNS Resolution", ""),
+                _edge("vpc-ep", "shared-vpc", "Private Link", ""),
+            ]
+        }),
+    },
+    # 19 ─ Azure SCCA Hub-Spoke
+    {
+        "id": "tpl-scca-azure-hub-spoke",
+        "name": "Azure SCCA Hub-Spoke",
+        "category": "SCCA / Landing Zone",
+        "description": "Azure Government network for SCCA compliance with Azure Firewall hub VNet, "
+                       "ExpressRoute and VPN connectivity, Bastion jump host, shared services VNet, "
+                       "and workload spoke VNets peered through the hub.",
+        "tags": json.dumps(["scca", "azure-gov", "hub-spoke", "firewall", "expressroute"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                # Hub VNet
+                _node("hub-vnet", "Hub VNet", "az-vnet", 400, 100),
+                _node("az-fw", "Azure Firewall", "az-fw", 400, 220),
+                _node("bastion", "Bastion", "az-bastion", 600, 100),
+                # Connectivity
+                _node("er", "ExpressRoute", "az-er", 100, 100),
+                _node("vpn-gw", "VPN Gateway", "az-vpn-gw", 100, 220),
+                # Shared
+                _node("shared-vnet", "Shared Services VNet", "az-vnet", 400, 380),
+                _node("priv-dns", "Private DNS", "az-dns", 600, 380),
+                # Spokes
+                _node("spoke1", "Workload Spoke 1", "az-vnet", 200, 380),
+                _node("spoke2", "Workload Spoke 2", "az-vnet", 200, 480),
+                # Security
+                _node("hub-nsg", "Hub NSG", "az-nsg", 600, 220),
+                # Additional spoke
+                _node("spoke3", "Mgmt Spoke", "az-vnet", 600, 480),
+                _node("log-analytics", "Log Analytics", "server", 400, 480),
+            ],
+            "edges": [
+                _edge("er", "hub-vnet", "ExpressRoute Peering", "BGP"),
+                _edge("vpn-gw", "hub-vnet", "VPN Tunnel", "IKEv2"),
+                _edge("az-fw", "spoke1", "Spoke Peering", ""),
+                _edge("az-fw", "spoke2", "Spoke Peering", ""),
+                _edge("az-fw", "shared-vnet", "Shared Peering", ""),
+                _edge("az-fw", "spoke3", "Mgmt Peering", ""),
+                _edge("bastion", "hub-vnet", "Secure RDP/SSH", "TLS"),
+                _edge("hub-nsg", "hub-vnet", "NSG Rules", ""),
+                _edge("priv-dns", "shared-vnet", "DNS", ""),
+                _edge("log-analytics", "az-fw", "Diagnostics", ""),
+            ]
+        }),
+    },
+    # 20 ─ GCP Shared VPC Landing Zone Network
+    {
+        "id": "tpl-gcp-shared-vpc-lz",
+        "name": "GCP Shared VPC Landing Zone Network",
+        "category": "SCCA / Landing Zone",
+        "description": "GCP network with Shared VPC host project, Cloud Router, Cloud NAT, "
+                       "Cloud Interconnect and HA VPN for hybrid connectivity, Cloud Armor for "
+                       "DDoS/WAF, and service project subnets for prod/dev workloads.",
+        "tags": json.dumps(["gcp", "shared-vpc", "landing-zone", "interconnect"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                # Host Project
+                _node("shared-vpc", "Shared VPC (Host)", "gcp-vpc", 400, 100),
+                _node("cloud-rtr", "Cloud Router", "gcp-router", 400, 220),
+                _node("cloud-nat", "Cloud NAT", "gcp-nat", 600, 220),
+                # Connectivity
+                _node("ic", "Cloud Interconnect", "gcp-ic", 100, 100),
+                _node("ha-vpn", "HA VPN", "gcp-vpn", 100, 220),
+                # Security
+                _node("armor", "Cloud Armor", "gcp-armor", 600, 100),
+                _node("priv-dns", "Cloud DNS (Private)", "gcp-dns", 400, 340),
+                # Service Projects
+                _node("prod-subnet", "Prod Subnet", "gcp-subnet", 200, 340),
+                _node("dev-subnet", "Dev Subnet", "gcp-subnet", 600, 340),
+                # Additional
+                _node("fw-rules", "VPC Firewall Rules", "firewall", 200, 220),
+                _node("lb", "Internal LB", "load-balancer", 200, 100),
+            ],
+            "edges": [
+                _edge("ic", "cloud-rtr", "Interconnect Attach", "BGP"),
+                _edge("ha-vpn", "cloud-rtr", "VPN Tunnel", "IKEv2"),
+                _edge("cloud-rtr", "shared-vpc", "BGP Routes", ""),
+                _edge("armor", "shared-vpc", "DDoS/WAF", ""),
+                _edge("prod-subnet", "shared-vpc", "Shared VPC Link", ""),
+                _edge("dev-subnet", "shared-vpc", "Shared VPC Link", ""),
+                _edge("cloud-nat", "shared-vpc", "NAT Gateway", ""),
+                _edge("priv-dns", "shared-vpc", "Private DNS Zone", ""),
+                _edge("fw-rules", "shared-vpc", "Firewall Policy", ""),
+                _edge("lb", "prod-subnet", "Backend Service", ""),
+            ]
+        }),
+    },
 ]
 
 
@@ -5824,6 +5960,63 @@ ENCLAVE_SNIPPETS = [
                 _edge("bootstrap", "registry", "Register", "TLS"),
                 _edge("registry", "policy", "Device Profile", ""),
                 _edge("policy", "new-dev", "Access Policy", "TLS"),
+            ],
+        }),
+    },
+    # 16 ─ SCCA BCAP Network Pattern
+    {
+        "id": "snip-scca-bcap-network",
+        "name": "SCCA BCAP Network Pattern",
+        "category": "SCCA",
+        "description": (
+            "Minimal SCCA Boundary Cloud Access Point network pattern: BCAP firewall, "
+            "BCAP router, AWS Network Firewall for deep-packet inspection, and Transit "
+            "Gateway hub. Drop onto any GovCloud topology to add SCCA-compliant ingress."
+        ),
+        "classification_level": "CUI",
+        "impact_level": "IL5",
+        "stig_controls": json.dumps([
+            "SC-7", "SC-7(5)", "AC-4", "SI-4", "AU-2",
+        ]),
+        "tags": json.dumps(["scca", "bcap", "dod", "govcloud", "transit-gateway"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                _node("bcap-fw", "BCAP FW", "firewall", 100, 100),
+                _node("bcap-rtr", "BCAP Router", "router", 300, 100),
+                _node("bcap-nfw", "Network Firewall", "aws-nfw", 500, 100),
+                _node("tgw", "Transit GW", "aws-tgw", 700, 100),
+            ],
+            "edges": [
+                _edge("bcap-fw", "bcap-rtr", "Filtered", ""),
+                _edge("bcap-rtr", "bcap-nfw", "Inspection", ""),
+                _edge("bcap-nfw", "tgw", "Forwarded", ""),
+            ],
+        }),
+    },
+    # 17 ─ Hub-Spoke Network
+    {
+        "id": "snip-hub-spoke-network",
+        "name": "Hub-Spoke Network",
+        "category": "Landing Zone",
+        "description": (
+            "Minimal hub-spoke network pattern with Azure Firewall hub and two spoke VNets. "
+            "Use as a starting point for any hub-spoke landing zone design."
+        ),
+        "classification_level": "CUI",
+        "impact_level": "IL4",
+        "stig_controls": json.dumps([
+            "SC-7", "AC-4", "SC-7(5)",
+        ]),
+        "tags": json.dumps(["hub-spoke", "azure", "firewall", "landing-zone"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                _node("hub-fw", "Hub Firewall", "az-fw", 300, 100),
+                _node("spoke1", "Spoke 1", "az-vnet", 100, 280),
+                _node("spoke2", "Spoke 2", "az-vnet", 500, 280),
+            ],
+            "edges": [
+                _edge("spoke1", "hub-fw", "Spoke Peering", ""),
+                _edge("spoke2", "hub-fw", "Spoke Peering", ""),
             ],
         }),
     },
