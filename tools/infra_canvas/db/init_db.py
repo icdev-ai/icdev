@@ -83,6 +83,18 @@ CREATE TABLE IF NOT EXISTS idc_audit (
     classification  TEXT DEFAULT 'CUI',
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS idc_versions (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT REFERENCES infra_designs(id),
+    version_number  INTEGER NOT NULL,
+    graph_json      TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[]}',
+    change_summary  TEXT DEFAULT '',
+    user_id         TEXT DEFAULT '',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_idc_versions_design ON idc_versions(design_id);
 """
 
 # ── Templates ────────────────────────────────────────────────────────────────

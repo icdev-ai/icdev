@@ -96,6 +96,18 @@ CREATE TABLE IF NOT EXISTS dd_audit (
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS dd_versions (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT REFERENCES data_designs(id),
+    version_number  INTEGER NOT NULL,
+    graph_json      TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[],"boundaries":[]}',
+    change_summary  TEXT DEFAULT '',
+    user_id         TEXT DEFAULT '',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_dd_versions_design ON dd_versions(design_id);
+
 -- Immutability triggers (SQLite)
 CREATE TRIGGER IF NOT EXISTS dd_audit_no_update
     BEFORE UPDATE ON dd_audit

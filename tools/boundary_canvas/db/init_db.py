@@ -120,6 +120,16 @@ CREATE TABLE IF NOT EXISTS bd_audit (
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS bd_versions (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT REFERENCES boundary_designs(id),
+    version_number  INTEGER NOT NULL,
+    graph_json      TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[],"boundaries":[]}',
+    change_summary  TEXT DEFAULT '',
+    user_id         TEXT DEFAULT '',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_bd_assessments_design ON bd_assessments(design_id);
 CREATE INDEX IF NOT EXISTS idx_bd_isa_tracker_design ON bd_isa_tracker(design_id);

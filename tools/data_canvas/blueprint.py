@@ -423,6 +423,148 @@ def create_data_canvas_blueprint():
     def dc_api_rules():
         return jsonify(DATA_COMPLIANCE_RULES)
 
+    # ====================================================================
+    # API ROUTES — Design Versioning
+    # ====================================================================
+
+    def _dc_diff_graph(old: dict, new: dict) -> str:
+        """Return a human-readable change summary between two graph states."""
+        old_nodes = {n.get("id") for n in old.get("nodes", [])}
+        new_nodes = {n.get("id") for n in new.get("nodes", [])}
+        added = len(new_nodes - old_nodes)
+        removed = len(old_nodes - new_nodes)
+        old_edges = {(e.get("source"), e.get("target")) for e in old.get("edges", [])}
+        new_edges = {(e.get("source"), e.get("target")) for e in new.get("edges", [])}
+        e_added = len(new_edges - old_edges)
+        e_removed = len(old_edges - new_edges)
+        parts = []
+        if added:
+            parts.append(f"+{added} node(s)")
+        if removed:
+            parts.append(f"-{removed} node(s)")
+        if e_added:
+            parts.append(f"+{e_added} edge(s)")
+        if e_removed:
+            parts.append(f"-{e_removed} edge(s)")
+        return ", ".join(parts) if parts else "No structural changes"
+
+    @bp.route("/api/versions/<design_id>", methods=["GET"])
+    @dc_login_required
+    def dc_api_list_versions(design_id):
+        """List all version snapshots for a data design."""
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT id, version_number, change_summary, user_id, created_at "
+            "FROM dd_versions WHERE design_id=? ORDER BY version_number DESC",
+            (design_id,),
+        ).fetchall()
+        conn.close()
+        return jsonify([row_to_dict(r) for r in rows])
+
+    @bp.route("/api/versions/<design_id>", methods=["POST"])
+    @dc_login_required
+    def dc_api_create_version(design_id):
+        """Create a version snapshot of the current data design state."""
+        data = request.get_json(force=True, silent=True) or {}
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT graph_json FROM data_designs WHERE id=?", (design_id,),
+        ).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"error": "Design not found"}), 404
+        raw = row_to_dict(row)["graph_json"]
+        try:
+            current_graph = json.loads(raw) if isinstance(raw, str) else raw
+        except Exception:
+            current_graph = {}
+        ver_num = conn.execute(
+            "SELECT COALESCE(MAX(version_number), 0) + 1 FROM dd_versions WHERE design_id=?",
+            (design_id,),
+        ).fetchone()[0]
+        change_summary = data.get("change_summary", "")
+        if not change_summary:
+            prev = conn.execute(
+                "SELECT graph_json FROM dd_versions WHERE design_id=? ORDER BY version_number DESC LIMIT 1",
+                (design_id,),
+            ).fetchone()
+            if prev:
+                try:
+                    prev_graph = json.loads(prev[0]) if isinstance(prev[0], str) else prev[0]
+                    change_summary = _dc_diff_graph(prev_graph, current_graph)
+                except Exception:
+                    pass
+        ver_id = str(_uuid.uuid4())
+        now = now_isoformat()
+        conn.execute(
+            "INSERT INTO dd_versions (id, design_id, version_number, graph_json, change_summary, user_id, created_at) "
+            "VALUES (?,?,?,?,?,?,?)",
+            (ver_id, design_id, ver_num,
+             json.dumps(current_graph) if isinstance(current_graph, dict) else str(raw),
+             change_summary, session.get("user_id", ""), now),
+        )
+        conn.commit()
+        conn.close()
+        _audit(design_id, session.get("user_id", ""), "VERSION_CREATE", f"v{ver_num}")
+        return jsonify({"id": ver_id, "version_number": ver_num, "change_summary": change_summary, "created_at": now}), 201
+
+    @bp.route("/api/versions/<design_id>/restore/<version_id>", methods=["POST"])
+    @dc_login_required
+    def dc_api_restore_version(design_id, version_id):
+        """Restore a data design to a previous version snapshot."""
+        conn = get_connection()
+        ver = conn.execute(
+            "SELECT graph_json, version_number FROM dd_versions WHERE id=? AND design_id=?",
+            (version_id, design_id),
+        ).fetchone()
+        if not ver:
+            conn.close()
+            return jsonify({"error": "Version not found"}), 404
+        now = now_isoformat()
+        conn.execute(
+            "UPDATE data_designs SET graph_json=?, updated_at=? WHERE id=?",
+            (ver[0], now, design_id),
+        )
+        conn.commit()
+        ver_num = ver[1]
+        conn.close()
+        _audit(design_id, session.get("user_id", ""), "VERSION_RESTORE", f"restored to v{ver_num}")
+        return jsonify({"id": design_id, "restored_version": version_id,
+                        "version_number": ver_num, "updated_at": now})
+
+    @bp.route("/api/versions/<design_id>/diff", methods=["POST"])
+    @dc_login_required
+    def dc_api_diff_versions(design_id):
+        """Compare two version snapshots of a data design."""
+        data = request.get_json(force=True, silent=True) or {}
+        ver_a_id = data.get("version_a")
+        ver_b_id = data.get("version_b")
+        if not ver_a_id or not ver_b_id:
+            return jsonify({"error": "version_a and version_b required"}), 400
+        conn = get_connection()
+        ver_a = conn.execute(
+            "SELECT graph_json, version_number FROM dd_versions WHERE id=? AND design_id=?",
+            (ver_a_id, design_id),
+        ).fetchone()
+        ver_b = conn.execute(
+            "SELECT graph_json, version_number FROM dd_versions WHERE id=? AND design_id=?",
+            (ver_b_id, design_id),
+        ).fetchone()
+        conn.close()
+        if not ver_a or not ver_b:
+            return jsonify({"error": "One or both versions not found"}), 404
+        try:
+            graph_a = json.loads(ver_a[0]) if isinstance(ver_a[0], str) else ver_a[0]
+            graph_b = json.loads(ver_b[0]) if isinstance(ver_b[0], str) else ver_b[0]
+        except Exception:
+            return jsonify({"error": "Failed to parse graph data"}), 500
+        summary = _dc_diff_graph(graph_a, graph_b)
+        return jsonify({
+            "version_a": {"id": ver_a_id, "version_number": ver_a[1]},
+            "version_b": {"id": ver_b_id, "version_number": ver_b[1]},
+            "summary": summary,
+        })
+
     @bp.route("/api/export/<design_id>/vsdx", methods=["POST"])
     @dc_login_required
     def dc_api_export_vsdx(design_id):

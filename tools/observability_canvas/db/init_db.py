@@ -100,6 +100,18 @@ CREATE TABLE IF NOT EXISTS od_audit (
     classification  TEXT DEFAULT 'CUI // SP-CTI',
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS od_versions (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT REFERENCES observability_designs(id),
+    version_number  INTEGER NOT NULL,
+    graph_json      TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[]}',
+    change_summary  TEXT DEFAULT '',
+    user_id         TEXT DEFAULT '',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_od_versions_design ON od_versions(design_id);
 """
 
 # ── Template seeds ────────────────────────────────────────────────────────────
