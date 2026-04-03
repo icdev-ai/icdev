@@ -80,6 +80,7 @@ from tools.dashboard.api.migration_cost import migration_cost_api  # noqa: E402
 from tools.dashboard.api.compliance_debt import compliance_debt_api  # noqa: E402
 from tools.dashboard.api.stig_manager import stig_manager_api  # noqa: E402
 from tools.dashboard.api.ato_package import ato_package_api  # noqa: E402
+from tools.dashboard.api.oracle import oracle_api  # noqa: E402
 try:
     from tools.dashboard.api.finetune import finetune_api  # noqa: E402
     _HAS_FINETUNE_API = True
@@ -929,6 +930,7 @@ def create_app() -> Flask:
     app.register_blueprint(compliance_debt_api)
     app.register_blueprint(stig_manager_api)
     app.register_blueprint(ato_package_api)
+    app.register_blueprint(oracle_api)
     if _HAS_FINETUNE_API:
         app.register_blueprint(finetune_api)
     if _HAS_RAG_EVAL_API:
@@ -1455,6 +1457,11 @@ def create_app() -> Flask:
             return render_template("events/timeline.html", recent_events=[])
         finally:
             conn.close()
+
+    @app.route("/oracle")
+    def oracle_page():
+        """Oracle — predictive intelligence dashboard."""
+        return render_template("oracle.html")
 
     @app.route("/activity")
     def activity_page():
