@@ -1638,3 +1638,4 @@
 |------|------|-------------|-------|--------|
 | Base Lens | tools\oracle\base_lens.py | Auto-registered: oracle/base_lens.py | --json | JSON |
 | Oracle Reflex | tools\oracle\oracle_reflex.py | Auto-registered: oracle/oracle_reflex.py | --json | JSON |
+| Trajectory Lens | tools\oracle\lens_trajectory.py | Lens 3: architectural trajectory forecasting — CC/maintainability regression, days-to-threshold, hotspot detection | --json / --gate | JSON |
