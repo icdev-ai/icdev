@@ -9340,6 +9340,25 @@ CREATE TABLE IF NOT EXISTS oracle_lens_state (
 );
 CREATE INDEX IF NOT EXISTS idx_oracle_lens_domain ON oracle_lens_state(domain);
 CREATE INDEX IF NOT EXISTS idx_oracle_lens_enabled ON oracle_lens_state(enabled);
+
+-- ============================================================
+-- CANVAS PROJECTS (Cross-Canvas Integration Layer)
+-- Phase: Cross-Canvas Integration
+-- Links a "Design Project" entity across all 7 canvases:
+--   IDC (infra), NDC (network), SDC (security), BDC (boundary),
+--   PDC (pipeline), ODC (observability), DDC (data)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS canvas_projects (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    description     TEXT DEFAULT '',
+    classification  TEXT NOT NULL DEFAULT 'CUI',
+    links_json      TEXT NOT NULL DEFAULT '{}',
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_canvas_projects_name ON canvas_projects(name);
+CREATE INDEX IF NOT EXISTS idx_canvas_projects_updated ON canvas_projects(updated_at);
 """
 
 
