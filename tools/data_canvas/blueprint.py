@@ -288,6 +288,14 @@ def create_data_canvas_blueprint():
         conn.commit()
         conn.close()
         _audit(design_id, session.get("user_id", "system"), "UPDATE", data.get("name", ""))
+
+        # Cross-canvas trigger: auto-classify data flows, detect CUI/PII threats
+        try:
+            from tools.security_canvas.agent import on_ddc_design_saved
+            on_ddc_design_saved(design_id)
+        except Exception:
+            pass
+
         return jsonify({"updated": True})
 
     @bp.route("/api/designs/<design_id>", methods=["DELETE"])

@@ -337,6 +337,14 @@ def create_observability_blueprint():
         finally:
             conn.close()
         _audit("UPDATE", design_id, data.get("name", ""))
+
+        # Cross-canvas trigger: verify SIEM/logging controls match SDC requirements
+        try:
+            from tools.security_canvas.agent import on_odc_design_saved
+            on_odc_design_saved(design_id)
+        except Exception:
+            pass
+
         return jsonify({"updated": True})
 
     @bp.route("/api/designs/<design_id>", methods=["DELETE"])

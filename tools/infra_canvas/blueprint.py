@@ -250,9 +250,17 @@ def save_design(design_id):
             ),
         )
         conn.commit()
-        return jsonify({"status": "saved", "id": design_id})
     finally:
         conn.close()
+
+    # Cross-canvas trigger: auto-assess for security gaps
+    try:
+        from tools.security_canvas.agent import on_idc_design_saved
+        on_idc_design_saved(design_id)
+    except Exception:
+        pass
+
+    return jsonify({"status": "saved", "id": design_id})
 
 
 @infra_bp.route("/api/designs/<design_id>/assess", methods=["POST"])

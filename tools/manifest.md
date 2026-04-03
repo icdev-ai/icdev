@@ -1644,6 +1644,8 @@
 | Blueprint Helpers | tools\network\blueprint_helpers.py | Auto-registered: network/blueprint_helpers.py | --json | JSON |
 | Observability Engine | tools\observability_canvas\observability_engine.py | Auto-registered: observability_canvas/observability_engine.py | --json | JSON |
 | E2E New Canvases | tools\testing\e2e_new_canvases.py | Auto-registered: testing/e2e_new_canvases.py | --json | JSON |
+| Canvas Orchestrator | tools\canvas\orchestrator.py | Cross-Canvas Integration Engine — links all 7 design canvases (IDC/NDC/SDC/BDC/PDC/ODC/DDC) via canvas_projects entity in icdev.db; CRUD for design projects, link/unlink designs, aggregate compliance summary across all canvases | create --name / list / summary --json | JSON |
+| Canvas Projects API | tools\dashboard\api\canvas_projects.py | REST API Blueprint for canvas_projects: GET/POST/PUT/DELETE /api/canvas-projects, link/unlink canvas designs, GET /api/canvas-projects/compliance for 7-canvas posture summary | (blueprint) | JSON |
 
 
 ## Auto-Registered (Coherence Fix)

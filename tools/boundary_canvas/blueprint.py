@@ -335,6 +335,14 @@ def create_boundary_blueprint():
                 params,
             )
         _audit(design_id, "UPDATE", json.dumps(list(data.keys())))
+
+        # Cross-canvas trigger: validate boundary vs NDC enclaves, check ISA
+        try:
+            from tools.security_canvas.agent import on_bdc_design_saved
+            on_bdc_design_saved(design_id)
+        except Exception:
+            pass
+
         return jsonify({"id": design_id, "updated_at": now})
 
     @bp.route("/api/designs/<design_id>", methods=["DELETE"])
