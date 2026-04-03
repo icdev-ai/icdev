@@ -215,7 +215,8 @@
 | Formatter | tools/builder/formatter.py | Multi-language formatting (black, prettier, gofmt, rustfmt, dotnet-format) | --project | Formatted files |
 | Agentic Fitness | tools/builder/agentic_fitness.py | Assess component fitness for agentic architecture (6-dimension scoring) | --spec, --project-id, --json | Fitness scorecard |
 | App Blueprint | tools/builder/app_blueprint.py | Generate deployment blueprint from fitness scorecard | --fitness-scorecard, --user-decisions, --app-name, --json | Blueprint JSON |
-| Child App Generator | tools/builder/child_app_generator.py | Generate mini-ICDEV™ clone child applications (16-step pipeline) | --blueprint, --output, --json | Generated app path |
+| Framework Detector | tools/builder/framework_detector.py | Zero-config language/framework detection from source — pre-populates FORGE blueprint (language, framework, deploy_template with Terraform+STIG baselines+CUI markings, capabilities) | --source-path, --blueprint, --merge, --gate, --json | Detection result + optional merged blueprint |
+| Child App Generator | tools/builder/child_app_generator.py | Generate mini-ICDEV™ clone child applications (16-step pipeline); supports --source-path --auto-detect for zero-config build detection | --blueprint, --project-path, --name, --source-path, --auto-detect, --json | Generated app path |
 | Claude MD Generator | tools/builder/claude_md_generator.py | Generate dynamic CLAUDE.md for child apps (Jinja2) | --blueprint, --output, --json | CLAUDE.md path |
 | Goal Adapter | tools/builder/goal_adapter.py | Copy and adapt ICDEV™ goals for child applications | --source-goals, --output, --app-name, --json | Adapted goal paths |
 | DB Init Generator | tools/builder/db_init_generator.py | Generate standalone DB init scripts for child apps | --blueprint, --output, --app-name, --json | DB init script path |

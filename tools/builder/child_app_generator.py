@@ -3215,13 +3215,52 @@ def generate_child_app(
 # ============================================================
 
 
+def _apply_framework_detection(blueprint: dict, source_path: str) -> dict:
+    """Run framework_detector on source_path and merge results into blueprint.
+
+    Decision D-FD-1: Detection is advisory — only fills absent fields.
+    Logs detection results; never raises (returns blueprint unchanged on error).
+    """
+    try:
+        from tools.builder.framework_detector import (
+            detect_from_source,
+            merge_detection_into_blueprint,
+        )
+        detection = detect_from_source(source_path)
+        if detection.get("error"):
+            logger.warning(
+                "Framework detection error for '%s': %s",
+                source_path, detection["error"],
+            )
+            return blueprint
+
+        logger.info(
+            "Framework detected — language=%s framework=%s confidence=%.0f%%",
+            detection.get("language", "unknown"),
+            detection.get("framework", "unknown"),
+            detection.get("confidence", 0) * 100,
+        )
+        blueprint = merge_detection_into_blueprint(blueprint, detection, overwrite=False)
+    except ImportError:
+        logger.warning("framework_detector not available — skipping auto-detect")
+    except Exception as exc:
+        logger.warning("Framework detection failed: %s", exc)
+    return blueprint
+
+
 def main():
     """CLI entry point for child app generation."""
     parser = argparse.ArgumentParser(
         description="Generate mini-ICDEV™ clone child application from blueprint",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="Example:\n  python tools/builder/child_app_generator.py "
-               "--blueprint bp.json --project-path /tmp --name my-app --json",
+        epilog=(
+            "Examples:\n"
+            "  python tools/builder/child_app_generator.py "
+            "--blueprint bp.json --project-path /tmp --name my-app --json\n"
+            "  python tools/builder/child_app_generator.py "
+            "--blueprint bp.json --project-path /tmp --name my-app "
+            "--source-path ./src --auto-detect --json"
+        ),
     )
     parser.add_argument("--blueprint", required=True,
                         help="Path to blueprint JSON file")
@@ -3229,6 +3268,11 @@ def main():
                         help="Parent directory for the child app")
     parser.add_argument("--name", required=True,
                         help="Child application name")
+    parser.add_argument("--source-path",
+                        help="Source directory to scan for zero-config language/framework detection")
+    parser.add_argument("--auto-detect", action="store_true",
+                        help="Enable zero-config detection from --source-path "
+                             "(merges language, framework, deploy_template, capabilities into blueprint)")
     parser.add_argument("--icdev-root",
                         help="Path to ICDEV™ root (default: auto-detect)")
     parser.add_argument("--db-path",
@@ -3258,6 +3302,12 @@ def main():
     except (json.JSONDecodeError, IOError) as e:
         logger.error("Failed to load blueprint: %s", e)
         sys.exit(1)
+
+    # Zero-config detection: merge language/framework/capabilities into blueprint
+    if args.auto_detect:
+        source = args.source_path or args.project_path
+        logger.info("Auto-detect enabled — scanning: %s", source)
+        blueprint = _apply_framework_detection(blueprint, source)
 
     # Resolve paths
     icdev_root = Path(args.icdev_root) if args.icdev_root else BASE_DIR
