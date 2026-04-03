@@ -55,6 +55,9 @@ class LLMRouter:
     # Runtime dual-model toggle (None = use config/env, True/False = explicit)
     _dual_model_runtime: Optional[bool] = None
 
+    # RL router singleton (shared across all LLMRouter instances in process)
+    _rl_router_instance = None
+
     def __init__(self, config_path=None):
         self._config_path = Path(config_path) if config_path else DEFAULT_CONFIG_PATH
         self._config: Dict = {}
@@ -99,6 +102,37 @@ class LLMRouter:
         dm = cfg.get("dual_model", {})
         val = str(dm.get("enabled", "false")).lower()
         return val in ("true", "1", "yes")
+
+    # -------------------------------------------------------------------
+    # RL router (lazy singleton)
+    # -------------------------------------------------------------------
+    def _get_rl_router(self):
+        """Return the process-wide RLRouter singleton (lazy-init).
+
+        Reads `rl_routing.enabled` from llm_config.yaml (default True).
+        Falls back to a disabled stub on import errors so existing routing
+        is never disrupted.
+        """
+        if LLMRouter._rl_router_instance is not None:
+            return LLMRouter._rl_router_instance
+
+        enabled = self._config.get("rl_routing", {}).get("enabled", True)
+        try:
+            from tools.llm.rl_router import RLRouter
+            LLMRouter._rl_router_instance = RLRouter(enabled=enabled)
+        except Exception as exc:
+            logger.debug("RL router unavailable, using passthrough: %s", exc)
+
+            class _NoopRL:
+                def rank_models(self, fn, models):
+                    return models
+
+                def record_outcome(self, *a, **kw):
+                    pass
+
+            LLMRouter._rl_router_instance = _NoopRL()
+
+        return LLMRouter._rl_router_instance
 
     # -------------------------------------------------------------------
     # Config loading
@@ -1006,6 +1040,8 @@ class LLMRouter:
             return two_tier_result
 
         chain = self._get_chain_for_function(function)
+        # RL routing: reorder chain by learned Q-values (epsilon-greedy)
+        chain = self._get_rl_router().rank_models(function, chain)
         last_error = None
 
         # D286: Create trace span for LLM invocation
@@ -1065,6 +1101,11 @@ class LLMRouter:
                 # D-RDT-2: Post-invoke de-anonymization — restore originals
                 response = self._post_invoke_deanonymize(response, _redaction_session)
 
+                # RL: record success so this model's Q-value improves
+                self._get_rl_router().record_outcome(
+                    function, model_name, success=True, latency_ms=_latency
+                )
+
                 return response
             except Exception as exc:
                 logger.warning(
@@ -1082,6 +1123,10 @@ class LLMRouter:
                 last_error = exc
                 # Mark model as unavailable in cache so next call skips it
                 self._availability_cache[model_name] = False
+                # RL: record failure so this model's Q-value decreases
+                self._get_rl_router().record_outcome(
+                    function, model_name, success=False
+                )
                 continue
 
         raise RuntimeError(

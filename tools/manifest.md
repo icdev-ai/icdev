@@ -464,6 +464,7 @@
 |------|------|-------------|-------|--------|
 | LLM Provider Base | tools/llm/provider.py | ABC base classes (LLMProvider, EmbeddingProvider), vendor-agnostic LLMRequest/LLMResponse, message/tool format translators | — | — |
 | LLM Router | tools/llm/router.py | Config-driven function→model routing with fallback chains, reads args/llm_config.yaml | function name | (provider, model_id, config) |
+| RL Router | tools/llm/rl_router.py | Q-Learning RL agent that ranks model chains by learned success/latency history (epsilon-greedy, TD(0)); persists Q-table to llm_rl_qtable in icdev.db | --stats, --reset, --function, --model, --json | Q-table stats |
 | Bedrock Provider | tools/llm/bedrock_provider.py | AWS Bedrock LLMProvider: Anthropic models, thinking/effort, tools, structured output, retry/backoff | LLMRequest | LLMResponse |
 | Anthropic Provider | tools/llm/anthropic_provider.py | Direct Anthropic API LLMProvider via anthropic SDK | LLMRequest | LLMResponse |
 | OpenAI-Compat Provider | tools/llm/openai_provider.py | OpenAI-compatible LLMProvider: OpenAI, vLLM, Azure via configurable base_url | LLMRequest | LLMResponse |
