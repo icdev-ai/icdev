@@ -8,11 +8,31 @@ No Flask dependency — takes graph data and returns results.
 No LLM dependency — all checks are deterministic.
 """
 from datetime import datetime, timezone
+from pathlib import Path
 
 from tools.data_canvas.constants import (
     DATA_COMPLIANCE_RULES,
     DATA_NIST_FAMILIES,
 )
+
+try:
+    import yaml as _yaml
+    _HAS_YAML = True
+except ImportError:
+    _HAS_YAML = False
+
+_CONFIG_PATH = Path(__file__).resolve().parent.parent.parent / "args" / "data_canvas_config.yaml"
+
+
+def _load_config() -> dict:
+    """Load DDC engine config from args/data_canvas_config.yaml."""
+    if not _HAS_YAML or not _CONFIG_PATH.exists():
+        return {}
+    with open(_CONFIG_PATH, "r", encoding="utf-8") as _f:
+        return _yaml.safe_load(_f) or {}
+
+
+_DDC_CONFIG = _load_config()
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────

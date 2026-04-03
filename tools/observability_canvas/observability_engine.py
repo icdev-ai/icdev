@@ -9,6 +9,7 @@ No LLM dependency — all checks are deterministic.
 """
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 
 from tools.observability_canvas.constants import (
     OBSERVABILITY_COMPLIANCE_RULES,
@@ -16,6 +17,25 @@ from tools.observability_canvas.constants import (
     SIEM_PLATFORM_TYPES,
     SEVERITY_WEIGHTS,
 )
+
+try:
+    import yaml as _yaml
+    _HAS_YAML = True
+except ImportError:
+    _HAS_YAML = False
+
+_CONFIG_PATH = Path(__file__).resolve().parent.parent.parent / "args" / "observability_canvas_config.yaml"
+
+
+def _load_config() -> dict:
+    """Load ODC engine config from args/observability_canvas_config.yaml."""
+    if not _HAS_YAML or not _CONFIG_PATH.exists():
+        return {}
+    with open(_CONFIG_PATH, "r", encoding="utf-8") as _f:
+        return _yaml.safe_load(_f) or {}
+
+
+_ODC_CONFIG = _load_config()
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────

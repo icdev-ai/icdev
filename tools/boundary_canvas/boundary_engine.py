@@ -9,12 +9,32 @@ No LLM dependency — all checks are deterministic.
 """
 import json
 from datetime import datetime, timezone
+from pathlib import Path
 
 from tools.boundary_canvas.constants import (
     ISA_LIFECYCLE_STATES,
     DEFAULT_PPS,
     BOUNDARY_NIST_CONTROLS,
 )
+
+try:
+    import yaml as _yaml
+    _HAS_YAML = True
+except ImportError:
+    _HAS_YAML = False
+
+_CONFIG_PATH = Path(__file__).resolve().parent.parent.parent / "args" / "boundary_canvas_config.yaml"
+
+
+def _load_config() -> dict:
+    """Load BDC engine config from args/boundary_canvas_config.yaml."""
+    if not _HAS_YAML or not _CONFIG_PATH.exists():
+        return {}
+    with open(_CONFIG_PATH, "r", encoding="utf-8") as _f:
+        return _yaml.safe_load(_f) or {}
+
+
+_BDC_CONFIG = _load_config()
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
