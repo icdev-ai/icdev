@@ -16,6 +16,8 @@ from pathlib import Path
 
 from flask import Blueprint, jsonify, request
 
+from tools.common.helpers import now_isoformat
+
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
@@ -32,9 +34,6 @@ def _get_db():
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
-
-def _now():
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _run_daemon_cmd(args_list, timeout=30):

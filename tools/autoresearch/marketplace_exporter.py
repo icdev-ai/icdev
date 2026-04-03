@@ -21,9 +21,7 @@ from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parent.parent.parent
 
-
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+from tools.common.helpers import now_iso
 
 
 def _gen_id(prefix="mke"):
@@ -62,7 +60,7 @@ def list_exportable(min_improvement: float = 0.005) -> dict:
                 "exportable": [dict(r) for r in rows],
                 "count": len(rows),
                 "min_improvement": min_improvement,
-                "timestamp": _now(),
+                "timestamp": now_iso(),
             }
     except Exception as exc:
         return {"exportable": [], "count": 0, "error": str(exc)[:200]}
@@ -110,7 +108,7 @@ def export_experiment_as_asset(
                     program_content = f.read()
 
             # Build asset metadata
-            asset_name = f"autoresearch-{domain}-{_now()[:10]}"
+            asset_name = f"autoresearch-{domain}-{now_iso()[:10]}"
             content_hash = hashlib.sha256(
                 f"{domain}:{result['hypothesis']}:{result['metric_delta']}".encode()
             ).hexdigest()[:16]
@@ -159,7 +157,7 @@ def export_experiment_as_asset(
                         "experiment_program", description,
                         f"{tenant_id}/{asset_name}",
                         publisher_user, "IL4", "draft", "CUI",
-                        _now(), _now(),
+                        now_iso(), now_iso(),
                     ),
                 )
             except Exception:
@@ -181,7 +179,7 @@ def export_experiment_as_asset(
                                    default=str),
                         "autoresearch",
                         "autoresearch",
-                        _now(),
+                        now_iso(),
                     ),
                 )
             except Exception:
@@ -196,7 +194,7 @@ def export_experiment_as_asset(
             "improvement_pct": result.get("improvement_pct", 0),
             "status": "draft",
             "asset_package": asset_package,
-            "timestamp": _now(),
+            "timestamp": now_iso(),
         }
 
     except Exception as exc:
@@ -218,7 +216,7 @@ def health_check() -> dict:
         "status": "healthy" if db_ok else "degraded",
         "db_available": db_ok,
         "exportable_experiments": exportable_count,
-        "timestamp": _now(),
+        "timestamp": now_iso(),
     }
 
 

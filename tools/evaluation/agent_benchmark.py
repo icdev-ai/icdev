@@ -35,9 +35,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
+from tools.common.helpers import now_isoformat  # noqa: E402
 
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 # ── Dataclasses ───────────────────────────────────────────────────────────
@@ -397,7 +396,7 @@ def _store_result(result: BenchmarkResult, scan_id: str, project_id: Optional[st
                 1 if result.outcome_passed else 0,
                 1 if result.methodology_passed else 0,
                 result.composite_score, result.duration_ms,
-                json.dumps(result.details), _now(),
+                json.dumps(result.details), now_isoformat(),
             ),
         )
         conn.commit()
@@ -435,7 +434,7 @@ def run_all_benchmarks(project_id: Optional[str] = None) -> BenchmarkReport:
 
     return BenchmarkReport(
         scan_id=scan_id,
-        timestamp=_now(),
+        timestamp=now_isoformat(),
         overall_pass=len(blockers) == 0,
         total_scenarios=len(results),
         passed=passed,
@@ -467,7 +466,7 @@ def run_agent_benchmarks(agent_type: str, project_id: Optional[str] = None) -> B
     ]
 
     return BenchmarkReport(
-        scan_id=scan_id, timestamp=_now(),
+        scan_id=scan_id, timestamp=now_isoformat(),
         overall_pass=len(blockers) == 0,
         total_scenarios=len(results),
         passed=passed, failed=len(results) - passed,

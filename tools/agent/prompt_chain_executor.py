@@ -21,6 +21,7 @@ import sys
 import time
 import uuid
 from tools.db.storage import get_connection
+from tools.common.helpers import now_iso
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -132,15 +133,6 @@ def _get_db(db_path: Path = None) -> sqlite3.Connection:
     conn = get_connection(db_path=str(path))
     return conn
 
-
-def _now() -> str:
-    """Current UTC timestamp as ISO string."""
-    from tools.compat.datetime_utils import utc_now_iso
-    try:
-        return utc_now_iso()
-    except Exception:
-        import datetime
-        return datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def _sha256(text: str) -> str:
@@ -508,7 +500,7 @@ class PromptChainExecutor:
 
         # Initialize execution record
         exec_id = f"pce-{uuid.uuid4().hex[:12]}"
-        now = _now()
+        now = now_iso()
         execution = ChainExecution(
             id=exec_id,
             project_id=project_id,
@@ -585,7 +577,7 @@ class PromptChainExecutor:
 
         # Finalize
         execution.total_duration_ms = int((time.time() - start_time) * 1000)
-        execution.completed_at = _now()
+        execution.completed_at = now_iso()
 
         if execution.status != "failed":
             execution.status = "completed"

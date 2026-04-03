@@ -16,7 +16,6 @@ import json
 import logging
 import os
 import uuid as _uuid
-from datetime import datetime, timezone
 from functools import wraps
 from pathlib import Path
 
@@ -44,19 +43,10 @@ from tools.data_canvas.data_engine import (  # noqa: E402
     compute_nist_coverage,
 )
 from tools.data_canvas.db.init_db import get_connection, init_db  # noqa: E402
+from tools.common.helpers import row_to_dict, now_isoformat  # noqa: E402
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
-
-def _row_to_dict(row):
-    """Convert a sqlite3.Row to a plain dict."""
-    if row is None:
-        return None
-    return dict(row)
-
-
-def _now():
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _audit(design_id, user, action, detail="", classification="CUI // SP-CTI"):
@@ -66,7 +56,7 @@ def _audit(design_id, user, action, detail="", classification="CUI // SP-CTI"):
         conn.execute(
             "INSERT INTO dd_audit (design_id, user, action, detail, classification, created_at) "
             "VALUES (?, ?, ?, ?, ?, ?)",
-            (design_id, user, action, detail, classification, _now()),
+            (design_id, user, action, detail, classification, now_isoformat()),
         )
         conn.commit()
         conn.close()
@@ -119,11 +109,11 @@ def create_data_canvas_blueprint():
     @dc_login_required
     def dc_index():
         conn = get_connection()
-        designs = [_row_to_dict(r) for r in conn.execute(
+        designs = [row_to_dict(r) for r in conn.execute(
             "SELECT id, name, description, classification, created_at, updated_at "
             "FROM data_designs ORDER BY updated_at DESC LIMIT 20"
         ).fetchall()]
-        templates = [_row_to_dict(r) for r in conn.execute(
+        templates = [row_to_dict(r) for r in conn.execute(
             "SELECT id, name, category, description, tags "
             "FROM dd_templates ORDER BY category, name"
         ).fetchall()]
@@ -150,7 +140,7 @@ def create_data_canvas_blueprint():
             ).fetchone()
             conn.close()
             if tpl:
-                tpl = _row_to_dict(tpl)
+                tpl = row_to_dict(tpl)
                 graph_json = tpl["graph_json"]
                 name = f"{tpl['name']} (copy)"
         return render_template(
@@ -172,7 +162,7 @@ def create_data_canvas_blueprint():
         conn.close()
         if not row:
             return redirect("/data/canvas/new")
-        design = _row_to_dict(row)
+        design = row_to_dict(row)
         return render_template(
             "data_canvas/canvas.html",
             design_id=design["id"],
@@ -187,7 +177,7 @@ def create_data_canvas_blueprint():
     def dc_templates():
         """Template gallery page."""
         conn = get_connection()
-        templates = [_row_to_dict(r) for r in conn.execute(
+        templates = [row_to_dict(r) for r in conn.execute(
             "SELECT id, name, category, description, tags "
             "FROM dd_templates ORDER BY category, name"
         ).fetchall()]
@@ -206,7 +196,7 @@ def create_data_canvas_blueprint():
             "LEFT JOIN data_designs d ON a.design_id = d.id "
             "ORDER BY a.created_at DESC LIMIT 50"
         ).fetchall()
-        assessments = [_row_to_dict(r) for r in rows]
+        assessments = [row_to_dict(r) for r in rows]
         conn.close()
         return render_template("data_canvas/assessments.html", assessments=assessments)
 
@@ -221,7 +211,7 @@ def create_data_canvas_blueprint():
         conn.close()
         if not row:
             return redirect("/data/")
-        design = _row_to_dict(row)
+        design = row_to_dict(row)
         return render_template("data_canvas/remediation.html", design=design)
 
     # ══════════════════════════════════════════════════════════════════════
@@ -241,7 +231,7 @@ def create_data_canvas_blueprint():
             "FROM data_designs ORDER BY updated_at DESC"
         ).fetchall()
         conn.close()
-        return jsonify([_row_to_dict(r) for r in rows])
+        return jsonify([row_to_dict(r) for r in rows])
 
     @bp.route("/api/designs", methods=["POST"])
     @dc_login_required
@@ -261,7 +251,7 @@ def create_data_canvas_blueprint():
             "(id, name, description, graph_json, template_id, classification, created_at, updated_at) "
             "VALUES (?,?,?,?,?,?,?,?)",
             (design_id, name, data.get("description", ""),
-             graph_json, template_id, classification, _now(), _now()),
+             graph_json, template_id, classification, now_isoformat(), now_isoformat()),
         )
         conn.commit()
         conn.close()
@@ -278,7 +268,7 @@ def create_data_canvas_blueprint():
         conn.close()
         if not row:
             return jsonify({"error": "Not found"}), 404
-        return jsonify(_row_to_dict(row))
+        return jsonify(row_to_dict(row))
 
     @bp.route("/api/designs/<design_id>", methods=["PUT"])
     @dc_login_required
@@ -293,7 +283,7 @@ def create_data_canvas_blueprint():
             "classification=?, updated_at=? WHERE id=?",
             (data.get("name", ""), data.get("description", ""),
              data.get("graph_json", "{}"),
-             data.get("classification", "CUI"), _now(), design_id),
+             data.get("classification", "CUI"), now_isoformat(), design_id),
         )
         conn.commit()
         conn.close()
@@ -324,7 +314,7 @@ def create_data_canvas_blueprint():
             "FROM dd_templates ORDER BY category, name"
         ).fetchall()
         conn.close()
-        return jsonify([_row_to_dict(r) for r in rows])
+        return jsonify([row_to_dict(r) for r in rows])
 
     # ══════════════════════════════════════════════════════════════════════
     # API — SNIPPETS
@@ -340,7 +330,7 @@ def create_data_canvas_blueprint():
             "FROM dd_snippets ORDER BY category, name"
         ).fetchall()
         conn.close()
-        return jsonify({"snippets": [_row_to_dict(r) for r in rows]})
+        return jsonify({"snippets": [row_to_dict(r) for r in rows]})
 
     # ══════════════════════════════════════════════════════════════════════
     # API — ASSESSMENT
@@ -379,7 +369,7 @@ def create_data_canvas_blueprint():
             "INSERT INTO dd_assessments (id, design_id, assessment_type, findings_json, score, created_at) "
             "VALUES (?,?,?,?,?,?)",
             (assess_id, design_id, "compliance",
-             json.dumps(result["findings"]), result["risk_score"], _now()),
+             json.dumps(result["findings"]), result["risk_score"], now_isoformat()),
         )
         conn.commit()
         conn.close()
@@ -406,7 +396,7 @@ def create_data_canvas_blueprint():
             (design_id,),
         ).fetchall()
         conn.close()
-        return jsonify([_row_to_dict(r) for r in rows])
+        return jsonify([row_to_dict(r) for r in rows])
 
     # ══════════════════════════════════════════════════════════════════════
     # API — CONSTANTS (for frontend)
@@ -438,7 +428,7 @@ def create_data_canvas_blueprint():
         conn.close()
         if not row:
             return jsonify({"error": "Not found"}), 404
-        d = _row_to_dict(row)
+        d = row_to_dict(row)
         gj = d["graph_json"]
         graph = json.loads(gj) if isinstance(gj, str) else gj
         from tools.network.visio_export import export_vsdx

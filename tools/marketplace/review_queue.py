@@ -60,6 +60,7 @@ import json
 import os
 import sys
 import uuid
+from tools.common.helpers import now_iso
 from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
@@ -144,10 +145,6 @@ def _gen_id(prefix="rev"):
     return f"{prefix}-{uuid.uuid4().hex[:12]}"
 
 
-def _now():
-    """ISO-8601 timestamp."""
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
 
 def _audit(event_type, actor, action, project_id=None, details=None):
     """Write an audit trail entry."""
@@ -202,7 +199,7 @@ def submit_review(asset_id, version_id, db_path=None):
             return {"error": f"Version not found: {version_id} for asset {asset_id}"}
 
         review_id = _gen_id("rev")
-        now = _now()
+        now = now_iso()
 
         conn.execute(
             """INSERT INTO marketplace_reviews
@@ -272,7 +269,7 @@ def assign_reviewer(review_id, reviewer_id, reviewer_role, db_path=None):
         if row["decision"] != "pending":
             return {"error": f"Review {review_id} is already {row['decision']}"}
 
-        _now()
+        now_iso()
         conn.execute(
             """UPDATE marketplace_reviews
                SET reviewer_id = ?, reviewer_role = ?
@@ -350,7 +347,7 @@ def complete_review(review_id, reviewer_id, decision, rationale,
 
         asset_id = row["asset_id"]
         version_id = row["version_id"]
-        now = _now()
+        now = now_iso()
 
         # Update review record
         conn.execute(
@@ -631,7 +628,7 @@ def escalate_review(review_id, escalation_reason, db_path=None):
         if row["decision"] != "pending":
             return {"error": f"Review {review_id} is already {row['decision']}, cannot escalate"}
 
-        now = _now()
+        now = now_iso()
 
         # Calculate days pending
         submitted_at = row["submitted_at"]

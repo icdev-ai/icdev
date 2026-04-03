@@ -52,6 +52,7 @@ import os
 import sys
 import time
 import uuid
+from tools.common.helpers import now_iso
 from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
@@ -97,10 +98,6 @@ def _try_import(module_path, func_name):
 # =========================================================================
 # HELPERS
 # =========================================================================
-def _now():
-    """ISO-8601 timestamp."""
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
 
 def _load_config():
     """Load innovation config from YAML."""
@@ -164,7 +161,7 @@ def stage_discover(sources=None, db_path=None):
     Returns:
         Dict with discovery results.
     """
-    results = {"stage": "discover", "started_at": _now(), "sub_results": {}}
+    results = {"stage": "discover", "started_at": now_iso(), "sub_results": {}}
 
     # Web scanning
     run_scan = _try_import("tools.innovation.web_scanner", "run_scan")
@@ -178,7 +175,7 @@ def stage_discover(sources=None, db_path=None):
     else:
         results["sub_results"]["web_scanner"] = {"error": "web_scanner not available"}
 
-    results["completed_at"] = _now()
+    results["completed_at"] = now_iso()
     _audit("innovation.discover", "Discovery complete", results.get("sub_results"))
     return results
 
@@ -346,7 +343,7 @@ def run_full_pipeline(db_path=None):
 
     result = {
         "pipeline_id": pipeline_id,
-        "started_at": _now(),
+        "started_at": now_iso(),
         "stages": {},
         "quiet_hours": False,
     }
@@ -373,7 +370,7 @@ def run_full_pipeline(db_path=None):
     else:
         result["stages"]["generate"] = stage_generate(db_path=db_path)
 
-    result["completed_at"] = _now()
+    result["completed_at"] = now_iso()
     _audit("innovation.pipeline.complete", f"Pipeline {pipeline_id} completed", result)
 
     return result
@@ -400,7 +397,7 @@ def get_status(db_path=None):
     conn = get_connection(db_path=str(path))
 
     try:
-        status = {"healthy": True, "timestamp": _now()}
+        status = {"healthy": True, "timestamp": now_iso()}
 
         # Signal counts by status
         try:
@@ -491,7 +488,7 @@ def get_pipeline_report(db_path=None):
     triaged = signals_by_status.get("triaged", 0)
 
     report = {
-        "timestamp": _now(),
+        "timestamp": now_iso(),
         "pipeline_health": status.get("healthy", False),
         "total_signals": total,
         "signals_by_status": signals_by_status,
@@ -544,20 +541,20 @@ def run_daemon(db_path=None):
 
     try:
         while True:
-            print(f"\n[{_now()}] Running pipeline...")
+            print(f"\n[{now_iso()}] Running pipeline...")
             try:
                 result = run_full_pipeline(db_path=db_path)
-                print(f"[{_now()}] Pipeline complete. "
+                print(f"[{now_iso()}] Pipeline complete. "
                       f"Stages: {len(result.get('stages', {}))}")
             except Exception as e:
-                print(f"[{_now()}] Pipeline error: {e}", file=sys.stderr)
+                print(f"[{now_iso()}] Pipeline error: {e}", file=sys.stderr)
                 _audit("innovation.daemon.error", f"Pipeline error: {e}")
 
-            print(f"[{_now()}] Next run in {default_interval} hours...")
+            print(f"[{now_iso()}] Next run in {default_interval} hours...")
             time.sleep(interval_seconds)
 
     except KeyboardInterrupt:
-        print(f"\n[{_now()}] Daemon stopped by user")
+        print(f"\n[{now_iso()}] Daemon stopped by user")
         _audit("innovation.daemon.stop", "Daemon stopped by user")
 
 

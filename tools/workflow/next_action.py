@@ -16,6 +16,7 @@ import json
 import sqlite3
 import sys
 from tools.db.storage import get_connection
+from tools.common.helpers import now_iso
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -40,10 +41,6 @@ def _get_db(db_path: Optional[Path] = None) -> sqlite3.Connection:
     conn = get_connection(db_path=str(path))
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
-
-
-def _now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _load_config() -> Dict[str, Any]:
@@ -219,7 +216,7 @@ def recommend(project_id: str, db_path: Optional[Path] = None) -> Dict[str, Any]
                 {"score": round(c[0], 4), "action": c[1], "command": c[2], "reason": c[3]}
                 for c in candidates[:5]
             ],
-            "evaluated_at": _now(),
+            "evaluated_at": now_iso(),
         }
     finally:
         conn.close()

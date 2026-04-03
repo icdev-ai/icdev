@@ -16,7 +16,6 @@ import json
 import logging
 import os
 import uuid as _uuid
-from datetime import datetime, timezone
 from functools import wraps
 from pathlib import Path
 
@@ -84,9 +83,7 @@ def create_boundary_blueprint():
 
     # ── DB helpers ─────────────────────────────────────────────────────────
     from tools.boundary_canvas.db.init_db import get_connection
-
-    def _now():
-        return datetime.now(timezone.utc).isoformat()
+    from tools.common.helpers import now_isoformat
 
     def _audit(design_id, action, detail=""):
         user_id = ""
@@ -99,7 +96,7 @@ def create_boundary_blueprint():
                 conn.execute(
                     "INSERT INTO bd_audit (design_id, user, action, detail, created_at) "
                     "VALUES (?,?,?,?,?)",
-                    (design_id, user_id, action, detail, _now()),
+                    (design_id, user_id, action, detail, now_isoformat()),
                 )
         except Exception:
             pass
@@ -277,7 +274,7 @@ def create_boundary_blueprint():
         data = request.get_json(force=True, silent=True) or {}
         design_id = str(_uuid.uuid4())
         name = data.get("name", "Untitled Boundary Design")
-        now = _now()
+        now = now_isoformat()
         default_graph = {"nodes": [], "edges": [], "boundaries": []}
         with get_connection() as conn:
             conn.execute(
@@ -311,7 +308,7 @@ def create_boundary_blueprint():
     def bdc_api_update_design(design_id):
         """Update an existing boundary design."""
         data = request.get_json(force=True, silent=True) or {}
-        now = _now()
+        now = now_isoformat()
         with get_connection() as conn:
             existing = conn.execute(
                 "SELECT id FROM boundary_designs WHERE id=?", (design_id,)
@@ -392,7 +389,7 @@ def create_boundary_blueprint():
 
             # Persist assessment
             assess_id = str(_uuid.uuid4())
-            now = _now()
+            now = now_isoformat()
             conn.execute(
                 "INSERT INTO bd_assessments "
                 "(id, design_id, assessment_type, findings_json, score, grade, "
@@ -510,7 +507,7 @@ def create_boundary_blueprint():
     def bdc_api_upsert_isa(design_id):
         """Create or update an ISA tracker entry."""
         data = request.get_json(force=True, silent=True) or {}
-        now = _now()
+        now = now_isoformat()
         interconnection_id = data.get("interconnection_id")
         if not interconnection_id:
             return jsonify({"error": "interconnection_id required"}), 400

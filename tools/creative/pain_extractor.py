@@ -36,6 +36,7 @@ import re
 import sys
 import uuid
 from tools.db.storage import get_connection
+from tools.common.helpers import now_iso
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -226,10 +227,6 @@ def _get_db(db_path=None):
     conn = get_connection(db_path=str(path))
     return conn
 
-
-def _now():
-    """ISO-8601 timestamp."""
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _pp_id():
@@ -666,7 +663,7 @@ def merge_with_existing(new_pain_points, db_path=None):
         return {"new_count": 0, "merged_count": 0, "total_stored": 0}
 
     conn = _get_db(db_path)
-    now = _now()
+    now = now_iso()
     new_count = 0
     merged_count = 0
 
@@ -1049,7 +1046,7 @@ def list_pain_points(category=None, severity=None, limit=50, db_path=None):
         severity_dist = {row["severity"]: row["cnt"] for row in sev_rows}
 
         return {
-            "generated_at": _now(),
+            "generated_at": now_iso(),
             "total_unique": total_unique,
             "returned": len(pain_points),
             "filters": {

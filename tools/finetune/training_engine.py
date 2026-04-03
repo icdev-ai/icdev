@@ -17,6 +17,7 @@ import json
 import sqlite3
 import uuid
 from tools.db.storage import get_connection
+from tools.common.helpers import now_iso
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -35,9 +36,6 @@ def _get_db(db_path: Optional[Path] = None) -> sqlite3.Connection:
     return conn
 
 
-def _now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
 
 def _record_event(
     conn: sqlite3.Connection, job_id: str, event_type: str, details: str = "{}"
@@ -45,7 +43,7 @@ def _record_event(
     """Record a training job event (append-only, D6)."""
     conn.execute(
         "INSERT INTO ft_training_job_events (job_id, event_type, details, created_at) VALUES (?, ?, ?, ?)",
-        (job_id, event_type, details, _now()),
+        (job_id, event_type, details, now_iso()),
     )
 
 
@@ -85,7 +83,7 @@ def create_training_job(
 
         # Create job record
         job_id = f"ft-{uuid.uuid4().hex[:12]}"
-        now = _now()
+        now = now_iso()
 
         hyperparams = json.dumps({
             "lora_rank": lora_rank,
@@ -250,7 +248,7 @@ def cancel_job(
 
         conn.execute(
             "UPDATE ft_training_jobs SET status = 'canceled', completed_at = ? WHERE id = ?",
-            (_now(), job_id),
+            (now_iso(), job_id),
         )
         _record_event(conn, job_id, "canceled")
         conn.commit()

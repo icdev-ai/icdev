@@ -37,6 +37,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
+from tools.common.helpers import now_iso  # noqa: E402
+
 logger = logging.getLogger("icdev.finetune.quality_monitor")
 
 
@@ -88,9 +90,6 @@ def _get_db():
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
-
-def _now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _gen_id(prefix: str = "qsnap") -> str:
@@ -164,7 +163,7 @@ def _record_snapshot(
         """INSERT INTO ft_quality_snapshots
            (id, snapshot_type, metric_name, metric_value, baseline_value, below_threshold, created_at)
            VALUES (?, 'rag_eval', ?, ?, ?, ?, ?)""",
-        (_gen_id(), metric_name, metric_value, baseline, 1 if below else 0, _now()),
+        (_gen_id(), metric_name, metric_value, baseline, 1 if below else 0, now_iso()),
     )
     conn.commit()
 
@@ -252,7 +251,7 @@ def check_quality(conn: Optional[sqlite3.Connection] = None) -> Dict[str, Any]:
         "metrics": metrics,
         "alerts": alerts,
         "retrain_recommended": retrain_recommended,
-        "checked_at": _now(),
+        "checked_at": now_iso(),
     }
 
 

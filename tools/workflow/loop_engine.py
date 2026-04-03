@@ -29,6 +29,7 @@ import json
 import sqlite3
 import sys
 from tools.db.storage import get_connection
+from tools.common.helpers import now_iso
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -63,17 +64,13 @@ def _get_db(db_path: Optional[Path] = None) -> sqlite3.Connection:
     return conn
 
 
-def _now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
 _ID_COUNTER = 0
 
 
 def _gen_id(prefix: str) -> str:
     global _ID_COUNTER
     _ID_COUNTER += 1
-    ts = _now()
+    ts = now_iso()
     h = hashlib.sha256(f"{ts}-{_ID_COUNTER}-{id(object())}".encode()).hexdigest()[:12]
     return f"{prefix}-{h}"
 
@@ -115,7 +112,7 @@ def create_loop(
 ) -> Dict[str, Any]:
     """Create a new workflow loop in PLANNING state."""
     loop_id = _gen_id("wl")
-    now = _now()
+    now = now_iso()
     conn = _get_db(db_path)
     try:
         conn.execute(
@@ -167,7 +164,7 @@ def finalize_plan(
         if require_ac and ac_count < min_ac:
             return {"error": f"Plan requires at least {min_ac} acceptance criteria, found {ac_count}"}
 
-        now = _now()
+        now = now_iso()
         conn.execute(
             """UPDATE workflow_loops
                SET status = 'planned', plan_summary = ?, task_count = ?,
@@ -212,7 +209,7 @@ def add_acceptance_criterion(
         ).fetchone()["mx"]
 
         crit_id = _gen_id("wac")
-        now = _now()
+        now = now_iso()
         conn.execute(
             """INSERT INTO workflow_acceptance_criteria
                (id, loop_id, criterion_number, given_text, when_text, then_text,
@@ -239,7 +236,7 @@ def start_apply(loop_id: str, db_path: Optional[Path] = None) -> Dict[str, Any]:
         if row["status"] != "planned":
             return {"error": f"Loop is in '{row['status']}' state, expected 'planned'"}
 
-        now = _now()
+        now = now_iso()
         conn.execute(
             "UPDATE workflow_loops SET status = 'applying', apply_started_at = ? WHERE id = ?",
             (now, loop_id),
@@ -264,7 +261,7 @@ def complete_task(loop_id: str, db_path: Optional[Path] = None) -> Dict[str, Any
 
         new_count = row["tasks_completed"] + 1
         status = "applying"
-        now = _now()
+        now = now_iso()
         if new_count >= row["task_count"]:
             status = "applied"
 
@@ -297,7 +294,7 @@ def verify_criterion(
         if not row:
             return {"error": f"Criterion {criterion_id} not found"}
 
-        now = _now()
+        now = now_iso()
         conn.execute(
             "UPDATE workflow_acceptance_criteria SET status = ?, evidence = ?, verified_at = ? WHERE id = ?",
             (status, evidence, now, criterion_id),
@@ -335,7 +332,7 @@ def start_unify(loop_id: str, db_path: Optional[Path] = None) -> Dict[str, Any]:
         if row["status"] not in ("applied", "applying"):
             return {"error": f"Loop is in '{row['status']}' state, expected 'applied' or 'applying'"}
 
-        now = _now()
+        now = now_iso()
         conn.execute(
             "UPDATE workflow_loops SET status = 'unifying', unify_started_at = ? WHERE id = ?",
             (now, loop_id),
@@ -365,7 +362,7 @@ def close_loop(loop_id: str, db_path: Optional[Path] = None) -> Dict[str, Any]:
         if require_unify and not recon:
             return {"error": "Reconciliation required before closing. Run reconciler first."}
 
-        now = _now()
+        now = now_iso()
         conn.execute(
             "UPDATE workflow_loops SET status = 'closed', closed_at = ? WHERE id = ?",
             (now, loop_id),
@@ -389,7 +386,7 @@ def abandon_loop(loop_id: str, reason: str = "", db_path: Optional[Path] = None)
         if row["status"] == "closed":
             return {"error": "Loop is already closed"}
 
-        now = _now()
+        now = now_iso()
         conn.execute(
             "UPDATE workflow_loops SET status = 'abandoned', closed_at = ? WHERE id = ?",
             (now, loop_id),

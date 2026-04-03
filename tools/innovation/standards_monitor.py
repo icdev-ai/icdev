@@ -24,6 +24,7 @@ import os
 import sys
 import uuid
 import xml.etree.ElementTree as ET
+from tools.common.helpers import now_iso
 from tools.db.storage import get_connection
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -84,8 +85,6 @@ def _get_db(db_path=None):
     conn = get_connection(db_path=str(path))
     return conn
 
-def _now():
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 def _audit(event_type, actor, action, details=None):
     if _HAS_AUDIT:
@@ -188,7 +187,7 @@ def _store_updates(body, entries, db_path=None):
                 "VALUES (?,?,?,?,?,?,?,NULL,'new',?,?)",
                 (f"upd-{uuid.uuid4().hex[:12]}", body, e["title"],
                  e.get("pub_type", "unknown"), e.get("link", ""),
-                 e.get("summary", ""), e.get("published", ""), chash, _now()))
+                 e.get("summary", ""), e.get("published", ""), chash, now_iso()))
             stored += 1
         conn.commit()
     finally:
@@ -298,7 +297,7 @@ def check_all_bodies(db_path=None):
     """Check all configured standards bodies for updates."""
     config = _load_config()
     if not config.get("enabled", True):
-        return {"check_time": _now(), "enabled": False, "results": {}}
+        return {"check_time": now_iso(), "enabled": False, "results": {}}
     results = {}
     for name, fn in BODY_CHECKERS.items():
         try:
@@ -309,7 +308,7 @@ def check_all_bodies(db_path=None):
               "new_stored": sum(r.get("stored", 0) for r in results.values())}
     _audit("standards.check_all", "standards-monitor",
            f"Checked {len(results)} bodies", totals)
-    return {"check_time": _now(), "bodies_checked": len(results),
+    return {"check_time": now_iso(), "bodies_checked": len(results),
             "results": results, "totals": totals}
 
 # ── IMPACT ASSESSMENT (deterministic keyword matching) ──────────────────
@@ -352,7 +351,7 @@ def assess_impact(update_id, db_path=None):
                             "description": "No immediate ICDEV™ impact; continue monitoring"})
         assessment = {"affected_frameworks": affected, "catalog_update_needed": catalog_needed,
                       "crosswalk_impact": crosswalk_hit, "priority": priority,
-                      "recommended_actions": actions, "assessed_at": _now()}
+                      "recommended_actions": actions, "assessed_at": now_iso()}
         conn.execute("UPDATE innovation_standards_updates "
                      "SET impact_assessment=?, status='assessed' WHERE id=?",
                      (json.dumps(assessment), update_id))
@@ -399,7 +398,7 @@ def get_standards_report(days=30, db_path=None):
         unassessed = conn.execute(
             "SELECT COUNT(*) as c FROM innovation_standards_updates "
             "WHERE created_at>=? AND status='new'", (cutoff,)).fetchone()["c"]
-        return {"report_date": _now(), "period_days": days, "total_updates": total,
+        return {"report_date": now_iso(), "period_days": days, "total_updates": total,
                 "unassessed_count": unassessed, "by_body": by_body,
                 "assessed_updates": assessed}
     finally:

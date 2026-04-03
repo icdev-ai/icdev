@@ -27,6 +27,7 @@ from pathlib import Path
 
 from flask import Blueprint, jsonify, request
 
+from tools.common.helpers import now_isoformat
 from tools.dashboard.config import DEFAULT_CLASSIFICATION
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
@@ -44,9 +45,6 @@ def _get_db():
     return conn
 
 
-def _now():
-    return datetime.now(timezone.utc).isoformat()
-
 
 def _uuid():
     return str(uuid.uuid4())
@@ -58,7 +56,7 @@ def _audit(conn, action, details="", actor="govcon_api"):
         conn.execute(
             "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (_uuid(), _now(), "govcon.api", actor, action, details, "govcon"),
+            (_uuid(), now_isoformat(), "govcon.api", actor, action, details, "govcon"),
         )
     except Exception:
         pass
@@ -163,7 +161,7 @@ def import_sam_to_proposal(sam_opp_id):
                 sam.get("set_aside_type", ""),
                 sam.get("solicitation_number", ""),  # use as rfp_url placeholder
                 DEFAULT_CLASSIFICATION,
-                _now(), _now(),
+                now_isoformat(), now_isoformat(),
             ),
         )
 
@@ -334,7 +332,7 @@ def auto_populate_compliance(opp_id):
                                 status_map.get(grade, "not_addressed"),
                                 f"Auto: {item.get('best_capability', 'none')} ({item.get('coverage_score', 0):.0%})",
                                 DEFAULT_CLASSIFICATION,
-                                _now(), _now(),
+                                now_isoformat(), now_isoformat(),
                             ),
                         )
                         created += 1
@@ -445,8 +443,8 @@ def approve_draft(draft_id):
                 draft.get("shall_statement_id"), draft.get("capability_ids"),
                 draft.get("draft_content"), draft.get("confidence"),
                 draft.get("generation_model"), draft.get("knowledge_block_ids"),
-                reviewer, _now(), data.get("review_notes", ""),
-                _now(), DEFAULT_CLASSIFICATION,
+                reviewer, now_isoformat(), data.get("review_notes", ""),
+                now_isoformat(), DEFAULT_CLASSIFICATION,
             ),
         )
 
@@ -457,7 +455,7 @@ def approve_draft(draft_id):
             if section and section["status"] in ("not_started", "outlining"):
                 conn.execute(
                     "UPDATE proposal_sections SET status = 'drafting', notes = ?, updated_at = ? WHERE id = ?",
-                    (f"AI draft approved by {reviewer}", _now(), section_id),
+                    (f"AI draft approved by {reviewer}", now_isoformat(), section_id),
                 )
                 conn.execute(
                     "INSERT INTO proposal_status_history (entity_type, entity_id, old_status, new_status, changed_by, reason) "
@@ -497,8 +495,8 @@ def reject_draft(draft_id):
                 draft.get("shall_statement_id"), draft.get("capability_ids"),
                 draft.get("draft_content"), draft.get("confidence"),
                 draft.get("generation_model"), draft.get("knowledge_block_ids"),
-                reviewer, _now(), data.get("review_notes", "Rejected"),
-                _now(), DEFAULT_CLASSIFICATION,
+                reviewer, now_isoformat(), data.get("review_notes", "Rejected"),
+                now_isoformat(), DEFAULT_CLASSIFICATION,
             ),
         )
 
@@ -771,7 +769,7 @@ def create_question(opp_id):
         next_num = (row["mx"] or 0) + 1
 
         q_id = _uuid()
-        now = _now()
+        now = now_isoformat()
         conn.execute(
             """INSERT INTO proposal_questions
                (id, opportunity_id, question_number, question_text, category, priority,
@@ -818,7 +816,7 @@ def update_question(q_id):
             return jsonify({"error": "No valid fields to update"}), 400
 
         sets = ", ".join(f"{k} = ?" for k in updates)
-        vals = list(updates.values()) + [_now(), q_id]
+        vals = list(updates.values()) + [now_isoformat(), q_id]
         conn.execute(
             f"UPDATE proposal_questions SET {sets}, updated_at = ? WHERE id = ?", vals  # nosec B608 -- table/column names are internal constants, not user input
         )
@@ -861,7 +859,7 @@ def change_question_status(q_id):
                 "error": f"Invalid transition: {old_status} → {new_status}. Allowed: {allowed}"
             }), 400
 
-        now = _now()
+        now = now_isoformat()
         extra_fields = ""
         extra_vals = []
 
@@ -914,7 +912,7 @@ def bulk_status_change(opp_id):
             "answered": [],
         }
 
-        now = _now()
+        now = now_isoformat()
         changed = 0
         skipped = 0
 

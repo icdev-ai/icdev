@@ -2465,38 +2465,37 @@ def create_app() -> Flask:
         sdc_db = BASE_DIR / "data" / "security_canvas.db"
         if sdc_db.exists():
             try:
-                sc = _sqlite3.connect(str(sdc_db))
-                sc.row_factory = _sqlite3.Row
-                result["sdc"]["design_count"] = sc.execute(
-                    "SELECT COUNT(*) FROM security_designs"
-                ).fetchone()[0]
-                result["sdc"]["available"] = result["sdc"]["design_count"] > 0
-                row = sc.execute(
-                    "SELECT risk_score, posture_grade FROM sc_assessments ORDER BY ran_at DESC LIMIT 1"
-                ).fetchone()
-                if row:
-                    result["sdc"]["risk_score"] = row["risk_score"]
-                    result["sdc"]["posture_grade"] = row["posture_grade"]
-                result["sdc"]["open_threats"] = sc.execute(
-                    "SELECT COUNT(*) FROM sc_threats WHERE status != 'mitigated'"
-                ).fetchone()[0]
-                for family, _ in NIST_FAMILIES:
-                    total = sc.execute(
-                        "SELECT COUNT(*) FROM sc_controls WHERE control_family = ?", (family,)
+                with _sqlite3.connect(str(sdc_db)) as sc:
+                    sc.row_factory = _sqlite3.Row
+                    result["sdc"]["design_count"] = sc.execute(
+                        "SELECT COUNT(*) FROM security_designs"
                     ).fetchone()[0]
-                    impl = sc.execute(
-                        "SELECT COUNT(*) FROM sc_controls WHERE control_family = ?"
-                        " AND implementation_status IN ('implemented','tested')", (family,)
+                    result["sdc"]["available"] = result["sdc"]["design_count"] > 0
+                    row = sc.execute(
+                        "SELECT risk_score, posture_grade FROM sc_assessments ORDER BY ran_at DESC LIMIT 1"
+                    ).fetchone()
+                    if row:
+                        result["sdc"]["risk_score"] = row["risk_score"]
+                        result["sdc"]["posture_grade"] = row["posture_grade"]
+                    result["sdc"]["open_threats"] = sc.execute(
+                        "SELECT COUNT(*) FROM sc_threats WHERE status != 'mitigated'"
                     ).fetchone()[0]
-                    if total > 0:
-                        sdc_family_pcts[family] = round(impl / total * 100)
-                        result["sdc"]["controls_implemented"] += impl
-                if sdc_family_pcts:
-                    result["sdc"]["nist_coverage_pct"] = round(
-                        sum(sdc_family_pcts.values()) / len(sdc_family_pcts)
-                    )
-                    result["sdc"]["nist_families"] = sdc_family_pcts
-                sc.close()
+                    for family, _ in NIST_FAMILIES:
+                        total = sc.execute(
+                            "SELECT COUNT(*) FROM sc_controls WHERE control_family = ?", (family,)
+                        ).fetchone()[0]
+                        impl = sc.execute(
+                            "SELECT COUNT(*) FROM sc_controls WHERE control_family = ?"
+                            " AND implementation_status IN ('implemented','tested')", (family,)
+                        ).fetchone()[0]
+                        if total > 0:
+                            sdc_family_pcts[family] = round(impl / total * 100)
+                            result["sdc"]["controls_implemented"] += impl
+                    if sdc_family_pcts:
+                        result["sdc"]["nist_coverage_pct"] = round(
+                            sum(sdc_family_pcts.values()) / len(sdc_family_pcts)
+                        )
+                        result["sdc"]["nist_families"] = sdc_family_pcts
             except Exception:
                 pass
 
@@ -2504,35 +2503,34 @@ def create_app() -> Flask:
         ndc_db = BASE_DIR / "data" / "network_canvas.db"
         if ndc_db.exists():
             try:
-                nc = _sqlite3.connect(str(ndc_db))
-                nc.row_factory = _sqlite3.Row
-                result["ndc"]["topology_count"] = nc.execute(
-                    "SELECT COUNT(*) FROM topologies"
-                ).fetchone()[0]
-                result["ndc"]["available"] = result["ndc"]["topology_count"] > 0
-                result["ndc"]["cat1_open"] = nc.execute(
-                    "SELECT COUNT(*) FROM nc_compliance_findings"
-                    " WHERE severity = 'CAT1' AND status = 'open'"
-                ).fetchone()[0]
-                result["ndc"]["cat2_open"] = nc.execute(
-                    "SELECT COUNT(*) FROM nc_compliance_findings"
-                    " WHERE severity = 'CAT2' AND status = 'open'"
-                ).fetchone()[0]
-                result["ndc"]["cat3_open"] = nc.execute(
-                    "SELECT COUNT(*) FROM nc_compliance_findings"
-                    " WHERE severity = 'CAT3' AND status = 'open'"
-                ).fetchone()[0]
-                total_f = nc.execute(
-                    "SELECT COUNT(*) FROM nc_compliance_findings"
-                ).fetchone()[0]
-                remediated_f = nc.execute(
-                    "SELECT COUNT(*) FROM nc_compliance_findings WHERE status = 'remediated'"
-                ).fetchone()[0]
-                result["ndc"]["total_findings"] = total_f
-                result["ndc"]["pass_rate"] = (
-                    round(remediated_f / total_f * 100) if total_f > 0 else 0
-                )
-                nc.close()
+                with _sqlite3.connect(str(ndc_db)) as nc:
+                    nc.row_factory = _sqlite3.Row
+                    result["ndc"]["topology_count"] = nc.execute(
+                        "SELECT COUNT(*) FROM topologies"
+                    ).fetchone()[0]
+                    result["ndc"]["available"] = result["ndc"]["topology_count"] > 0
+                    result["ndc"]["cat1_open"] = nc.execute(
+                        "SELECT COUNT(*) FROM nc_compliance_findings"
+                        " WHERE severity = 'CAT1' AND status = 'open'"
+                    ).fetchone()[0]
+                    result["ndc"]["cat2_open"] = nc.execute(
+                        "SELECT COUNT(*) FROM nc_compliance_findings"
+                        " WHERE severity = 'CAT2' AND status = 'open'"
+                    ).fetchone()[0]
+                    result["ndc"]["cat3_open"] = nc.execute(
+                        "SELECT COUNT(*) FROM nc_compliance_findings"
+                        " WHERE severity = 'CAT3' AND status = 'open'"
+                    ).fetchone()[0]
+                    total_f = nc.execute(
+                        "SELECT COUNT(*) FROM nc_compliance_findings"
+                    ).fetchone()[0]
+                    remediated_f = nc.execute(
+                        "SELECT COUNT(*) FROM nc_compliance_findings WHERE status = 'remediated'"
+                    ).fetchone()[0]
+                    result["ndc"]["total_findings"] = total_f
+                    result["ndc"]["pass_rate"] = (
+                        round(remediated_f / total_f * 100) if total_f > 0 else 0
+                    )
             except Exception:
                 pass
 
@@ -2540,87 +2538,85 @@ def create_app() -> Flask:
         pdc_db = BASE_DIR / "data" / "pipeline_canvas.db"
         if pdc_db.exists():
             try:
-                pc = _sqlite3.connect(str(pdc_db))
-                pc.row_factory = _sqlite3.Row
-                result["pdc"]["pipeline_count"] = pc.execute(
-                    "SELECT COUNT(*) FROM pipelines"
-                ).fetchone()[0]
-                result["pdc"]["available"] = result["pdc"]["pipeline_count"] > 0
-                slsa_row = pc.execute(
-                    "SELECT slsa_level FROM pc_snippets WHERE slsa_level IS NOT NULL"
-                    " GROUP BY slsa_level ORDER BY COUNT(*) DESC LIMIT 1"
-                ).fetchone()
-                if slsa_row:
-                    result["pdc"]["slsa_level"] = slsa_row["slsa_level"]
-                chk = pc.execute(
-                    "SELECT findings_json FROM pc_compliance_checks ORDER BY ran_at DESC LIMIT 1"
-                ).fetchone()
-                if chk and chk["findings_json"]:
-                    try:
-                        findings = json.loads(chk["findings_json"])
-                        result["pdc"]["total_findings"] = (
-                            len(findings) if isinstance(findings, list) else 0
-                        )
-                    except Exception:
-                        pass
-                # OWASP coverage — derive from node types in all pipelines
-                try:
-                    from tools.pipeline.constants import compute_owasp_coverage
-                    all_node_types: list = []
-                    for g_row in pc.execute("SELECT graph_json FROM pipelines").fetchall():
+                with _sqlite3.connect(str(pdc_db)) as pc:
+                    pc.row_factory = _sqlite3.Row
+                    result["pdc"]["pipeline_count"] = pc.execute(
+                        "SELECT COUNT(*) FROM pipelines"
+                    ).fetchone()[0]
+                    result["pdc"]["available"] = result["pdc"]["pipeline_count"] > 0
+                    slsa_row = pc.execute(
+                        "SELECT slsa_level FROM pc_snippets WHERE slsa_level IS NOT NULL"
+                        " GROUP BY slsa_level ORDER BY COUNT(*) DESC LIMIT 1"
+                    ).fetchone()
+                    if slsa_row:
+                        result["pdc"]["slsa_level"] = slsa_row["slsa_level"]
+                    chk = pc.execute(
+                        "SELECT findings_json FROM pc_compliance_checks ORDER BY ran_at DESC LIMIT 1"
+                    ).fetchone()
+                    if chk and chk["findings_json"]:
                         try:
-                            g = json.loads(g_row["graph_json"] or "{}")
-                            for n in g.get("nodes", []):
-                                t = n.get("type") or n.get("data", {}).get("type", "")
-                                if t:
-                                    all_node_types.append(t)
+                            findings = json.loads(chk["findings_json"])
+                            result["pdc"]["total_findings"] = (
+                                len(findings) if isinstance(findings, list) else 0
+                            )
                         except Exception:
                             pass
-                    if all_node_types:
-                        owasp = compute_owasp_coverage(all_node_types)
-                        result["pdc"]["owasp_pct"] = int(owasp.get("coverage_pct", 0))
-                except Exception:
-                    pass
-                # SSDF coverage — remediation rate of SSDF framework findings
-                try:
-                    tables_row = pc.execute(
-                        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='pc_compliance_findings'"
-                    ).fetchone()
-                    if tables_row and tables_row[0] > 0:
-                        ssdf_total = pc.execute(
-                            "SELECT COUNT(*) FROM pc_compliance_findings WHERE framework LIKE 'SSDF%'"
-                        ).fetchone()[0]
-                        ssdf_rem = pc.execute(
-                            "SELECT COUNT(*) FROM pc_compliance_findings"
-                            " WHERE framework LIKE 'SSDF%' AND status = 'remediated'"
-                        ).fetchone()[0]
-                        if ssdf_total > 0:
-                            result["pdc"]["ssdf_pct"] = round(ssdf_rem / ssdf_total * 100)
-                        else:
-                            # No findings means passing — treat as 100%
-                            result["pdc"]["ssdf_pct"] = 100
-                except Exception:
-                    pass
-                pc.close()
+                    # OWASP coverage — derive from node types in all pipelines
+                    try:
+                        from tools.pipeline.constants import compute_owasp_coverage
+                        all_node_types: list = []
+                        for g_row in pc.execute("SELECT graph_json FROM pipelines").fetchall():
+                            try:
+                                g = json.loads(g_row["graph_json"] or "{}")
+                                for n in g.get("nodes", []):
+                                    t = n.get("type") or n.get("data", {}).get("type", "")
+                                    if t:
+                                        all_node_types.append(t)
+                            except Exception:
+                                pass
+                        if all_node_types:
+                            owasp = compute_owasp_coverage(all_node_types)
+                            result["pdc"]["owasp_pct"] = int(owasp.get("coverage_pct", 0))
+                    except Exception:
+                        pass
+                    # SSDF coverage — remediation rate of SSDF framework findings
+                    try:
+                        tables_row = pc.execute(
+                            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='pc_compliance_findings'"
+                        ).fetchone()
+                        if tables_row and tables_row[0] > 0:
+                            ssdf_total = pc.execute(
+                                "SELECT COUNT(*) FROM pc_compliance_findings WHERE framework LIKE 'SSDF%'"
+                            ).fetchone()[0]
+                            ssdf_rem = pc.execute(
+                                "SELECT COUNT(*) FROM pc_compliance_findings"
+                                " WHERE framework LIKE 'SSDF%' AND status = 'remediated'"
+                            ).fetchone()[0]
+                            if ssdf_total > 0:
+                                result["pdc"]["ssdf_pct"] = round(ssdf_rem / ssdf_total * 100)
+                            else:
+                                # No findings means passing — treat as 100%
+                                result["pdc"]["ssdf_pct"] = 100
+                    except Exception:
+                        pass
             except Exception:
                 pass
 
         # --- NIST 800-53 heatmap from icdev.db project_controls ---
         try:
-            mc = get_connection(db_path=str(DB_PATH))
-            for family, _ in NIST_FAMILIES:
-                total = mc.execute(
-                    "SELECT COUNT(*) as cnt FROM project_controls WHERE control_id LIKE ?",
-                    (f"{family}-%",),
-                ).fetchone()["cnt"]
-                impl = mc.execute(
-                    "SELECT COUNT(*) as cnt FROM project_controls"
-                    " WHERE control_id LIKE ? AND implementation_status = 'implemented'",
-                    (f"{family}-%",),
-                ).fetchone()["cnt"]
-                if total > 0:
-                    main_family_pcts[family] = round(impl / total * 100)
-            mc.close()
+            with get_connection(db_path=str(DB_PATH)) as mc:
+                for family, _ in NIST_FAMILIES:
+                    total = mc.execute(
+                        "SELECT COUNT(*) as cnt FROM project_controls WHERE control_id LIKE ?",
+                        (f"{family}-%",),
+                    ).fetchone()["cnt"]
+                    impl = mc.execute(
+                        "SELECT COUNT(*) as cnt FROM project_controls"
+                        " WHERE control_id LIKE ? AND implementation_status = 'implemented'",
+                        (f"{family}-%",),
+                    ).fetchone()["cnt"]
+                    if total > 0:
+                        main_family_pcts[family] = round(impl / total * 100)
         except Exception:
             pass
 

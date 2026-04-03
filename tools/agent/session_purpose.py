@@ -16,6 +16,7 @@ import sqlite3
 import sys
 import uuid
 from tools.db.storage import get_connection
+from tools.common.helpers import now_iso
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -51,9 +52,6 @@ def _get_db(db_path=None) -> sqlite3.Connection:
     conn = get_connection(db_path=str(path))
     return conn
 
-
-def _now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
 def _hash(text: str) -> str:
@@ -105,7 +103,7 @@ def declare(purpose: str, project_id: str = None, declared_by: str = "user",
     _ensure_table(db_path)
 
     purpose_id = f"purpose-{uuid.uuid4().hex[:12]}"
-    now = _now()
+    now = now_iso()
 
     conn = _get_db(db_path)
     try:
@@ -190,7 +188,7 @@ def complete(purpose_id: str, db_path=None) -> bool:
     try:
         cursor = conn.execute(
             "UPDATE session_purposes SET status = 'completed', completed_at = ? WHERE id = ? AND status = 'active'",
-            (_now(), purpose_id),
+            (now_iso(), purpose_id),
         )
         conn.commit()
         return cursor.rowcount > 0
@@ -206,7 +204,7 @@ def abandon(purpose_id: str, db_path=None) -> bool:
     try:
         cursor = conn.execute(
             "UPDATE session_purposes SET status = 'abandoned', completed_at = ? WHERE id = ? AND status = 'active'",
-            (_now(), purpose_id),
+            (now_iso(), purpose_id),
         )
         conn.commit()
         return cursor.rowcount > 0

@@ -41,6 +41,7 @@ import os
 import re
 import sys
 import uuid
+from tools.common.helpers import now_iso
 from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
@@ -104,9 +105,6 @@ ASSET_TYPE_ALTERNATIVES = {
 def _gen_id(prefix="pub"):
     return f"{prefix}-{uuid.uuid4().hex[:12]}"
 
-
-def _now():
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _audit(event_type, actor, action, details=None):
@@ -399,7 +397,7 @@ def publish_asset(asset_path, asset_type, tenant_id, publisher_user,
             """INSERT INTO marketplace_reviews
                (id, asset_id, version_id, decision, submitted_at)
                VALUES (?, ?, ?, 'pending', ?)""",
-            (review_id, asset_id, version_id, _now()),
+            (review_id, asset_id, version_id, now_iso()),
         )
         conn.commit()
         conn.close()

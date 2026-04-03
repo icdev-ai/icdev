@@ -16,7 +16,6 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
 
 BASE_URL = os.environ.get("DASHBOARD_URL", "http://localhost:5050")
 SCREENSHOT_DIR = os.path.join(
@@ -85,7 +84,7 @@ def main():
                 # Check for JS errors
                 logs = driver.get_log("browser")
                 severe = [
-                    l for l in logs
+                    entry for entry in logs
                     if l.get("level") == "SEVERE"
                     and "favicon" not in l.get("message", "").lower()
                 ]

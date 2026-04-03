@@ -40,6 +40,7 @@ import json
 import os
 import sys
 import uuid
+from tools.common.helpers import now_iso
 from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
@@ -78,9 +79,6 @@ def _get_db(db_path=None):
 def _gen_id(prefix="prov"):
     return f"{prefix}-{uuid.uuid4().hex[:12]}"
 
-
-def _now():
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _sha256_dir(dir_path):
@@ -166,7 +164,7 @@ def record_provenance(asset_id, version_id, publisher_user, publisher_org=None,
             ],
             "classification": asset["classification"],
             "impact_level": asset["impact_level"],
-            "recorded_at": _now(),
+            "recorded_at": now_iso(),
         }
 
         # Store provenance in version metadata
@@ -340,7 +338,7 @@ def generate_report(asset_id, db_path=None):
             "version_chain": version_chain,
             "dependencies": [dict(d) for d in deps],
             "installations": [dict(i) for i in installations],
-            "generated_at": _now(),
+            "generated_at": now_iso(),
         }
     finally:
         conn.close()

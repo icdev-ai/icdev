@@ -37,6 +37,7 @@ import sys
 import time
 import uuid
 from tools.db.storage import get_connection
+from tools.common.helpers import now_iso
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
@@ -103,10 +104,6 @@ def _get_db(db_path=None):
     conn = get_connection(db_path=str(path))
     return conn
 
-
-def _now():
-    """ISO-8601 timestamp."""
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _signal_id():
@@ -205,9 +202,9 @@ def _error_signal(source, context, error):
         "rating": None,
         "upvotes": 0,
         "sentiment": None,
-        "content_hash": _content_hash(f"{source}_{context}_{_now()[:10]}"),
+        "content_hash": _content_hash(f"{source}_{context}_{now_iso()[:10]}"),
         "metadata": json.dumps({"error": str(error), "context": context}),
-        "discovered_at": _now(),
+        "discovered_at": now_iso(),
     }
 
 
@@ -386,7 +383,7 @@ def scan_g2(config, competitors=None):
                     "competitor_id": comp_id,
                     "site": "g2",
                 }),
-                "discovered_at": _now(),
+                "discovered_at": now_iso(),
             })
 
         time.sleep(delay)
@@ -487,7 +484,7 @@ def scan_capterra(config, competitors=None):
                     "competitor_id": comp_id,
                     "site": "capterra",
                 }),
-                "discovered_at": _now(),
+                "discovered_at": now_iso(),
             })
 
         time.sleep(delay)
@@ -588,7 +585,7 @@ def scan_trustradius(config, competitors=None):
                     "competitor_id": comp_id,
                     "site": "trustradius",
                 }),
-                "discovered_at": _now(),
+                "discovered_at": now_iso(),
             })
 
         time.sleep(delay)
@@ -698,7 +695,7 @@ def scan_reddit(config, competitors=None):
                     "is_self": post.get("is_self", False),
                     "link_flair_text": post.get("link_flair_text"),
                 }),
-                "discovered_at": _now(),
+                "discovered_at": now_iso(),
             })
 
         time.sleep(delay)
@@ -792,7 +789,7 @@ def scan_github_issues(config, competitors=None):
                     "created_at": item.get("created_at", ""),
                     "updated_at": item.get("updated_at", ""),
                 }),
-                "discovered_at": _now(),
+                "discovered_at": now_iso(),
             })
 
         time.sleep(delay_seconds)
@@ -886,7 +883,7 @@ def scan_producthunt(config, competitors=None):
                     "tagline": launch.get("tagline", ""),
                     "site": "producthunt",
                 }),
-                "discovered_at": _now(),
+                "discovered_at": now_iso(),
             })
 
         time.sleep(2)
@@ -987,7 +984,7 @@ def scan_govcon_blogs(config, competitors=None):
                                 "site": "govcon_blog",
                                 "published": article.get("published", article.get("date", "")),
                             }),
-                            "discovered_at": _now(),
+                            "discovered_at": now_iso(),
                         })
                         collected += 1
                     time.sleep(delay)
@@ -1012,7 +1009,7 @@ def scan_govcon_blogs(config, competitors=None):
                 "source_url": blog_url,
                 "site": "govcon_blog",
             }),
-            "discovered_at": _now(),
+            "discovered_at": now_iso(),
         })
         collected += 1
         time.sleep(delay)
@@ -1124,7 +1121,7 @@ def store_signals(signals, db_path=None):
                         signal.get("sentiment"),
                         signal.get("content_hash", ""),
                         signal.get("metadata", "{}"),
-                        signal.get("discovered_at", _now()),
+                        signal.get("discovered_at", now_iso()),
                     ),
                 )
                 stored += 1
@@ -1219,7 +1216,7 @@ def run_scan(source=None, db_path=None):
 
     return {
         "source": source or "all",
-        "scan_time": _now(),
+        "scan_time": now_iso(),
         "sources_scanned": len(sources_to_scan),
         "competitors_available": len(competitors),
         "signals_discovered": total_found,

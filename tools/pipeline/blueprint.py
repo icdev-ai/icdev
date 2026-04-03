@@ -16,7 +16,6 @@ import json
 import logging
 import os
 import uuid as _uuid
-from datetime import datetime, timezone
 from functools import wraps
 from pathlib import Path
 
@@ -37,6 +36,7 @@ from tools.pipeline.constants import (  # noqa: E402
     PIPELINE_COMPLIANCE_FRAMEWORKS, PIPELINE_COMPLIANCE_RULES,
     compute_owasp_coverage, estimate_pipeline_cost, estimate_execution_time,
 )
+from tools.common.helpers import row_to_dict, now_isoformat  # noqa: E402
 from tools.pipeline.db.init_db import get_connection, init_db  # noqa: E402
 from tools.pipeline.runbooks import (  # noqa: E402
     get_all_runbooks as _pdc_get_all_runbooks,
@@ -63,16 +63,6 @@ except Exception:
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _row_to_dict(row):
-    """Convert a sqlite3.Row to a plain dict."""
-    if row is None:
-        return None
-    return dict(row)
-
-
-def _now():
-    return datetime.now(timezone.utc).isoformat()
-
 
 def _audit(action, entity_type, entity_id, details="", user_id=None):
     """Write an audit log entry."""
@@ -82,7 +72,7 @@ def _audit(action, entity_type, entity_id, details="", user_id=None):
             "INSERT INTO pc_audit (action, entity_type, entity_id, details, user_id, ts) "
             "VALUES (?, ?, ?, ?, ?, ?)",
             (action, entity_type, entity_id, details,
-             user_id or session.get("user_id", "system"), _now()),
+             user_id or session.get("user_id", "system"), now_isoformat()),
         )
         conn.commit()
         conn.close()
@@ -146,15 +136,15 @@ def create_pipeline_blueprint():
     @pc_login_required
     def pc_index():
         conn = get_connection()
-        pipelines = [_row_to_dict(r) for r in conn.execute(
+        pipelines = [row_to_dict(r) for r in conn.execute(
             "SELECT id, name, description, classification, target_csp, "
             "created_at, updated_at FROM pipelines ORDER BY updated_at DESC LIMIT 20"
         ).fetchall()]
-        templates = [_row_to_dict(r) for r in conn.execute(
+        templates = [row_to_dict(r) for r in conn.execute(
             "SELECT id, name, category, description, tags "
             "FROM pc_templates ORDER BY category, name"
         ).fetchall()]
-        snippets = [_row_to_dict(r) for r in conn.execute(
+        snippets = [row_to_dict(r) for r in conn.execute(
             "SELECT id, name, category, description, tags "
             "FROM pc_snippets ORDER BY category, name"
         ).fetchall()]
@@ -187,7 +177,7 @@ def create_pipeline_blueprint():
         conn.close()
         if not row:
             return redirect("/devops/canvas/new")
-        pipe = _row_to_dict(row)
+        pipe = row_to_dict(row)
         return render_template(
             "pipeline/canvas.html",
             pipeline_id=pipe["id"],
@@ -214,7 +204,7 @@ def create_pipeline_blueprint():
             "created_at, updated_at FROM pipelines ORDER BY updated_at DESC"
         ).fetchall()
         conn.close()
-        return jsonify([_row_to_dict(r) for r in rows])
+        return jsonify([row_to_dict(r) for r in rows])
 
     @bp.route("/api/pipelines", methods=["POST"])
     @pc_login_required
@@ -233,7 +223,7 @@ def create_pipeline_blueprint():
             (pipe_id, name, data.get("description", ""),
              data.get("graph_json", '{"nodes":[],"edges":[]}'),
              data.get("classification", "public"),
-             data.get("target_csp", "generic"), _now(), _now()),
+             data.get("target_csp", "generic"), now_isoformat(), now_isoformat()),
         )
         conn.commit()
         conn.close()
@@ -248,7 +238,7 @@ def create_pipeline_blueprint():
         conn.close()
         if not row:
             return jsonify({"error": "Not found"}), 404
-        return jsonify(_row_to_dict(row))
+        return jsonify(row_to_dict(row))
 
     @bp.route("/api/pipelines/<pipe_id>", methods=["PUT"])
     @pc_login_required
@@ -263,7 +253,7 @@ def create_pipeline_blueprint():
             "classification=?, target_csp=?, updated_at=? WHERE id=?",
             (data.get("name", ""), data.get("description", ""),
              data.get("graph_json", "{}"), data.get("classification", "public"),
-             data.get("target_csp", "generic"), _now(), pipe_id),
+             data.get("target_csp", "generic"), now_isoformat(), pipe_id),
         )
         conn.commit()
         conn.close()
@@ -304,7 +294,7 @@ def create_pipeline_blueprint():
         conn.close()
         result = []
         for r in rows:
-            d = _row_to_dict(r)
+            d = row_to_dict(r)
             try:
                 d["tags"] = json.loads(d.get("tags") or "[]")
             except Exception:
@@ -320,7 +310,7 @@ def create_pipeline_blueprint():
         conn.close()
         if not row:
             return jsonify({"error": "Not found"}), 404
-        d = _row_to_dict(row)
+        d = row_to_dict(row)
         try:
             d["graph_json"] = json.loads(d["graph_json"])
         except Exception:
@@ -335,13 +325,13 @@ def create_pipeline_blueprint():
         if not row:
             conn.close()
             return jsonify({"error": "Not found"}), 404
-        tpl = _row_to_dict(row)
+        tpl = row_to_dict(row)
         pipe_id = str(_uuid.uuid4())
         conn.execute(
             "INSERT INTO pipelines (id, name, description, graph_json, template_id, "
             "created_at, updated_at) VALUES (?,?,?,?,?,?,?)",
             (pipe_id, f"{tpl['name']} (copy)", tpl.get("description", ""),
-             tpl["graph_json"], tpl_id, _now(), _now()),
+             tpl["graph_json"], tpl_id, now_isoformat(), now_isoformat()),
         )
         conn.commit()
         conn.close()
@@ -359,7 +349,7 @@ def create_pipeline_blueprint():
         conn.close()
         result = []
         for r in rows:
-            d = _row_to_dict(r)
+            d = row_to_dict(r)
             try:
                 d["tags"] = json.loads(d.get("tags") or "[]")
             except Exception:
@@ -375,7 +365,7 @@ def create_pipeline_blueprint():
         conn.close()
         if not row:
             return jsonify({"error": "Not found"}), 404
-        d = _row_to_dict(row)
+        d = row_to_dict(row)
         try:
             d["graph_json"] = json.loads(d["graph_json"])
         except Exception:
@@ -391,14 +381,14 @@ def create_pipeline_blueprint():
         if not row:
             conn.close()
             return jsonify({"error": "Not found"}), 404
-        snip = _row_to_dict(row)
+        snip = row_to_dict(row)
         pipe_id = str(_uuid.uuid4())
         conn.execute(
             "INSERT INTO pipelines (id, name, description, graph_json, classification, "
             "created_at, updated_at) VALUES (?,?,?,?,?,?,?)",
             (pipe_id, f"{snip['name']} (copy)", snip.get("description", ""),
              snip["graph_json"], snip.get("classification_level", "CUI"),
-             _now(), _now()),
+             now_isoformat(), now_isoformat()),
         )
         conn.commit()
         conn.close()
@@ -512,7 +502,7 @@ def create_pipeline_blueprint():
             "INSERT INTO pc_compliance_checks (id, pipeline_id, check_type, passed, failed, findings_json, ran_at) "
             "VALUES (?,?,?,?,?,?,?)",
             (check_id, pipe_id, "full_audit", result["passed"], result["failed"],
-             json.dumps(result["findings"]), _now()),
+             json.dumps(result["findings"]), now_isoformat()),
         )
         conn.commit()
         conn.close()
@@ -532,7 +522,7 @@ def create_pipeline_blueprint():
             "FROM pc_versions WHERE pipeline_id=? ORDER BY version_num DESC", (pipe_id,)
         ).fetchall()
         conn.close()
-        return jsonify([_row_to_dict(r) for r in rows])
+        return jsonify([row_to_dict(r) for r in rows])
 
     @bp.route("/api/versions/<pipe_id>", methods=["POST"])
     @pc_login_required
@@ -552,7 +542,7 @@ def create_pipeline_blueprint():
             "VALUES (?,?,?,?,?,?,?,?)",
             (ver_id, pipe_id, max_ver + 1, data.get("label", f"v{max_ver + 1}"),
              row["graph_json"], session.get("user_id", "system"),
-             data.get("notes", ""), _now()),
+             data.get("notes", ""), now_isoformat()),
         )
         conn.commit()
         conn.close()
@@ -570,7 +560,7 @@ def create_pipeline_blueprint():
             "SELECT * FROM pc_boundaries WHERE pipeline_id=?", (pipe_id,)
         ).fetchall()
         conn.close()
-        return jsonify([_row_to_dict(r) for r in rows])
+        return jsonify([row_to_dict(r) for r in rows])
 
     @bp.route("/api/boundaries/<pipe_id>", methods=["POST"])
     @pc_login_required
@@ -617,7 +607,7 @@ def create_pipeline_blueprint():
         conn.close()
         if not row:
             return jsonify({"error": "Not found"}), 404
-        pipe = _row_to_dict(row)
+        pipe = row_to_dict(row)
         graph = json.loads(pipe["graph_json"])
         data = request.get_json(force=True, silent=True) or {}
         fmt = data.get("format", "gitlab_ci")
@@ -647,7 +637,7 @@ def create_pipeline_blueprint():
         conn.close()
         if not row:
             return jsonify({"error": "Not found"}), 404
-        pipe = _row_to_dict(row)
+        pipe = row_to_dict(row)
         graph = json.loads(pipe["graph_json"])
         data = request.get_json(force=True, silent=True) or {}
 
@@ -678,7 +668,7 @@ def create_pipeline_blueprint():
         conn.close()
         if not row:
             return jsonify({"error": "Not found"}), 404
-        pipe = _row_to_dict(row)
+        pipe = row_to_dict(row)
         graph = json.loads(pipe["graph_json"])
         data = request.get_json(force=True, silent=True) or {}
 
@@ -769,7 +759,7 @@ def create_pipeline_blueprint():
             (pipe_id,)
         ).fetchall()
         conn.close()
-        return jsonify([_row_to_dict(r) for r in rows])
+        return jsonify([row_to_dict(r) for r in rows])
 
     @bp.route("/api/change-requests/<pipe_id>", methods=["POST"])
     @pc_login_required
@@ -783,7 +773,7 @@ def create_pipeline_blueprint():
             (cr_id, pipe_id, data.get("cr_number", f"CR-{cr_id[:4]}"),
              data.get("cr_type", "modify"), "draft",
              json.dumps(data.get("markup", [])),
-             session.get("user_id", "system"), _now(), _now()),
+             session.get("user_id", "system"), now_isoformat(), now_isoformat()),
         )
         conn.commit()
         conn.close()
@@ -1087,7 +1077,7 @@ def create_pipeline_blueprint():
                 "total_actions": 0,
                 "auto_fixable": 0,
                 "summary": "No compliance findings — pipeline is fully compliant.",
-                "created_at": _now(),
+                "created_at": now_isoformat(),
             })
 
         plan = generate_remediation_plan(findings, rules=PIPELINE_COMPLIANCE_RULES)

@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import json
 from datetime import datetime, timezone
+from tools.common.helpers import now_iso
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
@@ -42,10 +43,6 @@ def _load_matrix() -> Dict[str, Any]:
         return data.get("subsystems", {})
     except Exception:
         return {}
-
-
-def _now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _identify_subsystem_from_file(file_path: str, matrix: Dict[str, Any]) -> Set[str]:
@@ -129,7 +126,7 @@ def analyze_impact(
             "impacted_subsystems": [],
             "recommendations": [],
             "message": "No subsystems identified from the changes",
-            "analyzed_at": _now(),
+            "analyzed_at": now_iso(),
         }
 
     # Walk graph to find connected subsystems
@@ -193,7 +190,7 @@ def analyze_impact(
         "total_affected": len(affected),
         "total_impacted": len(impacted),
         "total_recommendations": len(recommendations),
-        "analyzed_at": _now(),
+        "analyzed_at": now_iso(),
     }
 
 

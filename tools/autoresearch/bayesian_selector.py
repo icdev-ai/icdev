@@ -26,9 +26,7 @@ from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parent.parent.parent
 
-
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+from tools.common.helpers import now_iso
 
 
 def _load_config() -> dict:
@@ -158,7 +156,7 @@ def score_experiment_candidate(
         "info_gain_score": round(info_gain, 4),
         "dimensions": {k: round(v, 4) for k, v in dimensions.items()},
         "threshold_band": band,
-        "scored_at": _now(),
+        "scored_at": now_iso(),
     }
 
 
@@ -487,7 +485,7 @@ def health_check() -> dict:
         "bayesian_teacher_available": bt_available,
         "trust_engine_available": te_available,
         "fallback_scoring": True,
-        "timestamp": _now(),
+        "timestamp": now_iso(),
     }
 
 

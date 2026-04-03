@@ -19,6 +19,7 @@ import json
 import sqlite3
 import sys
 from tools.db.storage import get_connection
+from tools.common.helpers import now_iso
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -53,17 +54,13 @@ def _get_db(db_path: Optional[Path] = None) -> sqlite3.Connection:
     return conn
 
 
-def _now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
 _ID_COUNTER = 0
 
 
 def _gen_id(prefix: str) -> str:
     global _ID_COUNTER
     _ID_COUNTER += 1
-    ts = _now()
+    ts = now_iso()
     h = hashlib.sha256(f"{ts}-{_ID_COUNTER}-{id(object())}".encode()).hexdigest()[:12]
     return f"{prefix}-{h}"
 
@@ -254,7 +251,7 @@ def reconcile(loop_id: str, lessons: str = "", db_path: Optional[Path] = None) -
 
         # Store reconciliation (append-only)
         recon_id = _gen_id("wr")
-        now = _now()
+        now = now_iso()
         process_checks = {
             "required": required,
             "invoked": invoked_processes,

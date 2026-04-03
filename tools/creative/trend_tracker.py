@@ -44,6 +44,7 @@ import re
 import sys
 import uuid
 from tools.db.storage import get_connection
+from tools.common.helpers import now_iso
 from collections import Counter, defaultdict
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -122,10 +123,6 @@ def _get_db(db_path=None):
     conn = get_connection(db_path=str(path))
     return conn
 
-
-def _now():
-    """ISO-8601 timestamp."""
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _trend_id():
@@ -300,7 +297,7 @@ def detect_trends(days=30, min_signals=3, db_path=None):
 
         if not rows:
             return {
-                "detected_at": _now(),
+                "detected_at": now_iso(),
                 "time_window_days": detection_window,
                 "min_signals": min_sigs,
                 "pain_points_analyzed": 0,
@@ -425,8 +422,8 @@ def detect_trends(days=30, min_signals=3, db_path=None):
                 # Dates
                 dates = sorted(pp["last_seen"] for pp in cluster_points if pp["last_seen"])
                 first_dates = sorted(pp["first_seen"] for pp in cluster_points if pp["first_seen"])
-                first_seen = first_dates[0] if first_dates else _now()
-                last_seen = dates[-1] if dates else _now()
+                first_seen = first_dates[0] if first_dates else now_iso()
+                last_seen = dates[-1] if dates else now_iso()
 
                 # Auto-generate name from top 3 keywords
                 name = " + ".join(common_keywords[:3])
@@ -559,7 +556,7 @@ def detect_trends(days=30, min_signals=3, db_path=None):
         )
 
         return {
-            "detected_at": _now(),
+            "detected_at": now_iso(),
             "time_window_days": detection_window,
             "min_signals": min_sigs,
             "pain_points_analyzed": len(deduped),
@@ -660,7 +657,7 @@ def _store_trend(conn, trend):
             trend["first_seen"],
             trend["last_seen"],
             json.dumps(trend["metadata"]),
-            _now(),
+            now_iso(),
             "CUI",
         ),
     )
@@ -697,7 +694,7 @@ def get_trend_report(db_path=None):
 
         if not rows:
             return {
-                "generated_at": _now(),
+                "generated_at": now_iso(),
                 "total": 0,
                 "by_status": {},
                 "top_trending": [],
@@ -772,7 +769,7 @@ def get_trend_report(db_path=None):
         )
 
         return {
-            "generated_at": _now(),
+            "generated_at": now_iso(),
             "total": total,
             "by_status": dict(by_status),
             "top_trending": [_trend_summary(t) for t in top_trending],

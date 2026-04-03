@@ -70,11 +70,10 @@ def check_database() -> Dict[str, Any]:
 
     try:
         import sqlite3
-        conn = sqlite3.connect(str(db_path))
-        tables = conn.execute(
-            "SELECT count(*) FROM sqlite_master WHERE type='table'"
-        ).fetchone()[0]
-        conn.close()
+        with sqlite3.connect(str(db_path)) as conn:
+            tables = conn.execute(
+                "SELECT count(*) FROM sqlite_master WHERE type='table'"
+            ).fetchone()[0]
         return {"status": "pass", "table_count": tables}
     except Exception as exc:
         return {"status": "fail", "error": str(exc)}

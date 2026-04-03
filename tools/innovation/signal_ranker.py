@@ -42,6 +42,7 @@ import argparse
 import json
 import os
 import sys
+from tools.common.helpers import now_iso
 from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
@@ -126,10 +127,6 @@ def _get_db(db_path=None):
     conn = get_connection(db_path=str(path))
     return conn
 
-
-def _now():
-    """ISO-8601 UTC timestamp."""
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _audit(event_type, actor, action, details=None, project_id=None):
@@ -681,7 +678,7 @@ def score_signal(signal_id, db_path=None):
             "weights": weights,
             "overall": overall_score,
             "threshold_band": threshold_band,
-            "scored_at": _now(),
+            "scored_at": now_iso(),
         }
 
         # Update DB: set score, score_breakdown, transition status new -> scored
@@ -789,7 +786,7 @@ def score_all_new(db_path=None):
         "errors": errors,
         "error_details": error_details[:10],  # Cap error details
         "score_distribution": score_distribution,
-        "scored_at": _now(),
+        "scored_at": now_iso(),
     }
 
 
@@ -1035,7 +1032,7 @@ def calibrate_weights(db_path=None):
             "new_weights": current_weights,
             "adjustments": adjustments,
             "data_points": len(completed_signals),
-            "calibrated_at": _now(),
+            "calibrated_at": now_iso(),
             "note": "Weights computed but NOT persisted to YAML. "
                     "Review adjustments and update args/innovation_config.yaml manually.",
         }

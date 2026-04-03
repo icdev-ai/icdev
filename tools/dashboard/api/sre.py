@@ -11,15 +11,13 @@ import json
 import logging
 from datetime import datetime, timezone, timedelta
 from flask import Blueprint, jsonify, request
+from tools.common.helpers import now_isoformat
 from tools.db.storage import get_connection
 
 logger = logging.getLogger("icdev.sre.api")
 
 sre_api = Blueprint("sre_api", __name__, url_prefix="/api/sre")
 
-
-def _now():
-    return datetime.now(timezone.utc).isoformat()
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -360,7 +358,7 @@ def api_sre_process_alert():
                 "VALUES (?, ?, ?, ?)",
                 ("self_heal_triggered", "sre_chain_processed",
                  json.dumps({"severity": severity, "service": service, "chain_status": result["chain_status"]}),
-                 _now()),
+                 now_isoformat()),
             )
             conn.commit()
         except Exception:

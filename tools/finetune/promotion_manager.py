@@ -18,6 +18,7 @@ import argparse
 import json
 import sqlite3
 from tools.db.storage import get_connection
+from tools.common.helpers import now_iso
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -31,9 +32,6 @@ def _get_db(db_path: Optional[Path] = None) -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
-
-def _now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _load_thresholds() -> Dict[str, float]:
@@ -177,7 +175,7 @@ def auto_promote(
                 (model_version_id, function_name,
                  json.dumps(eligibility["checks"]),
                  "Auto-promoted: met all thresholds",
-                 activated_by, tenant_id, project_id, _now()),
+                 activated_by, tenant_id, project_id, now_iso()),
             )
             conn.commit()
         except Exception:
@@ -225,7 +223,7 @@ def force_promote(
                    VALUES (?, 'override_promoted', ?, ?, ?, ?, ?, ?)""",
                 (model_version_id, function_name,
                  f"Force-promoted: {reason}", activated_by,
-                 tenant_id, project_id, _now()),
+                 tenant_id, project_id, now_iso()),
             )
             conn.commit()
         except Exception:

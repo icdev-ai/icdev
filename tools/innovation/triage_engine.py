@@ -53,6 +53,7 @@ import re
 import sqlite3
 import sys
 import uuid
+from tools.common.helpers import now_iso
 from tools.db.storage import get_connection
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -157,10 +158,6 @@ def _get_db(db_path=None):
     return conn
 
 
-def _now():
-    """ISO-8601 UTC timestamp."""
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
 
 def _audit(event_type, actor, action, details=None, project_id=None):
     """Write audit trail entry."""
@@ -247,7 +244,7 @@ def _log_triage_stage(conn, signal_id, stage, stage_name, result, details):
             stage_name,
             result,
             json.dumps(details) if isinstance(details, dict) else details,
-            _now(),
+            now_iso(),
         ),
     )
     return log_id
@@ -966,7 +963,7 @@ def triage_signal(signal_id, db_path=None):
                 "auto_queue": auto_queue_threshold,
                 "suggest": suggest_threshold,
             },
-            "triaged_at": _now(),
+            "triaged_at": now_iso(),
         }
 
         _audit(
@@ -1053,7 +1050,7 @@ def triage_all_scored(db_path=None):
         "total_processed": len(signal_ids),
         "counts": counts,
         "results": results,
-        "triaged_at": _now(),
+        "triaged_at": now_iso(),
     }
 
 
@@ -1174,7 +1171,7 @@ def get_triage_summary(db_path=None):
             "total_triage_log_entries": total_log_entries,
             "stage_stats": stage_stats,
             "recent_blocks": recent_blocks,
-            "generated_at": _now(),
+            "generated_at": now_iso(),
         }
 
     finally:

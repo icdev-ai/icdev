@@ -19,7 +19,6 @@ Usage:
 import argparse
 import json
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict
 
@@ -27,6 +26,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
+from tools.common.helpers import now_iso  # noqa: E402
 from tools.db.storage import get_connection as _raw_get_connection  # noqa: E402
 
 
@@ -40,8 +40,6 @@ def _get_connection():
     return conn
 
 
-def _now():
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _load_config():
@@ -164,7 +162,7 @@ def route_signals(dry_run: bool = False) -> Dict[str, Any]:
                         signal["title"],
                         json.dumps({"federated_from": "innovation_signals", "original_id": signal["id"]}),
                         signal["id"],
-                        _now(),
+                        now_iso(),
                     ),
                 )
                 conn.commit()

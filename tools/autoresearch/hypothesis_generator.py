@@ -21,9 +21,7 @@ from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parent.parent.parent
 
-
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+from tools.common.helpers import now_iso
 
 
 def _load_program(domain: str) -> dict:
@@ -172,7 +170,7 @@ def generate_hypotheses(domain: str, max_hypotheses: int = 10,
             "success": False,
             "error": f"No program config found for domain: {domain}",
             "hypotheses": [],
-            "timestamp": _now(),
+            "timestamp": now_iso(),
         }
 
     # Try LLM first
@@ -203,7 +201,7 @@ def generate_hypotheses(domain: str, max_hypotheses: int = 10,
         "hypotheses": candidates,
         "count": len(candidates),
         "source": candidates[0]["source"] if candidates else "none",
-        "timestamp": _now(),
+        "timestamp": now_iso(),
     }
 
 
@@ -246,7 +244,7 @@ def health_check() -> dict:
         "template_fallback": True,
         "programs_found": len(programs),
         "program_domains": [p.stem for p in programs],
-        "timestamp": _now(),
+        "timestamp": now_iso(),
     }
 
 

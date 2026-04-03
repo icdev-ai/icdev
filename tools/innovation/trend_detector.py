@@ -40,6 +40,7 @@ import os
 import re
 import sys
 import uuid
+from tools.common.helpers import now_iso
 from tools.db.storage import get_connection
 from collections import Counter, defaultdict
 from datetime import datetime, timezone, timedelta
@@ -123,10 +124,6 @@ def _get_db(db_path=None):
     conn = get_connection(db_path=str(path))
     return conn
 
-
-def _now():
-    """ISO-8601 timestamp."""
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _trend_id():
@@ -332,7 +329,7 @@ def detect_trends(time_window_days=30, min_signals=3, db_path=None):
 
         if not rows:
             return {
-                "detected_at": _now(),
+                "detected_at": now_iso(),
                 "time_window_days": time_window_days,
                 "min_signals": min_signals,
                 "signals_analyzed": 0,
@@ -532,7 +529,7 @@ def detect_trends(time_window_days=30, min_signals=3, db_path=None):
         )
 
         return {
-            "detected_at": _now(),
+            "detected_at": now_iso(),
             "time_window_days": time_window_days,
             "min_signals": min_signals,
             "signals_analyzed": len(rows),
@@ -621,7 +618,7 @@ def _store_trend(conn, trend):
                 json.dumps(trend["keywords"]),
                 json.dumps(trend["signal_ids"]),
                 json.dumps(trend["metadata"]),
-                _now(),
+                now_iso(),
                 trend["id"],
             ),
         )
@@ -646,7 +643,7 @@ def _store_trend(conn, trend):
                 json.dumps(trend["keywords"]),
                 json.dumps(trend["signal_ids"]),
                 json.dumps(trend["metadata"]),
-                _now(),
+                now_iso(),
             ),
         )
     conn.commit()
@@ -680,7 +677,7 @@ def get_trend_report(db_path=None):
 
         if not rows:
             return {
-                "generated_at": _now(),
+                "generated_at": now_iso(),
                 "total_trends": 0,
                 "by_status": {},
                 "by_category": {},
@@ -743,7 +740,7 @@ def get_trend_report(db_path=None):
         )
 
         return {
-            "generated_at": _now(),
+            "generated_at": now_iso(),
             "total_trends": total,
             "by_status": {
                 status: [_trend_summary(t) for t in trend_list]

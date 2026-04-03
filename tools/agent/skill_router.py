@@ -14,6 +14,7 @@ import logging
 import sqlite3
 import sys
 from tools.db.storage import get_connection
+from tools.common.helpers import row_to_dict_json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -37,17 +38,6 @@ def _get_db(db_path: Path = None) -> sqlite3.Connection:
     return conn
 
 
-def _row_to_dict(row: sqlite3.Row) -> dict:
-    """Convert a sqlite3.Row to a plain dict, parsing JSON capabilities."""
-    if row is None:
-        return None
-    d = dict(row)
-    if d.get("capabilities") and isinstance(d["capabilities"], str):
-        try:
-            d["capabilities"] = json.loads(d["capabilities"])
-        except json.JSONDecodeError:
-            pass
-    return d
 
 
 def _audit_log(event_type: str, actor: str, action: str,
@@ -141,7 +131,7 @@ def discover_agents_healthy(
 
         healthy = []
         for row in rows:
-            agent = _row_to_dict(row)
+            agent = row_to_dict_json(row)
             hb = agent.get("last_heartbeat", "")
             if not _is_stale(hb, staleness_seconds):
                 agent["healthy"] = True
@@ -285,7 +275,7 @@ def route_skill(
                         )
                         row = c.fetchone()
                         if row:
-                            agent = _row_to_dict(row)
+                            agent = row_to_dict_json(row)
                             agent["load"] = get_agent_load(
                                 redirect_agent, db_path=effective_db,
                             )
@@ -379,7 +369,7 @@ def _find_all_agents_for_skill(skill_id: str, db_path: Path = None) -> List[dict
         rows = c.fetchall()
 
         for row in rows:
-            agent = _row_to_dict(row)
+            agent = row_to_dict_json(row)
             caps = agent.get("capabilities")
             if isinstance(caps, dict):
                 skills = caps.get("skills", [])
@@ -444,7 +434,7 @@ def get_routing_table(db_path: Path = None, staleness_seconds: int = 120) -> dic
         rows = c.fetchall()
 
         for row in rows:
-            agent = _row_to_dict(row)
+            agent = row_to_dict_json(row)
             agent_id = agent.get("id", "")
             hb = agent.get("last_heartbeat", "")
             stale = _is_stale(hb, staleness_seconds)

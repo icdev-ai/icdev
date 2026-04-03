@@ -42,6 +42,7 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from tools.db.storage import get_connection  # noqa: E402
+from tools.common.helpers import row_to_dict  # noqa: E402
 
 
 # ── Constants ─────────────────────────────────────────────────────────
@@ -195,16 +196,6 @@ def _ensure_tables(conn):
     conn.commit()
 
 
-def _row_to_dict(row):
-    """Convert a DB row to a plain dict."""
-    if row is None:
-        return {}
-    if isinstance(row, dict):
-        return dict(row)
-    try:
-        return dict(row)
-    except (TypeError, ValueError):
-        return {}
 
 
 # ── Core Functions ────────────────────────────────────────────────────
@@ -278,7 +269,7 @@ def list_standing_teams(vehicle_name=None):
 
     teams = []
     for row in rows:
-        d = _row_to_dict(row)
+        d = row_to_dict(row)
         # Parse members JSON for summary
         try:
             members = json.loads(d.get("members", "[]"))
@@ -549,7 +540,7 @@ def track_to_capacity(vehicle_name):
         }
 
     total_available = sum(
-        float(_row_to_dict(t).get("total_fte", 0)) for t in teams
+        float(row_to_dict(t).get("total_fte", 0)) for t in teams
     )
 
     # Get active task orders for this vehicle
@@ -559,7 +550,7 @@ def track_to_capacity(vehicle_name):
     ).fetchall()
 
     committed = sum(
-        float(_row_to_dict(to).get("committed_fte", 0)) for to in active_tos
+        float(row_to_dict(to).get("committed_fte", 0)) for to in active_tos
     )
 
     remaining = total_available - committed
@@ -570,7 +561,7 @@ def track_to_capacity(vehicle_name):
 
     active_to_list = []
     for to_row in active_tos:
-        d = _row_to_dict(to_row)
+        d = row_to_dict(to_row)
         active_to_list.append({
             "id": d.get("id"),
             "title": d.get("title"),

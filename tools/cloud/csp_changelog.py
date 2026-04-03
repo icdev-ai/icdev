@@ -29,6 +29,7 @@ import os
 import sqlite3
 import sys
 from tools.db.storage import get_connection
+from tools.common.helpers import now_iso
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -146,10 +147,6 @@ def _get_db(db_path: Optional[Path] = None) -> sqlite3.Connection:
     return conn
 
 
-def _now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
 def fetch_signals(db_path: Path, days: int = 30, csp: Optional[str] = None) -> List[Dict]:
     """Fetch CSP monitor signals from database."""
     conn = _get_db(db_path)
@@ -201,7 +198,7 @@ def generate_markdown_changelog(entries: List[Dict], days: int,
         "# CUI // SP-CTI",
         f"# CSP Service Changelog — Last {days} Days",
         "",
-        f"*Generated: {_now()}*",
+        f"*Generated: {now_iso()}*",
         f"*Total changes: {len(entries)}*",
         "",
     ]
@@ -327,7 +324,7 @@ def main():
         summary = generate_summary(entries)
         summary["status"] = "ok"
         summary["period_days"] = args.days
-        summary["generated_at"] = _now()
+        summary["generated_at"] = now_iso()
         if args.json or args.format == "json":
             print(json.dumps(summary, indent=2))
         else:
@@ -353,7 +350,7 @@ def main():
                     ct: rec for ct, rec in RECOMMENDATIONS.items()
                     if any(e["change_type"] == ct for e in entries)
                 },
-                "generated_at": _now(),
+                "generated_at": now_iso(),
             }
             print(json.dumps(result, indent=2))
         else:

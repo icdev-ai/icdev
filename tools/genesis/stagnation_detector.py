@@ -18,13 +18,14 @@ import json
 import re
 import sys
 import uuid
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+
+from tools.common.helpers import now_isoformat  # noqa: E402
 
 
 _STOPWORDS = frozenset([
@@ -55,9 +56,6 @@ def _jaccard(a: set, b: set) -> float:
     union = a | b
     return len(a & b) / len(union) if union else 1.0
 
-
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 class StagnationDetector:
@@ -368,7 +366,7 @@ class StagnationDetector:
                     result.get("selected_alternative"),
                     result.get("selected_score", 0.0),
                     json.dumps(result.get("details", {})),
-                    _now(),
+                    now_isoformat(),
                 ),
             )
             conn.commit()

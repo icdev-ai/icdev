@@ -15,6 +15,8 @@ from pathlib import Path
 
 from flask import Blueprint, jsonify, request
 
+from tools.common.helpers import now_iso
+
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
@@ -28,9 +30,6 @@ def _get_db():
     conn = get_connection(db_path=str(DB_PATH))
     return conn
 
-
-def _now():
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def _uuid():
@@ -238,7 +237,7 @@ def update_opportunity(opp_id):
         if not sets:
             return jsonify({"error": "No valid fields to update"}), 400
         sets.append("updated_at = ?")
-        params.append(_now())
+        params.append(now_iso())
         params.append(opp_id)
         conn.execute(f"UPDATE proposal_opportunities SET {', '.join(sets)} WHERE id = ?", params)  # nosec B608 -- table/column names are internal constants, not user input
         conn.commit()
@@ -262,7 +261,7 @@ def change_opportunity_status(opp_id):
         old_status = row["status"]
         conn.execute(
             "UPDATE proposal_opportunities SET status = ?, updated_at = ? WHERE id = ?",
-            (new_status, _now(), opp_id),
+            (new_status, now_iso(), opp_id),
         )
         _record_status_change(conn, "opportunity", opp_id, old_status, new_status, data.get("changed_by"), data.get("reason"))
         conn.commit()
@@ -334,7 +333,7 @@ def update_volume(vol_id):
         if not sets:
             return jsonify({"error": "No valid fields to update"}), 400
         sets.append("updated_at = ?")
-        params.append(_now())
+        params.append(now_iso())
         params.append(vol_id)
         conn.execute(f"UPDATE proposal_volumes SET {', '.join(sets)} WHERE id = ?", params)  # nosec B608 -- table/column names are internal constants, not user input
         conn.commit()
@@ -489,7 +488,7 @@ def update_section(sec_id):
         if not sets:
             return jsonify({"error": "No valid fields to update"}), 400
         sets.append("updated_at = ?")
-        params.append(_now())
+        params.append(now_iso())
         params.append(sec_id)
         conn.execute(f"UPDATE proposal_sections SET {', '.join(sets)} WHERE id = ?", params)  # nosec B608 -- table/column names are internal constants, not user input
         conn.commit()
@@ -546,7 +545,7 @@ def advance_section_status(sec_id):
 
         conn.execute(
             "UPDATE proposal_sections SET status = ?, updated_at = ? WHERE id = ?",
-            (new_status, _now(), sec_id),
+            (new_status, now_iso(), sec_id),
         )
         _record_status_change(conn, "section", sec_id, old_status, new_status, data.get("changed_by"), data.get("reason"))
         conn.commit()
@@ -704,7 +703,7 @@ def update_compliance_item(item_id):
                 _record_status_change(conn, "compliance_item", item_id, old["compliance_status"], data["compliance_status"])
 
         sets.append("updated_at = ?")
-        params.append(_now())
+        params.append(now_iso())
         params.append(item_id)
         conn.execute(f"UPDATE proposal_compliance_matrix SET {', '.join(sets)} WHERE id = ?", params)  # nosec B608 -- table/column names are internal constants, not user input
         conn.commit()

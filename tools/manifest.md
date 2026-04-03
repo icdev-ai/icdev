@@ -1610,3 +1610,18 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | E2E Security Canvas | tools\testing\e2e_security_canvas.py | Auto-registered: testing/e2e_security_canvas.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Boundary Engine | tools\boundary_canvas\boundary_engine.py | Auto-registered: boundary_canvas/boundary_engine.py | --json | JSON |
+| Code Gen Agentic | tools\builder\code_gen_agentic.py | Auto-registered: builder/code_gen_agentic.py | --json | JSON |
+| Code Gen Core | tools\builder\code_gen_core.py | Auto-registered: builder/code_gen_core.py | --json | JSON |
+| Code Gen Multilang | tools\builder\code_gen_multilang.py | Auto-registered: builder/code_gen_multilang.py | --json | JSON |
+| Code Gen Python | tools\builder\code_gen_python.py | Auto-registered: builder/code_gen_python.py | --json | JSON |
+| Data Engine | tools\data_canvas\data_engine.py | Auto-registered: data_canvas/data_engine.py | --json | JSON |
+| Infra Engine | tools\infra_canvas\infra_engine.py | Auto-registered: infra_canvas/infra_engine.py | --json | JSON |
+| Blueprint Helpers | tools\network\blueprint_helpers.py | Auto-registered: network/blueprint_helpers.py | --json | JSON |
+| Observability Engine | tools\observability_canvas\observability_engine.py | Auto-registered: observability_canvas/observability_engine.py | --json | JSON |
+| E2E New Canvases | tools\testing\e2e_new_canvases.py | Auto-registered: testing/e2e_new_canvases.py | --json | JSON |

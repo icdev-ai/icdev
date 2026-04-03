@@ -22,7 +22,6 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
 BASE = "http://localhost:5050"
@@ -72,7 +71,7 @@ def screenshot(driver, name):
 def check_no_js_errors(driver, page_name):
     """Check browser console for SEVERE JS errors (exclude favicon 404)."""
     logs = driver.get_log("browser")
-    severe = [l for l in logs if l["level"] == "SEVERE" and "favicon" not in l.get("message", "")]
+    severe = [entry for entry in logs if entry["level"] == "SEVERE" and "favicon" not in entry.get("message", "")]
     check(f"{page_name}: no JS errors", len(severe) == 0,
           f"{len(severe)} errors: {severe[0]['message'][:100] if severe else ''}")
 

@@ -26,6 +26,7 @@ from pathlib import Path
 from flask import Blueprint, g, jsonify, request
 
 from tools.dashboard.auth import require_role
+from tools.common.helpers import now_isoformat
 from tools.dashboard.config import DEFAULT_CLASSIFICATION
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
@@ -44,9 +45,6 @@ def _get_db():
     return conn
 
 
-def _now():
-    return datetime.now(timezone.utc).isoformat()
-
 
 def _uuid():
     return str(uuid.uuid4())
@@ -57,7 +55,7 @@ def _audit(conn, action, details="", actor="cpmp_api"):
         conn.execute(
             "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (_uuid(), _now(), "cpmp.api", actor, action, details, "cpmp"),
+            (_uuid(), now_isoformat(), "cpmp.api", actor, action, details, "cpmp"),
         )
     except Exception:
         pass
@@ -72,7 +70,7 @@ def _cor_access_log(conn, user_id, contract_id, action):
         conn.execute(
             "INSERT INTO cpmp_cor_access_log (id, user_id, contract_id, action, accessed_at, classification) "
             "VALUES (?, ?, ?, ?, ?, ?)",
-            (_uuid(), user_id, contract_id, action, _now(), _classification()),
+            (_uuid(), user_id, contract_id, action, now_isoformat(), _classification()),
         )
     except Exception:
         pass

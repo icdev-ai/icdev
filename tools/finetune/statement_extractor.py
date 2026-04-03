@@ -29,6 +29,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
+from tools.common.helpers import now_iso  # noqa: E402
 from tools.db.storage import get_connection  # noqa: E402
 
 logger = logging.getLogger("icdev.finetune.statement_extractor")
@@ -94,9 +95,6 @@ def _get_db(db_path: Optional[Path] = None) -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
-
-def _now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _content_hash(text: str) -> str:

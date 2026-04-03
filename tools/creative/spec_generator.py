@@ -34,6 +34,7 @@ import os
 import sys
 import uuid
 from tools.db.storage import get_connection
+from tools.common.helpers import now_iso
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -243,10 +244,6 @@ def _get_db(db_path=None):
     conn = get_connection(db_path=str(path))
     return conn
 
-
-def _now():
-    """ISO-8601 UTC timestamp."""
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _spec_id():
@@ -767,7 +764,7 @@ def generate_spec(feature_gap_id, db_path=None):
 
         # Store in creative_specs
         spec_id = _spec_id()
-        now = _now()
+        now = now_iso()
         conn.execute(
             """INSERT INTO creative_specs
             (id, feature_gap_id, pain_point_id, title, spec_content,

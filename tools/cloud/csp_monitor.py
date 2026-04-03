@@ -45,6 +45,7 @@ import time
 import uuid
 import xml.etree.ElementTree as ET
 from tools.db.storage import get_connection
+from tools.common.helpers import now_iso
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Any
@@ -127,10 +128,6 @@ def _get_db(db_path: Optional[Path] = None) -> sqlite3.Connection:
     return conn
 
 
-def _now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
 def _content_hash(parts: List[str]) -> str:
     """Generate SHA-256 content hash for deduplication."""
     combined = "|".join(str(p) for p in parts)
@@ -193,7 +190,7 @@ def _save_registry(registry: Dict, registry_path: Optional[Path] = None):
         logger.info("Registry backup: %s", backup_path)
     # Update metadata
     registry.setdefault("_metadata", {})
-    registry["_metadata"]["last_updated"] = _now()
+    registry["_metadata"]["last_updated"] = now_iso()
     registry["_metadata"]["updated_by"] = "csp_monitor"
     # Write
     with open(path, "w", encoding="utf-8") as f:
@@ -448,7 +445,7 @@ def announcements_to_signals(announcements: List[Dict], config: Dict) -> List[Di
             },
             "community_score": score,
             "content_hash": _content_hash([csp, title, change_type]),
-            "discovered_at": _now(),
+            "discovered_at": now_iso(),
             "category": category,
         }
         signals.append(signal)
@@ -575,7 +572,7 @@ class CSPMonitor:
 
         result = {
             "status": "ok",
-            "scanned_at": _now(),
+            "scanned_at": now_iso(),
             "csps_scanned": list(raw.keys()),
             "announcements": len(all_announcements),
             "signals_generated": len(signals),
@@ -637,7 +634,7 @@ class CSPMonitor:
         changes = diff_registry(self._registry, signals)
         return {
             "status": "ok",
-            "diffed_at": _now(),
+            "diffed_at": now_iso(),
             "signals_analyzed": len(signals),
             "registry_services": sum(
                 len(svc) for svc in self._registry.get("services", {}).values()
@@ -793,7 +790,7 @@ class CSPMonitor:
                 "total_entries": len(entries),
                 "by_csp": by_csp,
                 "entries": entries,
-                "generated_at": _now(),
+                "generated_at": now_iso(),
             }
         except FileNotFoundError:
             return {"status": "error", "message": "Database not found", "entries": []}

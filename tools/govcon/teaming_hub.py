@@ -48,6 +48,7 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from tools.db.storage import get_connection  # noqa: E402
+from tools.common.helpers import row_to_dict  # noqa: E402
 
 # ── Constants ─────────────────────────────────────────────────
 
@@ -133,14 +134,6 @@ def _audit(conn, event_type, action, details, opp_id=None):
             pass  # audit is best-effort
 
 
-def _row_to_dict(row):
-    """Convert a DB row to a plain dict."""
-    if isinstance(row, dict):
-        return dict(row)
-    try:
-        return dict(row)
-    except (TypeError, ValueError):
-        return {}
 
 
 # ── Core Functions ────────────────────────────────────────────
@@ -270,7 +263,7 @@ def score_partner(partner_id):
             "message": f"Partner {partner_id} not found",
         }
 
-    p = _row_to_dict(row)
+    p = row_to_dict(row)
     partner_name = p.get("name", "")
 
     # Find opportunity via workshare link
@@ -293,7 +286,7 @@ def score_partner(partner_id):
                 (opp_id,),
             ).fetchone()
             if opp_row:
-                opp = _row_to_dict(opp_row)
+                opp = row_to_dict(opp_row)
         except Exception:
             pass
 
@@ -313,7 +306,7 @@ def score_partner(partner_id):
             if opp and opp.get("naics_code"):
                 match = [
                     a for a in awards
-                    if _row_to_dict(a).get("naics_code")
+                    if row_to_dict(a).get("naics_code")
                     == opp["naics_code"]
                 ]
                 if match:
@@ -392,7 +385,7 @@ def score_partner(partner_id):
     ).fetchall()
     for wr in ws_rows:
         se = (
-            _row_to_dict(wr).get("socioeconomic_status")
+            row_to_dict(wr).get("socioeconomic_status")
             or ""
         ).lower()
         if se and se not in ("", "none", "large_business"):
@@ -466,7 +459,7 @@ def track_workshare(opportunity_id):
             "issues": ["No partners for this opportunity"],
         }
 
-    partners = [_row_to_dict(r) for r in rows]
+    partners = [row_to_dict(r) for r in rows]
     total_pct = sum(
         float(p.get("workshare_pct") or 0)
         for p in partners
@@ -566,7 +559,7 @@ def manage_ta_lifecycle(opportunity_id):
     results = []
 
     for r in rows:
-        rd = _row_to_dict(r)
+        rd = row_to_dict(r)
         pid = rd.get("partner_id", "")
         name = rd.get("name", pid)
         ta_st = rd.get("ta_status", "none")
@@ -596,7 +589,7 @@ def manage_ta_lifecycle(opportunity_id):
                 (pid, opportunity_id),
             ).fetchall()
             for o in others:
-                od = _row_to_dict(o)
+                od = row_to_dict(o)
                 if od.get("ta_status") in (
                     "executed", "negotiating",
                 ):
@@ -681,7 +674,7 @@ def screen_oci(opportunity_id, partner_name):
             (opportunity_id,),
         ).fetchone()
         if opp_row:
-            opp = _row_to_dict(opp_row)
+            opp = row_to_dict(opp_row)
     except Exception:
         pass
 
@@ -800,7 +793,7 @@ def screen_oci(opportunity_id, partner_name):
         ).fetchall()
 
         for c in competing:
-            cd = _row_to_dict(c)
+            cd = row_to_dict(c)
             oci_factors.append({
                 "type": "impaired_objectivity",
                 "description": (
@@ -905,7 +898,7 @@ def get_team_status(opportunity_id):
             "issues": ["No partners registered"],
         }
 
-    partners = [_row_to_dict(r) for r in rows]
+    partners = [row_to_dict(r) for r in rows]
     total_ws = 0.0
     composites = []
     issues = []

@@ -30,6 +30,7 @@ import json
 import os
 import sys
 import uuid
+from tools.common.helpers import now_iso
 from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
@@ -201,10 +202,6 @@ def _get_db(db_path=None):
     conn = get_connection(db_path=str(path))
     return conn
 
-
-def _now():
-    """ISO-8601 UTC timestamp."""
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _audit(event_type, actor, action, details=None, project_id=None):
@@ -601,7 +598,7 @@ def generate_solution_spec(signal_id, db_path=None):
                 pass
 
         sol_id = f"sol-{uuid.uuid4().hex[:12]}"
-        now = _now()
+        now = now_iso()
         conn.execute("""INSERT INTO innovation_solutions
             (id, signal_id, spec_content, gotcha_layer, asset_type, estimated_effort,
              status, spec_quality_score, created_at, updated_at)

@@ -39,6 +39,7 @@ import sys
 import time
 import uuid
 from tools.db.storage import get_connection
+from tools.common.helpers import now_iso
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -86,10 +87,6 @@ def _get_db(db_path=None):
     conn = get_connection(db_path=str(path))
     return conn
 
-
-def _now():
-    """ISO-8601 UTC timestamp."""
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _comp_id():
@@ -455,7 +452,7 @@ def store_competitors(competitors, domain, db_path=None):
     """
     conn = _get_db(db_path)
     stored, duplicates = 0, 0
-    ts = _now()
+    ts = now_iso()
     try:
         for comp in competitors:
             name = comp.get("name", "").strip()
@@ -519,7 +516,7 @@ def confirm_competitor(competitor_id, confirmed_by, db_path=None):
         conn.execute(
             "UPDATE creative_competitors SET status='confirmed', confirmed_at=?, "
             "confirmed_by=? WHERE id=?",
-            (_now(), confirmed_by, competitor_id),
+            (now_iso(), confirmed_by, competitor_id),
         )
         conn.commit()
     finally:

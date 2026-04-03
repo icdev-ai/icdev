@@ -31,6 +31,7 @@ import os
 import sys
 import time
 import uuid
+from tools.common.helpers import now_iso
 from tools.db.storage import get_connection
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -95,10 +96,6 @@ def _get_db(db_path=None):
     conn = get_connection(db_path=str(path))
     return conn
 
-
-def _now():
-    """ISO-8601 timestamp."""
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _signal_id():
@@ -222,7 +219,7 @@ def scan_github(config):
                         }),
                         "community_score": min(item.get("stargazers_count", 0) / 1000, 1.0),
                         "content_hash": _content_hash(item.get("html_url", "")),
-                        "discovered_at": _now(),
+                        "discovered_at": now_iso(),
                     })
                 time.sleep(1)  # Rate limit courtesy
 
@@ -270,7 +267,7 @@ def scan_github(config):
                         }),
                         "community_score": min(thumbs_up / 50, 1.0),
                         "content_hash": _content_hash(item.get("html_url", "")),
-                        "discovered_at": _now(),
+                        "discovered_at": now_iso(),
                     })
                 time.sleep(1)
 
@@ -353,7 +350,7 @@ def scan_cve_databases(config):
                         }),
                         "community_score": min(cvss_score / 10.0, 1.0),
                         "content_hash": _content_hash(cve_id),
-                        "discovered_at": _now(),
+                        "discovered_at": now_iso(),
                     })
                 time.sleep(2)  # NVD rate limit
 
@@ -403,7 +400,7 @@ def scan_cve_databases(config):
                                 ((advisory.get("cvss", {}) or {}).get("score", 0)) / 10.0, 1.0
                             ),
                             "content_hash": _content_hash(ghsa_id or cve_id),
-                            "discovered_at": _now(),
+                            "discovered_at": now_iso(),
                         })
                     time.sleep(1)
 
@@ -468,7 +465,7 @@ def scan_stackoverflow(config):
                 }),
                 "community_score": min(score / 100, 1.0),
                 "content_hash": _content_hash(str(item.get("question_id", ""))),
-                "discovered_at": _now(),
+                "discovered_at": now_iso(),
             })
         time.sleep(1)
 
@@ -545,7 +542,7 @@ def scan_hackernews(config):
             }),
             "community_score": min(score / 500, 1.0),
             "content_hash": _content_hash(str(story_id)),
-            "discovered_at": _now(),
+            "discovered_at": now_iso(),
         })
 
         if len(signals) >= max_results:
@@ -566,8 +563,8 @@ def _error_signal(source, context, error):
         "url": "",
         "metadata": json.dumps({"error": str(error), "context": context}),
         "community_score": 0.0,
-        "content_hash": _content_hash(f"{source}_{context}_{_now()[:10]}"),
-        "discovered_at": _now(),
+        "content_hash": _content_hash(f"{source}_{context}_{now_iso()[:10]}"),
+        "discovered_at": now_iso(),
     }
 
 
@@ -621,7 +618,7 @@ def store_signals(signals, db_path=None):
                     signal.get("metadata", "{}"),
                     signal.get("community_score", 0.0),
                     signal.get("content_hash", ""),
-                    signal.get("discovered_at", _now()),
+                    signal.get("discovered_at", now_iso()),
                 ),
             )
             stored += 1
@@ -725,7 +722,7 @@ def run_scan(source=None, db_path=None):
     total_found = sum(r.get("signals_found", 0) for r in results.values())
 
     return {
-        "scan_time": _now(),
+        "scan_time": now_iso(),
         "sources_scanned": len(sources_to_scan),
         "results": results,
         "totals": {

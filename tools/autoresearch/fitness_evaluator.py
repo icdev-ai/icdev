@@ -24,9 +24,7 @@ _ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+from tools.common.helpers import now_iso
 
 
 def _run_tool(cmd: str, timeout: int = 120) -> dict:
@@ -82,7 +80,7 @@ def evaluate_compliance(project_id: str = "sparkpilot", **kwargs) -> dict:
             "metric_value": 0.0,
             "success": False,
             "error": result.get("error", "unknown"),
-            "timestamp": _now(),
+            "timestamp": now_iso(),
         }
     data = result["data"]
     # Extract pass rate from assessor output
@@ -99,7 +97,7 @@ def evaluate_compliance(project_id: str = "sparkpilot", **kwargs) -> dict:
             "satisfied": data.get("satisfied", 0),
             "project_id": project_id,
         },
-        "timestamp": _now(),
+        "timestamp": now_iso(),
     }
 
 
@@ -115,7 +113,7 @@ def evaluate_code_quality(project_dir: str = "tools/", **kwargs) -> dict:
             "metric_value": 0.0,
             "success": False,
             "error": result.get("error", "unknown"),
-            "timestamp": _now(),
+            "timestamp": now_iso(),
         }
     data = result["data"]
     value = data.get("avg_maintainability_score", 0.0)
@@ -134,7 +132,7 @@ def evaluate_code_quality(project_dir: str = "tools/", **kwargs) -> dict:
             "total_smells": data.get("total_smells", 0),
             "avg_complexity": data.get("avg_cyclomatic_complexity", 0),
         },
-        "timestamp": _now(),
+        "timestamp": now_iso(),
     }
 
 
@@ -150,7 +148,7 @@ def evaluate_security(project_dir: str = "tools/", **kwargs) -> dict:
             "metric_value": 0.0,
             "success": False,
             "error": result.get("error", "unknown"),
-            "timestamp": _now(),
+            "timestamp": now_iso(),
         }
     data = result["data"]
     total_findings = data.get("total_findings", 0)
@@ -167,7 +165,7 @@ def evaluate_security(project_dir: str = "tools/", **kwargs) -> dict:
             "files_scanned": files_scanned,
             "density": round(density, 4),
         },
-        "timestamp": _now(),
+        "timestamp": now_iso(),
     }
 
 
@@ -183,7 +181,7 @@ def evaluate_rag(query_set: list = None, **kwargs) -> dict:
             "metric_value": 0.0,
             "success": False,
             "error": result.get("error", "unknown"),
-            "timestamp": _now(),
+            "timestamp": now_iso(),
         }
     data = result["data"]
     value = _extract_metric(data, "metrics.ndcg_at_k")
@@ -193,7 +191,7 @@ def evaluate_rag(query_set: list = None, **kwargs) -> dict:
         "metric_value": round(min(1.0, max(0.0, value)), 4),
         "success": True,
         "details": data.get("metrics", {}),
-        "timestamp": _now(),
+        "timestamp": now_iso(),
     }
 
 
@@ -209,7 +207,7 @@ def evaluate_pulse(**kwargs) -> dict:
             "metric_value": 0.0,
             "success": False,
             "error": result.get("error", "unknown"),
-            "timestamp": _now(),
+            "timestamp": now_iso(),
         }
     data = result["data"]
     value = data.get("overall_score", 0.0)
@@ -225,7 +223,7 @@ def evaluate_pulse(**kwargs) -> dict:
             "readability_score": data.get("readability_score"),
             "tone_score": data.get("tone_score"),
         },
-        "timestamp": _now(),
+        "timestamp": now_iso(),
     }
 
 
@@ -238,7 +236,7 @@ def evaluate_skill(skill_name: str = None, assertions: list = None, **kwargs) ->
             "metric_value": 0.5,
             "success": True,
             "details": {"note": "No assertions provided, returning baseline 0.5"},
-            "timestamp": _now(),
+            "timestamp": now_iso(),
         }
     passed = 0
     for assertion in assertions:
@@ -256,7 +254,7 @@ def evaluate_skill(skill_name: str = None, assertions: list = None, **kwargs) ->
             "passed": passed,
             "failed": len(assertions) - passed,
         },
-        "timestamp": _now(),
+        "timestamp": now_iso(),
     }
 
 
@@ -314,7 +312,7 @@ def evaluate_marketplace_asset_quality(**kwargs) -> dict:
                 "published_assets": pub_count,
                 "pub_health_score": round(pub_score, 4),
             },
-            "timestamp": _now(),
+            "timestamp": now_iso(),
         }
     except Exception as exc:
         return {
@@ -323,7 +321,7 @@ def evaluate_marketplace_asset_quality(**kwargs) -> dict:
             "metric_value": 0.0,
             "success": False,
             "error": str(exc)[:200],
-            "timestamp": _now(),
+            "timestamp": now_iso(),
         }
 
 
@@ -350,7 +348,7 @@ def evaluate(domain: str, **kwargs) -> dict:
             "metric_value": 0.0,
             "success": False,
             "error": f"Unknown domain: {domain}. Available: {list(EVALUATORS.keys())}",
-            "timestamp": _now(),
+            "timestamp": now_iso(),
         }
     return EVALUATORS[domain](**kwargs)
 
@@ -363,7 +361,7 @@ def evaluate_all(**kwargs) -> dict:
     return {
         "domains_evaluated": len(results),
         "results": results,
-        "timestamp": _now(),
+        "timestamp": now_iso(),
     }
 
 
@@ -387,7 +385,7 @@ def health_check() -> dict:
         "status": "healthy",
         "domains_available": len(EVALUATORS),
         "domain_names": list(EVALUATORS.keys()),
-        "timestamp": _now(),
+        "timestamp": now_iso(),
     }
 
 

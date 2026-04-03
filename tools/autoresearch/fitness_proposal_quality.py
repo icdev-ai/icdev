@@ -33,9 +33,7 @@ _ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+from tools.common.helpers import now_iso
 
 
 def evaluate(project_id: str = None, **kwargs) -> Dict[str, Any]:
@@ -137,7 +135,7 @@ def evaluate(project_id: str = None, **kwargs) -> Dict[str, Any]:
                 "total": total_wl,
             },
             "sample_size": quality_sample + win_sample,
-            "timestamp": _now(),
+            "timestamp": now_iso(),
         }
 
     except Exception as exc:
@@ -197,7 +195,7 @@ def _baseline_result(error: str = None) -> Dict[str, Any]:
             "total": 0,
         },
         "sample_size": 0,
-        "timestamp": _now(),
+        "timestamp": now_iso(),
     }
     if error:
         result["error"] = error

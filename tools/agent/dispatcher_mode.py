@@ -34,6 +34,7 @@ import sqlite3
 import sys
 import uuid
 from tools.db.storage import get_connection
+from tools.common.helpers import now_iso
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional
@@ -51,10 +52,6 @@ logger = logging.getLogger("icdev.dispatcher_mode")
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-def _now() -> str:
-    """Return current UTC timestamp as ISO-8601 string."""
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
 
 def _get_db(db_path: Path = None) -> sqlite3.Connection:
     """Get a database connection with row factory."""
@@ -391,7 +388,7 @@ def enable_for_project(project_id: str, created_by: str = "system",
     conn = _get_db(db_path)
     try:
         override_id = f"dmo-{uuid.uuid4().hex[:12]}"
-        now = _now()
+        now = now_iso()
 
         conn.execute(
             """INSERT INTO dispatcher_mode_overrides
@@ -458,7 +455,7 @@ def disable_for_project(project_id: str, disabled_by: str = "system",
             """UPDATE dispatcher_mode_overrides
                SET enabled = 0, created_by = ?, created_at = ?
                WHERE project_id = ?""",
-            (disabled_by, _now(), project_id),
+            (disabled_by, now_iso(), project_id),
         )
         conn.commit()
 

@@ -26,6 +26,7 @@ import json
 import os
 import sys
 import uuid
+from tools.common.helpers import row_to_dict_json
 from tools.db.storage import get_connection
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -70,16 +71,12 @@ def _log_audit(conn, project_id, event_type, action, details):
         print(f"Warning: audit log failed: {exc}", file=sys.stderr)
 
 
+_ISA_JSON_FIELDS = ("data_types_shared", "ports_protocols", "security_controls")
+
+
 def _row_to_dict(row):
     """Convert a sqlite3.Row to a plain dict, parsing JSON fields."""
-    d = dict(row)
-    for key in ("data_types_shared", "ports_protocols", "security_controls"):
-        if key in d and d[key] and isinstance(d[key], str):
-            try:
-                d[key] = json.loads(d[key])
-            except (json.JSONDecodeError, TypeError):
-                pass
-    return d
+    return row_to_dict_json(row, json_fields=_ISA_JSON_FIELDS)
 
 
 # ---------------------------------------------------------------------------

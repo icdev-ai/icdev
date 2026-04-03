@@ -18,6 +18,8 @@ import sys
 from datetime import datetime, timezone
 from typing import Any
 
+from tools.common.helpers import now_iso
+
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -25,9 +27,6 @@ from typing import Any
 
 _TOOLS_ROOT = pathlib.Path(__file__).resolve().parent.parent  # tools/
 
-
-def _now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _has_json_flag(path: pathlib.Path) -> bool:
@@ -157,7 +156,7 @@ def wrap_tool(tool_path: str, dry_run: bool = False) -> dict:
             "wrapper_path": str(wrapper_path),
             "name": wrapper_name,
             "dry_run": True,
-            "generated_at": _now(),
+            "generated_at": now_iso(),
         }
 
     wrapper_dir.mkdir(parents=True, exist_ok=True)
@@ -172,7 +171,7 @@ def wrap_tool(tool_path: str, dry_run: bool = False) -> dict:
         "wrapper_path": str(wrapper_path),
         "name": wrapper_name,
         "dry_run": False,
-        "generated_at": _now(),
+        "generated_at": now_iso(),
     }
 
 
@@ -206,7 +205,7 @@ def wrap_all(dry_run: bool = False, limit: int = 20) -> dict:
         "total": len(results),
         "skipped": len(eligible) - len(to_wrap),
         "dry_run": dry_run,
-        "generated_at": _now(),
+        "generated_at": now_iso(),
     }
 
 
@@ -220,7 +219,7 @@ def _render_wrapper(name: str, tool_path: str) -> str:
 # CUI // SP-CTI
 # Auto-generated MCP wrapper for {name}
 # Source tool: {tool_path}
-# Generated: {_now()}
+# Generated: {now_iso()}
 
 """MCP tool handler — delegates to {name} via subprocess."""
 

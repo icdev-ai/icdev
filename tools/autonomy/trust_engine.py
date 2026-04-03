@@ -28,7 +28,6 @@ import json
 import random
 import sys
 import uuid
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
@@ -36,6 +35,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
+from tools.common.helpers import now_iso  # noqa: E402
 from tools.db.storage import get_connection as _raw_get_connection  # noqa: E402
 
 
@@ -48,9 +48,6 @@ def _get_connection():
         pass
     return conn
 
-
-def _now():
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _gen_id(prefix: str = "ao") -> str:
@@ -185,7 +182,7 @@ def get_trust_state(category: str) -> Dict[str, Any]:
             "INSERT INTO autonomy_trust_state "
             "(category, alpha, beta, ceiling, current_tier, last_updated) "
             "VALUES (?, ?, ?, ?, ?, ?)",
-            (category, alpha, beta_val, ceiling, _mean_to_tier(mean, config), _now()),
+            (category, alpha, beta_val, ceiling, _mean_to_tier(mean, config), now_iso()),
         )
         conn.commit()
 
@@ -265,7 +262,7 @@ def observe(category: str, success: bool, source: str = "daemon",
                 mean_before, mean_after, tier_before, tier_after,
                 source,
                 json.dumps(details) if details else None,
-                _now(),
+                now_iso(),
             ),
         )
 
@@ -279,7 +276,7 @@ def observe(category: str, success: bool, source: str = "daemon",
             (
                 alpha_after, beta_after,
                 1 if success else 0, 0 if success else 1,
-                tier_after, _now(), category,
+                tier_after, now_iso(), category,
             ),
         )
         conn.commit()
@@ -359,7 +356,7 @@ def should_act(category: str, required_tier: str = None) -> Dict[str, Any]:
                 action_id, category, category, decision,
                 mean, sample, required_tier, current_tier,
                 json.dumps({"reason": reason}),
-                _now(),
+                now_iso(),
             ),
         )
         conn.commit()
@@ -516,7 +513,7 @@ def main():
                 "UPDATE autonomy_trust_state SET alpha = ?, beta = ?, "
                 "total_observations = 0, total_successes = 0, total_failures = 0, "
                 "current_tier = 'observer', last_updated = ? WHERE category = ?",
-                (prior["alpha"], prior["beta"], _now(), args.reset),
+                (prior["alpha"], prior["beta"], now_iso(), args.reset),
             )
             conn.commit()
         finally:

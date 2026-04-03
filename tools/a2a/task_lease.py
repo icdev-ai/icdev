@@ -33,6 +33,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
+from tools.common.helpers import now_iso  # noqa: E402
 from tools.db.storage import get_connection  # noqa: E402
 
 DEFAULT_LEASE_TTL_SECONDS = 300  # 5 minutes
@@ -74,9 +75,6 @@ def _connect() -> sqlite3.Connection:
     return conn
 
 
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
 
 def _expire_time(ttl_seconds: int) -> str:
     from datetime import timedelta
@@ -93,7 +91,7 @@ def cleanup_expired(conn: Optional[sqlite3.Connection] = None) -> int:
     if own_conn:
         conn = _connect()
     try:
-        now = _now()
+        now = now_iso()
         cursor = conn.execute(
             """UPDATE agent_task_leases
                SET status = 'expired', released_at = ?
@@ -141,7 +139,7 @@ def checkout_task(
             (task_id,),
         ).fetchone()
 
-        now = _now()
+        now = now_iso()
         expires = _expire_time(ttl_seconds)
 
         if existing:
@@ -226,7 +224,7 @@ def release_task(task_id: str, agent_id: str) -> Dict:
     """
     conn = _connect()
     try:
-        now = _now()
+        now = now_iso()
         cursor = conn.execute(
             """UPDATE agent_task_leases
                SET status = 'released', released_at = ?
@@ -283,7 +281,7 @@ def get_lease_status(task_id: str) -> Dict:
 
         result = dict(row)
         # Check if expired but not yet marked
-        if result["status"] == "active" and result["expires_at"] < _now():
+        if result["status"] == "active" and result["expires_at"] < now_iso():
             result["status"] = "expired"
             result["message"] = "Lease expired (pending cleanup)"
         return result
@@ -363,7 +361,7 @@ def main() -> None:
         result = get_active_leases(args.agent_id)
     elif args.cleanup:
         count = cleanup_expired()
-        result = {"expired_count": count, "cleaned_at": _now()}
+        result = {"expired_count": count, "cleaned_at": now_iso()}
     else:
         parser.error("Specify --checkout, --release, --status, --active, or --cleanup")
 

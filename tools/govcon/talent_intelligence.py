@@ -39,6 +39,7 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from tools.db.storage import get_connection  # noqa: E402
+from tools.common.helpers import row_to_dict  # noqa: E402
 
 # ── Signal type classification rules ──────────────────────────────────
 # Must match CHECK constraint on pg_talent_signals.signal_type:
@@ -119,14 +120,6 @@ def _audit(conn, event_type, action, details, project_id=None):
             pass  # audit is best-effort
 
 
-def _row_to_dict(row):
-    """Convert a DB row to a plain dict (handles sqlite3.Row and dict)."""
-    if isinstance(row, dict):
-        return dict(row)
-    try:
-        return dict(row)
-    except (TypeError, ValueError):
-        return {}
 
 
 def _categorize_role(role_title):
@@ -246,7 +239,7 @@ def compute_velocity(competitor_name, weeks_back=12):
     # Group by ISO week (YYYY-WNN)
     week_buckets = {}
     for r in rows:
-        rd = _row_to_dict(r)
+        rd = row_to_dict(r)
         scan = rd.get("scan_date", "")
         try:
             if "T" in scan:
@@ -364,7 +357,7 @@ def detect_clusters(competitor_name=None, min_cluster_size=3):
     # Group by (competitor, location, clearance)
     groups = {}
     for r in rows:
-        rd = _row_to_dict(r)
+        rd = row_to_dict(r)
         key = (
             rd.get("competitor_name", "unknown"),
             rd.get("location") or "unspecified",
@@ -454,11 +447,11 @@ def correlate_with_opportunities(competitor_name=None):
     # Merge opportunity sources
     all_opps = []
     for o in opps:
-        od = _row_to_dict(o)
+        od = row_to_dict(o)
         od["source"] = "proposal_opportunities"
         all_opps.append(od)
     for o in sam_opps:
-        od = _row_to_dict(o)
+        od = row_to_dict(o)
         od["source"] = "sam_gov_opportunities"
         all_opps.append(od)
 
@@ -470,7 +463,7 @@ def correlate_with_opportunities(competitor_name=None):
 
     correlations = []
     for sig in signals:
-        sd = _row_to_dict(sig)
+        sd = row_to_dict(sig)
         sig_loc = (sd.get("location") or "").lower()
         sig_clr = (sd.get("clearance_required") or "").lower()
         sig_tools = (sd.get("tools_mentioned") or "").lower()
@@ -576,7 +569,7 @@ def get_salary_intelligence(role_category=None):
     # Group by category
     cat_salaries = {}
     for r in rows:
-        rd = _row_to_dict(r)
+        rd = row_to_dict(r)
         cat = _categorize_role(rd.get("role_title"))
         if role_category and cat != role_category:
             continue
@@ -651,7 +644,7 @@ def generate_competitor_profile(competitor_name):
             ),
         }
 
-    all_signals = [_row_to_dict(s) for s in signals]
+    all_signals = [row_to_dict(s) for s in signals]
     total = len(all_signals)
 
     # ── Top roles ──

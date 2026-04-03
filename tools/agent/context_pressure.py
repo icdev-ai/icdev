@@ -30,6 +30,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
+from tools.common.helpers import now_iso  # noqa: E402
 from tools.db.storage import get_connection  # noqa: E402
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
@@ -62,9 +63,6 @@ def _get_db(db_path: Path = None) -> sqlite3.Connection:
     return conn
 
 
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
 
 def _load_config() -> dict:
     """Load config from YAML if available, else use defaults."""
@@ -90,7 +88,7 @@ def estimate_context_usage(session_id: str = None, db_path: Path = None) -> dict
     """
     config = _load_config()
     result = {
-        "timestamp": _now(),
+        "timestamp": now_iso(),
         "session_id": session_id or "unknown",
         "estimated_tokens_used": 0,
         "context_window_tokens": config["context_window_tokens"],
@@ -198,7 +196,7 @@ def _log_pressure_event(result: dict, db_path: Path = None):
                 result["estimated_remaining_pct"],
                 result["tool_call_count"],
                 result.get("recommendation", ""),
-                _now(),
+                now_iso(),
             ),
         )
         conn.commit()
@@ -219,7 +217,7 @@ def detect_stuck(session_id: str = None, db_path: Path = None) -> dict:
     """
     config = _load_config()
     result = {
-        "timestamp": _now(),
+        "timestamp": now_iso(),
         "session_id": session_id or "unknown",
         "is_stuck": False,
         "stuck_type": None,      # analysis_paralysis, duplicate_loop, retry_spiral
@@ -359,7 +357,7 @@ def _log_stuck_event(result: dict, db_path: Path = None):
                 0,
                 result.get("consecutive_reads", 0),
                 result.get("recommendation", ""),
-                _now(),
+                now_iso(),
             ),
         )
         conn.commit()
@@ -389,7 +387,7 @@ def trigger_auto_compression(
         Dict with compression results.
     """
     result = {
-        "triggered_at": _now(),
+        "triggered_at": now_iso(),
         "budget_tokens": budget_tokens,
         "preserve_recent": preserve_recent_n,
     }
@@ -423,7 +421,7 @@ def health_check(session_id: str = None, db_path: Path = None) -> dict:
     stuck = detect_stuck(session_id, db_path)
 
     return {
-        "timestamp": _now(),
+        "timestamp": now_iso(),
         "session_id": session_id or "unknown",
         "context_pressure": pressure,
         "stuck_detection": stuck,

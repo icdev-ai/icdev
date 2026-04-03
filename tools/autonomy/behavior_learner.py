@@ -21,7 +21,6 @@ import argparse
 import json
 import sys
 import uuid
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -29,6 +28,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
+from tools.common.helpers import now_iso  # noqa: E402
 from tools.db.storage import get_connection as _raw_get_connection  # noqa: E402
 
 
@@ -42,8 +42,6 @@ def _get_connection():
     return conn
 
 
-def _now():
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _load_config():
@@ -173,13 +171,13 @@ def _apply_signal(conn, signal: Dict) -> None:
         conn.execute(
             "UPDATE autonomy_trust_state SET alpha = alpha + ?, last_updated = ? "
             "WHERE category = ?",
-            (alpha_delta, _now(), category),
+            (alpha_delta, now_iso(), category),
         )
     if beta_delta > 0:
         conn.execute(
             "UPDATE autonomy_trust_state SET beta = beta + ?, last_updated = ? "
             "WHERE category = ?",
-            (beta_delta, _now(), category),
+            (beta_delta, now_iso(), category),
         )
 
     # Log to behavior log (append-only)
@@ -194,7 +192,7 @@ def _apply_signal(conn, signal: Dict) -> None:
             alpha_delta,
             beta_delta,
             category,
-            _now(),
+            now_iso(),
         ),
     )
 

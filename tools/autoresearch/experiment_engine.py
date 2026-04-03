@@ -30,9 +30,7 @@ from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parent.parent.parent
 
-
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+from tools.common.helpers import now_iso
 
 
 def _uuid() -> str:
@@ -96,7 +94,7 @@ def _audit(event_type: str, action: str, details: dict = None,
                     json.dumps(details or {}, default=str),
                     project_id,
                     "autoresearch",
-                    _now(),
+                    now_iso(),
                 ),
             )
     except Exception:
@@ -141,7 +139,7 @@ def create_experiment(
     ensure_tables()
     exp_id = _uuid()
     content_hash = hashlib.sha256(hypothesis.encode("utf-8")).hexdigest()[:16]
-    now = _now()
+    now = now_iso()
 
     try:
         with _get_db() as conn:
@@ -227,7 +225,7 @@ def run_experiment(
             conn.execute(
                 "UPDATE experiment_candidates SET status = ?, updated_at = ? "
                 "WHERE id = ?",
-                ("running", _now(), experiment_id),
+                ("running", now_iso(), experiment_id),
             )
     except Exception:
         pass
@@ -358,7 +356,7 @@ def decide(experiment_id: str, pre_metric: float = None,
         decision = "discard"
         rationale = f"Metric delta {metric_delta:.6f} below threshold {keep_threshold}"
 
-    now = _now()
+    now = now_iso()
 
     # Record result (append-only — D-AR-4)
     result_id = _result_uuid()
@@ -604,7 +602,7 @@ def run_loop(
                         json.dumps(selection.get("dimensions", {}), default=str),
                         selection.get("threshold_band", "suggest"),
                         1 if selection.get("thompson_explored") else 0,
-                        _now(),
+                        now_iso(),
                     ),
                 )
         except Exception:
@@ -674,7 +672,7 @@ def run_loop(
         "baseline_metric": round(baseline_metric, 6),
         "results": results,
         "circuit_breaker_tripped": consecutive_failures >= max_failures,
-        "timestamp": _now(),
+        "timestamp": now_iso(),
     }
 
 
@@ -717,7 +715,7 @@ def get_status() -> dict:
                     kept_count / max(total_count, 1), 4),
                 "domains": [dict(d) for d in domains],
                 "landscapes": [dict(row) for row in landscapes],
-                "timestamp": _now(),
+                "timestamp": now_iso(),
             }
     except Exception as exc:
         return {
@@ -725,7 +723,7 @@ def get_status() -> dict:
             "total_kept": 0,
             "acceptance_rate": 0.0,
             "error": str(exc),
-            "timestamp": _now(),
+            "timestamp": now_iso(),
         }
 
 
@@ -752,7 +750,7 @@ def health_check() -> dict:
         "programs_found": len(programs),
         "program_domains": [p.stem for p in programs],
         "config_loaded": bool(config),
-        "timestamp": _now(),
+        "timestamp": now_iso(),
     }
 
 

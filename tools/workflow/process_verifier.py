@@ -18,6 +18,7 @@ import json
 import sqlite3
 import sys
 from tools.db.storage import get_connection
+from tools.common.helpers import now_iso
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -42,10 +43,6 @@ def _get_db(db_path: Optional[Path] = None) -> sqlite3.Connection:
     conn = get_connection(db_path=str(path))
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
-
-
-def _now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _load_config() -> Dict[str, Any]:
@@ -154,7 +151,7 @@ def verify_loop_processes(loop_id: str, db_path: Optional[Path] = None) -> Dict[
             "pass_rate": round(pass_rate, 2),
             "all_invoked": len(missing) == 0,
             "details": results,
-            "verified_at": _now(),
+            "verified_at": now_iso(),
         }
     finally:
         conn.close()
@@ -222,7 +219,7 @@ def check_project_processes(
             "pass_rate": round(invoked_count / max(total, 1), 2),
             "all_invoked": len(missing) == 0,
             "details": results,
-            "checked_at": _now(),
+            "checked_at": now_iso(),
         }
     finally:
         conn.close()

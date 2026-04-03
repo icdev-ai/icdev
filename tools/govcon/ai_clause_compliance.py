@@ -44,6 +44,7 @@ _ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
+from tools.common.helpers import now_isoformat  # noqa: E402
 from tools.db.storage import get_connection  # noqa: E402
 _DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(_ROOT / "data" / "icdev.db")))
 
@@ -141,9 +142,6 @@ def _get_db():
     return conn
 
 
-def _now():
-    return datetime.now(timezone.utc).isoformat()
-
 
 def _uuid():
     return f"aic-{uuid.uuid4().hex[:12]}"
@@ -154,7 +152,7 @@ def _audit(conn, action, details="", actor="ai_clause_compliance"):
         conn.execute(
             "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (str(uuid.uuid4()), _now(), "govcon.ai_clause", actor, action, details, "proposal_genesis"),
+            (str(uuid.uuid4()), now_isoformat(), "govcon.ai_clause", actor, action, details, "proposal_genesis"),
         )
     except Exception:
         pass
@@ -321,7 +319,7 @@ def _stub_model_card(opportunity_id):
             },
             "ethical_considerations": "TBD — Document ethical risks and mitigations",
             "limitations": "TBD — Known limitations",
-            "generated_at": _now(),
+            "generated_at": now_isoformat(),
             "note": "STUB — Complete with actual model details before submission",
         },
     }
@@ -358,7 +356,7 @@ def _stub_bias_evaluation(opportunity_id):
     return {
         "bias_evaluation": {
             "project_id": opportunity_id,
-            "assessment_date": _now(),
+            "assessment_date": now_isoformat(),
             "methodology": "TBD — Document bias testing methodology",
             "protected_classes_tested": [
                 "TBD — race", "TBD — gender", "TBD — age",
@@ -409,7 +407,7 @@ def _generate_source_disclosure_artifact(opportunity_id):
         "content": {
             "ai_source_disclosure": {
                 "project_id": opportunity_id,
-                "disclosure_date": _now(),
+                "disclosure_date": now_isoformat(),
                 "total_ai_components": len(components),
                 "components": components,
                 "us_origin_certification": "TBD — Certify US-origin or ally-nation AI",
@@ -429,7 +427,7 @@ def _generate_american_ai_checklist_artifact(opportunity_id):
         "content": {
             "american_ai_checklist": {
                 "project_id": opportunity_id,
-                "checklist_date": _now(),
+                "checklist_date": now_isoformat(),
                 "items": [
                     {
                         "id": "AAI-01",
@@ -524,7 +522,7 @@ def generate_compliance_bundle(opportunity_id, clause_type="gsar_552_239_7001"):
 
     required = CLAUSE_ARTIFACT_REQUIREMENTS[clause_type]
     conn = _get_db()
-    now = _now()
+    now = now_isoformat()
 
     generators = {
         "model_cards": _generate_model_cards_artifact,

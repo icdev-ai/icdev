@@ -46,6 +46,7 @@ import os
 import sys
 import uuid
 from tools.db.storage import get_connection
+from tools.common.helpers import now_iso
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -132,10 +133,6 @@ def _get_db(db_path=None):
     conn = get_connection(db_path=str(path))
     return conn
 
-
-def _now():
-    """ISO-8601 UTC timestamp."""
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _gap_id():
@@ -457,7 +454,7 @@ def score_pain_point(pain_point_id, db_path=None):
             "weights": weights,
             "composite": composite,
             "threshold_band": threshold_band,
-            "scored_at": _now(),
+            "scored_at": now_iso(),
         }
 
         # Append-only: INSERT new row with same keyword_fingerprint but scored status
@@ -482,8 +479,8 @@ def score_pain_point(pain_point_id, db_path=None):
                 pain_point.get("severity", "medium"),
                 composite,
                 json.dumps(score_breakdown),
-                pain_point.get("first_seen", _now()),
-                _now(),
+                pain_point.get("first_seen", now_iso()),
+                now_iso(),
             ),
         )
         conn.commit()
@@ -549,7 +546,7 @@ def score_all_new(db_path=None):
             "skipped": 0,
             "avg_score": 0.0,
             "top_5": [],
-            "scored_at": _now(),
+            "scored_at": now_iso(),
         }
 
     # Deduplicate by keyword_fingerprint (latest row per fingerprint)
@@ -604,7 +601,7 @@ def score_all_new(db_path=None):
         "skipped": skipped_count,
         "avg_score": avg_score,
         "top_5": top_5,
-        "scored_at": _now(),
+        "scored_at": now_iso(),
     }
 
 
@@ -711,7 +708,7 @@ def identify_feature_gaps(db_path=None):
             by_fingerprint[fp] = d
 
         gaps_identified = 0
-        now = _now()
+        now = now_iso()
 
         for pp in by_fingerprint.values():
             pp_id = pp["id"]
@@ -840,7 +837,7 @@ def identify_feature_gaps(db_path=None):
         "gaps_identified": gaps_identified,
         "total_gaps": total_gaps,
         "threshold_used": suggest_threshold,
-        "identified_at": _now(),
+        "identified_at": now_iso(),
     }
 
 
