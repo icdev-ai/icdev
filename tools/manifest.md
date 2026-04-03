@@ -239,6 +239,11 @@
 | Credential Broker | tools/security/credential_broker.py | NemoClaw-adapted agent credential isolation: function-scoped tokens, auto-revocation (D-NC-1) | --request, --revoke, --audit, --status, --gate, --json | Token + grant log |
 | Egress Policy Manager | tools/security/egress_policy_manager.py | NemoClaw-adapted per-agent network egress policies with deny-by-default (D-NC-2) | --resolve, --generate, --validate, --diff, --list-roles, --audit, --json | K8s NetworkPolicy |
 
+## Deploy
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| BYOC Controller | tools/deploy/byoc_controller.py | BYOC control-plane: register/manage agency IL4/IL5 K8s clusters, push compliance, remote self-healing | --register, --list, --status, --heartbeat, --push-compliance, --heal, --gate, --json | Operation result JSON |
+
 ## Infrastructure
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
