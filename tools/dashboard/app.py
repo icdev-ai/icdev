@@ -81,6 +81,7 @@ from tools.dashboard.api.compliance_debt import compliance_debt_api  # noqa: E40
 from tools.dashboard.api.stig_manager import stig_manager_api  # noqa: E402
 from tools.dashboard.api.ato_package import ato_package_api  # noqa: E402
 from tools.dashboard.api.oracle import oracle_api  # noqa: E402
+from tools.dashboard.api.analytics import analytics_api  # noqa: E402
 try:
     from tools.dashboard.api.finetune import finetune_api  # noqa: E402
     _HAS_FINETUNE_API = True
@@ -931,6 +932,7 @@ def create_app() -> Flask:
     app.register_blueprint(stig_manager_api)
     app.register_blueprint(ato_package_api)
     app.register_blueprint(oracle_api)
+    app.register_blueprint(analytics_api)
     if _HAS_FINETUNE_API:
         app.register_blueprint(finetune_api)
     if _HAS_RAG_EVAL_API:
@@ -2687,6 +2689,11 @@ def create_app() -> Flask:
     def ato_package_page():
         """ATO Package Builder — wizard to assemble SSP/SAR/POAM/SBOM package."""
         return render_template("ato_package.html")
+
+    @app.route("/analytics")
+    def analytics_page():
+        """Compliance Funnel Analytics — ATO pipeline funnel, time-series, child app telemetry."""
+        return render_template("analytics.html")
 
     @app.route("/api/simulation/scenarios", methods=["POST"])
     def api_simulation_create():

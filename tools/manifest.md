@@ -1665,3 +1665,9 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Fast Transforms | tools\builder\fast_transforms.py | Auto-registered: builder/fast_transforms.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Lens Convergence | tools\oracle\lens_convergence.py | Auto-registered: oracle/lens_convergence.py | --json | JSON |
