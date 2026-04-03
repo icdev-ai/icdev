@@ -18,7 +18,6 @@ import sqlite3
 import uuid
 from tools.db.storage import get_connection
 from tools.common.helpers import now_iso
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 

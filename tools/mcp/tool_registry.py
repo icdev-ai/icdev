@@ -2780,6 +2780,58 @@ TOOL_REGISTRY = {
         "description": "Initialize Studio database tables (idempotent).",
         "input_schema": {"type": "object", "properties": {}},
     },
+    # ============================================================
+    # KANBAN (7 tools)
+    # ============================================================
+    "kanban_list_tasks": {
+        "category": "kanban",
+        "module": "tools.mcp.kanban_server",
+        "handler": "handle_kanban_list_tasks",
+        "description": "List Kanban tasks, optionally filtered by status and/or priority.",
+        "input_schema": {"type": "object", "properties": {"status": {"type": "string", "description": "Filter by status column", "enum": ["backlog", "scheduled", "in_progress", "done", "token_exhausted"]}, "priority": {"type": "string", "description": "Filter by priority", "enum": ["critical", "high", "medium", "low"]}, "limit": {"type": "integer", "description": "Max tasks to return", "default": 50}}},
+    },
+    "kanban_get_task": {
+        "category": "kanban",
+        "module": "tools.mcp.kanban_server",
+        "handler": "handle_kanban_get_task",
+        "description": "Get a single Kanban task by its ID.",
+        "input_schema": {"type": "object", "properties": {"task_id": {"type": "string", "description": "The task ID (e.g. task-abc1234567)"}}, "required": ["task_id"]},
+    },
+    "kanban_create_task": {
+        "category": "kanban",
+        "module": "tools.mcp.kanban_server",
+        "handler": "handle_kanban_create_task",
+        "description": "Create a new Kanban task with title, type, priority, and optional scheduling.",
+        "input_schema": {"type": "object", "properties": {"title": {"type": "string", "description": "Task title (required)"}, "description": {"type": "string", "description": "Task description"}, "task_type": {"type": "string", "description": "Type of task", "enum": ["build", "run", "fix", "research", "deploy", "test", "chore"], "default": "build"}, "priority": {"type": "string", "description": "Task priority", "enum": ["critical", "high", "medium", "low"], "default": "medium"}, "status": {"type": "string", "description": "Initial status column", "enum": ["backlog", "scheduled", "in_progress", "done", "token_exhausted"], "default": "backlog"}, "scheduled_at": {"type": "string", "description": "ISO datetime for scheduling"}}, "required": ["title"]},
+    },
+    "kanban_update_task": {
+        "category": "kanban",
+        "module": "tools.mcp.kanban_server",
+        "handler": "handle_kanban_update_task",
+        "description": "Update fields on an existing Kanban task (title, description, priority, task_type).",
+        "input_schema": {"type": "object", "properties": {"task_id": {"type": "string", "description": "The task ID to update"}, "title": {"type": "string", "description": "New title"}, "description": {"type": "string", "description": "New description"}, "priority": {"type": "string", "description": "New priority", "enum": ["critical", "high", "medium", "low"]}, "task_type": {"type": "string", "description": "New task type", "enum": ["build", "run", "fix", "research", "deploy", "test", "chore"]}}, "required": ["task_id"]},
+    },
+    "kanban_move_task": {
+        "category": "kanban",
+        "module": "tools.mcp.kanban_server",
+        "handler": "handle_kanban_move_task",
+        "description": "Move a Kanban task to a new status column. Auto-sets completed_at when moving to done.",
+        "input_schema": {"type": "object", "properties": {"task_id": {"type": "string", "description": "The task ID to move"}, "status": {"type": "string", "description": "Target status column", "enum": ["backlog", "scheduled", "in_progress", "done", "token_exhausted"]}}, "required": ["task_id", "status"]},
+    },
+    "kanban_delete_task": {
+        "category": "kanban",
+        "module": "tools.mcp.kanban_server",
+        "handler": "handle_kanban_delete_task",
+        "description": "Delete a Kanban task by its ID.",
+        "input_schema": {"type": "object", "properties": {"task_id": {"type": "string", "description": "The task ID to delete"}}, "required": ["task_id"]},
+    },
+    "kanban_board_summary": {
+        "category": "kanban",
+        "module": "tools.mcp.kanban_server",
+        "handler": "handle_kanban_board_summary",
+        "description": "Get a summary of the Kanban board: task counts per status column, total count, and counts by priority.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
 }
 
 

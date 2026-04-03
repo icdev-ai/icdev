@@ -31,6 +31,7 @@ if str(BASE_DIR) not in sys.path:
 from tools.db.storage import get_connection  # noqa: E402
 
 PROMPT_DIR = BASE_DIR / ".tmp" / "kanban"
+WORKTREE_BASE = BASE_DIR / ".tmp" / "worktrees"
 
 
 def _utcnow_iso() -> str:
@@ -160,6 +161,96 @@ def _clear_retry_count(task_id: str):
         retry_file.unlink(missing_ok=True)
 
 
+# ---------------------------------------------------------------------------
+# Worktree isolation — each task runs in its own git worktree
+# ---------------------------------------------------------------------------
+
+# Track worktree paths: {task_id: worktree_path_str}
+_worktrees: Dict[str, str] = {}
+
+
+def _create_worktree(task_id: str) -> Optional[str]:
+    """Create an isolated git worktree for a kanban task.
+
+    Returns the worktree path on success, None on failure.
+    Falls back to BASE_DIR if git worktree is unavailable.
+    """
+    import subprocess as _sp
+
+    WORKTREE_BASE.mkdir(parents=True, exist_ok=True)
+    branch_name = f"kanban/{task_id}"
+    worktree_path = WORKTREE_BASE / task_id
+
+    if worktree_path.exists():
+        # Already exists from a previous attempt
+        return str(worktree_path)
+
+    try:
+        # Create a new branch from HEAD for this task
+        _sp.run(
+            ["git", "worktree", "add", "-b", branch_name, str(worktree_path)],
+            cwd=str(BASE_DIR),
+            capture_output=True, text=True, timeout=30,
+        )
+        if worktree_path.exists():
+            logger.info(
+                "Created worktree for %s at %s", task_id, worktree_path
+            )
+            return str(worktree_path)
+    except Exception as exc:
+        logger.warning("Worktree creation failed for %s: %s", task_id, exc)
+
+    return None  # Fallback — caller uses BASE_DIR
+
+
+def _cleanup_worktree(task_id: str):
+    """Remove the worktree and branch after task completion."""
+    import subprocess as _sp
+
+    branch_name = f"kanban/{task_id}"
+    worktree_path = WORKTREE_BASE / task_id
+
+    try:
+        if worktree_path.exists():
+            _sp.run(
+                ["git", "worktree", "remove", str(worktree_path), "--force"],
+                cwd=str(BASE_DIR),
+                capture_output=True, text=True, timeout=30,
+            )
+        # Delete the branch too
+        _sp.run(
+            ["git", "branch", "-D", branch_name],
+            cwd=str(BASE_DIR),
+            capture_output=True, text=True, timeout=10,
+        )
+        logger.info("Cleaned up worktree for %s", task_id)
+    except Exception as exc:
+        logger.warning("Worktree cleanup failed for %s: %s", task_id, exc)
+
+
+def _check_worktree_commits(task_id: str) -> bool:
+    """Check if the worktree branch has new commits vs the parent branch."""
+    import subprocess as _sp
+
+    branch_name = f"kanban/{task_id}"
+    try:
+        result = _sp.run(
+            ["git", "log", "HEAD.." + branch_name, "--oneline"],
+            cwd=str(BASE_DIR),
+            capture_output=True, text=True, timeout=10,
+        )
+        commits = result.stdout.strip()
+        if commits:
+            logger.info(
+                "Worktree branch %s has new commits:\n%s",
+                branch_name, commits,
+            )
+            return True
+    except Exception as exc:
+        logger.warning("Worktree commit check failed for %s: %s", task_id, exc)
+    return False
+
+
 def _get_due_tasks() -> list:
     """Find tasks ready for execution:
     1. Scheduled tasks whose scheduled_at has passed (always promoted)
@@ -247,6 +338,16 @@ def _move_task(task_id: str, new_status: str):
         conn.commit()
     finally:
         conn.close()
+    # Broadcast SSE event for real-time dashboard updates
+    try:
+        from tools.dashboard.sse_manager import sse_manager
+        sse_manager.broadcast({
+            "action": "task_updated",
+            "task_id": task_id,
+            "changes": {"status": new_status},
+        }, "kanban")
+    except Exception:
+        pass  # SSE is best-effort
 
 
 def _write_prompt_file(task: dict):
@@ -366,11 +467,24 @@ _running: Dict[str, subprocess.Popen] = {}
 
 
 def _dispatch_to_claude(task: dict, prompt_path: str):
-    """Launch claude CLI in background to execute the task."""
+    """Launch claude CLI in background to execute the task.
+
+    Creates a git worktree for isolation so parallel tasks don't collide.
+    Falls back to BASE_DIR if worktree creation fails.
+    """
     task_id = task["id"]
     title = task.get("title", "Untitled")
 
     prompt_text = Path(prompt_path).read_text(encoding="utf-8")
+
+    # Create isolated worktree for this task
+    worktree_path = _create_worktree(task_id)
+    work_dir = worktree_path if worktree_path else str(BASE_DIR)
+    if worktree_path:
+        _worktrees[task_id] = worktree_path
+        print(f"  Kanban: using worktree {worktree_path} for {task_id}")
+    else:
+        print(f"  Kanban: worktree unavailable, using BASE_DIR for {task_id}")
 
     # Build the full instruction for Claude
     instruction = (
@@ -397,7 +511,7 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
                 "--output-format", "text",
                 "-p", instruction,
             ],
-            cwd=str(BASE_DIR),
+            cwd=work_dir,
             stdout=log_fh,
             stderr=subprocess.STDOUT,
         )
@@ -537,7 +651,7 @@ def _check_completed():
                         )
                     except Exception:
                         pass
-                # Keep prompt file for retry — don't delete
+                # Keep prompt file AND worktree for retry — don't delete
                 del _running[task_id]
                 completed.append(task_id)
                 continue
@@ -609,6 +723,23 @@ def _check_completed():
                     f"  Kanban: {task_id} completed "
                     f"(exit {ret}, verified={verified})"
                 )
+
+                # ── WORKTREE CLEANUP (only on verified done) ─────────
+                if verified and task_id in _worktrees:
+                    has_commits = _check_worktree_commits(task_id)
+                    if has_commits:
+                        print(
+                            f"  Kanban: worktree kanban/{task_id} has "
+                            f"new commits (review before merging)"
+                        )
+                    _cleanup_worktree(task_id)
+                    del _worktrees[task_id]
+                elif not verified and task_id in _worktrees:
+                    # Preserve worktree for debugging/retry
+                    print(
+                        f"  Kanban: preserving worktree for "
+                        f"unverified task {task_id}"
+                    )
             else:
                 # ── NON-ZERO EXIT (not token exhaustion) ──────────────
                 error_tail = ""
@@ -622,6 +753,12 @@ def _check_completed():
                     f"  Kanban: {task_id} failed (exit {ret})"
                     f"{': ' + error_tail[:200] if error_tail else ''}"
                 )
+                # Preserve worktree for debugging/retry — do NOT clean up
+                if task_id in _worktrees:
+                    print(
+                        f"  Kanban: preserving worktree for "
+                        f"failed task {task_id}"
+                    )
                 try:
                     _move_task(task_id, "backlog")
                     _send_notification(task_dict, event="failed")

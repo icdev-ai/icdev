@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from flask import Blueprint, jsonify, request
 
 from tools.db.storage import get_connection
+from tools.dashboard.sse_manager import sse_manager
 
 kanban_api = Blueprint("kanban_api", __name__, url_prefix="/api/kanban")
 
@@ -78,6 +79,18 @@ def create_task():
             ),
         )
         conn.commit()
+        try:
+            sse_manager.broadcast({
+                "action": "task_created",
+                "task": {
+                    "id": task_id,
+                    "title": data["title"],
+                    "status": data.get("status", "backlog"),
+                    "priority": data.get("priority", "medium"),
+                },
+            }, "kanban")
+        except Exception:
+            pass  # SSE is best-effort
         return jsonify({"status": "created", "id": task_id}), 201
     finally:
         conn.close()
@@ -127,6 +140,14 @@ def update_task(task_id):
             tuple(vals),
         )
         conn.commit()
+        try:
+            sse_manager.broadcast({
+                "action": "task_updated",
+                "task_id": task_id,
+                "changes": data,
+            }, "kanban")
+        except Exception:
+            pass  # SSE is best-effort
         return jsonify({"status": "updated", "id": task_id})
     finally:
         conn.close()
@@ -144,6 +165,13 @@ def delete_task(task_id):
             return jsonify({"error": "Task not found"}), 404
         conn.execute("DELETE FROM kanban_tasks WHERE id = ?", (task_id,))
         conn.commit()
+        try:
+            sse_manager.broadcast({
+                "action": "task_deleted",
+                "task_id": task_id,
+            }, "kanban")
+        except Exception:
+            pass  # SSE is best-effort
         return jsonify({"status": "deleted", "id": task_id})
     finally:
         conn.close()
@@ -179,6 +207,14 @@ def move_task(task_id):
 
         conn.execute(sql, tuple(vals))
         conn.commit()
+        try:
+            sse_manager.broadcast({
+                "action": "task_updated",
+                "task_id": task_id,
+                "changes": {"status": new_status},
+            }, "kanban")
+        except Exception:
+            pass  # SSE is best-effort
         return jsonify({"status": "moved", "id": task_id, "new_status": new_status})
     finally:
         conn.close()
