@@ -785,6 +785,46 @@ CREATE TABLE IF NOT EXISTS compliance_evidence_chain (
 CREATE INDEX IF NOT EXISTS idx_cec_chain ON compliance_evidence_chain(chain_id);
 CREATE INDEX IF NOT EXISTS idx_cec_source ON compliance_evidence_chain(source);
 CREATE INDEX IF NOT EXISTS idx_cec_ts ON compliance_evidence_chain(event_ts);
+
+-- Oracle Anticipatory Agent (Phase Oracle)
+CREATE TABLE IF NOT EXISTS oracle_predictions (
+    id              TEXT PRIMARY KEY,
+    lens            TEXT NOT NULL,
+    title           TEXT NOT NULL,
+    description     TEXT NOT NULL,
+    confidence      REAL NOT NULL,
+    evidence        TEXT DEFAULT '[]',
+    proposed_action TEXT DEFAULT '',
+    tags            TEXT DEFAULT '[]',
+    created_at      TEXT NOT NULL,
+    run_id          TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_oracle_pred_lens ON oracle_predictions(lens);
+CREATE INDEX IF NOT EXISTS idx_oracle_pred_conf ON oracle_predictions(confidence);
+
+CREATE TABLE IF NOT EXISTS genesis_gkp (
+    id               TEXT PRIMARY KEY,
+    artifact_type    TEXT NOT NULL,
+    payload          TEXT NOT NULL DEFAULT '{}',
+    content_hash     TEXT,
+    confidence       REAL DEFAULT 0.0,
+    promotion_status TEXT DEFAULT 'pending',
+    created_at       TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_gkp_type ON genesis_gkp(artifact_type);
+CREATE INDEX IF NOT EXISTS idx_gkp_status ON genesis_gkp(promotion_status);
+
+CREATE TABLE IF NOT EXISTS kanban_tasks (
+    id           TEXT PRIMARY KEY,
+    title        TEXT NOT NULL,
+    description  TEXT,
+    task_type    TEXT DEFAULT 'chore',
+    priority     TEXT DEFAULT 'low',
+    status       TEXT DEFAULT 'backlog',
+    scheduled_at TEXT,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
+);
 """
 
 # ---------------------------------------------------------------------------

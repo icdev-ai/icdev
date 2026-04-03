@@ -2076,3 +2076,42 @@ python tools/studio/nl_app_builder.py --json refine <session_id> --classificatio
 # /studio/dashboards   — Dashboard Builder (widget grid + role defaults)
 # /studio/marketplace  — Marketplace Storefront (browse, search, install)
 ```
+
+# ── Oracle Anticipatory Agent (Phase Oracle) ──────────────────────────────
+
+```bash
+# Oracle Reflex — run all lenses as Genesis daemon reflex (DaemonBase protocol)
+# Called automatically by GenesisDaemon; not intended for direct CLI invocation.
+# python tools/oracle/oracle_reflex.py  (no standalone CLI — use via run(config, trust))
+
+# Kanban Bridge — sync promoted GKP anticipation reports to suggested kanban tasks
+python tools/oracle/kanban_bridge.py --sync --json                                     # Batch-sync all promoted anticipation_report GKPs
+python tools/oracle/kanban_bridge.py --sync --min-confidence 0.90 --json               # Only high-confidence reports
+python tools/oracle/kanban_bridge.py --gate                                             # Gate check: verify DB reachable
+python tools/oracle/kanban_bridge.py --gate --json                                      # Gate check (JSON output)
+
+# Individual Lens — Trajectory (architectural forecasting)
+python tools/oracle/lens_trajectory.py --json                                           # Run trajectory analysis
+python tools/oracle/lens_trajectory.py --gate                                           # Gate check
+
+# Individual Lens — Ecosystem Gap
+python tools/oracle/lens_ecosystem_gap.py --json                                        # Run FORGE-layer gap analysis
+python tools/oracle/lens_ecosystem_gap.py --gate                                        # Gate check
+
+# Individual Lens — Workflow Patterns
+python tools/oracle/lens_workflow_patterns.py --json                                    # Run workflow pattern mining
+python tools/oracle/lens_workflow_patterns.py --gate                                    # Gate check
+
+# Individual Lens — Regulatory Anticipation
+python tools/oracle/lens_regulatory.py --json                                           # Run regulatory signal crosswalk
+python tools/oracle/lens_regulatory.py --gate                                           # Gate check
+
+# Individual Lens — Child App Demand
+python tools/oracle/lens_child_app_demand.py --json                                     # Run child-app demand scoring
+python tools/oracle/lens_child_app_demand.py --gate                                     # Gate check
+
+# Dashboard API Endpoints (via Flask dashboard on port 5050)
+# GET  /api/oracle/predictions                                                          # Query oracle_predictions (filters: lens_id, severity, outcome)
+# GET  /api/oracle/lens-status                                                          # Per-lens health: last_run, prediction_count, avg_confidence
+# GET  /api/oracle/convergence                                                          # Convergence events with consensus_score and action_taken
+```

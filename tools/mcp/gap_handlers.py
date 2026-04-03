@@ -1313,3 +1313,79 @@ def handle_redaction_scan_db(args: dict) -> dict:
     if args.get("sample_size"):
         cli_args.extend(["--sample-size", str(args["sample_size"])])
     return _run_cli("tools/redaction/db_scanner.py", cli_args)
+
+
+# ── Oracle Anticipatory Agent ─────────────────────────────────────────────
+
+
+def handle_oracle_predictions_list(args: dict) -> dict:
+    """Query oracle_predictions with optional lens/confidence filters."""
+    lens = args.get("lens")
+    min_confidence = float(args.get("min_confidence", 0.0))
+    limit = int(args.get("limit", 50))
+    try:
+        conn = get_connection()
+        sql = "SELECT id, lens, title, confidence, tags, created_at FROM oracle_predictions WHERE confidence >= ?"
+        params = [min_confidence]
+        if lens:
+            sql += " AND lens = ?"
+            params.append(lens)
+        sql += " ORDER BY created_at DESC LIMIT ?"
+        params.append(limit)
+        rows = conn.execute(sql, params).fetchall()
+        conn.close()
+        predictions = [
+            {"id": r[0], "lens": r[1], "title": r[2], "confidence": r[3],
+             "tags": r[4], "created_at": r[5]}
+            for r in rows
+        ]
+        return {"predictions": predictions, "count": len(predictions)}
+    except Exception as exc:
+        logger.warning("handle_oracle_predictions_list: %s", exc)
+        return {"error": str(exc), "predictions": []}
+
+
+def handle_oracle_lens_status(args: dict) -> dict:
+    """Return per-lens health: prediction count, avg_confidence, latest run."""
+    try:
+        conn = get_connection()
+        rows = conn.execute(
+            """
+            SELECT lens,
+                   COUNT(*) AS total,
+                   AVG(confidence) AS avg_conf,
+                   MAX(created_at) AS last_run,
+                   SUM(CASE WHEN confidence >= 0.7 THEN 1 ELSE 0 END) AS high_count,
+                   SUM(CASE WHEN confidence >= 0.4 AND confidence < 0.7 THEN 1 ELSE 0 END) AS med_count,
+                   SUM(CASE WHEN confidence < 0.4 THEN 1 ELSE 0 END) AS low_count
+            FROM oracle_predictions
+            GROUP BY lens
+            ORDER BY lens
+            """
+        ).fetchall()
+        conn.close()
+        lenses = [
+            {
+                "lens": r[0], "total_predictions": r[1],
+                "avg_confidence": round(r[2], 3) if r[2] else 0.0,
+                "last_run": r[3],
+                "high": r[4], "medium": r[5], "low": r[6],
+            }
+            for r in rows
+        ]
+        return {"lenses": lenses}
+    except Exception as exc:
+        logger.warning("handle_oracle_lens_status: %s", exc)
+        return {"error": str(exc), "lenses": []}
+
+
+def handle_oracle_kanban_bridge_sync(args: dict) -> dict:
+    """Batch-sync promoted anticipation_report GKPs to suggested kanban tasks."""
+    min_confidence = float(args.get("min_confidence", 0.80))
+    cli_args = ["--sync", "--min-confidence", str(min_confidence)]
+    return _run_cli("tools/oracle/kanban_bridge.py", cli_args)
+
+
+def handle_oracle_kanban_bridge_gate(args: dict) -> dict:
+    """Gate check for the Oracle kanban bridge."""
+    return _run_cli("tools/oracle/kanban_bridge.py", ["--gate"])

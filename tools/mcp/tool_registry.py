@@ -2847,6 +2847,51 @@ TOOL_REGISTRY = {
             "required": ["markdown"],
         },
     },
+    # ============================================================
+    # ORACLE — Anticipatory Agent (Phase Oracle)
+    # ============================================================
+    "oracle_predictions_list": {
+        "category": "oracle",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_oracle_predictions_list",
+        "description": "Query Oracle predictions from oracle_predictions table with optional filters for lens, confidence tier, or tags.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "lens": {"type": "string", "description": "Filter by lens name (trend, risk, opportunity, horizon, compliance, knowledge, trajectory, workflow_patterns, regulatory_anticipation, child_app_demand)"},
+                "min_confidence": {"type": "number", "description": "Minimum confidence threshold (0.0-1.0)", "default": 0.0},
+                "limit": {"type": "integer", "description": "Max predictions to return", "default": 50},
+            },
+            "required": [],
+        },
+    },
+    "oracle_lens_status": {
+        "category": "oracle",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_oracle_lens_status",
+        "description": "Get per-lens health status: last_run, prediction_count, avg_confidence, and confidence tier breakdown.",
+        "input_schema": {"type": "object", "properties": {}, "required": []},
+    },
+    "oracle_kanban_bridge_sync": {
+        "category": "oracle",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_oracle_kanban_bridge_sync",
+        "description": "Batch-sync all promoted anticipation_report GKPs into suggested kanban tasks. Idempotent backfill.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "min_confidence": {"type": "number", "description": "Minimum GKP confidence for task creation", "default": 0.80},
+            },
+            "required": [],
+        },
+    },
+    "oracle_kanban_bridge_gate": {
+        "category": "oracle",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_oracle_kanban_bridge_gate",
+        "description": "Gate check: verify the Oracle kanban bridge can reach the database. Returns pass/fail.",
+        "input_schema": {"type": "object", "properties": {}, "required": []},
+    },
 }
 
 

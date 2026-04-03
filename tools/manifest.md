@@ -1646,13 +1646,22 @@
 ## Auto-Registered (Coherence Fix)
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
-| Base Lens | tools\oracle\base_lens.py | Auto-registered: oracle/base_lens.py | --json | JSON |
-| Oracle Reflex | tools\oracle\oracle_reflex.py | Auto-registered: oracle/oracle_reflex.py | --json | JSON |
+| Base Lens | tools\oracle\base_lens.py | Abstract 3-phase pipeline (analyze → score → propose) for all Oracle lenses; exception isolation per lens | N/A (library) | OraclePrediction list |
+| Oracle Reflex | tools\oracle\oracle_reflex.py | Orchestrates all 10 Oracle lenses, persists oracle_predictions, emits GKP artifacts; DaemonBase-compatible run() | run(config, trust) | {success, metric_value, details} |
 | Trajectory Lens | tools\oracle\lens_trajectory.py | Lens 3: architectural trajectory forecasting — CC/maintainability regression, days-to-threshold, hotspot detection | --json / --gate | JSON |
 
 
 ## Auto-Registered (Coherence Fix)
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
-| Lens Ecosystem Gap | tools\oracle\lens_ecosystem_gap.py | Auto-registered: oracle/lens_ecosystem_gap.py | --json | JSON |
-| Lens Workflow Patterns | tools\oracle\lens_workflow_patterns.py | Auto-registered: oracle/lens_workflow_patterns.py | --json | JSON |
+| Lens Ecosystem Gap | tools\oracle\lens_ecosystem_gap.py | Lens 1: FORGE-layer manifest gap detection, dead-table scan, coherence recidivism tracking | --json / --gate | JSON |
+| Lens Workflow Patterns | tools\oracle\lens_workflow_patterns.py | Lens 2: audit_trail sequential pattern mining, tool-pair co-occurrence, self-heal detection, kanban recurrence | --json / --gate | JSON |
+| Lens Regulatory Anticipation | tools\oracle\lens_regulatory.py | Lens 5: regulatory/standards signal crosswalk to ICDEV™ frameworks, effective-date extraction, compliance gap scoring | --json / --gate | JSON |
+| Lens Child App Demand | tools\oracle\lens_child_app_demand.py | Lens 6: dossier + SAM.gov + marketplace demand scoring to predict top child-app verticals | --json / --gate | JSON |
+| Oracle Kanban Bridge | tools\oracle\kanban_bridge.py | Convert promoted anticipation_report GKPs to suggested kanban tasks; batch-sync backfill | --sync / --gate / --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Fast Transforms | tools\builder\fast_transforms.py | Auto-registered: builder/fast_transforms.py | --json | JSON |
