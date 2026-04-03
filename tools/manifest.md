@@ -1696,3 +1696,14 @@ All canvases share: separate SQLite DB, Flask Blueprint, YAML config in `args/`,
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Lens Convergence | tools\oracle\lens_convergence.py | Auto-registered: oracle/lens_convergence.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Export Utils | tools\canvas\export_utils.py | Auto-registered: canvas/export_utils.py | --json | JSON |
+| Iac Generator | tools\infra_canvas\iac_generator.py | Auto-registered: infra_canvas/iac_generator.py | --json | JSON |
+| E2E Bdc Canvas | tools\testing\e2e_bdc_canvas.py | Auto-registered: testing/e2e_bdc_canvas.py | --json | JSON |
+| E2E Ddc Canvas | tools\testing\e2e_ddc_canvas.py | Auto-registered: testing/e2e_ddc_canvas.py | --json | JSON |
+| E2E Idc Canvas | tools\testing\e2e_idc_canvas.py | Auto-registered: testing/e2e_idc_canvas.py | --json | JSON |
+| E2E Odc Canvas | tools\testing\e2e_odc_canvas.py | Auto-registered: testing/e2e_odc_canvas.py | --json | JSON |
