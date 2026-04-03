@@ -45,6 +45,7 @@ from tools.dashboard.auth import register_dashboard_auth, validate_api_key, log_
 from tools.dashboard.websocket import init_socketio, get_socketio  # noqa: E402
 from tools.dashboard.api.projects import projects_api  # noqa: E402
 from tools.dashboard.api.kanban import kanban_api  # noqa: E402
+from tools.dashboard.api.kanban_plan import kanban_plan_api  # noqa: E402
 from tools.dashboard.api.agents import agents_api  # noqa: E402
 from tools.dashboard.api.compliance import compliance_api  # noqa: E402
 from tools.dashboard.api.audit import audit_api  # noqa: E402
@@ -891,6 +892,7 @@ def create_app() -> Flask:
     # ---- Register API blueprints ----
     app.register_blueprint(projects_api)
     app.register_blueprint(kanban_api)
+    app.register_blueprint(kanban_plan_api)
     app.register_blueprint(agents_api)
     app.register_blueprint(compliance_api)
     app.register_blueprint(audit_api)

@@ -799,6 +799,67 @@
     }
 
     // ===================================================================
+    // SECTION 11b: Send to Kanban — decompose plan into backlog tasks
+    // ===================================================================
+
+    function chatSendToKanban() {
+        // Get the last assistant message content from the active context
+        var contextId = _activeContextId;
+        if (!contextId) {
+            alert("No active chat context");
+            return;
+        }
+
+        // Collect all assistant messages from the chat to build the plan
+        var messages = document.querySelectorAll("#chat-messages .chat-msg-assistant .chat-msg-content");
+        if (!messages.length) {
+            alert("No assistant messages found");
+            return;
+        }
+
+        // Use the last assistant message as the plan (most recent plan output)
+        var lastMsg = messages[messages.length - 1];
+        var planMarkdown = lastMsg.innerText || lastMsg.textContent || "";
+
+        if (!planMarkdown.trim()) {
+            alert("No plan content found in chat");
+            return;
+        }
+
+        // Preview first
+        ICDEV.fetchJSON("/api/kanban/preview-plan", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({markdown: planMarkdown})
+        }).then(function(data) {
+            if (!data || !data.count) {
+                alert("Could not extract tasks from the plan. Try a more structured format (## Phase 1, ## Step 2, etc.)");
+                return;
+            }
+            // Confirm with user
+            var taskList = data.tasks.map(function(t, i) {
+                return (i + 1) + ". [" + t.priority + "] " + t.title;
+            }).join("\n");
+
+            if (confirm("Send " + data.count + " tasks to Kanban backlog?\n\n" + taskList)) {
+                ICDEV.fetchJSON("/api/kanban/from-plan", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({markdown: planMarkdown})
+                }).then(function(result) {
+                    if (result && result.tasks_created) {
+                        alert(result.tasks_created + " tasks added to Kanban backlog!");
+                        // Refresh kanban if on that page
+                        if (typeof ICDEV.refreshKanban === "function") {
+                            ICDEV.refreshKanban();
+                        }
+                    }
+                });
+            }
+        });
+    }
+
+    // ===================================================================
     // SECTION 12: RICOAS Features — COA rendering & selection
     // ===================================================================
 
@@ -1526,6 +1587,7 @@
     ns.chatViewRequirements = chatViewRequirements;
     ns.chatGeneratePRD = chatGeneratePRD;
     ns.chatValidatePRD = chatValidatePRD;
+    ns.chatSendToKanban = chatSendToKanban;
     ns.chatSelectCoa = chatSelectCoa;
     ns.chatUnselectCoa = chatUnselectCoa;
     ns.chatViewProject = chatViewProject;

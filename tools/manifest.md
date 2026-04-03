@@ -1625,3 +1625,9 @@
 | Blueprint Helpers | tools\network\blueprint_helpers.py | Auto-registered: network/blueprint_helpers.py | --json | JSON |
 | Observability Engine | tools\observability_canvas\observability_engine.py | Auto-registered: observability_canvas/observability_engine.py | --json | JSON |
 | E2E New Canvases | tools\testing\e2e_new_canvases.py | Auto-registered: testing/e2e_new_canvases.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Plan Decomposer | tools\kanban\plan_decomposer.py | Auto-registered: kanban/plan_decomposer.py | --json | JSON |

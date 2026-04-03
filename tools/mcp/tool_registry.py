@@ -2832,6 +2832,21 @@ TOOL_REGISTRY = {
         "description": "Get a summary of the Kanban board: task counts per status column, total count, and counts by priority.",
         "input_schema": {"type": "object", "properties": {}},
     },
+    "kanban_queue_plan": {
+        "category": "kanban",
+        "module": "tools.mcp.kanban_server",
+        "handler": "handle_kanban_queue_plan",
+        "description": "Decompose a markdown plan into Kanban tasks and queue them in the backlog.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "markdown": {"type": "string", "description": "Markdown plan text to decompose into tasks"},
+                "default_type": {"type": "string", "description": "Default task type (build/test/deploy/etc)"},
+                "project_context": {"type": "string", "description": "Optional project context for better inference"},
+            },
+            "required": ["markdown"],
+        },
+    },
 }
 
 
