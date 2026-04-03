@@ -12,6 +12,7 @@
 
 <div class="kanban-board" id="kanban-board">
     {% set columns = [
+        ("suggested", "Suggested"),
         ("backlog", "Backlog"),
         ("scheduled", "Scheduled"),
         ("in_progress", "In Progress"),
@@ -74,6 +75,7 @@
                 <div>
                     <label style="display:block; font-size:12px; color:var(--text-dim); margin-bottom:4px;">Status</label>
                     <select id="task-status" style="width:100%; padding:8px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; color:var(--text-primary);">
+                        <option value="suggested">Suggested</option>
                         <option value="backlog">Backlog</option>
                         <option value="scheduled">Scheduled</option>
                         <option value="in_progress">In Progress</option>
@@ -194,7 +196,7 @@ function renderTaskKanban(tasks) {
     var board = document.getElementById('kanban-board');
     if (!board) return;
 
-    var columns = { backlog: [], scheduled: [], in_progress: [], done: [] };
+    var columns = { suggested: [], backlog: [], scheduled: [], in_progress: [], done: [] };
     tasks.forEach(function(t) {
         var s = t.status || 'backlog';
         if (columns[s]) columns[s].push(t); else columns.backlog.push(t);
@@ -202,8 +204,8 @@ function renderTaskKanban(tasks) {
 
     var priorityColors = { critical: '#ef4444', high: '#f97316', medium: '#3b82f6', low: '#6b7280' };
     var typeIcons = { build: '\u{1F528}', run: '\u25B6', fix: '\u{1F41B}', research: '\u{1F50D}', deploy: '\u{1F680}', test: '\u2705', chore: '\u{1F9F9}' };
-    var nextStatus = { backlog: 'scheduled', scheduled: 'in_progress', in_progress: 'done' };
-    var prevStatus = { scheduled: 'backlog', in_progress: 'scheduled', done: 'in_progress' };
+    var nextStatus = { suggested: 'backlog', backlog: 'scheduled', scheduled: 'in_progress', in_progress: 'done' };
+    var prevStatus = { backlog: 'suggested', scheduled: 'backlog', in_progress: 'scheduled', done: 'in_progress' };
 
     board.querySelectorAll('.kanban-column').forEach(function(colEl) {
         var status = colEl.getAttribute('data-status');

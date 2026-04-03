@@ -47,6 +47,7 @@ ARTIFACT_TYPES = [
     "capability_update",
     "code_patch",
     "training_pair",
+    "anticipation_report",
 ]
 
 # Promotion statuses
@@ -370,6 +371,8 @@ def _import_to_v1x(artifact_type: str, payload: Dict, confidence: float) -> Dict
             return _import_code_patch(payload)
         elif artifact_type == "training_pair":
             return _import_training_pair(payload)
+        elif artifact_type == "anticipation_report":
+            return _import_anticipation_report(payload, confidence)
         else:
             return {"success": False, "error": f"No import handler for: {artifact_type}"}
     except Exception as e:
@@ -520,6 +523,17 @@ def _import_code_patch(payload: Dict) -> Dict:
         "branch": payload.get("branch", "unknown"),
         "files_changed": payload.get("files_changed", []),
     }
+
+
+def _import_anticipation_report(payload: Dict, confidence: float) -> Dict:
+    """Import a regulatory anticipation report — creates a suggested kanban task."""
+    try:
+        from tools.oracle.kanban_bridge import create_suggested_task
+        task_id = create_suggested_task(payload, confidence)
+        return {"success": True, "table": "kanban_tasks", "id": task_id,
+                "note": "Suggested kanban task created from anticipation_report GKP"}
+    except Exception as e:
+        return {"success": False, "error": f"kanban_bridge.create_suggested_task: {e}"}
 
 
 def _import_training_pair(payload: Dict) -> Dict:

@@ -459,6 +459,8 @@ promoter:
       min_confidence: 0.85
     - artifact_type: capability_update
       min_confidence: 0.0  # Marketplace capability updates are safe
+    - artifact_type: anticipation_report
+      min_confidence: 0.80  # Only high-confidence regulatory anticipation auto-promotes
     # Reflex-based rules: any GKP from these reflexes auto-promotes
     - reflex: comply
       min_confidence: 0.0  # All compliance outputs are safe
