@@ -568,7 +568,6 @@ def on_bdc_design_saved(design_id: str) -> dict:
 
         design_name = row[0]
         graph = json.loads(row[1]) if isinstance(row[1], str) else (row[1] or {})
-        nodes = graph.get("nodes", [])
         edges = graph.get("edges", [])
         boundaries = graph.get("boundaries", [])
 
@@ -584,7 +583,6 @@ def on_bdc_design_saved(design_id: str) -> dict:
             })
 
         # Check for cross-boundary flows without ISA
-        boundary_ids = {b.get("id") for b in boundaries}
         for e in edges:
             src_boundary = next((b.get("id") for b in boundaries
                                  if e.get("source") in b.get("members", [])), None)
