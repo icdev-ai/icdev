@@ -54,7 +54,7 @@ STATE_FILE = BASE_DIR / ".tmp" / "genesis" / "state.json"
 REFLEX_NAMES = [
     "research", "scout", "audit", "comply", "ingest", "market", "report",
     "publish", "test", "learn", "heal", "evolve", "docs", "experiment",
-    "synthesize", "kanban",
+    "synthesize", "kanban", "oracle",
 ]
 
 # Backward-compat aliases for module-level access used by other code

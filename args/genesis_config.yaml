@@ -419,6 +419,27 @@ reflexes:
     lookback_days: 7
     max_goals_per_run: 3
 
+  # ── Oracle Predictive Intelligence (tools/oracle/) ──────────────────────────
+
+  oracle:
+    enabled: true
+    risk_tier: green
+    schedule: "daily 08:00"
+    description: "Multi-lens predictive intelligence — trends, risks, opportunities, horizon, compliance, knowledge gaps"
+    success_metric:
+      name: predictions_generated
+      threshold: 0
+      operator: gte  # 0 = no signals to analyze (healthy), > 0 = predictions produced
+    lenses:
+      - trend
+      - risk
+      - opportunity
+      - horizon
+      - compliance
+      - knowledge
+    min_confidence_for_gkp: 0.4   # Only emit GKP for medium/high confidence predictions
+    max_predictions_per_lens: 5
+
 # ── Promoter Configuration ───────────────────────────────────────────────────
 
 promoter:

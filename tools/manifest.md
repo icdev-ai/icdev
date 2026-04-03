@@ -1631,3 +1631,10 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Plan Decomposer | tools\kanban\plan_decomposer.py | Auto-registered: kanban/plan_decomposer.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Base Lens | tools\oracle\base_lens.py | Auto-registered: oracle/base_lens.py | --json | JSON |
+| Oracle Reflex | tools\oracle\oracle_reflex.py | Auto-registered: oracle/oracle_reflex.py | --json | JSON |
