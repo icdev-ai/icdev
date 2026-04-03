@@ -106,6 +106,80 @@ def list_self_healing():
         conn.close()
 
 
+@metrics_api.route("/push", methods=["POST"])
+def push_container_metrics():
+    """
+    Accept a batch of container metrics from push_agent.py.
+    Body: {"metrics": [{container_id, container_name, host, backend, cpu_percent, ...}]}
+    """
+    from flask import request as flask_request
+
+    payload = flask_request.get_json(silent=True) or {}
+    metrics = payload.get("metrics", [])
+    if not metrics:
+        return jsonify({"error": "no metrics in payload"}), 400
+
+    conn = _get_db()
+    try:
+        conn.executemany(
+            """INSERT INTO container_metrics
+               (container_id, container_name, host, backend,
+                cpu_percent, memory_percent, memory_rss_mb, memory_limit_mb,
+                disk_read_mb, disk_write_mb, net_rx_mb, net_tx_mb, status,
+                pushed, pushed_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,1,datetime('now'))""",
+            [
+                (
+                    m.get("container_id", "unknown"),
+                    m.get("container_name"),
+                    m.get("host", "unknown"),
+                    m.get("backend", "unknown"),
+                    m.get("cpu_percent"),
+                    m.get("memory_percent"),
+                    m.get("memory_rss_mb"),
+                    m.get("memory_limit_mb"),
+                    m.get("disk_read_mb"),
+                    m.get("disk_write_mb"),
+                    m.get("net_rx_mb"),
+                    m.get("net_tx_mb"),
+                    m.get("status"),
+                )
+                for m in metrics
+            ],
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    return jsonify({"accepted": len(metrics)}), 200
+
+
+@metrics_api.route("/containers", methods=["GET"])
+def list_container_metrics():
+    """Return recent container metrics, optionally filtered by host or container_name."""
+    conn = _get_db()
+    try:
+        host = request.args.get("host")
+        container = request.args.get("container")
+        limit = min(int(request.args.get("limit", "200")), 2000)
+
+        query = "SELECT * FROM container_metrics WHERE 1=1"
+        params: list = []
+        if host:
+            query += " AND host = ?"
+            params.append(host)
+        if container:
+            query += " AND container_name LIKE ?"
+            params.append(f"%{container}%")
+        query += " ORDER BY collected_at DESC LIMIT ?"
+        params.append(limit)
+
+        rows = conn.execute(query, params).fetchall()
+        return jsonify({"metrics": [dict(r) for r in rows], "total": len(rows)})
+    finally:
+        conn.close()
+
+
 @metrics_api.route("/health", methods=["GET"])
 def health_status():
     """Overall health summary from latest metrics and alerts."""

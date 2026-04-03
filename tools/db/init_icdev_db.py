@@ -3166,6 +3166,30 @@ CREATE INDEX IF NOT EXISTS idx_hb_check_type ON heartbeat_checks(check_type);
 CREATE INDEX IF NOT EXISTS idx_hb_status ON heartbeat_checks(status);
 CREATE INDEX IF NOT EXISTS idx_hb_next_run ON heartbeat_checks(next_run);
 
+-- Push-Based Metrics Sidecar: per-container/process metrics with push buffer
+CREATE TABLE IF NOT EXISTS container_metrics (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    container_id     TEXT    NOT NULL,
+    container_name   TEXT,
+    host             TEXT    NOT NULL,
+    backend          TEXT    NOT NULL DEFAULT 'psutil',
+    cpu_percent      REAL,
+    memory_percent   REAL,
+    memory_rss_mb    REAL,
+    memory_limit_mb  REAL,
+    disk_read_mb     REAL,
+    disk_write_mb    REAL,
+    net_rx_mb        REAL,
+    net_tx_mb        REAL,
+    status           TEXT,
+    pushed           INTEGER DEFAULT 0,
+    collected_at     TEXT    DEFAULT (datetime('now')),
+    pushed_at        TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_cm_container ON container_metrics(container_id);
+CREATE INDEX IF NOT EXISTS idx_cm_pushed    ON container_metrics(pushed);
+CREATE INDEX IF NOT EXISTS idx_cm_collected ON container_metrics(collected_at);
+
 -- Phase 29: Auto-resolution alert processing log (D143-D145, append-only)
 CREATE TABLE IF NOT EXISTS auto_resolution_log (
     id TEXT PRIMARY KEY,
