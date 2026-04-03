@@ -1395,6 +1395,12 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Email Adapter | tools/notifications/adapters/email_adapter.py | Email notification delivery adapter | --json | Delivery status |
+| Compliance Notifier | tools/notify/adapter.py | Write-once multi-channel compliance notifier (STIG, cATO, gate blocks) | --health/--send/--json | NotifyResult JSON |
+| Compliance Cards | tools/notify/cards.py | Card abstractions: ComplianceCard, STIGCard, CATOCard, SecurityGateCard | (library) | Typed card objects |
+| Slack Compliance Channel | tools/notify/channels/slack.py | Slack Block Kit delivery for compliance cards | (library) | bool |
+| Teams Compliance Channel | tools/notify/channels/teams.py | MS Teams Connector Card delivery for compliance cards | (library) | bool |
+| Discord Compliance Channel | tools/notify/channels/discord.py | Discord webhook embed delivery for compliance cards | (library) | bool |
+| Email Compliance Channel | tools/notify/channels/email.py | SMTP HTML/plain-text delivery for compliance cards | (library) | bool |
 
 ## Proposal Genesis (Additional)
 | Tool | File | Description | Input | Output |
