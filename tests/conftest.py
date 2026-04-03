@@ -825,6 +825,19 @@ CREATE TABLE IF NOT EXISTS kanban_tasks (
     created_at   TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS scoped_memory_entries (
+    id           TEXT PRIMARY KEY,
+    partition    TEXT NOT NULL,
+    entry_type   TEXT NOT NULL,
+    content      TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    importance   INTEGER NOT NULL DEFAULT 5,
+    metadata     TEXT,
+    created_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sme_partition ON scoped_memory_entries (partition);
+CREATE INDEX IF NOT EXISTS idx_sme_hash ON scoped_memory_entries (partition, content_hash);
 """
 
 # ---------------------------------------------------------------------------
