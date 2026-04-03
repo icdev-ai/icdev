@@ -303,16 +303,16 @@ document.addEventListener('DOMContentLoaded', refreshKanbanTasks);
 <div class="chart-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-bottom: 24px;">
     <div class="card" style="padding: 20px;">
         <div class="card-label">Compliance Posture
-            <span class="help-icon" title="Open vs closed findings across STIG and POA&M">?</span>
+            <span class="help-icon" title="Compliance score per canvas assessment">?</span>
         </div>
         <div id="chart-compliance" style="min-height: 200px;"></div>
     </div>
     <div class="card" style="padding: 20px;">
-        <div class="card-label">Alert Trend (7 days)</div>
+        <div class="card-label">Activity Trend (7 days)</div>
         <div id="chart-alerts" style="min-height: 200px;"></div>
     </div>
     <div class="card" style="padding: 20px;">
-        <div class="card-label">Project Status</div>
+        <div class="card-label">Task Board Status</div>
         <div id="chart-projects" style="min-height: 200px;"></div>
     </div>
     <div class="card" style="padding: 20px;">
@@ -417,42 +417,43 @@ document.addEventListener('DOMContentLoaded', refreshKanbanTasks);
     fetch('/api/charts/overview')
         .then(function(r) { return r.json(); })
         .then(function(d) {
-            // Compliance posture bar chart
-            if (d.compliance) {
+            // Compliance posture — multi-canvas bar chart
+            if (d.compliance && d.compliance.canvases && d.compliance.canvases.length > 0) {
                 ICDEV.barChart('chart-compliance', {
-                    labels: ['POA&M', 'STIG'],
+                    labels: d.compliance.canvases.map(function(c) { return c.name; }),
                     series: [
-                        { name: 'Open', data: [d.compliance.poam.open, d.compliance.stig.open], color: '#dc3545' },
-                        { name: 'Closed', data: [d.compliance.poam.closed, d.compliance.stig.closed], color: '#28a745' },
+                        { name: 'Score', data: d.compliance.canvases.map(function(c) { return c.score; }), color: '#4a90d9' },
                     ],
-                    height: 180, showLegend: true, showValues: true,
+                    height: 180, showLegend: false, showValues: true,
                 });
+            } else {
+                document.getElementById('chart-compliance').innerHTML = '<p class="text-muted" style="text-align:center;padding:60px 0;">No canvas assessments yet</p>';
             }
-            // Alert trend line chart
-            if (d.alert_trend && d.alert_trend.length > 0) {
+            // Activity trend line chart
+            if (d.activity_trend && d.activity_trend.length > 0) {
                 ICDEV.lineChart('chart-alerts', {
-                    labels: d.alert_trend.map(function(r) { return r.day.slice(5); }),
-                    series: [{ name: 'Alerts', data: d.alert_trend.map(function(r) { return r.cnt; }), color: '#dc3545' }],
+                    labels: d.activity_trend.map(function(r) { return r.day.slice(5); }),
+                    series: [{ name: 'Activity', data: d.activity_trend.map(function(r) { return r.cnt; }), color: '#4a90d9' }],
                     height: 180, showLegend: false,
                 });
             } else {
-                document.getElementById('chart-alerts').innerHTML = '<p class="text-muted" style="text-align:center;padding:60px 0;">No alerts in last 7 days</p>';
+                document.getElementById('chart-alerts').innerHTML = '<p class="text-muted" style="text-align:center;padding:60px 0;">No activity in last 7 days</p>';
             }
-            // Project status donut
-            if (d.project_statuses && d.project_statuses.length > 0) {
-                var colors = { active: '#28a745', completed: '#4a90d9', inactive: '#6c6c80', planning: '#ffc107' };
-                var total = d.project_statuses.reduce(function(s, r) { return s + r.cnt; }, 0);
+            // Task board status donut
+            if (d.task_statuses && d.task_statuses.length > 0) {
+                var taskColors = { backlog: '#6c6c80', scheduled: '#ffc107', in_progress: '#4a90d9', done: '#28a745', token_exhausted: '#dc3545' };
+                var total = d.task_statuses.reduce(function(s, r) { return s + r.cnt; }, 0);
                 ICDEV.donutChart('chart-projects', {
-                    segments: d.project_statuses.map(function(r) {
-                        return { label: r.status, value: r.cnt, color: colors[r.status] || '#6c6c80' };
+                    segments: d.task_statuses.map(function(r) {
+                        return { label: r.status, value: r.cnt, color: taskColors[r.status] || '#6c6c80' };
                     }),
                     size: 160, thickness: 28,
                     centerLabel: String(total),
-                    centerSubLabel: 'Projects',
+                    centerSubLabel: 'Tasks',
                     showLegend: true,
                 });
             } else {
-                document.getElementById('chart-projects').innerHTML = '<p class="text-muted" style="text-align:center;padding:60px 0;">No projects yet</p>';
+                document.getElementById('chart-projects').innerHTML = '<p class="text-muted" style="text-align:center;padding:60px 0;">No tasks yet</p>';
             }
             // Agent health gauge
             if (d.agent_health) {

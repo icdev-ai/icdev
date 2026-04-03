@@ -1091,42 +1091,113 @@ def create_app() -> Flask:
     @app.route("/api/charts/overview", methods=["GET"])
     def api_charts_overview():
         """Aggregate chart data for the home dashboard."""
+        import sqlite3 as _sqlite3
+
         conn = _get_db()
         try:
-            # Project status distribution (donut chart)
-            project_statuses = conn.execute(
-                "SELECT status, COUNT(*) as cnt FROM projects GROUP BY status"
+            # ----------------------------------------------------------------
+            # 1. Task Board Status (donut) — replaces empty projects table
+            # ----------------------------------------------------------------
+            task_statuses = conn.execute(
+                "SELECT status, COUNT(*) as cnt FROM kanban_tasks GROUP BY status"
             ).fetchall()
 
-            # Alert trend: last 7 days (line chart)
-            alert_trend = conn.execute(
+            # ----------------------------------------------------------------
+            # 2. Activity Trend: last 7 days (line chart) — from audit_trail
+            # ----------------------------------------------------------------
+            activity_trend = conn.execute(
                 "SELECT DATE(created_at) as day, COUNT(*) as cnt "
-                "FROM alerts WHERE created_at >= DATE('now', '-7 days') "
+                "FROM audit_trail WHERE created_at >= DATE('now', '-7 days') "
                 "GROUP BY DATE(created_at) ORDER BY day"
             ).fetchall()
 
-            # Compliance posture: open vs closed across POAM + STIG (bar chart)
-            poam_open = conn.execute(
-                "SELECT COUNT(*) as cnt FROM poam_items WHERE status = 'open'"
-            ).fetchone()["cnt"]
-            poam_closed = conn.execute(
-                "SELECT COUNT(*) as cnt FROM poam_items WHERE status != 'open'"
-            ).fetchone()["cnt"]
-            stig_open = conn.execute(
-                "SELECT COUNT(*) as cnt FROM stig_findings WHERE status = 'Open'"
-            ).fetchone()["cnt"]
-            stig_closed = conn.execute(
-                "SELECT COUNT(*) as cnt FROM stig_findings WHERE status != 'Open'"
-            ).fetchone()["cnt"]
+            # ----------------------------------------------------------------
+            # 3. Compliance Posture — aggregate across canvas assessment DBs
+            # ----------------------------------------------------------------
+            _CANVAS_DBS = [
+                ("Security",      BASE_DIR / "data" / "security_canvas.db"),
+                ("Network",       BASE_DIR / "data" / "network_canvas.db"),
+                ("Pipeline",      BASE_DIR / "data" / "pipeline_canvas.db"),
+                ("Infra",         BASE_DIR / "data" / "infra_canvas.db"),
+                ("Data",          BASE_DIR / "data" / "data_canvas.db"),
+                ("Boundary",      BASE_DIR / "data" / "boundary_canvas.db"),
+                ("Observability", BASE_DIR / "data" / "observability_canvas.db"),
+            ]
 
-            # Deployment frequency: last 7 days (sparkline)
-            deploy_trend = conn.execute(
-                "SELECT DATE(created_at) as day, COUNT(*) as cnt "
-                "FROM deployments WHERE created_at >= DATE('now', '-7 days') "
-                "GROUP BY DATE(created_at) ORDER BY day"
-            ).fetchall()
+            canvas_compliance = []
+            overall_scores = []
 
-            # Agent health (gauge: % active)
+            for canvas_name, db_path in _CANVAS_DBS:
+                if not db_path.exists():
+                    continue
+                try:
+                    cconn = _sqlite3.connect(str(db_path))
+                    cconn.row_factory = _sqlite3.Row
+                    try:
+                        if canvas_name == "Security":
+                            row = cconn.execute(
+                                "SELECT AVG(risk_score) as avg_score, "
+                                "COUNT(*) as total_threats FROM sc_assessments"
+                            ).fetchone()
+                            score = round(max(0.0, 100.0 - float(row["avg_score"] or 0)), 1)
+                            open_f = int(row["total_threats"] or 0)
+                            closed_f = 0
+                        elif canvas_name in ("Network", "Pipeline"):
+                            tbl = "nc_compliance_findings" if canvas_name == "Network" else "pc_compliance_findings"
+                            open_f = cconn.execute(
+                                f"SELECT COUNT(*) as cnt FROM {tbl} WHERE status = 'open'"
+                            ).fetchone()["cnt"]
+                            closed_f = cconn.execute(
+                                f"SELECT COUNT(*) as cnt FROM {tbl} WHERE status != 'open'"
+                            ).fetchone()["cnt"]
+                            total_f = open_f + closed_f
+                            score = round((closed_f / total_f * 100) if total_f > 0 else 100.0, 1)
+                        elif canvas_name in ("Infra", "Data"):
+                            tbl = "idc_assessments" if canvas_name == "Infra" else "dd_assessments"
+                            row = cconn.execute(
+                                f"SELECT AVG(score) as avg_score FROM {tbl}"
+                            ).fetchone()
+                            score = round(float(row["avg_score"] or 0), 1)
+                            open_f = 0
+                            closed_f = 0
+                        elif canvas_name == "Boundary":
+                            row = cconn.execute(
+                                "SELECT SUM(cat1_findings) as cat1, "
+                                "SUM(cat2_findings) as cat2, "
+                                "SUM(cat3_findings) as cat3, "
+                                "AVG(score) as avg_score FROM bd_assessments"
+                            ).fetchone()
+                            open_f = int((row["cat1"] or 0) + (row["cat2"] or 0) + (row["cat3"] or 0))
+                            closed_f = 0
+                            score = round(float(row["avg_score"] or 0), 1)
+                        elif canvas_name == "Observability":
+                            row = cconn.execute(
+                                "SELECT AVG(score) as avg_score FROM od_assessments"
+                            ).fetchone()
+                            score = round(float(row["avg_score"] or 0), 1)
+                            open_f = 0
+                            closed_f = 0
+                        else:
+                            continue
+
+                        canvas_compliance.append({
+                            "name": canvas_name,
+                            "score": score,
+                            "open_findings": open_f,
+                            "closed_findings": closed_f,
+                        })
+                        if score > 0:
+                            overall_scores.append(score)
+                    finally:
+                        cconn.close()
+                except Exception:
+                    pass  # Graceful if canvas DB has no data yet
+
+            overall_score = round(sum(overall_scores) / len(overall_scores), 1) if overall_scores else 0.0
+
+            # ----------------------------------------------------------------
+            # 4. Agent health (gauge: % active) — unchanged
+            # ----------------------------------------------------------------
             total_agents = conn.execute(
                 "SELECT COUNT(*) as cnt FROM agents"
             ).fetchone()["cnt"]
@@ -1135,13 +1206,12 @@ def create_app() -> Flask:
             ).fetchone()["cnt"]
 
             return jsonify({
-                "project_statuses": [dict(r) for r in project_statuses],
-                "alert_trend": [dict(r) for r in alert_trend],
+                "task_statuses": [dict(r) for r in task_statuses],
+                "activity_trend": [dict(r) for r in activity_trend],
                 "compliance": {
-                    "poam": {"open": poam_open, "closed": poam_closed},
-                    "stig": {"open": stig_open, "closed": stig_closed},
+                    "canvases": canvas_compliance,
+                    "overall_score": overall_score,
                 },
-                "deploy_trend": [dict(r) for r in deploy_trend],
                 "agent_health": {
                     "total": total_agents,
                     "active": active_agents,
