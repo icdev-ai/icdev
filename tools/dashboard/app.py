@@ -82,6 +82,7 @@ from tools.dashboard.api.stig_manager import stig_manager_api  # noqa: E402
 from tools.dashboard.api.ato_package import ato_package_api  # noqa: E402
 from tools.dashboard.api.oracle import oracle_api  # noqa: E402
 from tools.dashboard.api.analytics import analytics_api  # noqa: E402
+from tools.dashboard.api.canvas_projects import canvas_projects_api  # noqa: E402
 try:
     from tools.dashboard.api.finetune import finetune_api  # noqa: E402
     _HAS_FINETUNE_API = True
@@ -933,6 +934,7 @@ def create_app() -> Flask:
     app.register_blueprint(ato_package_api)
     app.register_blueprint(oracle_api)
     app.register_blueprint(analytics_api)
+    app.register_blueprint(canvas_projects_api)
     if _HAS_FINETUNE_API:
         app.register_blueprint(finetune_api)
     if _HAS_RAG_EVAL_API:
@@ -1028,6 +1030,12 @@ def create_app() -> Flask:
                 app.logger.info("Observability Design Canvas registered at /observability/")
         except Exception as exc:
             app.logger.warning("Observability Design Canvas failed to register: %s", exc)
+
+    # ---- Unified Canvas Compliance Dashboard ----
+    @app.route("/canvas-compliance")
+    def canvas_compliance_page():
+        """Unified compliance posture across all 7 design canvases."""
+        return render_template("canvas_compliance.html")
 
     # ---- Convenience JSON routes that match the spec ----
 
