@@ -537,3 +537,99 @@ def export_vsdx_file(design_id):
         })
     finally:
         conn.close()
+
+
+def _idc_fetch_design(design_id: str):
+    """Return (name, graph) for an infra design or (None, None) if not found."""
+    conn = _get_conn()
+    try:
+        row = conn.execute(
+            "SELECT name, graph_json FROM infra_designs WHERE id = ?",
+            (design_id,),
+        ).fetchone()
+        if not row:
+            return None, None
+        d = dict(row)
+        graph = json.loads(d["graph_json"]) if isinstance(d["graph_json"], str) else d["graph_json"]
+        return d["name"], graph
+    finally:
+        conn.close()
+
+
+@infra_bp.route("/api/export/<design_id>/json", methods=["POST"])
+def idc_export_json(design_id):
+    """Export infrastructure design as JSON."""
+    name, graph = _idc_fetch_design(design_id)
+    if name is None:
+        return jsonify({"error": "Not found"}), 404
+    from tools.canvas.export_utils import export_json
+    data = base64.b64encode(export_json(name, graph, "IDC")).decode("ascii")
+    return jsonify({"format": "json", "filename": f"{name.replace(' ', '_')}.json", "data": data})
+
+
+@infra_bp.route("/api/export/<design_id>/markdown", methods=["POST"])
+def idc_export_markdown(design_id):
+    """Export infrastructure design as Markdown."""
+    name, graph = _idc_fetch_design(design_id)
+    if name is None:
+        return jsonify({"error": "Not found"}), 404
+    from tools.canvas.export_utils import export_markdown
+    data = base64.b64encode(export_markdown(name, graph, "IDC")).decode("ascii")
+    return jsonify({"format": "markdown", "filename": f"{name.replace(' ', '_')}.md", "data": data})
+
+
+@infra_bp.route("/api/export/<design_id>/csv", methods=["POST"])
+def idc_export_csv(design_id):
+    """Export infrastructure design node inventory as CSV."""
+    name, graph = _idc_fetch_design(design_id)
+    if name is None:
+        return jsonify({"error": "Not found"}), 404
+    from tools.canvas.export_utils import export_csv
+    data = base64.b64encode(export_csv(name, graph, "IDC")).decode("ascii")
+    return jsonify({"format": "csv", "filename": f"{name.replace(' ', '_')}.csv", "data": data})
+
+
+@infra_bp.route("/api/export/<design_id>/drawio", methods=["POST"])
+def idc_export_drawio(design_id):
+    """Export infrastructure design as DrawIO XML."""
+    name, graph = _idc_fetch_design(design_id)
+    if name is None:
+        return jsonify({"error": "Not found"}), 404
+    from tools.canvas.export_utils import export_drawio
+    data = base64.b64encode(export_drawio(name, graph, "IDC")).decode("ascii")
+    return jsonify({"format": "drawio", "filename": f"{name.replace(' ', '_')}.drawio", "data": data})
+
+
+@infra_bp.route("/api/export/<design_id>/svg", methods=["POST"])
+def idc_export_svg(design_id):
+    """Export infrastructure design as SVG vector graphic."""
+    name, graph = _idc_fetch_design(design_id)
+    if name is None:
+        return jsonify({"error": "Not found"}), 404
+    from tools.canvas.export_utils import export_svg
+    data = base64.b64encode(export_svg(name, graph, "IDC")).decode("ascii")
+    return jsonify({"format": "svg", "filename": f"{name.replace(' ', '_')}.svg", "data": data})
+
+
+@infra_bp.route("/api/export/<design_id>/terraform", methods=["POST"])
+def idc_export_terraform(design_id):
+    """Export infrastructure design as Terraform HCL."""
+    name, graph = _idc_fetch_design(design_id)
+    if name is None:
+        return jsonify({"error": "Not found"}), 404
+    from tools.infra_canvas.iac_generator import generate_terraform
+    hcl = generate_terraform(graph)
+    data = base64.b64encode(hcl.encode("utf-8")).decode("ascii")
+    return jsonify({"format": "terraform", "filename": f"{name.replace(' ', '_')}.tf", "data": data})
+
+
+@infra_bp.route("/api/export/<design_id>/cloudformation", methods=["POST"])
+def idc_export_cloudformation(design_id):
+    """Export infrastructure design as CloudFormation YAML."""
+    name, graph = _idc_fetch_design(design_id)
+    if name is None:
+        return jsonify({"error": "Not found"}), 404
+    from tools.infra_canvas.iac_generator import generate_cloudformation
+    cf_yaml = generate_cloudformation(graph)
+    data = base64.b64encode(cf_yaml.encode("utf-8")).decode("ascii")
+    return jsonify({"format": "cloudformation", "filename": f"{name.replace(' ', '_')}.yaml", "data": data})

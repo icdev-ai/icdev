@@ -755,4 +755,76 @@ def create_boundary_blueprint():
             "data": base64.b64encode(vsdx_bytes).decode("ascii"),
         })
 
+    def _bdc_fetch(design_id):
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT name, graph_json FROM boundary_designs WHERE id=?", (design_id,)
+            ).fetchone()
+        if not row:
+            return None, None
+        d = _row_to_dict(row)
+        gj = d["graph_json"]
+        graph = json.loads(gj) if isinstance(gj, str) else gj
+        return d["name"], graph
+
+    @bp.route("/api/export/<design_id>/json", methods=["POST"])
+    @bdc_login_required
+    def bdc_api_export_json(design_id):
+        """Export boundary design as JSON."""
+        import base64
+        name, graph = _bdc_fetch(design_id)
+        if name is None:
+            return jsonify({"error": "Not found"}), 404
+        from tools.canvas.export_utils import export_json
+        data = base64.b64encode(export_json(name, graph, "BDC")).decode("ascii")
+        return jsonify({"format": "json", "filename": f"{name.replace(' ', '_')}.json", "data": data})
+
+    @bp.route("/api/export/<design_id>/markdown", methods=["POST"])
+    @bdc_login_required
+    def bdc_api_export_markdown(design_id):
+        """Export boundary design as Markdown."""
+        import base64
+        name, graph = _bdc_fetch(design_id)
+        if name is None:
+            return jsonify({"error": "Not found"}), 404
+        from tools.canvas.export_utils import export_markdown
+        data = base64.b64encode(export_markdown(name, graph, "BDC")).decode("ascii")
+        return jsonify({"format": "markdown", "filename": f"{name.replace(' ', '_')}.md", "data": data})
+
+    @bp.route("/api/export/<design_id>/csv", methods=["POST"])
+    @bdc_login_required
+    def bdc_api_export_csv(design_id):
+        """Export boundary design node inventory as CSV."""
+        import base64
+        name, graph = _bdc_fetch(design_id)
+        if name is None:
+            return jsonify({"error": "Not found"}), 404
+        from tools.canvas.export_utils import export_csv
+        data = base64.b64encode(export_csv(name, graph, "BDC")).decode("ascii")
+        return jsonify({"format": "csv", "filename": f"{name.replace(' ', '_')}.csv", "data": data})
+
+    @bp.route("/api/export/<design_id>/drawio", methods=["POST"])
+    @bdc_login_required
+    def bdc_api_export_drawio(design_id):
+        """Export boundary design as DrawIO XML."""
+        import base64
+        name, graph = _bdc_fetch(design_id)
+        if name is None:
+            return jsonify({"error": "Not found"}), 404
+        from tools.canvas.export_utils import export_drawio
+        data = base64.b64encode(export_drawio(name, graph, "BDC")).decode("ascii")
+        return jsonify({"format": "drawio", "filename": f"{name.replace(' ', '_')}.drawio", "data": data})
+
+    @bp.route("/api/export/<design_id>/svg", methods=["POST"])
+    @bdc_login_required
+    def bdc_api_export_svg(design_id):
+        """Export boundary design as SVG vector graphic."""
+        import base64
+        name, graph = _bdc_fetch(design_id)
+        if name is None:
+            return jsonify({"error": "Not found"}), 404
+        from tools.canvas.export_utils import export_svg
+        data = base64.b64encode(export_svg(name, graph, "BDC")).decode("ascii")
+        return jsonify({"format": "svg", "filename": f"{name.replace(' ', '_')}.svg", "data": data})
+
     return bp
