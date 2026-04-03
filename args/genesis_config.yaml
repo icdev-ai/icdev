@@ -419,6 +419,20 @@ reflexes:
     lookback_days: 7
     max_goals_per_run: 3
 
+  # ── Goal Learner — Self-Improving Goals from Experience ─────────────────────
+
+  goal_learner:
+    enabled: true
+    risk_tier: yellow
+    schedule: "daily 20:00"
+    description: "Detect novel problem-solving not covered by existing goals, auto-generate FORGE goal files"
+    success_metric:
+      name: goals_generated
+      threshold: 0
+      operator: gte  # 0 = no novel events (healthy), > 0 = new goals learned
+    novelty_threshold: 0.6
+    max_goals_per_run: 3
+
   # ── Oracle Predictive Intelligence (tools/oracle/) ──────────────────────────
 
   oracle:
