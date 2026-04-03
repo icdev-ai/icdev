@@ -1218,25 +1218,112 @@ def create_app() -> Flask:
             ).fetchone()["cnt"]
             inactive_agents = total_agents - active_agents
 
-            # Recent audit entries
+            # Recent audit entries (for existing audit trail section)
             recent_audit = conn.execute(
                 "SELECT * FROM audit_trail ORDER BY created_at DESC LIMIT 10"
             ).fetchall()
 
-            # Recent alerts
-            recent_alerts = conn.execute(
-                "SELECT * FROM alerts ORDER BY created_at DESC LIMIT 10"
+            # --- Recent Activity & Findings: audit_trail + canvas CAT1 findings ---
+            import sqlite3 as _sqlite3
+
+            _audit_rows = conn.execute(
+                "SELECT event_type, actor, action, project_id, created_at "
+                "FROM audit_trail ORDER BY created_at DESC LIMIT 10"
             ).fetchall()
+            _activity = []
+            for _e in _audit_rows:
+                _e = dict(_e)
+                _activity.append({
+                    "event_type": _e.get("event_type") or "AUDIT",
+                    "source": "System",
+                    "details": _e.get("action") or "",
+                    "severity": "info",
+                    "created_at": _e.get("created_at") or "",
+                })
 
-            # Firing alert count (stat bar)
-            firing_alerts = conn.execute(
-                "SELECT COUNT(*) as cnt FROM alerts WHERE status = 'firing'"
-            ).fetchone()["cnt"]
+            # Canvas DBs: extract CAT1 findings from recent assessments
+            _canvas_json_dbs = [
+                ("security_canvas.db", "sc_assessments", "findings_json", "ran_at", "Security Canvas"),
+                ("infra_canvas.db", "idc_assessments", "findings_json", "created_at", "Infra Canvas"),
+                ("observability_canvas.db", "od_assessments", "findings_json", "created_at", "Observability Canvas"),
+                ("boundary_canvas.db", "bd_assessments", "findings_json", "created_at", "Boundary Canvas"),
+                ("data_canvas.db", "dd_assessments", "findings_json", "created_at", "Data Canvas"),
+            ]
+            cat1_count = 0
+            open_canvas_count = 0
+            for _db_name, _tbl, _fcol, _tcol, _label in _canvas_json_dbs:
+                try:
+                    _cc = _sqlite3.connect(str(BASE_DIR / "data" / _db_name))
+                    _cc.row_factory = _sqlite3.Row
+                    _rows = _cc.execute(
+                        f"SELECT {_fcol}, {_tcol} FROM {_tbl} ORDER BY {_tcol} DESC LIMIT 3"
+                    ).fetchall()
+                    for _row in _rows:
+                        _ts = _row[1] or ""
+                        try:
+                            _items = json.loads(_row[0] or "[]")
+                        except (json.JSONDecodeError, TypeError):
+                            _items = []
+                        for _f in _items:
+                            _sev = _f.get("severity", "")
+                            open_canvas_count += 1
+                            if _sev == "CAT1":
+                                cat1_count += 1
+                                _detail = _f.get("title", "")
+                                _extra = _f.get("detail") or _f.get("affected_entity") or ""
+                                if _extra:
+                                    _detail = f"{_detail}: {_extra}"
+                                _activity.append({
+                                    "event_type": "Canvas Finding",
+                                    "source": _label,
+                                    "details": _detail,
+                                    "severity": "CAT1",
+                                    "created_at": _ts,
+                                })
+                    _cc.close()
+                except Exception:
+                    pass
 
-            # Open POAM count (stat bar)
-            open_poam = conn.execute(
-                "SELECT COUNT(*) as cnt FROM poam_items WHERE status = 'open'"
-            ).fetchone()["cnt"]
+            # Direct findings tables (network, pipeline canvas)
+            _canvas_direct_dbs = [
+                ("network_canvas.db", "nc_compliance_findings", "Network Canvas"),
+                ("pipeline_canvas.db", "pc_compliance_findings", "Pipeline Canvas"),
+            ]
+            for _db_name, _tbl, _label in _canvas_direct_dbs:
+                try:
+                    _cc = _sqlite3.connect(str(BASE_DIR / "data" / _db_name))
+                    _cc.row_factory = _sqlite3.Row
+                    _rows = _cc.execute(
+                        f"SELECT severity, title, description, status, created_at "
+                        f"FROM {_tbl} ORDER BY created_at DESC LIMIT 10"
+                    ).fetchall()
+                    for _row in _rows:
+                        _sev = _row["severity"] or ""
+                        _status = _row["status"] or "open"
+                        if _status != "remediated":
+                            open_canvas_count += 1
+                        if _sev == "CAT1":
+                            cat1_count += 1
+                            _activity.append({
+                                "event_type": "Canvas Finding",
+                                "source": _label,
+                                "details": _row["title"] or "",
+                                "severity": "CAT1",
+                                "created_at": _row["created_at"] or "",
+                            })
+                    _cc.close()
+                except Exception:
+                    pass
+
+            # Sort merged activity by created_at DESC, limit 10
+            _activity.sort(key=lambda x: x.get("created_at") or "", reverse=True)
+            recent_activity = _activity[:10]
+
+            # Firing alert count = CAT1 canvas findings
+            firing_alerts = cat1_count
+
+            # Open POAM count = total open canvas findings
+            open_poam = open_canvas_count
 
             # Group projects by status for Kanban columns
             kanban_columns = {
@@ -1261,7 +1348,7 @@ def create_app() -> Flask:
                 active_agents=active_agents,
                 inactive_agents=inactive_agents,
                 recent_audit=[dict(r) for r in recent_audit],
-                recent_alerts=[dict(r) for r in recent_alerts],
+                recent_activity=recent_activity,
                 firing_alerts=firing_alerts,
                 open_poam=open_poam,
             )

@@ -321,33 +321,33 @@ document.addEventListener('DOMContentLoaded', refreshKanbanTasks);
     </div>
 </div>
 
-<!-- Recent Alerts -->
+<!-- Recent Activity & Findings -->
 <div class="table-container">
     <div class="table-header">
-        <h2>Recent Alerts</h2>
+        <h2>Recent Activity &amp; Findings</h2>
         <a href="/monitoring">View All</a>
     </div>
     <table>
         <thead>
             <tr>
-                <th>Severity</th>
-                <th>Title</th>
+                <th>Event Type</th>
                 <th>Source</th>
-                <th>Status</th>
-                <th>Created</th>
+                <th>Details</th>
+                <th>Severity</th>
+                <th>When</th>
             </tr>
         </thead>
         <tbody>
-            {% for alert in recent_alerts %}
+            {% for item in recent_activity %}
             <tr>
-                <td><span class="badge badge-{{ alert.severity }}" role="status">{{ alert.severity }}</span></td>
-                <td>{{ alert.title }}</td>
-                <td>{{ alert.source }}</td>
-                <td><span class="badge badge-{{ alert.status }}" role="status">{{ alert.status }}</span></td>
-                <td class="text-muted" data-timestamp="{{ alert.created_at }}">{{ alert.created_at | friendly_time }}</td>
+                <td><span class="badge badge-info">{{ item.event_type }}</span></td>
+                <td>{{ item.source }}</td>
+                <td>{{ item.details }}</td>
+                <td><span class="badge badge-{{ item.severity }}">{{ item.severity }}</span></td>
+                <td class="text-muted" data-timestamp="{{ item.created_at }}">{{ item.created_at | friendly_time }}</td>
             </tr>
             {% else %}
-            <tr class="empty-row"><td colspan="5">No recent alerts &mdash; all clear</td></tr>
+            <tr class="empty-row"><td colspan="5">No recent activity &mdash; all clear</td></tr>
             {% endfor %}
         </tbody>
     </table>
