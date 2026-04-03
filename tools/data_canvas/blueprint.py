@@ -29,6 +29,24 @@ logger = logging.getLogger("icdev.data_canvas")
 _DC_DIR = Path(__file__).resolve().parent
 _ICDEV_ROOT = _DC_DIR.parent.parent
 _TEMPLATE_DIR = _ICDEV_ROOT / "tools" / "dashboard" / "templates"
+_CONFIG_PATH = _ICDEV_ROOT / "args" / "data_canvas_config.yaml"
+
+try:
+    import yaml as _yaml
+    _HAS_YAML = True
+except ImportError:
+    _HAS_YAML = False
+
+
+def _load_config() -> dict:
+    """Load DDC config from args/data_canvas_config.yaml."""
+    if not _HAS_YAML or not _CONFIG_PATH.exists():
+        return {}
+    with open(_CONFIG_PATH, "r", encoding="utf-8") as _f:
+        return _yaml.safe_load(_f) or {}
+
+
+_DDC_CONFIG = _load_config()
 
 # ── Import data canvas modules ───────────────────────────────────────────────
 from tools.data_canvas.constants import (  # noqa: E402

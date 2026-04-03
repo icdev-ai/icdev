@@ -30,6 +30,24 @@ logger = logging.getLogger("icdev.boundary_canvas")
 _BDC_DIR = Path(__file__).resolve().parent
 _ICDEV_ROOT = _BDC_DIR.parent.parent
 _TEMPLATE_DIR = _ICDEV_ROOT / "tools" / "dashboard" / "templates"
+_CONFIG_PATH = _ICDEV_ROOT / "args" / "boundary_canvas_config.yaml"
+
+try:
+    import yaml as _yaml
+    _HAS_YAML = True
+except ImportError:
+    _HAS_YAML = False
+
+
+def _load_config() -> dict:
+    """Load BDC config from args/boundary_canvas_config.yaml."""
+    if not _HAS_YAML or not _CONFIG_PATH.exists():
+        return {}
+    with open(_CONFIG_PATH, "r", encoding="utf-8") as _f:
+        return _yaml.safe_load(_f) or {}
+
+
+_BDC_CONFIG = _load_config()
 
 # ── Import helper modules ──────────────────────────────────────────────────────
 from tools.boundary_canvas.constants import (  # noqa: E402

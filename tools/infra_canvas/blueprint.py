@@ -9,8 +9,30 @@ import base64
 import json
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
+
+try:
+    import yaml as _yaml
+    _HAS_YAML = True
+except ImportError:
+    _HAS_YAML = False
 
 from flask import Blueprint, jsonify, render_template, request
+
+_IDC_DIR = Path(__file__).resolve().parent
+_ICDEV_ROOT = _IDC_DIR.parent.parent
+_CONFIG_PATH = _ICDEV_ROOT / "args" / "infra_canvas_config.yaml"
+
+
+def _load_config() -> dict:
+    """Load IDC config from args/infra_canvas_config.yaml."""
+    if not _HAS_YAML or not _CONFIG_PATH.exists():
+        return {}
+    with open(_CONFIG_PATH, "r", encoding="utf-8") as _f:
+        return _yaml.safe_load(_f) or {}
+
+
+_IDC_CONFIG = _load_config()
 
 from tools.infra_canvas.constants import (
     CSP_EQUIVALENCE,

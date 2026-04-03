@@ -31,6 +31,24 @@ logger = logging.getLogger("icdev.observability_canvas")
 _OC_DIR = Path(__file__).resolve().parent
 _ICDEV_ROOT = _OC_DIR.parent.parent
 _TEMPLATE_DIR = _ICDEV_ROOT / "tools" / "dashboard" / "templates"
+_CONFIG_PATH = _ICDEV_ROOT / "args" / "observability_canvas_config.yaml"
+
+try:
+    import yaml as _yaml
+    _HAS_YAML = True
+except ImportError:
+    _HAS_YAML = False
+
+
+def _load_config() -> dict:
+    """Load ODC config from args/observability_canvas_config.yaml."""
+    if not _HAS_YAML or not _CONFIG_PATH.exists():
+        return {}
+    with open(_CONFIG_PATH, "r", encoding="utf-8") as _f:
+        return _yaml.safe_load(_f) or {}
+
+
+_ODC_CONFIG = _load_config()
 
 # ── Import helper modules ──────────────────────────────────────────────────────
 from tools.observability_canvas.constants import (  # noqa: E402
