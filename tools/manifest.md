@@ -1106,6 +1106,7 @@
 | KG Pair Generator | tools/finetune/kg_pair_generator.py | KG community-based FT pair generation (D-KARL-6) | --graph-id, --dataset-id, --strategy, --json | Generated pairs |
 | Quality Monitor | tools/finetune/quality_monitor.py | RAG eval feedback loop with retrain triggers (D-KARL-8) | --check, --status, --json | Quality status |
 | HP Search | tools/finetune/hp_search.py | Hyperparameter search orchestrator for fine-tuning (grid/random search over LoRA params) | --create, --run-next, --record, --status, --list, --json | Search/trial results |
+| Trajectory Capture | tools/finetune/trajectory_capture.py | Auto-capture successful agent tool-call traces as ShareGPT JSONL training data; compliance/build workflows → RL trajectories | --capture, --loop-id, --export, --stats, --gate, --workflow-type, --include-events, --json | Captured trajectories + JSONL export |
 
 ## Remote Command Gateway (Phase 28)
 | Tool | File | Description | Input | Output |
