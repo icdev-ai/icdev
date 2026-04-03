@@ -9235,6 +9235,87 @@ CREATE INDEX IF NOT EXISTS idx_redaction_registry_expires ON redaction_registry(
 
 -- redaction_audit: duplicate removed — canonical definition is at Phase 72, D-RDT-2 above
 -- (merged superset schema covers both router.py and anonymizer.py column sets)
+
+-- ============================================================
+-- ORACLE ENGINE — MULTI-LENS PREDICTION INTELLIGENCE
+-- ============================================================
+
+-- Individual predictions emitted by oracle lenses (append-only, NIST AU)
+CREATE TABLE IF NOT EXISTS oracle_predictions (
+    id              TEXT PRIMARY KEY,
+    lens_id         TEXT NOT NULL,
+    lens_name       TEXT NOT NULL,
+    subject_type    TEXT NOT NULL
+        CHECK(subject_type IN ('project','agent','pipeline','requirement','deployment','system')),
+    subject_id      TEXT NOT NULL,
+    prediction_type TEXT NOT NULL,
+    prediction_text TEXT NOT NULL,
+    confidence      REAL NOT NULL DEFAULT 0.0
+        CHECK(confidence >= 0.0 AND confidence <= 1.0),
+    severity        TEXT NOT NULL DEFAULT 'medium'
+        CHECK(severity IN ('critical','high','medium','low','info')),
+    horizon_days    INTEGER NOT NULL DEFAULT 7,
+    evidence_json   TEXT DEFAULT '{}',
+    scoring_weights TEXT DEFAULT '{}',
+    outcome         TEXT CHECK(outcome IN ('confirmed','refuted','expired','pending')),
+    outcome_at      TEXT,
+    classification  TEXT NOT NULL DEFAULT 'CUI',
+    created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_oracle_predictions_lens ON oracle_predictions(lens_id);
+CREATE INDEX IF NOT EXISTS idx_oracle_predictions_subject ON oracle_predictions(subject_type, subject_id);
+CREATE INDEX IF NOT EXISTS idx_oracle_predictions_severity ON oracle_predictions(severity);
+CREATE INDEX IF NOT EXISTS idx_oracle_predictions_created ON oracle_predictions(created_at);
+
+-- Convergence events: when 2+ lenses agree on the same prediction (append-only, NIST AU)
+CREATE TABLE IF NOT EXISTS oracle_convergence_events (
+    id                  TEXT PRIMARY KEY,
+    convergence_type    TEXT NOT NULL
+        CHECK(convergence_type IN ('risk','opportunity','anomaly','trend','threshold_breach')),
+    subject_type        TEXT NOT NULL,
+    subject_id          TEXT NOT NULL,
+    lens_ids_json       TEXT NOT NULL,
+    lens_count          INTEGER NOT NULL DEFAULT 2,
+    consensus_score     REAL NOT NULL DEFAULT 0.0
+        CHECK(consensus_score >= 0.0 AND consensus_score <= 1.0),
+    severity            TEXT NOT NULL DEFAULT 'medium'
+        CHECK(severity IN ('critical','high','medium','low','info')),
+    summary             TEXT NOT NULL,
+    prediction_ids_json TEXT DEFAULT '[]',
+    recommended_action  TEXT,
+    action_taken        INTEGER NOT NULL DEFAULT 0,
+    action_notes        TEXT,
+    resolved_at         TEXT,
+    classification      TEXT NOT NULL DEFAULT 'CUI',
+    created_at          TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_oracle_convergence_type ON oracle_convergence_events(convergence_type);
+CREATE INDEX IF NOT EXISTS idx_oracle_convergence_subject ON oracle_convergence_events(subject_type, subject_id);
+CREATE INDEX IF NOT EXISTS idx_oracle_convergence_severity ON oracle_convergence_events(severity);
+CREATE INDEX IF NOT EXISTS idx_oracle_convergence_created ON oracle_convergence_events(created_at);
+
+-- Per-lens runtime state: scheduling, health, and scoring config
+CREATE TABLE IF NOT EXISTS oracle_lens_state (
+    lens_id             TEXT PRIMARY KEY,
+    lens_name           TEXT NOT NULL UNIQUE,
+    domain              TEXT NOT NULL
+        CHECK(domain IN ('technical_debt','security_risk','performance','compliance_risk','architecture_drift','delivery_risk')),
+    enabled             INTEGER NOT NULL DEFAULT 1,
+    weight              REAL NOT NULL DEFAULT 1.0,
+    last_run_at         TEXT,
+    next_run_at         TEXT,
+    consecutive_failures INTEGER NOT NULL DEFAULT 0,
+    circuit_breaker_open INTEGER NOT NULL DEFAULT 0,
+    circuit_breaker_tripped_at TEXT,
+    total_runs          INTEGER NOT NULL DEFAULT 0,
+    total_predictions   INTEGER NOT NULL DEFAULT 0,
+    accuracy_rate       REAL DEFAULT NULL,
+    avg_confidence      REAL DEFAULT NULL,
+    config_json         TEXT DEFAULT '{}',
+    updated_at          TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_oracle_lens_domain ON oracle_lens_state(domain);
+CREATE INDEX IF NOT EXISTS idx_oracle_lens_enabled ON oracle_lens_state(enabled);
 """
 
 
