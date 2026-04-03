@@ -690,6 +690,7 @@
 | Tool Curator | tools/workflow/tool_curator.py | Phase-level tool curation enforcement — restrict available tools per goal phase (Agent Harness pattern) | --goal, --phase, --tool, --validate, --list-goals, --json | Allowed/blocked + reason |
 | Handoff Generator | tools/workflow/handoff_generator.py | Session handoff document generation for cross-session context transfers (D-WF-4) | --generate, --loop-id, --json | Handoff markdown |
 | Reconciler | tools/workflow/reconciler.py | UNIFY phase reconciliation: planned-vs-actual delta tracking with deviation classification (D-WF-5) | --reconcile, --loop-id, --json | Reconciliation record |
+| Replay Engine | tools/workflow/replay_engine.py | Event-sourced ANVIL pipeline recovery — reconstructs exact workflow state from append-only audit trail, identifies resume point, skips completed steps without re-executing side effects (NIST AU extension) | --inspect/--replay/--simulate/--verify/--list-failed, --loop-id, --project-id, --gate, --json | Resume plan + idempotency tokens |
 
 ## Cloud-Agnostic Architecture (Phase 38 — D223-D231)
 | Tool | File | Description | Input | Output |

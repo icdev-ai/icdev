@@ -120,6 +120,9 @@ VALID_EVENT_TYPES = (
     "openclaw_skill_rejected", "openclaw_skill_exported",
     "openclaw_export_approved", "openclaw_export_rejected",
     "openclaw_quarantine_expired",
+    # Event-Sourced Workflow Replay (NIST AU extension)
+    "workflow_replay_started", "workflow_replay_completed", "workflow_replay_failed",
+    "workflow_step_skipped", "workflow_resume_point_identified",
 )
 
 
