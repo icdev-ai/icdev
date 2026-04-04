@@ -1708,3 +1708,14 @@ All canvases share: separate SQLite DB, Flask Blueprint, YAML config in `args/`,
 | E2E Ddc Canvas | tools\testing\e2e_ddc_canvas.py | Auto-registered: testing/e2e_ddc_canvas.py | --json | JSON |
 | E2E Idc Canvas | tools\testing\e2e_idc_canvas.py | Auto-registered: testing/e2e_idc_canvas.py | --json | JSON |
 | E2E Odc Canvas | tools\testing\e2e_odc_canvas.py | Auto-registered: testing/e2e_odc_canvas.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Pii Detector | tools\data_canvas\pii_detector.py | Auto-registered: data_canvas/pii_detector.py | --json | JSON |
+| Cloud Import | tools\infra_canvas\cloud_import.py | Auto-registered: infra_canvas/cloud_import.py | --json | JSON |
+| Sigma Generator | tools\observability_canvas\sigma_generator.py | Auto-registered: observability_canvas/sigma_generator.py | --json | JSON |
+| Canvas Indexer | tools\rag\canvas_indexer.py | Auto-registered: rag/canvas_indexer.py | --json | JSON |
+| Claude Cli | tools\kanban\executors\claude_cli.py | Auto-registered: executors/claude_cli.py | --json | JSON |
+| Gitlab Pipeline | tools\kanban\executors\gitlab_pipeline.py | Auto-registered: executors/gitlab_pipeline.py | --json | JSON |

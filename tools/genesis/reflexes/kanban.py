@@ -77,8 +77,12 @@ def _count_pending_prompts() -> int:
             ).fetchone()
             if row and dict(row)["status"] == "in_progress":
                 count += 1
+            elif row and dict(row)["status"] in ("backlog", "scheduled",
+                                                  "token_exhausted"):
+                # Task exists and may be retried — don't count but don't delete
+                pass
             else:
-                # Orphaned prompt — clean it up
+                # Task is done or doesn't exist — truly orphaned
                 try:
                     pf.unlink()
                     logger.info("Cleaned up orphaned prompt: %s", pf.name)
@@ -113,7 +117,9 @@ TOKEN_EXHAUSTION_PATTERNS = [
     r"max.*turns.*reached",
     r"conversation.*limit",
     r"please\s*try\s*again\s*(?:later|in\s*\d+)",
-    r"reset(?:s)?\s*(?:at|in)\s*\d+",
+    r"reset(?:s)?\s*(?:at|in)?\s*\d+\s*(?:am|pm)",
+    r"hit\s*your\s*limit",
+    r"you'?ve\s*hit\s*your\s*limit",
 ]
 _TOKEN_RE = re.compile(
     "|".join(TOKEN_EXHAUSTION_PATTERNS), re.IGNORECASE
@@ -328,9 +334,13 @@ def _get_due_tasks() -> list:
         if slots <= 0:
             return result
 
+        # Backlog cooldown: skip tasks updated in the last 10 minutes
+        # (prevents rapid-fire retry of recently failed tasks)
         backlog = conn.execute(
             "SELECT * FROM kanban_tasks "
             "WHERE status = 'backlog' "
+            "  AND (updated_at IS NULL "
+            "       OR updated_at <= datetime('now', '-10 minutes')) "
             "ORDER BY "
             "CASE priority "
             "  WHEN 'critical' THEN 0 "
@@ -418,8 +428,8 @@ def _send_notification(task: dict, event: str = "in_progress"):
     event_labels = {
         "in_progress": "now in progress",
         "done": "completed",
-        "failed": "failed (will retry)",
-        "token_exhausted": "paused — Claude token limit hit, will auto-retry",
+        "failed": "failed (returned to backlog with 10-min cooldown)",
+        "token_exhausted": "PAUSED — token limit hit, move to backlog via dashboard to resume",
     }
     label = event_labels.get(event, event)
     title = f"Task {event}: {task['title']}"
@@ -439,7 +449,7 @@ def _send_notification(task: dict, event: str = "in_progress"):
                 "created_at) "
                 "VALUES (?, ?, ?, ?, ?, ?)",
                 (
-                    f"notif-kanban-{task['id']}-{event}",
+                    f"notif-kanban-{task['id']}-{event}-{_utcnow_iso()[:19]}",
                     title,
                     body,
                     "success" if event == "done" else "info",
@@ -894,51 +904,28 @@ def _check_completed():
 
 
 def _check_token_exhausted_tasks() -> list:
-    """Re-promote token_exhausted tasks whose retry delay has elapsed.
+    """Token-exhausted tasks stay PAUSED until manually moved back to backlog.
 
-    Checks updated_at timestamp — if TOKEN_RETRY_DELAY_SECONDS have passed
-    since the task was parked, move it back to in_progress for re-dispatch.
+    Previously auto-retried after TOKEN_RETRY_DELAY_SECONDS. Now tasks in
+    token_exhausted status remain parked — the user or dashboard must
+    explicitly move them to backlog or scheduled to resume execution.
 
-    Returns list of task dicts ready for retry.
+    Returns empty list (no auto-retry).
     """
+    # Log count for visibility but don't auto-retry
     conn = get_connection()
     try:
-        rows = conn.execute(
-            "SELECT * FROM kanban_tasks WHERE status = 'token_exhausted' "
-            "ORDER BY "
-            "CASE priority "
-            "  WHEN 'critical' THEN 0 "
-            "  WHEN 'high' THEN 1 "
-            "  WHEN 'medium' THEN 2 "
-            "  ELSE 3 END, "
-            "updated_at ASC"
-        ).fetchall()
-
-        ready = []
-        now = datetime.now(timezone.utc)
-        for row in rows:
-            task = dict(row)
-            # Parse updated_at to check if delay has elapsed
-            updated = task.get("updated_at")
-            if updated:
-                if isinstance(updated, str):
-                    # Handle ISO format strings
-                    try:
-                        updated = datetime.fromisoformat(
-                            updated.replace("Z", "+00:00")
-                        )
-                    except (ValueError, TypeError):
-                        updated = now  # Can't parse — retry immediately
-                elapsed = (now - updated).total_seconds()
-                if elapsed < TOKEN_RETRY_DELAY_SECONDS:
-                    remaining = TOKEN_RETRY_DELAY_SECONDS - elapsed
-                    logger.debug(
-                        "Token-exhausted task %s: %ds until retry",
-                        task["id"], remaining,
-                    )
-                    continue
-            ready.append(task)
-        return ready
+        row = conn.execute(
+            "SELECT COUNT(*) AS cnt FROM kanban_tasks "
+            "WHERE status = 'token_exhausted'"
+        ).fetchone()
+        count = dict(row).get("cnt", 0)
+        if count:
+            logger.info(
+                "%d task(s) paused (token_exhausted) — "
+                "move to backlog via dashboard to resume", count,
+            )
+        return []
     finally:
         conn.close()
 
