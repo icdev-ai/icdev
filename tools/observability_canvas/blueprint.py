@@ -373,6 +373,7 @@ def create_observability_blueprint():
         conn = get_connection()
         try:
             conn.execute("DELETE FROM od_assessments WHERE design_id=?", (design_id,))
+            conn.execute("DELETE FROM od_versions WHERE design_id=?", (design_id,))
             conn.execute("DELETE FROM observability_designs WHERE id=?", (design_id,))
             conn.commit()
         finally:

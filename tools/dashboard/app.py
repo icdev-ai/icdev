@@ -1386,7 +1386,7 @@ def create_app() -> Flask:
                     pass
 
             # Sort merged activity by created_at DESC, limit 10
-            _activity.sort(key=lambda x: x.get("created_at") or "", reverse=True)
+            _activity.sort(key=lambda x: str(x.get("created_at") or ""), reverse=True)
             recent_activity = _activity[:10]
 
             # Firing alert count = CAT1 canvas findings

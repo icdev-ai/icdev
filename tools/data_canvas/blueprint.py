@@ -321,6 +321,9 @@ def create_data_canvas_blueprint():
     def dc_api_delete(design_id):
         logger.info("Deleting data design: %s", design_id)
         conn = get_connection()
+        # Cascade-delete child records before removing parent (foreign key constraint)
+        conn.execute("DELETE FROM dd_versions WHERE design_id=?", (design_id,))
+        conn.execute("DELETE FROM dd_assessments WHERE design_id=?", (design_id,))
         conn.execute("DELETE FROM data_designs WHERE id=?", (design_id,))
         conn.commit()
         conn.close()

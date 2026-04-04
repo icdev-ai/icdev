@@ -367,7 +367,7 @@ def create_boundary_blueprint():
     @bdc_login_required
     def bdc_api_delete_design(design_id):
         """Delete a boundary design and all related records."""
-        child_tables = ("bd_isa_tracker", "bd_assessments")
+        child_tables = ("bd_isa_tracker", "bd_assessments", "bd_versions")
         with get_connection() as conn:
             for table in child_tables:
                 conn.execute(
