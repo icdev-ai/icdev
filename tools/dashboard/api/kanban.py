@@ -22,22 +22,35 @@ def _gen_id():
 
 @kanban_api.route("/tasks", methods=["GET"])
 def list_tasks():
-    """Return all kanban tasks, optionally filtered by status."""
+    """Return all kanban tasks, optionally filtered by status.
+
+    For suggested tasks, LEFT JOINs oracle_predictions to include the exact
+    confidence value and proposed_action from the originating prediction.
+    """
     status_filter = request.args.get("status")
     conn = get_connection()
     try:
+        order = (
+            "CASE kt.priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 "
+            "WHEN 'medium' THEN 2 ELSE 3 END, kt.created_at DESC"
+        )
+        select = (
+            "SELECT kt.*, "
+            "op.confidence AS oracle_confidence, "
+            "op.proposed_action AS oracle_proposed_action, "
+            "op.lens_name AS oracle_lens "
+            "FROM kanban_tasks kt "
+            "LEFT JOIN oracle_predictions op "
+            "ON kt.source_prediction_id = op.id "
+        )
         if status_filter:
             rows = conn.execute(
-                "SELECT * FROM kanban_tasks WHERE status = ? ORDER BY "
-                "CASE priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 "
-                "WHEN 'medium' THEN 2 ELSE 3 END, created_at DESC",
+                f"{select}WHERE kt.status = ? ORDER BY {order}",  # nosec B608
                 (status_filter,),
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT * FROM kanban_tasks ORDER BY "
-                "CASE priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 "
-                "WHEN 'medium' THEN 2 ELSE 3 END, created_at DESC"
+                f"{select}ORDER BY {order}"  # nosec B608
             ).fetchall()
         tasks = [dict(r) for r in rows]
         # Stringify datetimes for JSON

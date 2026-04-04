@@ -277,18 +277,25 @@ function renderTaskKanban(tasks) {
             var pColor = priorityColors[t.priority] || '#6b7280';
 
             if (status === 'suggested') {
-                // Extract proposed action from description (marked as "**Proposed action:** ...")
-                var proposedAction = '';
-                if (t.description) {
+                // Prefer exact confidence from oracle_predictions JOIN, fall back to priority-range
+                var confLabel;
+                if (t.oracle_confidence != null) {
+                    confLabel = Math.round(t.oracle_confidence * 100) + '%';
+                } else {
+                    confLabel = confidenceLabel[t.priority] || '';
+                }
+                // Prefer proposed_action from oracle JOIN; fall back to description parse
+                var proposedAction = t.oracle_proposed_action || '';
+                if (!proposedAction && t.description) {
                     var match = t.description.match(/\*\*Proposed action:\*\*\s*(.+?)(\n|$)/);
                     if (match) proposedAction = match[1].trim();
                 }
-                var confLabel = confidenceLabel[t.priority] || '';
+                var lensLabel = t.oracle_lens ? ' \u00B7 ' + esc(t.oracle_lens) : '';
 
                 return '<div class="kanban-card" style="border-left:3px solid #8b5cf6; cursor:pointer;" onclick="openEditTaskModal(' + JSON.stringify(t).replace(/"/g, '&quot;') + ')">'
-                    + '<div style="display:flex; align-items:center; gap:6px; margin-bottom:4px;">'
+                    + '<div style="display:flex; align-items:center; gap:6px; margin-bottom:4px; flex-wrap:wrap;">'
                     + '<span style="font-size:11px; background:#8b5cf620; color:#8b5cf6; border-radius:4px; padding:1px 6px; font-weight:600;">\uD83D\uDD2E Oracle</span>'
-                    + (confLabel ? '<span style="font-size:11px; color:var(--text-dim);">confidence ' + confLabel + '</span>' : '')
+                    + (confLabel ? '<span style="font-size:11px; color:var(--text-dim);">confidence ' + confLabel + lensLabel + '</span>' : '')
                     + '</div>'
                     + '<div class="kanban-card-title" title="' + esc(t.title) + '">' + icon + ' ' + esc(t.title) + '</div>'
                     + (proposedAction ? '<div style="font-size:11px; color:var(--text-dim); margin-top:4px; font-style:italic;">' + esc(proposedAction) + '</div>' : '')
