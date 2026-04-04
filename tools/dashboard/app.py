@@ -1108,6 +1108,44 @@ def create_app() -> Flask:
         finally:
             conn.close()
 
+    @app.route("/api/dashboard/autonomous-feed", methods=["GET"])
+    def api_dashboard_autonomous_feed():
+        """GET /api/dashboard/autonomous-feed — Recent autonomous agent activity."""
+        limit = min(max(int(flask_request.args.get("limit", 20)), 1), 100)
+        conn = _get_db()
+        try:
+            feed = []
+            def _tbl_exists(c, t):
+                try:
+                    c.execute(f"SELECT 1 FROM {t} LIMIT 1")  # nosec B608
+                    return True
+                except Exception:
+                    return False
+
+            tables_to_check = [
+                ("canvas_remediation_proposals", "id", "created_at", "remediation", "canvas_type"),
+                ("oracle_convergence_events", "id", "created_at", "convergence", "convergence_type"),
+                ("oracle_predictions", "id", "created_at", "prediction", "lens_id"),
+            ]
+            for table, id_col, ts_col, event_type, label_col in tables_to_check:
+                if not _tbl_exists(conn, table):
+                    continue
+                try:
+                    rows = conn.execute(
+                        f"SELECT {id_col}, {ts_col}, {label_col} FROM {table} ORDER BY {ts_col} DESC LIMIT ?",  # nosec B608
+                        (limit,),
+                    ).fetchall()
+                    for r in rows:
+                        feed.append({"type": event_type, "id": r[0], "ts": r[1], "label": r[2]})
+                except Exception:
+                    pass
+            feed.sort(key=lambda x: x.get("ts") or "", reverse=True)
+            return jsonify({"feed": feed[:limit], "total": len(feed)})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+        finally:
+            conn.close()
+
     @app.route("/api/charts/overview", methods=["GET"])
     def api_charts_overview():
         """Aggregate chart data for the home dashboard."""
