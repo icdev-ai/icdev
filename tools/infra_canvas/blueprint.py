@@ -282,6 +282,13 @@ def save_design(design_id):
     except Exception:
         pass
 
+    # Incremental KG update: re-extract only if graph_json changed
+    try:
+        from tools.canvas.kg_builder import rebuild_canvas_kg
+        rebuild_canvas_kg("idc", design_id)
+    except Exception:
+        pass
+
     return jsonify({"status": "saved", "id": design_id})
 
 

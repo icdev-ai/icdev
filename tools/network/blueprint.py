@@ -1323,6 +1323,12 @@ def create_network_blueprint():
             on_ndc_topology_saved(topo_id)
         except Exception:
             pass  # Security Canvas is optional
+        # Incremental KG update: re-extract only if graph_json changed
+        try:
+            from tools.canvas.kg_builder import rebuild_canvas_kg
+            rebuild_canvas_kg("ndc", topo_id)
+        except Exception:
+            pass
         return jsonify({"ok": True})
 
     @bp.route("/api/topologies/<topo_id>", methods=["DELETE"])

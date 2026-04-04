@@ -313,6 +313,12 @@ def create_security_blueprint():
             auto_assess(design_id, "design_save")
         except Exception:
             pass
+        # Incremental KG update: re-extract only if graph_json changed
+        try:
+            from tools.canvas.kg_builder import rebuild_canvas_kg
+            rebuild_canvas_kg("sdc", design_id)
+        except Exception:
+            pass
         return jsonify({"id": design_id, "updated_at": now})
 
     @bp.route("/api/clear-designs", methods=["DELETE", "POST"])

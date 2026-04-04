@@ -361,6 +361,13 @@ def create_boundary_blueprint():
         except Exception:
             pass
 
+        # Incremental KG update: re-extract only if graph_json changed
+        try:
+            from tools.canvas.kg_builder import rebuild_canvas_kg
+            rebuild_canvas_kg("bdc", design_id)
+        except Exception:
+            pass
+
         return jsonify({"id": design_id, "updated_at": now})
 
     @bp.route("/api/designs/<design_id>", methods=["DELETE"])

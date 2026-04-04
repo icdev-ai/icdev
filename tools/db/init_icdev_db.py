@@ -9359,6 +9359,26 @@ CREATE TABLE IF NOT EXISTS canvas_projects (
 );
 CREATE INDEX IF NOT EXISTS idx_canvas_projects_name ON canvas_projects(name);
 CREATE INDEX IF NOT EXISTS idx_canvas_projects_updated ON canvas_projects(updated_at);
+
+-- ============================================================
+-- CANVAS KG BUILD LOG (Append-only — NIST AU)
+-- Phase: Cross-Canvas KG Incremental Updates
+-- Records every targeted or full KG rebuild triggered by a
+-- canvas design save or a manual CLI rebuild.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS canvas_kg_build_log (
+    build_id        TEXT PRIMARY KEY,
+    canvas          TEXT NOT NULL,
+    design_id       TEXT NOT NULL,
+    nodes_upserted  INTEGER NOT NULL DEFAULT 0,
+    edges_upserted  INTEGER NOT NULL DEFAULT 0,
+    duration_ms     INTEGER NOT NULL DEFAULT 0,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_ckg_build_log_canvas
+    ON canvas_kg_build_log(canvas);
+CREATE INDEX IF NOT EXISTS idx_ckg_build_log_design
+    ON canvas_kg_build_log(design_id);
 """
 
 

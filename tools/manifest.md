@@ -1645,6 +1645,7 @@
 | Observability Engine | tools\observability_canvas\observability_engine.py | Auto-registered: observability_canvas/observability_engine.py | --json | JSON |
 | E2E New Canvases | tools\testing\e2e_new_canvases.py | Auto-registered: testing/e2e_new_canvases.py | --json | JSON |
 | Canvas Orchestrator | tools\canvas\orchestrator.py | Cross-Canvas Integration Engine — links all 7 design canvases (IDC/NDC/SDC/BDC/PDC/ODC/DDC) via canvas_projects entity in icdev.db; CRUD for design projects, link/unlink designs, aggregate compliance summary across all canvases | create --name / list / summary --json | JSON |
+| Canvas KG Builder | tools\canvas\kg_builder.py | Incremental Knowledge Graph builder for all 7 design canvases. rebuild_canvas_kg(canvas, design_id) for targeted on-save upsert with SHA-256 delta detection; rebuild_all() for full cold-start rebuild; stores source_canvas/source_design_id provenance in every node; logs every build to canvas_kg_build_log (append-only). | --build-all / --build-canvas idc --design-id \<id\> / --stats --json | JSON |
 | Canvas Projects API | tools\dashboard\api\canvas_projects.py | REST API Blueprint for canvas_projects: GET/POST/PUT/DELETE /api/canvas-projects, link/unlink canvas designs, GET /api/canvas-projects/compliance for 7-canvas posture summary | (blueprint) | JSON |
 
 

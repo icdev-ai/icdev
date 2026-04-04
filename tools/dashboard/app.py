@@ -165,6 +165,15 @@ if _OBSERVABILITY_CANVAS_ENABLED:
         _HAS_OBSERVABILITY_CANVAS = True
     except ImportError:
         _HAS_OBSERVABILITY_CANVAS = False
+# Canvas Knowledge Graph: feature-flagged
+_CANVAS_KG_ENABLED = os.environ.get("ICDEV_CANVAS_KG_ENABLED", "true").lower() in ("true", "1", "yes")
+_HAS_CANVAS_KG = False
+if _CANVAS_KG_ENABLED:
+    try:
+        from tools.canvas.blueprint import create_canvas_kg_blueprint  # noqa: E402
+        _HAS_CANVAS_KG = True
+    except ImportError:
+        _HAS_CANVAS_KG = False
 # D-CHILD-6: GovProposal/CPMP/GovCon conditionally loaded
 _GOVCON_ENABLED = os.environ.get("ICDEV_GOVCON_ENABLED", "true").lower() == "true"
 _HAS_GOVCON = False
@@ -861,6 +870,7 @@ def create_app() -> Flask:
             "data_canvas_enabled": _HAS_DATA_CANVAS,
             "boundary_canvas_enabled": _HAS_BOUNDARY_CANVAS,
             "observability_canvas_enabled": _HAS_OBSERVABILITY_CANVAS,
+            "canvas_kg_enabled": _HAS_CANVAS_KG,
             "airgap_mode": _AIRGAP_MODE,
             "route_module_map": _route_map,
         }
@@ -1030,6 +1040,16 @@ def create_app() -> Flask:
                 app.logger.info("Observability Design Canvas registered at /observability/")
         except Exception as exc:
             app.logger.warning("Observability Design Canvas failed to register: %s", exc)
+
+    # ---- Canvas Knowledge Graph Blueprint ----
+    if _HAS_CANVAS_KG:
+        try:
+            ckg_bp = create_canvas_kg_blueprint()
+            if ckg_bp:
+                app.register_blueprint(ckg_bp)
+                app.logger.info("Canvas KG registered at /canvas-kg")
+        except Exception as exc:
+            app.logger.warning("Canvas KG failed to register: %s", exc)
 
     # ---- Unified Canvas Compliance Dashboard ----
     @app.route("/canvas-compliance")

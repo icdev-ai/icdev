@@ -266,6 +266,12 @@ def create_pipeline_blueprint():
             on_pdc_pipeline_saved(pipe_id, graph)
         except Exception:
             pass  # Security Canvas is optional
+        # Incremental KG update: re-extract only if graph_json changed
+        try:
+            from tools.canvas.kg_builder import rebuild_canvas_kg
+            rebuild_canvas_kg("pdc", pipe_id)
+        except Exception:
+            pass
         return jsonify({"updated": True})
 
     @bp.route("/api/pipelines/<pipe_id>", methods=["DELETE"])
