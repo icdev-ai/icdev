@@ -553,6 +553,7 @@ document.addEventListener('DOMContentLoaded', function() {
             <span class="help-icon" title="Compliance score per canvas assessment">?</span>
         </div>
         <div id="chart-compliance" style="min-height: 200px; overflow: visible;"></div>
+        <div id="chart-compliance-trend" style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px;min-height:24px;"></div>
     </div>
     <div class="card" style="padding: 20px;">
         <div class="card-label">Activity Trend (7 days)</div>
@@ -673,6 +674,26 @@ window._loadCharts = function() {
                     ],
                     height: 160, showLegend: false, showValues: true,
                 });
+                // Fetch and render sparkline trend indicators
+                fetch('/api/charts/compliance-trend')
+                    .then(function(r) { return r.json(); })
+                    .then(function(td) {
+                        var trendEl = document.getElementById('chart-compliance-trend');
+                        if (!trendEl || !td.canvases) return;
+                        var html = '';
+                        td.canvases.forEach(function(c) {
+                            var arrow = '—', color = '#888', sign = '';
+                            if (c.direction === 'up') { arrow = '▲'; color = '#28a745'; sign = '+'; }
+                            else if (c.direction === 'down') { arrow = '▼'; color = '#dc3545'; }
+                            var deltaStr = c.delta !== 0 ? (sign + c.delta.toFixed(1)) : '';
+                            html += '<span style="font-size:11px;color:' + color + ';white-space:nowrap;padding:2px 5px;background:rgba(0,0,0,0.15);border-radius:3px;" title="' + c.name + ' 30d trend">' +
+                                '<span style="font-size:9px;color:#aaa;margin-right:2px;">' + c.name + '</span>' +
+                                arrow + (deltaStr ? ' ' + deltaStr : '') +
+                                '</span>';
+                        });
+                        trendEl.innerHTML = html || '';
+                    })
+                    .catch(function() {});
             } else {
                 document.getElementById('chart-compliance').innerHTML = '<p class="text-muted" style="text-align:center;padding:60px 0;">No canvas assessments yet</p>';
             }

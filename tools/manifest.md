@@ -1725,3 +1725,11 @@ All canvases share: separate SQLite DB, Flask Blueprint, YAML config in `args/`,
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Auto Remediate | tools\canvas\auto_remediate.py | Auto-registered: canvas/auto_remediate.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Canvas Health Scanner | tools\canvas\canvas_health_scanner.py | Auto-registered: canvas/canvas_health_scanner.py | --json | JSON |
+| Proposal Generator | tools\oracle\proposal_generator.py | Auto-registered: oracle/proposal_generator.py | --json | JSON |
+| Remediation Lens | tools\oracle\lenses\remediation_lens.py | Auto-registered: lenses/remediation_lens.py | --json | JSON |

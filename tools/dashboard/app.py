@@ -1249,6 +1249,60 @@ def create_app() -> Flask:
         finally:
             conn.close()
 
+    @app.route("/api/charts/compliance-trend", methods=["GET"])
+    def api_charts_compliance_trend():
+        """Return 30-day score history per canvas for sparkline overlays."""
+        import sqlite3 as _sqlite3
+
+        _TREND_CANVASES = [
+            ("Security",      BASE_DIR / "data" / "security_canvas.db",      "sc_assessments",        "risk_score", "ran_at",     "inverted"),
+            ("Network",       None,                                            None,                    None,         None,         "skip"),
+            ("Pipeline",      None,                                            None,                    None,         None,         "skip"),
+            ("Infra",         BASE_DIR / "data" / "infra_canvas.db",          "idc_assessments",       "score",      "created_at", "direct"),
+            ("Data",          BASE_DIR / "data" / "data_canvas.db",           "dd_assessments",        "score",      "created_at", "direct"),
+            ("Boundary",      BASE_DIR / "data" / "boundary_canvas.db",       "bd_assessments",        "score",      "created_at", "direct"),
+            ("Observability", BASE_DIR / "data" / "observability_canvas.db",  "od_assessments",        "score",      "created_at", "direct"),
+        ]
+
+        results = []
+        for canvas_name, db_path, table, score_col, ts_col, mode in _TREND_CANVASES:
+            if mode == "skip" or db_path is None or not db_path.exists():
+                results.append({"name": canvas_name, "scores": [], "direction": "flat", "delta": 0.0})
+                continue
+            try:
+                cconn = _sqlite3.connect(str(db_path))
+                cconn.row_factory = _sqlite3.Row
+                try:
+                    rows = cconn.execute(
+                        f"SELECT {score_col} as raw_score, DATE({ts_col}) as day "
+                        f"FROM {table} "
+                        f"WHERE {ts_col} >= DATE('now', '-30 days') "
+                        f"ORDER BY {ts_col} DESC LIMIT 30"
+                    ).fetchall()
+                    scores = []
+                    for r in rows:
+                        raw = float(r["raw_score"] or 0)
+                        s = round(max(0.0, 100.0 - raw), 1) if mode == "inverted" else round(raw, 1)
+                        scores.append({"score": s, "date": r["day"]})
+                    # Direction: compare latest to oldest in window (up to 7 days ago)
+                    direction = "flat"
+                    delta = 0.0
+                    if len(scores) >= 2:
+                        latest = scores[0]["score"]
+                        oldest = scores[-1]["score"]
+                        delta = round(latest - oldest, 1)
+                        if delta >= 2.0:
+                            direction = "up"
+                        elif delta <= -2.0:
+                            direction = "down"
+                    results.append({"name": canvas_name, "scores": scores, "direction": direction, "delta": delta})
+                finally:
+                    cconn.close()
+            except Exception:
+                results.append({"name": canvas_name, "scores": [], "direction": "flat", "delta": 0.0})
+
+        return jsonify({"canvases": results})
+
     @app.route("/api/charts/project/<project_id>", methods=["GET"])
     def api_charts_project(project_id):
         """Chart data for a specific project detail page."""
