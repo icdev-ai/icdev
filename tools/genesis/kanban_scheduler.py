@@ -55,6 +55,33 @@ def main():
     dummy_config = {"enabled": True, "risk_tier": "green"}
     dummy_trust = None
 
+    # ── STARTUP RECOVERY: reset orphaned in_progress tasks ──────────
+    # If the scheduler crashed, tasks may be stuck in in_progress with
+    # no running subprocess.  Reset them to backlog so they get re-dispatched.
+    try:
+        from tools.db.storage import get_connection
+        conn = get_connection()
+        try:
+            stuck = conn.execute(
+                "SELECT id, title FROM kanban_tasks WHERE status = 'in_progress'"
+            ).fetchall()
+            if stuck:
+                for row in stuck:
+                    conn.execute(
+                        "UPDATE kanban_tasks SET status = 'backlog', "
+                        "updated_at = datetime('now') WHERE id = ?",
+                        (row["id"],),
+                    )
+                conn.commit()
+                logger.info(
+                    "Startup recovery: reset %d orphaned in_progress "
+                    "tasks to backlog", len(stuck),
+                )
+        finally:
+            conn.close()
+    except Exception as exc:
+        logger.warning("Startup recovery failed: %s", exc)
+
     if args.once:
         logger.info("Running single kanban cycle...")
         result = kanban_run(dummy_config, dummy_trust)

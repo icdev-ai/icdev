@@ -56,10 +56,37 @@ def _count_in_progress() -> int:
 
 
 def _count_pending_prompts() -> int:
-    """Count unexecuted prompt files in .tmp/kanban/."""
+    """Count prompt files for tasks actually in_progress (not orphaned).
+
+    Previously counted all .md files, which blocked queue promotion when
+    stale prompt files lingered from crashed/completed tasks.
+    """
     if not PROMPT_DIR.exists():
         return 0
-    return len(list(PROMPT_DIR.glob("task-*.md")))
+    prompt_files = list(PROMPT_DIR.glob("task-*.md"))
+    if not prompt_files:
+        return 0
+    # Only count prompts whose task is still in_progress
+    conn = get_connection()
+    try:
+        count = 0
+        for pf in prompt_files:
+            task_id = pf.stem  # e.g. "task-abc123"
+            row = conn.execute(
+                "SELECT status FROM kanban_tasks WHERE id = ?", (task_id,)
+            ).fetchone()
+            if row and dict(row)["status"] == "in_progress":
+                count += 1
+            else:
+                # Orphaned prompt — clean it up
+                try:
+                    pf.unlink()
+                    logger.info("Cleaned up orphaned prompt: %s", pf.name)
+                except OSError:
+                    pass
+        return count
+    finally:
+        conn.close()
 
 
 # Max tasks to auto-promote per cycle (prevents flooding)
