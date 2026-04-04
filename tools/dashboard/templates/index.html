@@ -413,7 +413,7 @@ document.addEventListener('DOMContentLoaded', refreshKanbanTasks);
 
 // Load charts from API
 (function() {
-    if (!window.ICDEV || !ICDEV.barChart) return;
+    if (!window.ICDEV || !ICDEV.barChart) { console.warn('ICDEV chart namespace not available — charts skipped'); return; }
     fetch('/api/charts/overview')
         .then(function(r) { return r.json(); })
         .then(function(d) {
