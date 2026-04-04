@@ -6759,6 +6759,1017 @@ TEMPLATES = [
             ],
         }),
     },
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # Azure Virtual WAN / ExpressRoute Gateway / VPN Gateway Templates
+    # ══════════════════════════════════════════════════════════════════════════
+
+    # ── 1. Azure Virtual WAN Hub-and-Spoke ───────────────────────────────────
+    {
+        "id": "tpl-az-vwan-hub-spoke",
+        "name": "Azure Virtual WAN — Hub-and-Spoke Multi-VNet",
+        "category": "Azure / Hybrid Cloud",
+        "description": (
+            "Azure Virtual WAN as a managed hub connecting multiple segmented VNets "
+            "(production, dev, shared services) with integrated ExpressRoute gateway, "
+            "VPN gateway, Azure Firewall, and routing intent. Supports any-to-any "
+            "transit, branch-to-VNet, and VNet-to-VNet via Microsoft backbone. "
+            "See template docs for full SOP, Mermaid diagrams, and routing policies."
+        ),
+        "tags": json.dumps([
+            "azure", "vwan", "virtual-wan", "hub-spoke", "multi-vnet",
+            "firewall", "routing-intent", "expressroute", "vpn", "sop", "runbook",
+        ]),
+        "graph_json": json.dumps({
+            "nodes": [
+                # ── Virtual WAN + Hubs ──
+                _node("vwan", "Virtual WAN", "az-vwan", 500, 80, {
+                    "config": {
+                        "role": "Global managed WAN fabric — Standard SKU",
+                        "features": "Any-to-any, routing intent, inter-hub transit, BGP peering",
+                    }
+                }),
+                _node("hub-east", "vWAN Hub (East US)", "az-vwan", 350, 200, {
+                    "config": {
+                        "region": "East US",
+                        "address_space": "10.100.0.0/23",
+                        "routing_intent": "Enabled — private + internet via Azure Firewall",
+                    }
+                }),
+                _node("hub-west", "vWAN Hub (West US)", "az-vwan", 650, 200, {
+                    "config": {
+                        "region": "West US 2",
+                        "address_space": "10.101.0.0/23",
+                    }
+                }),
+
+                # ── Gateways in East Hub ──
+                _node("er-gw-east", "ER Gateway (East)", "az-er", 200, 200, {
+                    "config": {
+                        "sku": "ErGwScale (auto-scale up to 40 Gbps)",
+                        "role": "ExpressRoute termination in vWAN hub",
+                    }
+                }),
+                _node("vpn-gw-east", "VPN Gateway (East)", "az-vpn-gw", 200, 300, {
+                    "config": {
+                        "sku": "Up to 20 Gbps aggregate",
+                        "tunnels": "S2S VPN to branches, BGP over IPsec",
+                    }
+                }),
+                _node("az-fw-east", "Azure Firewall (East)", "az-fw", 350, 320, {
+                    "config": {
+                        "sku": "Premium",
+                        "features": "TLS inspection, IDPS, URL filtering, web categories",
+                        "role": "Routing intent — all private + internet traffic inspected",
+                    }
+                }),
+
+                # ── Gateways in West Hub ──
+                _node("er-gw-west", "ER Gateway (West)", "az-er", 800, 200),
+                _node("vpn-gw-west", "VPN Gateway (West)", "az-vpn-gw", 800, 300),
+                _node("az-fw-west", "Azure Firewall (West)", "az-fw", 650, 320),
+
+                # ── Spoke VNets (East) ──
+                _node("vnet-prod", "Prod VNet (East)", "az-vnet", 200, 460, {
+                    "config": {"cidr": "10.1.0.0/16", "peering": "vWAN hub connection"}
+                }),
+                _node("vnet-shared", "Shared Services VNet", "az-vnet", 350, 460, {
+                    "config": {
+                        "cidr": "10.0.0.0/16",
+                        "services": "DNS Private Resolver, Managed AD, Key Vault",
+                    }
+                }),
+                _node("vnet-dev", "Dev VNet (East)", "az-vnet", 500, 460, {
+                    "config": {"cidr": "10.2.0.0/16"}
+                }),
+
+                # ── Spoke VNets (West) ──
+                _node("vnet-dr", "DR VNet (West)", "az-vnet", 650, 460, {
+                    "config": {"cidr": "10.3.0.0/16"}
+                }),
+                _node("vnet-dmz", "DMZ VNet (West)", "az-vnet", 800, 460, {
+                    "config": {"cidr": "10.4.0.0/16"}
+                }),
+
+                # ── Shared Services Detail ──
+                _node("dns", "DNS Private Resolver", "az-dns", 280, 560),
+                _node("ad", "Managed AD (AAD DS)", "az-entra", 400, 560),
+                _node("kv", "Key Vault", "az-keyvault", 520, 560),
+
+                # ── On-Premises ──
+                _node("on-prem-dc", "On-Prem DC", "router", 60, 250, {
+                    "config": {"role": "ExpressRoute + VPN backup", "bgp_asn": "65001"}
+                }),
+                _node("branch-1", "Branch Office 1", "router", 60, 380),
+                _node("branch-2", "Branch Office 2", "router", 60, 460),
+
+                # ── Monitoring ──
+                _node("sentinel", "Microsoft Sentinel", "az-sentinel", 500, 80),
+                _node("netwatcher", "Network Watcher", "az-netwatcher", 350, 80),
+            ],
+            "edges": [
+                # vWAN to hubs
+                _edge("vwan", "hub-east", "Hub (East US)", ""),
+                _edge("vwan", "hub-west", "Hub (West US 2)", ""),
+                _edge("hub-east", "hub-west", "Inter-hub transit", "Microsoft backbone"),
+
+                # Gateways
+                _edge("er-gw-east", "hub-east", "ER Gateway", ""),
+                _edge("vpn-gw-east", "hub-east", "VPN Gateway", ""),
+                _edge("az-fw-east", "hub-east", "Routing Intent", ""),
+                _edge("er-gw-west", "hub-west", "ER Gateway", ""),
+                _edge("vpn-gw-west", "hub-west", "VPN Gateway", ""),
+                _edge("az-fw-west", "hub-west", "Routing Intent", ""),
+
+                # Spoke connections
+                _edge("hub-east", "vnet-prod", "VNet Connection", ""),
+                _edge("hub-east", "vnet-shared", "VNet Connection", ""),
+                _edge("hub-east", "vnet-dev", "VNet Connection", ""),
+                _edge("hub-west", "vnet-dr", "VNet Connection", ""),
+                _edge("hub-west", "vnet-dmz", "VNet Connection", ""),
+
+                # Shared services
+                _edge("vnet-shared", "dns", "DNS", ""),
+                _edge("vnet-shared", "ad", "AD DS", ""),
+                _edge("vnet-shared", "kv", "Key Vault", ""),
+
+                # On-prem
+                _edge("on-prem-dc", "er-gw-east", "ExpressRoute", "eBGP (ASN 12076)"),
+                _edge("on-prem-dc", "vpn-gw-east", "VPN Backup", "IPsec/BGP"),
+                _edge("branch-1", "vpn-gw-east", "S2S VPN", "IPsec/BGP"),
+                _edge("branch-2", "vpn-gw-west", "S2S VPN", "IPsec/BGP"),
+
+                # Monitoring
+                _edge("sentinel", "vwan", "SIEM", ""),
+                _edge("netwatcher", "hub-east", "Flow logs", ""),
+            ],
+        }),
+    },
+
+    # ── 2. Azure ExpressRoute Gateway — Multi-Region Global Reach ────────────
+    {
+        "id": "tpl-az-er-multi-region",
+        "name": "Azure ExpressRoute Gateway — Multi-Region + Global Reach",
+        "category": "Azure / Hybrid Cloud",
+        "description": (
+            "ExpressRoute with Global Reach enabling on-premises-to-on-premises "
+            "transit via Microsoft backbone. Shows dual ER circuits (primary/secondary), "
+            "ExpressRoute Direct (MACsec), multi-region with vWAN hub ER gateways, "
+            "FastPath for latency-sensitive workloads, and ER + VPN coexistence. "
+            "See template docs for full SOP and Mermaid diagrams."
+        ),
+        "tags": json.dumps([
+            "azure", "expressroute", "global-reach", "multi-region", "er-direct",
+            "macsec", "fastpath", "bgp", "sop", "runbook",
+        ]),
+        "graph_json": json.dumps({
+            "nodes": [
+                # On-Prem Sites
+                _node("dc-east", "DC East (Primary)", "router", 60, 250, {
+                    "config": {"bgp_asn": "65001", "location": "Equinix DC (Ashburn)"}
+                }),
+                _node("dc-west", "DC West (Diverse)", "router", 60, 450, {
+                    "config": {"bgp_asn": "65001", "location": "CoreSite (Santa Clara)"}
+                }),
+                _node("dc-europe", "DC Europe", "router", 60, 650, {
+                    "config": {"bgp_asn": "65002", "location": "Equinix LD5 (London)"}
+                }),
+
+                # ER Circuits
+                _node("er-pri", "ER Circuit (Primary)", "az-er", 250, 250, {
+                    "config": {
+                        "bandwidth": "10 Gbps",
+                        "provider": "Equinix / Megaport",
+                        "sku": "Premium (global route access)",
+                    }
+                }),
+                _node("er-sec", "ER Circuit (Secondary)", "az-er", 250, 450, {
+                    "config": {
+                        "bandwidth": "10 Gbps",
+                        "provider": "CoreSite / AT&T",
+                        "diversity": "Different provider + peering location",
+                    }
+                }),
+                _node("er-direct", "ER Direct (100G)", "az-er", 250, 100, {
+                    "config": {
+                        "bandwidth": "100 Gbps",
+                        "macsec": "MACsec 256-bit AES-GCM (ER Direct only)",
+                        "notes": "Direct port at Microsoft peering edge — no provider",
+                    }
+                }),
+                _node("er-europe", "ER Circuit (Europe)", "az-er", 250, 650),
+
+                # Global Reach
+                _node("global-reach", "ExpressRoute Global Reach", "az-er-global", 400, 450, {
+                    "config": {
+                        "role": "On-prem to on-prem transit via Microsoft backbone",
+                        "path": "DC East <-> Microsoft backbone <-> DC Europe",
+                        "notes": "No VNet traversal — direct on-prem-to-on-prem at MSEE",
+                    }
+                }),
+
+                # MSEE (Microsoft Edge)
+                _node("msee-east", "MSEE (East US)", "router", 400, 250, {
+                    "config": {"owner": "Microsoft", "bgp_asn": "12076"}
+                }),
+                _node("msee-west", "MSEE (West US)", "router", 400, 350, {
+                    "config": {"owner": "Microsoft", "bgp_asn": "12076"}
+                }),
+
+                # Region 1: East US
+                _node("gw-east", "ER Gateway (East US)", "az-er", 600, 200, {
+                    "config": {
+                        "sku": "ErGw3Az (Ultra Performance, zone-redundant)",
+                        "fastpath": "Enabled — bypasses gateway for data plane (latency)",
+                    }
+                }),
+                _node("vnet-prod-east", "Prod VNet (East)", "az-vnet", 760, 150, {
+                    "config": {"cidr": "10.1.0.0/16"}
+                }),
+                _node("vnet-shared-east", "Shared VNet (East)", "az-vnet", 760, 250, {
+                    "config": {"cidr": "10.0.0.0/16"}
+                }),
+
+                # Region 2: West US
+                _node("gw-west", "ER Gateway (West US)", "az-er", 600, 400, {
+                    "config": {"sku": "ErGw2Az (High Performance, zone-redundant)"}
+                }),
+                _node("vnet-prod-west", "Prod VNet (West)", "az-vnet", 760, 350, {
+                    "config": {"cidr": "10.3.0.0/16"}
+                }),
+                _node("vnet-dr-west", "DR VNet (West)", "az-vnet", 760, 450, {
+                    "config": {"cidr": "10.4.0.0/16"}
+                }),
+
+                # Region 3: UK South
+                _node("gw-uk", "ER Gateway (UK South)", "az-er", 600, 600),
+                _node("vnet-eu", "EU VNet (UK South)", "az-vnet", 760, 600, {
+                    "config": {"cidr": "10.5.0.0/16"}
+                }),
+
+                # VPN Backup
+                _node("vpn-backup", "VPN Gateway (Backup)", "az-vpn-gw", 600, 100, {
+                    "config": {
+                        "role": "IPsec VPN backup for ER failure",
+                        "sku": "VpnGw2AZ",
+                        "coexistence": "ER + VPN on same VNet gateway subnet",
+                    }
+                }),
+
+                # Monitoring
+                _node("monitor", "Azure Monitor", "az-monitor", 500, 700),
+                _node("netwatcher", "Network Watcher", "az-netwatcher", 650, 700),
+            ],
+            "edges": [
+                # DC to ER circuits
+                _edge("dc-east", "er-pri", "ER Primary", "BGP (ASN 12076)"),
+                _edge("dc-east", "er-direct", "ER Direct (100G)", "MACsec"),
+                _edge("dc-west", "er-sec", "ER Secondary (diverse)", "BGP"),
+                _edge("dc-europe", "er-europe", "ER Europe", "BGP"),
+
+                # ER to MSEE
+                _edge("er-pri", "msee-east", "Private Peering", ""),
+                _edge("er-direct", "msee-east", "Direct Peering", ""),
+                _edge("er-sec", "msee-west", "Private Peering", ""),
+                _edge("er-europe", "global-reach", "Global Reach leg", ""),
+                _edge("er-pri", "global-reach", "Global Reach leg", ""),
+
+                # MSEE to ER Gateways
+                _edge("msee-east", "gw-east", "ER Connection", ""),
+                _edge("msee-west", "gw-west", "ER Connection", ""),
+
+                # ER Gateways to VNets
+                _edge("gw-east", "vnet-prod-east", "Gateway Connection", ""),
+                _edge("gw-east", "vnet-shared-east", "Gateway Connection", ""),
+                _edge("gw-west", "vnet-prod-west", "Gateway Connection", ""),
+                _edge("gw-west", "vnet-dr-west", "Gateway Connection", ""),
+                _edge("gw-uk", "vnet-eu", "Gateway Connection", ""),
+
+                # ER Circuit to UK gateway
+                _edge("er-europe", "gw-uk", "ER Connection", ""),
+
+                # VPN backup
+                _edge("dc-east", "vpn-backup", "IPsec VPN (backup)", "BGP"),
+                _edge("vpn-backup", "vnet-prod-east", "VPN Connection", ""),
+
+                # Monitoring
+                _edge("monitor", "gw-east", "ER metrics", ""),
+                _edge("netwatcher", "gw-east", "Connection monitor", ""),
+            ],
+        }),
+    },
+
+    # ── 3. Azure VPN Gateway — Multi-Site at Scale ───────────────────────────
+    {
+        "id": "tpl-az-vpn-at-scale",
+        "name": "Azure VPN Gateway — Multi-Site at Scale",
+        "category": "Azure / Hybrid Cloud",
+        "description": (
+            "Azure VPN Gateway at scale using Virtual WAN for 100+ branch sites. "
+            "Shows S2S VPN with BGP, P2S VPN for remote users (OpenVPN/IKEv2), "
+            "active-active gateways for 99.99% SLA, NAT rules for overlapping "
+            "CIDRs, and VPN over ExpressRoute private peering for double encryption. "
+            "See template docs for full SOP and Mermaid diagrams."
+        ),
+        "tags": json.dumps([
+            "azure", "vpn-gateway", "site-to-site", "point-to-site",
+            "vwan", "bgp", "active-active", "nat-rules", "sop", "runbook",
+        ]),
+        "graph_json": json.dumps({
+            "nodes": [
+                # vWAN Hub
+                _node("vwan-hub", "vWAN Hub (East US)", "az-vwan", 500, 250, {
+                    "config": {
+                        "role": "Managed hub — integrated VPN + ER + Firewall",
+                        "vpn_scale": "Up to 20 Gbps aggregate S2S VPN",
+                    }
+                }),
+                _node("vpn-gw", "VPN Gateway (vWAN)", "az-vpn-gw", 350, 250, {
+                    "config": {
+                        "sku": "Scale units (1 unit = 500 Mbps, max 20 Gbps)",
+                        "mode": "Active-Active (99.99% SLA)",
+                        "bgp_asn": "65515 (Azure default for vWAN)",
+                    }
+                }),
+                _node("az-fw", "Azure Firewall", "az-fw", 500, 160, {
+                    "config": {"sku": "Premium", "routing_intent": "Enabled"}
+                }),
+                _node("er-gw", "ER Gateway (coexist)", "az-er", 650, 250, {
+                    "config": {"role": "ER + VPN coexistence on same hub"}
+                }),
+
+                # P2S (Remote Users)
+                _node("p2s", "P2S VPN Gateway", "az-vpn-gw", 500, 60, {
+                    "config": {
+                        "role": "Point-to-Site VPN for remote/mobile users",
+                        "protocols": "OpenVPN, IKEv2",
+                        "auth": "Azure AD (Entra ID) / Certificate / RADIUS",
+                        "clients": "Up to 10,000 concurrent P2S connections",
+                    }
+                }),
+                _node("remote-users", "Remote Users", "endpoint-pc", 500, -20),
+
+                # Spoke VNets
+                _node("vnet-prod", "Prod VNet", "az-vnet", 350, 420, {"config": {"cidr": "10.1.0.0/16"}}),
+                _node("vnet-shared", "Shared VNet", "az-vnet", 500, 420, {"config": {"cidr": "10.0.0.0/16"}}),
+                _node("vnet-dev", "Dev VNet", "az-vnet", 650, 420, {"config": {"cidr": "10.2.0.0/16"}}),
+
+                # Branch Sites (S2S VPN)
+                _node("hq", "HQ (Active-Active)", "router", 60, 160, {
+                    "config": {
+                        "bgp_asn": "65001",
+                        "vpn": "2 S2S connections (active-active) = 4 tunnels",
+                    }
+                }),
+                _node("branch-a", "Branch A", "router", 60, 280),
+                _node("branch-b", "Branch B", "router", 60, 360),
+                _node("branch-c", "Branch C (NAT)", "router", 60, 440, {
+                    "config": {
+                        "cidr": "10.1.0.0/16 (overlaps with Prod!)",
+                        "notes": "VPN NAT rules translate to 10.200.0.0/16",
+                    }
+                }),
+                _node("branch-d", "Branch D", "router", 160, 500),
+                _node("branch-e", "Branch E", "router", 260, 500),
+                _node("more-branches", "... 95+ more branches", "cloud", 60, 540),
+
+                # VPN over ER
+                _node("vpn-over-er", "VPN over ER", "az-vpn-gw", 760, 160, {
+                    "config": {
+                        "role": "IPsec over ExpressRoute private peering (double encryption)",
+                        "notes": "Customer CE tunnel endpoint to VPN GW via ER private peering",
+                    }
+                }),
+                _node("on-prem-dc", "On-Prem DC", "router", 900, 250, {
+                    "config": {"bgp_asn": "65001"}
+                }),
+            ],
+            "edges": [
+                # Hub internals
+                _edge("vpn-gw", "vwan-hub", "VPN Gateway", ""),
+                _edge("az-fw", "vwan-hub", "Routing Intent", ""),
+                _edge("er-gw", "vwan-hub", "ER Gateway", ""),
+                _edge("p2s", "vwan-hub", "P2S Gateway", ""),
+                _edge("remote-users", "p2s", "OpenVPN / IKEv2", ""),
+
+                # Spoke connections
+                _edge("vwan-hub", "vnet-prod", "VNet Connection", ""),
+                _edge("vwan-hub", "vnet-shared", "VNet Connection", ""),
+                _edge("vwan-hub", "vnet-dev", "VNet Connection", ""),
+
+                # Branch VPN connections
+                _edge("hq", "vpn-gw", "S2S VPN (active-active)", "BGP"),
+                _edge("branch-a", "vpn-gw", "S2S VPN", "BGP"),
+                _edge("branch-b", "vpn-gw", "S2S VPN", "BGP"),
+                _edge("branch-c", "vpn-gw", "S2S VPN + NAT rules", "BGP"),
+                _edge("branch-d", "vpn-gw", "S2S VPN", "BGP"),
+                _edge("branch-e", "vpn-gw", "S2S VPN", "BGP"),
+
+                # VPN over ER (double encryption)
+                _edge("on-prem-dc", "er-gw", "ExpressRoute", "BGP"),
+                _edge("on-prem-dc", "vpn-over-er", "IPsec over ER", "BGP"),
+                _edge("vpn-over-er", "vnet-prod", "Double encrypted path", ""),
+            ],
+        }),
+    },
+
+    # ── 4. Azure Hybrid Connectivity — Art of the Possible ───────────────────
+    {
+        "id": "tpl-az-hybrid-art-of-possible",
+        "name": "Azure Hybrid Connectivity — Art of the Possible",
+        "category": "Azure / Hybrid Cloud",
+        "description": (
+            "Comprehensive Azure hybrid connectivity showing every service: Virtual WAN "
+            "(dual-hub), ExpressRoute + Global Reach, VPN Gateway (S2S + P2S), Azure "
+            "Firewall with routing intent, Private Link, Application Gateway + WAF, "
+            "Front Door, DDoS Protection, Network Watcher, and Sentinel SIEM. "
+            "See template docs for full SOP, gateway comparison, and traffic flows."
+        ),
+        "tags": json.dumps([
+            "azure", "hybrid", "art-of-possible", "vwan", "expressroute",
+            "vpn", "firewall", "private-link", "front-door", "sentinel",
+            "multi-region", "sop", "runbook",
+        ]),
+        "graph_json": json.dumps({
+            "nodes": [
+                # On-Prem
+                _node("dc", "Data Center", "router", 60, 350, {"config": {"bgp_asn": "65001"}}),
+                _node("branch", "Branch", "router", 60, 500),
+                _node("partner", "B2B Partner", "router", 60, 200),
+                _node("remote", "Remote Users", "endpoint-pc", 60, 100),
+
+                # Connectivity
+                _node("er-pri", "ER Primary", "az-er", 220, 300),
+                _node("er-sec", "ER Secondary", "az-er", 220, 400),
+                _node("vpn-s2s", "S2S VPN", "az-vpn-gw", 220, 500),
+                _node("p2s", "P2S VPN", "az-vpn-gw", 220, 100),
+                _node("global-reach", "Global Reach", "az-er-global", 220, 200),
+
+                # vWAN
+                _node("vwan", "Virtual WAN", "az-vwan", 420, 100),
+                _node("hub-east", "Hub (East US)", "az-vwan", 420, 250),
+                _node("hub-west", "Hub (West US)", "az-vwan", 420, 450),
+
+                # Firewalls
+                _node("fw-east", "Azure FW (East)", "az-fw", 420, 340),
+                _node("fw-west", "Azure FW (West)", "az-fw", 420, 540),
+
+                # Region 1 VNets
+                _node("vnet-prod", "Prod VNet", "az-vnet", 620, 180, {"config": {"cidr": "10.1.0.0/16"}}),
+                _node("vnet-shared", "Shared VNet", "az-vnet", 620, 280, {"config": {"cidr": "10.0.0.0/16"}}),
+                _node("vnet-dmz", "DMZ VNet", "az-vnet", 620, 380),
+
+                # Region 2 VNets
+                _node("vnet-dr", "DR VNet", "az-vnet", 620, 480, {"config": {"cidr": "10.3.0.0/16"}}),
+                _node("vnet-dev", "Dev VNet", "az-vnet", 620, 560),
+
+                # Application Layer
+                _node("front-door", "Azure Front Door", "az-front", 800, 100, {
+                    "config": {"role": "Global L7 LB — WAF, SSL offload, CDN"}
+                }),
+                _node("appgw", "App Gateway + WAF", "az-appgw", 800, 200, {
+                    "config": {"role": "Regional L7 LB — WAF v2, SSL termination"}
+                }),
+                _node("pl-svc", "Private Link Service", "az-privatelink", 800, 300, {
+                    "config": {"role": "Expose service to partner privately"}
+                }),
+
+                # Security
+                _node("ddos", "DDoS Protection", "az-ddos", 800, 400),
+                _node("sentinel", "Microsoft Sentinel", "az-sentinel", 800, 480),
+                _node("defender", "Defender for Cloud", "az-defender", 800, 560),
+                _node("entra", "Entra ID (SSO)", "az-entra", 220, 40),
+            ],
+            "edges": [
+                # On-prem connectivity
+                _edge("dc", "er-pri", "ER Primary", "BGP"),
+                _edge("dc", "er-sec", "ER Secondary (diverse)", "BGP"),
+                _edge("dc", "vpn-s2s", "VPN Backup", "IPsec/BGP"),
+                _edge("branch", "vpn-s2s", "S2S VPN", "IPsec/BGP"),
+                _edge("remote", "p2s", "P2S VPN (OpenVPN)", ""),
+                _edge("remote", "entra", "SSO Auth", ""),
+                _edge("partner", "global-reach", "On-prem transit", ""),
+
+                # Connectivity to hubs
+                _edge("er-pri", "hub-east", "ER Connection", ""),
+                _edge("er-sec", "hub-west", "ER Connection (diverse)", ""),
+                _edge("vpn-s2s", "hub-east", "VPN Connection", ""),
+                _edge("p2s", "hub-east", "P2S Connection", ""),
+                _edge("global-reach", "er-pri", "Global Reach", ""),
+
+                # vWAN
+                _edge("vwan", "hub-east", "Hub", ""),
+                _edge("vwan", "hub-west", "Hub", ""),
+                _edge("hub-east", "hub-west", "Inter-hub transit", ""),
+                _edge("fw-east", "hub-east", "Routing Intent", ""),
+                _edge("fw-west", "hub-west", "Routing Intent", ""),
+
+                # Spoke VNets
+                _edge("hub-east", "vnet-prod", "", ""),
+                _edge("hub-east", "vnet-shared", "", ""),
+                _edge("hub-east", "vnet-dmz", "", ""),
+                _edge("hub-west", "vnet-dr", "", ""),
+                _edge("hub-west", "vnet-dev", "", ""),
+
+                # Application layer
+                _edge("front-door", "appgw", "Origin", ""),
+                _edge("appgw", "vnet-prod", "Backend pool", ""),
+                _edge("pl-svc", "vnet-prod", "NLB -> targets", ""),
+                _edge("partner", "pl-svc", "Private Endpoint", ""),
+
+                # Security
+                _edge("ddos", "vnet-prod", "DDoS plan", ""),
+                _edge("sentinel", "fw-east", "Log Analytics", ""),
+                _edge("defender", "vnet-prod", "CSPM", ""),
+            ],
+        }),
+    },
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # GCP Cloud Router / NCC / Interconnect / VPN Templates
+    # ══════════════════════════════════════════════════════════════════════════
+
+    # ── 1. GCP Network Connectivity Center (NCC) Hub-and-Spoke ───────────────
+    {
+        "id": "tpl-gcp-ncc-hub-spoke",
+        "name": "GCP Network Connectivity Center — Hub-and-Spoke",
+        "category": "GCP / Hybrid Cloud",
+        "description": (
+            "Network Connectivity Center (NCC) as a centralized hub for multi-VPC, "
+            "hybrid, and multi-cloud connectivity. Shows hub-and-spoke with VLAN "
+            "attachments (Interconnect), HA VPN spokes, Router appliance spokes, "
+            "and VPC spokes with Cloud Router BGP. Includes Private Service Connect "
+            "for service consumption. See template docs for full SOP."
+        ),
+        "tags": json.dumps([
+            "gcp", "ncc", "network-connectivity-center", "hub-spoke",
+            "cloud-router", "ha-vpn", "interconnect", "bgp", "sop", "runbook",
+        ]),
+        "graph_json": json.dumps({
+            "nodes": [
+                # NCC Hub
+                _node("ncc", "Network Connectivity Center", "gcp-ncc", 500, 250, {
+                    "config": {
+                        "role": "Global hub — any-to-any transit for Interconnect, VPN, and VPC spokes",
+                        "features": "Site-to-site data transfer, spoke-to-spoke routing",
+                        "routing": "BGP via Cloud Router at each spoke",
+                    }
+                }),
+
+                # Cloud Routers
+                _node("cr-east", "Cloud Router (us-east1)", "gcp-router", 350, 180, {
+                    "config": {"region": "us-east1", "bgp_asn": "16550 (Google)"}
+                }),
+                _node("cr-west", "Cloud Router (us-west1)", "gcp-router", 650, 180, {
+                    "config": {"region": "us-west1"}
+                }),
+                _node("cr-eu", "Cloud Router (europe-west1)", "gcp-router", 500, 120),
+
+                # Interconnect Spokes
+                _node("ic-pri", "Dedicated Interconnect (Primary)", "gcp-ic", 180, 250, {
+                    "config": {
+                        "speed": "10 Gbps",
+                        "vlan_attach": "VLAN Attachment -> Cloud Router -> NCC spoke",
+                    }
+                }),
+                _node("ic-sec", "Dedicated Interconnect (Secondary)", "gcp-ic", 180, 350),
+
+                # HA VPN Spokes
+                _node("vpn-east", "HA VPN (us-east1)", "gcp-vpn", 350, 400, {
+                    "config": {
+                        "tunnels": "4 tunnels (2 interfaces x 2 peers) = 99.99% SLA",
+                        "throughput": "3 Gbps per tunnel",
+                    }
+                }),
+                _node("vpn-west", "HA VPN (us-west1)", "gcp-vpn", 650, 400),
+
+                # VPC Spokes
+                _node("vpc-prod", "Prod VPC (us-east1)", "gcp-vpc", 350, 520, {
+                    "config": {"cidr": "10.1.0.0/16", "spoke_type": "VPC spoke"}
+                }),
+                _node("vpc-shared", "Shared Services VPC", "gcp-vpc", 500, 520, {
+                    "config": {"cidr": "10.0.0.0/16"}
+                }),
+                _node("vpc-dev", "Dev VPC (us-west1)", "gcp-vpc", 650, 520, {
+                    "config": {"cidr": "10.2.0.0/16"}
+                }),
+
+                # Private Service Connect
+                _node("psc-prod", "PSC Producer", "gcp-psc", 350, 620, {
+                    "config": {"role": "Expose internal service via Private Service Connect"}
+                }),
+                _node("psc-consumer", "PSC Consumer", "gcp-psc", 500, 620, {
+                    "config": {"role": "Consume Google APIs or partner services privately"}
+                }),
+
+                # Security
+                _node("armor", "Cloud Armor", "gcp-armor", 700, 520),
+                _node("scc", "Security Command Center", "gcp-scc", 700, 620),
+                _node("fw-policy", "Hierarchical FW Policy", "gcp-fw", 500, 420),
+
+                # On-Prem
+                _node("dc", "On-Prem DC", "router", 60, 300, {"config": {"bgp_asn": "65001"}}),
+                _node("branch", "Branch Office", "router", 60, 450),
+            ],
+            "edges": [
+                # NCC hub connections
+                _edge("cr-east", "ncc", "NCC Spoke (Interconnect)", ""),
+                _edge("cr-west", "ncc", "NCC Spoke (VPN)", ""),
+                _edge("cr-eu", "ncc", "NCC Spoke (VPC)", ""),
+
+                # Interconnect
+                _edge("dc", "ic-pri", "Interconnect Primary", "802.1Q"),
+                _edge("dc", "ic-sec", "Interconnect Secondary", "802.1Q"),
+                _edge("ic-pri", "cr-east", "VLAN Attachment", "eBGP"),
+                _edge("ic-sec", "cr-east", "VLAN Attachment", "eBGP"),
+
+                # HA VPN
+                _edge("branch", "vpn-east", "HA VPN (4 tunnels)", "BGP"),
+                _edge("dc", "vpn-west", "HA VPN (backup)", "BGP"),
+                _edge("vpn-east", "cr-east", "VPN Spoke", ""),
+                _edge("vpn-west", "cr-west", "VPN Spoke", ""),
+
+                # VPC spokes
+                _edge("ncc", "vpc-prod", "VPC Spoke", ""),
+                _edge("ncc", "vpc-shared", "VPC Spoke", ""),
+                _edge("ncc", "vpc-dev", "VPC Spoke", ""),
+
+                # PSC
+                _edge("vpc-prod", "psc-prod", "Service Attachment", ""),
+                _edge("vpc-shared", "psc-consumer", "PSC Endpoint", ""),
+
+                # Security
+                _edge("armor", "vpc-prod", "WAF/DDoS", ""),
+                _edge("scc", "vpc-prod", "Findings", ""),
+                _edge("fw-policy", "ncc", "Org policy", ""),
+            ],
+        }),
+    },
+
+    # ── 2. GCP Hybrid Connectivity — Art of the Possible ─────────────────────
+    {
+        "id": "tpl-gcp-hybrid-art-of-possible",
+        "name": "GCP Hybrid Connectivity — Art of the Possible",
+        "category": "GCP / Hybrid Cloud",
+        "description": (
+            "Comprehensive GCP hybrid connectivity showing every service: Network "
+            "Connectivity Center (NCC), Dedicated + Partner Interconnect, HA VPN, "
+            "Cloud Router, Shared VPC, Private Service Connect, Cloud NAT, Cloud "
+            "Armor, hierarchical firewall policies, and Assured Workloads. "
+            "See template docs for full SOP, comparison matrix, and traffic flows."
+        ),
+        "tags": json.dumps([
+            "gcp", "hybrid", "art-of-possible", "ncc", "interconnect",
+            "ha-vpn", "cloud-router", "shared-vpc", "psc", "assured-workloads",
+            "sop", "runbook",
+        ]),
+        "graph_json": json.dumps({
+            "nodes": [
+                # On-Prem
+                _node("dc", "Data Center", "router", 60, 300, {"config": {"bgp_asn": "65001"}}),
+                _node("branch", "Branch Office", "router", 60, 500),
+                _node("partner", "B2B Partner", "router", 60, 150),
+
+                # Connectivity Layer
+                _node("ic-ded", "Dedicated Interconnect (10G)", "gcp-ic", 220, 250),
+                _node("ic-part", "Partner Interconnect", "gcp-ic", 220, 350),
+                _node("vpn-ha", "HA VPN", "gcp-vpn", 220, 500),
+
+                # NCC Hub
+                _node("ncc", "NCC Hub", "gcp-ncc", 420, 300, {
+                    "config": {"role": "Global connectivity hub — all spokes"}
+                }),
+
+                # Cloud Routers
+                _node("cr-1", "Cloud Router (us-east1)", "gcp-router", 420, 200),
+                _node("cr-2", "Cloud Router (us-west1)", "gcp-router", 420, 400),
+
+                # Host/Shared VPC
+                _node("vpc-host", "Shared VPC (Host)", "gcp-vpc", 620, 150, {
+                    "config": {
+                        "role": "Centralized networking — subnets shared to service projects",
+                        "cidr": "10.0.0.0/8 (aggregated)",
+                    }
+                }),
+                _node("vpc-prod", "Prod (Service Project)", "gcp-vpc", 780, 100),
+                _node("vpc-dev", "Dev (Service Project)", "gcp-vpc", 780, 200),
+                _node("vpc-data", "Data (Service Project)", "gcp-vpc", 780, 300),
+
+                # Standalone VPC
+                _node("vpc-dmz", "DMZ VPC (us-east1)", "gcp-vpc", 620, 400),
+                _node("vpc-dr", "DR VPC (us-west1)", "gcp-vpc", 620, 500),
+
+                # Security
+                _node("fw-org", "Org Firewall Policy", "gcp-fw", 420, 100),
+                _node("armor", "Cloud Armor", "gcp-armor", 780, 400),
+                _node("scc", "Security Command Center", "gcp-scc", 780, 500),
+
+                # Services
+                _node("psc", "Private Service Connect", "gcp-psc", 620, 600, {
+                    "config": {"role": "Private access to Google APIs + partner services"}
+                }),
+                _node("nat", "Cloud NAT", "gcp-nat", 620, 300),
+                _node("lb", "Global External LB", "gcp-lb", 620, 50),
+                _node("dns", "Cloud DNS", "gcp-dns", 780, 600),
+
+                # Assured Workloads
+                _node("assured", "Assured Workloads", "gcp-assured", 420, 600, {
+                    "config": {"role": "IL4/IL5 compliance boundary — US data residency"}
+                }),
+            ],
+            "edges": [
+                # On-prem connectivity
+                _edge("dc", "ic-ded", "Dedicated IC (10G)", "802.1Q"),
+                _edge("dc", "ic-part", "Partner IC (backup)", ""),
+                _edge("branch", "vpn-ha", "HA VPN (4 tunnels)", "IPsec/BGP"),
+                _edge("partner", "psc", "PSC Endpoint (B2B)", ""),
+
+                # To Cloud Routers / NCC
+                _edge("ic-ded", "cr-1", "VLAN Attachment", "eBGP"),
+                _edge("ic-part", "cr-1", "VLAN Attachment", "eBGP"),
+                _edge("vpn-ha", "cr-2", "VPN Tunnel", "BGP"),
+                _edge("cr-1", "ncc", "NCC Spoke", ""),
+                _edge("cr-2", "ncc", "NCC Spoke", ""),
+
+                # NCC to VPCs
+                _edge("ncc", "vpc-host", "VPC Spoke", ""),
+                _edge("ncc", "vpc-dmz", "VPC Spoke", ""),
+                _edge("ncc", "vpc-dr", "VPC Spoke", ""),
+
+                # Shared VPC
+                _edge("vpc-host", "vpc-prod", "Shared Subnet", ""),
+                _edge("vpc-host", "vpc-dev", "Shared Subnet", ""),
+                _edge("vpc-host", "vpc-data", "Shared Subnet", ""),
+
+                # Services
+                _edge("lb", "vpc-prod", "Backend service", ""),
+                _edge("armor", "lb", "WAF/DDoS", ""),
+                _edge("nat", "vpc-host", "Egress NAT", ""),
+                _edge("psc", "vpc-prod", "PSC Attachment", ""),
+                _edge("dns", "vpc-host", "Private zones", ""),
+
+                # Security
+                _edge("fw-org", "ncc", "Org-level rules", ""),
+                _edge("scc", "vpc-prod", "Findings", ""),
+                _edge("assured", "vpc-prod", "Compliance boundary", ""),
+            ],
+        }),
+    },
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # OCI DRG v2 / FastConnect / VPN Connect Templates
+    # ══════════════════════════════════════════════════════════════════════════
+
+    # ── 1. OCI DRG v2 Hub-and-Spoke ──────────────────────────────────────────
+    {
+        "id": "tpl-oci-drg-hub-spoke",
+        "name": "OCI DRG v2 — Hub-and-Spoke Multi-VCN",
+        "category": "OCI / Hybrid Cloud",
+        "description": (
+            "Dynamic Routing Gateway v2 as a regional hub connecting multiple VCNs "
+            "with route distribution policies for segmentation. Shows FastConnect + "
+            "IPsec VPN attachments, VCN attachments with import/export route distributions, "
+            "Network Firewall in hub VCN, and Service Gateway for Oracle Services Network. "
+            "See template docs for full SOP and Mermaid diagrams."
+        ),
+        "tags": json.dumps([
+            "oci", "drg", "drg-v2", "hub-spoke", "multi-vcn",
+            "fastconnect", "vpn-connect", "network-firewall", "sop", "runbook",
+        ]),
+        "graph_json": json.dumps({
+            "nodes": [
+                # DRG Hub
+                _node("drg", "DRG v2 (Hub)", "oci-drg", 500, 300, {
+                    "config": {
+                        "role": "Regional hub — all VCN, FastConnect, and VPN attachments",
+                        "features": "Route distributions, import/export policies, transit routing",
+                        "limits": "300 VCN attachments, 100 DRG route tables",
+                    }
+                }),
+
+                # DRG Route Tables
+                _node("rt-prod", "DRG RT: Production", "oci-subnet", 350, 200, {
+                    "config": {
+                        "role": "DRG route table for production VCN attachment",
+                        "import_dist": "Import from Hub, Shared, On-Prem (no Dev)",
+                    }
+                }),
+                _node("rt-dev", "DRG RT: Development", "oci-subnet", 650, 200, {
+                    "config": {"role": "DRG route table for dev VCN — isolated from Prod"}
+                }),
+                _node("rt-onprem", "DRG RT: On-Prem", "oci-subnet", 500, 160, {
+                    "config": {
+                        "role": "DRG route table for FastConnect/VPN attachments",
+                        "import_dist": "Import from all VCN attachments",
+                    }
+                }),
+
+                # VCNs
+                _node("vcn-hub", "Hub VCN (Firewall)", "oci-vcn", 500, 460, {
+                    "config": {
+                        "cidr": "10.100.0.0/16",
+                        "role": "Centralized inspection — all VCN-to-VCN traffic via NFW",
+                    }
+                }),
+                _node("vcn-prod", "Prod VCN", "oci-vcn", 300, 460, {
+                    "config": {"cidr": "10.1.0.0/16"}
+                }),
+                _node("vcn-dev", "Dev VCN", "oci-vcn", 700, 460, {
+                    "config": {"cidr": "10.2.0.0/16"}
+                }),
+                _node("vcn-shared", "Shared Services VCN", "oci-vcn", 500, 560, {
+                    "config": {
+                        "cidr": "10.0.0.0/16",
+                        "services": "DNS, AD, logging, monitoring",
+                    }
+                }),
+
+                # Network Firewall
+                _node("nfw", "OCI Network Firewall", "oci-nfw", 500, 380, {
+                    "config": {
+                        "role": "Stateful inspection — IDS/IPS, URL filtering",
+                        "placement": "Hub VCN — all transit traffic routed through NFW",
+                    }
+                }),
+
+                # Service Gateway
+                _node("sgw", "Service Gateway", "oci-subnet", 700, 560, {
+                    "config": {
+                        "role": "Access Oracle Services Network (OSN) privately",
+                        "services": "Object Storage, Autonomous DB, OCI APIs",
+                    }
+                }),
+
+                # Connectivity
+                _node("fc-pri", "FastConnect (Primary)", "oci-fc", 250, 300, {
+                    "config": {"speed": "10 Gbps", "provider": "Equinix / Megaport"}
+                }),
+                _node("fc-sec", "FastConnect (Secondary)", "oci-fc", 250, 400),
+                _node("vpn-1", "IPsec VPN (Site 1)", "oci-vpn", 750, 300, {
+                    "config": {
+                        "tunnels": "2 tunnels per connection (BGP or static)",
+                        "throughput": "250 Mbps per tunnel",
+                    }
+                }),
+                _node("vpn-2", "IPsec VPN (Site 2)", "oci-vpn", 750, 400),
+
+                # On-Prem
+                _node("dc", "On-Prem DC", "router", 60, 350, {"config": {"bgp_asn": "65001"}}),
+                _node("branch", "Branch Office", "router", 900, 350),
+
+                # Monitoring
+                _node("cloudguard", "Cloud Guard", "oci-cloudguard", 350, 620),
+                _node("flowlogs", "VCN Flow Logs", "oci-flowlogs", 650, 620),
+            ],
+            "edges": [
+                # DRG Route Tables
+                _edge("rt-prod", "drg", "Prod RT", ""),
+                _edge("rt-dev", "drg", "Dev RT", ""),
+                _edge("rt-onprem", "drg", "On-Prem RT", ""),
+
+                # DRG to VCN attachments
+                _edge("drg", "vcn-hub", "VCN Attachment (Hub)", ""),
+                _edge("drg", "vcn-prod", "VCN Attachment (Prod)", ""),
+                _edge("drg", "vcn-dev", "VCN Attachment (Dev)", ""),
+                _edge("drg", "vcn-shared", "VCN Attachment (Shared)", ""),
+
+                # Firewall
+                _edge("nfw", "vcn-hub", "Hub VCN Firewall", ""),
+
+                # Service Gateway
+                _edge("vcn-shared", "sgw", "Oracle Services (OSN)", ""),
+
+                # Connectivity
+                _edge("dc", "fc-pri", "FastConnect Primary", "802.1Q"),
+                _edge("dc", "fc-sec", "FastConnect Secondary", "802.1Q"),
+                _edge("fc-pri", "drg", "FC Attachment (Primary)", "eBGP (ASN 31898)"),
+                _edge("fc-sec", "drg", "FC Attachment (Secondary)", "eBGP"),
+                _edge("branch", "vpn-1", "IPsec VPN", "BGP"),
+                _edge("branch", "vpn-2", "IPsec VPN (redundant)", "BGP"),
+                _edge("vpn-1", "drg", "VPN Attachment", ""),
+                _edge("vpn-2", "drg", "VPN Attachment", ""),
+
+                # Monitoring
+                _edge("cloudguard", "vcn-prod", "Security posture", ""),
+                _edge("flowlogs", "vcn-prod", "Flow logs", ""),
+            ],
+        }),
+    },
+
+    # ── 2. OCI Hybrid Connectivity — Art of the Possible ─────────────────────
+    {
+        "id": "tpl-oci-hybrid-art-of-possible",
+        "name": "OCI Hybrid Connectivity — Art of the Possible",
+        "category": "OCI / Hybrid Cloud",
+        "description": (
+            "Comprehensive OCI hybrid connectivity showing every service: DRG v2 with "
+            "advanced route distributions, FastConnect (colocation + provider), IPsec VPN "
+            "Connect, Remote Peering Connection (inter-region), Network Firewall, WAF, "
+            "Service Gateway, Cloud Guard, and cross-tenancy peering. "
+            "See template docs for full SOP, comparison matrix, and traffic flows."
+        ),
+        "tags": json.dumps([
+            "oci", "hybrid", "art-of-possible", "drg", "fastconnect",
+            "vpn-connect", "remote-peering", "network-firewall", "waf",
+            "multi-region", "sop", "runbook",
+        ]),
+        "graph_json": json.dumps({
+            "nodes": [
+                # On-Prem
+                _node("dc", "Data Center", "router", 60, 300, {"config": {"bgp_asn": "65001"}}),
+                _node("branch-1", "Branch 1", "router", 60, 450),
+                _node("branch-2", "Branch 2", "router", 60, 550),
+
+                # Connectivity
+                _node("fc-colo", "FastConnect (Colocation)", "oci-fc", 220, 250, {
+                    "config": {"model": "Colocation — direct cross-connect at Equinix/CoreSite"}
+                }),
+                _node("fc-prov", "FastConnect (Provider)", "oci-fc", 220, 350, {
+                    "config": {"model": "Provider — via Megaport/AT&T/Verizon"}
+                }),
+                _node("vpn-1", "VPN Connect (Branch 1)", "oci-vpn", 220, 450),
+                _node("vpn-2", "VPN Connect (Branch 2)", "oci-vpn", 220, 550),
+
+                # Region 1: Ashburn
+                _node("drg-1", "DRG v2 (Ashburn)", "oci-drg", 420, 300, {
+                    "config": {
+                        "region": "us-ashburn-1",
+                        "bgp_asn": "31898",
+                    }
+                }),
+                _node("vcn-hub-1", "Hub VCN (Firewall)", "oci-vcn", 420, 420),
+                _node("nfw-1", "Network Firewall", "oci-nfw", 420, 500),
+                _node("vcn-prod", "Prod VCN", "oci-vcn", 600, 200, {"config": {"cidr": "10.1.0.0/16"}}),
+                _node("vcn-shared", "Shared VCN", "oci-vcn", 600, 300, {"config": {"cidr": "10.0.0.0/16"}}),
+                _node("vcn-db", "DB VCN", "oci-vcn", 600, 400, {"config": {"cidr": "10.10.0.0/16"}}),
+
+                # Region 2: Phoenix (DR)
+                _node("drg-2", "DRG v2 (Phoenix)", "oci-drg", 420, 650, {
+                    "config": {"region": "us-phoenix-1"}
+                }),
+                _node("vcn-dr", "DR VCN", "oci-vcn", 600, 600, {"config": {"cidr": "10.3.0.0/16"}}),
+                _node("vcn-dev", "Dev VCN", "oci-vcn", 600, 700, {"config": {"cidr": "10.2.0.0/16"}}),
+
+                # Remote Peering (inter-region)
+                _node("rpc", "Remote Peering Connection", "oci-drg", 420, 570, {
+                    "config": {
+                        "role": "Cross-region DRG peering — Ashburn <-> Phoenix",
+                        "notes": "Route advertisements propagated between DRGs",
+                    }
+                }),
+
+                # Application Layer
+                _node("lb-pub", "Public Load Balancer", "oci-lb", 780, 200),
+                _node("waf", "WAF", "oci-waf", 780, 280),
+                _node("sgw", "Service Gateway (OSN)", "oci-subnet", 780, 400),
+
+                # Security
+                _node("cloudguard", "Cloud Guard", "oci-cloudguard", 780, 500),
+                _node("vault", "OCI Vault (KMS)", "oci-vault", 780, 580),
+                _node("vss", "Vulnerability Scanning", "oci-vss", 780, 660),
+                _node("nsg-prod", "NSG (Prod)", "oci-nsg", 600, 120),
+            ],
+            "edges": [
+                # On-prem to connectivity
+                _edge("dc", "fc-colo", "FastConnect (Colo)", "802.1Q"),
+                _edge("dc", "fc-prov", "FastConnect (Provider)", ""),
+                _edge("branch-1", "vpn-1", "IPsec VPN", "BGP"),
+                _edge("branch-2", "vpn-2", "IPsec VPN", "BGP"),
+
+                # To DRG
+                _edge("fc-colo", "drg-1", "FC Attachment", "eBGP"),
+                _edge("fc-prov", "drg-1", "FC Attachment", "eBGP"),
+                _edge("vpn-1", "drg-1", "VPN Attachment", ""),
+                _edge("vpn-2", "drg-1", "VPN Attachment", ""),
+
+                # DRG-1 to VCNs
+                _edge("drg-1", "vcn-hub-1", "Hub VCN Attachment", ""),
+                _edge("drg-1", "vcn-prod", "Prod Attachment", ""),
+                _edge("drg-1", "vcn-shared", "Shared Attachment", ""),
+                _edge("drg-1", "vcn-db", "DB Attachment", ""),
+                _edge("vcn-hub-1", "nfw-1", "Firewall Subnet", ""),
+
+                # Inter-region peering
+                _edge("drg-1", "rpc", "RPC (Ashburn side)", ""),
+                _edge("rpc", "drg-2", "RPC (Phoenix side)", ""),
+
+                # DRG-2 to VCNs
+                _edge("drg-2", "vcn-dr", "DR Attachment", ""),
+                _edge("drg-2", "vcn-dev", "Dev Attachment", ""),
+
+                # Application layer
+                _edge("lb-pub", "vcn-prod", "Backend set", ""),
+                _edge("waf", "lb-pub", "WAF policy", ""),
+                _edge("vcn-db", "sgw", "Oracle Services (OSN)", ""),
+                _edge("nsg-prod", "vcn-prod", "Network Security Group", ""),
+
+                # Security
+                _edge("cloudguard", "vcn-prod", "Security posture", ""),
+                _edge("vault", "vcn-prod", "Key management", ""),
+                _edge("vss", "vcn-prod", "Vulnerability scan", ""),
+            ],
+        }),
+    },
 ]
 
 
@@ -8314,6 +9325,14 @@ def init_db():
                 "tpl-aws-dxgw-multi-region": "AWS DX Gateway Multi-Region — SOP & Runbook",
                 "tpl-aws-vpn-at-scale": "AWS Site-to-Site VPN at Scale — SOP & Runbook",
                 "tpl-aws-hybrid-art-of-possible": "AWS Hybrid Connectivity — Art of the Possible — SOP & Runbook",
+                "tpl-az-vwan-hub-spoke": "Azure Virtual WAN Hub-and-Spoke — SOP & Runbook",
+                "tpl-az-er-multi-region": "Azure ExpressRoute Gateway Multi-Region — SOP & Runbook",
+                "tpl-az-vpn-at-scale": "Azure VPN Gateway Multi-Site at Scale — SOP & Runbook",
+                "tpl-az-hybrid-art-of-possible": "Azure Hybrid Connectivity — Art of the Possible — SOP & Runbook",
+                "tpl-gcp-ncc-hub-spoke": "GCP NCC Hub-and-Spoke — SOP & Runbook",
+                "tpl-gcp-hybrid-art-of-possible": "GCP Hybrid Connectivity — Art of the Possible — SOP & Runbook",
+                "tpl-oci-drg-hub-spoke": "OCI DRG v2 Hub-and-Spoke — SOP & Runbook",
+                "tpl-oci-hybrid-art-of-possible": "OCI Hybrid Connectivity — Art of the Possible — SOP & Runbook",
             }
             for tpl_id, title in doc_templates.items():
                 doc_id = f"doc-{tpl_id}"

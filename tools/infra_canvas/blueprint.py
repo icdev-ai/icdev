@@ -329,6 +329,56 @@ def run_assessment(design_id):
         conn.close()
 
 
+@infra_bp.route("/api/designs/<design_id>/auto-fix", methods=["POST"])
+def run_auto_fix(design_id):
+    """Auto-remediate a design by injecting missing compliance nodes.
+
+    Runs assessment to get current findings, calls the shared auto-remediation
+    engine to inject missing nodes/edges, saves the updated graph, re-assesses,
+    and returns {fixes_applied, old_score, new_score, nodes_added}.
+    """
+    from tools.canvas.auto_remediate import auto_remediate_idc
+    conn = _get_conn()
+    try:
+        row = conn.execute(
+            "SELECT graph_json FROM infra_designs WHERE id = ?", (design_id,)
+        ).fetchone()
+        if not row:
+            return jsonify({"error": "Not found"}), 404
+
+        graph = json.loads(row["graph_json"])
+        old_result = assess_infra_design(graph)
+        old_score = old_result["score"]
+
+        fix_result = auto_remediate_idc(design_id, graph, old_result["findings"])
+
+        if fix_result.get("rate_limited"):
+            return jsonify({"error": "Rate limit reached (max 5 auto-fixes/hour)"}), 429
+
+        # Save updated graph
+        conn.execute(
+            "UPDATE infra_designs SET graph_json = ?, updated_at = ? WHERE id = ?",
+            (json.dumps(graph), _utcnow(), design_id),
+        )
+        conn.commit()
+
+        # Re-assess to compute new score
+        new_result = assess_infra_design(graph)
+        new_score = new_result["score"]
+
+        return jsonify({
+            "status": "ok",
+            "design_id": design_id,
+            "fixes_applied": fix_result["fixes_applied"],
+            "old_score": old_score,
+            "new_score": new_score,
+            "nodes_added": fix_result["nodes_added"],
+            "edges_added": fix_result["edges_added"],
+        })
+    finally:
+        conn.close()
+
+
 @infra_bp.route("/api/templates", methods=["GET"])
 def list_templates():
     """List available IDC templates."""

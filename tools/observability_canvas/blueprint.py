@@ -444,6 +444,71 @@ def create_observability_blueprint():
         })
 
     # ====================================================================
+    # API — AUTO-FIX
+    # ====================================================================
+
+    @bp.route("/api/designs/<design_id>/auto-fix", methods=["POST"])
+    @oc_login_required
+    def oc_api_auto_fix(design_id):
+        """Auto-remediate an observability design by injecting missing nodes.
+
+        Runs assessment, calls shared auto-remediation engine, saves updated
+        graph, re-assesses, returns {fixes_applied, old_score, new_score}.
+        """
+        from tools.canvas.auto_remediate import auto_remediate_odc
+        conn = get_connection()
+        try:
+            row = conn.execute(
+                "SELECT graph_json FROM observability_designs WHERE id=?", (design_id,)
+            ).fetchone()
+        finally:
+            conn.close()
+        if not row:
+            return jsonify({"error": "Design not found"}), 404
+
+        graph_raw = row["graph_json"]
+        try:
+            graph_data = json.loads(graph_raw) if isinstance(graph_raw, str) else graph_raw
+        except (json.JSONDecodeError, TypeError):
+            return jsonify({"error": "Invalid graph data"}), 400
+
+        old_assessment = assess_observability_design(graph_data)
+        old_score = old_assessment["score"]
+
+        fix_result = auto_remediate_odc(design_id, graph_data, old_assessment["findings"])
+
+        if fix_result.get("rate_limited"):
+            return jsonify({"error": "Rate limit reached (max 5 auto-fixes/hour)"}), 429
+
+        # Save updated graph
+        conn = get_connection()
+        try:
+            conn.execute(
+                "UPDATE observability_designs SET graph_json=?, updated_at=? WHERE id=?",
+                (json.dumps(graph_data), _now(), design_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        new_assessment = assess_observability_design(graph_data)
+        new_score = new_assessment["score"]
+
+        _audit("AUTO_FIX", design_id,
+               f"Fixes: {fix_result['fixes_applied']}, "
+               f"Score: {old_score} -> {new_score}")
+
+        return jsonify({
+            "status": "ok",
+            "design_id": design_id,
+            "fixes_applied": fix_result["fixes_applied"],
+            "old_score": old_score,
+            "new_score": new_score,
+            "nodes_added": fix_result["nodes_added"],
+            "edges_added": fix_result["edges_added"],
+        })
+
+    # ====================================================================
     # API — TEMPLATES
     # ====================================================================
 
