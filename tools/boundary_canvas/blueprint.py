@@ -880,4 +880,293 @@ def create_boundary_blueprint():
         """Return current participants in a BDC collaborative session."""
         return jsonify({"participants": _bdc_collab.get_participants(design_id)})
 
+    # ====================================================================
+    # API — ISA Expiry Alerting & Risk Scoring
+    # ====================================================================
+
+    def _compute_days_until(date_str: str | None) -> int | None:
+        """Return days between today and an ISO date string (negative = past)."""
+        if not date_str:
+            return None
+        try:
+            from datetime import date
+            target = date.fromisoformat(date_str[:10])
+            delta = (target - date.today()).days
+            return delta
+        except (ValueError, TypeError):
+            return None
+
+    def _isa_risk_score(interconnection_type: str) -> dict:
+        """Compute risk score and tier for an interconnection type.
+
+        Risk tiers (NIST SP 800-47 / DoD cross-domain guidance):
+          cross-domain  — highest risk (different classification levels, need CDSE approval)
+          direct-connection — high risk (direct IP connectivity, attack surface)
+          api           — medium risk (API boundary, limited surface)
+          federation    — lower risk (identity federation, no data transit)
+          vpn           — medium risk (encrypted tunnel, perimeter trust)
+        """
+        _RISK_TABLE: dict[str, dict] = {
+            "cross-domain": {"score": 95, "tier": "CRITICAL", "nist_controls": ["CA-3", "SC-7", "SC-28", "AC-4"]},
+            "cross_domain": {"score": 95, "tier": "CRITICAL", "nist_controls": ["CA-3", "SC-7", "SC-28", "AC-4"]},
+            "direct": {"score": 80, "tier": "HIGH", "nist_controls": ["CA-3", "SC-7", "AC-17"]},
+            "direct-connection": {"score": 80, "tier": "HIGH", "nist_controls": ["CA-3", "SC-7", "AC-17"]},
+            "dedicated": {"score": 80, "tier": "HIGH", "nist_controls": ["CA-3", "SC-7", "AC-17"]},
+            "vpn": {"score": 60, "tier": "MEDIUM", "nist_controls": ["CA-3", "SC-8", "IA-3"]},
+            "api": {"score": 50, "tier": "MEDIUM", "nist_controls": ["CA-3", "SC-8", "AC-4"]},
+            "rest": {"score": 50, "tier": "MEDIUM", "nist_controls": ["CA-3", "SC-8", "AC-4"]},
+            "federation": {"score": 30, "tier": "LOW", "nist_controls": ["CA-3", "IA-8", "AC-16"]},
+            "saml": {"score": 30, "tier": "LOW", "nist_controls": ["CA-3", "IA-8", "AC-16"]},
+            "oidc": {"score": 30, "tier": "LOW", "nist_controls": ["CA-3", "IA-8", "AC-16"]},
+        }
+        key = (interconnection_type or "api").lower().strip()
+        return _RISK_TABLE.get(key, {"score": 50, "tier": "MEDIUM", "nist_controls": ["CA-3"]})
+
+    def _generate_expiry_alerts(design_id: str) -> list[dict]:
+        """Scan bd_isa_tracker for expiring ISAs and generate alert records.
+
+        Thresholds: 90 / 60 / 30 days — severity escalates as deadline approaches.
+        """
+        import uuid as _uuid_mod
+        thresholds = [
+            (30, "critical", "ISA expires in ≤30 days"),
+            (60, "high", "ISA expires in ≤60 days"),
+            (90, "medium", "ISA expires in ≤90 days"),
+        ]
+        new_alerts: list[dict] = []
+        with get_connection() as conn:
+            isas = conn.execute(
+                "SELECT id, interconnection_id, expiry_date, status, owner "
+                "FROM bd_isa_tracker WHERE design_id=? AND status NOT IN ('expired','revoked')",
+                (design_id,),
+            ).fetchall()
+
+            for isa in isas:
+                isa_dict = _row_to_dict(isa)
+                days = _compute_days_until(isa_dict.get("expiry_date"))
+                if days is None:
+                    continue
+
+                alert_type = None
+                severity = None
+                message = None
+
+                if days < 0:
+                    alert_type = "ISA_EXPIRED"
+                    severity = "critical"
+                    message = (
+                        f"ISA for interconnection '{isa_dict['interconnection_id']}' "
+                        f"EXPIRED {abs(days)} day(s) ago. Immediate action required."
+                    )
+                else:
+                    for threshold, sev, prefix in thresholds:
+                        if days <= threshold:
+                            alert_type = f"ISA_EXPIRY_{threshold}D"
+                            severity = sev
+                            message = (
+                                f"{prefix}: ISA for interconnection "
+                                f"'{isa_dict['interconnection_id']}' expires in {days} day(s)."
+                            )
+                            break
+
+                if not alert_type:
+                    continue
+
+                # Check if this alert already exists (avoid duplicates)
+                existing = conn.execute(
+                    "SELECT id FROM bd_alerts WHERE isa_id=? AND alert_type=? AND acknowledged=0",
+                    (isa_dict["id"], alert_type),
+                ).fetchone()
+                if existing:
+                    continue
+
+                alert_id = f"bda-{_uuid_mod.uuid4().hex[:10]}"
+                conn.execute(
+                    "INSERT INTO bd_alerts "
+                    "(id, design_id, isa_id, alert_type, severity, days_until_expiry, message, created_at) "
+                    "VALUES (?,?,?,?,?,?,?,?)",
+                    (alert_id, design_id, isa_dict["id"], alert_type, severity, days, message, now_isoformat()),
+                )
+                new_alerts.append({
+                    "id": alert_id,
+                    "isa_id": isa_dict["id"],
+                    "alert_type": alert_type,
+                    "severity": severity,
+                    "days_until_expiry": days,
+                    "message": message,
+                })
+        return new_alerts
+
+    @bp.route("/api/alerts", methods=["GET"])
+    @bdc_login_required
+    def bdc_api_alerts_global():
+        """List all unacknowledged ISA expiry alerts across all designs."""
+        design_id = request.args.get("design_id")
+        with get_connection() as conn:
+            if design_id:
+                rows = conn.execute(
+                    "SELECT a.*, i.interconnection_id, i.expiry_date, i.owner "
+                    "FROM bd_alerts a LEFT JOIN bd_isa_tracker i ON a.isa_id=i.id "
+                    "WHERE a.design_id=? ORDER BY a.created_at DESC",
+                    (design_id,),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT a.*, i.interconnection_id, i.expiry_date, i.owner "
+                    "FROM bd_alerts a LEFT JOIN bd_isa_tracker i ON a.isa_id=i.id "
+                    "ORDER BY a.created_at DESC",
+                ).fetchall()
+        return jsonify([_row_to_dict(r) for r in rows])
+
+    @bp.route("/api/designs/<design_id>/alerts", methods=["GET"])
+    @bdc_login_required
+    def bdc_api_alerts(design_id):
+        """List ISA expiry alerts for a specific boundary design.
+
+        Query params:
+          ?refresh=true  — Re-scan ISAs and generate fresh alerts before returning
+          ?unacked=true  — Return only unacknowledged alerts (default: all)
+        """
+        if request.args.get("refresh", "").lower() in ("true", "1"):
+            _generate_expiry_alerts(design_id)
+
+        unacked_only = request.args.get("unacked", "false").lower() in ("true", "1")
+        with get_connection() as conn:
+            query = (
+                "SELECT a.*, i.interconnection_id, i.expiry_date, i.owner "
+                "FROM bd_alerts a LEFT JOIN bd_isa_tracker i ON a.isa_id=i.id "
+                "WHERE a.design_id=?"
+            )
+            params: list = [design_id]
+            if unacked_only:
+                query += " AND a.acknowledged=0"
+            query += " ORDER BY a.created_at DESC"
+            rows = conn.execute(query, params).fetchall()
+        return jsonify([_row_to_dict(r) for r in rows])
+
+    @bp.route("/api/designs/<design_id>/alerts/refresh", methods=["POST"])
+    @bdc_login_required
+    def bdc_api_alerts_refresh(design_id):
+        """Trigger an ISA expiry scan and create new alerts for a design."""
+        new_alerts = _generate_expiry_alerts(design_id)
+        _audit(design_id, "ALERT_REFRESH", f"generated={len(new_alerts)}")
+        return jsonify({"generated": len(new_alerts), "alerts": new_alerts})
+
+    @bp.route("/api/alerts/<alert_id>/acknowledge", methods=["POST"])
+    @bdc_login_required
+    def bdc_api_alert_acknowledge(alert_id):
+        """Acknowledge an alert, suppressing it from active lists."""
+        user_id = session.get("user_id", "system")
+        with get_connection() as conn:
+            row = conn.execute("SELECT id FROM bd_alerts WHERE id=?", (alert_id,)).fetchone()
+            if not row:
+                return jsonify({"error": "Alert not found"}), 404
+            conn.execute(
+                "UPDATE bd_alerts SET acknowledged=1, acknowledged_by=?, acknowledged_at=? WHERE id=?",
+                (user_id, now_isoformat(), alert_id),
+            )
+        return jsonify({"status": "acknowledged", "alert_id": alert_id})
+
+    @bp.route("/api/designs/<design_id>/risk-score", methods=["GET"])
+    @bdc_login_required
+    def bdc_api_risk_score(design_id):
+        """Compute interconnection risk scores for all boundary edges.
+
+        Returns per-interconnection risk and an overall design risk score.
+        Also incorporates supply chain risk from ISA status.
+        """
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT graph_json FROM boundary_designs WHERE id=?", (design_id,)
+            ).fetchone()
+            if not row:
+                return jsonify({"error": "Not found"}), 404
+
+            isas = conn.execute(
+                "SELECT interconnection_id, status, expiry_date "
+                "FROM bd_isa_tracker WHERE design_id=?",
+                (design_id,),
+            ).fetchall()
+
+        try:
+            graph = json.loads(row["graph_json"]) if isinstance(row["graph_json"], str) else row["graph_json"]
+        except (json.JSONDecodeError, TypeError):
+            return jsonify({"error": "Invalid graph data"}), 400
+
+        # Map interconnection IDs to ISA status
+        isa_map: dict[str, dict] = {}
+        for isa in isas:
+            isa_d = _row_to_dict(isa)
+            isa_map[isa_d["interconnection_id"]] = isa_d
+
+        # Score each edge
+        edges = graph.get("edges", [])
+        scored_edges: list[dict] = []
+        total_score = 0.0
+
+        for edge in edges:
+            edge_id = edge.get("id", "")
+            edge_type = (edge.get("data", {}) or {}).get("interconnection_type", edge.get("type", "api"))
+            label = edge.get("label", edge_id)
+
+            risk_info = _isa_risk_score(edge_type)
+            base_score = risk_info["score"]
+
+            # ISA status modifier
+            isa_info = isa_map.get(edge_id, {})
+            isa_status = isa_info.get("status", "none")
+            if isa_status == "expired":
+                base_score = min(100, base_score + 20)
+            elif isa_status == "draft":
+                base_score = min(100, base_score + 10)
+            elif isa_status == "active":
+                base_score = max(0, base_score - 5)
+
+            # Expiry proximity modifier
+            days = _compute_days_until(isa_info.get("expiry_date"))
+            if days is not None and 0 <= days <= 30:
+                base_score = min(100, base_score + 15)
+
+            scored_edges.append({
+                "edge_id": edge_id,
+                "label": label,
+                "interconnection_type": edge_type,
+                "risk_tier": risk_info["tier"],
+                "risk_score": base_score,
+                "isa_status": isa_status,
+                "days_until_expiry": days,
+                "nist_controls": risk_info["nist_controls"],
+            })
+            total_score += base_score
+
+        overall = round(total_score / len(scored_edges), 1) if scored_edges else 0.0
+        overall_tier = (
+            "CRITICAL" if overall >= 80 else
+            "HIGH" if overall >= 60 else
+            "MEDIUM" if overall >= 40 else
+            "LOW"
+        )
+
+        # Supply chain risk: scan ISAs with supply-chain-related notes
+        supply_chain_risk: list[dict] = []
+        for edge in scored_edges:
+            if edge["risk_tier"] in ("CRITICAL", "HIGH"):
+                supply_chain_risk.append({
+                    "interconnection": edge["label"],
+                    "risk_score": edge["risk_score"],
+                    "recommendation": (
+                        "Review supply chain risk for this interconnection. "
+                        "Validate third-party security posture and add CMMC C2C controls."
+                    ),
+                })
+
+        return jsonify({
+            "design_id": design_id,
+            "overall_risk_score": overall,
+            "overall_risk_tier": overall_tier,
+            "edge_count": len(edges),
+            "scored_edges": scored_edges,
+            "supply_chain_risk": supply_chain_risk,
+        })
+
     return bp

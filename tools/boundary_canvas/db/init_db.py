@@ -141,12 +141,28 @@ CREATE TABLE IF NOT EXISTS bd_collab_sessions (
     is_active   INTEGER NOT NULL DEFAULT 1
 );
 
+CREATE TABLE IF NOT EXISTS bd_alerts (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT REFERENCES boundary_designs(id),
+    isa_id          TEXT REFERENCES bd_isa_tracker(id),
+    alert_type      TEXT NOT NULL,
+    severity        TEXT DEFAULT 'medium',
+    days_until_expiry INTEGER,
+    message         TEXT NOT NULL,
+    acknowledged    INTEGER DEFAULT 0,
+    acknowledged_by TEXT DEFAULT '',
+    acknowledged_at TEXT DEFAULT '',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_bd_assessments_design ON bd_assessments(design_id);
 CREATE INDEX IF NOT EXISTS idx_bd_isa_tracker_design ON bd_isa_tracker(design_id);
 CREATE INDEX IF NOT EXISTS idx_bd_isa_tracker_status ON bd_isa_tracker(status);
 CREATE INDEX IF NOT EXISTS idx_bd_audit_design ON bd_audit(design_id);
 CREATE INDEX IF NOT EXISTS idx_bd_audit_action ON bd_audit(action);
+CREATE INDEX IF NOT EXISTS idx_bd_alerts_design ON bd_alerts(design_id);
+CREATE INDEX IF NOT EXISTS idx_bd_alerts_acknowledged ON bd_alerts(acknowledged);
 """
 
 

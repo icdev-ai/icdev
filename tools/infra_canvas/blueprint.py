@@ -687,3 +687,88 @@ def idc_collab_poll(design_id):
 def idc_collab_participants(design_id):
     """Return current participants in an IDC collaborative session."""
     return jsonify({"participants": _idc_collab.get_participants(design_id)})
+
+
+# ── Cloud Discovery Import ────────────────────────────────────────────────────
+
+@infra_bp.route("/api/import/cloud", methods=["POST"])
+def idc_import_cloud():
+    """Import existing infrastructure from a cloud inventory JSON payload.
+
+    Accepts:
+      - JSON body with 'payload' key containing the cloud resource JSON
+      - Optional 'cloud' key: 'aws'|'azure'|'gcp'|'auto' (default: 'auto')
+      - Optional 'design_id' key to merge into an existing design
+      - Optional 'file_path' key for air-gapped import from local file
+      - Optional 'name' / 'description' for new design creation
+
+    Returns the import result and the created/updated design ID.
+    """
+    from tools.infra_canvas.cloud_import import import_cloud_inventory, import_from_file
+
+    body = request.get_json(force=True, silent=True) or {}
+    cloud = body.get("cloud", "auto")
+
+    # Air-gapped: import from local file path
+    file_path = body.get("file_path")
+    if file_path:
+        result = import_from_file(file_path, cloud=cloud)
+    else:
+        payload = body.get("payload", body.get("data", {}))
+        result = import_cloud_inventory(payload, cloud=cloud)
+
+    if result["node_count"] == 0:
+        return jsonify({"error": "No resources imported", "warnings": result["warnings"]}), 400
+
+    graph = result["graph"]
+    conn = _get_conn()
+    try:
+        design_id = body.get("design_id")
+        if design_id:
+            # Merge into existing design
+            row = conn.execute(
+                "SELECT graph_json FROM infra_designs WHERE id = ?", (design_id,)
+            ).fetchone()
+            if not row:
+                return jsonify({"error": "Design not found"}), 404
+            existing = json.loads(row["graph_json"])
+            existing_ids = {n["id"] for n in existing.get("nodes", [])}
+            new_nodes = [n for n in graph["nodes"] if n["id"] not in existing_ids]
+            existing["nodes"].extend(new_nodes)
+            conn.execute(
+                "UPDATE infra_designs SET graph_json = ?, updated_at = ? WHERE id = ?",
+                (json.dumps(existing), _utcnow(), design_id),
+            )
+            conn.commit()
+        else:
+            # Create new design from import
+            design_id = _gen_id()
+            now = _utcnow()
+            cloud_label = result["cloud"].upper()
+            name = body.get("name") or f"{cloud_label} Import {now[:10]}"
+            conn.execute(
+                "INSERT INTO infra_designs "
+                "(id, name, description, graph_json, classification, created_at, updated_at) "
+                "VALUES (?,?,?,?,?,?,?)",
+                (
+                    design_id,
+                    name[:200],
+                    body.get("description", f"Imported from {cloud_label} cloud inventory"),
+                    json.dumps(graph),
+                    body.get("classification", "CUI"),
+                    now,
+                    now,
+                ),
+            )
+            conn.commit()
+    finally:
+        conn.close()
+
+    return jsonify({
+        "status": "imported",
+        "design_id": design_id,
+        "cloud": result["cloud"],
+        "node_count": result["node_count"],
+        "imported_at": result["imported_at"],
+        "warnings": result["warnings"],
+    }), 201

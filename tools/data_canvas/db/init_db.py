@@ -121,6 +121,22 @@ CREATE TABLE IF NOT EXISTS dd_collab_sessions (
 
 CREATE INDEX IF NOT EXISTS idx_dd_collab_design ON dd_collab_sessions(design_id);
 
+CREATE TABLE IF NOT EXISTS dd_lineage (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT NOT NULL REFERENCES data_designs(id) ON DELETE CASCADE,
+    source_node_id  TEXT NOT NULL,
+    target_node_id  TEXT NOT NULL,
+    lineage_type    TEXT DEFAULT 'flow',
+    column_name     TEXT DEFAULT '',
+    transform_desc  TEXT DEFAULT '',
+    classification  TEXT DEFAULT 'CUI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_dd_lineage_design ON dd_lineage(design_id);
+CREATE INDEX IF NOT EXISTS idx_dd_lineage_source ON dd_lineage(source_node_id);
+CREATE INDEX IF NOT EXISTS idx_dd_lineage_target ON dd_lineage(target_node_id);
+
 -- Immutability triggers (SQLite)
 CREATE TRIGGER IF NOT EXISTS dd_audit_no_update
     BEFORE UPDATE ON dd_audit

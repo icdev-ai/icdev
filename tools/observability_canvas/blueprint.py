@@ -778,4 +778,111 @@ def create_observability_blueprint():
         """Return current participants in an ODC collaborative session."""
         return jsonify({"participants": _odc_collab.get_participants(design_id)})
 
+    # ====================================================================
+    # API — Sigma Rule Generation & Cost Estimation
+    # ====================================================================
+
+    @bp.route("/api/export/<design_id>/sigma", methods=["POST"])
+    @oc_login_required
+    def oc_export_sigma(design_id):
+        """Generate Sigma detection rules from an observability design.
+
+        Body params (all optional):
+          format: 'sigma'|'splunk'|'elastic'|'sentinel'|'all' (default: all)
+          retention_days: int — log retention for cost estimates (default: 90)
+
+        Returns:
+          rule_count, exports dict (sigma_yaml, splunk_spl, elastic_kql,
+          sentinel_kql), volume_estimate with SIEM cost projections.
+        """
+        import base64
+        from tools.observability_canvas.sigma_generator import generate_sigma_rules
+
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT name, graph_json FROM observability_designs WHERE id=?",
+                (design_id,),
+            ).fetchone()
+        if not row:
+            return jsonify({"error": "Not found"}), 404
+
+        row_d = _row_to_dict(row)
+        try:
+            graph = json.loads(row_d["graph_json"]) if isinstance(row_d["graph_json"], str) else row_d["graph_json"]
+        except (json.JSONDecodeError, TypeError):
+            return jsonify({"error": "Invalid graph data"}), 400
+
+        body = request.get_json(force=True, silent=True) or {}
+        retention_days = int(body.get("retention_days", 90))
+        fmt = body.get("format", "all").lower()
+
+        result = generate_sigma_rules(graph, design_name=row_d["name"])
+
+        # Override volume estimate retention_days if specified
+        if retention_days != 90:
+            from tools.observability_canvas.sigma_generator import estimate_log_volume
+            result["volume_estimate"] = estimate_log_volume(graph.get("nodes", []), retention_days)
+
+        _audit("export_sigma", design_id, f"rules={result['rule_count']} format={fmt}")
+
+        # Filter exports if specific format requested
+        exports = result["exports"]
+        if fmt != "all":
+            key_map = {
+                "sigma": "sigma_yaml",
+                "splunk": "splunk_spl",
+                "elastic": "elastic_kql",
+                "sentinel": "sentinel_kql",
+            }
+            key = key_map.get(fmt, "sigma_yaml")
+            content = exports.get(key, "")
+            encoded = base64.b64encode(content.encode("utf-8")).decode("ascii")
+            ext_map = {"sigma_yaml": "yml", "splunk_spl": "spl", "elastic_kql": "kql", "sentinel_kql": "kql"}
+            filename = f"{row_d['name'].replace(' ', '_')}_sigma.{ext_map.get(key, 'txt')}"
+            return jsonify({
+                "rule_count": result["rule_count"],
+                "format": fmt,
+                "filename": filename,
+                "data": encoded,
+                "volume_estimate": result["volume_estimate"],
+                "generated_at": result["generated_at"],
+            })
+
+        return jsonify({
+            "rule_count": result["rule_count"],
+            "rules": result["rules"],
+            "exports": exports,
+            "volume_estimate": result["volume_estimate"],
+            "generated_at": result["generated_at"],
+        })
+
+    @bp.route("/api/designs/<design_id>/volume-estimate", methods=["GET"])
+    @oc_login_required
+    def oc_volume_estimate(design_id):
+        """Compute log volume and SIEM cost estimates for a design.
+
+        Query params:
+          retention_days: int (default: 90)
+        """
+        from tools.observability_canvas.sigma_generator import estimate_log_volume
+
+        retention_days = int(request.args.get("retention_days", 90))
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT graph_json FROM observability_designs WHERE id=?",
+                (design_id,),
+            ).fetchone()
+        if not row:
+            return jsonify({"error": "Not found"}), 404
+
+        try:
+            row_d = _row_to_dict(row)
+            graph = json.loads(row_d["graph_json"]) if isinstance(row_d["graph_json"], str) else row_d["graph_json"]
+        except (json.JSONDecodeError, TypeError):
+            return jsonify({"error": "Invalid graph data"}), 400
+
+        nodes = graph.get("nodes", [])
+        result = estimate_log_volume(nodes, retention_days=retention_days)
+        return jsonify(result)
+
     return bp

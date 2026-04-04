@@ -392,6 +392,15 @@ def create_data_canvas_blueprint():
         nist_cov = compute_nist_coverage(graph_data)
         gaps = detect_data_gaps(result)
 
+        # PII/PHI detection — wire into findings
+        pii_scan: dict = {}
+        try:
+            from tools.data_canvas.pii_detector import scan_graph as _scan_graph
+            pii_scan = _scan_graph(graph_data)
+            result["findings"].extend(pii_scan.get("compliance_findings", []))
+        except Exception:
+            pass
+
         # Persist assessment
         assess_id = str(_uuid.uuid4())
         conn.execute(
@@ -412,6 +421,7 @@ def create_data_canvas_blueprint():
             "classification_coverage": classification_cov,
             "nist_coverage": nist_cov,
             "gaps": gaps,
+            "pii_scan": pii_scan,
         })
 
     @bp.route("/api/designs/<design_id>/assessments", methods=["GET"])
@@ -443,6 +453,88 @@ def create_data_canvas_blueprint():
     @bp.route("/api/rules")
     def dc_api_rules():
         return jsonify(DATA_COMPLIANCE_RULES)
+
+    # ====================================================================
+    # API ROUTES — Data Lineage
+    # ====================================================================
+
+    @bp.route("/api/designs/<design_id>/lineage", methods=["GET"])
+    @dc_login_required
+    def dc_api_lineage_list(design_id):
+        """List all lineage edges for a data design."""
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT id, source_node_id, target_node_id, lineage_type, "
+            "column_name, transform_desc, classification, created_at "
+            "FROM dd_lineage WHERE design_id=? ORDER BY created_at",
+            (design_id,),
+        ).fetchall()
+        conn.close()
+        return jsonify([row_to_dict(r) for r in rows])
+
+    @bp.route("/api/designs/<design_id>/lineage", methods=["POST"])
+    @dc_login_required
+    def dc_api_lineage_create(design_id):
+        """Add a column-level lineage edge to a data design."""
+        data = request.get_json(force=True, silent=True) or {}
+        source = data.get("source_node_id", "")
+        target = data.get("target_node_id", "")
+        if not source or not target:
+            return jsonify({"error": "source_node_id and target_node_id required"}), 400
+        edge_id = f"lin-{_uuid.uuid4().hex[:10]}"
+        conn = get_connection()
+        conn.execute(
+            "INSERT INTO dd_lineage "
+            "(id, design_id, source_node_id, target_node_id, lineage_type, "
+            "column_name, transform_desc, classification, created_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?)",
+            (
+                edge_id, design_id, source, target,
+                data.get("lineage_type", "flow"),
+                data.get("column_name", ""),
+                data.get("transform_desc", ""),
+                data.get("classification", "CUI"),
+                now_isoformat(),
+            ),
+        )
+        conn.commit()
+        conn.close()
+        _audit(design_id, session.get("user_id", "system"), "LINEAGE_CREATE",
+               f"source={source} target={target}")
+        return jsonify({"id": edge_id, "status": "created"}), 201
+
+    @bp.route("/api/designs/<design_id>/lineage/<edge_id>", methods=["DELETE"])
+    @dc_login_required
+    def dc_api_lineage_delete(design_id, edge_id):
+        """Delete a lineage edge."""
+        conn = get_connection()
+        conn.execute(
+            "DELETE FROM dd_lineage WHERE id=? AND design_id=?", (edge_id, design_id)
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({"status": "deleted"})
+
+    @bp.route("/api/designs/<design_id>/pii-scan", methods=["POST"])
+    @dc_login_required
+    def dc_api_pii_scan(design_id):
+        """Run PII/PHI detection on the current graph nodes."""
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT graph_json FROM data_designs WHERE id=?", (design_id,)
+        ).fetchone()
+        conn.close()
+        if not row:
+            return jsonify({"error": "Not found"}), 404
+        try:
+            graph = json.loads(row["graph_json"]) if isinstance(row["graph_json"], str) else row["graph_json"]
+        except (json.JSONDecodeError, TypeError):
+            return jsonify({"error": "Invalid graph data"}), 400
+        from tools.data_canvas.pii_detector import scan_graph as _scan_graph
+        result = _scan_graph(graph)
+        _audit(design_id, session.get("user_id", "system"), "PII_SCAN",
+               f"pii_nodes={result['pii_node_count']} high={result['high_count']}")
+        return jsonify(result)
 
     # ====================================================================
     # API ROUTES — Design Versioning
