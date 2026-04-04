@@ -525,7 +525,11 @@ window._loadCharts = function() {
             });
         });
 };
-// Initial chart load
-window._loadCharts();
+// Initial chart load — wait for DOMContentLoaded so charts.js (defer) is ready
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', window._loadCharts);
+} else {
+    window._loadCharts();
+}
 </script>
 {% endblock %}
