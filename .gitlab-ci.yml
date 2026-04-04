@@ -151,4 +151,172 @@ helm:lint:
   script:
     - helm lint deploy/helm/
     - helm template icdev deploy/helm/ > /dev/null
+
+# ---------------------------------------------------------------------------
+# Kanban Pipeline Job Templates
+# Jobs are triggered by the GitLabPipelineExecutor via pipeline trigger API.
+# All jobs require KANBAN_TASK_ID to be set; skipped otherwise.
+# KANBAN_PROMPT is base64-encoded to survive CI variable transport.
+# ---------------------------------------------------------------------------
+
+# Shared base: decode prompt, set up worktree, install deps
+.kanban-base:
+  image: python:3.11-slim
+  before_script:
+    - pip install --quiet -r requirements.txt
+    - |
+      # Decode base64 prompt into a plain text file
+      if [ -n "$KANBAN_PROMPT" ]; then
+        echo "$KANBAN_PROMPT" | base64 -d > /tmp/kanban_prompt.txt
+        echo "Kanban task: $KANBAN_TASK_ID (type=$KANBAN_TASK_TYPE, llm=$KANBAN_LLM_MODE)"
+      fi
+    - |
+      # Create isolated worktree for this task
+      if [ -n "$KANBAN_TASK_ID" ]; then
+        git config --global --add safe.directory "$CI_PROJECT_DIR"
+        export TASK_WORKTREE=".tmp/worktrees/$KANBAN_TASK_ID"
+        mkdir -p ".tmp/worktrees"
+        git worktree add "$TASK_WORKTREE" HEAD 2>/dev/null || true
+      fi
+  rules:
+    - if: '$KANBAN_TASK_ID != ""'
+
+# Plan tasks: Claude CLI on the runner (claude|research|architect)
+kanban-plan:
+  extends: .kanban-base
+  stage: test
+  variables:
+    GIT_STRATEGY: clone
+  script:
+    - |
+      echo "=== Kanban Plan Job: $KANBAN_TASK_ID ==="
+      PROMPT=$(cat /tmp/kanban_prompt.txt)
+      claude --dangerously-skip-permissions -p "$PROMPT" \
+        --output-format text 2>&1 | tee /tmp/kanban_output.txt
+      echo "Plan complete."
+  artifacts:
+    when: always
+    paths:
+      - .tmp/kanban_output.txt
+    expire_in: 7 days
+  rules:
+    - if: '$KANBAN_TASK_ID != "" && ($KANBAN_TASK_TYPE == "plan" || $KANBAN_TASK_TYPE == "research" || $KANBAN_TASK_TYPE == "architect")'
+
+# Build tasks: Ollama via LLM router (build|fix)
+kanban-build:
+  extends: .kanban-base
+  stage: test
+  variables:
+    GIT_STRATEGY: clone
+    OLLAMA_HOST: "${OLLAMA_HOST}"
+  script:
+    - |
+      echo "=== Kanban Build Job: $KANBAN_TASK_ID ==="
+      PROMPT=$(cat /tmp/kanban_prompt.txt)
+      python tools/llm/router.py \
+        --function code_generation \
+        --prompt "$PROMPT" \
+        --model qwen3.5 \
+        --json 2>&1 | tee /tmp/kanban_output.txt
+      echo "Build complete."
+  artifacts:
+    when: always
+    paths:
+      - .tmp/kanban_output.txt
+    expire_in: 7 days
+  rules:
+    - if: '$KANBAN_TASK_ID != "" && ($KANBAN_TASK_TYPE == "build" || $KANBAN_TASK_TYPE == "fix")'
+
+# Test tasks: Python only — pytest, ruff, bandit, behave (no LLM)
+kanban-test:
+  extends: .kanban-base
+  stage: test
+  script:
+    - |
+      echo "=== Kanban Test Job: $KANBAN_TASK_ID ==="
+      pip install --quiet ruff bandit behave
+      echo "--- ruff ---"
+      ruff check tools/ tests/ --select E,F,W || true
+      echo "--- pytest ---"
+      pytest tests/ -q --tb=line --ignore=tests/e2e \
+        --junitxml=/tmp/kanban_test_report.xml 2>&1 | tee /tmp/kanban_output.txt
+      echo "--- bandit ---"
+      bandit -r tools/ -ll -f json -o /tmp/kanban_bandit.json || true
+      echo "Test suite complete."
+  artifacts:
+    when: always
+    paths:
+      - /tmp/kanban_test_report.xml
+      - /tmp/kanban_bandit.json
+      - /tmp/kanban_output.txt
+    reports:
+      junit: /tmp/kanban_test_report.xml
+    expire_in: 7 days
+  rules:
+    - if: '$KANBAN_TASK_ID != "" && $KANBAN_TASK_TYPE == "test"'
+
+# Deploy tasks: IaC generation + terraform plan (no LLM)
+kanban-deploy:
+  extends: .kanban-base
+  stage: test
+  script:
+    - |
+      echo "=== Kanban Deploy Job: $KANBAN_TASK_ID ==="
+      python tools/ci/pipeline_config_generator.py \
+        --task-id "$KANBAN_TASK_ID" \
+        --json 2>&1 | tee /tmp/kanban_output.txt || true
+      echo "Deploy job complete."
+  artifacts:
+    when: always
+    paths:
+      - /tmp/kanban_output.txt
+    expire_in: 7 days
+  rules:
+    - if: '$KANBAN_TASK_ID != "" && $KANBAN_TASK_TYPE == "deploy"'
+
+# Chore tasks: Ollama-assisted refactor/cleanup (qwen3.5, zero Claude cost)
+kanban-chore:
+  extends: .kanban-base
+  stage: test
+  variables:
+    OLLAMA_HOST: "${OLLAMA_HOST}"
+  script:
+    - |
+      echo "=== Kanban Chore Job: $KANBAN_TASK_ID ==="
+      PROMPT=$(cat /tmp/kanban_prompt.txt)
+      python tools/llm/router.py \
+        --function code_generation \
+        --prompt "$PROMPT" \
+        --model qwen3.5 \
+        --json 2>&1 | tee /tmp/kanban_output.txt
+      echo "Chore complete."
+  artifacts:
+    when: always
+    paths:
+      - /tmp/kanban_output.txt
+    expire_in: 7 days
+  rules:
+    - if: '$KANBAN_TASK_ID != "" && $KANBAN_TASK_TYPE == "chore"'
+
+# Scan tasks: compliance + security canvas (no LLM)
+kanban-scan:
+  extends: .kanban-base
+  stage: security
+  script:
+    - |
+      echo "=== Kanban Scan Job: $KANBAN_TASK_ID ==="
+      pip install --quiet bandit
+      bandit -r tools/ -ll -f json -o /tmp/kanban_bandit.json || true
+      python tools/compliance/export.py \
+        --task-id "$KANBAN_TASK_ID" \
+        --json 2>&1 | tee /tmp/kanban_output.txt || true
+      echo "Scan complete."
+  artifacts:
+    when: always
+    paths:
+      - /tmp/kanban_bandit.json
+      - /tmp/kanban_output.txt
+    expire_in: 7 days
+  rules:
+    - if: '$KANBAN_TASK_ID != "" && ($KANBAN_TASK_TYPE == "scan" || $KANBAN_TASK_TYPE == "compliance")'
 # [TEMPLATE: CUI // SP-CTI]
