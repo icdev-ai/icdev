@@ -5187,6 +5187,1170 @@ TEMPLATES = [
             ]
         }),
     },
+
+    # ── AWS Direct Connect — SOP / Runbook ────────────────────────────────────
+    {
+        "id": "tpl-aws-directconnect",
+        "name": "AWS Direct Connect — SOP & Runbook",
+        "category": "WAN / Hybrid Cloud",
+        "description": (
+            "## AWS Direct Connect — Standard Operating Procedure & Runbook\n\n"
+            "Complete end-to-end SOP for establishing a dedicated 1/10/100 Gbps "
+            "AWS Direct Connect (DX) circuit covering both **customer-side** and "
+            "**AWS provider-side** provisioning.\n\n"
+            "### Workflow — Mermaid Diagram\n\n"
+            "```mermaid\n"
+            "flowchart TD\n"
+            "    A[\"1. Request DX Connection\\n(AWS Console / API)\"] --> B[\"2. Receive LOA-CFA\\nfrom AWS\"]\n"
+            "    B --> C[\"3. Submit LOA-CFA\\nto Colocation Provider\"]\n"
+            "    C --> D[\"4. Provider Builds\\nCross-Connect\"]\n"
+            "    D --> E{\"5. Physical Link Up?\"}\n"
+            "    E -- No --> F[\"Troubleshoot Layer 1\\n(optics, cabling, patch panel)\"]\n"
+            "    F --> E\n"
+            "    E -- Yes --> G[\"6. Create Virtual Interface\\n(Private / Public / Transit VIF)\"]\n"
+            "    G --> H[\"7. Configure BGP Peering\\n(Customer Router <-> AWS DX Router)\"]\n"
+            "    H --> I{\"8. BGP Session\\nEstablished?\"}\n"
+            "    I -- No --> J[\"Troubleshoot BGP\\n(ASN, MD5, prefixes)\"]\n"
+            "    J --> I\n"
+            "    I -- Yes --> K[\"9. Verify Route\\nAdvertisement\"]\n"
+            "    K --> L[\"10. Test Data Plane\\n(ping, iperf3, MTU 9001)\"]\n"
+            "    L --> M{\"11. Meets SLA\\nLatency/Throughput?\"}\n"
+            "    M -- No --> N[\"Tune QoS / MTU /\\nBGP Timers\"]\n"
+            "    N --> L\n"
+            "    M -- Yes --> O[\"12. Enable BFD\\n+ Redundancy\"]\n"
+            "    O --> P[\"13. Production\\nCut-Over\"]\n"
+            "    P --> Q[\"14. Document & Monitor\\n(CloudWatch DX Metrics)\"]\n"
+            "```\n\n"
+            "### SOP — Customer Side\n\n"
+            "| Step | Action | Owner | Duration |\n"
+            "|------|--------|-------|----------|\n"
+            "| 1 | Create DX connection in AWS Console (region, speed, location) | Cloud Engineer | 15 min |\n"
+            "| 2 | Download LOA-CFA from AWS Console | Cloud Engineer | 5 min |\n"
+            "| 3 | Submit LOA-CFA to colocation provider (Equinix, CoreSite, etc.) | Network Engineer | 1 day |\n"
+            "| 4 | Verify cross-connect completion and physical link-up | Network Engineer | 1-14 days |\n"
+            "| 5 | Create Private/Transit VIF — specify VLAN, BGP ASN, auth key | Cloud Engineer | 15 min |\n"
+            "| 6 | Configure customer edge router (see Cisco/Juniper configs below) | Network Engineer | 1 hr |\n"
+            "| 7 | Verify BGP peering established (show bgp summary) | Network Engineer | 15 min |\n"
+            "| 8 | Verify route advertisement — check AWS VPC route tables | Cloud Engineer | 15 min |\n"
+            "| 9 | Test data plane — ping, traceroute, iperf3, MTU 9001 (jumbo) | Network Engineer | 30 min |\n"
+            "| 10 | Enable BFD for fast failover (< 1s) | Network Engineer | 15 min |\n"
+            "| 11 | Configure redundant DX on second device/location (resiliency) | Network Engineer | Repeat 1-10 |\n"
+            "| 12 | Update CMDB, create CloudWatch alarms, document in NDC | Network Engineer | 1 hr |\n\n"
+            "### SOP — Provider Side (AWS)\n\n"
+            "| Step | Action | Owner | Duration |\n"
+            "|------|--------|-------|----------|\n"
+            "| 1 | Allocate DX port on AWS DX router at requested location | AWS (auto) | Minutes |\n"
+            "| 2 | Generate LOA-CFA with rack/port/panel details | AWS (auto) | Minutes |\n"
+            "| 3 | Colocation provider patches cross-connect per LOA-CFA | Colo Provider | 1-14 days |\n"
+            "| 4 | AWS detects physical link-up, connection state -> available | AWS (auto) | Minutes |\n"
+            "| 5 | Accept VIF creation, allocate BGP peer IP + Amazon-side ASN (7224) | AWS (auto) | Seconds |\n"
+            "| 6 | AWS DX router advertises agreed prefixes via BGP | AWS (auto) | Seconds |\n"
+            "| 7 | Monitor via DX CloudWatch: ConnectionState, Bps, Pps | AWS (auto) | Continuous |\n\n"
+            "### Failure Runbook\n\n"
+            "```mermaid\n"
+            "flowchart LR\n"
+            "    subgraph Layer1[\"Layer 1 — Physical\"]\n"
+            "        L1A[\"Link Down\"] --> L1B[\"Check SFP/optic type\\n(LR vs SR, single-mode vs multi)\"]\n"
+            "        L1B --> L1C[\"Check fiber patch\\n(LC-LC, correct strand)\"]\n"
+            "        L1C --> L1D[\"Check LOA-CFA port\\n(correct rack/panel/port)\"]\n"
+            "        L1D --> L1E[\"Contact colo NOC\\nfor cross-connect verification\"]\n"
+            "    end\n"
+            "    subgraph Layer2[\"Layer 2 — Data Link\"]\n"
+            "        L2A[\"802.1Q VLAN mismatch\"] --> L2B[\"Verify VIF VLAN ID matches\\nrouter sub-interface\"]\n"
+            "        L2B --> L2C[\"Check trunk vs access mode\"]\n"
+            "    end\n"
+            "    subgraph Layer3[\"Layer 3 — BGP\"]\n"
+            "        L3A[\"BGP not establishing\"] --> L3B[\"Verify ASN\\n(customer vs AWS 7224)\"]\n"
+            "        L3B --> L3C[\"Verify MD5 auth key\\n(exact match, no trailing space)\"]\n"
+            "        L3C --> L3D[\"Verify peer IPs\\n(/30 or /31 from AWS)\"]\n"
+            "        L3D --> L3E[\"Check firewall/ACL\\nfor TCP 179\"]\n"
+            "    end\n"
+            "    subgraph DataPlane[\"Data Plane\"]\n"
+            "        D1[\"No traffic flowing\"] --> D2[\"Check route tables\\n(VPC + on-prem)\"]\n"
+            "        D2 --> D3[\"Check security groups\\n+ NACLs in VPC\"]\n"
+            "        D3 --> D4[\"Check MTU\\n(jumbo 9001 vs 1500)\"]\n"
+            "        D4 --> D5[\"iperf3 throughput test\"]\n"
+            "    end\n"
+            "```\n\n"
+            "### Cisco IOS-XE Router Configuration\n\n"
+            "```\n"
+            "! ── AWS Direct Connect — Cisco IOS-XE ──────────────────────\n"
+            "! Customer Edge Router Configuration\n"
+            "! Replace: <VLAN_ID>, <CUSTOMER_ASN>, <AWS_PEER_IP>, <CUSTOMER_PEER_IP>, <BGP_AUTH_KEY>\n"
+            "!\n"
+            "interface GigabitEthernet0/0/0\n"
+            " description AWS-DX-Physical-Port\n"
+            " no ip address\n"
+            " no shutdown\n"
+            " mtu 9216\n"
+            "!\n"
+            "interface GigabitEthernet0/0/0.<VLAN_ID>\n"
+            " description AWS-DX-Private-VIF\n"
+            " encapsulation dot1Q <VLAN_ID>\n"
+            " ip address <CUSTOMER_PEER_IP> 255.255.255.252\n"
+            " ip mtu 9001\n"
+            " bfd interval 300 min_rx 300 multiplier 3\n"
+            "!\n"
+            "router bgp <CUSTOMER_ASN>\n"
+            " bgp log-neighbor-changes\n"
+            " neighbor <AWS_PEER_IP> remote-as 7224\n"
+            " neighbor <AWS_PEER_IP> password <BGP_AUTH_KEY>\n"
+            " neighbor <AWS_PEER_IP> fall-over bfd\n"
+            " neighbor <AWS_PEER_IP> timers 10 30\n"
+            " !\n"
+            " address-family ipv4 unicast\n"
+            "  neighbor <AWS_PEER_IP> activate\n"
+            "  neighbor <AWS_PEER_IP> soft-reconfiguration inbound\n"
+            "  network 10.0.0.0 mask 255.255.0.0\n"
+            "  ! Advertise on-prem summary to AWS\n"
+            " exit-address-family\n"
+            "!\n"
+            "! ── Monitoring\n"
+            "ip sla 1\n"
+            " icmp-echo <AWS_PEER_IP>\n"
+            "  frequency 10\n"
+            "  threshold 100\n"
+            "ip sla schedule 1 life forever start-time now\n"
+            "!\n"
+            "! ── Verify Commands\n"
+            "! show bgp summary\n"
+            "! show bgp ipv4 unicast neighbors <AWS_PEER_IP> advertised-routes\n"
+            "! show bgp ipv4 unicast neighbors <AWS_PEER_IP> received-routes\n"
+            "! show interface GigabitEthernet0/0/0.<VLAN_ID>\n"
+            "! show bfd neighbors\n"
+            "```\n\n"
+            "### Juniper JunOS Router Configuration\n\n"
+            "```\n"
+            "# ── AWS Direct Connect — Juniper JunOS ─────────────────────\n"
+            "# Customer Edge Router Configuration\n"
+            "# Replace: <VLAN_ID>, <CUSTOMER_ASN>, <AWS_PEER_IP>, <CUSTOMER_PEER_IP>, <BGP_AUTH_KEY>\n"
+            "#\n"
+            "interfaces {\n"
+            "    xe-0/0/0 {\n"
+            "        description \"AWS-DX-Physical-Port\";\n"
+            "        mtu 9216;\n"
+            "        flexible-vlan-tagging;\n"
+            "        unit <VLAN_ID> {\n"
+            "            description \"AWS-DX-Private-VIF\";\n"
+            "            vlan-id <VLAN_ID>;\n"
+            "            family inet {\n"
+            "                mtu 9001;\n"
+            "                address <CUSTOMER_PEER_IP>/30;\n"
+            "            }\n"
+            "        }\n"
+            "    }\n"
+            "}\n"
+            "#\n"
+            "protocols {\n"
+            "    bgp {\n"
+            "        group AWS-DX {\n"
+            "            type external;\n"
+            "            peer-as 7224;\n"
+            "            local-as <CUSTOMER_ASN>;\n"
+            "            hold-time 30;\n"
+            "            neighbor <AWS_PEER_IP> {\n"
+            "                authentication-key \"<BGP_AUTH_KEY>\";\n"
+            "                export ADVERTISE-TO-AWS;\n"
+            "                import ACCEPT-FROM-AWS;\n"
+            "                bfd-liveness-detection {\n"
+            "                    minimum-interval 300;\n"
+            "                    multiplier 3;\n"
+            "                }\n"
+            "            }\n"
+            "        }\n"
+            "    }\n"
+            "}\n"
+            "#\n"
+            "policy-options {\n"
+            "    policy-statement ADVERTISE-TO-AWS {\n"
+            "        term ON-PREM {\n"
+            "            from {\n"
+            "                protocol [ static direct ospf ];\n"
+            "                route-filter 10.0.0.0/16 orlonger;\n"
+            "            }\n"
+            "            then accept;\n"
+            "        }\n"
+            "        term REJECT-ALL {\n"
+            "            then reject;\n"
+            "        }\n"
+            "    }\n"
+            "    policy-statement ACCEPT-FROM-AWS {\n"
+            "        term AWS-PREFIXES {\n"
+            "            from {\n"
+            "                route-filter 172.16.0.0/12 orlonger;\n"
+            "            }\n"
+            "            then accept;\n"
+            "        }\n"
+            "        term REJECT-ALL {\n"
+            "            then reject;\n"
+            "        }\n"
+            "    }\n"
+            "}\n"
+            "#\n"
+            "# ── Verify Commands\n"
+            "# show bgp summary\n"
+            "# show route advertising-protocol bgp <AWS_PEER_IP>\n"
+            "# show route receive-protocol bgp <AWS_PEER_IP>\n"
+            "# show interfaces xe-0/0/0.<VLAN_ID>\n"
+            "# show bfd session\n"
+            "```\n"
+        ),
+        "tags": json.dumps([
+            "aws", "direct-connect", "dx", "hybrid-cloud", "bgp",
+            "sop", "runbook", "cisco", "juniper", "bfd",
+        ]),
+        "graph_json": json.dumps({
+            "nodes": [
+                _node("cust-rtr", "Customer Edge Router", "router", 100, 200, {
+                    "config": {
+                        "role": "CE router — terminates DX 802.1Q sub-interface",
+                        "protocols": "BGP (eBGP to AWS ASN 7224), BFD",
+                        "mtu": "9216 physical / 9001 IP (jumbo frames)",
+                        "redundancy": "Dual routers recommended (LAG or active/standby)",
+                    }
+                }),
+                _node("cust-patch", "Customer Patch Panel", "odf", 280, 200, {
+                    "config": {
+                        "role": "Customer cage patch panel in colocation facility",
+                        "fiber_type": "Single-mode (1000BASE-LX / 10GBASE-LR)",
+                        "notes": "Label both A and B strands per LOA-CFA",
+                    }
+                }),
+                _node("mmr", "Meet-Me Room", "odf", 460, 200, {
+                    "config": {
+                        "role": "Colocation meet-me room — cross-connect termination",
+                        "owner": "Colocation provider (Equinix, CoreSite, QTS, etc.)",
+                        "notes": "Cross-connect built by colo per LOA-CFA",
+                    }
+                }),
+                _node("aws-dx-port", "AWS DX Port", "odf", 640, 200, {
+                    "config": {
+                        "role": "AWS Direct Connect port on AWS cage router",
+                        "speed": "1 Gbps / 10 Gbps / 100 Gbps",
+                        "notes": "Port ID shown in LOA-CFA document",
+                    }
+                }),
+                _node("aws-dx-rtr", "AWS DX Router", "router", 820, 200, {
+                    "config": {
+                        "role": "AWS-managed DX router — BGP peer (ASN 7224)",
+                        "owner": "AWS (managed — no customer access)",
+                        "bgp_asn": "7224 (Amazon default) or custom private ASN",
+                    }
+                }),
+                _node("vgw", "Virtual Private Gateway", "router", 820, 380, {
+                    "config": {
+                        "role": "VGW attached to VPC — terminates Private VIF",
+                        "alternatives": "Transit Gateway (TGW) for multi-VPC via Transit VIF",
+                        "notes": "VGW propagates routes to VPC route tables automatically",
+                    }
+                }),
+                _node("vpc", "AWS VPC", "aws-vpc", 820, 520, {
+                    "config": {
+                        "role": "Target VPC with private subnets",
+                        "cidr": "172.16.0.0/16 (example)",
+                        "notes": "Enable route propagation on subnet route tables",
+                    }
+                }),
+                _node("on-prem", "On-Premises Network", "switch-l3", 100, 380, {
+                    "config": {
+                        "role": "Corporate LAN / data center network",
+                        "cidr": "10.0.0.0/16 (example — advertised to AWS via BGP)",
+                        "notes": "Summarize prefixes to avoid route table limits (100 max on VGW)",
+                    }
+                }),
+            ],
+            "edges": [
+                _edge("on-prem", "cust-rtr", "Uplink", "OSPF/IS-IS"),
+                _edge("cust-rtr", "cust-patch", "Fiber (SM)", "802.1Q"),
+                _edge("cust-patch", "mmr", "Cross-Connect", ""),
+                _edge("mmr", "aws-dx-port", "Cross-Connect", ""),
+                _edge("aws-dx-port", "aws-dx-rtr", "Internal", ""),
+                _edge("aws-dx-rtr", "vgw", "Private VIF", "eBGP"),
+                _edge("vgw", "vpc", "Route Propagation", ""),
+            ],
+        }),
+    },
+
+    # ── Azure ExpressRoute — SOP / Runbook ────────────────────────────────────
+    {
+        "id": "tpl-azure-expressroute",
+        "name": "Azure ExpressRoute — SOP & Runbook",
+        "category": "WAN / Hybrid Cloud",
+        "description": (
+            "## Azure ExpressRoute — Standard Operating Procedure & Runbook\n\n"
+            "Complete end-to-end SOP for establishing Azure ExpressRoute (ER) "
+            "circuit covering both **customer-side** and **provider-side** "
+            "provisioning, including Microsoft Peering and Private Peering.\n\n"
+            "### Workflow — Mermaid Diagram\n\n"
+            "```mermaid\n"
+            "flowchart TD\n"
+            "    A[\"1. Create ExpressRoute Circuit\\n(Azure Portal / CLI)\"] --> B[\"2. Select Provider\\n& Peering Location\"]\n"
+            "    B --> C{\"Connectivity Model?\"}\n"
+            "    C -- \"Co-located\\nat Exchange\" --> D1[\"3a. Request L2\\nCross-Connect\"]\n"
+            "    C -- \"Point-to-Point\\nEthernet\" --> D2[\"3b. Order P2P\\nCircuit from Carrier\"]\n"
+            "    C -- \"Any-to-Any\\n(IPVPN)\" --> D3[\"3c. Add Azure as\\nVRF to MPLS WAN\"]\n"
+            "    D1 --> E[\"4. Provider Provisions\\nCircuit\"]\n"
+            "    D2 --> E\n"
+            "    D3 --> E\n"
+            "    E --> F{\"5. Provider Status\\n= Provisioned?\"}\n"
+            "    F -- No --> G[\"Contact Provider\\n(check service key)\"]\n"
+            "    G --> F\n"
+            "    F -- Yes --> H[\"6. Configure Peering\\n(Private + Microsoft)\"]\n"
+            "    H --> I[\"7. Configure BGP\\non Customer Router\"]\n"
+            "    I --> J{\"8. BGP Session\\nEstablished?\"}\n"
+            "    J -- No --> K[\"Troubleshoot BGP\\n(ASN, VLAN, /30 IPs, MD5)\"]\n"
+            "    K --> J\n"
+            "    J -- Yes --> L[\"9. Link ER Circuit\\nto VNet Gateway\"]\n"
+            "    L --> M[\"10. Verify Route Tables\\n(az network express-route\\nlist-route-tables)\"]\n"
+            "    M --> N[\"11. Test Data Plane\\n(ping, iperf3, MTU 1500)\"]\n"
+            "    N --> O{\"12. Meets SLA?\"}\n"
+            "    O -- No --> P[\"Tune BGP / QoS /\\nCheck Route Filters\"]\n"
+            "    P --> N\n"
+            "    O -- Yes --> Q[\"13. Enable BFD +\\nER Global Reach\\n(optional)\"]\n"
+            "    Q --> R[\"14. Production\\nCut-Over\"]\n"
+            "    R --> S[\"15. Document & Monitor\\n(Azure Monitor ER Metrics)\"]\n"
+            "```\n\n"
+            "### SOP — Customer Side\n\n"
+            "| Step | Action | Owner | Duration |\n"
+            "|------|--------|-------|----------|\n"
+            "| 1 | Create ER circuit in Azure Portal (provider, peering location, bandwidth) | Cloud Engineer | 15 min |\n"
+            "| 2 | Copy Service Key from Azure Portal — share with provider | Cloud Engineer | 5 min |\n"
+            "| 3 | Engage provider to provision circuit using Service Key | Network Engineer | 1-30 days |\n"
+            "| 4 | Verify provider status = 'Provisioned' in Azure Portal | Cloud Engineer | 5 min |\n"
+            "| 5 | Configure Private Peering — specify VLAN, /30 subnets, ASN | Cloud Engineer | 15 min |\n"
+            "| 6 | Configure Microsoft Peering (optional) — public IP /30, route filters | Cloud Engineer | 30 min |\n"
+            "| 7 | Configure customer edge router (see Cisco/Juniper configs below) | Network Engineer | 1 hr |\n"
+            "| 8 | Verify BGP established on both primary and secondary paths | Network Engineer | 15 min |\n"
+            "| 9 | Create VNet Gateway (ErGw1Az/ErGw2Az/ErGw3Az SKU) | Cloud Engineer | 30 min |\n"
+            "| 10 | Link ER circuit to VNet Gateway (connection resource) | Cloud Engineer | 10 min |\n"
+            "| 11 | Verify effective routes on VNet subnets | Cloud Engineer | 15 min |\n"
+            "| 12 | Test data plane — ping, traceroute, iperf3 | Network Engineer | 30 min |\n"
+            "| 13 | Enable BFD for sub-second failover | Network Engineer | 15 min |\n"
+            "| 14 | Update CMDB, create Azure Monitor alerts, document in NDC | Network Engineer | 1 hr |\n\n"
+            "### SOP — Provider Side (Connectivity Provider)\n\n"
+            "| Step | Action | Owner | Duration |\n"
+            "|------|--------|-------|----------|\n"
+            "| 1 | Receive Service Key from customer | Provider | — |\n"
+            "| 2 | Provision L2 circuit between customer CE and MSEE routers | Provider | 1-30 days |\n"
+            "| 3 | Configure 802.1Q VLAN tagging per Azure peering config | Provider | 1 day |\n"
+            "| 4 | Set Provider Status = 'Provisioned' via provider API | Provider | Minutes |\n"
+            "| 5 | (If L3 provider) Establish BGP to MSEE on customer's behalf | Provider | 1 day |\n"
+            "| 6 | Monitor circuit health, report SLA metrics | Provider | Continuous |\n\n"
+            "### Provider Side — Microsoft (MSEE)\n\n"
+            "| Step | Action | Owner | Duration |\n"
+            "|------|--------|-------|----------|\n"
+            "| 1 | Allocate MSEE router pair at peering location | Azure (auto) | Minutes |\n"
+            "| 2 | Generate Service Key, allocate circuit resources | Azure (auto) | Minutes |\n"
+            "| 3 | Wait for provider to set status = Provisioned | Azure (auto) | — |\n"
+            "| 4 | Accept peering config, allocate BGP peer IPs (/30) | Azure (auto) | Seconds |\n"
+            "| 5 | MSEE routers advertise Azure VNet prefixes via BGP | Azure (auto) | Seconds |\n"
+            "| 6 | Monitor via Azure Monitor: BitsInPerSecond, BitsOutPerSecond, ArpAvailability, BgpAvailability | Azure (auto) | Continuous |\n\n"
+            "### Failure Runbook\n\n"
+            "```mermaid\n"
+            "flowchart LR\n"
+            "    subgraph Circuit[\"Circuit Health\"]\n"
+            "        C1[\"Circuit not provisioned\"] --> C2[\"Verify Service Key\\nshared with provider\"]\n"
+            "        C2 --> C3[\"Contact provider NOC\\nfor provisioning status\"]\n"
+            "        C3 --> C4[\"Check Azure Portal:\\nProvider Status field\"]\n"
+            "    end\n"
+            "    subgraph BGP[\"BGP Issues\"]\n"
+            "        B1[\"ARP Availability < 100%\"] --> B2[\"Check VLAN ID matches\\nboth peerings\"]\n"
+            "        B2 --> B3[\"Verify /30 peer IPs\\n(primary + secondary)\"]\n"
+            "        B3 --> B4[\"Verify BGP ASN\\n(customer vs Azure 12076)\"]\n"
+            "        B4 --> B5[\"Check MD5 auth key\\n(if configured)\"]\n"
+            "        B5 --> B6[\"Verify both primary\\n& secondary links active\"]\n"
+            "    end\n"
+            "    subgraph DataPlane[\"Data Plane\"]\n"
+            "        D1[\"No connectivity\\nto VNet\"] --> D2[\"Verify VNet Gateway\\nlinked to ER circuit\"]\n"
+            "        D2 --> D3[\"Check effective routes\\non subnet\"]\n"
+            "        D3 --> D4[\"Verify NSG rules\\nallow traffic\"]\n"
+            "        D4 --> D5[\"Check UDR not\\noverriding ER routes\"]\n"
+            "        D5 --> D6[\"Test with Azure\\nNetwork Watcher\"]\n"
+            "    end\n"
+            "```\n\n"
+            "### Cisco IOS-XE Router Configuration\n\n"
+            "```\n"
+            "! ── Azure ExpressRoute — Cisco IOS-XE ──────────────────────\n"
+            "! Customer Edge Router — Private Peering (Primary)\n"
+            "! Replace: <PRI_VLAN>, <SEC_VLAN>, <CUSTOMER_ASN>,\n"
+            "!          <PRI_CUST_IP>, <PRI_MSEE_IP>, <SEC_CUST_IP>, <SEC_MSEE_IP>,\n"
+            "!          <BGP_AUTH_KEY>\n"
+            "!\n"
+            "! ── Primary Link\n"
+            "interface GigabitEthernet0/0/0\n"
+            " description AzureER-Physical-Primary\n"
+            " no ip address\n"
+            " no shutdown\n"
+            "!\n"
+            "interface GigabitEthernet0/0/0.<PRI_VLAN>\n"
+            " description AzureER-Private-Peering-Primary\n"
+            " encapsulation dot1Q <PRI_VLAN>\n"
+            " ip address <PRI_CUST_IP> 255.255.255.252\n"
+            " bfd interval 300 min_rx 300 multiplier 3\n"
+            "!\n"
+            "! ── Secondary Link (MUST be on separate device or interface for SLA)\n"
+            "interface GigabitEthernet0/0/1.<SEC_VLAN>\n"
+            " description AzureER-Private-Peering-Secondary\n"
+            " encapsulation dot1Q <SEC_VLAN>\n"
+            " ip address <SEC_CUST_IP> 255.255.255.252\n"
+            " bfd interval 300 min_rx 300 multiplier 3\n"
+            "!\n"
+            "router bgp <CUSTOMER_ASN>\n"
+            " bgp log-neighbor-changes\n"
+            " bgp bestpath as-path multipath-relax\n"
+            " !\n"
+            " ! Primary MSEE peer\n"
+            " neighbor <PRI_MSEE_IP> remote-as 12076\n"
+            " neighbor <PRI_MSEE_IP> password <BGP_AUTH_KEY>\n"
+            " neighbor <PRI_MSEE_IP> fall-over bfd\n"
+            " neighbor <PRI_MSEE_IP> timers 10 30\n"
+            " !\n"
+            " ! Secondary MSEE peer\n"
+            " neighbor <SEC_MSEE_IP> remote-as 12076\n"
+            " neighbor <SEC_MSEE_IP> password <BGP_AUTH_KEY>\n"
+            " neighbor <SEC_MSEE_IP> fall-over bfd\n"
+            " neighbor <SEC_MSEE_IP> timers 10 30\n"
+            " !\n"
+            " address-family ipv4 unicast\n"
+            "  neighbor <PRI_MSEE_IP> activate\n"
+            "  neighbor <PRI_MSEE_IP> soft-reconfiguration inbound\n"
+            "  neighbor <PRI_MSEE_IP> prefix-list ONPREM-TO-AZURE out\n"
+            "  neighbor <SEC_MSEE_IP> activate\n"
+            "  neighbor <SEC_MSEE_IP> soft-reconfiguration inbound\n"
+            "  neighbor <SEC_MSEE_IP> prefix-list ONPREM-TO-AZURE out\n"
+            "  network 10.0.0.0 mask 255.255.0.0\n"
+            "  maximum-paths 2\n"
+            " exit-address-family\n"
+            "!\n"
+            "ip prefix-list ONPREM-TO-AZURE seq 10 permit 10.0.0.0/16\n"
+            "ip prefix-list ONPREM-TO-AZURE seq 999 deny 0.0.0.0/0 le 32\n"
+            "!\n"
+            "! ── Verify Commands\n"
+            "! show bgp summary\n"
+            "! show bgp ipv4 unicast neighbors <PRI_MSEE_IP> advertised-routes\n"
+            "! show bgp ipv4 unicast neighbors <PRI_MSEE_IP> received-routes\n"
+            "! show bfd neighbors\n"
+            "! show ip route bgp\n"
+            "```\n\n"
+            "### Juniper JunOS Router Configuration\n\n"
+            "```\n"
+            "# ── Azure ExpressRoute — Juniper JunOS ─────────────────────\n"
+            "# Customer Edge Router — Private Peering (Primary + Secondary)\n"
+            "# Replace: <PRI_VLAN>, <SEC_VLAN>, <CUSTOMER_ASN>,\n"
+            "#          <PRI_CUST_IP>, <PRI_MSEE_IP>, <SEC_CUST_IP>, <SEC_MSEE_IP>,\n"
+            "#          <BGP_AUTH_KEY>\n"
+            "#\n"
+            "interfaces {\n"
+            "    xe-0/0/0 {\n"
+            "        description \"AzureER-Physical-Primary\";\n"
+            "        flexible-vlan-tagging;\n"
+            "        unit <PRI_VLAN> {\n"
+            "            description \"AzureER-Private-Peering-Primary\";\n"
+            "            vlan-id <PRI_VLAN>;\n"
+            "            family inet {\n"
+            "                address <PRI_CUST_IP>/30;\n"
+            "            }\n"
+            "        }\n"
+            "    }\n"
+            "    xe-0/0/1 {\n"
+            "        description \"AzureER-Physical-Secondary\";\n"
+            "        flexible-vlan-tagging;\n"
+            "        unit <SEC_VLAN> {\n"
+            "            description \"AzureER-Private-Peering-Secondary\";\n"
+            "            vlan-id <SEC_VLAN>;\n"
+            "            family inet {\n"
+            "                address <SEC_CUST_IP>/30;\n"
+            "            }\n"
+            "        }\n"
+            "    }\n"
+            "}\n"
+            "#\n"
+            "protocols {\n"
+            "    bgp {\n"
+            "        group AZURE-ER-PRIMARY {\n"
+            "            type external;\n"
+            "            peer-as 12076;\n"
+            "            local-as <CUSTOMER_ASN>;\n"
+            "            hold-time 30;\n"
+            "            multipath;\n"
+            "            neighbor <PRI_MSEE_IP> {\n"
+            "                authentication-key \"<BGP_AUTH_KEY>\";\n"
+            "                export ADVERTISE-TO-AZURE;\n"
+            "                import ACCEPT-FROM-AZURE;\n"
+            "                bfd-liveness-detection {\n"
+            "                    minimum-interval 300;\n"
+            "                    multiplier 3;\n"
+            "                }\n"
+            "            }\n"
+            "        }\n"
+            "        group AZURE-ER-SECONDARY {\n"
+            "            type external;\n"
+            "            peer-as 12076;\n"
+            "            local-as <CUSTOMER_ASN>;\n"
+            "            hold-time 30;\n"
+            "            multipath;\n"
+            "            neighbor <SEC_MSEE_IP> {\n"
+            "                authentication-key \"<BGP_AUTH_KEY>\";\n"
+            "                export ADVERTISE-TO-AZURE;\n"
+            "                import ACCEPT-FROM-AZURE;\n"
+            "                bfd-liveness-detection {\n"
+            "                    minimum-interval 300;\n"
+            "                    multiplier 3;\n"
+            "                }\n"
+            "            }\n"
+            "        }\n"
+            "    }\n"
+            "}\n"
+            "#\n"
+            "routing-options {\n"
+            "    autonomous-system <CUSTOMER_ASN>;\n"
+            "}\n"
+            "#\n"
+            "policy-options {\n"
+            "    policy-statement ADVERTISE-TO-AZURE {\n"
+            "        term ON-PREM {\n"
+            "            from {\n"
+            "                protocol [ static direct ospf ];\n"
+            "                route-filter 10.0.0.0/16 orlonger;\n"
+            "            }\n"
+            "            then accept;\n"
+            "        }\n"
+            "        term REJECT-ALL {\n"
+            "            then reject;\n"
+            "        }\n"
+            "    }\n"
+            "    policy-statement ACCEPT-FROM-AZURE {\n"
+            "        term AZURE-PREFIXES {\n"
+            "            from {\n"
+            "                route-filter 172.16.0.0/12 orlonger;\n"
+            "            }\n"
+            "            then accept;\n"
+            "        }\n"
+            "        term REJECT-ALL {\n"
+            "            then reject;\n"
+            "        }\n"
+            "    }\n"
+            "}\n"
+            "#\n"
+            "# ── Verify Commands\n"
+            "# show bgp summary\n"
+            "# show route advertising-protocol bgp <PRI_MSEE_IP>\n"
+            "# show route receive-protocol bgp <PRI_MSEE_IP>\n"
+            "# show bfd session\n"
+            "# show route protocol bgp\n"
+            "```\n"
+        ),
+        "tags": json.dumps([
+            "azure", "expressroute", "hybrid-cloud", "bgp", "msee",
+            "sop", "runbook", "cisco", "juniper", "bfd",
+        ]),
+        "graph_json": json.dumps({
+            "nodes": [
+                _node("cust-rtr-pri", "Customer CE (Primary)", "router", 100, 160, {
+                    "config": {
+                        "role": "Primary CE router — BGP to MSEE primary",
+                        "protocols": "BGP (eBGP to Azure ASN 12076), BFD",
+                        "notes": "MUST be separate device from secondary for Azure SLA",
+                    }
+                }),
+                _node("cust-rtr-sec", "Customer CE (Secondary)", "router", 100, 340, {
+                    "config": {
+                        "role": "Secondary CE router — BGP to MSEE secondary",
+                        "protocols": "BGP (eBGP to Azure ASN 12076), BFD",
+                        "notes": "Azure requires primary + secondary for 99.95% SLA",
+                    }
+                }),
+                _node("provider-pe", "Provider PE / Exchange", "mpls-pe", 340, 250, {
+                    "config": {
+                        "role": "Connectivity provider PE router or cloud exchange fabric",
+                        "models": "Equinix Fabric, Megaport, AT&T NetBond, Verizon, etc.",
+                        "notes": "L2 or L3 connectivity depending on provider model",
+                    }
+                }),
+                _node("msee-pri", "MSEE Primary", "router", 580, 160, {
+                    "config": {
+                        "role": "Microsoft Enterprise Edge router — primary",
+                        "owner": "Microsoft (managed — no customer access)",
+                        "bgp_asn": "12076 (Microsoft)",
+                        "peering_types": "Private Peering, Microsoft Peering",
+                    }
+                }),
+                _node("msee-sec", "MSEE Secondary", "router", 580, 340, {
+                    "config": {
+                        "role": "Microsoft Enterprise Edge router — secondary",
+                        "owner": "Microsoft (managed)",
+                        "bgp_asn": "12076 (Microsoft)",
+                        "notes": "Active-active with primary for high availability",
+                    }
+                }),
+                _node("er-gw", "ExpressRoute Gateway", "router", 780, 250, {
+                    "config": {
+                        "role": "VNet Gateway (SKU: ErGw1Az / ErGw2Az / ErGw3Az)",
+                        "notes": "Zone-redundant SKUs (*Az) recommended for production",
+                        "fastpath": "Enable FastPath on ErGw3Az for bypass (latency reduction)",
+                    }
+                }),
+                _node("vnet", "Azure VNet", "az-vnet", 940, 250, {
+                    "config": {
+                        "role": "Target Virtual Network with GatewaySubnet",
+                        "requirements": "GatewaySubnet (/27 minimum), no NSG on GatewaySubnet",
+                        "cidr": "172.16.0.0/16 (example)",
+                    }
+                }),
+                _node("on-prem", "On-Premises Network", "switch-l3", 100, 500, {
+                    "config": {
+                        "role": "Corporate LAN / data center",
+                        "cidr": "10.0.0.0/16 (advertised to Azure via BGP)",
+                        "notes": "Use route filters to limit prefixes advertised to Azure",
+                    }
+                }),
+            ],
+            "edges": [
+                _edge("on-prem", "cust-rtr-pri", "Uplink", "OSPF/IS-IS"),
+                _edge("on-prem", "cust-rtr-sec", "Uplink", "OSPF/IS-IS"),
+                _edge("cust-rtr-pri", "provider-pe", "Primary Circuit", "802.1Q"),
+                _edge("cust-rtr-sec", "provider-pe", "Secondary Circuit", "802.1Q"),
+                _edge("provider-pe", "msee-pri", "Primary Path", "L2"),
+                _edge("provider-pe", "msee-sec", "Secondary Path", "L2"),
+                _edge("msee-pri", "er-gw", "Private Peering", "eBGP"),
+                _edge("msee-sec", "er-gw", "Private Peering", "eBGP"),
+                _edge("er-gw", "vnet", "Gateway Connection", ""),
+            ],
+        }),
+    },
+
+    # ── GCP Cloud Interconnect — SOP / Runbook ────────────────────────────────
+    {
+        "id": "tpl-gcp-interconnect",
+        "name": "GCP Cloud Interconnect — SOP & Runbook",
+        "category": "WAN / Hybrid Cloud",
+        "description": (
+            "## GCP Cloud Interconnect — Standard Operating Procedure & Runbook\n\n"
+            "Complete end-to-end SOP for establishing Google Cloud **Dedicated Interconnect** "
+            "(10/100 Gbps) and **Partner Interconnect** covering both **customer-side** and "
+            "**Google provider-side** provisioning.\n\n"
+            "### Workflow — Mermaid Diagram (Dedicated Interconnect)\n\n"
+            "```mermaid\n"
+            "flowchart TD\n"
+            "    A[\"1. Create Interconnect\\n(GCP Console / gcloud)\"] --> B{\"Interconnect Type?\"}\n"
+            "    B -- Dedicated --> C1[\"2a. Select Colocation\\nFacility\"]\n"
+            "    B -- Partner --> C2[\"2b. Select Service\\nProvider\"]\n"
+            "    C1 --> D[\"3. Google Provisions\\nInterconnect Port\"]\n"
+            "    C2 --> D2[\"3b. Provider Provisions\\nPartner Circuit\"]\n"
+            "    D --> E[\"4. Submit LOA to\\nColocation Provider\"]\n"
+            "    E --> F[\"5. Cross-Connect\\nInstalled\"]\n"
+            "    D2 --> F2[\"5b. Provider Confirms\\nPairing Key\"]\n"
+            "    F --> G[\"6. Create VLAN\\nAttachment\"]\n"
+            "    F2 --> G\n"
+            "    G --> H[\"7. Create Cloud Router\\n(BGP ASN)\"]\n"
+            "    H --> I[\"8. Configure BGP on\\nCustomer Router\"]\n"
+            "    I --> J{\"9. BGP Session\\nEstablished?\"}\n"
+            "    J -- No --> K[\"Troubleshoot BGP\\n(ASN, peer IPs, VLAN)\"]\n"
+            "    K --> J\n"
+            "    J -- Yes --> L[\"10. Verify Routes in\\nVPC Route Table\"]\n"
+            "    L --> M[\"11. Test Data Plane\\n(ping, iperf3, MTU 1440)\"]\n"
+            "    M --> N{\"12. Meets SLA?\"}\n"
+            "    N -- No --> O[\"Tune BGP / MTU /\\nCheck Firewall Rules\"]\n"
+            "    O --> M\n"
+            "    N -- Yes --> P[\"13. Add Redundant\\nInterconnect\"]\n"
+            "    P --> Q[\"14. Production\\nCut-Over\"]\n"
+            "    Q --> R[\"15. Document & Monitor\\n(Cloud Monitoring)\"]\n"
+            "```\n\n"
+            "### SOP — Customer Side\n\n"
+            "| Step | Action | Owner | Duration |\n"
+            "|------|--------|-------|----------|\n"
+            "| 1 | Create Interconnect in GCP Console (type, location, capacity) | Cloud Engineer | 15 min |\n"
+            "| 2 | (Dedicated) Download LOA from GCP Console | Cloud Engineer | 5 min |\n"
+            "| 2b | (Partner) Share pairing key with service provider | Cloud Engineer | 5 min |\n"
+            "| 3 | Submit LOA to colocation provider / engage partner | Network Engineer | 1-14 days |\n"
+            "| 4 | Verify physical link-up / partner provisioning complete | Network Engineer | 1-30 days |\n"
+            "| 5 | Create VLAN Attachment (specify Cloud Router, VLAN, bandwidth) | Cloud Engineer | 15 min |\n"
+            "| 6 | Create Cloud Router in target region with private ASN (16550 is Google's) | Cloud Engineer | 10 min |\n"
+            "| 7 | Configure customer edge router — BGP to Cloud Router peer IPs | Network Engineer | 1 hr |\n"
+            "| 8 | Verify BGP session established (gcloud compute routers get-status) | Cloud Engineer | 15 min |\n"
+            "| 9 | Verify routes propagated to VPC (gcloud compute routes list) | Cloud Engineer | 15 min |\n"
+            "| 10 | Test data plane — ping, traceroute, iperf3, verify MTU (1440 default) | Network Engineer | 30 min |\n"
+            "| 11 | Create redundant interconnect in second metro (99.99% SLA) | Network Engineer | Repeat 1-10 |\n"
+            "| 12 | Configure custom route advertisements on Cloud Router | Cloud Engineer | 15 min |\n"
+            "| 13 | Update CMDB, create Cloud Monitoring alerts, document in NDC | Network Engineer | 1 hr |\n\n"
+            "### SOP — Provider Side (Google)\n\n"
+            "| Step | Action | Owner | Duration |\n"
+            "|------|--------|-------|----------|\n"
+            "| 1 | Allocate interconnect port at requested facility | Google (auto) | Minutes |\n"
+            "| 2 | Generate LOA with rack/port details | Google (auto) | Minutes |\n"
+            "| 3 | Detect physical link-up, set status = active | Google (auto) | Minutes |\n"
+            "| 4 | Allocate BGP peer IPs for VLAN attachment (link-local 169.254.x.x/29) | Google (auto) | Seconds |\n"
+            "| 5 | Cloud Router establishes BGP, advertises VPC subnets | Google (auto) | Seconds |\n"
+            "| 6 | Monitor via Cloud Monitoring: interconnect/link/state, received/sent bytes | Google (auto) | Continuous |\n\n"
+            "### Failure Runbook\n\n"
+            "```mermaid\n"
+            "flowchart LR\n"
+            "    subgraph Physical[\"Layer 1\"]\n"
+            "        P1[\"Admin status down\"] --> P2[\"Check optics\\n(10GBASE-LR for Dedicated)\"]\n"
+            "        P2 --> P3[\"Verify cross-connect\\nper LOA\"]\n"
+            "        P3 --> P4[\"Contact colo NOC\"]\n"
+            "    end\n"
+            "    subgraph BGPIssue[\"BGP\"]\n"
+            "        B1[\"BGP not establishing\"] --> B2[\"Verify peer IPs\\n(link-local 169.254.x.x)\"]\n"
+            "        B2 --> B3[\"Verify ASN\\n(customer vs Google 16550)\"]\n"
+            "        B3 --> B4[\"Verify VLAN ID matches\\nattachment config\"]\n"
+            "        B4 --> B5[\"Check Cloud Router\\nlogs in Cloud Logging\"]\n"
+            "    end\n"
+            "    subgraph Routes[\"Routing\"]\n"
+            "        R1[\"Routes not propagating\"] --> R2[\"Check Cloud Router\\ncustom advertisements\"]\n"
+            "        R2 --> R3[\"Verify VPC firewall\\nrules allow traffic\"]\n"
+            "        R3 --> R4[\"Check MTU\\n(GCP default 1460,\\nInterconnect 1440)\"]\n"
+            "    end\n"
+            "```\n\n"
+            "### Cisco IOS-XE Router Configuration\n\n"
+            "```\n"
+            "! ── GCP Cloud Interconnect — Cisco IOS-XE ──────────────────\n"
+            "! Customer Edge Router — Dedicated Interconnect\n"
+            "! Replace: <VLAN_ID>, <CUSTOMER_ASN>, <GCP_PEER_IP>, <CUSTOMER_PEER_IP>\n"
+            "! Note: Google ASN = 16550, peer IPs are link-local 169.254.x.x/29\n"
+            "!\n"
+            "interface GigabitEthernet0/0/0\n"
+            " description GCP-Interconnect-Physical\n"
+            " no ip address\n"
+            " no shutdown\n"
+            "!\n"
+            "interface GigabitEthernet0/0/0.<VLAN_ID>\n"
+            " description GCP-VLAN-Attachment\n"
+            " encapsulation dot1Q <VLAN_ID>\n"
+            " ip address <CUSTOMER_PEER_IP> 255.255.255.248\n"
+            " ip mtu 1440\n"
+            "!\n"
+            "router bgp <CUSTOMER_ASN>\n"
+            " bgp log-neighbor-changes\n"
+            " neighbor <GCP_PEER_IP> remote-as 16550\n"
+            " neighbor <GCP_PEER_IP> timers 20 60\n"
+            " neighbor <GCP_PEER_IP> ebgp-multihop 4\n"
+            " !\n"
+            " address-family ipv4 unicast\n"
+            "  neighbor <GCP_PEER_IP> activate\n"
+            "  neighbor <GCP_PEER_IP> soft-reconfiguration inbound\n"
+            "  neighbor <GCP_PEER_IP> prefix-list ONPREM-TO-GCP out\n"
+            "  neighbor <GCP_PEER_IP> prefix-list GCP-INBOUND in\n"
+            "  network 10.0.0.0 mask 255.255.0.0\n"
+            " exit-address-family\n"
+            "!\n"
+            "ip prefix-list ONPREM-TO-GCP seq 10 permit 10.0.0.0/16\n"
+            "ip prefix-list ONPREM-TO-GCP seq 999 deny 0.0.0.0/0 le 32\n"
+            "ip prefix-list GCP-INBOUND seq 10 permit 172.16.0.0/12 le 24\n"
+            "ip prefix-list GCP-INBOUND seq 999 deny 0.0.0.0/0 le 32\n"
+            "!\n"
+            "! ── Verify Commands\n"
+            "! show bgp summary\n"
+            "! show bgp ipv4 unicast neighbors <GCP_PEER_IP> advertised-routes\n"
+            "! show bgp ipv4 unicast neighbors <GCP_PEER_IP> received-routes\n"
+            "! show interface GigabitEthernet0/0/0.<VLAN_ID>\n"
+            "```\n\n"
+            "### Juniper JunOS Router Configuration\n\n"
+            "```\n"
+            "# ── GCP Cloud Interconnect — Juniper JunOS ─────────────────\n"
+            "# Customer Edge Router — Dedicated Interconnect\n"
+            "# Replace: <VLAN_ID>, <CUSTOMER_ASN>, <GCP_PEER_IP>, <CUSTOMER_PEER_IP>\n"
+            "# Note: Google ASN = 16550, peer IPs are link-local 169.254.x.x/29\n"
+            "#\n"
+            "interfaces {\n"
+            "    xe-0/0/0 {\n"
+            "        description \"GCP-Interconnect-Physical\";\n"
+            "        flexible-vlan-tagging;\n"
+            "        unit <VLAN_ID> {\n"
+            "            description \"GCP-VLAN-Attachment\";\n"
+            "            vlan-id <VLAN_ID>;\n"
+            "            family inet {\n"
+            "                mtu 1440;\n"
+            "                address <CUSTOMER_PEER_IP>/29;\n"
+            "            }\n"
+            "        }\n"
+            "    }\n"
+            "}\n"
+            "#\n"
+            "protocols {\n"
+            "    bgp {\n"
+            "        group GCP-INTERCONNECT {\n"
+            "            type external;\n"
+            "            peer-as 16550;\n"
+            "            local-as <CUSTOMER_ASN>;\n"
+            "            hold-time 60;\n"
+            "            multihop {\n"
+            "                ttl 4;\n"
+            "            }\n"
+            "            neighbor <GCP_PEER_IP> {\n"
+            "                export ADVERTISE-TO-GCP;\n"
+            "                import ACCEPT-FROM-GCP;\n"
+            "            }\n"
+            "        }\n"
+            "    }\n"
+            "}\n"
+            "#\n"
+            "policy-options {\n"
+            "    policy-statement ADVERTISE-TO-GCP {\n"
+            "        term ON-PREM {\n"
+            "            from {\n"
+            "                protocol [ static direct ospf ];\n"
+            "                route-filter 10.0.0.0/16 orlonger;\n"
+            "            }\n"
+            "            then accept;\n"
+            "        }\n"
+            "        term REJECT-ALL {\n"
+            "            then reject;\n"
+            "        }\n"
+            "    }\n"
+            "    policy-statement ACCEPT-FROM-GCP {\n"
+            "        term GCP-PREFIXES {\n"
+            "            from {\n"
+            "                route-filter 172.16.0.0/12 orlonger;\n"
+            "            }\n"
+            "            then accept;\n"
+            "        }\n"
+            "        term REJECT-ALL {\n"
+            "            then reject;\n"
+            "        }\n"
+            "    }\n"
+            "}\n"
+            "#\n"
+            "# ── Verify Commands\n"
+            "# show bgp summary\n"
+            "# show route advertising-protocol bgp <GCP_PEER_IP>\n"
+            "# show route receive-protocol bgp <GCP_PEER_IP>\n"
+            "# show interfaces xe-0/0/0.<VLAN_ID>\n"
+            "```\n"
+        ),
+        "tags": json.dumps([
+            "gcp", "cloud-interconnect", "hybrid-cloud", "bgp",
+            "sop", "runbook", "cisco", "juniper", "dedicated", "partner",
+        ]),
+        "graph_json": json.dumps({
+            "nodes": [
+                _node("cust-rtr", "Customer Edge Router", "router", 100, 200, {
+                    "config": {
+                        "role": "CE router — BGP to Cloud Router (Google ASN 16550)",
+                        "protocols": "BGP, link-local 169.254.x.x peer addressing",
+                        "mtu": "1440 (GCP Interconnect default)",
+                    }
+                }),
+                _node("cust-patch", "Customer Patch Panel", "odf", 260, 200, {
+                    "config": {
+                        "role": "Customer cage patch panel in colocation",
+                        "fiber_type": "Single-mode (10GBASE-LR)",
+                    }
+                }),
+                _node("mmr", "Meet-Me Room", "odf", 420, 200, {
+                    "config": {
+                        "role": "Colocation meet-me room cross-connect",
+                        "notes": "Cross-connect per Google LOA",
+                    }
+                }),
+                _node("gcp-port", "Google Interconnect Port", "odf", 580, 200, {
+                    "config": {
+                        "role": "Google peering edge port at colocation",
+                        "speed": "10 Gbps (Dedicated) or 50M-50G (Partner)",
+                    }
+                }),
+                _node("gcp-edge", "Google Peering Edge", "router", 740, 200, {
+                    "config": {
+                        "role": "Google-managed peering edge router",
+                        "owner": "Google (managed)",
+                        "bgp_asn": "16550",
+                    }
+                }),
+                _node("cloud-rtr", "Cloud Router", "router", 740, 380, {
+                    "config": {
+                        "role": "GCP Cloud Router — regional, software-defined",
+                        "notes": "Automatically learns and advertises VPC subnet routes",
+                        "features": "Custom route advertisements, ASN configuration",
+                    }
+                }),
+                _node("vpc", "GCP VPC Network", "gcp-vpc", 740, 520, {
+                    "config": {
+                        "role": "Target VPC with subnets in interconnect region",
+                        "cidr": "172.16.0.0/16 (example)",
+                        "notes": "Firewall rules must allow ingress from on-prem CIDRs",
+                    }
+                }),
+                _node("on-prem", "On-Premises Network", "switch-l3", 100, 380, {
+                    "config": {
+                        "role": "Corporate LAN / data center",
+                        "cidr": "10.0.0.0/16 (advertised to GCP via BGP)",
+                    }
+                }),
+            ],
+            "edges": [
+                _edge("on-prem", "cust-rtr", "Uplink", "OSPF/IS-IS"),
+                _edge("cust-rtr", "cust-patch", "Fiber (SM)", "802.1Q"),
+                _edge("cust-patch", "mmr", "Cross-Connect", ""),
+                _edge("mmr", "gcp-port", "Cross-Connect", ""),
+                _edge("gcp-port", "gcp-edge", "Internal", ""),
+                _edge("gcp-edge", "cloud-rtr", "VLAN Attachment", "eBGP"),
+                _edge("cloud-rtr", "vpc", "Route Propagation", ""),
+            ],
+        }),
+    },
+
+    # ── OCI FastConnect — SOP / Runbook ───────────────────────────────────────
+    {
+        "id": "tpl-oci-fastconnect",
+        "name": "OCI FastConnect — SOP & Runbook",
+        "category": "WAN / Hybrid Cloud",
+        "description": (
+            "## OCI FastConnect — Standard Operating Procedure & Runbook\n\n"
+            "Complete end-to-end SOP for establishing Oracle Cloud Infrastructure "
+            "**FastConnect** (1/10 Gbps) covering both **customer-side** and "
+            "**Oracle provider-side** provisioning, including Private Peering "
+            "and Oracle Services Network (OSN) peering.\n\n"
+            "### Workflow — Mermaid Diagram\n\n"
+            "```mermaid\n"
+            "flowchart TD\n"
+            "    A[\"1. Create FastConnect\\n(OCI Console / CLI)\"] --> B{\"Connectivity Model?\"}\n"
+            "    B -- \"Colocation\\n(direct)\" --> C1[\"2a. Create Cross-Connect\\nGroup\"]\n"
+            "    B -- \"Provider\" --> C2[\"2b. Create Virtual Circuit\\nvia Provider\"]\n"
+            "    B -- \"Exchange\\n(Equinix, Megaport)\" --> C3[\"2c. Create Virtual Circuit\\nvia Exchange\"]\n"
+            "    C1 --> D1[\"3a. Download LOA\\nfrom OCI Console\"]\n"
+            "    C2 --> D2[\"3b. Share OCID\\nwith Provider\"]\n"
+            "    C3 --> D3[\"3c. Configure\\non Exchange Portal\"]\n"
+            "    D1 --> E[\"4. Cross-Connect\\nProvisioned\"]\n"
+            "    D2 --> E\n"
+            "    D3 --> E\n"
+            "    E --> F[\"5. Create Virtual Circuit\\n(Private Peering or OSN)\"]\n"
+            "    F --> G[\"6. Configure BGP\\non Customer Router\"]\n"
+            "    G --> H{\"7. BGP Session\\nEstablished?\"}\n"
+            "    H -- No --> I[\"Troubleshoot BGP\\n(ASN 31898, VLAN, /30 IPs)\"]\n"
+            "    I --> H\n"
+            "    H -- Yes --> J[\"8. Verify Routes\\nin VCN Route Table\"]\n"
+            "    J --> K[\"9. Test Data Plane\\n(ping, iperf3)\"]\n"
+            "    K --> L{\"10. Meets SLA?\"}\n"
+            "    L -- No --> M[\"Tune BGP Timers /\\nCheck Security Lists\"]\n"
+            "    M --> K\n"
+            "    L -- Yes --> N[\"11. Add Redundant\\nFastConnect\"]\n"
+            "    N --> O[\"12. Production\\nCut-Over\"]\n"
+            "    O --> P[\"13. Document & Monitor\\n(OCI Monitoring)\"]\n"
+            "```\n\n"
+            "### SOP — Customer Side\n\n"
+            "| Step | Action | Owner | Duration |\n"
+            "|------|--------|-------|----------|\n"
+            "| 1 | Create FastConnect in OCI Console (type, location, speed) | Cloud Engineer | 15 min |\n"
+            "| 2 | (Colocation) Create Cross-Connect Group, download LOA | Cloud Engineer | 15 min |\n"
+            "| 2b | (Provider) Share Virtual Circuit OCID with provider | Cloud Engineer | 5 min |\n"
+            "| 3 | Submit LOA to colocation / engage provider | Network Engineer | 1-14 days |\n"
+            "| 4 | Verify cross-connect is lit (OCI Console shows 'Up') | Network Engineer | 1-14 days |\n"
+            "| 5 | Create Private Virtual Circuit — specify DRG, VLAN, BGP ASN, peer IPs | Cloud Engineer | 15 min |\n"
+            "| 6 | Configure customer edge router (see Cisco/Juniper configs below) | Network Engineer | 1 hr |\n"
+            "| 7 | Verify BGP peering established | Network Engineer | 15 min |\n"
+            "| 8 | Attach DRG to VCN, configure VCN route tables | Cloud Engineer | 15 min |\n"
+            "| 9 | Verify effective routes, check security lists / NSGs | Cloud Engineer | 15 min |\n"
+            "| 10 | Test data plane — ping, traceroute, iperf3 | Network Engineer | 30 min |\n"
+            "| 11 | Create redundant FastConnect on second physical path | Network Engineer | Repeat 1-10 |\n"
+            "| 12 | Update CMDB, create OCI alarms, document in NDC | Network Engineer | 1 hr |\n\n"
+            "### SOP — Provider Side (Oracle)\n\n"
+            "| Step | Action | Owner | Duration |\n"
+            "|------|--------|-------|----------|\n"
+            "| 1 | Allocate port at requested FastConnect location | Oracle (auto) | Minutes |\n"
+            "| 2 | Generate LOA with port/rack details (colocation model) | Oracle (auto) | Minutes |\n"
+            "| 3 | Detect physical link-up, cross-connect state = Up | Oracle (auto) | Minutes |\n"
+            "| 4 | Accept virtual circuit, allocate BGP peer IPs (/30) | Oracle (auto) | Seconds |\n"
+            "| 5 | Oracle edge router (ASN 31898) establishes BGP, advertises VCN routes | Oracle (auto) | Seconds |\n"
+            "| 6 | Monitor via OCI Monitoring: FastConnect status, bytes in/out, BGP state | Oracle (auto) | Continuous |\n\n"
+            "### Failure Runbook\n\n"
+            "```mermaid\n"
+            "flowchart LR\n"
+            "    subgraph Physical[\"Layer 1\"]\n"
+            "        P1[\"Cross-connect down\"] --> P2[\"Check optics\\n(1000BASE-LX / 10GBASE-LR)\"]\n"
+            "        P2 --> P3[\"Verify LOA port mapping\"]\n"
+            "        P3 --> P4[\"Contact colo NOC\"]\n"
+            "    end\n"
+            "    subgraph BGPIssue[\"BGP\"]\n"
+            "        B1[\"BGP not establishing\"] --> B2[\"Verify ASN\\n(customer vs Oracle 31898)\"]\n"
+            "        B2 --> B3[\"Verify /30 peer IPs\\nfrom OCI Console\"]\n"
+            "        B3 --> B4[\"Verify VLAN tag\\nmatches virtual circuit\"]\n"
+            "        B4 --> B5[\"Check BGP MD5 auth\\n(if configured)\"]\n"
+            "    end\n"
+            "    subgraph Routes[\"Routing\"]\n"
+            "        R1[\"No VCN connectivity\"] --> R2[\"Verify DRG attached\\nto VCN\"]\n"
+            "        R2 --> R3[\"Check VCN route table\\nhas DRG rule\"]\n"
+            "        R3 --> R4[\"Check security lists\\n+ NSG ingress/egress\"]\n"
+            "        R4 --> R5[\"Verify no overlapping\\nCIDR with VCN\"]\n"
+            "    end\n"
+            "```\n\n"
+            "### Cisco IOS-XE Router Configuration\n\n"
+            "```\n"
+            "! ── OCI FastConnect — Cisco IOS-XE ─────────────────────────\n"
+            "! Customer Edge Router — Private Peering\n"
+            "! Replace: <VLAN_ID>, <CUSTOMER_ASN>, <OCI_PEER_IP>, <CUSTOMER_PEER_IP>\n"
+            "! Note: Oracle BGP ASN = 31898\n"
+            "!\n"
+            "interface GigabitEthernet0/0/0\n"
+            " description OCI-FastConnect-Physical\n"
+            " no ip address\n"
+            " no shutdown\n"
+            "!\n"
+            "interface GigabitEthernet0/0/0.<VLAN_ID>\n"
+            " description OCI-FastConnect-Private-VC\n"
+            " encapsulation dot1Q <VLAN_ID>\n"
+            " ip address <CUSTOMER_PEER_IP> 255.255.255.252\n"
+            "!\n"
+            "router bgp <CUSTOMER_ASN>\n"
+            " bgp log-neighbor-changes\n"
+            " neighbor <OCI_PEER_IP> remote-as 31898\n"
+            " neighbor <OCI_PEER_IP> timers 10 30\n"
+            " !\n"
+            " address-family ipv4 unicast\n"
+            "  neighbor <OCI_PEER_IP> activate\n"
+            "  neighbor <OCI_PEER_IP> soft-reconfiguration inbound\n"
+            "  neighbor <OCI_PEER_IP> prefix-list ONPREM-TO-OCI out\n"
+            "  neighbor <OCI_PEER_IP> prefix-list OCI-INBOUND in\n"
+            "  network 10.0.0.0 mask 255.255.0.0\n"
+            " exit-address-family\n"
+            "!\n"
+            "ip prefix-list ONPREM-TO-OCI seq 10 permit 10.0.0.0/16\n"
+            "ip prefix-list ONPREM-TO-OCI seq 999 deny 0.0.0.0/0 le 32\n"
+            "ip prefix-list OCI-INBOUND seq 10 permit 172.16.0.0/12 le 24\n"
+            "ip prefix-list OCI-INBOUND seq 999 deny 0.0.0.0/0 le 32\n"
+            "!\n"
+            "! ── Verify Commands\n"
+            "! show bgp summary\n"
+            "! show bgp ipv4 unicast neighbors <OCI_PEER_IP> advertised-routes\n"
+            "! show bgp ipv4 unicast neighbors <OCI_PEER_IP> received-routes\n"
+            "! show interface GigabitEthernet0/0/0.<VLAN_ID>\n"
+            "```\n\n"
+            "### Juniper JunOS Router Configuration\n\n"
+            "```\n"
+            "# ── OCI FastConnect — Juniper JunOS ────────────────────────\n"
+            "# Customer Edge Router — Private Peering\n"
+            "# Replace: <VLAN_ID>, <CUSTOMER_ASN>, <OCI_PEER_IP>, <CUSTOMER_PEER_IP>\n"
+            "# Note: Oracle BGP ASN = 31898\n"
+            "#\n"
+            "interfaces {\n"
+            "    xe-0/0/0 {\n"
+            "        description \"OCI-FastConnect-Physical\";\n"
+            "        flexible-vlan-tagging;\n"
+            "        unit <VLAN_ID> {\n"
+            "            description \"OCI-FastConnect-Private-VC\";\n"
+            "            vlan-id <VLAN_ID>;\n"
+            "            family inet {\n"
+            "                address <CUSTOMER_PEER_IP>/30;\n"
+            "            }\n"
+            "        }\n"
+            "    }\n"
+            "}\n"
+            "#\n"
+            "protocols {\n"
+            "    bgp {\n"
+            "        group OCI-FASTCONNECT {\n"
+            "            type external;\n"
+            "            peer-as 31898;\n"
+            "            local-as <CUSTOMER_ASN>;\n"
+            "            hold-time 30;\n"
+            "            neighbor <OCI_PEER_IP> {\n"
+            "                export ADVERTISE-TO-OCI;\n"
+            "                import ACCEPT-FROM-OCI;\n"
+            "            }\n"
+            "        }\n"
+            "    }\n"
+            "}\n"
+            "#\n"
+            "policy-options {\n"
+            "    policy-statement ADVERTISE-TO-OCI {\n"
+            "        term ON-PREM {\n"
+            "            from {\n"
+            "                protocol [ static direct ospf ];\n"
+            "                route-filter 10.0.0.0/16 orlonger;\n"
+            "            }\n"
+            "            then accept;\n"
+            "        }\n"
+            "        term REJECT-ALL {\n"
+            "            then reject;\n"
+            "        }\n"
+            "    }\n"
+            "    policy-statement ACCEPT-FROM-OCI {\n"
+            "        term OCI-PREFIXES {\n"
+            "            from {\n"
+            "                route-filter 172.16.0.0/12 orlonger;\n"
+            "            }\n"
+            "            then accept;\n"
+            "        }\n"
+            "        term REJECT-ALL {\n"
+            "            then reject;\n"
+            "        }\n"
+            "    }\n"
+            "}\n"
+            "#\n"
+            "# ── Verify Commands\n"
+            "# show bgp summary\n"
+            "# show route advertising-protocol bgp <OCI_PEER_IP>\n"
+            "# show route receive-protocol bgp <OCI_PEER_IP>\n"
+            "# show interfaces xe-0/0/0.<VLAN_ID>\n"
+            "```\n"
+        ),
+        "tags": json.dumps([
+            "oci", "oracle", "fastconnect", "hybrid-cloud", "bgp", "drg",
+            "sop", "runbook", "cisco", "juniper",
+        ]),
+        "graph_json": json.dumps({
+            "nodes": [
+                _node("cust-rtr", "Customer Edge Router", "router", 100, 200, {
+                    "config": {
+                        "role": "CE router — BGP to Oracle edge (ASN 31898)",
+                        "protocols": "BGP (eBGP to Oracle ASN 31898)",
+                    }
+                }),
+                _node("cust-patch", "Customer Patch Panel", "odf", 260, 200, {
+                    "config": {
+                        "role": "Customer cage patch panel in colocation",
+                        "fiber_type": "Single-mode (1000BASE-LX / 10GBASE-LR)",
+                    }
+                }),
+                _node("mmr", "Meet-Me Room", "odf", 420, 200, {
+                    "config": {
+                        "role": "Colocation meet-me room cross-connect",
+                    }
+                }),
+                _node("oci-port", "OCI FastConnect Port", "odf", 580, 200, {
+                    "config": {
+                        "role": "Oracle edge port at FastConnect location",
+                        "speed": "1 Gbps / 10 Gbps",
+                    }
+                }),
+                _node("oci-edge", "Oracle Edge Router", "router", 740, 200, {
+                    "config": {
+                        "role": "Oracle-managed edge router",
+                        "owner": "Oracle (managed)",
+                        "bgp_asn": "31898",
+                    }
+                }),
+                _node("drg", "Dynamic Routing Gateway", "router", 740, 380, {
+                    "config": {
+                        "role": "DRG — OCI virtual router for hybrid connectivity",
+                        "notes": "DRG v2 supports multiple VCN attachments and transit routing",
+                        "features": "Route tables, import/export route distributions",
+                    }
+                }),
+                _node("vcn", "OCI VCN", "oci-vcn", 740, 520, {
+                    "config": {
+                        "role": "Target Virtual Cloud Network with private subnets",
+                        "cidr": "172.16.0.0/16 (example)",
+                        "notes": "Add route rule: on-prem CIDR -> DRG in subnet route table",
+                    }
+                }),
+                _node("on-prem", "On-Premises Network", "switch-l3", 100, 380, {
+                    "config": {
+                        "role": "Corporate LAN / data center",
+                        "cidr": "10.0.0.0/16 (advertised to OCI via BGP)",
+                    }
+                }),
+            ],
+            "edges": [
+                _edge("on-prem", "cust-rtr", "Uplink", "OSPF/IS-IS"),
+                _edge("cust-rtr", "cust-patch", "Fiber (SM)", "802.1Q"),
+                _edge("cust-patch", "mmr", "Cross-Connect", ""),
+                _edge("mmr", "oci-port", "Cross-Connect", ""),
+                _edge("oci-port", "oci-edge", "Internal", ""),
+                _edge("oci-edge", "drg", "Private Virtual Circuit", "eBGP"),
+                _edge("drg", "vcn", "DRG Attachment", ""),
+            ],
+        }),
+    },
 ]
 
 
@@ -6087,6 +7251,352 @@ ENCLAVE_SNIPPETS = [
             "edges": [
                 _edge("spoke1", "hub-fw", "Spoke Peering", ""),
                 _edge("spoke2", "hub-fw", "Spoke Peering", ""),
+            ],
+        }),
+    },
+
+    # ── AWS Direct Connect GovCloud (IL4/IL5) ─────────────────────────────────
+    {
+        "id": "snip-aws-dx-govcloud",
+        "name": "AWS Direct Connect — GovCloud (IL4/IL5)",
+        "category": "Hybrid Cloud",
+        "description": (
+            "AWS Direct Connect to GovCloud (US) region for CUI workloads. "
+            "Includes FIPS 140-2 validated encryption (MACsec or IPsec overlay), "
+            "dedicated 10 Gbps connection via GovCloud-approved colocation, "
+            "BGP with MD5 authentication, and BFD fast failover. "
+            "Compliant with FedRAMP High, DoD IL4/IL5, and NIST 800-53 Rev 5."
+        ),
+        "classification_level": "CUI",
+        "impact_level": "IL5",
+        "stig_controls": json.dumps([
+            "SC-7", "SC-7(4)", "SC-8", "SC-8(1)", "SC-13", "AC-4",
+            "CA-3", "AU-2", "AU-12", "SI-4", "IA-2", "IA-7",
+        ]),
+        "tags": json.dumps([
+            "aws", "direct-connect", "govcloud", "il4", "il5", "cui",
+            "fips", "fedramp-high", "macsec", "bgp", "sop", "runbook",
+        ]),
+        "graph_json": json.dumps({
+            "nodes": [
+                _node("cust-rtr", "CE Router (FIPS)", "router", 100, 200, {
+                    "config": {
+                        "classification": "CUI",
+                        "stig_baseline": "DISA Network STIG V3R9",
+                        "fips_mode": "FIPS 140-2 Level 2",
+                        "role": "Customer edge — BGP to AWS GovCloud DX (ASN 7224)",
+                        "macsec": "MACsec 256-bit AES-GCM (if supported by DX location)",
+                        "notes": "If MACsec unavailable, use IPsec VPN overlay for SC-8(1) encryption",
+                    }
+                }),
+                _node("dx-port", "AWS DX Port (GovCloud)", "odf", 340, 200, {
+                    "config": {
+                        "classification": "CUI",
+                        "role": "DX port at GovCloud-approved colocation",
+                        "locations": "Equinix DC, CoreSite VA, QTS (ITAR/GovCloud approved)",
+                        "speed": "1 Gbps / 10 Gbps dedicated",
+                    }
+                }),
+                _node("dx-rtr", "AWS DX Router (GovCloud)", "router", 540, 200, {
+                    "config": {
+                        "classification": "CUI",
+                        "owner": "AWS (managed)",
+                        "bgp_asn": "7224",
+                        "notes": "GovCloud DX endpoints are physically in US only",
+                    }
+                }),
+                _node("vgw", "VGW / TGW (GovCloud)", "router", 540, 380, {
+                    "config": {
+                        "classification": "CUI",
+                        "role": "Virtual Private Gateway or Transit Gateway in us-gov-west-1",
+                        "notes": "TGW recommended for multi-VPC GovCloud architectures",
+                    }
+                }),
+                _node("vpc", "GovCloud VPC", "aws-vpc", 540, 520, {
+                    "config": {
+                        "classification": "CUI",
+                        "role": "GovCloud VPC (us-gov-west-1 / us-gov-east-1)",
+                        "notes": "FedRAMP High authorized, ITAR compliant",
+                    }
+                }),
+                _node("on-prem", "On-Prem (CUI Enclave)", "switch-l3", 100, 380, {
+                    "config": {
+                        "classification": "CUI",
+                        "stig_baseline": "DISA Network STIG V3R9",
+                        "role": "CUI-authorized on-premises network",
+                    }
+                }),
+            ],
+            "edges": [
+                _edge("on-prem", "cust-rtr", "Uplink (encrypted)", "OSPF"),
+                _edge("cust-rtr", "dx-port", "Dedicated DX (MACsec)", "802.1Q"),
+                _edge("dx-port", "dx-rtr", "Internal", ""),
+                _edge("dx-rtr", "vgw", "Private VIF", "eBGP + MD5"),
+                _edge("vgw", "vpc", "Route Propagation", ""),
+            ],
+        }),
+    },
+
+    # ── Azure ExpressRoute Government (IL4/IL5) ──────────────────────────────
+    {
+        "id": "snip-azure-er-gov",
+        "name": "Azure ExpressRoute — Government (IL4/IL5)",
+        "category": "Hybrid Cloud",
+        "description": (
+            "Azure ExpressRoute to Azure Government regions for CUI workloads. "
+            "Includes FIPS 140-2 validated encryption (MACsec on ER Direct or IPsec), "
+            "dual primary/secondary circuits for 99.95% SLA, BGP with MD5, BFD. "
+            "Compliant with FedRAMP High, DoD IL4/IL5, and NIST 800-53 Rev 5."
+        ),
+        "classification_level": "CUI",
+        "impact_level": "IL5",
+        "stig_controls": json.dumps([
+            "SC-7", "SC-7(4)", "SC-8", "SC-8(1)", "SC-13", "AC-4",
+            "CA-3", "AU-2", "AU-12", "SI-4", "IA-2", "IA-7",
+        ]),
+        "tags": json.dumps([
+            "azure", "expressroute", "government", "il4", "il5", "cui",
+            "fips", "fedramp-high", "macsec", "bgp", "sop", "runbook",
+        ]),
+        "graph_json": json.dumps({
+            "nodes": [
+                _node("ce-pri", "CE Router Primary (FIPS)", "router", 100, 160, {
+                    "config": {
+                        "classification": "CUI",
+                        "stig_baseline": "DISA Network STIG V3R9",
+                        "fips_mode": "FIPS 140-2 Level 2",
+                        "role": "Primary CE — BGP to MSEE (Azure ASN 12076)",
+                        "macsec": "MACsec on ER Direct (10/100 Gbps) or IPsec overlay",
+                    }
+                }),
+                _node("ce-sec", "CE Router Secondary (FIPS)", "router", 100, 340, {
+                    "config": {
+                        "classification": "CUI",
+                        "stig_baseline": "DISA Network STIG V3R9",
+                        "fips_mode": "FIPS 140-2 Level 2",
+                        "role": "Secondary CE — required for Azure SLA",
+                    }
+                }),
+                _node("msee-pri", "MSEE Primary (AzGov)", "router", 400, 160, {
+                    "config": {
+                        "classification": "CUI",
+                        "owner": "Microsoft (managed)",
+                        "bgp_asn": "12076",
+                        "region": "Azure Government (USGov Virginia / USGov Arizona)",
+                    }
+                }),
+                _node("msee-sec", "MSEE Secondary (AzGov)", "router", 400, 340, {
+                    "config": {
+                        "classification": "CUI",
+                        "owner": "Microsoft (managed)",
+                        "bgp_asn": "12076",
+                    }
+                }),
+                _node("er-gw", "ER Gateway (AzGov)", "router", 620, 250, {
+                    "config": {
+                        "classification": "CUI",
+                        "role": "Zone-redundant ER Gateway (ErGw1Az/ErGw2Az/ErGw3Az)",
+                        "region": "USGov Virginia / USGov Arizona",
+                    }
+                }),
+                _node("vnet", "AzGov VNet", "az-vnet", 800, 250, {
+                    "config": {
+                        "classification": "CUI",
+                        "role": "Azure Government VNet (FedRAMP High, IL5 authorized)",
+                    }
+                }),
+                _node("on-prem", "On-Prem (CUI Enclave)", "switch-l3", 100, 500, {
+                    "config": {
+                        "classification": "CUI",
+                        "stig_baseline": "DISA Network STIG V3R9",
+                    }
+                }),
+            ],
+            "edges": [
+                _edge("on-prem", "ce-pri", "Uplink", "OSPF"),
+                _edge("on-prem", "ce-sec", "Uplink", "OSPF"),
+                _edge("ce-pri", "msee-pri", "Primary (MACsec/IPsec)", "eBGP + MD5"),
+                _edge("ce-sec", "msee-sec", "Secondary (MACsec/IPsec)", "eBGP + MD5"),
+                _edge("msee-pri", "er-gw", "Private Peering", ""),
+                _edge("msee-sec", "er-gw", "Private Peering", ""),
+                _edge("er-gw", "vnet", "Gateway Connection", ""),
+            ],
+        }),
+    },
+
+    # ── GCP Cloud Interconnect Government (IL4/IL5) ──────────────────────────
+    {
+        "id": "snip-gcp-interconnect-gov",
+        "name": "GCP Cloud Interconnect — Assured Workloads (IL4/IL5)",
+        "category": "Hybrid Cloud",
+        "description": (
+            "GCP Dedicated Interconnect to Assured Workloads environment for CUI. "
+            "Includes FIPS 140-2 validated encryption via HA VPN overlay on Interconnect, "
+            "Cloud Router with custom route advertisements, and BFD-equivalent health checks. "
+            "Compliant with FedRAMP High, DoD IL4/IL5, and NIST 800-53 Rev 5. "
+            "Note: GCP uses Assured Workloads (not a separate region) for IL4/IL5 compliance."
+        ),
+        "classification_level": "CUI",
+        "impact_level": "IL5",
+        "stig_controls": json.dumps([
+            "SC-7", "SC-7(4)", "SC-8", "SC-8(1)", "SC-13", "AC-4",
+            "CA-3", "AU-2", "AU-12", "SI-4", "IA-2", "IA-7",
+        ]),
+        "tags": json.dumps([
+            "gcp", "cloud-interconnect", "assured-workloads", "il4", "il5",
+            "cui", "fips", "fedramp-high", "bgp", "sop", "runbook",
+        ]),
+        "graph_json": json.dumps({
+            "nodes": [
+                _node("cust-rtr", "CE Router (FIPS)", "router", 100, 200, {
+                    "config": {
+                        "classification": "CUI",
+                        "stig_baseline": "DISA Network STIG V3R9",
+                        "fips_mode": "FIPS 140-2 Level 2",
+                        "role": "CE router — BGP to Cloud Router (Google ASN 16550)",
+                        "encryption": "HA VPN over Interconnect (IPsec) for SC-8(1) compliance",
+                        "notes": "GCP Interconnect does not natively support MACsec; use HA VPN overlay",
+                    }
+                }),
+                _node("gcp-port", "GCP Interconnect Port", "odf", 340, 200, {
+                    "config": {
+                        "classification": "CUI",
+                        "role": "Google peering edge at Assured Workloads-approved facility",
+                        "speed": "10 Gbps / 100 Gbps dedicated",
+                    }
+                }),
+                _node("gcp-edge", "Google Peering Edge", "router", 540, 200, {
+                    "config": {
+                        "classification": "CUI",
+                        "owner": "Google (managed)",
+                        "bgp_asn": "16550",
+                    }
+                }),
+                _node("ha-vpn", "HA VPN Gateway", "fips-140-l3", 540, 350, {
+                    "config": {
+                        "classification": "CUI",
+                        "role": "HA VPN over Interconnect — FIPS-validated IPsec encryption",
+                        "encryption": "AES-256-GCM, IKEv2, FIPS 140-2 validated",
+                        "notes": "Required for SC-8(1) transit encryption on GCP Interconnect",
+                    }
+                }),
+                _node("cloud-rtr", "Cloud Router (Assured)", "router", 540, 500, {
+                    "config": {
+                        "classification": "CUI",
+                        "role": "GCP Cloud Router in Assured Workloads folder",
+                    }
+                }),
+                _node("vpc", "Assured Workloads VPC", "gcp-vpc", 740, 500, {
+                    "config": {
+                        "classification": "CUI",
+                        "role": "VPC in Assured Workloads folder (IL4/IL5)",
+                        "notes": "Org policy restricts to US regions, CMEK required",
+                    }
+                }),
+                _node("on-prem", "On-Prem (CUI Enclave)", "switch-l3", 100, 400, {
+                    "config": {
+                        "classification": "CUI",
+                        "stig_baseline": "DISA Network STIG V3R9",
+                    }
+                }),
+            ],
+            "edges": [
+                _edge("on-prem", "cust-rtr", "Uplink", "OSPF"),
+                _edge("cust-rtr", "gcp-port", "Dedicated Interconnect", "802.1Q"),
+                _edge("gcp-port", "gcp-edge", "Internal", ""),
+                _edge("gcp-edge", "ha-vpn", "HA VPN over Interconnect", "IPsec"),
+                _edge("ha-vpn", "cloud-rtr", "Encrypted Tunnel", "eBGP"),
+                _edge("cloud-rtr", "vpc", "Route Propagation", ""),
+            ],
+        }),
+    },
+
+    # ── OCI FastConnect Government (IL4/IL5) ─────────────────────────────────
+    {
+        "id": "snip-oci-fc-gov",
+        "name": "OCI FastConnect — Government Cloud (IL4/IL5)",
+        "category": "Hybrid Cloud",
+        "description": (
+            "OCI FastConnect to Oracle Government Cloud for CUI workloads. "
+            "Includes FIPS 140-2 encryption via IPsec VPN overlay, "
+            "DRG v2 with advanced route distribution, and private peering. "
+            "Compliant with FedRAMP High, DoD IL4/IL5, DISA STIG, and NIST 800-53 Rev 5. "
+            "OCI Government Cloud regions: us-langley-1 (IC Gov), us-luke-1 (DoD), "
+            "us-gov-ashburn-1, us-gov-chicago-1, us-gov-phoenix-1."
+        ),
+        "classification_level": "CUI",
+        "impact_level": "IL5",
+        "stig_controls": json.dumps([
+            "SC-7", "SC-7(4)", "SC-8", "SC-8(1)", "SC-13", "AC-4",
+            "CA-3", "AU-2", "AU-12", "SI-4", "IA-2", "IA-7",
+        ]),
+        "tags": json.dumps([
+            "oci", "oracle", "fastconnect", "government", "il4", "il5",
+            "cui", "fips", "fedramp-high", "bgp", "drg", "sop", "runbook",
+        ]),
+        "graph_json": json.dumps({
+            "nodes": [
+                _node("cust-rtr", "CE Router (FIPS)", "router", 100, 200, {
+                    "config": {
+                        "classification": "CUI",
+                        "stig_baseline": "DISA Network STIG V3R9",
+                        "fips_mode": "FIPS 140-2 Level 2",
+                        "role": "CE router — BGP to Oracle Gov edge (ASN 31898)",
+                        "encryption": "IPsec VPN overlay for SC-8(1) transit encryption",
+                    }
+                }),
+                _node("fc-port", "OCI FC Port (Gov)", "odf", 340, 200, {
+                    "config": {
+                        "classification": "CUI",
+                        "role": "FastConnect port at Gov-approved colocation",
+                        "speed": "1 Gbps / 10 Gbps",
+                        "locations": "Equinix DC, CoreSite VA (FedRAMP authorized)",
+                    }
+                }),
+                _node("oci-edge", "Oracle Gov Edge Router", "router", 540, 200, {
+                    "config": {
+                        "classification": "CUI",
+                        "owner": "Oracle (managed)",
+                        "bgp_asn": "31898",
+                    }
+                }),
+                _node("ipsec-gw", "IPsec VPN Overlay", "fips-140-l3", 540, 350, {
+                    "config": {
+                        "classification": "CUI",
+                        "role": "CPE IPsec tunnel over FastConnect for FIPS encryption",
+                        "encryption": "AES-256-GCM, IKEv2, FIPS 140-2",
+                        "notes": "OCI FastConnect does not natively encrypt; use IPsec overlay",
+                    }
+                }),
+                _node("drg", "DRG v2 (Gov Cloud)", "router", 540, 500, {
+                    "config": {
+                        "classification": "CUI",
+                        "role": "Dynamic Routing Gateway in OCI Gov region",
+                        "features": "Route distribution policies, multi-VCN attachment",
+                        "region": "us-gov-ashburn-1 / us-gov-phoenix-1",
+                    }
+                }),
+                _node("vcn", "Gov Cloud VCN", "oci-vcn", 740, 500, {
+                    "config": {
+                        "classification": "CUI",
+                        "role": "VCN in OCI Government Cloud (FedRAMP High, IL5)",
+                        "notes": "Security lists + NSGs must restrict to CUI-authorized CIDRs",
+                    }
+                }),
+                _node("on-prem", "On-Prem (CUI Enclave)", "switch-l3", 100, 400, {
+                    "config": {
+                        "classification": "CUI",
+                        "stig_baseline": "DISA Network STIG V3R9",
+                    }
+                }),
+            ],
+            "edges": [
+                _edge("on-prem", "cust-rtr", "Uplink", "OSPF"),
+                _edge("cust-rtr", "fc-port", "FastConnect (Dedicated)", "802.1Q"),
+                _edge("fc-port", "oci-edge", "Internal", ""),
+                _edge("oci-edge", "ipsec-gw", "IPsec over FastConnect", "IPsec"),
+                _edge("ipsec-gw", "drg", "Encrypted Private VC", "eBGP"),
+                _edge("drg", "vcn", "DRG Attachment", ""),
             ],
         }),
     },
