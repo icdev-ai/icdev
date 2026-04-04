@@ -101,6 +101,7 @@ def create_task():
                     "title": data["title"],
                     "status": data.get("status", "backlog"),
                     "priority": data.get("priority", "medium"),
+                    "executor_type": data.get("executor_type", "claude_cli"),
                 },
             }, "kanban")
         except Exception:

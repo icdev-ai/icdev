@@ -87,6 +87,14 @@
                     <input type="datetime-local" id="task-scheduled-at" style="width:100%; padding:8px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; color:var(--text-primary);">
                 </div>
             </div>
+            <div style="margin-bottom:12px;">
+                <label style="display:block; font-size:12px; color:var(--text-dim); margin-bottom:4px;">Executor</label>
+                <select id="task-executor-type" style="width:100%; padding:8px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; color:var(--text-primary);">
+                    <option value="claude_cli">&#129502; Claude CLI</option>
+                    <option value="gitlab">&#129418; GitLab CI</option>
+                    <option value="github_actions">&#9881;&#65039; GitHub Actions</option>
+                </select>
+            </div>
         </div>
         <div style="padding:16px 20px; border-top:1px solid var(--border); display:flex; gap:12px; justify-content:flex-end;">
             <button class="btn" onclick="closeTaskModal()">Cancel</button>
@@ -130,6 +138,7 @@ function openAddTaskModal() {
     document.getElementById('task-priority').value = 'medium';
     document.getElementById('task-status').value = 'backlog';
     document.getElementById('task-scheduled-at').value = '';
+    document.getElementById('task-executor-type').value = 'claude_cli';
     document.getElementById('task-modal').style.display = 'flex';
 }
 
@@ -142,6 +151,7 @@ function openEditTaskModal(task) {
     document.getElementById('task-priority').value = task.priority;
     document.getElementById('task-status').value = task.status;
     document.getElementById('task-scheduled-at').value = _isoToLocal(task.scheduled_at);
+    document.getElementById('task-executor-type').value = task.executor_type || 'claude_cli';
     document.getElementById('task-modal').style.display = 'flex';
 }
 
@@ -157,7 +167,8 @@ function saveTask() {
         task_type: document.getElementById('task-type').value,
         priority: document.getElementById('task-priority').value,
         status: document.getElementById('task-status').value,
-        scheduled_at: _localToIso(document.getElementById('task-scheduled-at').value)
+        scheduled_at: _localToIso(document.getElementById('task-scheduled-at').value),
+        executor_type: document.getElementById('task-executor-type').value
     };
     if (!payload.title.trim()) { alert('Title is required'); return; }
 
@@ -206,6 +217,13 @@ function renderTaskKanban(tasks) {
     var typeIcons = { build: '\u{1F528}', run: '\u25B6', fix: '\u{1F41B}', research: '\u{1F50D}', deploy: '\u{1F680}', test: '\u2705', chore: '\u{1F9F9}' };
     var nextStatus = { suggested: 'backlog', backlog: 'scheduled', scheduled: 'in_progress', in_progress: 'done' };
     var prevStatus = { backlog: 'suggested', scheduled: 'backlog', in_progress: 'scheduled', done: 'in_progress' };
+    var executorLabels = {
+        claude_cli: { icon: '\uD83E\uDD16', label: 'Claude', color: '#7c3aed' },
+        gitlab: { icon: '\uD83E\uDD8A', label: 'GitLab', color: '#e24304' },
+        github_actions: { icon: '\u2699\uFE0F', label: 'GH Actions', color: '#2ea043' }
+    };
+    var llmModeIcons = { claude: '\uD83E\uDDE0', ollama: '\uD83D\uDCBB', none: '\u2699\uFE0F' };
+    var llmModeTitles = { claude: 'LLM: Claude', ollama: 'LLM: Ollama (local)', none: 'No LLM' };
 
     board.querySelectorAll('.kanban-column').forEach(function(colEl) {
         var status = colEl.getAttribute('data-status');
@@ -233,13 +251,39 @@ function renderTaskKanban(tasks) {
 
             var schedLine = t.scheduled_at ? '<div style="font-size:11px; color:var(--text-dim); margin-top:4px;">\u{1F4C5} ' + _formatSchedule(t.scheduled_at) + '</div>' : '';
 
+            // Executor badge
+            var execInfo = executorLabels[t.executor_type] || executorLabels['claude_cli'];
+            var execBadge = '<span class="badge" style="background:' + execInfo.color + '20;color:' + execInfo.color + ';font-size:10px;" title="Executor: ' + execInfo.label + '">'
+                + execInfo.icon + ' ' + execInfo.label + '</span>';
+
+            // Execution ID as clickable link (GitLab pipeline URL) or plain text
+            var execIdLine = '';
+            if (t.execution_id) {
+                var execUrl = t.executor_url || null;
+                if (execUrl) {
+                    execIdLine = '<div style="font-size:10px; color:var(--text-dim); margin-top:3px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">'
+                        + '\uD83D\uDD17 <a href="' + esc(execUrl) + '" target="_blank" rel="noopener" onclick="event.stopPropagation();" style="color:var(--text-dim);text-decoration:underline;">' + esc(t.execution_id) + '</a></div>';
+                } else {
+                    execIdLine = '<div style="font-size:10px; color:var(--text-dim); margin-top:3px;">\uD83C\uDD94 ' + esc(t.execution_id) + '</div>';
+                }
+            }
+
+            // LLM mode indicator — inferred from executor_type
+            var llmMode = (t.executor_type === 'claude_cli') ? 'claude' : (t.executor_type === 'gitlab' ? 'none' : 'none');
+            var llmIcon = llmModeIcons[llmMode] || '';
+            var llmTitle = llmModeTitles[llmMode] || '';
+            var llmBadge = '<span title="' + llmTitle + '" style="font-size:11px; cursor:default;">' + llmIcon + '</span>';
+
             return '<div class="kanban-card" style="border-left:3px solid ' + pColor + '; cursor:pointer;" onclick="openEditTaskModal(' + JSON.stringify(t).replace(/"/g, '&quot;') + ')">'
                 + '<div class="kanban-card-title" title="' + esc(t.title) + '">' + icon + ' ' + esc(t.title) + '</div>'
                 + '<div class="kanban-card-meta">'
                 + '<span class="badge badge-info">' + esc(t.task_type) + '</span>'
                 + '<span class="badge" style="background:' + pColor + '20; color:' + pColor + ';">' + esc(t.priority) + '</span>'
+                + execBadge
+                + llmBadge
                 + '</div>'
                 + schedLine
+                + execIdLine
                 + '<div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px;">'
                 + '<div style="display:flex; gap:4px;">' + arrows + '</div>'
                 + '<button class="kanban-move-btn" onclick="event.stopPropagation(); deleteTask(\'' + t.id + '\')" title="Delete" style="color:#ef4444;">\u2715</button>'
