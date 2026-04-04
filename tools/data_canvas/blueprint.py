@@ -683,4 +683,57 @@ def create_data_canvas_blueprint():
         data = base64.b64encode(export_svg(name, graph, "DDC")).decode("ascii")
         return jsonify({"format": "svg", "filename": f"{name.replace(' ', '_')}.svg", "data": data})
 
+    # ── Collaboration (Task 18) ───────────────────────────────────────────────
+    import uuid as _uuid_mod
+    from tools.canvas.collaboration import CanvasCollabManager as _DDCCollabMgr
+    _ddc_collab = _DDCCollabMgr("dd")
+
+    @bp.route("/api/collab/<design_id>/join", methods=["POST"])
+    @dc_login_required
+    def dc_collab_join(design_id):
+        """Join a collaborative DDC editing session."""
+        body = request.json or {}
+        user_id = body.get("user_id", str(_uuid_mod.uuid4())[:8])
+        user_name = body.get("user_name", "")
+        return jsonify(_ddc_collab.join(design_id, user_id, user_name))
+
+    @bp.route("/api/collab/<design_id>/leave", methods=["POST"])
+    @dc_login_required
+    def dc_collab_leave(design_id):
+        """Leave a DDC collaborative session."""
+        body = request.json or {}
+        user_id = body.get("user_id", "")
+        _ddc_collab.leave(design_id, user_id)
+        return jsonify({"ok": True})
+
+    @bp.route("/api/collab/<design_id>/push", methods=["POST"])
+    @dc_login_required
+    def dc_collab_push(design_id):
+        """Push an operation into a DDC collaborative session."""
+        body = request.json or {}
+        user_id = body.get("user_id", "")
+        op_type = body.get("op_type", "")
+        data = body.get("data", {})
+        seq = _ddc_collab.push(design_id, user_id, op_type, data)
+        return jsonify({"seq": seq})
+
+    @bp.route("/api/collab/<design_id>/poll", methods=["GET"])
+    @dc_login_required
+    def dc_collab_poll(design_id):
+        """Poll for DDC collaborative operations since a sequence number."""
+        since = int(request.args.get("since", 0))
+        user_id = request.args.get("user_id", "")
+        cx = request.args.get("cx")
+        cy = request.args.get("cy")
+        if user_id and cx is not None and cy is not None:
+            _ddc_collab.update_cursor(design_id, user_id, float(cx), float(cy))
+        ops, participants, latest_seq = _ddc_collab.poll(design_id, since)
+        return jsonify({"operations": ops, "participants": participants, "latest_seq": latest_seq})
+
+    @bp.route("/api/collab/<design_id>/participants", methods=["GET"])
+    @dc_login_required
+    def dc_collab_participants(design_id):
+        """Return current participants in a DDC collaborative session."""
+        return jsonify({"participants": _ddc_collab.get_participants(design_id)})
+
     return bp

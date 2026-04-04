@@ -1028,3 +1028,229 @@ document.addEventListener('DOMContentLoaded', () => {
     showStatus('✓ IaC bundle generated');
   };
 });
+
+/* ── Shared Collaboration Widget (Task 18) ─────────────────────────────────
+ *
+ * Polling-based real-time collaboration for all design canvases.
+ * No WebSocket dependency — air-gapped/CUI compatible.
+ *
+ * Usage (in canvas page):
+ *   canvas.collab.init({ designId, apiBase, userId, userName });
+ *   canvas.collab.destroy();
+ *
+ * Emits DOM events on document:
+ *   canvas:collab:op     — { detail: { op_type, data, user_id } }
+ *   canvas:collab:join   — { detail: { user_id, name, color } }
+ *   canvas:collab:leave  — { detail: { user_id } }
+ */
+(function () {
+  'use strict';
+
+  const POLL_INTERVAL_MS = 2000;   // poll every 2 s
+  const CURSOR_DEBOUNCE_MS = 300;  // throttle cursor updates
+  const COLORS = [
+    '#e74c3c','#3498db','#27ae60','#f39c12',
+    '#9b59b6','#1abc9c','#e67e22','#2c3e50'
+  ];
+
+  let _state = null; // active collab state
+
+  /* ── Public API ──────────────────────────────────────────────────────── */
+  window.canvas = window.canvas || {};
+  window.canvas.collab = {
+    /**
+     * Start collaborative editing for a design.
+     * @param {object} opts - { designId, apiBase, userId, userName }
+     */
+    init(opts) {
+      if (_state) this.destroy();
+      const userId = opts.userId || _randomId();
+      _state = {
+        designId: opts.designId,
+        apiBase: opts.apiBase,
+        userId,
+        userName: opts.userName || `User-${userId.slice(0, 6)}`,
+        myColor: COLORS[Math.floor(Math.random() * COLORS.length)],
+        latestSeq: 0,
+        participants: {},
+        pollTimer: null,
+        cursorTimer: null,
+        pendingCursor: null,
+      };
+      _join(_state);
+    },
+
+    /** Stop collaborative editing and clean up. */
+    destroy() {
+      if (!_state) return;
+      _leave(_state);
+      clearInterval(_state.pollTimer);
+      clearTimeout(_state.cursorTimer);
+      _removeBar();
+      _state = null;
+    },
+
+    /**
+     * Push an operation (call after local graph changes).
+     * @param {string} opType - node_add | node_move | node_delete | edge_add | edge_delete
+     * @param {object} data   - operation payload
+     */
+    push(opType, data) {
+      if (!_state) return;
+      _push(_state, opType, data);
+    },
+
+    /** Update cursor position (call on paper:mousemove). */
+    moveCursor(x, y) {
+      if (!_state) return;
+      _state.pendingCursor = { x, y };
+      clearTimeout(_state.cursorTimer);
+      _state.cursorTimer = setTimeout(() => {
+        if (_state && _state.pendingCursor) {
+          const { x: cx, y: cy } = _state.pendingCursor;
+          const base = _state.apiBase;
+          const did = _state.designId;
+          fetch(`${base}/collab/${did}/poll?since=${_state.latestSeq}` +
+            `&user_id=${encodeURIComponent(_state.userId)}&cx=${cx}&cy=${cy}`)
+            .catch(() => {});
+          _state.pendingCursor = null;
+        }
+      }, CURSOR_DEBOUNCE_MS);
+    },
+
+    /** Return current participants map (user_id → info). */
+    participants() {
+      return _state ? { ..._state.participants } : {};
+    },
+  };
+
+  /* ── Internal ────────────────────────────────────────────────────────── */
+  function _randomId() {
+    return Math.random().toString(36).slice(2, 10);
+  }
+
+  function _join(s) {
+    fetch(`${s.apiBase}/collab/${s.designId}/join`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: s.userId, user_name: s.userName }),
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (data.color) s.myColor = data.color;
+        if (data.participants) _syncParticipants(s, data.participants);
+        _renderBar(s);
+        s.pollTimer = setInterval(() => _poll(s), POLL_INTERVAL_MS);
+      })
+      .catch(err => console.warn('[collab] join failed:', err));
+  }
+
+  function _leave(s) {
+    fetch(`${s.apiBase}/collab/${s.designId}/leave`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: s.userId }),
+    }).catch(() => {});
+  }
+
+  function _push(s, opType, data) {
+    fetch(`${s.apiBase}/collab/${s.designId}/push`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: s.userId, op_type: opType, data }),
+    })
+      .then(r => r.json())
+      .then(res => { if (res.seq) s.latestSeq = Math.max(s.latestSeq, res.seq); })
+      .catch(() => {});
+  }
+
+  function _poll(s) {
+    fetch(`${s.apiBase}/collab/${s.designId}/poll?since=${s.latestSeq}` +
+      `&user_id=${encodeURIComponent(s.userId)}`)
+      .then(r => r.json())
+      .then(data => {
+        if (!_state) return;
+        if (data.latest_seq !== undefined) s.latestSeq = data.latest_seq;
+        if (data.participants) _syncParticipants(s, data.participants);
+        (data.operations || []).forEach(op => {
+          if (op.user_id === s.userId) return; // skip own ops
+          document.dispatchEvent(new CustomEvent('canvas:collab:op', { detail: op }));
+        });
+        _updateBar(s);
+      })
+      .catch(() => {});
+  }
+
+  function _syncParticipants(s, list) {
+    const prev = new Set(Object.keys(s.participants));
+    const next = new Set();
+    list.forEach(p => {
+      next.add(p.user_id);
+      if (!prev.has(p.user_id) && p.user_id !== s.userId) {
+        document.dispatchEvent(new CustomEvent('canvas:collab:join', { detail: p }));
+      }
+      s.participants[p.user_id] = p;
+    });
+    prev.forEach(id => {
+      if (!next.has(id)) {
+        document.dispatchEvent(new CustomEvent('canvas:collab:leave', { detail: { user_id: id } }));
+        delete s.participants[id];
+      }
+    });
+  }
+
+  /* ── Collaboration Bar ───────────────────────────────────────────────── */
+  const BAR_ID = 'canvas-collab-bar';
+
+  function _renderBar(s) {
+    _removeBar();
+    const bar = document.createElement('div');
+    bar.id = BAR_ID;
+    bar.style.cssText = [
+      'position:fixed;top:56px;right:12px;z-index:9000',
+      'background:rgba(18,26,38,0.96)',
+      'border:1px solid rgba(255,255,255,0.08)',
+      'border-radius:8px;padding:6px 10px',
+      'display:flex;align-items:center;gap:8px',
+      'font-size:11px;color:#8ea8c3',
+      'box-shadow:0 2px 12px rgba(0,0,0,0.4)',
+      'pointer-events:none',
+    ].join(';');
+    bar.innerHTML = `
+      <span style="font-weight:600;color:#1abc9c;">● LIVE</span>
+      <span id="${BAR_ID}-avatars" style="display:flex;gap:4px;"></span>
+      <span id="${BAR_ID}-count"></span>
+    `;
+    document.body.appendChild(bar);
+    _updateBar(s);
+  }
+
+  function _updateBar(s) {
+    const bar = document.getElementById(BAR_ID);
+    if (!bar) return;
+    const avatarEl = bar.querySelector(`#${BAR_ID}-avatars`);
+    const countEl  = bar.querySelector(`#${BAR_ID}-count`);
+    const others = Object.values(s.participants).filter(p => p.user_id !== s.userId);
+    const total = others.length + 1; // include self
+    if (avatarEl) {
+      avatarEl.innerHTML = others.slice(0, 5).map(p => {
+        const initials = (p.name || '?').slice(0, 2).toUpperCase();
+        const color = p.color || '#3498db';
+        return `<span title="${p.name}" style="
+          display:inline-flex;align-items:center;justify-content:center;
+          width:22px;height:22px;border-radius:50%;
+          background:${color};color:#fff;font-size:9px;font-weight:700;
+          border:1.5px solid rgba(255,255,255,0.12);
+        ">${initials}</span>`;
+      }).join('');
+    }
+    if (countEl) {
+      countEl.textContent = total === 1 ? 'Only you' : `${total} collaborators`;
+    }
+  }
+
+  function _removeBar() {
+    const el = document.getElementById(BAR_ID);
+    if (el) el.remove();
+  }
+})();

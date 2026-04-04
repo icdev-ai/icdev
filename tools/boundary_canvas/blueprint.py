@@ -827,4 +827,57 @@ def create_boundary_blueprint():
         data = base64.b64encode(export_svg(name, graph, "BDC")).decode("ascii")
         return jsonify({"format": "svg", "filename": f"{name.replace(' ', '_')}.svg", "data": data})
 
+    # ── Collaboration (Task 18) ───────────────────────────────────────────────
+    import uuid as _uuid_mod
+    from tools.canvas.collaboration import CanvasCollabManager as _BDCCollabMgr
+    _bdc_collab = _BDCCollabMgr("bd")
+
+    @bp.route("/api/collab/<design_id>/join", methods=["POST"])
+    @bdc_login_required
+    def bdc_collab_join(design_id):
+        """Join a collaborative BDC editing session."""
+        body = request.json or {}
+        user_id = body.get("user_id", str(_uuid_mod.uuid4())[:8])
+        user_name = body.get("user_name", "")
+        return jsonify(_bdc_collab.join(design_id, user_id, user_name))
+
+    @bp.route("/api/collab/<design_id>/leave", methods=["POST"])
+    @bdc_login_required
+    def bdc_collab_leave(design_id):
+        """Leave a BDC collaborative session."""
+        body = request.json or {}
+        user_id = body.get("user_id", "")
+        _bdc_collab.leave(design_id, user_id)
+        return jsonify({"ok": True})
+
+    @bp.route("/api/collab/<design_id>/push", methods=["POST"])
+    @bdc_login_required
+    def bdc_collab_push(design_id):
+        """Push an operation into a BDC collaborative session."""
+        body = request.json or {}
+        user_id = body.get("user_id", "")
+        op_type = body.get("op_type", "")
+        data = body.get("data", {})
+        seq = _bdc_collab.push(design_id, user_id, op_type, data)
+        return jsonify({"seq": seq})
+
+    @bp.route("/api/collab/<design_id>/poll", methods=["GET"])
+    @bdc_login_required
+    def bdc_collab_poll(design_id):
+        """Poll for BDC collaborative operations since a sequence number."""
+        since = int(request.args.get("since", 0))
+        user_id = request.args.get("user_id", "")
+        cx = request.args.get("cx")
+        cy = request.args.get("cy")
+        if user_id and cx is not None and cy is not None:
+            _bdc_collab.update_cursor(design_id, user_id, float(cx), float(cy))
+        ops, participants, latest_seq = _bdc_collab.poll(design_id, since)
+        return jsonify({"operations": ops, "participants": participants, "latest_seq": latest_seq})
+
+    @bp.route("/api/collab/<design_id>/participants", methods=["GET"])
+    @bdc_login_required
+    def bdc_collab_participants(design_id):
+        """Return current participants in a BDC collaborative session."""
+        return jsonify({"participants": _bdc_collab.get_participants(design_id)})
+
     return bp
