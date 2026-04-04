@@ -42,8 +42,13 @@
 
 <!-- Task Kanban Board -->
 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-    <h2 style="margin:0;">Task Board</h2>
-    <button class="btn btn-primary" onclick="openAddTaskModal()">+ Add Task</button>
+    <h2 style="margin:0;">Task Board
+        <span id="auto-refresh-countdown" style="font-size:12px; font-weight:normal; color:var(--text-dim); margin-left:8px;"></span>
+    </h2>
+    <div style="display:flex; gap:8px; align-items:center;">
+        <button class="btn" id="refresh-btn" onclick="refreshDashboard()" title="Refresh now" style="padding:6px 12px; font-size:13px;">&#x21bb; Refresh</button>
+        <button class="btn btn-primary" onclick="openAddTaskModal()">+ Add Task</button>
+    </div>
 </div>
 <div class="kanban-board" id="kanban-board">
     {% set columns = [
@@ -288,7 +293,52 @@ function renderTaskKanban(tasks) {
     });
 }
 
-document.addEventListener('DOMContentLoaded', refreshKanbanTasks);
+// ── Auto-refresh: 5-minute interval with countdown ──────────────────
+var AUTO_REFRESH_SECONDS = 300; // 5 minutes
+var _refreshCountdown = AUTO_REFRESH_SECONDS;
+var _refreshTimer = null;
+var _countdownTimer = null;
+
+function refreshDashboard() {
+    // Refresh kanban tasks
+    refreshKanbanTasks();
+    // Refresh charts (re-trigger the chart loader in the scripts block)
+    if (window._loadCharts) window._loadCharts();
+    // Visual feedback on button
+    var btn = document.getElementById('refresh-btn');
+    if (btn) {
+        btn.textContent = '\u2713 Refreshed';
+        btn.style.color = 'var(--status-green)';
+        setTimeout(function() { btn.innerHTML = '&#x21bb; Refresh'; btn.style.color = ''; }, 1500);
+    }
+    // Reset countdown
+    _refreshCountdown = AUTO_REFRESH_SECONDS;
+}
+
+function _updateCountdownDisplay() {
+    var el = document.getElementById('auto-refresh-countdown');
+    if (!el) return;
+    var m = Math.floor(_refreshCountdown / 60);
+    var s = _refreshCountdown % 60;
+    el.textContent = '(auto-refresh in ' + m + ':' + (s < 10 ? '0' : '') + s + ')';
+}
+
+function _startAutoRefresh() {
+    // Countdown tick every second
+    _countdownTimer = setInterval(function() {
+        _refreshCountdown--;
+        _updateCountdownDisplay();
+        if (_refreshCountdown <= 0) {
+            refreshDashboard();
+        }
+    }, 1000);
+    _updateCountdownDisplay();
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    refreshKanbanTasks();
+    _startAutoRefresh();
+});
 </script>
 
 <style>
@@ -411,8 +461,8 @@ document.addEventListener('DOMContentLoaded', refreshKanbanTasks);
     }
 })();
 
-// Load charts from API
-(function() {
+// Load charts from API — exposed as window._loadCharts for auto-refresh
+window._loadCharts = function() {
     if (!window.ICDEV || !ICDEV.barChart) { console.warn('ICDEV chart namespace not available — charts skipped'); return; }
     fetch('/api/charts/overview')
         .then(function(r) { return r.json(); })
@@ -474,6 +524,8 @@ document.addEventListener('DOMContentLoaded', refreshKanbanTasks);
                 }
             });
         });
-})();
+};
+// Initial chart load
+window._loadCharts();
 </script>
 {% endblock %}
