@@ -1105,11 +1105,19 @@ def create_app() -> Flask:
             # ----------------------------------------------------------------
             # 2. Activity Trend: last 7 days (line chart) — from audit_trail
             # ----------------------------------------------------------------
-            activity_trend = conn.execute(
-                "SELECT DATE(created_at) as day, COUNT(*) as cnt "
-                "FROM audit_trail WHERE created_at >= DATE('now', '-7 days') "
-                "GROUP BY DATE(created_at) ORDER BY day"
-            ).fetchall()
+            _is_pg = getattr(conn, "_backend", "sqlite") == "postgresql"
+            if _is_pg:
+                activity_trend = conn.execute(
+                    "SELECT DATE(created_at) as day, COUNT(*) as cnt "
+                    "FROM audit_trail WHERE created_at >= NOW() - INTERVAL '7 days' "
+                    "GROUP BY DATE(created_at) ORDER BY day"
+                ).fetchall()
+            else:
+                activity_trend = conn.execute(
+                    "SELECT DATE(created_at) as day, COUNT(*) as cnt "
+                    "FROM audit_trail WHERE created_at >= DATE('now', '-7 days') "
+                    "GROUP BY DATE(created_at) ORDER BY day"
+                ).fetchall()
 
             # ----------------------------------------------------------------
             # 3. Compliance Posture — aggregate across canvas assessment DBs
