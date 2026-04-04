@@ -141,6 +141,8 @@ CREATE TABLE IF NOT EXISTS bd_collab_sessions (
     is_active   INTEGER NOT NULL DEFAULT 1
 );
 
+CREATE INDEX IF NOT EXISTS idx_bd_collab_design ON bd_collab_sessions(design_id);
+
 CREATE TABLE IF NOT EXISTS bd_alerts (
     id              TEXT PRIMARY KEY,
     design_id       TEXT REFERENCES boundary_designs(id),
