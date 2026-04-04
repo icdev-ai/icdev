@@ -1719,3 +1719,9 @@ All canvases share: separate SQLite DB, Flask Blueprint, YAML config in `args/`,
 | Canvas Indexer | tools\rag\canvas_indexer.py | Auto-registered: rag/canvas_indexer.py | --json | JSON |
 | Claude Cli | tools\kanban\executors\claude_cli.py | Auto-registered: executors/claude_cli.py | --json | JSON |
 | Gitlab Pipeline | tools\kanban\executors\gitlab_pipeline.py | Auto-registered: executors/gitlab_pipeline.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Auto Remediate | tools\canvas\auto_remediate.py | Auto-registered: canvas/auto_remediate.py | --json | JSON |
