@@ -1415,6 +1415,20 @@ def create_network_blueprint():
             d["tags"] = []
         return jsonify(d)
 
+    @bp.route("/api/templates/<tpl_id>/docs", methods=["GET"])
+    @nc_login_required
+    def nc_api_get_template_docs(tpl_id):
+        """Get SOP/runbook markdown documentation for a template."""
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT id, template_id, doc_type, title, body_markdown, created_at "
+            "FROM nc_template_docs WHERE template_id = ? ORDER BY created_at",
+            (tpl_id,),
+        ).fetchall()
+        conn.close()
+        docs = [_row_to_dict(r) for r in rows]
+        return jsonify({"template_id": tpl_id, "docs": docs, "count": len(docs)})
+
     @bp.route("/api/templates/<tpl_id>/load", methods=["POST"])
     @nc_login_required
     def nc_api_load_template(tpl_id):
