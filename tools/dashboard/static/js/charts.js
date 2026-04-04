@@ -322,10 +322,11 @@
     opts = opts || {};
     var series   = opts.series || [];
     var labels   = opts.labels || [];
-    var H        = opts.height || 220;
+    var baseH    = opts.height || 220;
     var W        = container.offsetWidth || 400;
     var rotateLabels = opts.rotateLabels !== undefined ? opts.rotateLabels : (labels.length > 4);
-    var padL = 48, padR = 12, padT = 16, padB = rotateLabels ? 72 : 32;
+    var padL = 48, padR = 12, padT = 16, padB = 28;
+    var H = rotateLabels ? baseH + 30 : baseH;
     var plotW = W - padL - padR;
     var plotH = H - padT - padB;
 
@@ -367,12 +368,13 @@
     labels.forEach(function (lbl, gi) {
       // X-axis label
       var gx = padL + gi * groupW + groupW / 2;
+      var lblY = baseline + 12;
       var lblAttrs = {
-        x: gx, y: H - 4, fill: palette('muted'),
-        'font-size': '10', 'text-anchor': rotateLabels ? 'end' : 'middle'
+        x: gx, y: lblY, fill: palette('muted'),
+        'font-size': '11', 'text-anchor': rotateLabels ? 'end' : 'middle'
       };
       if (rotateLabels) {
-        lblAttrs.transform = 'rotate(-45,' + gx + ',' + (H - 4) + ')';
+        lblAttrs.transform = 'rotate(-45,' + gx + ',' + lblY + ')';
       }
       var txt = svgEl('text', lblAttrs);
       txt.textContent = escapeHTML(String(lbl));
