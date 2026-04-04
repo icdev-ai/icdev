@@ -6003,6 +6003,762 @@ TEMPLATES = [
             ],
         }),
     },
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # AWS Transit Gateway / DX Gateway / VPN Gateway Templates
+    # ══════════════════════════════════════════════════════════════════════════
+
+    # ── 1. AWS Transit Gateway Hub-and-Spoke (Multi-VPC Segmentation) ────────
+    {
+        "id": "tpl-aws-tgw-hub-spoke",
+        "name": "AWS Transit Gateway — Hub-and-Spoke Multi-VPC",
+        "category": "AWS / Hybrid Cloud",
+        "description": (
+            "Transit Gateway as a regional hub connecting multiple segmented VPCs "
+            "(production, development, shared services, inspection) with route table "
+            "isolation. Network Firewall in centralized inspection VPC for east-west "
+            "traffic. Supports 5,000 attachments per TGW, 50 Gbps per AZ burst. "
+            "See template docs for full SOP, Mermaid diagrams, and route table design."
+        ),
+        "tags": json.dumps([
+            "aws", "tgw", "transit-gateway", "hub-spoke", "multi-vpc",
+            "network-firewall", "segmentation", "route-table", "sop", "runbook",
+        ]),
+        "graph_json": json.dumps({
+            "nodes": [
+                # ── Transit Gateway (Center Hub) ──
+                _node("tgw", "Transit Gateway", "aws-tgw", 500, 350, {
+                    "config": {
+                        "role": "Regional hub — all VPC-to-VPC and VPC-to-on-prem traffic",
+                        "asn": "64512 (TGW BGP ASN — configurable)",
+                        "features": "Multicast, inter-region peering, ECMP, route tables",
+                        "limits": "5,000 attachments, 10,000 routes per table, 50 Gbps/AZ burst",
+                    }
+                }),
+
+                # ── TGW Route Tables (logical, shown as labels) ──
+                _node("rt-prod", "RT: Production", "aws-subnet", 340, 250, {
+                    "config": {
+                        "role": "TGW route table — Production segment",
+                        "associations": "Prod VPC attachment",
+                        "propagations": "Shared Services, Inspection (no Dev)",
+                        "blackhole": "Dev VPC CIDRs (isolation)",
+                    }
+                }),
+                _node("rt-dev", "RT: Development", "aws-subnet", 660, 250, {
+                    "config": {
+                        "role": "TGW route table — Dev/Staging segment",
+                        "associations": "Dev VPC attachment",
+                        "propagations": "Shared Services, Inspection (no Prod)",
+                        "blackhole": "Prod VPC CIDRs (isolation)",
+                    }
+                }),
+                _node("rt-shared", "RT: Shared Services", "aws-subnet", 340, 450, {
+                    "config": {
+                        "role": "TGW route table — Shared Services (DNS, AD, logging)",
+                        "associations": "Shared VPC attachment",
+                        "propagations": "All segments (hub for shared access)",
+                    }
+                }),
+                _node("rt-inspect", "RT: Inspection", "aws-subnet", 660, 450, {
+                    "config": {
+                        "role": "TGW route table — Centralized inspection VPC",
+                        "associations": "Inspection VPC attachment",
+                        "propagations": "All segments (forces traffic through NFW)",
+                        "notes": "Default route 0.0.0.0/0 -> Inspection VPC for egress",
+                    }
+                }),
+
+                # ── Production VPC ──
+                _node("vpc-prod", "Production VPC", "aws-vpc", 140, 100, {
+                    "config": {
+                        "cidr": "10.1.0.0/16",
+                        "subnets": "Private app (10.1.1.0/24, 10.1.2.0/24), Private DB (10.1.10.0/24, 10.1.11.0/24), TGW (10.1.255.0/28, 10.1.255.16/28)",
+                        "az": "us-east-1a, us-east-1b (multi-AZ)",
+                    }
+                }),
+                _node("alb-prod", "ALB (Prod)", "aws-alb", 60, 100),
+                _node("sub-prod-app", "App Subnet (Prod)", "aws-subnet", 140, 180),
+                _node("sub-prod-db", "DB Subnet (Prod)", "aws-subnet", 60, 180),
+
+                # ── Development VPC ──
+                _node("vpc-dev", "Development VPC", "aws-vpc", 860, 100, {
+                    "config": {
+                        "cidr": "10.2.0.0/16",
+                        "subnets": "Private app, Private DB, TGW attachment",
+                    }
+                }),
+                _node("alb-dev", "ALB (Dev)", "aws-alb", 940, 100),
+                _node("sub-dev-app", "App Subnet (Dev)", "aws-subnet", 860, 180),
+
+                # ── Shared Services VPC ──
+                _node("vpc-shared", "Shared Services VPC", "aws-vpc", 140, 560, {
+                    "config": {
+                        "cidr": "10.0.0.0/16",
+                        "services": "Route 53 Resolver, AD Connector, CloudWatch, S3 endpoints",
+                    }
+                }),
+                _node("r53", "Route 53 Resolver", "aws-r53", 60, 560),
+                _node("ad", "Managed AD", "aws-ad", 60, 640),
+                _node("ep-s3", "S3 Gateway Endpoint", "aws-gw-ep", 140, 640),
+
+                # ── Centralized Inspection VPC ──
+                _node("vpc-inspect", "Inspection VPC", "aws-vpc", 860, 560, {
+                    "config": {
+                        "cidr": "100.64.0.0/16 (RFC 6598 — non-routable)",
+                        "subnets": "Firewall (100.64.1.0/24), TGW (100.64.255.0/28), NAT GW (100.64.2.0/24)",
+                        "notes": "All east-west and egress traffic forced through NFW",
+                    }
+                }),
+                _node("nfw", "Network Firewall", "aws-nfw", 860, 640, {
+                    "config": {
+                        "role": "Stateful inspection — IDS/IPS, domain filtering, TLS inspection",
+                        "rules": "Suricata-compatible, managed rule groups + custom",
+                    }
+                }),
+                _node("nat-gw", "NAT Gateway", "aws-subnet", 940, 640, {
+                    "config": {"role": "Egress to internet via NFW -> NAT GW -> IGW"}
+                }),
+                _node("igw", "Internet Gateway", "aws-subnet", 940, 560),
+
+                # ── On-Premises (via DX or VPN) ──
+                _node("on-prem", "On-Premises DC", "router", 500, 650, {
+                    "config": {
+                        "role": "Corporate data center — connected via DX or VPN to TGW",
+                        "cidr": "172.16.0.0/12 (on-prem aggregate)",
+                    }
+                }),
+
+                # ── Monitoring ──
+                _node("netmgr", "Network Manager", "aws-netmgr", 500, 180, {
+                    "config": {"role": "TGW route analysis, topology visualization, CloudWatch metrics"}
+                }),
+                _node("flowlogs", "VPC Flow Logs", "aws-flowlogs", 500, 100, {
+                    "config": {"role": "All VPCs — flow logs to S3 + CloudWatch for SIEM"}
+                }),
+            ],
+            "edges": [
+                # ── TGW attachments ──
+                _edge("vpc-prod", "tgw", "TGW Attachment (Prod)", ""),
+                _edge("vpc-dev", "tgw", "TGW Attachment (Dev)", ""),
+                _edge("vpc-shared", "tgw", "TGW Attachment (Shared)", ""),
+                _edge("vpc-inspect", "tgw", "TGW Attachment (Inspect)", ""),
+
+                # ── Route table associations ──
+                _edge("rt-prod", "tgw", "Prod RT", ""),
+                _edge("rt-dev", "tgw", "Dev RT", ""),
+                _edge("rt-shared", "tgw", "Shared RT", ""),
+                _edge("rt-inspect", "tgw", "Inspect RT", ""),
+
+                # ── VPC internals ──
+                _edge("vpc-prod", "alb-prod", "", ""),
+                _edge("vpc-prod", "sub-prod-app", "", ""),
+                _edge("vpc-prod", "sub-prod-db", "", ""),
+                _edge("vpc-dev", "alb-dev", "", ""),
+                _edge("vpc-dev", "sub-dev-app", "", ""),
+                _edge("vpc-shared", "r53", "DNS", ""),
+                _edge("vpc-shared", "ad", "AD DS", ""),
+                _edge("vpc-shared", "ep-s3", "S3 Endpoint", ""),
+                _edge("vpc-inspect", "nfw", "Firewall subnet", ""),
+                _edge("nfw", "nat-gw", "Post-inspection egress", ""),
+                _edge("nat-gw", "igw", "Internet", ""),
+
+                # ── On-prem connectivity ──
+                _edge("on-prem", "tgw", "DX or VPN", "BGP"),
+
+                # ── Monitoring ──
+                _edge("tgw", "netmgr", "Route analysis", ""),
+                _edge("flowlogs", "tgw", "All VPC logs", ""),
+            ],
+        }),
+    },
+
+    # ── 2. AWS DX Gateway — Multi-Region Global Connectivity ─────────────────
+    {
+        "id": "tpl-aws-dxgw-multi-region",
+        "name": "AWS DX Gateway — Multi-Region with TGW Peering",
+        "category": "AWS / Hybrid Cloud",
+        "description": (
+            "DX Gateway as a global fabric connecting on-premises to multiple AWS "
+            "regions via Transit Gateways and VGWs. Shows dual DX circuits (primary/"
+            "secondary) at diverse locations, DX Gateway associating up to 6 TGWs "
+            "across regions, inter-region TGW peering, and allowed prefix filters. "
+            "See template docs for full SOP, Mermaid diagrams, and prefix management."
+        ),
+        "tags": json.dumps([
+            "aws", "dx-gateway", "dxgw", "multi-region", "transit-gateway",
+            "direct-connect", "global", "bgp", "sop", "runbook",
+        ]),
+        "graph_json": json.dumps({
+            "nodes": [
+                # ── On-Premises ──
+                _node("ce-rtr-1", "CE Router 1 (Primary)", "router", 80, 350, {
+                    "config": {
+                        "role": "Primary CE — DX Location A (e.g., Equinix DC)",
+                        "bgp_asn": "65001 (customer)",
+                    }
+                }),
+                _node("ce-rtr-2", "CE Router 2 (Secondary)", "router", 80, 500, {
+                    "config": {
+                        "role": "Secondary CE — DX Location B (diverse facility)",
+                        "bgp_asn": "65001 (customer)",
+                    }
+                }),
+                _node("on-prem-sw", "On-Prem Core", "switch-l3", 80, 425, {
+                    "config": {"cidr": "172.16.0.0/12"}
+                }),
+
+                # ── DX Connections ──
+                _node("dx-pri", "DX Primary (10G)", "aws-dx", 250, 350, {
+                    "config": {
+                        "speed": "10 Gbps dedicated",
+                        "location": "DX Location A (e.g., Equinix DC2 Ashburn)",
+                        "lag": "LAG with 2x10G for 20G aggregate (optional)",
+                    }
+                }),
+                _node("dx-sec", "DX Secondary (10G)", "aws-dx", 250, 500, {
+                    "config": {
+                        "speed": "10 Gbps dedicated",
+                        "location": "DX Location B (diverse — e.g., CoreSite VA1)",
+                        "diversity": "Different facility from primary for maximum resilience",
+                    }
+                }),
+
+                # ── Transit VIFs ──
+                _node("tvif-pri", "Transit VIF (Primary)", "aws-subnet", 400, 350, {
+                    "config": {
+                        "type": "Transit Virtual Interface",
+                        "vlan": "100",
+                        "bgp_asn_aws": "64512 (TGW ASN)",
+                        "bgp_asn_cust": "65001",
+                        "notes": "Transit VIF connects DX -> DX Gateway -> TGW (not VGW)",
+                    }
+                }),
+                _node("tvif-sec", "Transit VIF (Secondary)", "aws-subnet", 400, 500, {
+                    "config": {
+                        "type": "Transit Virtual Interface",
+                        "vlan": "200",
+                    }
+                }),
+                _node("pvif-legacy", "Private VIF (Legacy)", "aws-subnet", 400, 650, {
+                    "config": {
+                        "type": "Private Virtual Interface",
+                        "notes": "Private VIF -> DX Gateway -> VGW (for non-TGW VPCs)",
+                    }
+                }),
+
+                # ── DX Gateway (Global) ──
+                _node("dxgw", "DX Gateway (Global)", "aws-dx-gw", 580, 425, {
+                    "config": {
+                        "role": "Global resource — not region-specific",
+                        "limits": "Up to 6 TGW associations + 20 VGW associations",
+                        "asn": "64512 (DX Gateway ASN — must differ from TGW ASN)",
+                        "prefixes": "Allowed prefix filters per association (max 20 per TGW, 100 per VGW)",
+                        "notes": "Single DX Gateway can serve ALL regions simultaneously",
+                    }
+                }),
+
+                # ── Region 1: us-east-1 ──
+                _node("tgw-use1", "TGW (us-east-1)", "aws-tgw", 780, 200, {
+                    "config": {
+                        "region": "us-east-1",
+                        "asn": "64513",
+                        "attachments": "DX Gateway, VPCs, VPN",
+                    }
+                }),
+                _node("vpc-prod-use1", "Prod VPC (us-east-1)", "aws-vpc", 940, 120, {
+                    "config": {"cidr": "10.1.0.0/16"}
+                }),
+                _node("vpc-shared-use1", "Shared VPC (us-east-1)", "aws-vpc", 940, 200, {
+                    "config": {"cidr": "10.0.0.0/16"}
+                }),
+                _node("nfw-use1", "NFW (us-east-1)", "aws-nfw", 940, 280),
+
+                # ── Region 2: us-west-2 ──
+                _node("tgw-usw2", "TGW (us-west-2)", "aws-tgw", 780, 425, {
+                    "config": {
+                        "region": "us-west-2",
+                        "asn": "64514",
+                        "attachments": "DX Gateway, VPCs, VPN",
+                    }
+                }),
+                _node("vpc-prod-usw2", "Prod VPC (us-west-2)", "aws-vpc", 940, 380, {
+                    "config": {"cidr": "10.3.0.0/16"}
+                }),
+                _node("vpc-dr-usw2", "DR VPC (us-west-2)", "aws-vpc", 940, 460, {
+                    "config": {"cidr": "10.4.0.0/16"}
+                }),
+
+                # ── Region 3: eu-west-1 ──
+                _node("tgw-euw1", "TGW (eu-west-1)", "aws-tgw", 780, 620, {
+                    "config": {
+                        "region": "eu-west-1",
+                        "asn": "64515",
+                    }
+                }),
+                _node("vpc-eu", "EU VPC (eu-west-1)", "aws-vpc", 940, 620, {
+                    "config": {"cidr": "10.5.0.0/16"}
+                }),
+
+                # ── Legacy Region (VGW path) ──
+                _node("vgw-legacy", "VGW (ap-southeast-1)", "aws-vpn", 780, 750, {
+                    "config": {
+                        "role": "Virtual Private Gateway — legacy VPC (no TGW)",
+                        "region": "ap-southeast-1",
+                        "notes": "DX Gateway -> VGW (Private VIF path, not Transit VIF)",
+                    }
+                }),
+                _node("vpc-legacy", "Legacy VPC (ap-se-1)", "aws-vpc", 940, 750, {
+                    "config": {"cidr": "10.8.0.0/16"}
+                }),
+
+                # ── VPN Backup ──
+                _node("vpn-backup", "VPN Backup (us-east-1)", "aws-vpn", 580, 120, {
+                    "config": {
+                        "role": "Site-to-Site VPN as backup for DX failure",
+                        "tunnels": "2 IPsec tunnels (active/active or active/passive)",
+                        "throughput": "Up to 1.25 Gbps per tunnel (ECMP across tunnels)",
+                        "bgp": "BGP over VPN — AS-PATH prepend to prefer DX",
+                    }
+                }),
+
+                # ── Inter-Region TGW Peering ──
+                _node("peer-use1-usw2", "TGW Peering", "aws-tgw", 860, 310, {
+                    "config": {
+                        "role": "Inter-region TGW peering (us-east-1 <-> us-west-2)",
+                        "bandwidth": "Up to 50 Gbps",
+                        "notes": "Static routes only (no BGP), requires route entries in both TGW RTs",
+                    }
+                }),
+            ],
+            "edges": [
+                # On-prem to DX
+                _edge("on-prem-sw", "ce-rtr-1", "Uplink", "OSPF"),
+                _edge("on-prem-sw", "ce-rtr-2", "Uplink", "OSPF"),
+                _edge("ce-rtr-1", "dx-pri", "DX Primary (10G)", "802.1Q"),
+                _edge("ce-rtr-2", "dx-sec", "DX Secondary (10G)", "802.1Q"),
+
+                # DX to Transit VIFs
+                _edge("dx-pri", "tvif-pri", "Transit VIF", ""),
+                _edge("dx-sec", "tvif-sec", "Transit VIF", ""),
+                _edge("dx-pri", "pvif-legacy", "Private VIF", ""),
+
+                # Transit VIFs to DX Gateway
+                _edge("tvif-pri", "dxgw", "Primary path", "eBGP"),
+                _edge("tvif-sec", "dxgw", "Secondary path", "eBGP"),
+                _edge("pvif-legacy", "dxgw", "Legacy path", "eBGP"),
+
+                # DX Gateway to regional TGWs
+                _edge("dxgw", "tgw-use1", "Association (us-east-1)", "BGP"),
+                _edge("dxgw", "tgw-usw2", "Association (us-west-2)", "BGP"),
+                _edge("dxgw", "tgw-euw1", "Association (eu-west-1)", "BGP"),
+                _edge("dxgw", "vgw-legacy", "Association (ap-se-1)", "BGP"),
+
+                # Regional TGWs to VPCs
+                _edge("tgw-use1", "vpc-prod-use1", "Attachment", ""),
+                _edge("tgw-use1", "vpc-shared-use1", "Attachment", ""),
+                _edge("tgw-use1", "nfw-use1", "Inspection", ""),
+                _edge("tgw-usw2", "vpc-prod-usw2", "Attachment", ""),
+                _edge("tgw-usw2", "vpc-dr-usw2", "Attachment", ""),
+                _edge("tgw-euw1", "vpc-eu", "Attachment", ""),
+                _edge("vgw-legacy", "vpc-legacy", "VGW Attachment", ""),
+
+                # VPN backup
+                _edge("ce-rtr-1", "vpn-backup", "IPsec VPN (backup)", "BGP"),
+                _edge("vpn-backup", "tgw-use1", "VPN Attachment", ""),
+
+                # Inter-region peering
+                _edge("tgw-use1", "peer-use1-usw2", "Peering", "Static"),
+                _edge("peer-use1-usw2", "tgw-usw2", "Peering", "Static"),
+            ],
+        }),
+    },
+
+    # ── 3. AWS Site-to-Site VPN at Scale ──────────────────────────────────────
+    {
+        "id": "tpl-aws-vpn-at-scale",
+        "name": "AWS Site-to-Site VPN — Multi-Site at Scale",
+        "category": "AWS / Hybrid Cloud",
+        "description": (
+            "Site-to-Site VPN at scale using Transit Gateway as a VPN concentrator "
+            "for 20+ remote sites. Shows accelerated VPN (Global Accelerator), "
+            "ECMP across tunnels, BGP dynamic routing, certificate-based auth, and "
+            "VPN failover patterns. Covers both AWS-managed and customer gateway "
+            "configurations. See template docs for full SOP and Mermaid diagrams."
+        ),
+        "tags": json.dumps([
+            "aws", "vpn", "site-to-site", "tgw", "transit-gateway",
+            "ipsec", "bgp", "ecmp", "global-accelerator", "sop", "runbook",
+        ]),
+        "graph_json": json.dumps({
+            "nodes": [
+                # ── TGW VPN Hub ──
+                _node("tgw", "Transit Gateway (VPN Hub)", "aws-tgw", 500, 300, {
+                    "config": {
+                        "role": "VPN concentrator — all remote sites terminate here",
+                        "asn": "64512",
+                        "ecmp": "ECMP enabled across VPN tunnels for aggregate throughput",
+                        "limits": "Up to 5,000 VPN attachments",
+                    }
+                }),
+                _node("ga", "Global Accelerator", "aws-ga", 500, 180, {
+                    "config": {
+                        "role": "Accelerated VPN — AWS global backbone instead of public internet",
+                        "benefit": "Reduced latency, jitter, packet loss for VPN tunnels",
+                        "notes": "Enable 'Accelerate' flag on VPN connection creation",
+                    }
+                }),
+
+                # ── Hub VPCs ──
+                _node("vpc-prod", "Production VPC", "aws-vpc", 300, 120, {
+                    "config": {"cidr": "10.1.0.0/16"}
+                }),
+                _node("vpc-shared", "Shared Services VPC", "aws-vpc", 700, 120, {
+                    "config": {"cidr": "10.0.0.0/16"}
+                }),
+                _node("nfw", "Network Firewall", "aws-nfw", 500, 120),
+
+                # ── Remote Site A (Primary) ──
+                _node("cgw-a1", "CGW: HQ Primary", "router", 100, 460, {
+                    "config": {
+                        "role": "Customer Gateway — Headquarters (Primary ISP)",
+                        "public_ip": "203.0.113.10",
+                        "bgp_asn": "65001",
+                        "device": "Cisco ISR 4451 / ASR 1001-X",
+                    }
+                }),
+                _node("cgw-a2", "CGW: HQ Secondary", "router", 100, 560, {
+                    "config": {
+                        "role": "Customer Gateway — HQ (Secondary ISP, diverse)",
+                        "public_ip": "198.51.100.20",
+                        "bgp_asn": "65001",
+                    }
+                }),
+                _node("vpn-a1", "VPN: HQ-Primary", "aws-vpn", 280, 460, {
+                    "config": {
+                        "tunnels": "2 IPsec tunnels per VPN connection",
+                        "throughput": "1.25 Gbps per tunnel (2.5 Gbps ECMP)",
+                        "accelerated": "Yes (Global Accelerator)",
+                    }
+                }),
+                _node("vpn-a2", "VPN: HQ-Secondary", "aws-vpn", 280, 560, {
+                    "config": {
+                        "tunnels": "2 IPsec tunnels (diverse ISP path)",
+                        "notes": "4 tunnels total across 2 VPN connections = 5 Gbps ECMP",
+                    }
+                }),
+
+                # ── Remote Site B (Branch Office) ──
+                _node("cgw-b", "CGW: Branch-NYC", "router", 100, 700, {
+                    "config": {
+                        "role": "Branch office — New York",
+                        "public_ip": "192.0.2.50",
+                        "bgp_asn": "65002",
+                        "device": "Cisco ISR 1100 / Meraki MX",
+                    }
+                }),
+                _node("vpn-b", "VPN: Branch-NYC", "aws-vpn", 280, 700),
+
+                # ── Remote Sites C-F (representing scale) ──
+                _node("cgw-c", "CGW: Branch-Chicago", "router", 500, 560, {
+                    "config": {"bgp_asn": "65003"}
+                }),
+                _node("vpn-c", "VPN: Branch-CHI", "aws-vpn", 500, 480),
+
+                _node("cgw-d", "CGW: Branch-LA", "router", 700, 560, {
+                    "config": {"bgp_asn": "65004"}
+                }),
+                _node("vpn-d", "VPN: Branch-LA", "aws-vpn", 700, 480),
+
+                _node("cgw-e", "CGW: Branch-London", "router", 900, 460, {
+                    "config": {"bgp_asn": "65005"}
+                }),
+                _node("vpn-e", "VPN: Branch-LDN", "aws-vpn", 900, 380),
+
+                _node("cgw-f", "CGW: Branch-Tokyo", "router", 900, 560, {
+                    "config": {"bgp_asn": "65006"}
+                }),
+                _node("vpn-f", "VPN: Branch-TKY", "aws-vpn", 900, 480),
+
+                # ── More sites indicator ──
+                _node("more-sites", "... 15+ more sites", "cloud", 500, 700, {
+                    "config": {
+                        "notes": "Pattern repeats: CGW + VPN connection per site, all to TGW",
+                    }
+                }),
+
+                # ── Monitoring ──
+                _node("netmgr", "Network Manager", "aws-netmgr", 300, 300, {
+                    "config": {"role": "VPN tunnel status, reachability, route analysis"}
+                }),
+                _node("cw", "CloudWatch Alarms", "aws-flowlogs", 700, 300, {
+                    "config": {"role": "TunnelState, TunnelDataIn/Out, BGP status metrics"}
+                }),
+            ],
+            "edges": [
+                # VPC attachments
+                _edge("vpc-prod", "tgw", "TGW Attachment", ""),
+                _edge("vpc-shared", "tgw", "TGW Attachment", ""),
+                _edge("nfw", "tgw", "Inspection", ""),
+
+                # Global Accelerator
+                _edge("ga", "tgw", "Accelerated path", ""),
+
+                # HQ (dual VPN for max throughput)
+                _edge("cgw-a1", "vpn-a1", "IPsec (2 tunnels)", "BGP"),
+                _edge("cgw-a2", "vpn-a2", "IPsec (2 tunnels)", "BGP"),
+                _edge("vpn-a1", "tgw", "VPN Attachment", "ECMP"),
+                _edge("vpn-a2", "tgw", "VPN Attachment", "ECMP"),
+
+                # Branch sites
+                _edge("cgw-b", "vpn-b", "IPsec", "BGP"),
+                _edge("vpn-b", "tgw", "VPN Attachment", ""),
+                _edge("cgw-c", "vpn-c", "IPsec", "BGP"),
+                _edge("vpn-c", "tgw", "VPN Attachment", ""),
+                _edge("cgw-d", "vpn-d", "IPsec", "BGP"),
+                _edge("vpn-d", "tgw", "VPN Attachment", ""),
+                _edge("cgw-e", "vpn-e", "IPsec", "BGP"),
+                _edge("vpn-e", "tgw", "VPN Attachment", ""),
+                _edge("cgw-f", "vpn-f", "IPsec", "BGP"),
+                _edge("vpn-f", "tgw", "VPN Attachment", ""),
+
+                # Monitoring
+                _edge("tgw", "netmgr", "Route analysis", ""),
+                _edge("tgw", "cw", "Metrics", ""),
+            ],
+        }),
+    },
+
+    # ── 4. AWS Hybrid Connectivity — Art of the Possible ─────────────────────
+    {
+        "id": "tpl-aws-hybrid-art-of-possible",
+        "name": "AWS Hybrid Connectivity — Art of the Possible",
+        "category": "AWS / Hybrid Cloud",
+        "description": (
+            "Comprehensive AWS hybrid connectivity showing every gateway type working "
+            "together: Transit Gateway, DX Gateway, VPN Gateway, Cloud WAN, PrivateLink, "
+            "Gateway LB, inter-region TGW peering, and Global Accelerator. Demonstrates "
+            "DX + VPN failover, multi-region, multi-account, centralized inspection, "
+            "and third-party appliance integration. See template docs for full SOP."
+        ),
+        "tags": json.dumps([
+            "aws", "hybrid", "art-of-possible", "tgw", "dx-gateway", "vpn",
+            "cloud-wan", "privatelink", "gwlb", "global-accelerator", "multi-region",
+            "multi-account", "sop", "runbook",
+        ]),
+        "graph_json": json.dumps({
+            "nodes": [
+                # ═══════════════════════════════
+                # ON-PREMISES (Left)
+                # ═══════════════════════════════
+                _node("dc-core", "DC Core Router", "router", 60, 400, {
+                    "config": {
+                        "role": "Data center core — dual-homed to DX and VPN",
+                        "bgp_asn": "65001",
+                    }
+                }),
+                _node("branch-rtr", "Branch Router", "router", 60, 600, {
+                    "config": {
+                        "role": "Branch office — VPN only (no DX)",
+                        "bgp_asn": "65002",
+                    }
+                }),
+                _node("partner-rtr", "Partner Network", "router", 60, 200, {
+                    "config": {"role": "B2B partner — PrivateLink consumer"}
+                }),
+
+                # ═══════════════════════════════
+                # DX + VPN LAYER
+                # ═══════════════════════════════
+                _node("dx-pri", "DX Primary (10G)", "aws-dx", 220, 350),
+                _node("dx-sec", "DX Secondary (10G)", "aws-dx", 220, 450),
+                _node("vpn-dc", "VPN (DC Backup)", "aws-vpn", 220, 550, {
+                    "config": {
+                        "role": "Backup for DX — AS-PATH prepend to deprioritize",
+                        "accelerated": "Yes (Global Accelerator)",
+                    }
+                }),
+                _node("vpn-branch", "VPN (Branch)", "aws-vpn", 220, 650),
+                _node("ga", "Global Accelerator", "aws-ga", 220, 250, {
+                    "config": {"role": "Accelerated VPN + anycast endpoints"}
+                }),
+
+                # ═══════════════════════════════
+                # DX GATEWAY (Global)
+                # ═══════════════════════════════
+                _node("dxgw", "DX Gateway", "aws-dx-gw", 400, 400, {
+                    "config": {
+                        "role": "Global DX fabric — connects DX to TGWs in any region",
+                        "associations": "TGW us-east-1, TGW us-west-2, VGW ap-southeast-1",
+                    }
+                }),
+
+                # ═══════════════════════════════
+                # REGION 1: us-east-1 (Primary)
+                # ═══════════════════════════════
+                _node("tgw-1", "TGW (us-east-1)", "aws-tgw", 600, 300, {
+                    "config": {
+                        "asn": "64513",
+                        "role": "Primary region hub — DX, VPN, VPC, CloudWAN, GWLB",
+                    }
+                }),
+
+                # Cloud WAN
+                _node("cloudwan", "Cloud WAN", "aws-cloudwan", 600, 140, {
+                    "config": {
+                        "role": "Global network — policy-based segmentation across regions",
+                        "segments": "Production, Development, Shared Services",
+                        "attachment": "TGW attachment to Cloud WAN core network",
+                    }
+                }),
+
+                # Inspection VPC with GWLB
+                _node("vpc-inspect", "Inspection VPC", "aws-vpc", 780, 180, {
+                    "config": {"cidr": "100.64.0.0/16"}
+                }),
+                _node("gwlb", "Gateway LB", "aws-gwlb", 900, 180, {
+                    "config": {
+                        "role": "L3 bump-in-the-wire — routes traffic to 3rd-party appliances",
+                        "appliances": "Palo Alto, Fortinet, Check Point (auto-scaling group)",
+                        "notes": "GENEVE encapsulation, preserves src/dst IP for inspection",
+                    }
+                }),
+                _node("nfw", "Network Firewall", "aws-nfw", 780, 100, {
+                    "config": {"role": "AWS-managed stateful inspection (IDS/IPS, domain filtering)"}
+                }),
+
+                # Production VPC
+                _node("vpc-prod", "Production VPC", "aws-vpc", 780, 320, {
+                    "config": {"cidr": "10.1.0.0/16"}
+                }),
+                _node("alb-prod", "ALB", "aws-alb", 900, 280),
+                _node("ep-prod", "Interface Endpoint", "aws-gw-ep", 900, 360, {
+                    "config": {"role": "PrivateLink endpoint — access AWS services privately"}
+                }),
+
+                # Shared Services VPC
+                _node("vpc-shared", "Shared Services VPC", "aws-vpc", 780, 460, {
+                    "config": {"cidr": "10.0.0.0/16"}
+                }),
+                _node("r53", "Route 53 Resolver", "aws-r53", 900, 420),
+                _node("ad", "Managed AD", "aws-ad", 900, 460),
+                _node("kms", "KMS", "aws-kms", 900, 500),
+                _node("ct", "CloudTrail", "aws-ct", 900, 540),
+
+                # Egress VPC
+                _node("vpc-egress", "Egress VPC", "aws-vpc", 600, 500, {
+                    "config": {
+                        "cidr": "100.65.0.0/16",
+                        "role": "Centralized internet egress — NAT GW + NFW",
+                    }
+                }),
+
+                # ═══════════════════════════════
+                # REGION 2: us-west-2 (DR)
+                # ═══════════════════════════════
+                _node("tgw-2", "TGW (us-west-2)", "aws-tgw", 600, 650, {
+                    "config": {
+                        "asn": "64514",
+                        "role": "DR region — peered to primary TGW",
+                    }
+                }),
+                _node("vpc-dr", "DR VPC (us-west-2)", "aws-vpc", 780, 650, {
+                    "config": {"cidr": "10.3.0.0/16"}
+                }),
+                _node("vpc-dev", "Dev VPC (us-west-2)", "aws-vpc", 780, 730, {
+                    "config": {"cidr": "10.2.0.0/16"}
+                }),
+
+                # Inter-region peering
+                _node("tgw-peer", "TGW Peering", "aws-tgw", 680, 480, {
+                    "config": {"role": "Inter-region peering (us-east-1 <-> us-west-2)"}
+                }),
+
+                # ═══════════════════════════════
+                # PRIVATELINK (B2B Partner Access)
+                # ═══════════════════════════════
+                _node("pl-service", "PrivateLink Service", "aws-privatelink", 400, 180, {
+                    "config": {
+                        "role": "Expose internal service to partner via PrivateLink",
+                        "nlb": "NLB behind PrivateLink endpoint service",
+                        "notes": "Partner consumes via Interface Endpoint in their VPC",
+                    }
+                }),
+                _node("pl-consumer", "PrivateLink Consumer", "aws-privatelink", 220, 140, {
+                    "config": {"role": "Partner's VPC endpoint consuming the service"}
+                }),
+
+                # ═══════════════════════════════
+                # MONITORING & SECURITY
+                # ═══════════════════════════════
+                _node("netmgr", "Network Manager", "aws-netmgr", 400, 80),
+                _node("guardduty", "GuardDuty", "aws-guardduty", 400, 600),
+                _node("sechub", "Security Hub", "aws-securityhub", 400, 680),
+                _node("shield", "Shield Advanced", "aws-shield", 400, 760),
+            ],
+            "edges": [
+                # On-prem to DX/VPN
+                _edge("dc-core", "dx-pri", "DX Primary", "802.1Q"),
+                _edge("dc-core", "dx-sec", "DX Secondary", "802.1Q"),
+                _edge("dc-core", "vpn-dc", "VPN Backup (accelerated)", "IPsec/BGP"),
+                _edge("branch-rtr", "vpn-branch", "VPN (accelerated)", "IPsec/BGP"),
+                _edge("ga", "vpn-dc", "Accelerated path", ""),
+                _edge("ga", "vpn-branch", "Accelerated path", ""),
+
+                # DX to DX Gateway
+                _edge("dx-pri", "dxgw", "Transit VIF (primary)", "eBGP"),
+                _edge("dx-sec", "dxgw", "Transit VIF (secondary)", "eBGP"),
+
+                # DX Gateway to TGWs
+                _edge("dxgw", "tgw-1", "Association (us-east-1)", "BGP"),
+                _edge("dxgw", "tgw-2", "Association (us-west-2)", "BGP"),
+
+                # VPN to TGW
+                _edge("vpn-dc", "tgw-1", "VPN Attachment", ""),
+                _edge("vpn-branch", "tgw-1", "VPN Attachment", ""),
+
+                # TGW-1 attachments
+                _edge("tgw-1", "cloudwan", "Cloud WAN Attachment", ""),
+                _edge("tgw-1", "vpc-inspect", "Inspection Attachment", ""),
+                _edge("tgw-1", "vpc-prod", "Prod Attachment", ""),
+                _edge("tgw-1", "vpc-shared", "Shared Attachment", ""),
+                _edge("tgw-1", "vpc-egress", "Egress Attachment", ""),
+
+                # Inspection VPC internals
+                _edge("vpc-inspect", "gwlb", "GENEVE encap", ""),
+                _edge("vpc-inspect", "nfw", "AWS NFW", ""),
+
+                # Prod VPC internals
+                _edge("vpc-prod", "alb-prod", "ALB", ""),
+                _edge("vpc-prod", "ep-prod", "PrivateLink EP", ""),
+
+                # Shared VPC internals
+                _edge("vpc-shared", "r53", "DNS", ""),
+                _edge("vpc-shared", "ad", "AD DS", ""),
+                _edge("vpc-shared", "kms", "Key Mgmt", ""),
+                _edge("vpc-shared", "ct", "Audit", ""),
+
+                # Inter-region peering
+                _edge("tgw-1", "tgw-peer", "Peering", "Static"),
+                _edge("tgw-peer", "tgw-2", "Peering", "Static"),
+
+                # TGW-2 attachments
+                _edge("tgw-2", "vpc-dr", "DR Attachment", ""),
+                _edge("tgw-2", "vpc-dev", "Dev Attachment", ""),
+
+                # PrivateLink (B2B partner)
+                _edge("partner-rtr", "pl-consumer", "Partner VPC EP", ""),
+                _edge("pl-consumer", "pl-service", "PrivateLink (private)", ""),
+                _edge("pl-service", "vpc-prod", "NLB -> targets", ""),
+
+                # Monitoring
+                _edge("netmgr", "tgw-1", "Route analysis", ""),
+                _edge("guardduty", "tgw-1", "Threat detection", ""),
+                _edge("sechub", "guardduty", "Findings", ""),
+                _edge("shield", "alb-prod", "DDoS protection", ""),
+            ],
+        }),
+    },
 ]
 
 
@@ -7554,6 +8310,10 @@ def init_db():
                 "tpl-oci-fastconnect": "OCI FastConnect — SOP & Runbook",
                 "tpl-dwdm-metro-ring": "DWDM Metro Ring — Architecture & Expansion Guide",
                 "tpl-dwdm-customer-provider-access": "DWDM Customer-Provider Access — SOP & Runbook",
+                "tpl-aws-tgw-hub-spoke": "AWS Transit Gateway Hub-and-Spoke — SOP & Runbook",
+                "tpl-aws-dxgw-multi-region": "AWS DX Gateway Multi-Region — SOP & Runbook",
+                "tpl-aws-vpn-at-scale": "AWS Site-to-Site VPN at Scale — SOP & Runbook",
+                "tpl-aws-hybrid-art-of-possible": "AWS Hybrid Connectivity — Art of the Possible — SOP & Runbook",
             }
             for tpl_id, title in doc_templates.items():
                 doc_id = f"doc-{tpl_id}"
