@@ -6535,6 +6535,35 @@ def create_app() -> Flask:
         """Studio — Case Management."""
         return render_template("studio/cases.html")
 
+    # ---- Platform Health API (Phase 73) ----
+    try:
+        from tools.dashboard.platform_health import get_platform_health, get_domain_health, _DOMAIN_SCORERS  # noqa: E402
+
+        @app.route("/api/platform/health", methods=["GET"])
+        def api_platform_health():
+            """GET /api/platform/health — Composite platform health across 10 domains."""
+            result = get_platform_health()
+            # Shape domains for API response (omit all_findings for brevity)
+            return jsonify({
+                "composite_score": result["composite_score"],
+                "composite_status": result["composite_status"],
+                "cached_at": result.get("cached_at"),
+                "domains": result["domains"],
+            })
+
+        @app.route("/api/platform/health/<domain>", methods=["GET"])
+        def api_platform_health_domain(domain: str):
+            """GET /api/platform/health/<domain> — Detailed findings for one domain."""
+            detail = get_domain_health(domain)
+            return jsonify({
+                "domain": domain,
+                **detail,
+            })
+
+    except ImportError as _ph_err:
+        import logging as _logging
+        _logging.getLogger(__name__).warning("Platform health module unavailable: %s", _ph_err)
+
     return app
 
 
