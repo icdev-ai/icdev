@@ -77,8 +77,8 @@ def create_task():
         conn.execute(
             "INSERT INTO kanban_tasks "
             "(id, title, description, task_type, priority, "
-            "status, scheduled_at, created_at, updated_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?)",
+            "status, scheduled_at, executor_type, created_at, updated_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?)",
             (
                 task_id,
                 data["title"],
@@ -87,6 +87,7 @@ def create_task():
                 data.get("priority", "medium"),
                 data.get("status", "backlog"),
                 data.get("scheduled_at"),
+                data.get("executor_type", "claude_cli"),
                 now,
                 now,
             ),
@@ -123,7 +124,7 @@ def update_task(task_id):
 
         allowed = (
             "title", "description", "task_type",
-            "priority", "status", "scheduled_at",
+            "priority", "status", "scheduled_at", "executor_type",
         )
         sets = []
         vals = []
