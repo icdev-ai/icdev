@@ -187,6 +187,19 @@ CREATE TABLE IF NOT EXISTS pc_change_requests (
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
     updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS pc_collab_sessions (
+    id          TEXT PRIMARY KEY,
+    design_id   TEXT NOT NULL REFERENCES pipelines(id) ON DELETE CASCADE,
+    user_id     TEXT NOT NULL,
+    user_name   TEXT NOT NULL DEFAULT '',
+    color       TEXT NOT NULL DEFAULT '#3498db',
+    joined_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_seen   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    is_active   INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE INDEX IF NOT EXISTS idx_pc_collab_design ON pc_collab_sessions(design_id);
 """
 
 

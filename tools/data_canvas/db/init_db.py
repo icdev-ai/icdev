@@ -108,6 +108,19 @@ CREATE TABLE IF NOT EXISTS dd_versions (
 
 CREATE INDEX IF NOT EXISTS idx_dd_versions_design ON dd_versions(design_id);
 
+CREATE TABLE IF NOT EXISTS dd_collab_sessions (
+    id          TEXT PRIMARY KEY,
+    design_id   TEXT NOT NULL REFERENCES data_designs(id) ON DELETE CASCADE,
+    user_id     TEXT NOT NULL,
+    user_name   TEXT NOT NULL DEFAULT '',
+    color       TEXT NOT NULL DEFAULT '#3498db',
+    joined_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_seen   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    is_active   INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE INDEX IF NOT EXISTS idx_dd_collab_design ON dd_collab_sessions(design_id);
+
 -- Immutability triggers (SQLite)
 CREATE TRIGGER IF NOT EXISTS dd_audit_no_update
     BEFORE UPDATE ON dd_audit

@@ -130,6 +130,17 @@ CREATE TABLE IF NOT EXISTS bd_versions (
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS bd_collab_sessions (
+    id          TEXT PRIMARY KEY,
+    design_id   TEXT NOT NULL REFERENCES boundary_designs(id) ON DELETE CASCADE,
+    user_id     TEXT NOT NULL,
+    user_name   TEXT NOT NULL DEFAULT '',
+    color       TEXT NOT NULL DEFAULT '#3498db',
+    joined_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_seen   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    is_active   INTEGER NOT NULL DEFAULT 1
+);
+
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_bd_assessments_design ON bd_assessments(design_id);
 CREATE INDEX IF NOT EXISTS idx_bd_isa_tracker_design ON bd_isa_tracker(design_id);

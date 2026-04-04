@@ -95,6 +95,19 @@ CREATE TABLE IF NOT EXISTS idc_versions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_idc_versions_design ON idc_versions(design_id);
+
+CREATE TABLE IF NOT EXISTS idc_collab_sessions (
+    id          TEXT PRIMARY KEY,
+    design_id   TEXT NOT NULL REFERENCES infra_designs(id) ON DELETE CASCADE,
+    user_id     TEXT NOT NULL,
+    user_name   TEXT NOT NULL DEFAULT '',
+    color       TEXT NOT NULL DEFAULT '#3498db',
+    joined_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_seen   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    is_active   INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE INDEX IF NOT EXISTS idx_idc_collab_design ON idc_collab_sessions(design_id);
 """
 
 # ── Templates ────────────────────────────────────────────────────────────────

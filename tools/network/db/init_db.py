@@ -1276,6 +1276,19 @@ CREATE INDEX IF NOT EXISTS idx_query_log_ts   ON nc_query_log(ts);
 -- Pre-built compliance-validated sub-topologies (SIPR, IL5 DMZ, Tactical Edge)
 -- Drag onto canvas; all STIG properties pre-populated.
 
+CREATE TABLE IF NOT EXISTS nc_collab_sessions (
+    id          TEXT PRIMARY KEY,
+    design_id   TEXT NOT NULL REFERENCES topologies(id) ON DELETE CASCADE,
+    user_id     TEXT NOT NULL,
+    user_name   TEXT NOT NULL DEFAULT '',
+    color       TEXT NOT NULL DEFAULT '#3498db',
+    joined_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_seen   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    is_active   INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE INDEX IF NOT EXISTS idx_nc_collab_design ON nc_collab_sessions(design_id);
+
 CREATE TABLE IF NOT EXISTS nc_enclave_snippets (
     id                  TEXT PRIMARY KEY,
     name                TEXT NOT NULL,
