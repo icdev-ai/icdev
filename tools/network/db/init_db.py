@@ -6351,6 +6351,608 @@ TEMPLATES = [
             ],
         }),
     },
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # DWDM Metro Ring — Expandable Ring Backbone
+    # ══════════════════════════════════════════════════════════════════════════
+
+    # ── DWDM Metro Ring (8-node, expandable) ─────────────────────────��───────
+    {
+        "id": "tpl-dwdm-metro-ring",
+        "name": "DWDM Metro Ring — 8-Node Expandable",
+        "category": "Transport / Optical",
+        "description": (
+            "## DWDM Metro Ring — 8-Node Expandable Backbone\n\n"
+            "Scalable metro DWDM ring with 8 sites arranged in an octagonal ring. "
+            "Each site has a ROADM (hub) or OADM (access), EDFA amplifiers per span, "
+            "and ODF frames for fiber termination. The ring provides **bidirectional "
+            "line-switched protection (BLSR)** with sub-50ms failover.\n\n"
+            "**To expand:** Duplicate any OADM site group and insert between two "
+            "existing sites — reconnect the ring edges through the new site.\n\n"
+            "### Ring Architecture — Mermaid Diagram\n\n"
+            "```mermaid\n"
+            "flowchart TD\n"
+            "    subgraph Ring[\"DWDM Metro Ring — 96-Channel C+L Band\"]\n"
+            "        A((\"Site A\\nROADM Hub\"))\n"
+            "        B((\"Site B\\nOADM\"))\n"
+            "        C((\"Site C\\nROADM\"))\n"
+            "        D((\"Site D\\nOADM\"))\n"
+            "        E((\"Site E\\nROADM Hub\"))\n"
+            "        F((\"Site F\\nOADM\"))\n"
+            "        G((\"Site G\\nOADM\"))\n"
+            "        H((\"Site H\\nOADM\"))\n"
+            "        A -- \"Span 1\\n40km\\nEDFA\" --> B\n"
+            "        B -- \"Span 2\\n25km\\nEDFA\" --> C\n"
+            "        C -- \"Span 3\\n35km\\nEDFA\" --> D\n"
+            "        D -- \"Span 4\\n50km\\nEDFA\" --> E\n"
+            "        E -- \"Span 5\\n30km\\nEDFA\" --> F\n"
+            "        F -- \"Span 6\\n20km\\nEDFA\" --> G\n"
+            "        G -- \"Span 7\\n45km\\nEDFA\" --> H\n"
+            "        H -- \"Span 8\\n35km\\nEDFA\" --> A\n"
+            "    end\n"
+            "```\n\n"
+            "### Optical Parameters\n\n"
+            "| Parameter | Value |\n"
+            "|-----------|-------|\n"
+            "| Channel plan | 96-ch C+L band (1528-1610nm), 50 GHz spacing |\n"
+            "| Per-channel rate | 100G (DP-QPSK) or 400G (DP-16QAM) coherent |\n"
+            "| Aggregate capacity | 9.6 Tbps (96 x 100G) to 38.4 Tbps (96 x 400G) |\n"
+            "| Span budget | Up to 80km with inline EDFA (typ. 22 dB) |\n"
+            "| Protection | 2-fiber BLSR, < 50ms switchover |\n"
+            "| ROADM degree | 2-degree (ring) at access, 4+ degree at hub |\n"
+            "| Amplification | EDFA pre-amp + booster per span |\n"
+            "| Fiber type | G.652.D single-mode (ITU-T) |\n\n"
+            "### Ring Expansion Procedure\n\n"
+            "1. Choose insertion point between two existing sites (e.g., between Site B and C)\n"
+            "2. Duplicate an OADM site group (OADM + ODF + EDFA pair + transponders)\n"
+            "3. Place new site at desired coordinates on canvas\n"
+            "4. Delete the direct span edge between the two neighboring sites\n"
+            "5. Create two new span edges: neighbor-A -> new-site, new-site -> neighbor-B\n"
+            "6. Add EDFA nodes on each new span if distance > 20km\n"
+            "7. Update OSNR budget and verify optical power levels\n"
+        ),
+        "tags": json.dumps([
+            "dwdm", "metro", "ring", "optical", "transport", "roadm", "oadm",
+            "edfa", "blsr", "expandable", "scalable", "coherent", "100g", "400g",
+        ]),
+        "graph_json": json.dumps({
+            "nodes": [
+                # ── Site A — ROADM Hub (Top Center) ──
+                _node("pop-a", "Site A — ROADM Hub", "pop", 500, 60, {
+                    "config": {
+                        "role": "Primary hub site — full ROADM, 4-degree capable",
+                        "facility": "Carrier POP / Data Center",
+                    }
+                }),
+                _node("odf-a", "ODF-A", "odf", 420, 60, {
+                    "config": {"role": "Fiber termination — ring East + West trunks"}
+                }),
+                _node("roadm-a", "ROADM-A (Hub)", "roadm", 500, 140, {
+                    "config": {
+                        "role": "Full ROADM — colorless/directionless add-drop",
+                        "degree": "4-degree (2 ring + 2 express/add)",
+                        "channels": "96-ch C+L band, 50 GHz grid",
+                        "features": "WSS (Wavelength Selective Switch), OCM, VOA",
+                    }
+                }),
+                _node("txp-a", "Transponders-A", "transponder", 580, 60, {
+                    "config": {
+                        "role": "Coherent transponders — 100G/400G client interfaces",
+                        "capacity": "Up to 96 wavelengths",
+                    }
+                }),
+
+                # ── Site B — OADM (Upper Right) ──
+                _node("pop-b", "Site B — OADM", "pop", 800, 200, {
+                    "config": {"role": "Access site — OADM add/drop"}
+                }),
+                _node("odf-b", "ODF-B", "odf", 880, 200),
+                _node("oadm-b", "OADM-B", "oadm", 800, 280, {
+                    "config": {
+                        "role": "Fixed or flex-grid OADM — add/drop 8-16 channels",
+                        "channels": "8-16 ch add/drop, remainder express-through",
+                    }
+                }),
+                _node("txp-b", "Transponders-B", "transponder", 880, 280),
+
+                # ── Site C — ROADM (Right) ──
+                _node("pop-c", "Site C — ROADM", "pop", 900, 440, {
+                    "config": {"role": "Secondary ROADM — intermediate hub"}
+                }),
+                _node("odf-c", "ODF-C", "odf", 980, 440),
+                _node("roadm-c", "ROADM-C", "roadm", 900, 520, {
+                    "config": {
+                        "role": "2-degree ROADM — full add-drop capability",
+                        "degree": "2-degree (ring East + West)",
+                    }
+                }),
+                _node("txp-c", "Transponders-C", "transponder", 980, 520),
+
+                # ── Site D — OADM (Lower Right) ──
+                _node("pop-d", "Site D — OADM", "pop", 800, 640, {
+                    "config": {"role": "Access site — OADM"}
+                }),
+                _node("odf-d", "ODF-D", "odf", 880, 640),
+                _node("oadm-d", "OADM-D", "oadm", 800, 720, {
+                    "config": {"role": "Fixed OADM — 8 ch add/drop"}
+                }),
+                _node("txp-d", "Transponders-D", "transponder", 880, 720),
+
+                # ── Site E — ROADM Hub (Bottom Center) ──
+                _node("pop-e", "Site E — ROADM Hub", "pop", 500, 780, {
+                    "config": {
+                        "role": "Secondary hub — ROADM, DC interconnect",
+                        "facility": "Disaster Recovery DC / Secondary POP",
+                    }
+                }),
+                _node("odf-e", "ODF-E", "odf", 420, 780),
+                _node("roadm-e", "ROADM-E (Hub)", "roadm", 500, 700, {
+                    "config": {
+                        "role": "Full ROADM — secondary hub for DC interconnect",
+                        "degree": "4-degree",
+                    }
+                }),
+                _node("txp-e", "Transponders-E", "transponder", 580, 780),
+
+                # ── Site F — OADM (Lower Left) ──
+                _node("pop-f", "Site F — OADM", "pop", 200, 640, {
+                    "config": {"role": "Access site — OADM"}
+                }),
+                _node("odf-f", "ODF-F", "odf", 120, 640),
+                _node("oadm-f", "OADM-F", "oadm", 200, 720, {
+                    "config": {"role": "Fixed OADM — 8 ch add/drop"}
+                }),
+                _node("txp-f", "Transponders-F", "transponder", 120, 720),
+
+                # ── Site G — OADM (Left) ──
+                _node("pop-g", "Site G — OADM", "pop", 100, 440, {
+                    "config": {"role": "Access site — OADM"}
+                }),
+                _node("odf-g", "ODF-G", "odf", 20, 440),
+                _node("oadm-g", "OADM-G", "oadm", 100, 520, {
+                    "config": {"role": "Fixed OADM — 8 ch add/drop"}
+                }),
+                _node("txp-g", "Transponders-G", "transponder", 20, 520),
+
+                # ── Site H — OADM (Upper Left) ──
+                _node("pop-h", "Site H — OADM", "pop", 200, 200, {
+                    "config": {"role": "Access site — OADM"}
+                }),
+                _node("odf-h", "ODF-H", "odf", 120, 200),
+                _node("oadm-h", "OADM-H", "oadm", 200, 280, {
+                    "config": {"role": "Fixed OADM — 8 ch add/drop"}
+                }),
+                _node("txp-h", "Transponders-H", "transponder", 120, 280),
+
+                # ── EDFA amplifiers (one per span) ──
+                _node("edfa-ab", "EDFA A-B", "edfa", 660, 120, {
+                    "config": {"span": "A->B", "distance_km": "40", "gain_db": "22"}
+                }),
+                _node("edfa-bc", "EDFA B-C", "edfa", 870, 360, {
+                    "config": {"span": "B->C", "distance_km": "25", "gain_db": "18"}
+                }),
+                _node("edfa-cd", "EDFA C-D", "edfa", 870, 580, {
+                    "config": {"span": "C->D", "distance_km": "35", "gain_db": "20"}
+                }),
+                _node("edfa-de", "EDFA D-E", "edfa", 660, 740, {
+                    "config": {"span": "D->E", "distance_km": "50", "gain_db": "24"}
+                }),
+                _node("edfa-ef", "EDFA E-F", "edfa", 340, 740, {
+                    "config": {"span": "E->F", "distance_km": "30", "gain_db": "19"}
+                }),
+                _node("edfa-fg", "EDFA F-G", "edfa", 130, 580, {
+                    "config": {"span": "F->G", "distance_km": "20", "gain_db": "16"}
+                }),
+                _node("edfa-gh", "EDFA G-H", "edfa", 130, 360, {
+                    "config": {"span": "G->H", "distance_km": "45", "gain_db": "23"}
+                }),
+                _node("edfa-ha", "EDFA H-A", "edfa", 340, 120, {
+                    "config": {"span": "H->A", "distance_km": "35", "gain_db": "20"}
+                }),
+            ],
+            "edges": [
+                # ── Internal site wiring ──
+                _edge("pop-a", "odf-a", "Trunk fiber", ""),
+                _edge("odf-a", "roadm-a", "λ1-96", "DWDM"),
+                _edge("roadm-a", "txp-a", "Client 100G/400G", ""),
+                _edge("pop-b", "odf-b", "Trunk fiber", ""),
+                _edge("odf-b", "oadm-b", "λ add/drop", "DWDM"),
+                _edge("oadm-b", "txp-b", "Client", ""),
+                _edge("pop-c", "odf-c", "Trunk fiber", ""),
+                _edge("odf-c", "roadm-c", "λ1-96", "DWDM"),
+                _edge("roadm-c", "txp-c", "Client 100G/400G", ""),
+                _edge("pop-d", "odf-d", "Trunk fiber", ""),
+                _edge("odf-d", "oadm-d", "λ add/drop", "DWDM"),
+                _edge("oadm-d", "txp-d", "Client", ""),
+                _edge("pop-e", "odf-e", "Trunk fiber", ""),
+                _edge("odf-e", "roadm-e", "λ1-96", "DWDM"),
+                _edge("roadm-e", "txp-e", "Client 100G/400G", ""),
+                _edge("pop-f", "odf-f", "Trunk fiber", ""),
+                _edge("odf-f", "oadm-f", "λ add/drop", "DWDM"),
+                _edge("oadm-f", "txp-f", "Client", ""),
+                _edge("pop-g", "odf-g", "Trunk fiber", ""),
+                _edge("odf-g", "oadm-g", "λ add/drop", "DWDM"),
+                _edge("oadm-g", "txp-g", "Client", ""),
+                _edge("pop-h", "odf-h", "Trunk fiber", ""),
+                _edge("odf-h", "oadm-h", "λ add/drop", "DWDM"),
+                _edge("oadm-h", "txp-h", "Client", ""),
+
+                # ── Ring spans (clockwise: A→B→C→D→E→F→G→H→A) ──
+                _edge("roadm-a", "edfa-ab", "East λ1-96 (40km)", "DWDM BLSR"),
+                _edge("edfa-ab", "oadm-b", "Amplified", ""),
+                _edge("oadm-b", "edfa-bc", "Express λ (25km)", "DWDM BLSR"),
+                _edge("edfa-bc", "roadm-c", "Amplified", ""),
+                _edge("roadm-c", "edfa-cd", "East λ1-96 (35km)", "DWDM BLSR"),
+                _edge("edfa-cd", "oadm-d", "Amplified", ""),
+                _edge("oadm-d", "edfa-de", "Express λ (50km)", "DWDM BLSR"),
+                _edge("edfa-de", "roadm-e", "Amplified", ""),
+                _edge("roadm-e", "edfa-ef", "West λ1-96 (30km)", "DWDM BLSR"),
+                _edge("edfa-ef", "oadm-f", "Amplified", ""),
+                _edge("oadm-f", "edfa-fg", "Express λ (20km)", "DWDM BLSR"),
+                _edge("edfa-fg", "oadm-g", "Amplified", ""),
+                _edge("oadm-g", "edfa-gh", "Express λ (45km)", "DWDM BLSR"),
+                _edge("edfa-gh", "oadm-h", "Amplified", ""),
+                _edge("oadm-h", "edfa-ha", "Express λ (35km)", "DWDM BLSR"),
+                _edge("edfa-ha", "roadm-a", "Amplified (ring close)", ""),
+            ],
+        }),
+    },
+
+    # ── Customer-to-Provider DWDM Access — Detailed Demarcation ──────────────
+    {
+        "id": "tpl-dwdm-customer-provider-access",
+        "name": "DWDM Customer-Provider Access — Demarcation & Redundancy",
+        "category": "Transport / Optical",
+        "description": (
+            "## Customer-to-Provider DWDM Access — Full Demarcation Detail\n\n"
+            "Comprehensive template showing every physical and logical object "
+            "on both the **customer side** and **provider side** of a DWDM "
+            "wavelength service hand-off. Includes dual-path redundancy with "
+            "diverse meet-me rooms, cross-connect panels, and separate provider POPs.\n\n"
+            "### Physical Architecture — Mermaid Diagram\n\n"
+            "```mermaid\n"
+            "flowchart LR\n"
+            "    subgraph Customer[\"CUSTOMER PREMISES\"]\n"
+            "        CR1[\"CE Router 1\\n(Primary)\"]\n"
+            "        CR2[\"CE Router 2\\n(Secondary)\"]\n"
+            "        CS1[\"Core Switch\\nStack\"]\n"
+            "        CS1 --- CR1\n"
+            "        CS1 --- CR2\n"
+            "    end\n"
+            "    subgraph CustCage[\"CUSTOMER CAGE (Colo)\"]\n"
+            "        CP1[\"Cust Patch Panel 1\\n(Primary)\"]\n"
+            "        CP2[\"Cust Patch Panel 2\\n(Secondary)\"]\n"
+            "        CT1[\"Cust Transponder 1\\n100G QSFP28\"]\n"
+            "        CT2[\"Cust Transponder 2\\n100G QSFP28\"]\n"
+            "        CR1 --> CT1\n"
+            "        CR2 --> CT2\n"
+            "        CT1 --> CP1\n"
+            "        CT2 --> CP2\n"
+            "    end\n"
+            "    subgraph MMR_A[\"MEET-ME ROOM A\\n(Primary Path)\"]\n"
+            "        XC1[\"Cross-Connect\\nPanel A\"]\n"
+            "        CP1 --> XC1\n"
+            "    end\n"
+            "    subgraph MMR_B[\"MEET-ME ROOM B\\n(Diverse Path)\"]\n"
+            "        XC2[\"Cross-Connect\\nPanel B\"]\n"
+            "        CP2 --> XC2\n"
+            "    end\n"
+            "    subgraph ProvPOP_A[\"PROVIDER POP A\"]\n"
+            "        PP1[\"Provider Patch\\nPanel A\"]\n"
+            "        OADM1[\"OADM / ROADM A\\n(Ring Node)\"]\n"
+            "        EDFA1[\"EDFA A\"]\n"
+            "        XC1 --> PP1\n"
+            "        PP1 --> OADM1\n"
+            "        OADM1 --> EDFA1\n"
+            "    end\n"
+            "    subgraph ProvPOP_B[\"PROVIDER POP B (Diverse)\"]\n"
+            "        PP2[\"Provider Patch\\nPanel B\"]\n"
+            "        OADM2[\"OADM / ROADM B\\n(Ring Node)\"]\n"
+            "        EDFA2[\"EDFA B\"]\n"
+            "        XC2 --> PP2\n"
+            "        PP2 --> OADM2\n"
+            "        OADM2 --> EDFA2\n"
+            "    end\n"
+            "    subgraph DWDMRing[\"DWDM METRO RING\"]\n"
+            "        R1((\"Ring\\nNode 1\"))\n"
+            "        R2((\"Ring\\nNode 2\"))\n"
+            "        R3((\"Ring\\nNode 3\"))\n"
+            "        EDFA1 --> R1\n"
+            "        EDFA2 --> R2\n"
+            "        R1 --- R3\n"
+            "        R3 --- R2\n"
+            "        R1 --- R2\n"
+            "    end\n"
+            "```\n\n"
+            "### SOP — Customer Side (Ordering a DWDM Wavelength Service)\n\n"
+            "| Step | Action | Owner | Duration |\n"
+            "|------|--------|-------|----------|\n"
+            "| 1 | Order wavelength service from carrier (specify speed, SLA, diversity) | Network Eng | 1 day |\n"
+            "| 2 | Receive service confirmation with circuit ID, VLAN, wavelength assignment | Carrier | 3-5 days |\n"
+            "| 3 | Install/configure customer transponders (match carrier wavelength/modulation) | Network Eng | 1 day |\n"
+            "| 4 | Run fiber from transponder to customer patch panel (LC-UPC or LC-APC) | Cabling Tech | 1 day |\n"
+            "| 5 | Submit LOA to colocation for cross-connect from customer cage to meet-me room | Network Eng | 1 day |\n"
+            "| 6 | Colocation installs cross-connect (verify strand mapping: Tx->Rx, Rx->Tx) | Colo NOC | 1-7 days |\n"
+            "| 7 | Verify optical power at demarcation point (provider spec: -5 to +2 dBm typ.) | Network Eng | 1 hr |\n"
+            "| 8 | Provider confirms light received on OADM/ROADM — wavelength provisioned | Carrier NOC | 1-3 days |\n"
+            "| 9 | End-to-end test: bit-error rate, latency, jitter | Network Eng | 2 hr |\n"
+            "| 10 | Repeat steps 2-9 for secondary/diverse path | Network Eng | Repeat |\n"
+            "| 11 | Configure link aggregation or active/standby failover on CE routers | Network Eng | 1 hr |\n"
+            "| 12 | Document: circuit IDs, wavelengths, patch panel ports, cross-connect IDs | Network Eng | 1 hr |\n\n"
+            "### SOP — Provider Side (Provisioning a DWDM Wavelength)\n\n"
+            "| Step | Action | Owner | Duration |\n"
+            "|------|--------|-------|----------|\n"
+            "| 1 | Receive order, assign circuit ID, wavelength (λ), ROADM/OADM port | Provisioning | 1-3 days |\n"
+            "| 2 | Verify fiber path from meet-me room to provider patch panel | Fiber Ops | 1 day |\n"
+            "| 3 | Configure OADM/ROADM to add/drop assigned wavelength | Optical Eng | 1 day |\n"
+            "| 4 | Tune EDFA gain and per-channel VOA for target power level | Optical Eng | 2 hr |\n"
+            "| 5 | Verify OSNR (>20 dB) and BER (<1e-15 pre-FEC) end-to-end across ring | Optical Eng | 2 hr |\n"
+            "| 6 | Accept customer light at demarcation, confirm circuit up | NOC | 1 hr |\n"
+            "| 7 | Monitor: optical power, OSNR, FEC corrections, alarms (LOS, LOF, SD) | NMS | Continuous |\n\n"
+            "### Failure Runbook\n\n"
+            "```mermaid\n"
+            "flowchart LR\n"
+            "    subgraph OpticalLayer[\"Optical Layer\"]\n"
+            "        O1[\"LOS Alarm\"] --> O2[\"Check SFP/QSFP\\nTx power > -5 dBm?\"]\n"
+            "        O2 --> O3[\"Check fiber patch\\n(LC connectors, bend radius)\"]\n"
+            "        O3 --> O4[\"Check cross-connect\\n(correct MMR panel port?)\"]\n"
+            "        O4 --> O5[\"OTDR test\\n(find break/loss event)\"]\n"
+            "    end\n"
+            "    subgraph SignalQuality[\"Signal Quality\"]\n"
+            "        S1[\"High BER /\\nFEC Corrections\"] --> S2[\"Check OSNR\\n(> 20 dB required)\"]\n"
+            "        S2 --> S3[\"Check EDFA gain\\n(flat across channels?)\"]\n"
+            "        S3 --> S4[\"Check chromatic\\ndispersion compensation\"]\n"
+            "        S4 --> S5[\"Check PMD\\n(< 1 ps for 100G)\"]\n"
+            "    end\n"
+            "    subgraph Protection[\"Ring Protection\"]\n"
+            "        P1[\"Primary path\\ndown\"] --> P2[\"BLSR switchover\\n(< 50ms)\"]\n"
+            "        P2 --> P3[\"Verify traffic on\\nprotect path\"]\n"
+            "        P3 --> P4[\"Dispatch fiber repair\\nfor working path\"]\n"
+            "        P4 --> P5[\"Revert after repair\\n(wait-to-restore timer)\"]\n"
+            "    end\n"
+            "```\n"
+        ),
+        "tags": json.dumps([
+            "dwdm", "customer", "provider", "demarcation", "cross-connect",
+            "meet-me", "pop", "oadm", "roadm", "edfa", "transponder", "odf",
+            "redundancy", "diverse", "blsr", "wavelength", "sop", "runbook",
+        ]),
+        "graph_json": json.dumps({
+            "nodes": [
+                # ════════════════════════════════════════════════════
+                # CUSTOMER SIDE
+                # ════════════════════════════════════════════════════
+
+                # ── Customer Core ──
+                _node("cust-sw", "Customer Core Switch", "switch-l3", 60, 380, {
+                    "config": {
+                        "role": "Core/distribution switch — feeds both CE routers",
+                        "redundancy": "VSS/vPC stack for single point of management",
+                    }
+                }),
+                _node("ce-rtr-1", "CE Router 1 (Primary)", "router", 200, 240, {
+                    "config": {
+                        "role": "Primary customer edge router",
+                        "interface": "100G QSFP28 towards transponder",
+                        "protocols": "BGP / OSPF / MPLS",
+                        "redundancy": "Active path — primary DWDM wavelength",
+                    }
+                }),
+                _node("ce-rtr-2", "CE Router 2 (Secondary)", "router", 200, 520, {
+                    "config": {
+                        "role": "Secondary customer edge router (diverse path)",
+                        "interface": "100G QSFP28 towards transponder",
+                        "redundancy": "Standby or ECMP — diverse DWDM wavelength",
+                    }
+                }),
+
+                # ── Customer Cage (Colocation) — Primary ──
+                _node("cust-txp-1", "Cust Transponder 1", "transponder", 360, 240, {
+                    "config": {
+                        "role": "Customer-owned coherent transponder (primary)",
+                        "modulation": "DP-QPSK (100G) or DP-16QAM (400G)",
+                        "wavelength": "Assigned by carrier (e.g., λ32 = 1551.72nm)",
+                        "notes": "Must match carrier wavelength plan exactly",
+                    }
+                }),
+                _node("cust-pp-1", "Cust Patch Panel 1", "patch-panel-fiber", 500, 240, {
+                    "config": {
+                        "role": "Customer cage fiber patch panel (primary path)",
+                        "connector": "LC-UPC duplex, single-mode",
+                        "labeling": "Port A1: CE-RTR-1 Tx, Port A2: CE-RTR-1 Rx",
+                    }
+                }),
+
+                # ── Customer Cage (Colocation) — Secondary ──
+                _node("cust-txp-2", "Cust Transponder 2", "transponder", 360, 520, {
+                    "config": {
+                        "role": "Customer-owned coherent transponder (secondary/diverse)",
+                        "modulation": "DP-QPSK (100G) or DP-16QAM (400G)",
+                        "wavelength": "Assigned by carrier (diverse λ, e.g., λ64 = 1558.17nm)",
+                    }
+                }),
+                _node("cust-pp-2", "Cust Patch Panel 2", "patch-panel-fiber", 500, 520, {
+                    "config": {
+                        "role": "Customer cage fiber patch panel (diverse path)",
+                        "connector": "LC-UPC duplex, single-mode",
+                    }
+                }),
+
+                # ════════════════════════════════════════════════════
+                # DEMARCATION / MEET-ME ROOMS
+                # ════════════════════════════════════════════════════
+
+                _node("mmr-a", "Meet-Me Room A (Primary)", "odf", 660, 240, {
+                    "config": {
+                        "role": "Colocation meet-me room — primary cross-connect",
+                        "owner": "Colocation provider (Equinix, CoreSite, QTS, etc.)",
+                        "notes": "Demarcation point — customer responsibility ends here",
+                    }
+                }),
+                _node("xc-a", "Cross-Connect A", "odf", 660, 320, {
+                    "config": {
+                        "role": "Physical cross-connect: customer cage -> provider cage",
+                        "fiber_type": "Single-mode, LC-UPC or SC-APC",
+                        "install": "Ordered via LOA-CFA from customer to colocation",
+                        "sla": "Typically 5 business days for install",
+                    }
+                }),
+                _node("mmr-b", "Meet-Me Room B (Diverse)", "odf", 660, 520, {
+                    "config": {
+                        "role": "Diverse meet-me room — physically separate from MMR-A",
+                        "diversity": "Different floor, riser, or building wing",
+                        "notes": "Ensures no single point of failure at colo level",
+                    }
+                }),
+                _node("xc-b", "Cross-Connect B", "odf", 660, 440, {
+                    "config": {
+                        "role": "Physical cross-connect: customer cage -> provider cage (diverse)",
+                        "fiber_type": "Single-mode, LC-UPC or SC-APC",
+                        "diversity": "Routed through separate conduit/riser from XC-A",
+                    }
+                }),
+
+                # ════════════════════════════════════════════════════
+                # PROVIDER SIDE — POP A (Primary)
+                # ════════════════════════════════════════════════════
+
+                _node("prov-pp-a", "Provider Patch Panel A", "patch-panel-fiber", 820, 200, {
+                    "config": {
+                        "role": "Provider cage fiber patch panel — terminates customer cross-connect",
+                        "labeling": "Circuit ID, customer name, wavelength assignment",
+                    }
+                }),
+                _node("prov-txp-a", "Provider Transponder A", "transponder", 820, 280, {
+                    "config": {
+                        "role": "Provider-side transponder (if customer doesn't own optics)",
+                        "notes": "Used in managed wavelength service model",
+                        "modulation": "Must match customer transponder modulation/FEC",
+                    }
+                }),
+                _node("prov-oadm-a", "ROADM / OADM A", "roadm", 960, 240, {
+                    "config": {
+                        "role": "Provider ROADM at POP A — adds customer wavelength to ring",
+                        "add_drop": "Add: customer λ onto ring East direction",
+                        "express": "All other wavelengths pass through",
+                        "monitoring": "OCM per-channel power, OSNR",
+                    }
+                }),
+                _node("prov-edfa-a", "EDFA A (Booster)", "edfa", 1080, 240, {
+                    "config": {
+                        "role": "Post-ROADM booster amplifier — launches signal onto ring fiber",
+                        "gain": "18-24 dB (auto-gain control)",
+                        "output_power": "+17 dBm aggregate",
+                    }
+                }),
+                _node("prov-pop-a", "Provider POP A", "pop", 960, 160, {
+                    "config": {
+                        "role": "Provider POP — primary ring access point",
+                        "facility": "Carrier central office or colocation",
+                    }
+                }),
+
+                # ════════════════════════════════════════════════════
+                # PROVIDER SIDE — POP B (Diverse)
+                # ════════════════════════════════════════════════════
+
+                _node("prov-pp-b", "Provider Patch Panel B", "patch-panel-fiber", 820, 480, {
+                    "config": {
+                        "role": "Provider cage patch panel — diverse path",
+                    }
+                }),
+                _node("prov-txp-b", "Provider Transponder B", "transponder", 820, 560, {
+                    "config": {
+                        "role": "Provider-side transponder (diverse path)",
+                    }
+                }),
+                _node("prov-oadm-b", "ROADM / OADM B", "roadm", 960, 520, {
+                    "config": {
+                        "role": "Provider ROADM at POP B — diverse add/drop point",
+                        "add_drop": "Add: customer λ onto ring West direction (diverse from POP A)",
+                        "diversity": "Different ring segment from POP A",
+                    }
+                }),
+                _node("prov-edfa-b", "EDFA B (Booster)", "edfa", 1080, 520, {
+                    "config": {
+                        "role": "Post-ROADM booster amplifier — diverse ring direction",
+                        "gain": "18-24 dB",
+                    }
+                }),
+                _node("prov-pop-b", "Provider POP B (Diverse)", "pop", 960, 600, {
+                    "config": {
+                        "role": "Provider POP — diverse ring access point",
+                        "diversity": "Different physical location from POP A on the ring",
+                    }
+                }),
+
+                # ════════════════════════════════════════════════════
+                # DWDM RING (Abstracted — 4 ring nodes)
+                # ════════════════════════════════════════════════════
+
+                _node("ring-n1", "Ring Node 1", "roadm", 1200, 200, {
+                    "config": {"role": "DWDM ring node — express-through"}
+                }),
+                _node("ring-n2", "Ring Node 2", "roadm", 1320, 380, {
+                    "config": {"role": "DWDM ring node — express-through"}
+                }),
+                _node("ring-n3", "Ring Node 3", "roadm", 1200, 560, {
+                    "config": {"role": "DWDM ring node — express-through"}
+                }),
+                _node("ring-edfa-1", "EDFA (Ring)", "edfa", 1280, 280, {
+                    "config": {"role": "Inline EDFA — ring span amplification"}
+                }),
+                _node("ring-edfa-2", "EDFA (Ring)", "edfa", 1280, 480, {
+                    "config": {"role": "Inline EDFA — ring span amplification"}
+                }),
+            ],
+            "edges": [
+                # ── Customer internal ──
+                _edge("cust-sw", "ce-rtr-1", "10G/100G LAG", ""),
+                _edge("cust-sw", "ce-rtr-2", "10G/100G LAG", ""),
+
+                # ── Customer to transponders ──
+                _edge("ce-rtr-1", "cust-txp-1", "100G QSFP28 (gray)", ""),
+                _edge("ce-rtr-2", "cust-txp-2", "100G QSFP28 (gray)", ""),
+
+                # ── Transponders to customer patch panels ──
+                _edge("cust-txp-1", "cust-pp-1", "Colored λ (SM fiber)", "DWDM"),
+                _edge("cust-txp-2", "cust-pp-2", "Colored λ (SM fiber)", "DWDM"),
+
+                # ── Customer patch panels to meet-me rooms ──
+                _edge("cust-pp-1", "mmr-a", "Intra-colo fiber", ""),
+                _edge("cust-pp-2", "mmr-b", "Intra-colo fiber (diverse)", ""),
+
+                # ── Meet-me room cross-connects ──
+                _edge("mmr-a", "xc-a", "Cross-Connect A", ""),
+                _edge("xc-a", "prov-pp-a", "Cust->Provider (Primary)", ""),
+                _edge("mmr-b", "xc-b", "Cross-Connect B", ""),
+                _edge("xc-b", "prov-pp-b", "Cust->Provider (Diverse)", ""),
+
+                # ── Provider POP A internal ──
+                _edge("prov-pop-a", "prov-pp-a", "Fiber trunk", ""),
+                _edge("prov-pp-a", "prov-txp-a", "Client handoff", ""),
+                _edge("prov-txp-a", "prov-oadm-a", "Line side λ", "DWDM"),
+                _edge("prov-oadm-a", "prov-edfa-a", "Amplified WDM", ""),
+
+                # ── Provider POP B internal ──
+                _edge("prov-pop-b", "prov-pp-b", "Fiber trunk", ""),
+                _edge("prov-pp-b", "prov-txp-b", "Client handoff", ""),
+                _edge("prov-txp-b", "prov-oadm-b", "Line side λ", "DWDM"),
+                _edge("prov-oadm-b", "prov-edfa-b", "Amplified WDM", ""),
+
+                # ── Provider to DWDM Ring ──
+                _edge("prov-edfa-a", "ring-n1", "East ring (primary)", "DWDM"),
+                _edge("prov-edfa-b", "ring-n3", "West ring (diverse)", "DWDM"),
+
+                # ── Ring interconnection ──
+                _edge("ring-n1", "ring-edfa-1", "Span (working)", "DWDM BLSR"),
+                _edge("ring-edfa-1", "ring-n2", "Amplified", ""),
+                _edge("ring-n2", "ring-edfa-2", "Span (working)", "DWDM BLSR"),
+                _edge("ring-edfa-2", "ring-n3", "Amplified", ""),
+                _edge("ring-n3", "ring-n1", "Protect path", "DWDM BLSR"),
+            ],
+        }),
+    },
 ]
 
 
@@ -7597,6 +8199,161 @@ ENCLAVE_SNIPPETS = [
                 _edge("oci-edge", "ipsec-gw", "IPsec over FastConnect", "IPsec"),
                 _edge("ipsec-gw", "drg", "Encrypted Private VC", "eBGP"),
                 _edge("drg", "vcn", "DRG Attachment", ""),
+            ],
+        }),
+    },
+
+    # ── DWDM Ring + MPLS Overlay — CUI/IL5 Compliant ────────────────────────
+    {
+        "id": "snip-dwdm-mpls-cui",
+        "name": "DWDM Ring + MPLS Overlay — CUI (IL4/IL5)",
+        "category": "Transport / Optical",
+        "description": (
+            "DWDM metro ring with MPLS L3VPN overlay for CUI transport. "
+            "Layer 1: DWDM 96-channel ring with BLSR protection. "
+            "Layer 2: KG-series Type 1 encryptors (FIPS 140-2/3) at every handoff. "
+            "Layer 3: MPLS PE routers with VRF isolation, MP-BGP, BFD. "
+            "Compliant with NIST 800-53, DISA STIG, FedRAMP High, DoD IL4/IL5."
+        ),
+        "classification_level": "CUI",
+        "impact_level": "IL5",
+        "stig_controls": json.dumps([
+            "SC-7", "SC-7(4)", "SC-8", "SC-8(1)", "SC-12", "SC-13",
+            "SC-28", "AC-4", "CA-3", "AU-2", "AU-12", "SI-4",
+            "IA-2", "IA-7", "CM-6", "CM-7",
+        ]),
+        "tags": json.dumps([
+            "dwdm", "mpls", "ring", "cui", "il4", "il5", "fips",
+            "kg", "type-1", "blsr", "l3vpn", "stig", "fedramp-high",
+        ]),
+        "graph_json": json.dumps({
+            "nodes": [
+                # ── DWDM Ring Layer (4 ring nodes) ──
+                _node("roadm-hub", "ROADM Hub (Site A)", "roadm", 400, 100, {
+                    "config": {
+                        "classification": "CUI",
+                        "role": "Primary ROADM hub — 96-ch C+L band",
+                        "degree": "4-degree, WSS",
+                        "stig_baseline": "DISA Network STIG V3R9",
+                    }
+                }),
+                _node("oadm-b", "OADM (Site B)", "oadm", 700, 300, {
+                    "config": {
+                        "classification": "CUI",
+                        "role": "OADM access — 16-ch add/drop",
+                    }
+                }),
+                _node("roadm-c", "ROADM (Site C)", "roadm", 400, 500, {
+                    "config": {
+                        "classification": "CUI",
+                        "role": "Secondary ROADM — DR site",
+                    }
+                }),
+                _node("oadm-d", "OADM (Site D)", "oadm", 100, 300, {
+                    "config": {
+                        "classification": "CUI",
+                        "role": "OADM access — 16-ch add/drop",
+                    }
+                }),
+                # EDFA per span
+                _node("edfa-ab", "EDFA A-B", "edfa", 580, 180),
+                _node("edfa-bc", "EDFA B-C", "edfa", 580, 420),
+                _node("edfa-cd", "EDFA C-D", "edfa", 220, 420),
+                _node("edfa-da", "EDFA D-A", "edfa", 220, 180),
+
+                # ── KG Encryption Layer ──
+                _node("kg-a", "KG-250 (Site A)", "fips-140-l3", 400, 210, {
+                    "config": {
+                        "classification": "CUI",
+                        "role": "NSA Type 1 encryptor — DWDM to MPLS handoff",
+                        "model": "KG-250 (100G inline)",
+                        "fips_mode": "FIPS 140-3 Level 3",
+                        "stig_baseline": "DISA HAIPE STIG",
+                        "encryption": "Suite B / AES-256, Type 1",
+                    }
+                }),
+                _node("kg-b", "KG-175D (Site B)", "fips-140-l3", 600, 300, {
+                    "config": {
+                        "classification": "CUI",
+                        "model": "KG-175D (TACLANE, 1-10G)",
+                        "fips_mode": "FIPS 140-2 Level 2",
+                    }
+                }),
+                _node("kg-c", "KG-250 (Site C)", "fips-140-l3", 400, 390, {
+                    "config": {
+                        "classification": "CUI",
+                        "model": "KG-250 (100G inline)",
+                        "fips_mode": "FIPS 140-3 Level 3",
+                    }
+                }),
+                _node("kg-d", "KG-175D (Site D)", "fips-140-l3", 200, 300, {
+                    "config": {
+                        "classification": "CUI",
+                        "model": "KG-175D (TACLANE, 1-10G)",
+                        "fips_mode": "FIPS 140-2 Level 2",
+                    }
+                }),
+
+                # ── MPLS PE Layer ──
+                _node("pe-a", "MPLS PE-A", "mpls-pe", 400, 310, {
+                    "config": {
+                        "classification": "CUI",
+                        "stig_baseline": "DISA Network STIG V3R9",
+                        "role": "MPLS PE — BGP RR client, LDP, VRF",
+                        "protocols": "MP-BGP, LDP, OSPF (area 0), BFD",
+                    }
+                }),
+                _node("pe-b", "MPLS PE-B", "mpls-pe", 500, 300, {
+                    "config": {
+                        "classification": "CUI",
+                        "stig_baseline": "DISA Network STIG V3R9",
+                    }
+                }),
+                _node("pe-c", "MPLS PE-C", "mpls-pe", 400, 500, {
+                    "config": {
+                        "classification": "CUI",
+                        "stig_baseline": "DISA Network STIG V3R9",
+                    }
+                }),
+                _node("pe-d", "MPLS PE-D", "mpls-pe", 300, 300, {
+                    "config": {
+                        "classification": "CUI",
+                        "stig_baseline": "DISA Network STIG V3R9",
+                    }
+                }),
+                _node("rr", "Route Reflector", "route-reflector", 400, 400, {
+                    "config": {
+                        "classification": "CUI",
+                        "role": "MP-BGP Route Reflector for VPNv4",
+                        "stig_baseline": "DISA Network STIG V3R9",
+                    }
+                }),
+            ],
+            "edges": [
+                # Ring
+                _edge("roadm-hub", "edfa-ab", "East λ (working)", "DWDM"),
+                _edge("edfa-ab", "oadm-b", "Amplified", ""),
+                _edge("oadm-b", "edfa-bc", "Express λ", "DWDM"),
+                _edge("edfa-bc", "roadm-c", "Amplified", ""),
+                _edge("roadm-c", "edfa-cd", "West λ", "DWDM"),
+                _edge("edfa-cd", "oadm-d", "Amplified", ""),
+                _edge("oadm-d", "edfa-da", "Express λ", "DWDM"),
+                _edge("edfa-da", "roadm-hub", "Ring close", ""),
+                # KG encryption
+                _edge("roadm-hub", "kg-a", "100G λ handoff", ""),
+                _edge("oadm-b", "kg-b", "10G λ handoff", ""),
+                _edge("roadm-c", "kg-c", "100G λ handoff", ""),
+                _edge("oadm-d", "kg-d", "10G λ handoff", ""),
+                # KG to MPLS PE
+                _edge("kg-a", "pe-a", "Encrypted 100G", "IPsec Type1"),
+                _edge("kg-b", "pe-b", "Encrypted 10G", "IPsec Type1"),
+                _edge("kg-c", "pe-c", "Encrypted 100G", "IPsec Type1"),
+                _edge("kg-d", "pe-d", "Encrypted 10G", "IPsec Type1"),
+                # MPLS core
+                _edge("pe-a", "rr", "MP-BGP (VPNv4)", "iBGP"),
+                _edge("pe-b", "rr", "MP-BGP (VPNv4)", "iBGP"),
+                _edge("pe-c", "rr", "MP-BGP (VPNv4)", "iBGP"),
+                _edge("pe-d", "rr", "MP-BGP (VPNv4)", "iBGP"),
             ],
         }),
     },
