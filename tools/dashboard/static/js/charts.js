@@ -326,7 +326,7 @@
     var W        = container.offsetWidth || 400;
     var rotateLabels = opts.rotateLabels !== undefined ? opts.rotateLabels : (labels.length > 4);
     var padL = 48, padR = 12, padT = 16, padB = 28;
-    var H = rotateLabels ? baseH + 30 : baseH;
+    var H = baseH;
     var plotW = W - padL - padR;
     var plotH = H - padT - padB;
 
@@ -337,11 +337,13 @@
     });
     var scale = niceScale(0, Math.max.apply(null, allVals));
 
+    var svgH = rotateLabels ? H + 40 : H;
     var svg = svgEl('svg', {
-      width: W, height: H, viewBox: '0 0 ' + W + ' ' + H,
+      width: W, height: svgH, viewBox: '0 0 ' + W + ' ' + svgH,
       role: 'img', 'aria-label': 'Bar chart: ' + series.map(function (s) { return s.name; }).join(', ')
     });
     svg.style.display = 'block';
+    svg.style.overflow = 'visible';
 
     // Grid + y-axis
     scale.values.forEach(function (v) {

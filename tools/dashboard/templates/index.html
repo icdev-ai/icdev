@@ -474,7 +474,7 @@ window._loadCharts = function() {
                     series: [
                         { name: 'Score', data: d.compliance.canvases.map(function(c) { return c.score; }), color: '#4a90d9' },
                     ],
-                    height: 140, showLegend: false, showValues: true,
+                    height: 160, showLegend: false, showValues: true,
                 });
             } else {
                 document.getElementById('chart-compliance').innerHTML = '<p class="text-muted" style="text-align:center;padding:60px 0;">No canvas assessments yet</p>';
