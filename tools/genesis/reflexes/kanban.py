@@ -66,6 +66,8 @@ def _count_pending_prompts() -> int:
 MAX_AUTO_PROMOTE = 2
 # Max in-progress tasks at any time (prevents pile-up)
 MAX_IN_PROGRESS = 3
+# Max seconds a Claude CLI subprocess can run before being killed
+MAX_EXECUTION_SECONDS = 1800  # 30 minutes
 
 # ── Token exhaustion detection ────────────────────────────────────────────────
 
@@ -516,6 +518,7 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
             stderr=subprocess.STDOUT,
         )
         _running[task_id] = proc
+        _dispatch_times[task_id] = datetime.now(timezone.utc)
         print(f"  Kanban: dispatched {task_id} to claude (PID {proc.pid})")
     except FileNotFoundError:
         print(f"  Kanban: claude CLI not found at {CLAUDE_CLI}")
@@ -527,48 +530,142 @@ def _verify_task_completed(task_id, claude_output):
     """Verify that a task actually produced results before marking done.
 
     Checks:
-    1. Git has new commits since task was dispatched
-    2. Claude output is non-trivial (>100 chars, not just an error)
-    3. No obvious failure indicators in output
+    1. Claude output must be substantial (>200 chars)
+    2. No obvious failure indicators in output
+    3. Git has new commits on the task's WORKTREE branch (not main)
+    4. Output must contain evidence of actual file changes
 
     Returns: (verified: bool, reason: str)
     """
     # Check 1: Claude output must be substantial
-    if not claude_output or len(claude_output) < 100:
+    if not claude_output or len(claude_output) < 200:
         return False, "Output too short — likely no work done"
 
-    # Check 2: Look for failure indicators
+    # Check 2: Look for failure indicators (scan full output, not just first 500)
     fail_markers = [
         "I cannot", "I'm unable", "I don't have access",
         "Permission denied", "No such file", "FileNotFoundError",
         "I was unable to", "Error:", "failed to",
+        "ModuleNotFoundError", "ImportError", "SyntaxError",
+        "there is nothing to", "no changes", "already up to date",
     ]
     output_lower = claude_output.lower()
     for marker in fail_markers:
-        if marker.lower() in output_lower[:500]:
+        if marker.lower() in output_lower[:1000]:
             return False, f"Output contains failure indicator: {marker}"
 
-    # Check 3: Git commit check — did any new commits appear?
+    # Check 3: Evidence of file changes in output
+    file_change_markers = [
+        "created", "modified", "updated", "wrote", "edited",
+        "added", "fixed", "refactored", "generated",
+        "tools/", "tests/", "args/", "goals/", "docs/",
+    ]
+    has_file_evidence = any(m in output_lower for m in file_change_markers)
+    if not has_file_evidence:
+        return False, "No evidence of file changes in output"
+
+    # Check 4: Git commit check on the WORKTREE branch (not main)
     try:
         import subprocess as _sp
+        branch_name = f"kanban/{task_id}"
+        # Check if the worktree branch has commits ahead of HEAD
         result = _sp.run(
-            ["git", "log", "--oneline", "--since=30 minutes ago"],
-            capture_output=True, text=True, encoding="utf-8", errors="replace",
-            cwd=str(BASE_DIR), timeout=10,
+            ["git", "log", f"HEAD..{branch_name}", "--oneline"],
+            capture_output=True, text=True, encoding="utf-8",
+            errors="replace", cwd=str(BASE_DIR), timeout=10,
         )
-        recent_commits = result.stdout.strip()
-        if not recent_commits:
-            # No commits but output looks ok — mark as "needs review" not "done"
-            return False, "No git commits found — work may not have been saved"
+        worktree_commits = result.stdout.strip()
+        if worktree_commits:
+            return True, f"Verified: worktree has commits: {worktree_commits[:100]}"
+
+        # Fallback: if no worktree branch (ran in BASE_DIR), check for
+        # commits mentioning this task ID or title
+        result = _sp.run(
+            ["git", "log", "--oneline", "--since=30 minutes ago",
+             "--all", "--grep", task_id[:12]],
+            capture_output=True, text=True, encoding="utf-8",
+            errors="replace", cwd=str(BASE_DIR), timeout=10,
+        )
+        if result.stdout.strip():
+            return True, "Verified: found commits referencing task"
+
+        # No task-specific commits found — output looked good but no proof
+        return False, "No git commits found on task branch — work may not have been saved"
     except Exception:
         pass  # Git check failed — don't block on this
 
-    return True, "Verified"
+    # If git check failed but output has strong evidence, cautiously verify
+    if len(claude_output) > 500 and has_file_evidence:
+        return True, "Verified: strong output evidence (git check unavailable)"
+
+    return False, "Insufficient evidence of task completion"
+
+
+# Track when each task was dispatched: {task_id: datetime}
+_dispatch_times: Dict[str, datetime] = {}
 
 
 def _check_completed():
-    """Check for completed claude subprocesses and clean up."""
+    """Check for completed claude subprocesses and clean up.
+
+    Also enforces MAX_EXECUTION_SECONDS timeout — kills hung processes
+    and returns them to backlog.
+    """
     completed = []
+
+    # ── TIMEOUT CHECK: kill hung processes ─────────────────────────
+    now = datetime.now(timezone.utc)
+    for task_id, proc in list(_running.items()):
+        dispatch_time = _dispatch_times.get(task_id)
+        if dispatch_time:
+            elapsed = (now - dispatch_time).total_seconds()
+            if elapsed > MAX_EXECUTION_SECONDS:
+                print(
+                    f"  Kanban: {task_id} TIMEOUT after "
+                    f"{int(elapsed)}s (max {MAX_EXECUTION_SECONDS}s) "
+                    f"— killing process"
+                )
+                try:
+                    proc.kill()
+                    proc.wait(timeout=10)
+                except Exception:
+                    pass
+                _move_task(task_id, "backlog")
+                # Build task dict for notification
+                task_dict = {"id": task_id, "title": task_id}
+                try:
+                    task_conn = get_connection()
+                    row = task_conn.execute(
+                        "SELECT title FROM kanban_tasks WHERE id = ?",
+                        (task_id,),
+                    ).fetchone()
+                    task_conn.close()
+                    if row:
+                        task_dict["title"] = row["title"]
+                except Exception:
+                    pass
+                _send_notification(task_dict, event="failed")
+                try:
+                    from tools.notifications.adapters.telegram import (
+                        send as tg_send,
+                    )
+                    tg_send(
+                        f"TIMEOUT: {task_dict.get('title', task_id)[:60]}",
+                        f"Task killed after {int(elapsed)}s — returned to backlog",
+                        severity="warning",
+                    )
+                except Exception:
+                    pass
+                del _running[task_id]
+                _dispatch_times.pop(task_id, None)
+                _dispatch_times.pop(task_id, None)
+                # Cleanup worktree
+                if task_id in _worktrees:
+                    _cleanup_worktree(task_id)
+                    del _worktrees[task_id]
+                completed.append(task_id)
+                continue
+
     for task_id, proc in list(_running.items()):
         ret = proc.poll()
         if ret is not None:
@@ -653,6 +750,7 @@ def _check_completed():
                         pass
                 # Keep prompt file AND worktree for retry — don't delete
                 del _running[task_id]
+                _dispatch_times.pop(task_id, None)
                 completed.append(task_id)
                 continue
 
@@ -829,6 +927,37 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         print(f"  Kanban: {len(tg_results)} Telegram commands")
 
     # 3. Don't promote new tasks if claude is already running
+    #    BUT first clean up stale entries — if the task was marked done/backlog
+    #    externally (e.g., Claude CLI self-reported via HTTP POST), the
+    #    _running dict may hold an orphaned Popen reference that blocks
+    #    all future promotions forever.
+    if _running:
+        stale_ids = []
+        for tid, proc in list(_running.items()):
+            try:
+                task_conn = get_connection()
+                row = task_conn.execute(
+                    "SELECT status FROM kanban_tasks WHERE id = ?", (tid,)
+                ).fetchone()
+                task_conn.close()
+                if row and dict(row)["status"] not in ("in_progress", "scheduled"):
+                    # Task was completed/moved externally — clean up
+                    stale_ids.append(tid)
+            except Exception:
+                pass
+        for tid in stale_ids:
+            print(f"  Kanban: cleaning up stale _running entry for {tid}")
+            proc = _running.pop(tid, None)
+            _dispatch_times.pop(tid, None)
+            if proc:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+            if tid in _worktrees:
+                _cleanup_worktree(tid)
+                del _worktrees[tid]
+
     if _running:
         print(
             f"  Kanban: {len(_running)} task(s) executing in claude, "
