@@ -75,6 +75,17 @@ from tools.security_canvas.artifacts import (  # noqa: E402
     generate_poam_artifact,
     generate_artifact_bundle,
 )
+from tools.security_canvas.sops import (  # noqa: E402
+    get_all_sops,
+    get_sop_by_id,
+    create_sop,
+    update_sop,
+    delete_sop,
+    submit_for_review,
+    approve_sop,
+    reject_sop,
+    seed_sops,
+)
 
 
 def create_security_blueprint():
@@ -94,6 +105,12 @@ def create_security_blueprint():
         init_db()
     except Exception as exc:
         logger.warning("Security Canvas DB init failed: %s", exc)
+
+    # Seed SOPs
+    try:
+        seed_sops()
+    except Exception as exc:
+        logger.warning("SOP seed failed: %s", exc)
 
     bp = Blueprint(
         "security_canvas",
@@ -1553,6 +1570,103 @@ def create_security_blueprint():
     # ====================================================================
     # API ROUTES — LLM-Assisted Threat Identification
     # ====================================================================
+
+    # ====================================================================
+    # PAGE ROUTES — SOPs
+    # ====================================================================
+
+    @bp.route("/sops")
+    @sc_login_required
+    def sc_sops_page():
+        """Standard Operating Procedures — list, create, approve."""
+        sops = get_all_sops()
+        return render_template("security_canvas/sops.html", sops=sops)
+
+    # ====================================================================
+    # API ROUTES — SOPs CRUD + Approval Workflow
+    # ====================================================================
+
+    @bp.route("/api/sops", methods=["GET"])
+    @sc_login_required
+    def sc_api_list_sops():
+        """List SOPs with optional ?type= and ?status= filters."""
+        sop_type = request.args.get("type")
+        approval_status = request.args.get("status")
+        return jsonify(get_all_sops(sop_type=sop_type, approval_status=approval_status))
+
+    @bp.route("/api/sops", methods=["POST"])
+    @sc_login_required
+    def sc_api_create_sop():
+        """Create a new SOP."""
+        data = request.get_json(force=True, silent=True) or {}
+        sop = create_sop(data)
+        _audit("CREATE", "sop", sop["id"], sop["title"])
+        return jsonify(sop), 201
+
+    @bp.route("/api/sops/<sop_id>", methods=["GET"])
+    @sc_login_required
+    def sc_api_get_sop(sop_id):
+        """Get a single SOP by ID."""
+        sop = get_sop_by_id(sop_id)
+        if not sop:
+            return jsonify({"error": "Not found"}), 404
+        return jsonify(sop)
+
+    @bp.route("/api/sops/<sop_id>", methods=["PUT"])
+    @sc_login_required
+    def sc_api_update_sop(sop_id):
+        """Update an existing SOP."""
+        data = request.get_json(force=True, silent=True) or {}
+        sop = update_sop(sop_id, data)
+        if not sop:
+            return jsonify({"error": "Not found"}), 404
+        _audit("UPDATE", "sop", sop_id, sop["title"])
+        return jsonify(sop)
+
+    @bp.route("/api/sops/<sop_id>", methods=["DELETE"])
+    @sc_login_required
+    def sc_api_delete_sop(sop_id):
+        """Delete a SOP."""
+        deleted = delete_sop(sop_id)
+        if not deleted:
+            return jsonify({"error": "Not found"}), 404
+        _audit("DELETE", "sop", sop_id, "")
+        return jsonify({"deleted": True})
+
+    @bp.route("/api/sops/<sop_id>/submit", methods=["POST"])
+    @sc_login_required
+    def sc_api_submit_sop(sop_id):
+        """Submit a SOP for review (draft → pending_review)."""
+        sop, err = submit_for_review(sop_id)
+        if err:
+            return jsonify({"error": err}), 400
+        _audit("SUBMIT", "sop", sop_id, "pending_review")
+        return jsonify(sop)
+
+    @bp.route("/api/sops/<sop_id>/approve", methods=["POST"])
+    @sc_login_required
+    def sc_api_approve_sop(sop_id):
+        """Approve a pending SOP."""
+        data = request.get_json(force=True, silent=True) or {}
+        approved_by = data.get("approved_by", session.get("user_id", ""))
+        sop, err = approve_sop(sop_id, approved_by=approved_by)
+        if err:
+            return jsonify({"error": err}), 400
+        _audit("APPROVE", "sop", sop_id, f"approved_by={approved_by}")
+        return jsonify(sop)
+
+    @bp.route("/api/sops/<sop_id>/reject", methods=["POST"])
+    @sc_login_required
+    def sc_api_reject_sop(sop_id):
+        """Reject a pending SOP."""
+        data = request.get_json(force=True, silent=True) or {}
+        reason = data.get("reason", "")
+        rejected_by = data.get("rejected_by", session.get("user_id", ""))
+        sop, err = reject_sop(sop_id, reason=reason, rejected_by=rejected_by)
+        if err:
+            return jsonify({"error": err}), 400
+        _audit("REJECT", "sop", sop_id, f"rejected_by={rejected_by} reason={reason}")
+        return jsonify(sop)
 
     @bp.route("/api/designs/<design_id>/llm-threats", methods=["POST"])
     @sc_login_required

@@ -214,6 +214,30 @@ CREATE TABLE IF NOT EXISTS sc_audit (
     classification  TEXT DEFAULT 'CUI // SP-CTI',
     ts              TEXT DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS sdc_sops (
+    id                  TEXT PRIMARY KEY,
+    title               TEXT NOT NULL,
+    sop_type            TEXT NOT NULL,
+    description         TEXT,
+    purpose             TEXT,
+    scope               TEXT,
+    steps               TEXT DEFAULT '[]',
+    nist_controls       TEXT DEFAULT '[]',
+    owner               TEXT,
+    reviewer            TEXT,
+    approval_status     TEXT DEFAULT 'draft' CHECK(approval_status IN ('draft','pending_review','approved','rejected')),
+    approved_by         TEXT,
+    approved_at         TEXT,
+    rejected_reason     TEXT,
+    version             TEXT DEFAULT '1.0',
+    next_review_date    TEXT,
+    classification      TEXT DEFAULT 'CUI',
+    created_at          TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_sdc_sops_type ON sdc_sops(sop_type);
+CREATE INDEX IF NOT EXISTS idx_sdc_sops_status ON sdc_sops(approval_status);
 """
 
 # ── Template seeds ────────────────────────────────────────────────────────────
