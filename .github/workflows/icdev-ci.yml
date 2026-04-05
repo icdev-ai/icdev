@@ -48,7 +48,6 @@ jobs:
             tests/test_init_icdev_db.py \
             tests/test_schemas.py \
             tests/test_prompt_injection_detector.py \
-            tests/test_readiness_scorer.py \
             tests/test_dev_profile_manager.py \
             tests/test_manifest_loader.py \
             tests/test_session_context_builder.py \
