@@ -424,64 +424,83 @@ document.addEventListener('DOMContentLoaded', function() {
 var _SEV_COLORS = { critical: '#ef4444', high: '#f97316', medium: '#eab308', low: '#22c55e' };
 var _SEV_EMOJIS = { critical: '\uD83D\uDD34', high: '\uD83D\uDFE0', medium: '\uD83D\uDFE1', low: '\uD83D\uDFE2' };
 
+function _buildProposalTable(proposals, isCore) {
+    var esc = window.ICDEV && ICDEV.escapeHTML ? ICDEV.escapeHTML : function(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); };
+    var rows = proposals.map(function(p, i) {
+        var sev = p.severity || 'medium';
+        var col = _SEV_COLORS[sev] || '#6b7280';
+        var emoji = _SEV_EMOJIS[sev] || '';
+        var scoreArrow = p.current_score != null && p.projected_score != null
+            ? esc(String(p.current_score.toFixed(0))) + ' &rarr; <span style="color:#22c55e;">' + esc(String(p.projected_score.toFixed(0))) + '</span>'
+            : '&mdash;';
+        var approveCall = isCore
+            ? 'approveCoreProposal(\'' + esc(p.canvas_type) + '\')'
+            : 'approveProposal(\'' + esc(p.id) + '\')';
+        var rejectCall = isCore
+            ? 'openRejectModal(\'' + esc(p.id) + '\')'
+            : 'openRejectModal(\'' + esc(p.id) + '\')';
+        return '<tr style="border-bottom:' + (i < proposals.length - 1 ? '1px solid var(--border)' : 'none') + ';">'
+            + '<td style="padding:10px 14px; font-size:13px;">'
+            + '<span style="border-left:3px solid ' + col + '; padding-left:8px;">' + esc(p.canvas_label || p.canvas_type) + '</span>'
+            + '</td>'
+            + '<td style="padding:10px 14px; font-size:13px; color:var(--text-dim);">' + (p.finding_count || 0) + ' finding(s)</td>'
+            + '<td style="padding:10px 14px; font-size:13px;">' + scoreArrow + '</td>'
+            + '<td style="padding:10px 14px;">'
+            + '<span style="font-size:11px; background:' + col + '20; color:' + col + '; border-radius:4px; padding:2px 7px; font-weight:600;">'
+            + emoji + ' ' + esc(sev)
+            + '</span>'
+            + '</td>'
+            + '<td style="padding:10px 14px; text-align:right;">'
+            + '<button class="btn btn-sm btn-primary" style="margin-right:6px; font-size:11px;" onclick="' + approveCall + '">&#10003; Approve</button>'
+            + '<button class="btn btn-sm" style="font-size:11px; color:#ef4444;" onclick="' + rejectCall + '">&#10005; Reject</button>'
+            + '</td>'
+            + '</tr>';
+    }).join('');
+    return '<div class="card" style="overflow:hidden;">'
+        + '<table style="width:100%; border-collapse:collapse;">'
+        + '<thead><tr style="border-bottom:1px solid var(--border);">'
+        + '<th style="padding:10px 14px; text-align:left; font-size:12px; color:var(--text-dim); font-weight:600;">' + (isCore ? 'Domain' : 'Canvas') + '</th>'
+        + '<th style="padding:10px 14px; text-align:left; font-size:12px; color:var(--text-dim); font-weight:600;">Findings</th>'
+        + '<th style="padding:10px 14px; text-align:left; font-size:12px; color:var(--text-dim); font-weight:600;">Score</th>'
+        + '<th style="padding:10px 14px; text-align:left; font-size:12px; color:var(--text-dim); font-weight:600;">Severity</th>'
+        + '<th style="padding:10px 14px; text-align:right; font-size:12px; color:var(--text-dim); font-weight:600;">Actions</th>'
+        + '</tr></thead>'
+        + '<tbody>' + rows + '</tbody></table></div>';
+}
+
 function refreshProposals() {
-    fetch('/api/oracle/proposals?status=pending&limit=20')
+    fetch('/api/oracle/proposals/unified')
         .then(function(r) { return r.json(); })
         .then(function(data) {
-            var proposals = data.proposals || [];
+            var canvas = data.canvas_designs || [];
+            var core = data.platform_health || [];
+            var total = data.total_pending || 0;
             var badge = document.getElementById('proposals-count-badge');
             var list = document.getElementById('proposals-list');
             if (!list) return;
 
-            if (proposals.length === 0) {
+            if (total === 0) {
                 badge.style.display = 'none';
                 list.innerHTML = '<div class="card" style="padding:16px 20px; display:flex; align-items:center; gap:10px;">'
                     + '<span style="color:#22c55e; font-size:18px;">&#x2713;</span>'
-                    + '<span style="color:var(--text-dim);">All canvases healthy &mdash; no pending proposals</span>'
+                    + '<span style="color:var(--text-dim);">All systems healthy &mdash; no pending proposals</span>'
                     + '</div>';
                 return;
             }
 
-            badge.textContent = proposals.length;
+            badge.textContent = total;
             badge.style.display = 'inline';
 
-            var esc = window.ICDEV && ICDEV.escapeHTML ? ICDEV.escapeHTML : function(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); };
-
-            list.innerHTML = '<div class="card" style="overflow:hidden;">'
-                + '<table style="width:100%; border-collapse:collapse;">'
-                + '<thead><tr style="border-bottom:1px solid var(--border);">'
-                + '<th style="padding:10px 14px; text-align:left; font-size:12px; color:var(--text-dim); font-weight:600;">Canvas</th>'
-                + '<th style="padding:10px 14px; text-align:left; font-size:12px; color:var(--text-dim); font-weight:600;">Findings</th>'
-                + '<th style="padding:10px 14px; text-align:left; font-size:12px; color:var(--text-dim); font-weight:600;">Score</th>'
-                + '<th style="padding:10px 14px; text-align:left; font-size:12px; color:var(--text-dim); font-weight:600;">Severity</th>'
-                + '<th style="padding:10px 14px; text-align:right; font-size:12px; color:var(--text-dim); font-weight:600;">Actions</th>'
-                + '</tr></thead>'
-                + '<tbody>'
-                + proposals.map(function(p, i) {
-                    var sev = p.severity || 'medium';
-                    var col = _SEV_COLORS[sev] || '#6b7280';
-                    var emoji = _SEV_EMOJIS[sev] || '';
-                    var scoreArrow = p.current_score != null && p.projected_score != null
-                        ? esc(p.current_score.toFixed(0)) + ' &rarr; <span style="color:#22c55e;">' + esc(p.projected_score.toFixed(0)) + '</span>'
-                        : '&mdash;';
-                    return '<tr style="border-bottom:' + (i < proposals.length - 1 ? '1px solid var(--border)' : 'none') + ';">'
-                        + '<td style="padding:10px 14px; font-size:13px;">'
-                        + '<span style="border-left:3px solid ' + col + '; padding-left:8px;">' + esc(p.canvas_label || p.canvas_type) + '</span>'
-                        + '</td>'
-                        + '<td style="padding:10px 14px; font-size:13px; color:var(--text-dim);">' + (p.finding_count || 0) + ' finding(s)</td>'
-                        + '<td style="padding:10px 14px; font-size:13px;">' + scoreArrow + '</td>'
-                        + '<td style="padding:10px 14px;">'
-                        + '<span style="font-size:11px; background:' + col + '20; color:' + col + '; border-radius:4px; padding:2px 7px; font-weight:600;">'
-                        + emoji + ' ' + esc(sev)
-                        + '</span>'
-                        + '</td>'
-                        + '<td style="padding:10px 14px; text-align:right;">'
-                        + '<button class="btn btn-sm btn-primary" style="margin-right:6px; font-size:11px;" onclick="approveProposal(\'' + esc(p.id) + '\')">&#10003; Approve</button>'
-                        + '<button class="btn btn-sm" style="font-size:11px; color:#ef4444;" onclick="openRejectModal(\'' + esc(p.id) + '\')">&#10005; Reject</button>'
-                        + '</td>'
-                        + '</tr>';
-                }).join('')
-                + '</tbody></table></div>';
+            var html = '';
+            if (canvas.length > 0) {
+                html += '<div style="font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--text-dim); margin-bottom:8px;">Canvas Designs</div>';
+                html += _buildProposalTable(canvas, false);
+            }
+            if (core.length > 0) {
+                html += '<div style="font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--text-dim); margin-top:16px; margin-bottom:8px;">Platform Health</div>';
+                html += _buildProposalTable(core, true);
+            }
+            list.innerHTML = html;
         })
         .catch(function() {
             var list = document.getElementById('proposals-list');
@@ -509,6 +528,26 @@ function approveProposal(proposalId) {
     .catch(function(e) { alert('Error: ' + e); });
 }
 
+function approveCoreProposal(domain) {
+    if (!confirm('Approve and execute fix for ' + domain + ' domain?')) return;
+    fetch('/api/oracle/proposals/core/' + encodeURIComponent(domain) + '/approve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reviewed_by: 'dashboard-user' })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(res) {
+        var msg = res.status === 'approved'
+            ? 'Fix executed for ' + domain + ' — ' + (res.fixes_applied ? res.fixes_applied + ' fix(es) applied.' : 'done.')
+            : 'Approval failed: ' + (res.message || res.error);
+        window.ICDEV && ICDEV.showNotification
+            ? ICDEV.showNotification(msg, res.status === 'approved' ? 'success' : 'error')
+            : alert(msg);
+        refreshProposals();
+    })
+    .catch(function(e) { alert('Error: ' + e); });
+}
+
 function openRejectModal(proposalId) {
     document.getElementById('reject-proposal-id').value = proposalId;
     document.getElementById('reject-notes').value = '';
@@ -518,7 +557,10 @@ function openRejectModal(proposalId) {
 function submitRejectProposal() {
     var proposalId = document.getElementById('reject-proposal-id').value;
     var notes = document.getElementById('reject-notes').value.trim();
-    fetch('/api/oracle/proposals/' + proposalId + '/reject', {
+    var url = proposalId.startsWith('core-')
+        ? '/api/oracle/proposals/core/' + encodeURIComponent(proposalId.replace('core-', '')) + '/reject'
+        : '/api/oracle/proposals/' + proposalId + '/reject';
+    fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reviewed_by: 'dashboard-user', notes: notes })

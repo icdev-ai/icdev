@@ -29,12 +29,13 @@
 
             <!-- Operations -->
             <li class="nav-dropdown">
-                <a href="#" class="{% if request.path in ['/projects', '/agents', '/orchestration', '/monitoring', '/activity', '/cicd', '/batch', '/simulation'] %}active{% endif %}">Ops</a>
+                <a href="#" class="{% if request.path in ['/projects', '/agents', '/orchestration', '/monitoring', '/platform-health', '/activity', '/cicd', '/batch', '/simulation'] %}active{% endif %}">Ops</a>
                 <ul class="nav-dropdown-menu">
                     <li><a href="/projects">Projects</a></li>
                     <li><a href="/agents">Agents</a></li>
                     <li><a href="/orchestration">Orchestration</a></li>
                     <li><a href="/monitoring">Monitoring</a></li>
+                    <li><a href="/platform-health">Platform Health</a></li>
                     <li><a href="/activity">Activity</a></li>
                     <li><a href="/cicd">CI/CD</a></li>
                     <li><a href="/kanban">Task Board</a></li>

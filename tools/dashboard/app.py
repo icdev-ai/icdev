@@ -6535,13 +6535,21 @@ def create_app() -> Flask:
         """Studio — Case Management."""
         return render_template("studio/cases.html")
 
-    # ---- Platform Health API (Phase 73) ----
+    # ---- Platform Health page + API (Phase 73) ----
+    @app.route("/platform-health", methods=["GET"])
+    def platform_health_page():
+        """Platform Health detail page — all 10 domains with drill-down."""
+        return render_template("platform_health.html")
+
     try:
         from tools.dashboard.platform_health import get_platform_health, get_domain_health, _DOMAIN_SCORERS  # noqa: E402
 
         @app.route("/api/platform/health", methods=["GET"])
         def api_platform_health():
             """GET /api/platform/health — Composite platform health across 10 domains."""
+            from tools.dashboard.platform_health import _invalidate_cache  # noqa: E402
+            if request.args.get("invalidate") == "1":
+                _invalidate_cache()
             result = get_platform_health()
             # Shape domains for API response (omit all_findings for brevity)
             return jsonify({
