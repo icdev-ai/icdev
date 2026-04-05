@@ -93,6 +93,11 @@ document.addEventListener('DOMContentLoaded', () => {
   // Load existing design
   if (DESIGN_ID && DESIGN_ID !== 'new') { loadDesign(DESIGN_ID); }
 
+  // Enhanced tooltips (shared utility from canvas-tooltips.js)
+  if (typeof initEnhancedTooltips === 'function') {
+    initEnhancedTooltips(paper, graph, (type) => SC_STYLES[type] || {fill:'#0f2b3a', stroke:'#3498db', symbol:'?', label:type});
+  }
+
   // Click handler
   paper.on('element:pointerclick', (view) => {
     selectedCell = view.model;

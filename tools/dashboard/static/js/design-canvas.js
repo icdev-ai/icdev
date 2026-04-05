@@ -200,6 +200,14 @@ document.addEventListener('DOMContentLoaded', () => {
     validateConnection: (s, ms, t, mt) => s !== t,
   });
 
+  // Enhanced tooltips (shared utility from canvas-tooltips.js)
+  if (typeof initEnhancedTooltips === 'function') {
+    initEnhancedTooltips(paper, graph, (type) => {
+      const color = getNodeColor(type);
+      return { fill: color.fill || '#0f2b3a', stroke: color.stroke || '#3498db', label: type, symbol: '?' };
+    });
+  }
+
   // Enable element moving
   paper.on('element:pointerdown', (cellView) => {
     selectedCell = cellView.model;

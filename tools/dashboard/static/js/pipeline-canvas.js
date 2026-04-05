@@ -299,47 +299,14 @@ function initCanvas() {
     if (newLabel !== null) { pushUndo(); view.model.attr('label/text', newLabel); markDirty(); }
   });
 
-  // Tooltip on hover
-  paper.on('element:mouseenter', (view) => {
-    const model = view.model;
-    const type = model.get('nodeType') || '';
-    const label = model.attr('label/text') || '';
-    const style = getStyle(type);
-    let tip = document.getElementById('pc-tooltip');
-    if (!tip) {
-      tip = document.createElement('div');
-      tip.id = 'pc-tooltip';
-      tip.style.cssText = 'position:fixed;z-index:999;background:#16213e;color:#eaeaea;border:1px solid #1e3a6e;border-radius:8px;padding:10px 14px;font-size:11px;pointer-events:none;max-width:340px;box-shadow:0 6px 20px rgba(0,0,0,0.5);';
-      document.body.appendChild(tip);
-    }
-    const info = TOOL_INFO[type] || {};
-    let html = '<div style="margin-bottom:4px;"><b style="font-size:12px;">' + label + '</b></div>';
-    html += '<div style="color:#7a8cb0;font-size:10px;margin-bottom:4px;">' + type + '</div>';
-    if (info.desc) {
-      html += '<div style="color:#eaeaea;font-size:11px;line-height:1.4;margin-bottom:6px;">' + info.desc + '</div>';
-    }
-    // Info pills
-    let pills = '';
-    if (info.category) pills += '<span style="display:inline-block;padding:1px 6px;border-radius:8px;font-size:9px;background:#0f3460;color:#7a8cb0;margin:1px 2px;">' + info.category + '</span>';
-    if (info.stage) pills += '<span style="display:inline-block;padding:1px 6px;border-radius:8px;font-size:9px;background:' + (STAGE_COLORS[info.stage] || '#0f3460') + '22;border:1px solid ' + (STAGE_COLORS[info.stage] || '#7a8cb0') + ';color:' + (STAGE_COLORS[info.stage] || '#7a8cb0') + ';margin:1px 2px;">' + (STAGE_LABELS[info.stage] || info.stage) + '</span>';
-    if (info.deploy) pills += '<span style="display:inline-block;padding:1px 6px;border-radius:8px;font-size:9px;background:#1a2a0f;color:#27ae60;border:1px solid #27ae60;margin:1px 2px;">' + info.deploy + '</span>';
-    if (info.license) pills += '<span style="display:inline-block;padding:1px 6px;border-radius:8px;font-size:9px;background:#2b1a0f;color:#f39c12;border:1px solid #f39c12;margin:1px 2px;">' + info.license + '</span>';
-    if (info.csp) pills += '<span style="display:inline-block;padding:1px 6px;border-radius:8px;font-size:9px;background:#0f0f2b;color:#5b6abf;border:1px solid #5b6abf;margin:1px 2px;">' + info.csp.toUpperCase() + '</span>';
-    if (pills) html += '<div style="margin-top:4px;">' + pills + '</div>';
-    tip.innerHTML = html;
-    tip.style.display = 'block';
-    // Position near the element
-    const bbox = view.getBBox();
-    const ctm = paper.svg.getScreenCTM();
-    if (ctm) {
-      tip.style.left = (bbox.x * ctm.a + ctm.e + bbox.width + 10) + 'px';
-      tip.style.top = (bbox.y * ctm.d + ctm.f) + 'px';
-    }
-  });
-  paper.on('element:mouseleave', () => {
-    const tip = document.getElementById('pc-tooltip');
-    if (tip) tip.style.display = 'none';
-  });
+  // Enhanced tooltips (shared utility from canvas-tooltips.js)
+  // Adds config-aware rich tooltips. Pipeline-specific TOOL_INFO added as extra fields.
+  if (typeof initEnhancedTooltips === 'function') {
+    initEnhancedTooltips(paper, graph, (type) => {
+      const s = getStyle(type);
+      return { fill: s.fill || '#0f2b3a', stroke: s.stroke || '#3498db', label: s.label || type, symbol: s.symbol || '?' };
+    });
+  }
 
   let isPanning = false, panStart = {}, scrollStart = {};
   const canvasArea = document.querySelector('.pc-canvas-area');
