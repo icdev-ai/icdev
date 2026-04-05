@@ -2,7 +2,7 @@
 # CUI // SP-CTI
 """Dispatcher-Only Orchestrator Mode (Phase 61, D-DISP-1).
 
-Enforces the GOTCHA principle that the Orchestration layer delegates work
+Enforces the FORGE principle that the Orchestration layer delegates work
 to domain agents rather than executing tools directly. When enabled,
 the orchestrator is restricted to dispatch-related tools only (task_dispatch,
 agent_status, agent_mailbox, workflow_status, prompt_chain_execute).
@@ -14,7 +14,6 @@ Configuration:
 Usage::
 
     from icdev.tools.agent.dispatcher_mode import is_dispatcher_mode, is_tool_allowed
-from icdev._paths import get_project_root
 
     if is_dispatcher_mode(project_id="proj-123"):
         if not is_tool_allowed("scaffold"):
@@ -28,6 +27,7 @@ CLI::
     python tools/agent/dispatcher_mode.py --disable --project-id proj-123
 """
 
+from icdev._paths import get_project_root
 import argparse
 import json
 import logging
@@ -517,7 +517,7 @@ def get_status(project_id: str = None, db_path: Path = None) -> dict:
 def main():
     """CLI for dispatcher mode management."""
     parser = argparse.ArgumentParser(
-        description="ICDEV Dispatcher Mode — restrict orchestrator to delegation-only (Phase 61)"
+        description="ICDEV™ Dispatcher Mode — restrict orchestrator to delegation-only (Phase 61)"
     )
     parser.add_argument(
         "--status", action="store_true",
@@ -564,7 +564,7 @@ def main():
             print(json.dumps(result, indent=2, default=str))
         else:
             effective = result["effective_dispatcher_mode"]
-            print("ICDEV Dispatcher Mode Status")
+            print("ICDEV™ Dispatcher Mode Status")
             print("Classification: CUI // SP-CTI")
             print()
             print(f"  Global enabled: {result['global_config']['enabled']}")

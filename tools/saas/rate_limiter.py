@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ICDEV SaaS -- Rate Limiter.
+"""ICDEV™ SaaS -- Rate Limiter.
 
 CUI // SP-CTI
 
@@ -15,6 +15,8 @@ Usage:
     from tools.saas.rate_limiter import register_rate_limiter
     register_rate_limiter(app)
 """
+
+from __future__ import annotations
 
 import abc
 import logging
@@ -37,9 +39,9 @@ logger = logging.getLogger("saas.rate_limiter")
 # Tier rate limits (requests per window)
 # ---------------------------------------------------------------------------
 TIER_RATE_LIMITS = {
-    "starter":      {"per_minute": 60,  "per_hour": 500},
+    "starter": {"per_minute": 60, "per_hour": 500},
     "professional": {"per_minute": 300, "per_hour": 5000},
-    "enterprise":   {"per_minute": -1,  "per_hour": -1},  # unlimited
+    "enterprise": {"per_minute": -1, "per_hour": -1},  # unlimited
 }
 
 
@@ -151,12 +153,14 @@ class RedisBackend(RateLimiterBackend):
     Config: args/scaling_config.yaml → rate_limiter.redis.*
     """
 
-    def __init__(self, host: str, port: int = 6379, db: int = 0,
-                 password: str = "", key_prefix: str = "icdev:rate:"):
+    def __init__(self, host: str, port: int = 6379, db: int = 0, password: str = "", key_prefix: str = "icdev:rate:"):
         try:
             import redis
+
             self._client = redis.Redis(
-                host=host, port=port, db=db,
+                host=host,
+                port=port,
+                db=db,
                 password=password or None,
                 decode_responses=True,
                 socket_connect_timeout=5,
@@ -164,10 +168,7 @@ class RedisBackend(RateLimiterBackend):
             self._client.ping()
             logger.info("Redis rate limiter connected: %s:%d", host, port)
         except ImportError:
-            raise RuntimeError(
-                "redis package required for RedisBackend. "
-                "Install: pip install redis"
-            )
+            raise RuntimeError("redis package required for RedisBackend. Install: pip install redis")
         except Exception as e:
             raise RuntimeError(f"Redis connection failed: {e}")
         self._prefix = key_prefix
@@ -184,6 +185,7 @@ class RedisBackend(RateLimiterBackend):
         # Circuit breaker protection for Redis (D146)
         try:
             from tools.resilience.circuit_breaker import get_circuit_breaker
+
             cb = get_circuit_breaker("redis")
             if not cb.allow_request():
                 logger.warning("Redis circuit breaker OPEN — skipping rate check")
@@ -199,15 +201,15 @@ class RedisBackend(RateLimiterBackend):
 
             # Atomic INCR + GET current counts
             pipe.incr(min_key)
-            pipe.expire(min_key, 120)        # TTL 2 minutes (covers current + next)
+            pipe.expire(min_key, 120)  # TTL 2 minutes (covers current + next)
             pipe.incr(hr_key)
-            pipe.expire(hr_key, 7200)        # TTL 2 hours
+            pipe.expire(hr_key, 7200)  # TTL 2 hours
             results = pipe.execute()
 
             if cb:
                 cb.record_success()
 
-            min_count = results[0]           # INCR returns new value
+            min_count = results[0]  # INCR returns new value
             hr_count = results[2]
 
             # Check per-minute
@@ -265,6 +267,7 @@ def _load_scaling_config() -> dict:
     """Load rate limiter config from args/scaling_config.yaml."""
     try:
         import yaml
+
         config_path = BASE_DIR / "args" / "scaling_config.yaml"
         if config_path.exists():
             with open(config_path, "r") as f:
@@ -349,12 +352,14 @@ def register_rate_limiter(app):
 
         if not result["allowed"]:
             retry_after = max(result["reset_at"] - int(time.time()), 1)
-            resp = jsonify({
-                "error": "Rate limit exceeded",
-                "code": "RATE_LIMITED",
-                "retry_after": retry_after,
-                "limit": result["limit"],
-            })
+            resp = jsonify(
+                {
+                    "error": "Rate limit exceeded",
+                    "code": "RATE_LIMITED",
+                    "retry_after": retry_after,
+                    "limit": result["limit"],
+                }
+            )
             resp.status_code = 429
             resp.headers["Retry-After"] = str(retry_after)
             return resp

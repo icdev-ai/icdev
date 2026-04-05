@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """OMB M-26-04 Unbiased AI Assessor.
 
 Assesses compliance with OMB Memorandum M-26-04 — Advancing Unbiased

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Runtime Feedback Collector — test-to-source correlation for ICDEV.
+"""Runtime Feedback Collector — test-to-source correlation for ICDEV™.
 
 Phase 52 (D332, D334). Parses pytest JUnit XML output and correlates test
 results back to source functions via naming convention. Stores append-only
@@ -331,7 +331,7 @@ def main():
     )
     parser.add_argument("--xml", help="Path to JUnit XML file")
     parser.add_argument("--stdout", help="Raw pytest -v output text")
-    parser.add_argument("--project-id", help="ICDEV project ID")
+    parser.add_argument("--project-id", help="ICDEV™ project ID")
     parser.add_argument("--run-id", help="Test run identifier")
     parser.add_argument("--db-path", help="Override DB path")
     parser.add_argument("--health", action="store_true",

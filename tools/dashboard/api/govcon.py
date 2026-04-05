@@ -18,15 +18,16 @@ Integration points:
     competitor_profiler   → govcon_awards            (vendor intelligence)
 """
 
-import json
 import os
-import sqlite3
 import sys
 import uuid
-from datetime import datetime, timezone
+from tools.db.storage import get_connection
 from pathlib import Path
 
 from flask import Blueprint, jsonify, request
+
+from tools.common.helpers import now_isoformat
+from tools.dashboard.config import DEFAULT_CLASSIFICATION
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
@@ -38,14 +39,9 @@ govcon_api = Blueprint("govcon_api", __name__, url_prefix="/api/govcon")
 
 
 def _get_db():
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(DB_PATH))
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
-
-
-def _now():
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _uuid():
@@ -56,9 +52,9 @@ def _audit(conn, action, details="", actor="govcon_api"):
     """Append-only audit trail (NIST AU-2)."""
     try:
         conn.execute(
-            "INSERT INTO audit_trail (id, timestamp, event_type, actor, action, details, session_id) "
+            "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (_uuid(), _now(), "govcon.api", actor, action, details, "govcon"),
+            (_uuid(), now_isoformat(), "govcon.api", actor, action, details, "govcon"),
         )
     except Exception:
         pass
@@ -67,6 +63,7 @@ def _audit(conn, action, details="", actor="govcon_api"):
 # =====================================================================
 # SAM.gov Sync → Proposal Opportunities
 # =====================================================================
+
 
 @govcon_api.route("/sam/scan", methods=["POST"])
 def scan_sam_gov():
@@ -77,6 +74,7 @@ def scan_sam_gov():
     """
     try:
         from tools.govcon.sam_scanner import scan_sam_gov as _scan_sam
+
         data = request.get_json(silent=True) or {}
         result = _scan_sam(
             naics_filter=data.get("naics"),
@@ -151,7 +149,7 @@ def import_sam_to_proposal(sam_opp_id):
             """INSERT INTO proposal_opportunities
                (id, solicitation_number, title, agency, sub_agency, due_date,
                 naics_code, set_aside_type, rfp_url, status, classification, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'intake', 'CUI', ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'intake', ?, ?, ?)""",
             (
                 prop_id,
                 sam.get("solicitation_number", ""),
@@ -162,7 +160,9 @@ def import_sam_to_proposal(sam_opp_id):
                 sam.get("naics_code", ""),
                 sam.get("set_aside_type", ""),
                 sam.get("solicitation_number", ""),  # use as rfp_url placeholder
-                _now(), _now(),
+                DEFAULT_CLASSIFICATION,
+                now_isoformat(),
+                now_isoformat(),
             ),
         )
 
@@ -191,6 +191,7 @@ def import_sam_to_proposal(sam_opp_id):
 # Requirement Extraction → rfp_shall_statements
 # =====================================================================
 
+
 @govcon_api.route("/opportunities/<opp_id>/extract-requirements", methods=["POST"])
 def extract_requirements(opp_id):
     """POST /api/govcon/opportunities/<id>/extract-requirements
@@ -200,6 +201,7 @@ def extract_requirements(opp_id):
     """
     try:
         from tools.govcon.requirement_extractor import extract_and_store
+
         result = extract_and_store(opp_id=opp_id)
         return jsonify(result)
     except Exception as e:
@@ -229,11 +231,13 @@ def list_requirements(opp_id):
             d = s.get("domain_category", "other")
             domains[d] = domains.get(d, 0) + 1
 
-        return jsonify({
-            "statements": statements,
-            "total": len(statements),
-            "by_domain": domains,
-        })
+        return jsonify(
+            {
+                "statements": statements,
+                "total": len(statements),
+                "by_domain": domains,
+            }
+        )
     finally:
         conn.close()
 
@@ -263,15 +267,17 @@ def list_patterns():
 # Capability Mapping → icdev_capability_map
 # =====================================================================
 
+
 @govcon_api.route("/opportunities/<opp_id>/map-capabilities", methods=["POST"])
 def map_capabilities(opp_id):
     """POST /api/govcon/opportunities/<id>/map-capabilities
 
-    Map ICDEV capabilities against extracted requirements for this opportunity.
+    Map ICDEV™ capabilities against extracted requirements for this opportunity.
     Computes coverage scores and L/M/N grades.
     """
     try:
         from tools.govcon.capability_mapper import map_all_patterns
+
         result = map_all_patterns()
         return jsonify(result)
     except Exception as e:
@@ -283,6 +289,7 @@ def get_coverage(opp_id):
     """GET /api/govcon/opportunities/<id>/coverage — Capability coverage for opportunity."""
     try:
         from tools.govcon.capability_mapper import get_compliance_matrix
+
         result = get_compliance_matrix(opp_id)
         return jsonify(result)
     except Exception as e:
@@ -293,6 +300,7 @@ def get_coverage(opp_id):
 # Compliance Auto-Population → proposal_compliance_matrix
 # =====================================================================
 
+
 @govcon_api.route("/opportunities/<opp_id>/auto-compliance", methods=["POST"])
 def auto_populate_compliance(opp_id):
     """POST /api/govcon/opportunities/<id>/auto-compliance
@@ -302,6 +310,7 @@ def auto_populate_compliance(opp_id):
     """
     try:
         from tools.govcon.compliance_populator import populate_compliance_matrix
+
         result = populate_compliance_matrix(opp_id)
 
         # Also batch-create compliance items in proposal_compliance_matrix
@@ -324,15 +333,18 @@ def auto_populate_compliance(opp_id):
                                (id, opportunity_id, section_ref, requirement_text,
                                 requirement_type, compliance_status, response_summary,
                                 classification, created_at, updated_at)
-                               VALUES (?, ?, ?, ?, ?, ?, ?, 'CUI', ?, ?)""",
+                               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                             (
-                                _uuid(), opp_id,
+                                _uuid(),
+                                opp_id,
                                 item.get("domain", ""),
                                 item["statement"][:500],
                                 grade,
                                 status_map.get(grade, "not_addressed"),
                                 f"Auto: {item.get('best_capability', 'none')} ({item.get('coverage_score', 0):.0%})",
-                                _now(), _now(),
+                                DEFAULT_CLASSIFICATION,
+                                now_isoformat(),
+                                now_isoformat(),
                             ),
                         )
                         created += 1
@@ -352,6 +364,7 @@ def bid_recommendation(opp_id):
     """GET /api/govcon/opportunities/<id>/bid-recommendation — Get bid/no-bid recommendation."""
     try:
         from tools.govcon.compliance_populator import get_summary
+
         result = get_summary(opp_id)
         return jsonify(result)
     except Exception as e:
@@ -361,6 +374,7 @@ def bid_recommendation(opp_id):
 # =====================================================================
 # AI Drafting → proposal_section_drafts
 # =====================================================================
+
 
 @govcon_api.route("/opportunities/<opp_id>/auto-draft", methods=["POST"])
 def auto_draft(opp_id):
@@ -372,6 +386,7 @@ def auto_draft(opp_id):
     """
     try:
         from tools.govcon.response_drafter import draft_all_for_opportunity
+
         data = request.get_json(silent=True) or {}
         result = draft_all_for_opportunity(
             opp_id,
@@ -437,14 +452,22 @@ def approve_draft(draft_id):
                (id, section_id, opportunity_id, shall_statement_id, capability_ids,
                 draft_content, confidence, generation_model, knowledge_block_ids,
                 status, reviewed_by, reviewed_at, review_notes, created_at, classification)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved', ?, ?, ?, ?, 'CUI')""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved', ?, ?, ?, ?, ?)""",
             (
-                _uuid(), draft.get("section_id"), draft.get("opportunity_id"),
-                draft.get("shall_statement_id"), draft.get("capability_ids"),
-                draft.get("draft_content"), draft.get("confidence"),
-                draft.get("generation_model"), draft.get("knowledge_block_ids"),
-                reviewer, _now(), data.get("review_notes", ""),
-                _now(),
+                _uuid(),
+                draft.get("section_id"),
+                draft.get("opportunity_id"),
+                draft.get("shall_statement_id"),
+                draft.get("capability_ids"),
+                draft.get("draft_content"),
+                draft.get("confidence"),
+                draft.get("generation_model"),
+                draft.get("knowledge_block_ids"),
+                reviewer,
+                now_isoformat(),
+                data.get("review_notes", ""),
+                now_isoformat(),
+                DEFAULT_CLASSIFICATION,
             ),
         )
 
@@ -455,7 +478,7 @@ def approve_draft(draft_id):
             if section and section["status"] in ("not_started", "outlining"):
                 conn.execute(
                     "UPDATE proposal_sections SET status = 'drafting', notes = ?, updated_at = ? WHERE id = ?",
-                    (f"AI draft approved by {reviewer}", _now(), section_id),
+                    (f"AI draft approved by {reviewer}", now_isoformat(), section_id),
                 )
                 conn.execute(
                     "INSERT INTO proposal_status_history (entity_type, entity_id, old_status, new_status, changed_by, reason) "
@@ -489,14 +512,22 @@ def reject_draft(draft_id):
                (id, section_id, opportunity_id, shall_statement_id, capability_ids,
                 draft_content, confidence, generation_model, knowledge_block_ids,
                 status, reviewed_by, reviewed_at, review_notes, created_at, classification)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'rejected', ?, ?, ?, ?, 'CUI')""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'rejected', ?, ?, ?, ?, ?)""",
             (
-                _uuid(), draft.get("section_id"), draft.get("opportunity_id"),
-                draft.get("shall_statement_id"), draft.get("capability_ids"),
-                draft.get("draft_content"), draft.get("confidence"),
-                draft.get("generation_model"), draft.get("knowledge_block_ids"),
-                reviewer, _now(), data.get("review_notes", "Rejected"),
-                _now(),
+                _uuid(),
+                draft.get("section_id"),
+                draft.get("opportunity_id"),
+                draft.get("shall_statement_id"),
+                draft.get("capability_ids"),
+                draft.get("draft_content"),
+                draft.get("confidence"),
+                draft.get("generation_model"),
+                draft.get("knowledge_block_ids"),
+                reviewer,
+                now_isoformat(),
+                data.get("review_notes", "Rejected"),
+                now_isoformat(),
+                DEFAULT_CLASSIFICATION,
             ),
         )
 
@@ -511,11 +542,13 @@ def reject_draft(draft_id):
 # Gap Analysis
 # =====================================================================
 
+
 @govcon_api.route("/gaps", methods=["GET"])
 def get_gaps():
     """GET /api/govcon/gaps — Full gap analysis across all requirement patterns."""
     try:
         from tools.govcon.gap_analyzer import analyze_gaps
+
         result = analyze_gaps()
         return jsonify(result)
     except Exception as e:
@@ -527,6 +560,7 @@ def get_gap_recommendations():
     """GET /api/govcon/gaps/recommendations — Enhancement recommendations for gaps."""
     try:
         from tools.govcon.gap_analyzer import generate_recommendations
+
         result = generate_recommendations()
         return jsonify(result)
     except Exception as e:
@@ -538,6 +572,7 @@ def get_gap_heatmap():
     """GET /api/govcon/gaps/heatmap — Domain x Grade heatmap."""
     try:
         from tools.govcon.gap_analyzer import get_heatmap
+
         result = get_heatmap()
         return jsonify(result)
     except Exception as e:
@@ -548,11 +583,13 @@ def get_gap_heatmap():
 # Knowledge Base
 # =====================================================================
 
+
 @govcon_api.route("/knowledge-base", methods=["GET"])
 def search_knowledge_base():
     """GET /api/govcon/knowledge-base?q=&domain=&category= — Search KB."""
     try:
         from tools.govcon.knowledge_base import search_blocks, list_blocks
+
         query = request.args.get("q")
         domain = request.args.get("domain")
         category = request.args.get("category")
@@ -571,6 +608,7 @@ def create_knowledge_block():
     """POST /api/govcon/knowledge-base — Create a knowledge block."""
     try:
         from tools.govcon.knowledge_base import add_block
+
         data = request.get_json(silent=True) or {}
         result = add_block(
             title=data.get("title", ""),
@@ -589,11 +627,13 @@ def create_knowledge_block():
 # Competitor Intelligence
 # =====================================================================
 
+
 @govcon_api.route("/competitors/scan", methods=["POST"])
 def scan_awards():
     """POST /api/govcon/competitors/scan — Scan SAM.gov for award notices."""
     try:
         from tools.govcon.award_tracker import scan_awards as _scan
+
         result = _scan()
         return jsonify(result)
     except Exception as e:
@@ -605,6 +645,7 @@ def competitor_leaderboard():
     """GET /api/govcon/competitors/leaderboard — Vendor leaderboard."""
     try:
         from tools.govcon.competitor_profiler import get_leaderboard
+
         naics = request.args.get("naics")
         agency = request.args.get("agency")
         limit = int(request.args.get("limit", 20))
@@ -619,6 +660,7 @@ def competitor_profile(vendor):
     """GET /api/govcon/competitors/profile/<vendor> — Vendor profile."""
     try:
         from tools.govcon.competitor_profiler import profile_vendor
+
         result = profile_vendor(vendor)
         return jsonify(result)
     except Exception as e:
@@ -628,6 +670,7 @@ def competitor_profile(vendor):
 # =====================================================================
 # Pipeline — Full GovCon Intelligence Pipeline
 # =====================================================================
+
 
 @govcon_api.route("/pipeline/run", methods=["POST"])
 def run_pipeline():
@@ -646,6 +689,7 @@ def run_pipeline():
         if "discover" in stages:
             try:
                 from tools.govcon.sam_scanner import scan_sam_gov as _scan_sam
+
                 results["stages"]["discover"] = _scan_sam()
             except Exception as e:
                 results["stages"]["discover"] = {"status": "error", "error": str(e)}
@@ -653,6 +697,7 @@ def run_pipeline():
         if "extract" in stages:
             try:
                 from tools.govcon.requirement_extractor import extract_and_store
+
                 results["stages"]["extract"] = extract_and_store(opp_id=opp_id)
             except Exception as e:
                 results["stages"]["extract"] = {"status": "error", "error": str(e)}
@@ -660,6 +705,7 @@ def run_pipeline():
         if "map" in stages:
             try:
                 from tools.govcon.capability_mapper import map_all_patterns
+
                 results["stages"]["map"] = map_all_patterns()
             except Exception as e:
                 results["stages"]["map"] = {"status": "error", "error": str(e)}
@@ -667,6 +713,7 @@ def run_pipeline():
         if "draft" in stages and opp_id:
             try:
                 from tools.govcon.response_drafter import draft_all_for_opportunity
+
                 results["stages"]["draft"] = draft_all_for_opportunity(opp_id)
             except Exception as e:
                 results["stages"]["draft"] = {"status": "error", "error": str(e)}
@@ -680,6 +727,7 @@ def run_pipeline():
 # Questions to Government (D-QTG-1 through D-QTG-5)
 # =====================================================================
 
+
 @govcon_api.route("/opportunities/<opp_id>/generate-questions", methods=["POST"])
 def generate_questions(opp_id):
     """POST /api/govcon/opportunities/<id>/generate-questions
@@ -689,6 +737,7 @@ def generate_questions(opp_id):
     """
     try:
         from tools.govcon.question_generator import generate_and_store
+
         data = request.get_json(silent=True) or {}
         result = generate_and_store(
             opp_id=opp_id,
@@ -769,20 +818,24 @@ def create_question(opp_id):
         next_num = (row["mx"] or 0) + 1
 
         q_id = _uuid()
-        now = _now()
+        now = now_isoformat()
         conn.execute(
             """INSERT INTO proposal_questions
                (id, opportunity_id, question_number, question_text, category, priority,
                 source, rfp_section_ref, status, created_by, classification, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, 'manual', ?, 'draft', ?, 'CUI', ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, 'manual', ?, 'draft', ?, ?, ?, ?)""",
             (
-                q_id, opp_id, next_num,
+                q_id,
+                opp_id,
+                next_num,
                 data["question_text"],
                 data.get("category", "scope"),
                 data.get("priority", "medium"),
                 data.get("rfp_section_ref", ""),
                 data.get("created_by", "govcon_api"),
-                now, now,
+                DEFAULT_CLASSIFICATION,
+                now,
+                now,
             ),
         )
 
@@ -815,9 +868,10 @@ def update_question(q_id):
             return jsonify({"error": "No valid fields to update"}), 400
 
         sets = ", ".join(f"{k} = ?" for k in updates)
-        vals = list(updates.values()) + [_now(), q_id]
+        vals = list(updates.values()) + [now_isoformat(), q_id]
         conn.execute(
-            f"UPDATE proposal_questions SET {sets}, updated_at = ? WHERE id = ?", vals
+            f"UPDATE proposal_questions SET {sets}, updated_at = ? WHERE id = ?",
+            vals,  # nosec B608 -- table/column names are internal constants, not user input
         )
         _audit(conn, "update_question", f"question={q_id}, fields={list(updates.keys())}")
         conn.commit()
@@ -854,11 +908,9 @@ def change_question_status(q_id):
         }
         allowed = valid_transitions.get(old_status, [])
         if new_status not in allowed:
-            return jsonify({
-                "error": f"Invalid transition: {old_status} → {new_status}. Allowed: {allowed}"
-            }), 400
+            return jsonify({"error": f"Invalid transition: {old_status} → {new_status}. Allowed: {allowed}"}), 400
 
-        now = _now()
+        now = now_isoformat()
         extra_fields = ""
         extra_vals = []
 
@@ -870,7 +922,7 @@ def change_question_status(q_id):
             extra_vals = [now]
 
         conn.execute(
-            f"UPDATE proposal_questions SET status = ?, updated_at = ?{extra_fields} WHERE id = ?",
+            f"UPDATE proposal_questions SET status = ?, updated_at = ?{extra_fields} WHERE id = ?",  # nosec B608 -- table/column names are internal constants, not user input
             [new_status, now] + extra_vals + [q_id],
         )
 
@@ -879,14 +931,12 @@ def change_question_status(q_id):
             "INSERT INTO proposal_status_history "
             "(entity_type, entity_id, old_status, new_status, changed_by, reason) "
             "VALUES (?, ?, ?, ?, ?, ?)",
-            ("question", q_id, old_status, new_status,
-             data.get("changed_by", "govcon_api"), data.get("notes", "")),
+            ("question", q_id, old_status, new_status, data.get("changed_by", "govcon_api"), data.get("notes", "")),
         )
 
         _audit(conn, "change_question_status", f"question={q_id}, {old_status}→{new_status}")
         conn.commit()
-        return jsonify({"status": "ok", "question_id": q_id,
-                        "old_status": old_status, "new_status": new_status})
+        return jsonify({"status": "ok", "question_id": q_id, "old_status": old_status, "new_status": new_status})
     finally:
         conn.close()
 
@@ -911,7 +961,7 @@ def bulk_status_change(opp_id):
             "answered": [],
         }
 
-        now = _now()
+        now = now_isoformat()
         changed = 0
         skipped = 0
 
@@ -953,6 +1003,7 @@ def export_questions_endpoint(opp_id):
     """POST /api/govcon/opportunities/<id>/questions/export — Export to HTML document."""
     try:
         from tools.govcon.question_exporter import export_questions
+
         data = request.get_json(silent=True) or {}
         result = export_questions(
             opp_id=opp_id,
@@ -970,6 +1021,7 @@ def upload_amendment_endpoint(opp_id):
     """POST /api/govcon/opportunities/<id>/amendments — Upload amendment (file or text)."""
     try:
         from tools.govcon.amendment_tracker import upload_amendment
+
         data = request.get_json(silent=True) or {}
         # Validate file_path to prevent path traversal — restrict to data/ and .tmp/
         file_path = data.get("file_path")
@@ -998,6 +1050,7 @@ def list_amendments_endpoint(opp_id):
     """GET /api/govcon/opportunities/<id>/amendments — List amendments."""
     try:
         from tools.govcon.amendment_tracker import list_amendments
+
         result = list_amendments(opp_id)
         return jsonify(result)
     except Exception as e:
@@ -1009,6 +1062,7 @@ def get_amendment_diff(amendment_id):
     """GET /api/govcon/amendments/<id>/diff — Get diff data for amendment."""
     try:
         from tools.govcon.amendment_tracker import compute_diff
+
         result = compute_diff(amendment_id)
         return jsonify(result)
     except Exception as e:
@@ -1020,6 +1074,7 @@ def record_response_endpoint(q_id):
     """POST /api/govcon/questions/<id>/response — Record government Q&A response."""
     try:
         from tools.govcon.amendment_tracker import record_response
+
         data = request.get_json(silent=True) or {}
         if not data.get("response_text"):
             return jsonify({"error": "response_text is required"}), 400
@@ -1041,6 +1096,7 @@ def record_response_endpoint(q_id):
 # =====================================================================
 # Pipeline — Full GovCon Intelligence Pipeline
 # =====================================================================
+
 
 @govcon_api.route("/pipeline/status", methods=["GET"])
 def pipeline_status():
@@ -1068,9 +1124,9 @@ def pipeline_status():
         ).fetchone()["c"]
 
         # Knowledge base
-        kb_total = conn.execute(
-            "SELECT COUNT(*) as c FROM proposal_knowledge_base WHERE status = 'active'"
-        ).fetchone()["c"]
+        kb_total = conn.execute("SELECT COUNT(*) as c FROM proposal_knowledge_base WHERE status = 'active'").fetchone()[
+            "c"
+        ]
 
         # Awards
         awards_total = conn.execute("SELECT COUNT(*) as c FROM govcon_awards").fetchone()["c"]
@@ -1080,15 +1136,17 @@ def pipeline_status():
             "SELECT domain_category, COUNT(*) as c FROM rfp_shall_statements GROUP BY domain_category ORDER BY c DESC"
         ).fetchall()
 
-        return jsonify({
-            "status": "ok",
-            "sam_gov": {"total": sam_total, "active": sam_active},
-            "requirements": {"shall_statements": shall_total, "patterns": pattern_total},
-            "capability_mapping": {"mapped": mapped},
-            "drafts": {"total": drafts_total, "pending_review": drafts_pending, "approved": drafts_approved},
-            "knowledge_base": {"active_blocks": kb_total},
-            "awards": {"total": awards_total},
-            "domain_distribution": {d["domain_category"]: d["c"] for d in domains},
-        })
+        return jsonify(
+            {
+                "status": "ok",
+                "sam_gov": {"total": sam_total, "active": sam_active},
+                "requirements": {"shall_statements": shall_total, "patterns": pattern_total},
+                "capability_mapping": {"mapped": mapped},
+                "drafts": {"total": drafts_total, "pending_review": drafts_pending, "approved": drafts_approved},
+                "knowledge_base": {"active_blocks": kb_total},
+                "awards": {"total": awards_total},
+                "domain_distribution": {d["domain_category"]: d["c"] for d in domains},
+            }
+        )
     finally:
         conn.close()

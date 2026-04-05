@@ -9,16 +9,16 @@
 | Status | Implemented |
 | Priority | P2 |
 | Dependencies | Phase 35 (Innovation Engine) |
-| Author | ICDEV Architect Agent |
+| Author | ICDEV™ Architect Agent |
 | Date | 2026-02-27 |
 
 ---
 
 ## 1. Problem Statement
 
-ICDEV's Innovation Engine (Phase 35) discovers technical improvement opportunities from CVE feeds, package registries, standards bodies, and internal telemetry. However, it has no visibility into *customer-facing* pain points — the frustrations users voice on review sites, community forums, and GitHub issue trackers. When a product manager asks "what features are competitors missing?" or "what do users complain about most?", there is no systematic answer. Feature opportunity discovery is manual, ad hoc, and biased toward internal engineering priorities rather than customer needs.
+ICDEV™'s Innovation Engine (Phase 35) discovers technical improvement opportunities from CVE feeds, package registries, standards bodies, and internal telemetry. However, it has no visibility into *customer-facing* pain points — the frustrations users voice on review sites, community forums, and GitHub issue trackers. When a product manager asks "what features are competitors missing?" or "what do users complain about most?", there is no systematic answer. Feature opportunity discovery is manual, ad hoc, and biased toward internal engineering priorities rather than customer needs.
 
-Without customer-centric intelligence, ICDEV cannot:
+Without customer-centric intelligence, ICDEV™ cannot:
 - Identify unmet user needs that competitors fail to address
 - Quantify pain point frequency and severity from real user feedback
 - Detect emerging feature trends before they become table stakes

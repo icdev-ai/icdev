@@ -3,8 +3,8 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""Pull-Based Telemetry Collector for ICDEV Child Apps (D210).
+# POC: ICDEV™ System Administrator
+"""Pull-Based Telemetry Collector for ICDEV™ Child Apps (D210).
 
 Collects health and performance telemetry from child applications
 via pull-based HTTP requests to their health endpoints. Stores
@@ -18,13 +18,13 @@ Architecture:
 
 Usage:
     from icdev.tools.registry.telemetry_collector import TelemetryCollector
-from icdev._paths import get_project_root
     collector = TelemetryCollector()
     heartbeat = collector.collect_heartbeat("child-abc", "http://localhost:8445/health")
     collector.store_heartbeat(heartbeat)
     summary = collector.get_health_summary("child-abc")
 """
 
+from icdev._paths import get_project_root
 import hashlib
 import json
 import sqlite3
@@ -52,7 +52,7 @@ except Exception:
 
 
 class TelemetryCollector:
-    """Pull-based telemetry collector for ICDEV child applications.
+    """Pull-based telemetry collector for ICDEV™ child applications.
 
     Polls child app health endpoints and stores telemetry in
     the child_telemetry table. Used by the evolution engine to

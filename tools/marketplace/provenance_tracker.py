@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Marketplace Provenance Tracker — Supply chain provenance for published assets.
 
 Tracks the full provenance chain of marketplace assets: who published what,
@@ -38,10 +38,10 @@ import argparse
 import hashlib
 import json
 import os
-import sqlite3
 import sys
 import uuid
-from datetime import datetime, timezone
+from tools.common.helpers import now_iso
+from tools.db.storage import get_connection
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -56,32 +56,30 @@ DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db
 # Graceful imports
 try:
     from tools.saas.artifacts.signer import verify_signature
+
     _HAS_SIGNER = True
 except ImportError:
     _HAS_SIGNER = False
 
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
+
     def audit_log_event(**kwargs):
         return -1
 
 
 def _get_db(db_path=None):
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(path))
     return conn
 
 
 def _gen_id(prefix="prov"):
     return f"{prefix}-{uuid.uuid4().hex[:12]}"
-
-
-def _now():
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _sha256_dir(dir_path):
@@ -101,8 +99,10 @@ def _sha256_dir(dir_path):
 # Provenance operations
 # ---------------------------------------------------------------------------
 
-def record_provenance(asset_id, version_id, publisher_user, publisher_org=None,
-                      source_repo=None, build_id=None, db_path=None):
+
+def record_provenance(
+    asset_id, version_id, publisher_user, publisher_org=None, source_repo=None, build_id=None, db_path=None
+):
     """Record provenance metadata for an asset version.
 
     Updates the marketplace_versions record with provenance fields
@@ -111,16 +111,12 @@ def record_provenance(asset_id, version_id, publisher_user, publisher_org=None,
     conn = _get_db(db_path)
     try:
         # Get version details
-        version = conn.execute(
-            "SELECT * FROM marketplace_versions WHERE id = ?", (version_id,)
-        ).fetchone()
+        version = conn.execute("SELECT * FROM marketplace_versions WHERE id = ?", (version_id,)).fetchone()
         if not version:
             raise ValueError(f"Version not found: {version_id}")
 
         # Get asset details
-        asset = conn.execute(
-            "SELECT * FROM marketplace_assets WHERE id = ?", (asset_id,)
-        ).fetchone()
+        asset = conn.execute("SELECT * FROM marketplace_assets WHERE id = ?", (asset_id,)).fetchone()
         if not asset:
             raise ValueError(f"Asset not found: {asset_id}")
 
@@ -157,17 +153,13 @@ def record_provenance(asset_id, version_id, publisher_user, publisher_org=None,
                 "signature": version["signature"],
                 "signed_by": version["signed_by"],
             },
-            "dependencies": [
-                {"slug": d["depends_on_slug"], "constraint": d["version_constraint"]}
-                for d in deps
-            ],
+            "dependencies": [{"slug": d["depends_on_slug"], "constraint": d["version_constraint"]} for d in deps],
             "security_scans": [
-                {"gate": s["gate_name"], "status": s["status"], "findings": s["findings_count"]}
-                for s in scans
+                {"gate": s["gate_name"], "status": s["status"], "findings": s["findings_count"]} for s in scans
             ],
             "classification": asset["classification"],
             "impact_level": asset["impact_level"],
-            "recorded_at": _now(),
+            "recorded_at": now_iso(),
         }
 
         # Store provenance in version metadata
@@ -201,9 +193,7 @@ def get_provenance(asset_id, version_id=None, db_path=None):
     conn = _get_db(db_path)
     try:
         if version_id:
-            version = conn.execute(
-                "SELECT * FROM marketplace_versions WHERE id = ?", (version_id,)
-            ).fetchone()
+            version = conn.execute("SELECT * FROM marketplace_versions WHERE id = ?", (version_id,)).fetchone()
         else:
             version = conn.execute(
                 """SELECT * FROM marketplace_versions
@@ -230,9 +220,7 @@ def verify_provenance(asset_id, version_id, asset_path, public_key_path=None, db
     """Verify provenance: check hash matches, signature valid."""
     conn = _get_db(db_path)
     try:
-        version = conn.execute(
-            "SELECT * FROM marketplace_versions WHERE id = ?", (version_id,)
-        ).fetchone()
+        version = conn.execute("SELECT * FROM marketplace_versions WHERE id = ?", (version_id,)).fetchone()
         if not version:
             return {"verified": False, "reason": "Version not found"}
 
@@ -251,9 +239,7 @@ def verify_provenance(asset_id, version_id, asset_path, public_key_path=None, db
         # Check 2: Signature verification (if available)
         if version["signature"] and _HAS_SIGNER and public_key_path:
             try:
-                sig_ok = verify_signature(
-                    str(asset_path), version["signature"], public_key_path
-                )
+                sig_ok = verify_signature(str(asset_path), version["signature"], public_key_path)
                 results["checks"]["signature"] = {
                     "status": "pass" if sig_ok else "fail",
                     "signed_by": version["signed_by"],
@@ -279,10 +265,7 @@ def verify_provenance(asset_id, version_id, asset_path, public_key_path=None, db
             "scan_count": scans["cnt"],
         }
 
-        all_pass = all(
-            c.get("status") in ("pass", "skipped")
-            for c in results["checks"].values()
-        )
+        all_pass = all(c.get("status") in ("pass", "skipped") for c in results["checks"].values())
         results["verified"] = all_pass
         return results
     finally:
@@ -293,9 +276,7 @@ def generate_report(asset_id, db_path=None):
     """Generate a comprehensive provenance report for an asset."""
     conn = _get_db(db_path)
     try:
-        asset = conn.execute(
-            "SELECT * FROM marketplace_assets WHERE id = ?", (asset_id,)
-        ).fetchone()
+        asset = conn.execute("SELECT * FROM marketplace_assets WHERE id = ?", (asset_id,)).fetchone()
         if not asset:
             return {"error": "Asset not found"}
 
@@ -307,15 +288,17 @@ def generate_report(asset_id, db_path=None):
         version_chain = []
         for v in versions:
             meta = json.loads(v["metadata"]) if v["metadata"] else {}
-            version_chain.append({
-                "version": v["version"],
-                "hash": v["sha256_hash"],
-                "signed": bool(v["signature"]),
-                "signed_by": v["signed_by"],
-                "published_by": v["published_by"],
-                "created_at": v["created_at"],
-                "provenance": meta.get("provenance"),
-            })
+            version_chain.append(
+                {
+                    "version": v["version"],
+                    "hash": v["sha256_hash"],
+                    "signed": bool(v["signature"]),
+                    "signed_by": v["signed_by"],
+                    "published_by": v["published_by"],
+                    "created_at": v["created_at"],
+                    "provenance": meta.get("provenance"),
+                }
+            )
 
         deps = conn.execute(
             "SELECT * FROM marketplace_dependencies WHERE asset_id = ?",
@@ -341,7 +324,7 @@ def generate_report(asset_id, db_path=None):
             "version_chain": version_chain,
             "dependencies": [dict(d) for d in deps],
             "installations": [dict(i) for i in installations],
-            "generated_at": _now(),
+            "generated_at": now_iso(),
         }
     finally:
         conn.close()
@@ -351,7 +334,7 @@ def generate_report(asset_id, db_path=None):
 # CLI
 # ---------------------------------------------------------------------------
 def main():
-    parser = argparse.ArgumentParser(description="ICDEV Marketplace Provenance Tracker")
+    parser = argparse.ArgumentParser(description="ICDEV™ Marketplace Provenance Tracker")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--db-path", type=Path, default=None)
 
@@ -378,11 +361,13 @@ def main():
             if not all([args.version_id, args.publisher_user]):
                 parser.error("--record requires --version-id, --publisher-user")
             result = record_provenance(
-                asset_id=args.asset_id, version_id=args.version_id,
+                asset_id=args.asset_id,
+                version_id=args.version_id,
                 publisher_user=args.publisher_user,
                 publisher_org=args.publisher_org,
                 source_repo=args.source_repo,
-                build_id=args.build_id, db_path=db_path,
+                build_id=args.build_id,
+                db_path=db_path,
             )
         elif args.get:
             result = get_provenance(args.asset_id, args.version_id, db_path)
@@ -390,8 +375,11 @@ def main():
             if not all([args.version_id, args.asset_path]):
                 parser.error("--verify requires --version-id, --asset-path")
             result = verify_provenance(
-                args.asset_id, args.version_id, args.asset_path,
-                args.public_key, db_path,
+                args.asset_id,
+                args.version_id,
+                args.asset_path,
+                args.public_key,
+                db_path,
             )
         elif args.report:
             result = generate_report(args.asset_id, db_path)

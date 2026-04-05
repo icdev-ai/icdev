@@ -92,7 +92,7 @@ CMD ["python", "-m", "gunicorn", "-w", "4", "-b", "0.0.0.0:8080", "src.app:creat
 | CM-7 | Minimal base image, non-root user |
 
 ## Instructions
-1. Read the goal file: `goals/build_app.md` (ATLAS workflow)
+1. Read the goal file: `goals/build_app.md` (ANVIL workflow)
 2. Use `/icdev-init` to scaffold the project
 3. Follow TDD: Write tests FIRST (RED), then implement (GREEN), then refactor
 4. Run security scanning after each feature

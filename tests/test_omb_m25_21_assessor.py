@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Tests for OMB M-25-21 High-Impact AI assessor (Phase 48).
 
 Coverage: framework metadata, base class inheritance, catalog loading,
@@ -15,7 +15,6 @@ import json
 import sqlite3
 import sys
 from pathlib import Path
-from unittest.mock import patch, MagicMock
 
 import pytest
 
@@ -168,6 +167,7 @@ def mock_db_path(tmp_path):
 # Import & Metadata
 # ============================================================
 
+
 class TestImportAndMetadata:
     def test_import(self):
         """OMBM2521Assessor can be imported."""
@@ -201,6 +201,7 @@ class TestImportAndMetadata:
 # ============================================================
 # Catalog Loading
 # ============================================================
+
 
 class TestCatalogLoading:
     def test_catalog_file_exists(self):
@@ -240,6 +241,7 @@ class TestCatalogLoading:
 # Automated Checks — Assessment
 # ============================================================
 
+
 class TestAssessment:
     def test_automated_checks_returns_dict(self, mock_db_path):
         """get_automated_checks returns a dict with string values."""
@@ -272,10 +274,8 @@ class TestAssessment:
         project = {"id": "proj-test"}
         results = assessor.get_automated_checks(project, project_dir=None)
         # Inventory keys must not be satisfied on an empty DB
-        assert results.get("M25-INV-1") != "satisfied", \
-            "M25-INV-1 should not be satisfied with empty inventory"
-        assert results.get("M25-INV-2") != "satisfied", \
-            "M25-INV-2 should not be satisfied with empty inventory"
+        assert results.get("M25-INV-1") != "satisfied", "M25-INV-1 should not be satisfied with empty inventory"
+        assert results.get("M25-INV-2") != "satisfied", "M25-INV-2 should not be satisfied with empty inventory"
 
     def test_inventory_check_satisfied_with_data(self, mock_db_path):
         """Populated ai_use_case_inventory -> inventory check satisfied."""
@@ -299,8 +299,7 @@ class TestAssessment:
         """Populated ai_telemetry -> telemetry check satisfied."""
         conn = sqlite3.connect(str(mock_db_path))
         conn.execute(
-            "INSERT INTO ai_telemetry (project_id, agent_id, event_type, model_id) "
-            "VALUES (?, ?, ?, ?)",
+            "INSERT INTO ai_telemetry (project_id, agent_id, event_type, model_id) VALUES (?, ?, ?, ?)",
             ("proj-test", "builder-agent", "llm_call", "claude-opus-4"),
         )
         conn.commit()
@@ -327,6 +326,7 @@ class TestAssessment:
 # ============================================================
 # Gate Evaluation
 # ============================================================
+
 
 class TestGateEvaluation:
     def test_gate_not_assessed_empty(self, mock_db_path):

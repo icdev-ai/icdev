@@ -36,7 +36,7 @@ STIG-hardened Dockerfiles, CI/CD pipeline stages, and NIST 800-53 control mappin
 2. Command generates framework-specific plan
 3. User reviews and customizes plan
 4. Use `/icdev-init` to scaffold the project
-5. Follow ATLAS workflow for implementation
+5. Follow ANVIL workflow for implementation
 6. TDD cycle: RED → GREEN → REFACTOR
 
 ## Context
@@ -57,7 +57,7 @@ These commands embody the 12 Leverage Points framework:
 6. **Types** — Strong typing (dataclasses, Pydantic, DB schemas)
 7. **Docs** — Clear instructions (CLAUDE.md, SKILL.md, goals)
 8. **Tests** — Validation (pytest + behave + Playwright + gates)
-9. **Architecture** — System design (GOTCHA layers, ATLAS workflow)
+9. **Architecture** — System design (FORGE layers, ANVIL workflow)
 10. **Plans** — Implementation blueprints (framework commands)
 11. **Templates** — Reusable patterns (context/ JSON, hardprompts/)
 12. **Workflows** — Orchestration logic (goals/, CI/CD pipelines)

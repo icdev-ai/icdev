@@ -18,7 +18,7 @@ import pytest
 def test_post_atlas_reflection_imports():
     """Verify module can be imported without errors."""
     try:
-        import tools.atlas.post_atlas_reflection
+        import tools.atlas.post_atlas_reflection  # noqa: F401
     except ImportError as e:
         pytest.skip(f"Import dependency missing: {e}")
 

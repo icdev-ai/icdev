@@ -113,89 +113,70 @@ class TestRecordEntity(unittest.TestCase):
     def test_record_entity_stores_in_db(self):
         eid = self.recorder.record_entity("prompt", "User query")
         conn = sqlite3.connect(str(self.db_path))
-        row = conn.execute(
-            "SELECT * FROM prov_entities WHERE id = ?", (eid,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM prov_entities WHERE id = ?", (eid,)).fetchone()
         conn.close()
         self.assertIsNotNone(row)
 
     def test_record_entity_with_content_hash(self):
-        eid = self.recorder.record_entity(
-            "response", "Model output", content_hash="abc123"
-        )
+        eid = self.recorder.record_entity("response", "Model output", content_hash="abc123")
         conn = sqlite3.connect(str(self.db_path))
         conn.row_factory = sqlite3.Row
-        row = conn.execute(
-            "SELECT content_hash FROM prov_entities WHERE id = ?", (eid,)
-        ).fetchone()
+        row = conn.execute("SELECT content_hash FROM prov_entities WHERE id = ?", (eid,)).fetchone()
         conn.close()
         self.assertEqual(row["content_hash"], "abc123")
 
     def test_record_entity_auto_hash_from_content(self):
         """When content provided without hash, hash is auto-computed."""
-        eid = self.recorder.record_entity(
-            "document", "Test doc", content="Hello world"
-        )
+        eid = self.recorder.record_entity("document", "Test doc", content="Hello world")
         conn = sqlite3.connect(str(self.db_path))
         conn.row_factory = sqlite3.Row
-        row = conn.execute(
-            "SELECT content_hash FROM prov_entities WHERE id = ?", (eid,)
-        ).fetchone()
+        row = conn.execute("SELECT content_hash FROM prov_entities WHERE id = ?", (eid,)).fetchone()
         conn.close()
         self.assertIsNotNone(row["content_hash"])
         self.assertEqual(len(row["content_hash"]), 64)  # SHA-256 hex
 
     def test_content_not_stored_by_default(self):
         """Content should NOT be stored when content tracing is disabled."""
-        eid = self.recorder.record_entity(
-            "prompt", "Test", content="Secret content"
-        )
+        eid = self.recorder.record_entity("prompt", "Test", content="Secret content")
         conn = sqlite3.connect(str(self.db_path))
         conn.row_factory = sqlite3.Row
-        row = conn.execute(
-            "SELECT content FROM prov_entities WHERE id = ?", (eid,)
-        ).fetchone()
+        row = conn.execute("SELECT content FROM prov_entities WHERE id = ?", (eid,)).fetchone()
         conn.close()
         self.assertIsNone(row["content"])
 
     @unittest.mock.patch.dict(os.environ, {"ICDEV_CONTENT_TRACING_ENABLED": "true"})
     def test_content_stored_when_tracing_enabled(self):
         """Content stored when ICDEV_CONTENT_TRACING_ENABLED=true."""
-        eid = self.recorder.record_entity(
-            "prompt", "Test", content="Visible content"
-        )
+        eid = self.recorder.record_entity("prompt", "Test", content="Visible content")
         conn = sqlite3.connect(str(self.db_path))
         conn.row_factory = sqlite3.Row
-        row = conn.execute(
-            "SELECT content FROM prov_entities WHERE id = ?", (eid,)
-        ).fetchone()
+        row = conn.execute("SELECT content FROM prov_entities WHERE id = ?", (eid,)).fetchone()
         conn.close()
         self.assertEqual(row["content"], "Visible content")
 
     def test_record_entity_with_trace_id(self):
         eid = self.recorder.record_entity(
-            "code", "Generated module",
-            trace_id="abc123", span_id="def456",
+            "code",
+            "Generated module",
+            trace_id="abc123",
+            span_id="def456",
         )
         conn = sqlite3.connect(str(self.db_path))
         conn.row_factory = sqlite3.Row
-        row = conn.execute(
-            "SELECT trace_id, span_id FROM prov_entities WHERE id = ?", (eid,)
-        ).fetchone()
+        row = conn.execute("SELECT trace_id, span_id FROM prov_entities WHERE id = ?", (eid,)).fetchone()
         conn.close()
         self.assertEqual(row["trace_id"], "abc123")
         self.assertEqual(row["span_id"], "def456")
 
     def test_record_entity_with_attributes(self):
         eid = self.recorder.record_entity(
-            "artifact", "SBOM",
+            "artifact",
+            "SBOM",
             attributes={"format": "cyclonedx", "version": "1.5"},
         )
         conn = sqlite3.connect(str(self.db_path))
         conn.row_factory = sqlite3.Row
-        row = conn.execute(
-            "SELECT attributes FROM prov_entities WHERE id = ?", (eid,)
-        ).fetchone()
+        row = conn.execute("SELECT attributes FROM prov_entities WHERE id = ?", (eid,)).fetchone()
         conn.close()
         attrs = json.loads(row["attributes"])
         self.assertEqual(attrs["format"], "cyclonedx")
@@ -227,24 +208,21 @@ class TestRecordActivity(unittest.TestCase):
         aid = self.recorder.record_activity("tool_invocation", "ssp_generate")
         conn = sqlite3.connect(str(self.db_path))
         conn.row_factory = sqlite3.Row
-        row = conn.execute(
-            "SELECT * FROM prov_activities WHERE id = ?", (aid,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM prov_activities WHERE id = ?", (aid,)).fetchone()
         conn.close()
         self.assertIsNotNone(row)
         self.assertEqual(row["activity_type"], "tool_invocation")
 
     def test_record_activity_with_timestamps(self):
         aid = self.recorder.record_activity(
-            "decision", "Architecture choice",
+            "decision",
+            "Architecture choice",
             start_time="2025-01-01T00:00:00Z",
             end_time="2025-01-01T00:01:00Z",
         )
         conn = sqlite3.connect(str(self.db_path))
         conn.row_factory = sqlite3.Row
-        row = conn.execute(
-            "SELECT start_time, end_time FROM prov_activities WHERE id = ?", (aid,)
-        ).fetchone()
+        row = conn.execute("SELECT start_time, end_time FROM prov_activities WHERE id = ?", (aid,)).fetchone()
         conn.close()
         self.assertEqual(row["start_time"], "2025-01-01T00:00:00Z")
 
@@ -278,9 +256,7 @@ class TestRecordRelation(unittest.TestCase):
         self.recorder.record_relation("wasGeneratedBy", eid, aid)
         conn = sqlite3.connect(str(self.db_path))
         conn.row_factory = sqlite3.Row
-        row = conn.execute(
-            "SELECT * FROM prov_relations WHERE subject_id = ?", (eid,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM prov_relations WHERE subject_id = ?", (eid,)).fetchone()
         conn.close()
         self.assertIsNotNone(row)
         self.assertEqual(row["relation_type"], "wasGeneratedBy")

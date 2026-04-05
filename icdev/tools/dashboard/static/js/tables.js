@@ -1,9 +1,9 @@
 /**
  * CUI // SP-CTI
  *
- * ICDEV Dashboard - Table Enhancement Module
+ * ICDEV™ Dashboard - Table Enhancement Module
  * Adds search, sort, column filter, CSV export, and row count to all dashboard tables.
- * Extends window.ICDEV (created by api.js, extended by ux.js).
+ * Extends window.ICDEV™ (created by api.js, extended by ux.js).
  *
  * No external dependencies. Works with the rendered DOM only.
  */
@@ -11,7 +11,7 @@
 (function () {
     "use strict";
 
-    var NS = window.ICDEV || (window.ICDEV = {});
+    var NS = window.ICDEV™ || (window.ICDEV™ = {});
 
     // ========================================================================
     // Constants

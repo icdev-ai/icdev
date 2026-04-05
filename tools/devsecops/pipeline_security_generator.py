@@ -17,7 +17,7 @@ Usage:
 import argparse
 import json
 import os
-import sqlite3
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -34,6 +34,7 @@ except ImportError:
 # Config
 # ---------------------------------------------------------------------------
 
+
 def _load_config() -> dict:
     """Load DevSecOps config from YAML."""
     config_path = BASE_DIR / "args" / "devsecops_config.yaml"
@@ -44,8 +45,7 @@ def _load_config() -> dict:
 
 
 def _get_db():
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
@@ -54,10 +54,7 @@ def _get_profile(project_id: str) -> dict:
     """Get DevSecOps profile for project."""
     conn = _get_db()
     try:
-        row = conn.execute(
-            "SELECT * FROM devsecops_profiles WHERE project_id = ?",
-            (project_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM devsecops_profiles WHERE project_id = ?", (project_id,)).fetchone()
         if not row:
             return {}
         return {
@@ -72,6 +69,7 @@ def _get_profile(project_id: str) -> dict:
 # ---------------------------------------------------------------------------
 # Stage generators — one function per DevSecOps pipeline stage
 # ---------------------------------------------------------------------------
+
 
 def _gen_sast(config: dict, stage_cfg: dict) -> str:
     """SAST stage — static analysis security testing."""
@@ -111,7 +109,7 @@ devsecops:dast:
   image: ghcr.io/zaproxy/zaproxy:stable
   script:
     - echo "Running DAST (OWASP ZAP baseline scan)..."
-    - zap-baseline.py -t ${APP_URL:-http://localhost:8080} -r devsecops-dast-report.html -J devsecops-dast-report.json || true
+    - zap-baseline.py -t ${APP_URL:-http://localhost:8080} -r devsecops-dast-report.html -J devsecops-dast-report.json || true  # noqa: E501
   artifacts:
     when: always
     paths:
@@ -249,7 +247,7 @@ devsecops:sbom-attestation:
     - echo "Attesting SBOM..."
     - |
       if command -v cosign &>/dev/null; then
-        cosign attest --key env://COSIGN_PRIVATE_KEY --predicate devsecops-sbom.json --type cyclonedx ${IMAGE_NAME}:${IMAGE_TAG}
+        cosign attest --key env://COSIGN_PRIVATE_KEY --predicate devsecops-sbom.json --type cyclonedx ${IMAGE_NAME}:${IMAGE_TAG}  # noqa: E501
       else
         echo "WARN: cosign not available — SBOM generated but not attested"
       fi
@@ -393,6 +391,7 @@ STAGE_GENERATORS = {
 # Main generation
 # ---------------------------------------------------------------------------
 
+
 def generate_security_stages(project_id: str, profile: dict = None) -> dict:
     """Generate GitLab CI security stages based on DevSecOps profile.
 
@@ -406,8 +405,10 @@ def generate_security_stages(project_id: str, profile: dict = None) -> dict:
     if profile is None:
         profile = _get_profile(project_id)
         if not profile:
-            return {"error": f"No DevSecOps profile for project {project_id}",
-                    "hint": "Run profile_manager.py --create first"}
+            return {
+                "error": f"No DevSecOps profile for project {project_id}",
+                "hint": "Run profile_manager.py --create first",
+            }
 
     config = _load_config()
     active_stages = profile.get("active_stages", [])
@@ -421,7 +422,7 @@ def generate_security_stages(project_id: str, profile: dict = None) -> dict:
 # =============================================================================
 # DevSecOps Security Stages (Profile: {maturity})
 # Generated: {datetime.now(timezone.utc).isoformat()}
-# Active stages: {', '.join(active_stages)}
+# Active stages: {", ".join(active_stages)}
 # =============================================================================
 """)
 
@@ -447,6 +448,7 @@ def generate_security_stages(project_id: str, profile: dict = None) -> dict:
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+
 
 def main():
     parser = argparse.ArgumentParser(description="DevSecOps Pipeline Security Generator")

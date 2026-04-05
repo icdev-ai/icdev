@@ -3,7 +3,7 @@
 """A2A v0.3 Agent Discovery Server.
 
 Provides a centralized agent discovery endpoint that returns v0.3 Agent Cards
-for all registered ICDEV agents. Supports capability-based filtering and
+for all registered ICDEV™ agents. Supports capability-based filtering and
 health-aware routing.
 
 Architecture Decisions:
@@ -21,11 +21,14 @@ Usage:
 import argparse
 import json
 import sqlite3
-import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(BASE_DIR))  # noqa: F821
+
+from tools.db.storage import get_connection  # noqa: E402
+
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 
@@ -33,8 +36,7 @@ def _get_connection(db_path=None):
     """Get database connection."""
     path = db_path or DB_PATH
     if path.exists():
-        conn = sqlite3.connect(str(path))
-        conn.row_factory = sqlite3.Row
+        conn = get_connection(db_path=str(path))
         return conn
     return None
 
@@ -55,9 +57,7 @@ def discover_agents(db_path=None) -> list:
 
     if conn:
         try:
-            rows = conn.execute(
-                "SELECT id, name, url, status, last_heartbeat FROM agent_registry"
-            ).fetchall()
+            rows = conn.execute("SELECT id, name, url, status, last_heartbeat FROM agent_registry").fetchall()
             for row in rows:
                 health_map[row["id"]] = {
                     "status": row["status"],
@@ -72,15 +72,17 @@ def discover_agents(db_path=None) -> list:
     for agent_id, card in sorted(cards.items()):
         agent_name = card["name"]
         health = health_map.get(agent_name, {})
-        agents.append({
-            "agent_id": agent_id,
-            "card": card,
-            "health": {
-                "status": health.get("status", "unknown"),
-                "last_heartbeat": health.get("last_heartbeat"),
-                "registered_url": health.get("url"),
-            },
-        })
+        agents.append(
+            {
+                "agent_id": agent_id,
+                "card": card,
+                "health": {
+                    "status": health.get("status", "unknown"),
+                    "last_heartbeat": health.get("last_heartbeat"),
+                    "registered_url": health.get("url"),
+                },
+            }
+        )
 
     return agents
 
@@ -100,13 +102,15 @@ def find_agent_for_skill(skill_id: str, db_path=None) -> list:
         skills = agent["card"].get("skills", [])
         for skill in skills:
             if skill["id"] == skill_id:
-                matches.append({
-                    "agent_id": agent["agent_id"],
-                    "agent_name": agent["card"]["name"],
-                    "url": agent["card"]["url"],
-                    "skill": skill,
-                    "health_status": agent["health"]["status"],
-                })
+                matches.append(
+                    {
+                        "agent_id": agent["agent_id"],
+                        "agent_name": agent["card"]["name"],
+                        "url": agent["card"]["url"],
+                        "skill": skill,
+                        "health_status": agent["health"]["status"],
+                    }
+                )
                 break
     return matches
 
@@ -125,13 +129,15 @@ def find_agents_by_capability(capability: str, db_path=None) -> list:
     for agent in agents:
         caps = agent["card"].get("capabilities", {})
         if caps.get(capability, False):
-            matches.append({
-                "agent_id": agent["agent_id"],
-                "agent_name": agent["card"]["name"],
-                "url": agent["card"]["url"],
-                "capability_value": caps[capability],
-                "health_status": agent["health"]["status"],
-            })
+            matches.append(
+                {
+                    "agent_id": agent["agent_id"],
+                    "agent_name": agent["card"]["name"],
+                    "url": agent["card"]["url"],
+                    "capability_value": caps[capability],
+                    "health_status": agent["health"]["status"],
+                }
+            )
     return matches
 
 
@@ -183,9 +189,7 @@ def get_discovery_summary(db_path=None) -> dict:
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="A2A v0.3 Agent Discovery Server (D344)"
-    )
+    parser = argparse.ArgumentParser(description="A2A v0.3 Agent Discovery Server (D344)")
     parser.add_argument("--list", action="store_true", help="List all discovered agents")
     parser.add_argument("--find-skill", help="Find agents providing a skill", dest="find_skill")
     parser.add_argument("--find-capability", help="Find agents with a capability", dest="find_capability")
@@ -202,11 +206,30 @@ def main():
     if args.list:
         agents = discover_agents(db)
         if args.json_output:
-            print(json.dumps({"agents": [{"agent_id": a["agent_id"], "name": a["card"]["name"], "url": a["card"]["url"], "skills": len(a["card"]["skills"]), "health": a["health"]["status"]} for a in agents], "count": len(agents)}, indent=2))
+            print(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": a["agent_id"],
+                                "name": a["card"]["name"],
+                                "url": a["card"]["url"],
+                                "skills": len(a["card"]["skills"]),
+                                "health": a["health"]["status"],
+                            }
+                            for a in agents
+                        ],
+                        "count": len(agents),
+                    },
+                    indent=2,
+                )
+            )
         else:
             print(f"\n=== Discovered Agents ({len(agents)}) ===")
             for a in agents:
-                print(f"  {a['agent_id']:25s} {a['card']['url']:30s} {len(a['card']['skills']):2d} skills  [{a['health']['status']}]")
+                print(
+                    f"  {a['agent_id']:25s} {a['card']['url']:30s} {len(a['card']['skills']):2d} skills  [{a['health']['status']}]"  # noqa: E501
+                )
         return
 
     if args.find_skill:
@@ -234,7 +257,7 @@ def main():
         if args.json_output:
             print(json.dumps(summary, indent=2))
         else:
-            print(f"\n=== Discovery Summary ===")
+            print("\n=== Discovery Summary ===")
             print(f"  Total Agents: {summary['total_agents']}")
             print(f"  Protocol: v{summary['protocol_version']}")
             print(f"  Total Skills: {summary['total_skills']}")

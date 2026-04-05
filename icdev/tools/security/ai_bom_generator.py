@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """AI Bill of Materials (AI BOM) Generator.
 
 Catalogs all AI/ML components in a project: LLM providers, embedding models,

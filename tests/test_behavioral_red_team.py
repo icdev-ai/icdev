@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Tests for Behavioral Red Teaming in ATLASRedTeamScanner (Phase 45, Gap 7, D262)."""
+"""Tests for Behavioral Red Teaming in ANVILRedTeamScanner (Phase 45, Gap 7, D262)."""
 
-import json
 import sqlite3
 from pathlib import Path
 

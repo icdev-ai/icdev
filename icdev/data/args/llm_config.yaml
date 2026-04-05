@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV LLM Provider Configuration
+# ICDEV™ LLM Provider Configuration
 # Controls which models are used for each function across the platform.
 # Single source of truth — replaces scattered hardcoded model IDs.
 
@@ -237,7 +237,7 @@ models:
 # -----------------------------------------------------------------------
 # Function -> Model Routing
 # -----------------------------------------------------------------------
-# Maps each ICDEV function to a model with fallback chain.
+# Maps each ICDEV™ function to a model with fallback chain.
 # First available model in the chain is used.
 routing:
   agent_architect:

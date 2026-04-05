@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-# Bedrock Model Configuration for ICDEV Agent Orchestration
+# Bedrock Model Configuration for ICDEV™ Agent Orchestration
 # Defines model IDs, capabilities, pricing, and fallback chain
 
 models:

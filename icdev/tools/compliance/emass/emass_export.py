@@ -64,7 +64,7 @@ def _get_project(conn, project_id):
 
     Args:
         conn: Active database connection.
-        project_id: ICDEV project identifier.
+        project_id: ICDEV™ project identifier.
 
     Returns:
         Dict of project row data.
@@ -83,7 +83,7 @@ def _log_audit(conn, project_id, action, details=None):
 
     Args:
         conn: Active database connection.
-        project_id: ICDEV project identifier.
+        project_id: ICDEV™ project identifier.
         action: Short action description (e.g., ``export_controls``).
         details: Optional dict of additional context.
     """
@@ -100,7 +100,7 @@ def _ensure_output_dir(project_id, output_dir=None):
     """Ensure the output directory exists and return it.
 
     Args:
-        project_id: ICDEV project identifier (used for default sub-path).
+        project_id: ICDEV™ project identifier (used for default sub-path).
         output_dir: Explicit output directory. Falls back to
                     ``compliance/emass-exports/<project_id>``.
 
@@ -120,13 +120,13 @@ def _ensure_output_dir(project_id, output_dir=None):
 # ============================================================
 
 def _map_impl_status(status):
-    """Map ICDEV implementation status to eMASS-compatible value.
+    """Map ICDEV™ implementation status to eMASS-compatible value.
 
     eMASS accepts: Planned, Implemented, Inherited, Not Applicable,
     Manually Inherited.
 
     Args:
-        status: ICDEV-internal implementation status string.
+        status: ICDEV™-internal implementation status string.
 
     Returns:
         eMASS-compatible status string.
@@ -146,12 +146,12 @@ def _map_impl_status(status):
 
 
 def _map_poam_status(status):
-    """Map ICDEV POA&M status to eMASS-compatible value.
+    """Map ICDEV™ POA&M status to eMASS-compatible value.
 
     eMASS accepts: Ongoing, Completed, Risk Accepted, Delayed, Cancelled.
 
     Args:
-        status: ICDEV-internal POA&M status string.
+        status: ICDEV™-internal POA&M status string.
 
     Returns:
         eMASS-compatible POA&M status string.
@@ -173,12 +173,12 @@ def _map_poam_status(status):
 
 
 def _map_severity(severity):
-    """Map ICDEV severity to eMASS-compatible severity value.
+    """Map ICDEV™ severity to eMASS-compatible severity value.
 
     eMASS accepts: Very High, High, Moderate, Low, Very Low.
 
     Args:
-        severity: ICDEV-internal severity string.
+        severity: ICDEV™-internal severity string.
 
     Returns:
         eMASS-compatible severity string.
@@ -205,12 +205,12 @@ def _map_severity(severity):
 
 
 def _map_compliance_status(status):
-    """Map ICDEV scan/test status to eMASS compliance status.
+    """Map ICDEV™ scan/test status to eMASS compliance status.
 
     eMASS accepts: Compliant, Non-Compliant, Not Applicable.
 
     Args:
-        status: ICDEV-internal test/scan status string.
+        status: ICDEV™-internal test/scan status string.
 
     Returns:
         eMASS-compatible compliance status string.
@@ -250,7 +250,7 @@ def export_controls_emass(project_id, output_dir=None, db_path=None):
         Evidence Reference, Assessment Date
 
     Args:
-        project_id: ICDEV project ID.
+        project_id: ICDEV™ project ID.
         output_dir: Output directory (optional).
         db_path: Database path (optional).
 
@@ -322,7 +322,7 @@ def export_poam_emass(project_id, output_dir=None, db_path=None):
         Status, Resources Required
 
     Args:
-        project_id: ICDEV project ID.
+        project_id: ICDEV™ project ID.
         output_dir: Output directory (optional).
         db_path: Database path (optional).
 
@@ -397,7 +397,7 @@ def export_artifacts_emass(project_id, output_dir=None, db_path=None):
     and metadata manifest suitable for eMASS artifact upload.
 
     Args:
-        project_id: ICDEV project ID.
+        project_id: ICDEV™ project ID.
         output_dir: Output directory (optional).
         db_path: Database path (optional).
 
@@ -500,7 +500,7 @@ def export_artifacts_emass(project_id, output_dir=None, db_path=None):
                 "project_name": project.get("name", project_id),
                 "export_date": datetime.now(timezone.utc).isoformat() + "Z",
                 "classification": "CUI // SP-CTI",
-                "source": "ICDEV Compliance Engine",
+                "source": "ICDEV™ Compliance Engine",
                 "target_system": "eMASS (Enterprise Mission Assurance Support Service)",
                 "artifact_count": file_count,
                 "artifacts": artifact_manifest,
@@ -535,7 +535,7 @@ def export_test_results_emass(project_id, output_dir=None, db_path=None):
         Scan Type, Severity, Finding ID
 
     Args:
-        project_id: ICDEV project ID.
+        project_id: ICDEV™ project ID.
         output_dir: Output directory (optional).
         db_path: Database path (optional).
 
@@ -589,7 +589,7 @@ def export_test_results_emass(project_id, output_dir=None, db_path=None):
                 writer.writerow([
                     r.get("cci", r.get("control_id", r.get("rule_id", ""))),
                     r.get("assessed_at", datetime.now(timezone.utc).strftime("%Y-%m-%d")),
-                    r.get("assessed_by", "ICDEV Compliance Engine"),
+                    r.get("assessed_by", "ICDEV™ Compliance Engine"),
                     r.get("title", r.get("description", "")),
                     _map_compliance_status(r.get("status", "")),
                     "STIG",
@@ -604,7 +604,7 @@ def export_test_results_emass(project_id, output_dir=None, db_path=None):
                 writer.writerow([
                     r.get("cci", r.get("control_id", "")),
                     r.get("scan_date", datetime.now(timezone.utc).strftime("%Y-%m-%d")),
-                    r.get("scanner", r.get("scanned_by", "ICDEV Security Scanner")),
+                    r.get("scanner", r.get("scanned_by", "ICDEV™ Security Scanner")),
                     r.get("description", r.get("scan_type", "Vulnerability Scan")),
                     _map_compliance_status(r.get("status", r.get("result", ""))),
                     r.get("scan_type", "Vulnerability"),
@@ -640,7 +640,7 @@ def export_all_emass(project_id, output_dir=None, db_path=None):
     captured but do not prevent other exports from running.
 
     Args:
-        project_id: ICDEV project ID.
+        project_id: ICDEV™ project ID.
         output_dir: Output directory (optional).
         db_path: Database path (optional).
 
@@ -720,11 +720,11 @@ def export_all_emass(project_id, output_dir=None, db_path=None):
 def main():
     """CLI entry point for eMASS export tool."""
     parser = argparse.ArgumentParser(
-        description="Export ICDEV compliance data in eMASS-compatible formats"
+        description="Export ICDEV™ compliance data in eMASS-compatible formats"
     )
     parser.add_argument(
         "--project-id", required=True,
-        help="ICDEV project ID",
+        help="ICDEV™ project ID",
     )
     parser.add_argument(
         "--type", default="all",

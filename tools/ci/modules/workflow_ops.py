@@ -1,9 +1,9 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Workflow Operations — classify, branch, commit, PR helpers
+# ICDEV™ Workflow Operations — classify, branch, commit, PR helpers
 # Adapted from ADW workflow_ops.py with dual platform support
 
 """
-Shared workflow operations for ICDEV CI/CD pipelines.
+Shared workflow operations for ICDEV™ CI/CD pipelines.
 
 Provides issue classification, branch name generation, commit message creation,
 PR/MR creation, and workflow extraction using Claude Code slash commands.
@@ -22,10 +22,10 @@ from typing import Tuple, Optional
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 
-from tools.ci.modules.agent import execute_template, BOT_IDENTIFIER
-from tools.ci.modules.state import ICDevState
-from tools.testing.data_types import AgentTemplateRequest, AgentPromptResponse
-from tools.testing.utils import parse_json
+from tools.ci.modules.agent import execute_template, BOT_IDENTIFIER  # noqa: E402
+from tools.ci.modules.state import ICDevState  # noqa: E402
+from tools.testing.data_types import AgentTemplateRequest, AgentPromptResponse  # noqa: E402
+from tools.testing.utils import parse_json  # noqa: E402
 
 # Agent name constants (adapted from ADW)
 AGENT_PLANNER = "icdev_planner"
@@ -34,7 +34,7 @@ AGENT_CLASSIFIER = "issue_classifier"
 AGENT_BRANCH_GENERATOR = "branch_generator"
 AGENT_PR_CREATOR = "pr_creator"
 
-# Available ICDEV workflows for runtime validation
+# Available ICDEV™ workflows for runtime validation
 AVAILABLE_ICDEV_WORKFLOWS = [
     "icdev_plan",
     "icdev_build",
@@ -52,19 +52,15 @@ AVAILABLE_ICDEV_WORKFLOWS = [
 ]
 
 
-def format_issue_message(
-    run_id: str, agent_name: str, message: str, session_id: Optional[str] = None
-) -> str:
-    """Format a message for issue comments with ICDEV tracking and bot identifier."""
+def format_issue_message(run_id: str, agent_name: str, message: str, session_id: Optional[str] = None) -> str:
+    """Format a message for issue comments with ICDEV™ tracking and bot identifier."""
     if session_id:
         return f"{BOT_IDENTIFIER} {run_id}_{agent_name}_{session_id}: {message}"
     return f"{BOT_IDENTIFIER} {run_id}_{agent_name}: {message}"
 
 
-def extract_icdev_info(
-    text: str, temp_run_id: str
-) -> Tuple[Optional[str], Optional[str]]:
-    """Extract ICDEV workflow and run_id from text using classify_workflow agent.
+def extract_icdev_info(text: str, temp_run_id: str) -> Tuple[Optional[str], Optional[str]]:
+    """Extract ICDEV™ workflow and run_id from text using classify_workflow agent.
     Returns (workflow_command, run_id) tuple."""
 
     request = AgentTemplateRequest(
@@ -78,7 +74,7 @@ def extract_icdev_info(
         response = execute_template(request)
 
         if not response.success:
-            print(f"Failed to classify ICDEV workflow: {response.output}")
+            print(f"Failed to classify ICDEV™ workflow: {response.output}")
             return None, None
 
         try:
@@ -99,9 +95,7 @@ def extract_icdev_info(
         return None, None
 
 
-def classify_issue(
-    issue_json: str, run_id: str, logger: logging.Logger
-) -> Tuple[Optional[str], Optional[str]]:
+def classify_issue(issue_json: str, run_id: str, logger: logging.Logger) -> Tuple[Optional[str], Optional[str]]:
     """Classify issue and return appropriate slash command.
     Returns (command, error_message) tuple."""
 
@@ -159,9 +153,7 @@ def generate_branch_name(
     return branch_name, None
 
 
-def build_plan(
-    issue_json: str, command: str, run_id: str, logger: logging.Logger
-) -> AgentPromptResponse:
+def build_plan(issue_json: str, command: str, run_id: str, logger: logging.Logger) -> AgentPromptResponse:
     """Build implementation plan for the issue."""
     request = AgentTemplateRequest(
         agent_name=AGENT_PLANNER,
@@ -174,8 +166,7 @@ def build_plan(
 
 
 def implement_plan(
-    plan_file: str, run_id: str, logger: logging.Logger,
-    agent_name: Optional[str] = None
+    plan_file: str, run_id: str, logger: logging.Logger, agent_name: Optional[str] = None
 ) -> AgentPromptResponse:
     """Implement the plan using the /implement command."""
     implementor_name = agent_name or AGENT_IMPLEMENTOR
@@ -191,8 +182,7 @@ def implement_plan(
 
 
 def create_commit(
-    agent_name: str, issue_json: str, issue_class: str,
-    run_id: str, logger: logging.Logger
+    agent_name: str, issue_json: str, issue_class: str, run_id: str, logger: logging.Logger
 ) -> Tuple[Optional[str], Optional[str]]:
     """Create a git commit with a properly formatted message.
     Returns (commit_message, error_message) tuple."""
@@ -217,8 +207,7 @@ def create_commit(
 
 
 def create_pull_request(
-    branch_name: str, issue_json: str, state: ICDevState,
-    logger: logging.Logger
+    branch_name: str, issue_json: str, state: ICDevState, logger: logging.Logger
 ) -> Tuple[Optional[str], Optional[str]]:
     """Create a pull request/merge request for the implemented changes.
     Returns (pr_url, error_message) tuple."""
@@ -270,12 +259,12 @@ def ensure_run_id(
     return new_run_id
 
 
-def find_existing_branch_for_issue(
-    issue_number: str, run_id: Optional[str] = None
-) -> Optional[str]:
+def find_existing_branch_for_issue(issue_number: str, run_id: Optional[str] = None) -> Optional[str]:
     """Find an existing branch for the given issue number."""
     result = subprocess.run(
-        ["git", "branch", "-a"], capture_output=True, text=True,
+        ["git", "branch", "-a"],
+        capture_output=True,
+        text=True,
         cwd=str(PROJECT_ROOT),
     )
 

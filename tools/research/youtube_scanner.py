@@ -15,6 +15,7 @@ Architecture Decisions:
 
 CUI // SP-CTI
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -26,7 +27,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -155,6 +156,7 @@ def _summarize_transcript(transcript: str, config: Dict) -> str:
 
     try:
         from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
 
         router = LLMRouter()
         prompt = (
@@ -164,11 +166,12 @@ def _summarize_transcript(transcript: str, config: Dict) -> str:
             "points. Output as concise bullet points (max 400 words).\n\n"
             f"TRANSCRIPT:\n{transcript[:8000]}"
         )
-        result = router.invoke(
-            llm_function,
-            {"prompt": prompt, "max_tokens": 600},
+        request = LLMRequest(
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=600,
         )
-        summary = result.get("content", "") or result.get("text", "")
+        result = router.invoke(llm_function, request)
+        summary = result.content if result and result.content else ""
         if summary and len(summary) > 50:
             return summary[:4000]
     except Exception as exc:
@@ -181,9 +184,7 @@ def _summarize_transcript(transcript: str, config: Dict) -> str:
 # ---------------------------------------------------------------------------
 # Video ID extraction
 # ---------------------------------------------------------------------------
-_VIDEO_ID_RE = re.compile(
-    r"(?:v=|youtu\.be/|/embed/|/v/|/shorts/)([a-zA-Z0-9_-]{11})"
-)
+_VIDEO_ID_RE = re.compile(r"(?:v=|youtu\.be/|/embed/|/v/|/shorts/)([a-zA-Z0-9_-]{11})")
 
 
 def _extract_video_id(url: str) -> Optional[str]:
@@ -249,9 +250,7 @@ def _scan_youtube_search(
                 "id": video_id,
                 "key": api_key,
             }
-            stat_data, stat_err = _safe_get(
-                f"{YOUTUBE_API_BASE}/videos", params=stat_params
-            )
+            stat_data, stat_err = _safe_get(f"{YOUTUBE_API_BASE}/videos", params=stat_params)
             if not stat_err and stat_data:
                 stat_items = stat_data.get("items", [])
                 if stat_items:
@@ -277,30 +276,34 @@ def _scan_youtube_search(
             channel_id = snippet.get("channelId", "")
             published_at = snippet.get("publishedAt", "")
 
-            signals.append({
-                "id": _signal_id(),
-                "session_id": None,
-                "source": "video",
-                "source_type": "youtube_search",
-                "title": (snippet.get("title", "") or "")[:500],
-                "body": body,
-                "url": VIDEO_URL_TEMPLATE.format(video_id=video_id),
-                "author": channel_name,
-                "upvotes": view_count,
-                "citations": comment_count,
-                "sentiment": None,
-                "content_hash": _content_hash(f"youtube_{video_id}"),
-                "keywords": json.dumps([query]),
-                "metadata": json.dumps({
-                    "video_id": video_id,
-                    "channel_id": channel_id,
-                    "published_at": published_at,
-                    "duration": duration,
-                    "has_transcript": has_transcript,
-                    "search_query": query,
-                }),
-                "discovered_at": _now(),
-            })
+            signals.append(
+                {
+                    "id": _signal_id(),
+                    "session_id": None,
+                    "source": "video",
+                    "source_type": "youtube_search",
+                    "title": (snippet.get("title", "") or "")[:500],
+                    "body": body,
+                    "url": VIDEO_URL_TEMPLATE.format(video_id=video_id),
+                    "author": channel_name,
+                    "upvotes": view_count,
+                    "citations": comment_count,
+                    "sentiment": None,
+                    "content_hash": _content_hash(f"youtube_{video_id}"),
+                    "keywords": json.dumps([query]),
+                    "metadata": json.dumps(
+                        {
+                            "video_id": video_id,
+                            "channel_id": channel_id,
+                            "published_at": published_at,
+                            "duration": duration,
+                            "has_transcript": has_transcript,
+                            "search_query": query,
+                        }
+                    ),
+                    "discovered_at": _now(),
+                }
+            )
 
             time.sleep(0.5)  # inter-video delay
 
@@ -356,27 +359,31 @@ def _scan_youtube_manual(
                 has_transcript = True
                 body = _summarize_transcript(transcript, config)
 
-        signals.append({
-            "id": _signal_id(),
-            "session_id": None,
-            "source": "video",
-            "source_type": "youtube_manual",
-            "title": title or f"Video {video_id}",
-            "body": body,
-            "url": VIDEO_URL_TEMPLATE.format(video_id=video_id),
-            "author": author,
-            "upvotes": 0,
-            "citations": 0,
-            "sentiment": None,
-            "content_hash": _content_hash(f"youtube_{video_id}"),
-            "keywords": "[]",
-            "metadata": json.dumps({
-                "video_id": video_id,
-                "has_transcript": has_transcript,
-                "user_provided": True,
-            }),
-            "discovered_at": _now(),
-        })
+        signals.append(
+            {
+                "id": _signal_id(),
+                "session_id": None,
+                "source": "video",
+                "source_type": "youtube_manual",
+                "title": title or f"Video {video_id}",
+                "body": body,
+                "url": VIDEO_URL_TEMPLATE.format(video_id=video_id),
+                "author": author,
+                "upvotes": 0,
+                "citations": 0,
+                "sentiment": None,
+                "content_hash": _content_hash(f"youtube_{video_id}"),
+                "keywords": "[]",
+                "metadata": json.dumps(
+                    {
+                        "video_id": video_id,
+                        "has_transcript": has_transcript,
+                        "user_provided": True,
+                    }
+                ),
+                "discovered_at": _now(),
+            }
+        )
 
         time.sleep(delay)
 
@@ -419,9 +426,7 @@ def _scan_youtube_channel(
         }
         data, err = _safe_get(f"{YOUTUBE_API_BASE}/search", params=params)
         if err:
-            signals.append(
-                _error_signal("youtube_channel", f"Channel {channel_id}: {err}")
-            )
+            signals.append(_error_signal("youtube_channel", f"Channel {channel_id}: {err}"))
             continue
 
         items = (data or {}).get("items", [])
@@ -440,28 +445,32 @@ def _scan_youtube_channel(
                     has_transcript = True
                     body = _summarize_transcript(transcript, config)
 
-            signals.append({
-                "id": _signal_id(),
-                "session_id": None,
-                "source": "video",
-                "source_type": "youtube_channel",
-                "title": (snippet.get("title", "") or "")[:500],
-                "body": body,
-                "url": VIDEO_URL_TEMPLATE.format(video_id=video_id),
-                "author": snippet.get("channelTitle", ""),
-                "upvotes": 0,
-                "citations": 0,
-                "sentiment": None,
-                "content_hash": _content_hash(f"youtube_{video_id}"),
-                "keywords": "[]",
-                "metadata": json.dumps({
-                    "video_id": video_id,
-                    "channel_id": channel_id,
-                    "published_at": snippet.get("publishedAt", ""),
-                    "has_transcript": has_transcript,
-                }),
-                "discovered_at": _now(),
-            })
+            signals.append(
+                {
+                    "id": _signal_id(),
+                    "session_id": None,
+                    "source": "video",
+                    "source_type": "youtube_channel",
+                    "title": (snippet.get("title", "") or "")[:500],
+                    "body": body,
+                    "url": VIDEO_URL_TEMPLATE.format(video_id=video_id),
+                    "author": snippet.get("channelTitle", ""),
+                    "upvotes": 0,
+                    "citations": 0,
+                    "sentiment": None,
+                    "content_hash": _content_hash(f"youtube_{video_id}"),
+                    "keywords": "[]",
+                    "metadata": json.dumps(
+                        {
+                            "video_id": video_id,
+                            "channel_id": channel_id,
+                            "published_at": snippet.get("publishedAt", ""),
+                            "has_transcript": has_transcript,
+                        }
+                    ),
+                    "discovered_at": _now(),
+                }
+            )
 
             time.sleep(0.5)
 

@@ -2,7 +2,7 @@
 # CUI // SP-CTI
 """DoD SWFT (Software Factory Trust) Evidence Bundler.
 
-Packages ICDEV compliance artifacts into a SWFT-compliant evidence bundle
+Packages ICDEV™ compliance artifacts into a SWFT-compliant evidence bundle
 for DoD software factory authorization. Bundles SLSA provenance, SBOM,
 VEX, attestations, and compliance artifacts into a single package.
 

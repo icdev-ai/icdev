@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Innovation Engine MCP server exposing innovation tools.
 
 Tools:
@@ -269,7 +269,7 @@ if __name__ == "__main__":
 
     server.register_tool(
         name="introspect",
-        description="Run introspective analysis on ICDEV internal telemetry",
+        description="Run introspective analysis on ICDEV™ internal telemetry",
         handler=handle_introspect,
         input_schema={
             "type": "object",

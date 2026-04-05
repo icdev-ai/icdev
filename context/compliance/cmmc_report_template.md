@@ -125,7 +125,7 @@ The following evidence artifacts were referenced during this assessment:
 
 ## 11. Assessment Methodology
 
-This assessment was conducted using the ICDEV CMMC Assessor tool against the CMMC v2.0 practice catalog. CMMC Level 2 includes 110 practices aligned with NIST SP 800-171 Rev 2. Level 3 adds 24 practices from NIST SP 800-172 for a total of 134 practices.
+This assessment was conducted using the ICDEV™ CMMC Assessor tool against the CMMC v2.0 practice catalog. CMMC Level 2 includes 110 practices aligned with NIST SP 800-171 Rev 2. Level 3 adds 24 practices from NIST SP 800-172 for a total of 134 practices.
 
 Automated checks were performed where possible. Practices marked as "semi" or "manual" require human verification by a certified CMMC Third Party Assessment Organization (C3PAO).
 

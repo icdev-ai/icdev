@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Proposals - ICDEV{% endblock %}
+{% block title %}Proposals - ICDEV™{% endblock %}
 
 {% block content %}
 <div class="breadcrumbs"><a href="/">Home</a><span class="separator">/</span><span>Proposals</span></div>
@@ -37,7 +37,7 @@
 
 <!-- Actions -->
 <div style="margin: 16px 0; display: flex; gap: 8px;">
-    <button class="btn btn-primary" onclick="ICDEV.proposals.openModal('create-opp-modal')">+ New Opportunity</button>
+    <button class="btn btn-primary" onclick="ICDEV™.proposals.openModal('create-opp-modal')">+ New Opportunity</button>
 </div>
 
 <!-- Opportunity Table -->
@@ -89,9 +89,9 @@
     <div class="modal-content">
         <div class="modal-header">
             <h2>New Opportunity</h2>
-            <button class="modal-close" onclick="ICDEV.proposals.closeModal('create-opp-modal')">&times;</button>
+            <button class="modal-close" onclick="ICDEV™.proposals.closeModal('create-opp-modal')">&times;</button>
         </div>
-        <form id="create-opp-form" onsubmit="return ICDEV.proposals.submitOppForm(event)">
+        <form id="create-opp-form" onsubmit="return ICDEV™.proposals.submitOppForm(event)">
             <div class="form-grid">
                 <div class="form-group">
                     <label>Solicitation Number *</label>
@@ -153,7 +153,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" onclick="ICDEV.proposals.closeModal('create-opp-modal')">Cancel</button>
+                <button type="button" class="btn btn-secondary" onclick="ICDEV™.proposals.closeModal('create-opp-modal')">Cancel</button>
                 <button type="submit" class="btn btn-primary">Create Opportunity</button>
             </div>
         </form>

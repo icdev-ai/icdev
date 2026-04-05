@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Helm Values — IBM Cloud Override
+# ICDEV™ Helm Values — IBM Cloud Override
 # Usage: helm install icdev ./helm -f values.yaml -f values-ibm.yaml
 
 global:

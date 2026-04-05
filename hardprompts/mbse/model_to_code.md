@@ -43,7 +43,7 @@ You are a model-driven development engineer responsible for generating productio
 ## Input Variables
 | Variable | Type | Description |
 |----------|------|-------------|
-| `project_id` | string | ICDEV project identifier |
+| `project_id` | string | ICDEV™ project identifier |
 | `language` | string | Target language (python, java, go, rust, csharp, typescript) |
 | `output_dir` | string | Output directory for generated code |
 

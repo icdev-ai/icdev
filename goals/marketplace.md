@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-# Goal: Federated GOTCHA Asset Marketplace (Phase 22)
+# Goal: Federated FORGE Asset Marketplace (Phase 22)
 
 ## Purpose
 Enable customer developer communities to share skills, plugins, goals, hardprompts,
@@ -17,7 +17,7 @@ TENANT-LOCAL CATALOG (per-org private catalog)
 DEVELOPER WORKSPACE (local asset development)
 ```
 
-### Shareable GOTCHA Asset Types
+### Shareable FORGE Asset Types
 | Type | Format | Primary File |
 |------|--------|-------------|
 | Skill | SKILL.md + scripts/ + references/ + assets/ | SKILL.md |
@@ -33,7 +33,7 @@ DEVELOPER WORKSPACE (local asset development)
 - **D76:** 7-gate automated + human review for cross-tenant sharing
 - **D77:** Independent IL marking per asset with high-watermark consumption
 - **D78:** Ollama nomic-embed-text for air-gapped semantic search
-- **D79:** Full GOTCHA asset sharing (not just skills)
+- **D79:** Full FORGE asset sharing (not just skills)
 - **D80:** Append-only marketplace audit (NIST AU compliance)
 - **D81:** Asset SBOM required for executable assets
 

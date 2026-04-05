@@ -1,6 +1,6 @@
 # [TEMPLATE: CUI // SP-CTI]
 """
-ICDEV SaaS Prometheus Metrics Blueprint.
+ICDEV™ SaaS Prometheus Metrics Blueprint.
 
 Exposes GET /metrics endpoint for Prometheus scraping.
 """

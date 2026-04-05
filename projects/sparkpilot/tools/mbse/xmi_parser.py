@@ -7,7 +7,7 @@ Parses MagicDraw/Cameo XMI files using Python stdlib xml.etree.ElementTree
 activities, requirements, state machines, use cases, and all relationship types
 (structural + SysML dependency stereotypes).
 
-Stores parsed elements into the ICDEV SQLite database (sysml_elements,
+Stores parsed elements into the ICDEV™ SQLite database (sysml_elements,
 sysml_relationships, model_imports tables) and records an immutable audit
 trail entry.
 
@@ -1235,7 +1235,7 @@ def parse_xmi(file_path: str) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 def _get_connection(db_path: Optional[str] = None) -> sqlite3.Connection:
-    """Open a connection to the ICDEV database."""
+    """Open a connection to the ICDEV™ database."""
     path = Path(db_path) if db_path else DB_PATH
     if not path.exists():
         raise FileNotFoundError(
@@ -1491,7 +1491,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--project-id", required=True,
-        help="ICDEV project identifier (e.g. proj-123)",
+        help="ICDEV™ project identifier (e.g. proj-123)",
     )
     parser.add_argument(
         "--file", required=True,

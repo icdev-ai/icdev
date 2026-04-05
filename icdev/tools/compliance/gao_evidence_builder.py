@@ -3,14 +3,14 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """GAO Evidence Builder — compile audit evidence per GAO-21-519SP.
 
-Pulls evidence from existing ICDEV data (audit_trail, ai_telemetry,
+Pulls evidence from existing ICDEV™ data (audit_trail, ai_telemetry,
 XAI, SHAP, provenance) to build evidence packages aligned with GAO's
 4 accountability principles.
 
-ADR D313: Reuses existing ICDEV data — no new data collection needed.
+ADR D313: Reuses existing ICDEV™ data — no new data collection needed.
 
 Usage:
     python tools/compliance/gao_evidence_builder.py --project-id proj-123 --json
@@ -55,7 +55,7 @@ def _count_table_global(conn: sqlite3.Connection, table: str) -> int:
 
 
 def build_evidence(project_id: str, db_path: Path = DB_PATH) -> Dict:
-    """Build GAO evidence package from existing ICDEV data."""
+    """Build GAO evidence package from existing ICDEV™ data."""
     conn = _get_connection(db_path)
     try:
         now = datetime.now(timezone.utc).isoformat()

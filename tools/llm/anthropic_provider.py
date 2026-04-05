@@ -22,6 +22,7 @@ logger = logging.getLogger("icdev.llm.anthropic")
 
 try:
     import anthropic as anthropic_sdk
+
     HAS_ANTHROPIC = True
 except ImportError:
     anthropic_sdk = None
@@ -48,9 +49,7 @@ class AnthropicLLMProvider(LLMProvider):
         """Lazy-init anthropic client."""
         if self._client is None:
             if not HAS_ANTHROPIC:
-                raise ImportError(
-                    "anthropic SDK required. Install: pip install anthropic"
-                )
+                raise ImportError("anthropic SDK required. Install: pip install anthropic")
             kwargs = {}
             if self._api_key:
                 kwargs["api_key"] = self._api_key
@@ -71,8 +70,7 @@ class AnthropicLLMProvider(LLMProvider):
         ratio, floor_val = ratios.get(effort, (0.25, 4096))
         return max(int(max_tokens * ratio), floor_val)
 
-    def invoke(self, request: LLMRequest, model_id: str,
-               model_config: dict) -> LLMResponse:
+    def invoke(self, request: LLMRequest, model_id: str, model_config: dict) -> LLMResponse:
         """Invoke Anthropic API synchronously."""
         client = self._get_client()
         start_time = time.time()
@@ -99,8 +97,9 @@ class AnthropicLLMProvider(LLMProvider):
         if request.tools:
             kwargs["tools"] = tools_to_anthropic(request.tools)
 
-        # Thinking support
-        if model_config.get("supports_thinking", False):
+        # Thinking support — try adaptive, fall back to disabled on API error
+        use_thinking = model_config.get("supports_thinking", False)
+        if use_thinking:
             effort = request.effort or "medium"
             kwargs["thinking"] = {
                 "type": "adaptive",
@@ -110,8 +109,18 @@ class AnthropicLLMProvider(LLMProvider):
         try:
             message = client.messages.create(**kwargs)
         except Exception as exc:
-            logger.error("Anthropic API error: %s", exc)
-            raise
+            if use_thinking and "budget_tokens" in str(exc):
+                # Model doesn't support adaptive thinking — retry without it
+                logger.warning("Adaptive thinking not supported, retrying without: %s", exc)
+                kwargs.pop("thinking", None)
+                try:
+                    message = client.messages.create(**kwargs)
+                except Exception as exc2:
+                    logger.error("Anthropic API error (no thinking): %s", exc2)
+                    raise
+            else:
+                logger.error("Anthropic API error: %s", exc)
+                raise
 
         # Parse response
         resp = LLMResponse(provider=self.provider_name)
@@ -132,11 +141,13 @@ class AnthropicLLMProvider(LLMProvider):
             if btype == "text":
                 text_parts.append(getattr(block, "text", ""))
             elif btype == "tool_use":
-                tool_calls.append({
-                    "id": getattr(block, "id", ""),
-                    "name": getattr(block, "name", ""),
-                    "input": getattr(block, "input", {}),
-                })
+                tool_calls.append(
+                    {
+                        "id": getattr(block, "id", ""),
+                        "name": getattr(block, "name", ""),
+                        "input": getattr(block, "input", {}),
+                    }
+                )
             elif btype == "thinking":
                 resp.thinking_tokens += getattr(block, "tokens", 0)
 

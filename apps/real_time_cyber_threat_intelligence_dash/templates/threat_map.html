@@ -1,0 +1,17 @@
+{% extends "base.html" %}{% set active = "threat_map" %}
+{% block content %}
+<div class="page-header"><h1>Threat Map</h1></div>
+<div id="app-map" style="height:calc(100vh - 200px);border-radius:8px;border:1px solid #2a2a40"></div>
+{% endblock %}
+{% block scripts %}
+<script>
+const map = L.map('app-map', {center:[25,0],zoom:2});
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{maxZoom:18}).addTo(map);
+fetch('/api/threats').then(r=>r.json()).then(data => {
+    (data['threats']||[]).forEach(e => {
+        if(e.lat && e.lon) L.circleMarker([e.lat,e.lon],{radius:5,color:'#6366f1',fillOpacity:0.7})
+            .bindPopup('<b>'+e.name+'</b><br>'+(e.description||'')).addTo(map);
+    });
+});
+</script>
+{% endblock %}

@@ -18,17 +18,17 @@ from __future__ import annotations
 import argparse
 import json
 import sqlite3
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 
 def _get_db(db_path: Optional[Path] = None) -> sqlite3.Connection:
-    conn = sqlite3.connect(str(db_path or DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(db_path))
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
@@ -38,6 +38,7 @@ def _now() -> str:
 
 
 # ── Label Single Example ─────────────────────────────────────────────
+
 
 def label_example(
     example_id: int,
@@ -75,8 +76,7 @@ def label_example(
                SET quality_score = ?, compliance_score = ?, relevance_score = ?,
                    approved = ?, labeled_by = ?, labeled_at = ?
                WHERE id = ?""",
-            (quality_score, compliance_score, relevance_score,
-             1 if approved else 0, labeled_by, _now(), example_id),
+            (quality_score, compliance_score, relevance_score, 1 if approved else 0, labeled_by, _now(), example_id),
         )
         conn.commit()
         return {
@@ -94,6 +94,7 @@ def label_example(
 
 
 # ── Batch Operations ─────────────────────────────────────────────────
+
 
 def batch_approve(
     dataset_id: str,
@@ -151,6 +152,7 @@ def batch_reject(
 
 
 # ── Queries ──────────────────────────────────────────────────────────
+
 
 def get_unlabeled(
     dataset_id: str,
@@ -252,6 +254,7 @@ def get_labeling_summary(
 
 
 # ── CLI ───────────────────────────────────────────────────────────────
+
 
 def main():
     parser = argparse.ArgumentParser(description="Fine-tuning labeling backend")

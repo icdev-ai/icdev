@@ -561,7 +561,7 @@ def generate_monitoring(project_path: str) -> list:
 
     - name: Download node_exporter
       get_url:
-        url: "https://github.com/prometheus/node_exporter/releases/download/v{{{{ node_exporter_version }}}}/node_exporter-{{{{ node_exporter_version }}}}.linux-amd64.tar.gz"
+        url: "https://github.com/prometheus/node_exporter/releases/download/v{{{{ node_exporter_version }}}}/node_exporter-{{{{ node_exporter_version }}}}.linux-amd64.tar.gz"  # noqa: E501
         dest: /tmp/node_exporter.tar.gz
         mode: "0644"
       tags: [prometheus]

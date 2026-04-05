@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Pre-Tool-Use Hook — Safety validation before tool execution
+# ICDEV™ Pre-Tool-Use Hook — Safety validation before tool execution
 # Adapted from ADW pre_tool_use.py
 
 """
@@ -97,6 +97,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # Phase 22 — Marketplace
         "marketplace_reviews",
         "marketplace_scan_results",
+        # Phase 69 — OpenClaw Bridge
+        "openclaw_exports",
         # Multi-Agent Orchestration
         "agent_vetoes",
         # Dashboard Auth (D169-D172)
@@ -154,8 +156,17 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # Phase 64 — RAG Subsystem (D-RAG-8, D-RAG-11)
         "rag_ingestion_log",
         "rag_retrieval_log",
+        # Phase 69 — Codebase Assistant (D-CA-6)
+        "codebase_qa_cache",
+        # Genesis v2.0 (D-GEN-6, D-GEN-10)
+        "genesis_audit",
+        # Knowledge Graph (D-KARL-1)
+        "kg_retrieval_log",
         # Phase 64 Extension — Fine-Tuning (D-FT-3, D-FT-9, D-FT-14, D-FT-16, D-FT-13)
         "ft_dataset_examples",
+        # RAG-to-FT Pipeline (D-KARL-5, D-KARL-8)
+        "ft_pipeline_runs",
+        "ft_quality_snapshots",
         "ft_training_job_events",
         "ft_evaluations",
         "ft_promotion_log",
@@ -172,6 +183,7 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "creative_specs",
         "creative_trends",
         # GovCon Intelligence (Phase 59, D361-D373)
+        "sam_gov_quota_events",
         "rfp_shall_statements",
         "rfp_requirement_patterns",
         "icdev_capability_map",
@@ -187,9 +199,9 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "cpmp_evm_periods",
         "cpmp_cdrl_generations",
         "cpmp_cor_access_log",
-        # Phase 61 — ATLAS Critique (Feature 3)
-        "atlas_critique_sessions",
-        "atlas_critique_findings",
+        # Phase 61 — ANVIL Critique (Feature 3)
+        "anvil_critique_sessions",
+        "anvil_critique_findings",
         # Phase 61 — Prompt Chain Execution (Feature 2)
         "prompt_chain_executions",
         # Phase 61 — Dispatcher Mode (Feature 1)
@@ -205,6 +217,102 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "research_trends",
         "research_capability_map",
         "research_forecasts",
+        # Proposal Genesis (D-PG-1 through D-PG-10)
+        "pg_proposal_genesis_audit",
+        "pg_amendment_diffs",
+        "pg_pulse_proposal_links",
+        "pg_proposal_quality_scores",
+        "pg_bid_decisions",
+        "pg_bid_decision_outcomes",
+        "pg_win_loss_records",
+        "pg_win_loss_lessons",
+        "pg_crm_interactions",
+        "pg_crm_engagement_scores",
+        "pg_capture_activities",
+        "pg_teaming_assessments",
+        # Proposal Genesis Enhancement (append-only review/theme/experiment tracking)
+        "pg_review_findings",
+        "pg_theme_tracking",
+        "pg_quality_experiments",
+        # File Sync Module (D-SYNC-7 — sync_log is append-only, NIST AU)
+        "sync_log",
+        # Phase 65 — Quality Design Canvas (D-QDC-5)
+        "qdc_audit",
+        "qdc_gate_results",
+        "qdc_uqs_history",
+        # Phase 65 — Adaptive Intelligence (Red Team, Convergence, Stagnation, Benchmarks)
+        "red_team_results",
+        "genesis_convergence_log",
+        "genesis_stagnation_log",
+        "agent_benchmark_results",
+        # GSD-adapted: 4-Level Verification, Context Pressure, Deviation Rules (D-GSD-1 through D-GSD-9)
+        "stub_detection_results",
+        "context_pressure_events",
+        "deviation_rule_events",
+        # Evolution Daemon (D-EVO-1, Phase 36 autonomous lifecycle)
+        "evolution_audit",
+        # Outcome Verifier (D-EVO-6, self-healing feedback loop)
+        "outcome_verification_log",
+        # NemoClaw-Adapted Agent Sandboxing (D-NC-1, D-NC-2, D-NC-3, D-NC-5)
+        "credential_broker_log",
+        "egress_policy_audit",
+        "blueprint_digests",
+        "propagation_verifications",
+        # Bayesian Teaching Intelligence Layer (D-BT-1 through D-BT-6)
+        "bayesian_teaching_scores",
+        # Phase 66 — Workflow Discipline Engine (D-WF-1 through D-WF-7)
+        "workflow_reconciliations",
+        "workflow_handoffs",
+        # WriteGuard (D-WG-9 — analysis results/findings are immutable)
+        "wg_analysis_results",
+        "wg_analysis_findings",
+        # DataBridge (D-DB-6 — sync log, mapping log, messages are append-only)
+        "db_sync_log",
+        "db_mapping_log",
+        "db_messages",
+        # Connector Forge (D-CF sandbox/promotion logs are append-only)
+        "db_forge_sandbox_log",
+        "db_forge_promotions",
+        # CloudForge (D-CF-10, D-CF-15, D-CF-20, D-CF-21 — all append-only)
+        "cf_provision_log",
+        "cf_siem_events",
+        "cf_runbook_executions",
+        "cf_runbook_task_log",
+        # Phase 67 — Engineering Review Board (D-RB-2, D-RB-10 — audit + findings + remediation append-only)
+        "review_board_audit",
+        "review_board_findings",
+        "review_board_remediation_log",
+        "review_board_health_history",
+        # Phase 68 — Autonomy Engine (D-AE-5, D-AE-10, D-AE-12 — observations, actions, behavior append-only)
+        "autonomy_observations",
+        "autonomy_actions",
+        "autonomy_behavior_log",
+        # Phase 67 — Bayesian Autoresearch (D-AR-4)
+        "experiment_results",
+        "bayesian_experiment_scores",
+        # Scout Daemon (D-SCT-1 — daily autonomous scan audit trail)
+        "scout_audit",
+        # Phase 70 — AIOps/LLMOps Adaptation (append-only audit/event tables)
+        "llm_gateway_audit",
+        "prompt_audit_log",
+        "llm_cost_alerts",
+        "model_drift_events",
+        "sre_slo_measurements",
+        "sre_runbook_executions",
+        "sre_incident_events",
+        "agent_topology_snapshots",
+        # Phase 71 — Sandbox Executor (D-SEC-10)
+        "sandbox_execution_log",
+        # Phase 71 — CRAG Evaluation (D-RAG-23)
+        "rag_evaluation_campaigns",
+        "rag_evaluation_results",
+        # Phase 70 — Redaction & Data Protection (D-RDT-1)
+        "redaction_audit",
+        # Phase 72 — Notification Gateway (Hermes adaptation)
+        "notification_log",
+        # Phase 72 — ICDEV™ Studio (D364, D365 — case history + automation runs)
+        "studio_case_history",
+        "studio_automation_runs",
     ]
 
     if tool_name == "Bash":

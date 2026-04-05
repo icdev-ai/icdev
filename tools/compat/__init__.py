@@ -1,9 +1,10 @@
 # [TEMPLATE: CUI // SP-CTI]
-"""ICDEV cross-platform compatibility module.
+"""ICDEV™ cross-platform compatibility module.
 
 Centralizes OS detection and platform-specific behavior (D145).
 Uses only Python stdlib — air-gap safe.
 """
+
 from tools.compat.platform_utils import (  # noqa: F401
     IS_WINDOWS,
     IS_MACOS,

@@ -1,10 +1,10 @@
-# ICDEV Agent Configuration
+# ICDEV™ Agent Configuration
 # Defines all 10 A2A agents and their connection settings
 
 agents:
   orchestrator:
     id: "orchestrator-agent"
-    name: "ICDEV Orchestrator"
+    name: "ICDEV™ Orchestrator"
     description: "Top-level router. Decomposes tasks, dispatches to specialists, aggregates results."
     host: "0.0.0.0"
     port: 8443
@@ -20,7 +20,7 @@ agents:
       max_tokens: 16384
     max_concurrent: 20
     # Phase 61: Dispatcher-Only Orchestrator Mode (D-DISP-1)
-    # When enabled, restricts orchestrator to delegation-only � enforces GOTCHA
+    # When enabled, restricts orchestrator to delegation-only — enforces FORGE
     # principle that the Orchestration layer delegates, not executes.
     dispatcher_mode:
       enabled: false
@@ -48,8 +48,8 @@ agents:
 
   architect:
     id: "architect-agent"
-    name: "ICDEV Architect"
-    description: "System design, schema design, technology selection. Runs ATLAS A/T phases."
+    name: "ICDEV™ Architect"
+    description: "System design, schema design, technology selection. Runs ANVIL A/T phases."
     host: "0.0.0.0"
     port: 8444
     tls:
@@ -66,7 +66,7 @@ agents:
 
   builder:
     id: "builder-agent"
-    name: "ICDEV Builder"
+    name: "ICDEV™ Builder"
     description: "Code generation with TDD. Tests first (Cucumber/Gherkin), then implementation."
     host: "0.0.0.0"
     port: 8445
@@ -84,7 +84,7 @@ agents:
 
   compliance:
     id: "compliance-agent"
-    name: "ICDEV Compliance"
+    name: "ICDEV™ Compliance"
     description: "ATO artifact generation: SSP, POAM, STIG, SBOM, CUI markings, NIST mapping."
     host: "0.0.0.0"
     port: 8446
@@ -102,7 +102,7 @@ agents:
 
   security:
     id: "security-agent"
-    name: "ICDEV Security"
+    name: "ICDEV™ Security"
     description: "Vulnerability scanning, SAST/DAST, dependency auditing, secret detection."
     host: "0.0.0.0"
     port: 8447
@@ -120,7 +120,7 @@ agents:
 
   infra:
     id: "infra-agent"
-    name: "ICDEV Infrastructure"
+    name: "ICDEV™ Infrastructure"
     description: "Terraform/Ansible generation, K8s manifests, Dockerfiles, pipeline config."
     host: "0.0.0.0"
     port: 8448
@@ -138,7 +138,7 @@ agents:
 
   knowledge:
     id: "knowledge-agent"
-    name: "ICDEV Knowledge"
+    name: "ICDEV™ Knowledge"
     description: "Learning knowledge base. Pattern detection, recommendations, self-healing."
     host: "0.0.0.0"
     port: 8449
@@ -156,7 +156,7 @@ agents:
 
   monitor:
     id: "monitor-agent"
-    name: "ICDEV Monitor"
+    name: "ICDEV™ Monitor"
     description: "Production monitoring, log analysis, alert correlation, rollback decisions."
     host: "0.0.0.0"
     port: 8450
@@ -174,7 +174,7 @@ agents:
 
   mbse:
     id: "mbse-agent"
-    name: "ICDEV MBSE"
+    name: "ICDEV™ MBSE"
     description: "Model-Based Systems Engineering — SysML parsing, DOORS NG integration, digital thread, model-code sync, DES compliance."
     host: "0.0.0.0"
     port: 8451
@@ -199,7 +199,7 @@ agents:
 
   modernization:
     id: "modernization-agent"
-    name: "ICDEV Modernization"
+    name: "ICDEV™ Modernization"
     description: "Application modernization — legacy analysis, 7R assessment, migration planning, code generation, compliance bridge."
     host: "0.0.0.0"
     port: 8452
@@ -224,7 +224,7 @@ agents:
 
   requirements_analyst:
     id: "requirements-analyst-agent"
-    name: "ICDEV Requirements Analyst"
+    name: "ICDEV™ Requirements Analyst"
     description: "AI-driven conversational requirements intake, gap detection, SAFe decomposition, readiness scoring, document extraction, COA generation, boundary analysis."
     host: "0.0.0.0"
     port: 8453
@@ -250,7 +250,7 @@ agents:
 
   supply_chain:
     id: "supply-chain-agent"
-    name: "ICDEV Supply Chain"
+    name: "ICDEV™ Supply Chain"
     description: "Supply chain intelligence — upstream/downstream impact propagation, SBOM aggregation, ISA lifecycle, CVE triage, NIST 800-161 SCRM."
     host: "0.0.0.0"
     port: 8454
@@ -275,7 +275,7 @@ agents:
 
   simulation:
     id: "simulation-agent"
-    name: "ICDEV Simulation"
+    name: "ICDEV™ Simulation"
     description: "Digital Program Twin — 6-dimension what-if simulation (architecture, compliance, supply chain, schedule, cost, risk), scenario management, Monte Carlo."
     host: "0.0.0.0"
     port: 8455
@@ -302,8 +302,8 @@ agents:
 
   gateway:
     id: "gateway-agent"
-    name: "ICDEV Remote Command Gateway"
-    description: "Receives commands from messaging channels (Telegram, Slack, Teams, Mattermost, internal chat), validates through 8-gate security chain, executes via ICDEV tools, returns classification-filtered responses."
+    name: "ICDEV™ Remote Command Gateway"
+    description: "Receives commands from messaging channels (Telegram, Slack, Teams, Mattermost, internal chat), validates through 8-gate security chain, executes via ICDEV™ tools, returns classification-filtered responses."
     host: "0.0.0.0"
     port: 8458
     tls:
@@ -328,7 +328,7 @@ agents:
 
   devsecops:
     id: "devsecops-agent"
-    name: "ICDEV DevSecOps & Zero Trust"
+    name: "ICDEV™ DevSecOps & Zero Trust"
     description: "DevSecOps pipeline security, Zero Trust Architecture (NIST SP 800-207), policy-as-code, secrets lifecycle, ZTA maturity scoring, service mesh configuration."
     host: "0.0.0.0"
     port: 8457

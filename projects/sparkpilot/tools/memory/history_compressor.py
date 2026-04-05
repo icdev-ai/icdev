@@ -16,10 +16,9 @@ Usage:
 
 import logging
 import re
-import string
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 logger = logging.getLogger("sparkpilot.history_compressor")
 
@@ -252,14 +251,16 @@ class HistoryCompressor:
         try:
             from tools.llm.router import LLMRouter
             router = LLMRouter()
-            response = router.generate(
-                function_name="history_summarize",
+            from tools.llm.provider import LLMRequest
+
+            request = LLMRequest(
                 messages=[{
                     "role": "user",
                     "content": f"Summarize this conversation segment in {max_tokens // 4} words or fewer:\n\n{combined[:3000]}",
                 }],
             )
-            summary = response.get("content", str(response)) if isinstance(response, dict) else str(response)
+            response = router.invoke("history_summarize", request)
+            summary = response.content if response.content else str(response)
             return summary[:max_tokens * 4]  # Rough token-to-char ratio
         except (ImportError, Exception) as exc:
             logger.debug("LLM summarization unavailable: %s — using truncation", exc)

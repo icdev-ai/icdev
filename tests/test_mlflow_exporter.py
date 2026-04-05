@@ -17,7 +17,6 @@ Covers:
 
 import json
 import sqlite3
-import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -28,6 +27,7 @@ import pytest
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _create_span_db(path: Path, spans=None):
     """Create a SQLite DB with otel_spans table and optional seed data."""
@@ -92,14 +92,17 @@ def db_with_spans(tmp_path):
 # MLflowExporter Tests
 # ---------------------------------------------------------------------------
 
+
 class TestMLflowExporterInit:
     def test_init_defaults(self, db_path):
         from icdev.tools.observability.mlflow_exporter import MLflowExporter
+
         exporter = MLflowExporter(db_path=db_path)
         assert exporter._experiment_name == "icdev-traces"
 
     def test_init_custom_experiment(self, db_path):
         from icdev.tools.observability.mlflow_exporter import MLflowExporter
+
         exporter = MLflowExporter(db_path=db_path, experiment_name="custom")
         assert exporter._experiment_name == "custom"
 
@@ -108,6 +111,7 @@ class TestExportPending:
     def test_skip_when_no_mlflow(self, db_path):
         with patch("icdev.tools.observability.mlflow_exporter.HAS_MLFLOW", False):
             from icdev.tools.observability.mlflow_exporter import MLflowExporter
+
             exporter = MLflowExporter(db_path=db_path, tracking_uri="http://fake:5001")
             # Force the attribute since we patched after import
             result = exporter.export_pending()
@@ -116,6 +120,7 @@ class TestExportPending:
 
     def test_skip_when_no_tracking_uri(self, db_path):
         from icdev.tools.observability.mlflow_exporter import MLflowExporter
+
         exporter = MLflowExporter(db_path=db_path, tracking_uri="")
         exporter._tracking_uri = ""
         result = exporter.export_pending()
@@ -123,6 +128,7 @@ class TestExportPending:
 
     def test_skip_when_db_missing(self, tmp_path):
         from icdev.tools.observability.mlflow_exporter import MLflowExporter
+
         exporter = MLflowExporter(
             db_path=tmp_path / "nonexistent.db",
             tracking_uri="http://localhost:5001",
@@ -134,8 +140,10 @@ class TestExportPending:
         from icdev.tools.observability.mlflow_exporter import MLflowExporter
 
         mock_mlflow = MagicMock()
-        with patch("icdev.tools.observability.mlflow_exporter.HAS_MLFLOW", True), \
-             patch("icdev.tools.observability.mlflow_exporter.mlflow", mock_mlflow):
+        with (
+            patch("icdev.tools.observability.mlflow_exporter.HAS_MLFLOW", True),
+            patch("icdev.tools.observability.mlflow_exporter.mlflow", mock_mlflow),
+        ):
             exporter = MLflowExporter(
                 db_path=db_path,
                 tracking_uri="http://localhost:5001",
@@ -149,6 +157,7 @@ class TestExportPending:
     def test_export_groups_by_trace_id(self, mock_mlflow, db_with_spans):
         with patch("icdev.tools.observability.mlflow_exporter.HAS_MLFLOW", True):
             from icdev.tools.observability.mlflow_exporter import MLflowExporter
+
             exporter = MLflowExporter(
                 db_path=db_with_spans,
                 tracking_uri="http://localhost:5001",
@@ -184,6 +193,7 @@ class TestExportPending:
 class TestGetStatus:
     def test_status_basic(self, db_path):
         from icdev.tools.observability.mlflow_exporter import MLflowExporter
+
         exporter = MLflowExporter(db_path=db_path)
         status = exporter.get_status()
         assert "mlflow_available" in status
@@ -192,12 +202,14 @@ class TestGetStatus:
 
     def test_status_with_spans(self, db_with_spans):
         from icdev.tools.observability.mlflow_exporter import MLflowExporter
+
         exporter = MLflowExporter(db_path=db_with_spans)
         status = exporter.get_status()
         assert status["total_spans"] == 3
 
     def test_status_missing_db(self, tmp_path):
         from icdev.tools.observability.mlflow_exporter import MLflowExporter
+
         exporter = MLflowExporter(db_path=tmp_path / "nope.db")
         status = exporter.get_status()
         assert "total_spans" not in status
@@ -206,18 +218,21 @@ class TestGetStatus:
 class TestReadUnexportedSpans:
     def test_read_spans(self, db_with_spans):
         from icdev.tools.observability.mlflow_exporter import MLflowExporter
+
         exporter = MLflowExporter(db_path=db_with_spans)
         spans = exporter._read_unexported_spans(100)
         assert len(spans) == 3
 
     def test_read_with_limit(self, db_with_spans):
         from icdev.tools.observability.mlflow_exporter import MLflowExporter
+
         exporter = MLflowExporter(db_path=db_with_spans)
         spans = exporter._read_unexported_spans(2)
         assert len(spans) == 2
 
     def test_read_missing_db(self, tmp_path):
         from icdev.tools.observability.mlflow_exporter import MLflowExporter
+
         exporter = MLflowExporter(db_path=tmp_path / "nope.db")
         spans = exporter._read_unexported_spans(100)
         assert spans == []

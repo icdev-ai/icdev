@@ -93,8 +93,11 @@ class TestSessionPurpose(unittest.TestCase):
 
     def test_get_active_latest(self):
         """Test that most recent active purpose is returned."""
-        declare(purpose="First", db_path=self.db_path)
-        declare(purpose="Second", db_path=self.db_path)
+        # Use explicit timestamps to avoid flaky timing under load
+        with patch("icdev.tools.agent.session_purpose._now", return_value="2026-01-01T00:00:00.000000Z"):
+            declare(purpose="First", db_path=self.db_path)
+        with patch("icdev.tools.agent.session_purpose._now", return_value="2026-01-01T00:00:01.000000Z"):
+            declare(purpose="Second", db_path=self.db_path)
         active = get_active(db_path=self.db_path)
         self.assertEqual(active["purpose"], "Second")
 
@@ -161,7 +164,7 @@ class TestSessionPurpose(unittest.TestCase):
 
     def test_metadata_storage(self):
         """Test metadata is stored as JSON."""
-        result = declare(
+        declare(
             purpose="With metadata",
             metadata={"workflow": "icdev_sdlc", "issue": 42},
             db_path=self.db_path,
@@ -232,6 +235,7 @@ class TestAsyncResultInjection(unittest.TestCase):
     def test_send_async_result(self):
         """Test sending an async result."""
         from icdev.tools.agent.mailbox import send_async_result
+
         msg_id = send_async_result(
             from_agent_id="builder-agent",
             to_agent_id="orchestrator-agent",
@@ -244,6 +248,7 @@ class TestAsyncResultInjection(unittest.TestCase):
     def test_async_result_high_priority(self):
         """Test async result gets priority 9 for injection."""
         from icdev.tools.agent.mailbox import send_async_result, receive, PRIORITY_INJECT_NEXT_TURN
+
         send_async_result(
             from_agent_id="security-agent",
             to_agent_id="orchestrator-agent",
@@ -259,6 +264,7 @@ class TestAsyncResultInjection(unittest.TestCase):
     def test_collect_pending_injections(self):
         """Test collecting pending injections."""
         from icdev.tools.agent.mailbox import send_async_result, collect_pending_injections
+
         send_async_result(
             from_agent_id="builder-agent",
             to_agent_id="orchestrator-agent",
@@ -280,6 +286,7 @@ class TestAsyncResultInjection(unittest.TestCase):
     def test_collect_marks_read(self):
         """Test that collection marks messages as read."""
         from icdev.tools.agent.mailbox import send_async_result, collect_pending_injections
+
         send_async_result(
             from_agent_id="builder-agent",
             to_agent_id="orchestrator-agent",
@@ -297,12 +304,14 @@ class TestAsyncResultInjection(unittest.TestCase):
     def test_collect_empty(self):
         """Test collection with no pending messages."""
         from icdev.tools.agent.mailbox import collect_pending_injections
+
         results = collect_pending_injections("orchestrator-agent", db_path=self.db_path)
         self.assertEqual(len(results), 0)
 
     def test_no_inject_normal_messages(self):
         """Test that normal messages are not collected as injections."""
         from icdev.tools.agent.mailbox import send, collect_pending_injections
+
         send(
             from_agent_id="builder-agent",
             to_agent_id="orchestrator-agent",
@@ -322,6 +331,7 @@ class TestTieredFileAccess(unittest.TestCase):
     def test_matches_tier_env_file(self):
         """Test .env file matching."""
         from importlib.machinery import SourceFileLoader
+
         hook_path = str(Path(__file__).resolve().parent.parent / ".claude" / "hooks" / "pre_tool_use.py")
         loader = SourceFileLoader("hook", hook_path)
         hook = loader.load_module()
@@ -333,6 +343,7 @@ class TestTieredFileAccess(unittest.TestCase):
     def test_matches_tier_pem_file(self):
         """Test .pem file matching."""
         from importlib.machinery import SourceFileLoader
+
         hook_path = str(Path(__file__).resolve().parent.parent / ".claude" / "hooks" / "pre_tool_use.py")
         loader = SourceFileLoader("hook", hook_path)
         hook = loader.load_module()
@@ -343,6 +354,7 @@ class TestTieredFileAccess(unittest.TestCase):
     def test_matches_tier_no_match(self):
         """Test non-matching file."""
         from importlib.machinery import SourceFileLoader
+
         hook_path = str(Path(__file__).resolve().parent.parent / ".claude" / "hooks" / "pre_tool_use.py")
         loader = SourceFileLoader("hook", hook_path)
         hook = loader.load_module()

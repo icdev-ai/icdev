@@ -241,11 +241,11 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="import_xmi",
-        description="Import a Cameo SysML v1.6 XMI model file into the ICDEV database",
+        description="Import a Cameo SysML v1.6 XMI model file into the ICDEV™ database",
         input_schema={
             "type": "object",
             "properties": {
-                "project_id": {"type": "string", "description": "ICDEV project ID"},
+                "project_id": {"type": "string", "description": "ICDEV™ project ID"},
                 "file_path": {"type": "string", "description": "Path to the XMI file exported from Cameo"},
             },
             "required": ["project_id", "file_path"],
@@ -255,11 +255,11 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="import_reqif",
-        description="Import a DOORS NG ReqIF 1.2 requirements file into the ICDEV database",
+        description="Import a DOORS NG ReqIF 1.2 requirements file into the ICDEV™ database",
         input_schema={
             "type": "object",
             "properties": {
-                "project_id": {"type": "string", "description": "ICDEV project ID"},
+                "project_id": {"type": "string", "description": "ICDEV™ project ID"},
                 "file_path": {"type": "string", "description": "Path to the ReqIF file exported from DOORS NG"},
             },
             "required": ["project_id", "file_path"],
@@ -273,7 +273,7 @@ def create_server() -> MCPServer:
         input_schema={
             "type": "object",
             "properties": {
-                "project_id": {"type": "string", "description": "ICDEV project ID"},
+                "project_id": {"type": "string", "description": "ICDEV™ project ID"},
                 "source_type": {"type": "string", "enum": ["doors_requirement", "sysml_element", "code_module", "test_file", "nist_control"]},
                 "source_id": {"type": "string", "description": "ID of the source element"},
             },
@@ -288,7 +288,7 @@ def create_server() -> MCPServer:
         input_schema={
             "type": "object",
             "properties": {
-                "project_id": {"type": "string", "description": "ICDEV project ID"},
+                "project_id": {"type": "string", "description": "ICDEV™ project ID"},
                 "target_type": {"type": "string", "enum": ["doors_requirement", "sysml_element", "code_module", "test_file", "nist_control"]},
                 "target_id": {"type": "string", "description": "ID of the target element"},
             },
@@ -303,7 +303,7 @@ def create_server() -> MCPServer:
         input_schema={
             "type": "object",
             "properties": {
-                "project_id": {"type": "string", "description": "ICDEV project ID"},
+                "project_id": {"type": "string", "description": "ICDEV™ project ID"},
                 "language": {"type": "string", "default": "python", "enum": ["python", "java", "go", "rust", "csharp", "typescript"]},
                 "output_dir": {"type": "string", "description": "Output directory for generated code"},
             },
@@ -318,7 +318,7 @@ def create_server() -> MCPServer:
         input_schema={
             "type": "object",
             "properties": {
-                "project_id": {"type": "string", "description": "ICDEV project ID"},
+                "project_id": {"type": "string", "description": "ICDEV™ project ID"},
             },
             "required": ["project_id"],
         },
@@ -331,7 +331,7 @@ def create_server() -> MCPServer:
         input_schema={
             "type": "object",
             "properties": {
-                "project_id": {"type": "string", "description": "ICDEV project ID"},
+                "project_id": {"type": "string", "description": "ICDEV™ project ID"},
                 "direction": {"type": "string", "default": "model_to_code", "enum": ["model_to_code", "code_to_model"]},
                 "language": {"type": "string", "default": "python"},
                 "output_path": {"type": "string", "description": "Output XMI path (for code_to_model)"},
@@ -347,7 +347,7 @@ def create_server() -> MCPServer:
         input_schema={
             "type": "object",
             "properties": {
-                "project_id": {"type": "string", "description": "ICDEV project ID"},
+                "project_id": {"type": "string", "description": "ICDEV™ project ID"},
                 "project_dir": {"type": "string", "description": "Project directory path"},
             },
             "required": ["project_id", "project_dir"],
@@ -361,7 +361,7 @@ def create_server() -> MCPServer:
         input_schema={
             "type": "object",
             "properties": {
-                "project_id": {"type": "string", "description": "ICDEV project ID"},
+                "project_id": {"type": "string", "description": "ICDEV™ project ID"},
             },
             "required": ["project_id"],
         },
@@ -374,7 +374,7 @@ def create_server() -> MCPServer:
         input_schema={
             "type": "object",
             "properties": {
-                "project_id": {"type": "string", "description": "ICDEV project ID"},
+                "project_id": {"type": "string", "description": "ICDEV™ project ID"},
                 "pi_number": {"type": "string", "description": "PI identifier (e.g., PI-25.1)"},
                 "snapshot_type": {"type": "string", "default": "manual", "enum": ["pi_start", "pi_end", "baseline", "milestone", "manual"]},
                 "notes": {"type": "string", "description": "Optional notes for this snapshot"},

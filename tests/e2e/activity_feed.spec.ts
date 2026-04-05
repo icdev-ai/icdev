@@ -1,6 +1,6 @@
 // CUI // SP-CTI
 // E2E Test: Activity Feed
-// Verifies the ICDEV dashboard activity page loads with SSE connection and activity entries.
+// Verifies the ICDEV™ dashboard activity page loads with SSE connection and activity entries.
 
 import { test, expect } from '@playwright/test';
 

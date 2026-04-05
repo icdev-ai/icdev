@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Translations — ICDEV Dashboard{% endblock %}
+{% block title %}Translations — ICDEV™ Dashboard{% endblock %}
 
 {% block content %}
 <div class="breadcrumb" role="navigation" aria-label="Breadcrumb">
@@ -127,9 +127,9 @@ fetch('/api/charts/translations')
         // Status donut
         const statusEl = document.getElementById('chart-status');
         if (data.status_distribution && Object.keys(data.status_distribution).length > 0) {
-            if (typeof ICDEV !== 'undefined' && ICDEV.donutChart) {
+            if (typeof ICDEV™ !== 'undefined' && ICDEV™.donutChart) {
                 statusEl.innerHTML = '';
-                ICDEV.donutChart(statusEl, data.status_distribution, {
+                ICDEV™.donutChart(statusEl, data.status_distribution, {
                     colors: { completed: '#22c55e', failed: '#ef4444', partial: '#f59e0b',
                               pending: '#6b7280', extracting: '#3b82f6', translating: '#8b5cf6',
                               assembling: '#06b6d4', validating: '#14b8a6' }
@@ -144,9 +144,9 @@ fetch('/api/charts/translations')
         // Language pair bar chart
         const pairsEl = document.getElementById('chart-pairs');
         if (data.language_pair_frequency && Object.keys(data.language_pair_frequency).length > 0) {
-            if (typeof ICDEV !== 'undefined' && ICDEV.barChart) {
+            if (typeof ICDEV™ !== 'undefined' && ICDEV™.barChart) {
                 pairsEl.innerHTML = '';
-                ICDEV.barChart(pairsEl, data.language_pair_frequency);
+                ICDEV™.barChart(pairsEl, data.language_pair_frequency);
             } else {
                 pairsEl.innerHTML = '<pre>' + JSON.stringify(data.language_pair_frequency, null, 2) + '</pre>';
             }

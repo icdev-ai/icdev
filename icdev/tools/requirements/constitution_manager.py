@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Project constitution manager -- immutable principles that gate specs and plans.
 
 Constitutions are per-project principles (security, compliance, architecture, quality,
@@ -490,7 +490,7 @@ def validate_spec(spec_path: Path, project_id: str, db_path=None) -> dict:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Constitution Manager (ADR D158)"
+        description="ICDEV™ Constitution Manager (ADR D158)"
     )
     parser.add_argument("--project-id", help="Target project ID")
     parser.add_argument("--add", action="store_true", help="Add a new principle")

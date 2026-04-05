@@ -13,10 +13,10 @@ from __future__ import annotations
 import json
 import sqlite3
 import struct
-import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from tools.db.storage import get_connection
 from tools.rag.vector_store_provider import (
     SearchResult,
     VectorChunk,
@@ -31,6 +31,7 @@ def _cosine_similarity(a: List[float], b: List[float]) -> float:
     """Cosine similarity with numpy fast path + pure-python fallback."""
     try:
         import numpy as np
+
         va = np.array(a, dtype=np.float32)
         vb = np.array(b, dtype=np.float32)
         dot = float(np.dot(va, vb))
@@ -72,7 +73,7 @@ class SQLiteVectorStore(VectorStoreProvider):
         self._init_schema()
 
     def _get_conn(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(str(self._db_path))
+        conn = get_connection(db_path=str(self._db_path))
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA busy_timeout=5000")
         return conn
@@ -208,8 +209,16 @@ class SQLiteVectorStore(VectorStoreProvider):
         results: list[SearchResult] = []
         for row in rows:
             (
-                cid, content, src_type, src_id, src_table,
-                cidx, emb_blob, meta_str, tier, cls,
+                cid,
+                content,
+                src_type,
+                src_id,
+                src_table,
+                cidx,
+                emb_blob,
+                meta_str,
+                tier,
+                cls,
             ) = row
             stored_emb = _blob_to_embedding(emb_blob)
             score = _cosine_similarity(query_embedding, stored_emb)
@@ -219,19 +228,21 @@ class SQLiteVectorStore(VectorStoreProvider):
                     meta = json.loads(meta_str)
                 except (json.JSONDecodeError, ValueError):
                     pass
-            results.append(SearchResult(
-                chunk_id=cid,
-                content=content,
-                source_type=src_type,
-                source_id=src_id,
-                source_table=src_table,
-                chunk_index=cidx,
-                score=score,
-                final_score=score,
-                metadata=meta,
-                tier=tier,
-                classification=cls,
-            ))
+            results.append(
+                SearchResult(
+                    chunk_id=cid,
+                    content=content,
+                    source_type=src_type,
+                    source_id=src_id,
+                    source_table=src_table,
+                    chunk_index=cidx,
+                    score=score,
+                    final_score=score,
+                    metadata=meta,
+                    tier=tier,
+                    classification=cls,
+                )
+            )
 
         results.sort(key=lambda r: r.score, reverse=True)
         return results[:top_k]
@@ -242,7 +253,8 @@ class SQLiteVectorStore(VectorStoreProvider):
         conn = self._get_conn()
         placeholders = ",".join("?" for _ in chunk_ids)
         cur = conn.execute(
-            f"DELETE FROM rag_chunks WHERE id IN ({placeholders})", chunk_ids
+            f"DELETE FROM rag_chunks WHERE id IN ({placeholders})",
+            chunk_ids,  # nosec B608 -- table/column names are internal constants, not user input
         )
         deleted = cur.rowcount
         conn.commit()
@@ -329,13 +341,12 @@ class SQLiteVectorStore(VectorStoreProvider):
         for cid in chunk_ids:
             if target_tier == "warm":
                 # Compress float32 → float16
-                row = conn.execute(
-                    "SELECT embedding FROM rag_chunks WHERE id = ?", (cid,)
-                ).fetchone()
+                row = conn.execute("SELECT embedding FROM rag_chunks WHERE id = ?", (cid,)).fetchone()
                 if row and row[0]:
                     emb = _blob_to_embedding(row[0])
                     try:
                         import numpy as np
+
                         f16 = np.array(emb, dtype=np.float16)
                         compressed = f16.tobytes()
                     except ImportError:

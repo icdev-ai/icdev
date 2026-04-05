@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-import pytest
 
 from tools.rag.retention_manager import (
     get_retention_status,
@@ -33,6 +32,7 @@ def _make_chunk(content, chunk_id, embedding=None, tier="hot"):
 class TestRetentionFunctions:
     def test_import(self):
         from tools.rag import retention_manager
+
         assert retention_manager is not None
 
     def test_get_retention_status(self):

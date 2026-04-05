@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-# Code Translation Prompt — ICDEV Phase 43 (D247, D254)
+# Code Translation Prompt — ICDEV™ Phase 43 (D247, D254)
 
 You are a senior software engineer performing a precise code translation from **{{ source_language }}** to **{{ target_language }}**.
 

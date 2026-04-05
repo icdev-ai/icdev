@@ -1,7 +1,7 @@
 # [TEMPLATE: CUI // SP-CTI]
 # Cross-Language Translation — `/icdev-translate`
 
-You are an ICDEV orchestrator performing cross-language code translation using the Phase 43 translation pipeline.
+You are an ICDEV™ orchestrator performing cross-language code translation using the Phase 43 translation pipeline.
 
 ## Workflow
 
@@ -11,7 +11,7 @@ Ask the user to confirm:
 - **Source language**: One of: python, java, javascript, typescript, go, rust, csharp
 - **Target language**: Must be different from source
 - **Output directory**: Where translated project will be written
-- **Project ID**: ICDEV project identifier (optional)
+- **Project ID**: ICDEV™ project identifier (optional)
 
 ### 2. Dry Run (Preview)
 Run extraction + type-checking without LLM calls to preview scope:

@@ -1,6 +1,6 @@
-# ICDEV Documentation
+# ICDEV™ Documentation
 
-ICDEV is a meta-builder that autonomously builds Gov/DoD applications with full SDLC compliance. This documentation covers everything from getting started to production operations.
+ICDEV™ is a meta-builder that autonomously builds Gov/DoD applications with full SDLC compliance. This documentation covers everything from getting started to production operations.
 
 ---
 
@@ -9,19 +9,19 @@ ICDEV is a meta-builder that autonomously builds Gov/DoD applications with full 
 | Guide | Description |
 |-------|-------------|
 | [Quickstart](dx/quickstart.md) | Get running in 5 minutes |
-| [Integration Tiers](dx/integration-tiers.md) | Three ways to use ICDEV: Invisible, Conversational, Programmatic |
+| [Integration Tiers](dx/integration-tiers.md) | Three ways to use ICDEV™: Invisible, Conversational, Programmatic |
 | [icdev.yaml Specification](dx/icdev-yaml-spec.md) | Project manifest reference — one file configures everything |
 
 ---
 
 ## Developer Experience (DX)
 
-Guides for day-to-day development with ICDEV.
+Guides for day-to-day development with ICDEV™.
 
 | Guide | Description |
 |-------|-------------|
 | [DX Overview](dx/README.md) | Developer experience index and integration tier comparison |
-| [Claude Code Guide](dx/claude-code-guide.md) | Using natural language to drive ICDEV workflows |
+| [Claude Code Guide](dx/claude-code-guide.md) | Using natural language to drive ICDEV™ workflows |
 | [AI Companion Guide](dx/companion-guide.md) | Multi-tool setup — Claude Code, Codex, Gemini, Copilot, Cursor, and 5 more |
 | [LLM Routing Guide](dx/llm-routing-guide.md) | Per-task LLM provider selection — assign Claude, GPT, Gemini, or local models to specific functions |
 | [CI/CD Integration](dx/ci-cd-integration.md) | Pipeline auto-attach for GitHub Actions and GitLab CI |
@@ -33,11 +33,11 @@ Guides for day-to-day development with ICDEV.
 
 ## Architecture
 
-Deep-dive reference guides for ICDEV's internal architecture.
+Deep-dive reference guides for ICDEV™'s internal architecture.
 
 | Guide | Description |
 |-------|-------------|
-| [GOTCHA Framework](architecture/gotcha-framework.md) | 6-layer agentic architecture — Goals, Orchestration, Tools, Context, Hard Prompts, Args |
+| [FORGE Framework](architecture/forge-framework.md) | 6-layer agentic architecture — Frameworks, Orchestration, Routines, Guidance, Evidence, Args |
 | [Multi-Agent System](architecture/multi-agent-system.md) | 15 agents, A2A protocol, MCP servers, DAG workflows, domain authority |
 | [Database Schema](architecture/database-schema.md) | 5 databases, 183+ tables, migrations, backup/restore, append-only audit |
 | [Compliance Framework](architecture/compliance-framework.md) | 26 frameworks, dual-hub crosswalk, BaseAssessor pattern, security gates |
@@ -46,7 +46,7 @@ Deep-dive reference guides for ICDEV's internal architecture.
 
 ## Operations
 
-Guides for running ICDEV in production.
+Guides for running ICDEV™ in production.
 
 | Guide | Description |
 |-------|-------------|
@@ -59,11 +59,11 @@ Guides for running ICDEV in production.
 
 ## Administration
 
-Guides for managing ICDEV subsystems.
+Guides for managing ICDEV™ subsystems.
 
 | Guide | Description |
 |-------|-------------|
-| [Marketplace Guide](admin/marketplace-guide.md) | Federated GOTCHA asset marketplace — publish, install, review, federation sync |
+| [Marketplace Guide](admin/marketplace-guide.md) | Federated FORGE asset marketplace — publish, install, review, federation sync |
 | [Gateway Guide](admin/gateway-guide.md) | Remote Command Gateway — messaging channels, user binding, air-gapped mode |
 | [Monitoring Guide](admin/monitoring-guide.md) | Heartbeat daemon, auto-resolver, distributed tracing, provenance, XAI |
 
@@ -82,14 +82,14 @@ Step-by-step operational procedures.
 
 ## Feature Documentation
 
-Detailed documentation for each ICDEV capability phase.
+Detailed documentation for each ICDEV™ capability phase.
 
 ### Core Platform (Phases 1-9)
 
 | Phase | Guide | Description |
 |-------|-------|-------------|
-| 1 | [GOTCHA Framework](features/phase-01-gotcha-framework.md) | 6-layer deterministic agentic architecture |
-| 2 | [ATLAS Build Workflow](features/phase-02-atlas-build-workflow.md) | 5-phase build: Architect, Trace, Link, Assemble, Stress-test |
+| 1 | [FORGE Framework](features/phase-01-forge-framework.md) | 6-layer deterministic agentic architecture |
+| 2 | [ANVIL Build Workflow](features/phase-02-atlas-build-workflow.md) | 5-phase build: Architect, Navigate, Verify, Integrate, Launch |
 | 3 | [TDD/BDD Testing](features/phase-03-tdd-bdd-testing.md) | RED-GREEN-REFACTOR cycle with 6-language support |
 | 4 | [NIST Compliance](features/phase-04-nist-compliance.md) | NIST 800-53 Rev 5 control mapping and SSP generation |
 | 5 | [Security Scanning](features/phase-05-security-scanning.md) | SAST, dependency audit, secret detection, container scanning |
@@ -147,9 +147,9 @@ Detailed documentation for each ICDEV capability phase.
 
 | Phase | Guide | Description |
 |-------|-------|-------------|
-| 19 | [Agentic Generation](features/phase-19-agentic-generation.md) | Mini-ICDEV clone child app generation |
+| 19 | [Agentic Generation](features/phase-19-agentic-generation.md) | Mini-ICDEV™ clone child app generation |
 | 21 | [SaaS Multi-Tenancy](features/phase-21-saas-multi-tenancy.md) | Multi-tenant platform, API gateway, tenant isolation |
-| 22 | [Federated Marketplace](features/phase-22-federated-gotcha-marketplace.md) | GOTCHA asset sharing with 9-gate security |
+| 22 | [Federated Marketplace](features/phase-22-federated-gotcha-marketplace.md) | FORGE asset sharing with 9-gate security |
 | 27 | [CLI Capabilities](features/phase-27-cli-capabilities.md) | Optional CLI toggles for headless/scripted execution |
 | 28 | [Remote Command Gateway](features/phase-28-remote-command-gateway.md) | Messaging channel integration (5 channels) |
 | 33 | [Modular Installation](features/phase-33-modular-installation.md) | Interactive wizard, 10 deployment profiles |
@@ -179,9 +179,9 @@ Detailed documentation for each ICDEV capability phase.
 
 ## Quick Links
 
-- **New to ICDEV?** Start with the [Quickstart](dx/quickstart.md)
+- **New to ICDEV™?** Start with the [Quickstart](dx/quickstart.md)
 - **Setting up your AI tool?** See the [AI Companion Guide](dx/companion-guide.md)
 - **Deploying to production?** See the [Deployment Guide](operations/deployment-guide.md)
 - **Managing tenants?** See the [SaaS Administration](operations/saas-admin-guide.md)
 - **Troubleshooting?** See the [Troubleshooting Runbook](runbooks/troubleshooting.md)
-- **Understanding the architecture?** Start with [GOTCHA Framework](architecture/gotcha-framework.md)
+- **Understanding the architecture?** Start with [FORGE Framework](architecture/forge-framework.md)

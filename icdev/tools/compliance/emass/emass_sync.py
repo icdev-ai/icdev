@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""eMASS sync orchestrator -- coordinates data flow between ICDEV and eMASS.
+"""eMASS sync orchestrator -- coordinates data flow between ICDEV™ and eMASS.
 
 Supports three modes:
     - api: Push data directly via the eMASS REST API (EMASSClient)
@@ -60,7 +60,7 @@ def _log_audit(conn, project_id, action, details=None):
 
     Args:
         conn: Active database connection.
-        project_id: ICDEV project identifier.
+        project_id: ICDEV™ project identifier.
         action: Short action description (e.g., ``sync_completed_hybrid``).
         details: Optional dict of additional context.
     """
@@ -77,7 +77,7 @@ def _ensure_sync_tables(conn):
     """Ensure the emass_sync_log and emass_systems tables exist.
 
     These tables are created idempotently so the sync module works
-    even if the main ICDEV database schema has not been updated to
+    even if the main ICDEV™ database schema has not been updated to
     include them yet.
 
     Args:
@@ -126,7 +126,7 @@ def _log_sync(conn, project_id, mode, status, started_at, details=None,
 
     Args:
         conn: Active database connection.
-        project_id: ICDEV project identifier.
+        project_id: ICDEV™ project identifier.
         mode: Sync mode used (api, export, hybrid).
         status: Final sync status (success, partial, error).
         started_at: ISO timestamp when sync started.
@@ -160,7 +160,7 @@ def _update_emass_system(conn, project_id, sync_status, sync_mode,
 
     Args:
         conn: Active database connection.
-        project_id: ICDEV project identifier.
+        project_id: ICDEV™ project identifier.
         sync_status: Last sync status.
         sync_mode: Last sync mode used.
         emass_system_id: eMASS system identifier (if known).
@@ -227,7 +227,7 @@ def _load_project_data(conn, project_id):
 
     Args:
         conn: Active database connection.
-        project_id: ICDEV project identifier.
+        project_id: ICDEV™ project identifier.
 
     Returns:
         Dict with project, controls, poam_items, stig_findings,
@@ -289,7 +289,7 @@ def _sync_via_api(project_id, db_path=None):
     independently so partial failures do not block other pushes.
 
     Args:
-        project_id: ICDEV project ID.
+        project_id: ICDEV™ project ID.
         db_path: Database path (optional).
 
     Returns:
@@ -443,7 +443,7 @@ def _sync_via_export(project_id, db_path=None):
     Uses emass_export.export_all_emass() to produce every export file.
 
     Args:
-        project_id: ICDEV project ID.
+        project_id: ICDEV™ project ID.
         db_path: Database path (optional).
 
     Returns:
@@ -467,7 +467,7 @@ def _sync_via_export(project_id, db_path=None):
 # ============================================================
 
 def sync_to_emass(project_id, mode="hybrid", db_path=None):
-    """Main sync orchestrator between ICDEV and eMASS.
+    """Main sync orchestrator between ICDEV™ and eMASS.
 
     Coordinates pushing compliance data (controls, POA&M, artifacts,
     test results) to eMASS using the specified mode.
@@ -485,7 +485,7 @@ def sync_to_emass(project_id, mode="hybrid", db_path=None):
         - ``audit_trail`` table (immutable audit event)
 
     Args:
-        project_id: ICDEV project ID.
+        project_id: ICDEV™ project ID.
         mode: Sync mode -- ``"api"``, ``"export"``, or ``"hybrid"``
               (default: ``"hybrid"``).
         db_path: Database path (optional).
@@ -627,7 +627,7 @@ def pull_ato_status(project_id, db_path=None):
     ``emass_systems`` table.
 
     Args:
-        project_id: ICDEV project ID.
+        project_id: ICDEV™ project ID.
         db_path: Database path (optional).
 
     Returns:
@@ -728,7 +728,7 @@ def get_sync_history(project_id, db_path=None):
     most recent first.
 
     Args:
-        project_id: ICDEV project ID.
+        project_id: ICDEV™ project ID.
         db_path: Database path (optional).
 
     Returns:
@@ -775,11 +775,11 @@ def get_sync_history(project_id, db_path=None):
 def main():
     """CLI entry point for eMASS sync tool."""
     parser = argparse.ArgumentParser(
-        description="Sync ICDEV compliance data to eMASS"
+        description="Sync ICDEV™ compliance data to eMASS"
     )
     parser.add_argument(
         "--project-id", required=True,
-        help="ICDEV project ID",
+        help="ICDEV™ project ID",
     )
     parser.add_argument(
         "--mode", default="hybrid",

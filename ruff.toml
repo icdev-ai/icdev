@@ -2,10 +2,16 @@
 # Ruff configuration for ICDEV platform
 # See: https://docs.astral.sh/ruff/configuration/
 
+# ICDEV codebase uses 120-char lines (industry standard for wide monitors).
+# Default 88 was generating 10K+ false E501 violations.
+line-length = 120
+
 [lint]
 # E402: Module-level imports not at top — intentional pattern in ICDEV tools.
 # All tools/ scripts use sys.path.insert(0, ...) before importing project modules.
 # This is required for standalone CLI execution from any directory.
 #
 # E731: Lambda assignment — used sparingly in compact data transforms.
-ignore = ["E402", "E731"]
+#
+# E741: Ambiguous variable names (l, O, I) — used in loop-heavy data transforms.
+ignore = ["E402", "E731", "E741"]

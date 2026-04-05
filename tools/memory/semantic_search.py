@@ -3,8 +3,8 @@
 """Semantic (vector) search on memory entries. Requires OpenAI API key for embeddings."""
 
 import argparse
-import sqlite3
 import struct
+from tools.db.storage import get_connection
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -15,17 +15,20 @@ def get_openai_client():
     """Get an embedding client (tries LLM provider system first, then direct OpenAI)."""
     try:
         from tools.llm import get_embedding_provider
+
         return get_embedding_provider()
     except Exception:
         pass
     # Fallback to direct OpenAI
     try:
         from dotenv import load_dotenv
+
         load_dotenv(BASE_DIR / ".env")
     except ImportError:
         pass
 
     import os
+
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
         print("Error: OPENAI_API_KEY not set. Add it to .env or environment.")
@@ -33,6 +36,7 @@ def get_openai_client():
 
     try:
         import openai
+
         return openai.OpenAI(api_key=api_key)
     except ImportError:
         print("Error: openai package not installed. Run: pip install openai")
@@ -52,6 +56,7 @@ def get_embedding(client, text, model="text-embedding-3-small"):
 def cosine_similarity(a, b):
     try:
         import numpy as np
+
         a = np.array(a)
         b = np.array(b)
         return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))
@@ -83,7 +88,7 @@ def search(query, limit=10, user_id=None, tenant_id=None):
 
     query_embedding = get_embedding(client, query)
 
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = get_connection()
     c = conn.cursor()
 
     sql = "SELECT id, content, type, importance, embedding, created_at FROM memory_entries WHERE embedding IS NOT NULL"

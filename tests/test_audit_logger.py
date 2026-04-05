@@ -1,6 +1,7 @@
 # [TEMPLATE: CUI // SP-CTI]
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 """Tests for tools.audit.audit_logger — append-only audit trail writer."""
@@ -78,9 +79,7 @@ class TestLogEventBasic:
         )
         conn = sqlite3.connect(str(audit_db))
         conn.row_factory = sqlite3.Row
-        row = conn.execute(
-            "SELECT * FROM audit_trail WHERE id = ?", (entry_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM audit_trail WHERE id = ?", (entry_id,)).fetchone()
         conn.close()
 
         assert row["event_type"] == "code_generated"
@@ -168,9 +167,7 @@ class TestLogEventDetails:
             db_path=audit_db,
         )
         conn = sqlite3.connect(str(audit_db))
-        row = conn.execute(
-            "SELECT details FROM audit_trail WHERE id = ?", (entry_id,)
-        ).fetchone()
+        row = conn.execute("SELECT details FROM audit_trail WHERE id = ?", (entry_id,)).fetchone()
         conn.close()
         assert row[0] is not None
         parsed = json.loads(row[0])
@@ -185,9 +182,7 @@ class TestLogEventDetails:
             db_path=audit_db,
         )
         conn = sqlite3.connect(str(audit_db))
-        row = conn.execute(
-            "SELECT details FROM audit_trail WHERE id = ?", (entry_id,)
-        ).fetchone()
+        row = conn.execute("SELECT details FROM audit_trail WHERE id = ?", (entry_id,)).fetchone()
         conn.close()
         assert row[0] is None
 
@@ -200,9 +195,7 @@ class TestLogEventDetails:
             db_path=audit_db,
         )
         conn = sqlite3.connect(str(audit_db))
-        row = conn.execute(
-            "SELECT classification FROM audit_trail WHERE id = ?", (entry_id,)
-        ).fetchone()
+        row = conn.execute("SELECT classification FROM audit_trail WHERE id = ?", (entry_id,)).fetchone()
         conn.close()
         assert row[0] == "CUI"
 
@@ -216,11 +209,11 @@ class TestLogEventSessionId:
         with patch(
             "icdev.tools.audit.audit_logger.get_correlation_id",
             create=True,
-        ) as mock_get:
+        ):
             # We need to patch the import inside log_event
-            with patch.dict("sys.modules", {
-                "icdev.tools.resilience.correlation": type(sys)("icdev.tools.resilience.correlation")
-            }):
+            with patch.dict(
+                "sys.modules", {"icdev.tools.resilience.correlation": type(sys)("icdev.tools.resilience.correlation")}
+            ):
                 sys.modules["icdev.tools.resilience.correlation"].get_correlation_id = lambda: mock_corr_id
                 entry_id = log_event(
                     event_type="project_created",
@@ -229,9 +222,7 @@ class TestLogEventSessionId:
                     db_path=audit_db,
                 )
         conn = sqlite3.connect(str(audit_db))
-        row = conn.execute(
-            "SELECT session_id FROM audit_trail WHERE id = ?", (entry_id,)
-        ).fetchone()
+        row = conn.execute("SELECT session_id FROM audit_trail WHERE id = ?", (entry_id,)).fetchone()
         conn.close()
         assert row[0] == mock_corr_id
 
@@ -246,9 +237,7 @@ class TestLogEventSessionId:
             db_path=audit_db,
         )
         conn = sqlite3.connect(str(audit_db))
-        row = conn.execute(
-            "SELECT session_id FROM audit_trail WHERE id = ?", (entry_id,)
-        ).fetchone()
+        row = conn.execute("SELECT session_id FROM audit_trail WHERE id = ?", (entry_id,)).fetchone()
         conn.close()
         assert row[0] == explicit_id
 

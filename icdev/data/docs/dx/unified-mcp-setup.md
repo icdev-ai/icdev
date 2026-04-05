@@ -2,15 +2,15 @@
 
 CUI // SP-CTI
 
-ICDEV exposes **225 tools** through a single MCP server. This guide shows how to configure it in every supported AI coding tool and IDE.
+ICDEV™ exposes **225 tools** through a single MCP server. This guide shows how to configure it in every supported AI coding tool and IDE.
 
 ---
 
 ## Prerequisites
 
 - Python 3.10+ installed and on PATH
-- ICDEV repository cloned locally
-- No additional dependencies required (stdlib + existing ICDEV packages)
+- ICDEV™ repository cloned locally
+- No additional dependencies required (stdlib + existing ICDEV™ packages)
 
 Verify the server starts:
 
@@ -34,7 +34,7 @@ python tools/dx/companion.py --setup --write
 # Or generate for all 10 supported tools
 python tools/dx/companion.py --setup --all --write
 
-# After any ICDEV update, regenerate
+# After any ICDEV™ update, regenerate
 python tools/dx/companion.py --sync --write
 ```
 
@@ -44,7 +44,7 @@ For manual setup, follow the IDE-specific instructions below.
 
 ## VS Code + Claude Code
 
-Claude Code reads MCP configuration from `.mcp.json` in the project root. The unified server is already configured if you're using the ICDEV repository.
+Claude Code reads MCP configuration from `.mcp.json` in the project root. The unified server is already configured if you're using the ICDEV™ repository.
 
 ### Configuration
 
@@ -67,7 +67,7 @@ File: `.mcp.json`
 
 ### Verify
 
-1. Open the ICDEV project in VS Code
+1. Open the ICDEV™ project in VS Code
 2. Open Claude Code (Ctrl+L or Cmd+L)
 3. Type: "List all available MCP tools"
 4. Claude Code should report 225 tools from the `icdev-unified` server
@@ -122,7 +122,7 @@ File: `.cursor/mcp.json`
 
 1. Open Cursor composer (Ctrl+I)
 2. The MCP server indicator should show `icdev-unified` as connected
-3. Ask: "Use the project_list tool to show all ICDEV projects"
+3. Ask: "Use the project_list tool to show all ICDEV™ projects"
 
 ---
 
@@ -153,7 +153,7 @@ File: `.windsurf/mcp.json`
 
 1. Open Windsurf Cascade (Ctrl+L)
 2. Windsurf should detect and connect to the MCP server
-3. Ask it to call any ICDEV tool
+3. Ask it to call any ICDEV™ tool
 
 ---
 
@@ -184,7 +184,7 @@ File: `.cline/mcp_settings.json`
 
 1. Open the Cline extension panel
 2. Check that `icdev-unified` appears in the MCP server list
-3. Cline can now use all 225 ICDEV tools
+3. Cline can now use all 225 ICDEV™ tools
 
 ---
 
@@ -320,7 +320,7 @@ File: `.junie/mcp.json`
 
 1. Open the AI Assistant panel
 2. Check that `icdev-unified` is listed as a connected tool server
-3. Ask the assistant to use any ICDEV tool
+3. Ask the assistant to use any ICDEV™ tool
 
 ---
 
@@ -358,7 +358,7 @@ File: `.vscode/mcp.json`
 
 ## Aider
 
-Aider does not natively support MCP. However, you can use ICDEV tools via the CLI:
+Aider does not natively support MCP. However, you can use ICDEV™ tools via the CLI:
 
 ```bash
 # Aider can execute shell commands, so tools are accessible via:

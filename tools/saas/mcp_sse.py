@@ -3,10 +3,10 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""ICDEV SaaS -- MCP-over-SSE Transport.
+# POC: ICDEV™ System Administrator
+"""ICDEV™ SaaS -- MCP-over-SSE Transport.
 
-Converts ICDEV's stdio MCP servers to HTTP SSE for remote SaaS clients.
+Converts ICDEV™'s stdio MCP servers to HTTP SSE for remote SaaS clients.
 Implements JSON-RPC 2.0 dispatch for MCP tool calls with tenant isolation.
 
 Auth is handled by the gateway middleware -- by the time a request reaches
@@ -38,7 +38,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from flask import Blueprint, Response, g, jsonify, request
+from flask import Blueprint, Response, g, jsonify, request  # noqa: E402
 
 logger = logging.getLogger("saas.mcp_sse")
 
@@ -85,19 +85,20 @@ def _unregister_sse_client(tenant_id: str, q: queue.Queue) -> None:
 
 def _broadcast_event(tenant_id: str, event_type: str, data: dict) -> None:
     """Broadcast an SSE event to all connected clients for a tenant."""
-    payload = json.dumps({
-        "type": event_type,
-        "data": data,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-    })
+    payload = json.dumps(
+        {
+            "type": event_type,
+            "data": data,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+    )
     with _sse_lock:
         clients = _sse_clients.get(tenant_id, [])
         for q in clients:
             try:
                 q.put_nowait(("event", event_type, payload))
             except queue.Full:
-                logger.warning("SSE queue full for tenant %s, dropping event",
-                               tenant_id)
+                logger.warning("SSE queue full for tenant %s, dropping event", tenant_id)
 
 
 # ---------------------------------------------------------------------------
@@ -110,7 +111,7 @@ def _broadcast_event(tenant_id: str, event_type: str, data: dict) -> None:
 TOOL_REGISTRY = [
     {
         "name": "project_create",
-        "description": "Create a new ICDEV-managed project",
+        "description": "Create a new ICDEV™-managed project",
         "module": "tools.project.project_create",
         "function": "create_project",
         "inputSchema": {
@@ -281,6 +282,7 @@ _TOOL_MAP: Dict[str, dict] = {t["name"]: t for t in TOOL_REGISTRY}
 def _load_tool_func(tool_entry: dict) -> Callable:
     """Dynamically import and return the tool function."""
     import importlib
+
     mod = importlib.import_module(tool_entry["module"])
     return getattr(mod, tool_entry["function"])
 
@@ -309,6 +311,7 @@ def _dispatch_tool(name: str, arguments: dict, tenant_id: str) -> Any:
 
     # Use tenant_db_adapter for tools that need DB isolation
     from tools.saas.tenant_db_adapter import call_tool_with_tenant_db
+
     try:
         result = call_tool_with_tenant_db(tool_func, tenant_id, **arguments)
     except TypeError:
@@ -352,16 +355,18 @@ def handle_jsonrpc(request_data: dict, tenant_id: str) -> dict:
 
     # ----- initialize -----
     if method == "initialize":
-        return _success({
-            "protocolVersion": MCP_VERSION,
-            "capabilities": {
-                "tools": {"listChanged": False},
-            },
-            "serverInfo": {
-                "name": SERVER_NAME,
-                "version": SERVER_VERSION,
-            },
-        })
+        return _success(
+            {
+                "protocolVersion": MCP_VERSION,
+                "capabilities": {
+                    "tools": {"listChanged": False},
+                },
+                "serverInfo": {
+                    "name": SERVER_NAME,
+                    "version": SERVER_VERSION,
+                },
+            }
+        )
 
     # ----- ping -----
     if method == "ping":
@@ -371,11 +376,13 @@ def handle_jsonrpc(request_data: dict, tenant_id: str) -> dict:
     if method == "tools/list":
         tools = []
         for t in TOOL_REGISTRY:
-            tools.append({
-                "name": t["name"],
-                "description": t["description"],
-                "inputSchema": t["inputSchema"],
-            })
+            tools.append(
+                {
+                    "name": t["name"],
+                    "description": t["description"],
+                    "inputSchema": t["inputSchema"],
+                }
+            )
         return _success({"tools": tools})
 
     # ----- tools/call -----
@@ -388,35 +395,49 @@ def handle_jsonrpc(request_data: dict, tenant_id: str) -> dict:
         try:
             result = _dispatch_tool(tool_name, arguments, tenant_id)
             # Broadcast completion event to SSE clients
-            _broadcast_event(tenant_id, "tool.completed", {
-                "tool": tool_name,
-                "status": "success",
-            })
+            _broadcast_event(
+                tenant_id,
+                "tool.completed",
+                {
+                    "tool": tool_name,
+                    "status": "success",
+                },
+            )
             # MCP tools/call returns content array
             content = []
             if isinstance(result, dict):
-                content.append({
-                    "type": "text",
-                    "text": json.dumps(result, indent=2, default=str),
-                })
+                content.append(
+                    {
+                        "type": "text",
+                        "text": json.dumps(result, indent=2, default=str),
+                    }
+                )
             elif isinstance(result, str):
                 content.append({"type": "text", "text": result})
             else:
-                content.append({
-                    "type": "text",
-                    "text": json.dumps(result, default=str),
-                })
+                content.append(
+                    {
+                        "type": "text",
+                        "text": json.dumps(result, default=str),
+                    }
+                )
             return _success({"content": content, "isError": False})
         except Exception as exc:
             logger.error("Tool %s failed: %s", tool_name, exc)
-            _broadcast_event(tenant_id, "tool.failed", {
-                "tool": tool_name,
-                "error": str(exc),
-            })
-            return _success({
-                "content": [{"type": "text", "text": str(exc)}],
-                "isError": True,
-            })
+            _broadcast_event(
+                tenant_id,
+                "tool.failed",
+                {
+                    "tool": tool_name,
+                    "error": str(exc),
+                },
+            )
+            return _success(
+                {
+                    "content": [{"type": "text", "text": str(exc)}],
+                    "isError": True,
+                }
+            )
 
     # ----- unknown method -----
     return _err(-32601, "Method not found: {}".format(method))
@@ -426,25 +447,30 @@ def handle_jsonrpc(request_data: dict, tenant_id: str) -> dict:
 # Flask routes
 # ---------------------------------------------------------------------------
 
+
 @mcp_bp.route("/", methods=["POST"])
 def mcp_rpc_endpoint():
     """POST /mcp/v1/ -- Handle JSON-RPC requests."""
     try:
         data = request.get_json(force=True, silent=True)
         if not data:
-            return jsonify({
-                "jsonrpc": "2.0",
-                "id": None,
-                "error": {"code": -32700, "message": "Parse error"},
-            }), 400
+            return jsonify(
+                {
+                    "jsonrpc": "2.0",
+                    "id": None,
+                    "error": {"code": -32700, "message": "Parse error"},
+                }
+            ), 400
 
         # Validate JSON-RPC structure
         if data.get("jsonrpc") != "2.0":
-            return jsonify({
-                "jsonrpc": "2.0",
-                "id": data.get("id"),
-                "error": {"code": -32600, "message": "Invalid Request: jsonrpc must be '2.0'"},
-            }), 400
+            return jsonify(
+                {
+                    "jsonrpc": "2.0",
+                    "id": data.get("id"),
+                    "error": {"code": -32600, "message": "Invalid Request: jsonrpc must be '2.0'"},
+                }
+            ), 400
 
         tenant_id = getattr(g, "tenant_id", None) or ""
         response = handle_jsonrpc(data, tenant_id)
@@ -452,11 +478,13 @@ def mcp_rpc_endpoint():
 
     except Exception as exc:
         logger.error("MCP RPC error: %s", exc)
-        return jsonify({
-            "jsonrpc": "2.0",
-            "id": None,
-            "error": {"code": -32603, "message": "Internal error: {}".format(str(exc))},
-        }), 500
+        return jsonify(
+            {
+                "jsonrpc": "2.0",
+                "id": None,
+                "error": {"code": -32603, "message": "Internal error: {}".format(str(exc))},
+            }
+        ), 500
 
 
 @mcp_bp.route("/sse", methods=["GET"])
@@ -472,12 +500,16 @@ def mcp_sse_stream():
         client_q = _register_sse_client(tenant_id)
         try:
             # Send initial connection event
-            yield "event: connected\ndata: {}\n\n".format(json.dumps({
-                "server": SERVER_NAME,
-                "version": SERVER_VERSION,
-                "tenant_id": tenant_id,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            }))
+            yield "event: connected\ndata: {}\n\n".format(
+                json.dumps(
+                    {
+                        "server": SERVER_NAME,
+                        "version": SERVER_VERSION,
+                        "tenant_id": tenant_id,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    }
+                )
+            )
 
             while True:
                 try:
@@ -488,8 +520,7 @@ def mcp_sse_stream():
                     yield "event: {}\ndata: {}\n\n".format(event_type, payload)
                 except queue.Empty:
                     # Heartbeat to keep connection alive
-                    yield ": heartbeat {}\n\n".format(
-                        datetime.now(timezone.utc).isoformat())
+                    yield ": heartbeat {}\n\n".format(datetime.now(timezone.utc).isoformat())
         except GeneratorExit:
             pass
         finally:
@@ -512,13 +543,17 @@ def mcp_list_tools():
     """GET /mcp/v1/tools -- List available MCP tools (convenience endpoint)."""
     tools = []
     for t in TOOL_REGISTRY:
-        tools.append({
-            "name": t["name"],
-            "description": t["description"],
-            "inputSchema": t["inputSchema"],
-        })
-    return jsonify({
-        "tools": tools,
-        "total": len(tools),
-        "classification": "CUI // SP-CTI",
-    })
+        tools.append(
+            {
+                "name": t["name"],
+                "description": t["description"],
+                "inputSchema": t["inputSchema"],
+            }
+        )
+    return jsonify(
+        {
+            "tools": tools,
+            "total": len(tools),
+            "classification": "CUI // SP-CTI",
+        }
+    )

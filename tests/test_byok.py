@@ -1,11 +1,11 @@
 # [TEMPLATE: CUI // SP-CTI]
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 """Tests for tools.dashboard.byok — BYOK (Bring Your Own Key) management."""
 
-import os
 import sqlite3
 
 import pytest
@@ -70,6 +70,7 @@ def _init_db(db_path: Path):
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture(autouse=True)
 def _reset_fernet():
     """Reset module-level Fernet cache between tests."""
@@ -93,6 +94,7 @@ def byok_db(tmp_path, monkeypatch):
 # 1-2. encrypt_key / decrypt_key
 # ---------------------------------------------------------------------------
 
+
 class TestEncryptDecrypt:
     """Encryption round-trip and prefix detection."""
 
@@ -108,6 +110,7 @@ class TestEncryptDecrypt:
         """decrypt_key should detect 'b64:' prefix and base64-decode."""
         monkeypatch.setattr("icdev.tools.dashboard.byok.BYOK_ENCRYPTION_KEY", "")
         import base64
+
         manual = "b64:" + base64.b64encode(b"hello-world").decode("utf-8")
         assert byok.decrypt_key(manual) == "hello-world"
 
@@ -128,6 +131,7 @@ class TestEncryptDecrypt:
 # 3. store_llm_key
 # ---------------------------------------------------------------------------
 
+
 class TestStoreLlmKey:
     """Tests for storing LLM keys."""
 
@@ -141,9 +145,7 @@ class TestStoreLlmKey:
         # Verify in DB
         conn = sqlite3.connect(byok_db)
         conn.row_factory = sqlite3.Row
-        row = conn.execute(
-            "SELECT * FROM dashboard_user_llm_keys WHERE id = ?", (result["id"],)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM dashboard_user_llm_keys WHERE id = ?", (result["id"],)).fetchone()
         conn.close()
         assert row is not None
         assert row["user_id"] == TEST_USER_ID
@@ -153,8 +155,11 @@ class TestStoreLlmKey:
     def test_store_department_key(self, byok_db):
         """store_llm_key with is_department_key=True should set department flag."""
         result = byok.store_llm_key(
-            TEST_USER_ID, "openai", "sk-openai-fake",
-            department="Engineering", is_department_key=True,
+            TEST_USER_ID,
+            "openai",
+            "sk-openai-fake",
+            department="Engineering",
+            is_department_key=True,
         )
         assert result["is_department_key"] is True
         assert result["department"] == "Engineering"
@@ -173,6 +178,7 @@ class TestStoreLlmKey:
 # ---------------------------------------------------------------------------
 # 4. list_llm_keys
 # ---------------------------------------------------------------------------
+
 
 class TestListLlmKeys:
     """Tests for listing LLM keys."""
@@ -200,6 +206,7 @@ class TestListLlmKeys:
 # 5. revoke_llm_key
 # ---------------------------------------------------------------------------
 
+
 class TestRevokeLlmKey:
     """Tests for revoking LLM keys."""
 
@@ -213,9 +220,7 @@ class TestRevokeLlmKey:
 
         conn = sqlite3.connect(byok_db)
         conn.row_factory = sqlite3.Row
-        row = conn.execute(
-            "SELECT status FROM dashboard_user_llm_keys WHERE id = ?", (key_id,)
-        ).fetchone()
+        row = conn.execute("SELECT status FROM dashboard_user_llm_keys WHERE id = ?", (key_id,)).fetchone()
         conn.close()
         assert row["status"] == "revoked"
 
@@ -228,6 +233,7 @@ class TestRevokeLlmKey:
 # ---------------------------------------------------------------------------
 # 6-7. get_llm_key_for_provider
 # ---------------------------------------------------------------------------
+
 
 class TestGetLlmKeyForProvider:
     """Tests for retrieving a decrypted key by provider."""
@@ -255,6 +261,7 @@ class TestGetLlmKeyForProvider:
 # 8-12. resolve_api_key
 # ---------------------------------------------------------------------------
 
+
 class TestResolveApiKey:
     """Tests for the D175 key resolution chain."""
 
@@ -269,8 +276,11 @@ class TestResolveApiKey:
         """resolve_api_key should fall back to department key with source='department_byok'."""
         dept_key = "sk-ant-DEPT-key-999"
         byok.store_llm_key(
-            TEST_USER_ID, TEST_PROVIDER, dept_key,
-            department="Engineering", is_department_key=True,
+            TEST_USER_ID,
+            TEST_PROVIDER,
+            dept_key,
+            department="Engineering",
+            is_department_key=True,
         )
         # Use a different user who does NOT have a personal key
         other_user = "user-other-002"
@@ -325,8 +335,11 @@ class TestResolveApiKey:
         user_key = "sk-user-personal"
         dept_key = "sk-dept-shared"
         byok.store_llm_key(
-            TEST_USER_ID, TEST_PROVIDER, dept_key,
-            department="Ops", is_department_key=True,
+            TEST_USER_ID,
+            TEST_PROVIDER,
+            dept_key,
+            department="Ops",
+            is_department_key=True,
         )
         byok.store_llm_key(TEST_USER_ID, TEST_PROVIDER, user_key)
 
@@ -347,6 +360,7 @@ class TestResolveApiKey:
 # ---------------------------------------------------------------------------
 # 13. PROVIDER_ENV_MAP
 # ---------------------------------------------------------------------------
+
 
 class TestProviderEnvMap:
     """Tests for the PROVIDER_ENV_MAP constant."""

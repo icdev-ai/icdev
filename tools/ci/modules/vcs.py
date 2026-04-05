@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV VCS Abstraction — Unified GitHub + GitLab interface
+# ICDEV™ VCS Abstraction — Unified GitHub + GitLab interface
 # Adapted from ADW github.py with GitLab support added
 
 """
@@ -25,6 +25,7 @@ from typing import Optional, List, Dict, Any, Tuple
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 
+
 # Safe environment for subprocesses
 def _get_env() -> Dict[str, str]:
     # Start with full inherited environment so gh/glab can access OS keyring,
@@ -46,9 +47,12 @@ def _get_env() -> Dict[str, str]:
 def _run(cmd: List[str], cwd: str = None, timeout: int = 30) -> Tuple[str, str, int]:
     """Run a CLI command and return (stdout, stderr, returncode)."""
     proc = subprocess.run(
-        cmd, capture_output=True, text=True,
+        cmd,
+        capture_output=True,
+        text=True,
         cwd=cwd or str(PROJECT_ROOT),
-        env=_get_env(), timeout=timeout,
+        env=_get_env(),
+        timeout=timeout,
     )
     return proc.stdout.strip(), proc.stderr.strip(), proc.returncode
 
@@ -123,16 +127,29 @@ class VCS:
         """Fetch issue details from GitHub or GitLab."""
         if self.is_github:
             fields = "number,title,body,state,author,labels,comments,createdAt,updatedAt,url"
-            stdout, stderr, rc = _run([
-                "gh", "issue", "view", str(issue_number),
-                "-R", self.repo_path,
-                "--json", fields,
-            ])
+            stdout, stderr, rc = _run(
+                [
+                    "gh",
+                    "issue",
+                    "view",
+                    str(issue_number),
+                    "-R",
+                    self.repo_path,
+                    "--json",
+                    fields,
+                ]
+            )
         else:
-            stdout, stderr, rc = _run([
-                "glab", "issue", "view", str(issue_number),
-                "--output", "json",
-            ])
+            stdout, stderr, rc = _run(
+                [
+                    "glab",
+                    "issue",
+                    "view",
+                    str(issue_number),
+                    "--output",
+                    "json",
+                ]
+            )
 
         if rc != 0:
             raise RuntimeError(f"Failed to fetch issue #{issue_number}: {stderr}")
@@ -142,20 +159,34 @@ class VCS:
     def list_open_issues(self, limit: int = 50) -> List[Dict[str, Any]]:
         """List open issues."""
         if self.is_github:
-            stdout, stderr, rc = _run([
-                "gh", "issue", "list",
-                "--repo", self.repo_path,
-                "--state", "open",
-                "--json", "number,title,body,labels,createdAt,updatedAt",
-                "--limit", str(limit),
-            ])
+            stdout, stderr, rc = _run(
+                [
+                    "gh",
+                    "issue",
+                    "list",
+                    "--repo",
+                    self.repo_path,
+                    "--state",
+                    "open",
+                    "--json",
+                    "number,title,body,labels,createdAt,updatedAt",
+                    "--limit",
+                    str(limit),
+                ]
+            )
         else:
-            stdout, stderr, rc = _run([
-                "glab", "issue", "list",
-                "--opened",
-                "--output", "json",
-                "--per-page", str(limit),
-            ])
+            stdout, stderr, rc = _run(
+                [
+                    "glab",
+                    "issue",
+                    "list",
+                    "--opened",
+                    "--output",
+                    "json",
+                    "--per-page",
+                    str(limit),
+                ]
+            )
 
         if rc != 0:
             return []
@@ -165,35 +196,59 @@ class VCS:
     def comment_on_issue(self, issue_number: int, body: str) -> bool:
         """Post a comment on an issue/MR."""
         if self.is_github:
-            _, stderr, rc = _run([
-                "gh", "issue", "comment", str(issue_number),
-                "-R", self.repo_path,
-                "--body", body,
-            ])
+            _, stderr, rc = _run(
+                [
+                    "gh",
+                    "issue",
+                    "comment",
+                    str(issue_number),
+                    "-R",
+                    self.repo_path,
+                    "--body",
+                    body,
+                ]
+            )
         else:
-            _, stderr, rc = _run([
-                "glab", "issue", "note", str(issue_number),
-                "--message", body,
-            ])
+            _, stderr, rc = _run(
+                [
+                    "glab",
+                    "issue",
+                    "note",
+                    str(issue_number),
+                    "--message",
+                    body,
+                ]
+            )
 
         return rc == 0
 
     def fetch_issue_comments(self, issue_number: int) -> List[Dict[str, Any]]:
         """Fetch comments on an issue."""
         if self.is_github:
-            stdout, stderr, rc = _run([
-                "gh", "issue", "view", str(issue_number),
-                "--repo", self.repo_path,
-                "--json", "comments",
-            ])
+            stdout, stderr, rc = _run(
+                [
+                    "gh",
+                    "issue",
+                    "view",
+                    str(issue_number),
+                    "--repo",
+                    self.repo_path,
+                    "--json",
+                    "comments",
+                ]
+            )
             if rc == 0 and stdout:
                 data = json.loads(stdout)
                 return data.get("comments", [])
         else:
-            stdout, stderr, rc = _run([
-                "glab", "api", f"projects/:id/issues/{issue_number}/notes",
-                "--paginate",
-            ])
+            stdout, stderr, rc = _run(
+                [
+                    "glab",
+                    "api",
+                    f"projects/:id/issues/{issue_number}/notes",
+                    "--paginate",
+                ]
+            )
             if rc == 0 and stdout:
                 return json.loads(stdout)
 
@@ -201,29 +256,39 @@ class VCS:
 
     # --- Pull Requests / Merge Requests ---
 
-    def create_pr(self, title: str, body: str, base: str = "main",
-                  head: str = None) -> Optional[str]:
+    def create_pr(self, title: str, body: str, base: str = "main", head: str = None) -> Optional[str]:
         """Create a pull request (GitHub) or merge request (GitLab).
 
         Returns the PR/MR URL on success, None on failure.
         """
         if self.is_github:
             cmd = [
-                "gh", "pr", "create",
-                "--repo", self.repo_path,
-                "--title", title,
-                "--body", body,
-                "--base", base,
+                "gh",
+                "pr",
+                "create",
+                "--repo",
+                self.repo_path,
+                "--title",
+                title,
+                "--body",
+                body,
+                "--base",
+                base,
             ]
             if head:
                 cmd.extend(["--head", head])
             stdout, stderr, rc = _run(cmd, timeout=60)
         else:
             cmd = [
-                "glab", "mr", "create",
-                "--title", title,
-                "--description", body,
-                "--target-branch", base,
+                "glab",
+                "mr",
+                "create",
+                "--title",
+                title,
+                "--description",
+                body,
+                "--target-branch",
+                base,
                 "--remove-source-branch",
                 "--yes",
             ]
@@ -235,7 +300,7 @@ class VCS:
             # Extract URL from output
             for line in (stdout + "\n" + stderr).splitlines():
                 if "http" in line:
-                    url_match = re.search(r'(https?://\S+)', line)
+                    url_match = re.search(r"(https?://\S+)", line)
                     if url_match:
                         return url_match.group(1)
             return stdout.strip() or "created"
@@ -245,22 +310,35 @@ class VCS:
     def check_pr_exists(self, branch_name: str) -> Optional[str]:
         """Check if a PR/MR already exists for a branch. Returns URL or None."""
         if self.is_github:
-            stdout, stderr, rc = _run([
-                "gh", "pr", "list",
-                "--repo", self.repo_path,
-                "--head", branch_name,
-                "--json", "url",
-            ])
+            stdout, stderr, rc = _run(
+                [
+                    "gh",
+                    "pr",
+                    "list",
+                    "--repo",
+                    self.repo_path,
+                    "--head",
+                    branch_name,
+                    "--json",
+                    "url",
+                ]
+            )
             if rc == 0 and stdout:
                 prs = json.loads(stdout)
                 if prs:
                     return prs[0].get("url")
         else:
-            stdout, stderr, rc = _run([
-                "glab", "mr", "list",
-                "--source-branch", branch_name,
-                "--output", "json",
-            ])
+            stdout, stderr, rc = _run(
+                [
+                    "glab",
+                    "mr",
+                    "list",
+                    "--source-branch",
+                    branch_name,
+                    "--output",
+                    "json",
+                ]
+            )
             if rc == 0 and stdout:
                 mrs = json.loads(stdout)
                 if mrs:
@@ -271,16 +349,29 @@ class VCS:
     def comment_on_pr(self, pr_number: int, body: str) -> bool:
         """Post a comment on a PR/MR."""
         if self.is_github:
-            _, _, rc = _run([
-                "gh", "pr", "comment", str(pr_number),
-                "-R", self.repo_path,
-                "--body", body,
-            ])
+            _, _, rc = _run(
+                [
+                    "gh",
+                    "pr",
+                    "comment",
+                    str(pr_number),
+                    "-R",
+                    self.repo_path,
+                    "--body",
+                    body,
+                ]
+            )
         else:
-            _, _, rc = _run([
-                "glab", "mr", "note", str(pr_number),
-                "--message", body,
-            ])
+            _, _, rc = _run(
+                [
+                    "glab",
+                    "mr",
+                    "note",
+                    str(pr_number),
+                    "--message",
+                    body,
+                ]
+            )
         return rc == 0
 
     # --- Utility ---

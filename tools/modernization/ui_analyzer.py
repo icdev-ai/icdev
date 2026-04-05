@@ -2,8 +2,8 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""Legacy UI Screenshot Analysis Engine for ICDEV DoD Modernization.
+# POC: ICDEV™ System Administrator
+"""Legacy UI Screenshot Analysis Engine for ICDEV™ DoD Modernization.
 
 Analyzes legacy application UI screenshots using vision-capable LLMs to assess
 navigation complexity, form density, layout approach, accessibility indicators,
@@ -39,9 +39,9 @@ Compliance:     NIST 800-53 Rev 5 / RMF
 import argparse
 import json
 import logging
-import sqlite3
 import sys
 import time
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -97,18 +97,14 @@ UI_ANALYSIS_SYSTEM_PROMPT = (
 # Database helper
 # ---------------------------------------------------------------------------
 def _get_db(db_path: Optional[Path] = None):
-    """Return a sqlite3 connection to the ICDEV operational database.
+    """Return a sqlite3 connection to the ICDEV™ operational database.
 
     Uses row_factory = sqlite3.Row for dict-like access.
     """
     path = db_path or DB_PATH
     if not path.exists():
-        raise FileNotFoundError(
-            f"ICDEV database not found at {path}. "
-            "Run 'python tools/db/init_icdev_db.py' first."
-        )
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+        raise FileNotFoundError(f"ICDEV™ database not found at {path}. Run 'python tools/db/init_icdev_db.py' first.")
+    conn = get_connection(db_path=str(path))
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
@@ -162,6 +158,7 @@ def _check_vision_available() -> dict:
     """
     try:
         from tools.llm import get_router
+
         router = get_router()
         provider, model_id, model_cfg = router.get_provider_for_function("ui_analysis")
 
@@ -179,9 +176,7 @@ def _check_vision_available() -> dict:
             "model": model_id,
             "provider": provider.provider_name,
             "supports_vision": supports_vision,
-            "error": None if supports_vision else (
-                f"Model {model_id} does not have supports_vision: true"
-            ),
+            "error": None if supports_vision else (f"Model {model_id} does not have supports_vision: true"),
         }
     except Exception as e:
         return {
@@ -227,10 +222,7 @@ def analyze_screenshot(
     # Validate encode_image availability
     # ------------------------------------------------------------------
     if encode_image is None:
-        result_base["error"] = (
-            "screenshot_validator.encode_image not available; "
-            "cannot encode image"
-        )
+        result_base["error"] = "screenshot_validator.encode_image not available; cannot encode image"
         result_base["complexity_score"] = None
         result_base["duration_ms"] = int((time.time() - start_time) * 1000)
         return result_base
@@ -240,9 +232,7 @@ def analyze_screenshot(
     # ------------------------------------------------------------------
     avail = _check_vision_available()
     if not avail["available"]:
-        result_base["error"] = (
-            f"Vision model not available: {avail.get('error', 'unknown')}"
-        )
+        result_base["error"] = f"Vision model not available: {avail.get('error', 'unknown')}"
         result_base["complexity_score"] = None
         result_base["duration_ms"] = int((time.time() - start_time) * 1000)
         return result_base
@@ -345,11 +335,7 @@ def analyze_ui_batch(
     # ------------------------------------------------------------------
     # Aggregate summary
     # ------------------------------------------------------------------
-    scores = [
-        r.get("complexity_score")
-        for r in individual_results
-        if r.get("complexity_score") is not None
-    ]
+    scores = [r.get("complexity_score") for r in individual_results if r.get("complexity_score") is not None]
     avg_score = sum(scores) / len(scores) if scores else None
 
     # Merge technology indicators
@@ -463,13 +449,7 @@ def compute_ui_complexity_score(analysis_results: Dict[str, Any]) -> float:
     tech_score = _era_to_score(era_str)
 
     # --- Weighted average ---
-    score = (
-        0.25 * nav_score
-        + 0.25 * form_score
-        + 0.20 * layout_score
-        + 0.15 * access_score
-        + 0.15 * tech_score
-    )
+    score = 0.25 * nav_score + 0.25 * form_score + 0.20 * layout_score + 0.15 * access_score + 0.15 * tech_score
     return round(min(max(score, 0.0), 1.0), 4)
 
 
@@ -484,6 +464,7 @@ def _era_to_score(era_str: str) -> float:
 
     # Try to extract a 4-digit year from the era string
     import re
+
     match = re.search(r"(\d{4})", era_str)
     if match:
         year = int(match.group(1))
@@ -496,12 +477,29 @@ def _era_to_score(era_str: str) -> float:
 
     # Keyword-based fallback
     early_keywords = {
-        "90s", "2000s", "early", "legacy", "classic", "ie6",
-        "table-based", "frames", "activex", "flash", "silverlight",
+        "90s",
+        "2000s",
+        "early",
+        "legacy",
+        "classic",
+        "ie6",
+        "table-based",
+        "frames",
+        "activex",
+        "flash",
+        "silverlight",
     }
     modern_keywords = {
-        "modern", "react", "angular", "vue", "responsive", "spa",
-        "material", "bootstrap4", "bootstrap5", "tailwind",
+        "modern",
+        "react",
+        "angular",
+        "vue",
+        "responsive",
+        "spa",
+        "material",
+        "bootstrap4",
+        "bootstrap5",
+        "tailwind",
     }
     if any(kw in era_str for kw in early_keywords):
         return 0.9
@@ -526,7 +524,7 @@ def store_ui_analysis(
 
     Args:
         app_id: Legacy application identifier.
-        project_id: ICDEV project identifier.
+        project_id: ICDEV™ project identifier.
         results: Analysis results dict to store.
         db_path: Optional override for the database path.
 
@@ -548,9 +546,7 @@ def store_ui_analysis(
         )
         row = cursor.fetchone()
         if row is None:
-            logger.error(
-                "Legacy app not found: app_id=%s, project_id=%s", app_id, project_id
-            )
+            logger.error("Legacy app not found: app_id=%s, project_id=%s", app_id, project_id)
             conn.close()
             return False
 
@@ -600,16 +596,14 @@ def store_ui_analysis(
 # ---------------------------------------------------------------------------
 def main():
     """CLI entry point for legacy UI screenshot analysis."""
-    parser = argparse.ArgumentParser(
-        description="ICDEV Legacy UI Screenshot Analyzer"
-    )
+    parser = argparse.ArgumentParser(description="ICDEV™ Legacy UI Screenshot Analyzer")
 
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--image", help="Path to a single screenshot image")
     group.add_argument("--image-dir", help="Directory containing screenshot images")
 
     parser.add_argument("--app-id", help="Legacy application ID (for DB storage / 7R integration)")
-    parser.add_argument("--project-id", help="ICDEV project ID")
+    parser.add_argument("--project-id", help="ICDEV™ project ID")
     parser.add_argument("--store", action="store_true", help="Store results in icdev.db")
     parser.add_argument("--score-only", action="store_true", help="Print only the complexity score")
     parser.add_argument("--json", action="store_true", help="Output as JSON")
@@ -668,9 +662,7 @@ def main():
         # Compute deterministic scores for each individual result
         for individual in batch_result.get("individual", []):
             if individual.get("navigation") is not None and not individual.get("error"):
-                individual["deterministic_complexity_score"] = (
-                    compute_ui_complexity_score(individual)
-                )
+                individual["deterministic_complexity_score"] = compute_ui_complexity_score(individual)
 
         # Compute aggregate deterministic score
         det_scores = [
@@ -679,9 +671,7 @@ def main():
             if r.get("deterministic_complexity_score") is not None
         ]
         if det_scores:
-            batch_result["summary"]["average_deterministic_score"] = round(
-                sum(det_scores) / len(det_scores), 4
-            )
+            batch_result["summary"]["average_deterministic_score"] = round(sum(det_scores) / len(det_scores), 4)
 
         if args.score_only:
             score = batch_result["summary"].get(
@@ -692,9 +682,7 @@ def main():
             return
 
         if args.store and args.app_id and args.project_id:
-            stored = store_ui_analysis(
-                args.app_id, args.project_id, batch_result
-            )
+            stored = store_ui_analysis(args.app_id, args.project_id, batch_result)
             batch_result["stored"] = stored
 
         if args.json:
@@ -717,26 +705,31 @@ def _print_human_readable(result: Dict[str, Any]) -> None:
 
     nav = result.get("navigation", {})
     if isinstance(nav, dict) and nav:
-        print(f"Navigation: depth={nav.get('depth', 0)}, "
-              f"items={nav.get('menu_items', 0)}, "
-              f"breadcrumbs={nav.get('breadcrumbs', False)}")
+        print(
+            f"Navigation: depth={nav.get('depth', 0)}, "
+            f"items={nav.get('menu_items', 0)}, "
+            f"breadcrumbs={nav.get('breadcrumbs', False)}"
+        )
 
     forms = result.get("forms", {})
     if isinstance(forms, dict) and forms:
-        print(f"Forms: count={forms.get('count', 0)}, "
-              f"fields={forms.get('field_count', 0)}, "
-              f"custom_widgets={forms.get('custom_widgets', 0)}")
+        print(
+            f"Forms: count={forms.get('count', 0)}, "
+            f"fields={forms.get('field_count', 0)}, "
+            f"custom_widgets={forms.get('custom_widgets', 0)}"
+        )
 
     layout = result.get("layout", {})
     if isinstance(layout, dict) and layout:
-        print(f"Layout: responsive={layout.get('responsive', False)}, "
-              f"grid={layout.get('grid_based', False)}, "
-              f"table_heavy={layout.get('table_heavy', False)}")
+        print(
+            f"Layout: responsive={layout.get('responsive', False)}, "
+            f"grid={layout.get('grid_based', False)}, "
+            f"table_heavy={layout.get('table_heavy', False)}"
+        )
 
     tech = result.get("technology_indicators", {})
     if isinstance(tech, dict) and tech:
-        print(f"Technology: era={tech.get('era', 'unknown')}, "
-              f"hints={tech.get('framework_hints', [])}")
+        print(f"Technology: era={tech.get('era', 'unknown')}, hints={tech.get('framework_hints', [])}")
 
     notes = result.get("modernization_notes", "")
     if notes:

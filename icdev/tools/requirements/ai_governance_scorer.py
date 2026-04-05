@@ -18,10 +18,10 @@ Components (from args/ai_governance_config.yaml):
 
 Usage:
     from icdev.tools.requirements.ai_governance_scorer import score_ai_governance_readiness
-from icdev._paths import get_project_root
     result = score_ai_governance_readiness(project_id, conn=conn)
 """
 
+from icdev._paths import get_project_root
 import json
 import sqlite3
 from pathlib import Path

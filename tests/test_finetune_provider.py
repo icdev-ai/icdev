@@ -5,8 +5,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List, Optional
-from unittest.mock import patch, MagicMock
+from typing import Any, Dict
 
 import pytest
 
@@ -18,6 +17,7 @@ from tools.finetune.provider import (
 
 
 # ---- FineTuneRequest tests ----
+
 
 class TestFineTuneRequest:
     def test_default_values(self):
@@ -80,6 +80,7 @@ class TestFineTuneRequest:
 
 # ---- FineTuneStatus tests ----
 
+
 class TestFineTuneStatus:
     def test_default_status(self):
         status = FineTuneStatus()
@@ -110,6 +111,7 @@ class TestFineTuneStatus:
 
 
 # ---- FineTuneProvider ABC tests ----
+
 
 class ConcreteProvider(FineTuneProvider):
     """Test implementation of FineTuneProvider."""

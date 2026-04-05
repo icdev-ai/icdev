@@ -15,7 +15,7 @@ import logging
 import re
 import sys
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Tuple
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
@@ -27,8 +27,10 @@ logger = logging.getLogger("icdev.gateway.response_filter")
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
 except ImportError:
+
     def audit_log_event(**kwargs):
         logger.debug("audit_logger unavailable — skipping: %s", kwargs.get("action", ""))
+
 
 # IL ordering: higher number = more sensitive
 IL_ORDER = {"IL2": 0, "IL4": 1, "IL5": 2, "IL6": 3}
@@ -46,7 +48,7 @@ _CLASSIFICATION_PATTERNS = [
 DEFAULT_REDACTION_MSG = (
     "[REDACTED] Response contains {classification} content that cannot be "
     "displayed on this channel (max: {channel_il}). "
-    "View full response in the ICDEV dashboard."
+    "View full response in the ICDEV™ dashboard."
 )
 
 
@@ -71,10 +73,13 @@ def detect_response_il(response_text: str) -> str:
     return highest_il
 
 
-def filter_response(response_text: str, channel_max_il: str,
-                    envelope_id: str = "",
-                    dashboard_url: str = "",
-                    redaction_template: str = "") -> Tuple[str, bool, str]:
+def filter_response(
+    response_text: str,
+    channel_max_il: str,
+    envelope_id: str = "",
+    dashboard_url: str = "",
+    redaction_template: str = "",
+) -> Tuple[str, bool, str]:
     """Filter a response based on channel classification limits.
 
     Args:
@@ -102,7 +107,10 @@ def filter_response(response_text: str, channel_max_il: str,
 
         logger.warning(
             "Response FILTERED: detected %s (%s) > channel max %s [envelope=%s]",
-            detected_il, classification, channel_max_il, envelope_id
+            detected_il,
+            classification,
+            channel_max_il,
+            envelope_id,
         )
 
         try:
@@ -110,12 +118,14 @@ def filter_response(response_text: str, channel_max_il: str,
                 event_type="remote_response_filtered",
                 actor="gateway",
                 action=f"Response redacted: {detected_il} content on {channel_max_il} channel",
-                details=str({
-                    "envelope_id": envelope_id,
-                    "detected_il": detected_il,
-                    "channel_max_il": channel_max_il,
-                    "response_length": len(response_text),
-                }),
+                details=str(
+                    {
+                        "envelope_id": envelope_id,
+                        "detected_il": detected_il,
+                        "channel_max_il": channel_max_il,
+                        "response_length": len(response_text),
+                    }
+                ),
             )
         except Exception:
             pass  # Audit logging is best-effort
@@ -147,11 +157,14 @@ def truncate_response(text: str, max_length: int = 4000) -> str:
     return text[:cut_point] + "\n\n... [truncated — view full response in dashboard]"
 
 
-def format_response(response_text: str, command: str,
-                    execution_time_ms: int = 0,
-                    audit_id: str = "",
-                    include_timing: bool = True,
-                    include_audit_id: bool = True) -> str:
+def format_response(
+    response_text: str,
+    command: str,
+    execution_time_ms: int = 0,
+    audit_id: str = "",
+    include_timing: bool = True,
+    include_audit_id: bool = True,
+) -> str:
     """Format a tool response for channel display.
 
     Adds metadata footer with timing and audit reference.
@@ -188,6 +201,7 @@ def format_response(response_text: str, command: str,
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _il_to_classification(il: str) -> str:
     """Map IL level to classification name."""

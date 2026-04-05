@@ -1,5 +1,5 @@
 ---
-description: "ICDEV workflow: Run maintenance audit — scan dependencies, check CVEs, compute score, remediate, track SLAs"
+description: "ICDEV™ workflow: Run maintenance audit — scan dependencies, check CVEs, compute score, remediate, track SLAs"
 globs:
   - "**/*.py"
   - "**/*.yaml"

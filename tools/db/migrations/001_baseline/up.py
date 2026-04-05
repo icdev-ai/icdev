@@ -2,7 +2,7 @@
 # CUI // SP-CTI
 """Baseline migration — delegates to init_icdev_db.py.
 
-This migration applies the complete ICDEV schema (124+ tables) as it exists
+This migration applies the complete ICDEV™ schema (124+ tables) as it exists
 in tools/db/init_icdev_db.py. Rather than duplicating the 2860-line SQL
 string, this Python migration imports and executes the existing init_db logic.
 
@@ -58,7 +58,6 @@ def up(conn):
 
 def down(conn):
     """Drop all tables (DEVELOPMENT ONLY — never in production)."""
-    import sqlite3
     c = conn.cursor()
     c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name != 'schema_migrations'")
     tables = [row[0] for row in c.fetchall()]

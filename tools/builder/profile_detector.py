@@ -13,9 +13,7 @@ Usage:
 
 import argparse
 import json
-import os
 import re
-import sqlite3
 import subprocess
 from collections import Counter
 from datetime import datetime, timezone
@@ -28,6 +26,7 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 def _generate_id(prefix="det"):
     """Generate unique detection ID."""
     import hashlib
+
     ts = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
     return f"{prefix}-{hashlib.sha256(ts.encode()).hexdigest()[:8]}"
 
@@ -36,6 +35,7 @@ def _load_config():
     """Load detection config from args/dev_profile_config.yaml."""
     try:
         import yaml
+
         config_path = BASE_DIR / "args" / "dev_profile_config.yaml"
         if config_path.exists():
             with open(config_path, "r", encoding="utf-8") as f:
@@ -104,9 +104,7 @@ def detect_from_repo(repo_path):
         detected["security"] = sec_result["data"]
         confidence["security"] = sec_result["confidence"]
 
-    avg_confidence = (
-        sum(confidence.values()) / len(confidence) if confidence else 0.0
-    )
+    avg_confidence = sum(confidence.values()) / len(confidence) if confidence else 0.0
 
     return {
         "status": "detected",
@@ -121,17 +119,25 @@ def detect_from_repo(repo_path):
 def _detect_languages(repo):
     """Detect languages from file extensions."""
     ext_map = {
-        ".py": "python", ".java": "java", ".go": "go",
-        ".rs": "rust", ".cs": "csharp", ".ts": "typescript",
-        ".tsx": "typescript", ".js": "javascript", ".jsx": "javascript",
+        ".py": "python",
+        ".java": "java",
+        ".go": "go",
+        ".rs": "rust",
+        ".cs": "csharp",
+        ".ts": "typescript",
+        ".tsx": "typescript",
+        ".js": "javascript",
+        ".jsx": "javascript",
     }
     counts = Counter()
     for ext, lang in ext_map.items():
         files = list(repo.rglob(f"*{ext}"))
         # Exclude common non-source dirs
-        files = [f for f in files if not any(
-            p in f.parts for p in ("node_modules", ".git", "__pycache__", "venv", ".venv", "vendor")
-        )]
+        files = [
+            f
+            for f in files
+            if not any(p in f.parts for p in ("node_modules", ".git", "__pycache__", "venv", ".venv", "vendor"))
+        ]
         if files:
             counts[lang] = len(files)
 
@@ -266,13 +272,15 @@ def _detect_git_conventions(repo):
         # Commit message format
         result = subprocess.run(
             ["git", "log", "--oneline", "-50", "--format=%s"],
-            cwd=str(repo), capture_output=True, text=True, timeout=10,
+            cwd=str(repo),
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         if result.returncode == 0 and result.stdout.strip():
             messages = result.stdout.strip().split("\n")
             conventional = sum(
-                1 for m in messages
-                if re.match(r"^(feat|fix|chore|docs|style|refactor|perf|test|build|ci|revert)", m)
+                1 for m in messages if re.match(r"^(feat|fix|chore|docs|style|refactor|perf|test|build|ci|revert)", m)
             )
             if conventional > len(messages) * 0.5:
                 data["commit_format"] = "conventional_commits"
@@ -285,7 +293,10 @@ def _detect_git_conventions(repo):
         # Branch naming
         result = subprocess.run(
             ["git", "branch", "-a", "--format=%(refname:short)"],
-            cwd=str(repo), capture_output=True, text=True, timeout=10,
+            cwd=str(repo),
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         if result.returncode == 0 and result.stdout.strip():
             branches = result.stdout.strip().split("\n")
@@ -300,7 +311,10 @@ def _detect_git_conventions(repo):
         # Merge strategy (from merge commits)
         result = subprocess.run(
             ["git", "log", "--merges", "-10", "--format=%s"],
-            cwd=str(repo), capture_output=True, text=True, timeout=10,
+            cwd=str(repo),
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         if result.returncode == 0:
             merges = result.stdout.strip().split("\n") if result.stdout.strip() else []
@@ -582,8 +596,7 @@ def accept_detection(detection_id, accepted_by, db_path=None):
         conn.close()
 
 
-def store_detection(detection_results, tenant_id=None, project_id=None,
-                    session_id=None, repo_url=None, db_path=None):
+def store_detection(detection_results, tenant_id=None, project_id=None, session_id=None, repo_url=None, db_path=None):
     """Store detection results in the database."""
     from tools.builder.dev_profile_manager import _get_connection, _generate_id
 
@@ -594,9 +607,15 @@ def store_detection(detection_results, tenant_id=None, project_id=None,
             """INSERT INTO dev_profile_detections
                (id, tenant_id, project_id, session_id, repo_url, detected_at, detection_results)
                VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (det_id, tenant_id, project_id, session_id, repo_url,
-             datetime.now(timezone.utc).isoformat(),
-             json.dumps(detection_results, default=str)),
+            (
+                det_id,
+                tenant_id,
+                project_id,
+                session_id,
+                repo_url,
+                datetime.now(timezone.utc).isoformat(),
+                json.dumps(detection_results, default=str),
+            ),
         )
         conn.commit()
         return {"detection_id": det_id, "status": "stored"}
@@ -608,9 +627,7 @@ def store_detection(detection_results, tenant_id=None, project_id=None,
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Profile Detector — scan repos and text for dev conventions (D185)"
-    )
+    parser = argparse.ArgumentParser(description="Profile Detector — scan repos and text for dev conventions (D185)")
     parser.add_argument("--repo-path", help="Repository path to scan")
     parser.add_argument("--from-text", help="Detect signals from text")
     parser.add_argument("--accept", action="store_true", help="Accept a detection")
@@ -633,8 +650,10 @@ def main():
         result = detect_from_repo(args.repo_path)
         if args.store and "error" not in result:
             store_result = store_detection(
-                result, tenant_id=args.tenant_id,
-                project_id=args.project_id, repo_url=args.repo_path,
+                result,
+                tenant_id=args.tenant_id,
+                project_id=args.project_id,
+                repo_url=args.repo_path,
                 db_path=db,
             )
             result["detection_id"] = store_result.get("detection_id")

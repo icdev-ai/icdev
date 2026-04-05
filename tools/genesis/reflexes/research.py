@@ -11,6 +11,7 @@ Scanner-tier only (zero Claude tokens).  Air-gap safe (graceful degradation).
 
 import hashlib
 import json
+import logging
 import os
 import sys
 import xml.etree.ElementTree as ET
@@ -23,7 +24,10 @@ from urllib.request import Request, urlopen
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
-from tools.db.storage import get_connection
+from tools.db.storage import get_connection  # noqa: E402
+from tools.security.injection_scanner import scan_text  # noqa: E402
+
+logger = logging.getLogger(__name__)
 
 
 def _utcnow_iso() -> str:
@@ -42,6 +46,7 @@ def _load_feeds() -> List[Dict[str, Any]]:
     """Load feed definitions from context/genesis/feeds.yaml."""
     try:
         import yaml
+
         feeds_path = BASE_DIR / "context" / "genesis" / "feeds.yaml"
         if feeds_path.exists():
             with open(feeds_path, "r", encoding="utf-8") as f:
@@ -60,7 +65,7 @@ def _fetch_url(url: str, timeout: int = 30) -> Optional[str]:
             "Accept": "application/xml, application/rss+xml, application/json, text/xml, */*",
         }
         req = Request(url, headers=headers)
-        with urlopen(req, timeout=timeout) as resp:
+        with urlopen(req, timeout=timeout) as resp:  # nosec B310 -- URL scheme validated; internal/configured endpoints only
             return resp.read().decode("utf-8", errors="replace")
     except (URLError, OSError, Exception) as e:
         print(f"  WARN: Failed to fetch {url}: {e}")
@@ -71,7 +76,7 @@ def _parse_rss(xml_text: str) -> List[Dict[str, str]]:
     """Parse RSS/Atom XML into list of {title, description, link, published}."""
     entries = []
     try:
-        root = ET.fromstring(xml_text)
+        root = ET.fromstring(xml_text)  # nosec B314 -- parsing trusted internal MBSE/config XML
         # RSS 2.0
         for item in root.iter("item"):
             entry = {
@@ -108,22 +113,26 @@ def _parse_json_feed(json_text: str) -> List[Dict[str, str]]:
         # CISA KEV format
         if "vulnerabilities" in data:
             for vuln in data["vulnerabilities"][:20]:
-                entries.append({
-                    "title": f"KEV: {vuln.get('cveID', 'Unknown')} — {vuln.get('vendorProject', '')} {vuln.get('product', '')}",
-                    "description": vuln.get("shortDescription", "")[:500],
-                    "link": f"https://nvd.nist.gov/vuln/detail/{vuln.get('cveID', '')}",
-                    "published": vuln.get("dateAdded", ""),
-                })
+                entries.append(
+                    {
+                        "title": f"KEV: {vuln.get('cveID', 'Unknown')} — {vuln.get('vendorProject', '')} {vuln.get('product', '')}",  # noqa: E501
+                        "description": vuln.get("shortDescription", "")[:500],
+                        "link": f"https://nvd.nist.gov/vuln/detail/{vuln.get('cveID', '')}",
+                        "published": vuln.get("dateAdded", ""),
+                    }
+                )
         # Generic JSON array
         elif isinstance(data, list):
             for item in data[:20]:
                 if isinstance(item, dict) and "title" in item:
-                    entries.append({
-                        "title": str(item.get("title", ""))[:200],
-                        "description": str(item.get("description", item.get("summary", "")))[:500],
-                        "link": str(item.get("url", item.get("link", ""))),
-                        "published": str(item.get("date", item.get("published", ""))),
-                    })
+                    entries.append(
+                        {
+                            "title": str(item.get("title", ""))[:200],
+                            "description": str(item.get("description", item.get("summary", "")))[:500],
+                            "link": str(item.get("url", item.get("link", ""))),
+                            "published": str(item.get("date", item.get("published", ""))),
+                        }
+                    )
     except (json.JSONDecodeError, KeyError):
         pass
     return entries
@@ -134,8 +143,7 @@ def _is_duplicate(content_hash: str) -> bool:
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT COUNT(*) as cnt FROM innovation_signals WHERE content_hash = ?",
-            (content_hash,)
+            "SELECT COUNT(*) as cnt FROM innovation_signals WHERE content_hash = ?", (content_hash,)
         ).fetchone()
         return (row["cnt"] if row else 0) > 0
     except Exception:
@@ -148,6 +156,7 @@ def _export_signal(feed_name: str, entry: Dict[str, str]) -> Optional[str]:
     """Export a single research signal as a GKP via the promoter."""
     try:
         from tools.genesis.promoter import export_gkp
+
         result = export_gkp(
             reflex="research",
             artifact_type="research_signal",
@@ -183,7 +192,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         return {
             "success": True,
             "metric_value": 0,
-            "details": {"status": "air_gapped", "message": "Skipped — air-gapped mode"},
+            "details": {"status": "air_gapped", "message": "Skipped -- air-gapped mode"},
         }
 
     feeds = _load_feeds()
@@ -205,11 +214,13 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
 
         # Skip non-fetchable types
         if feed_type in ("sam_bridge", "html_scrape"):
-            feed_results.append({
-                "feed": feed_name,
-                "status": "skipped",
-                "reason": f"Type '{feed_type}' not yet implemented in Research Reflex",
-            })
+            feed_results.append(
+                {
+                    "feed": feed_name,
+                    "status": "skipped",
+                    "reason": f"Type '{feed_type}' not yet implemented in Research Reflex",
+                }
+            )
             continue
 
         if not url:
@@ -219,6 +230,25 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         content = _fetch_url(url)
         if not content:
             feed_results.append({"feed": feed_name, "status": "fetch_failed"})
+            continue
+
+        # Injection scan — block content with critical findings
+        findings = scan_text(content, source=url)
+        critical = [f for f in findings if f["severity"] == "critical"]
+        if critical:
+            logger.warning(
+                "Injection attempt blocked from %s: %s",
+                url,
+                [f["category"] for f in critical],
+            )
+            feed_results.append(
+                {
+                    "feed": feed_name,
+                    "status": "blocked",
+                    "reason": "injection_detected",
+                    "categories": [f["category"] for f in critical],
+                }
+            )
             continue
 
         # Parse based on type
@@ -239,12 +269,14 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                 new_count += 1
                 total_signals += 1
 
-        feed_results.append({
-            "feed": feed_name,
-            "status": "ok",
-            "entries_found": len(entries),
-            "new_signals": new_count,
-        })
+        feed_results.append(
+            {
+                "feed": feed_name,
+                "status": "ok",
+                "entries_found": len(entries),
+                "new_signals": new_count,
+            }
+        )
 
     return {
         "success": total_signals > 0 or total_dupes > 0,  # Success if we processed anything

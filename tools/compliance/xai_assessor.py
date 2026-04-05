@@ -22,9 +22,9 @@ CLI:
     python tools/compliance/xai_assessor.py --project-id proj-123 --gate
 """
 
-import json
 import logging
 import sqlite3
+from tools.db.storage import get_connection
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, Optional
@@ -95,7 +95,7 @@ class XAIAssessor(BaseAssessor):
     def _check_tracing_active(self, project_id: str) -> str:
         """XAI-001: Check if tracing is active (any spans exist)."""
         try:
-            conn = sqlite3.connect(str(self.db_path))
+            conn = get_connection()
             count = conn.execute(
                 "SELECT COUNT(*) FROM otel_spans WHERE project_id = ?",
                 (project_id,),
@@ -108,7 +108,7 @@ class XAIAssessor(BaseAssessor):
     def _check_mcp_instrumentation(self, project_id: str) -> str:
         """XAI-002: Check for MCP tool call spans."""
         try:
-            conn = sqlite3.connect(str(self.db_path))
+            conn = get_connection()
             count = conn.execute(
                 "SELECT COUNT(*) FROM otel_spans WHERE project_id = ? AND name = 'mcp.tool_call'",
                 (project_id,),
@@ -121,7 +121,7 @@ class XAIAssessor(BaseAssessor):
     def _check_a2a_tracing(self, project_id: str) -> str:
         """XAI-003: Check for cross-agent span linking."""
         try:
-            conn = sqlite3.connect(str(self.db_path))
+            conn = get_connection()
             # Look for spans with parent_span_id (indicates linked hierarchy)
             count = conn.execute(
                 """SELECT COUNT(*) FROM otel_spans
@@ -136,7 +136,7 @@ class XAIAssessor(BaseAssessor):
     def _check_provenance_populated(self, project_id: str) -> str:
         """XAI-004: Check provenance graph has entities."""
         try:
-            conn = sqlite3.connect(str(self.db_path))
+            conn = get_connection()
             count = conn.execute(
                 "SELECT COUNT(*) FROM prov_entities WHERE project_id = ?",
                 (project_id,),
@@ -156,7 +156,7 @@ class XAIAssessor(BaseAssessor):
     def _check_shap_recent(self, project_id: str) -> str:
         """XAI-006: Check SHAP analysis run within 30 days."""
         try:
-            conn = sqlite3.connect(str(self.db_path))
+            conn = get_connection()
             cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
             count = conn.execute(
                 """SELECT COUNT(*) FROM shap_attributions
@@ -171,7 +171,7 @@ class XAIAssessor(BaseAssessor):
     def _check_decision_rationale(self, project_id: str) -> str:
         """XAI-007: Check decision_records exist for project."""
         try:
-            conn = sqlite3.connect(str(self.db_path))
+            conn = get_connection()
             count = conn.execute(
                 "SELECT COUNT(*) FROM decision_records WHERE project_id = ?",
                 (project_id,),
@@ -185,6 +185,7 @@ class XAIAssessor(BaseAssessor):
         """XAI-008: Check retention config exists in YAML."""
         try:
             import yaml
+
             config_path = Path(__file__).resolve().parent.parent.parent / "args" / "observability_tracing_config.yaml"
             if not config_path.exists():
                 return "not_satisfied"
@@ -200,7 +201,7 @@ class XAIAssessor(BaseAssessor):
     def _check_ai_telemetry(self, project_id: str) -> str:
         """XAI-009: Check AI telemetry has recent entries."""
         try:
-            conn = sqlite3.connect(str(self.db_path))
+            conn = get_connection()
             cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
             count = conn.execute(
                 """SELECT COUNT(*) FROM ai_telemetry
@@ -215,7 +216,7 @@ class XAIAssessor(BaseAssessor):
     def _check_trust_scoring(self, project_id: str) -> str:
         """XAI-010: Check agent trust scores have been computed."""
         try:
-            conn = sqlite3.connect(str(self.db_path))
+            conn = get_connection()
             count = conn.execute(
                 "SELECT COUNT(*) FROM agent_trust_scores WHERE project_id = ?",
                 (project_id,),

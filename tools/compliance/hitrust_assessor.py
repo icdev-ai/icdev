@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """HITRUST CSF v11 Assessment Engine.
 
 Assesses projects against HITRUST Common Security Framework v11.
@@ -31,7 +31,9 @@ class HITRUSTAssessor(BaseAssessor):
     CATALOG_FILENAME = "hitrust_csf_v11.json"
 
     def get_automated_checks(
-        self, project: Dict, project_dir: Optional[str] = None,
+        self,
+        project: Dict,
+        project_dir: Optional[str] = None,
     ) -> Dict[str, str]:
         """HITRUST-specific automated checks.
 

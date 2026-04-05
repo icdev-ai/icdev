@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-"""Genesis v2.0 — Autonomous Research Laboratory for ICDEV.
+"""Genesis v2.0 — Autonomous Research Laboratory for ICDEV™.
 
 Genesis is a permanent experimental research engine that runs 12 autonomous
 Reflexes to continuously discover, validate, and export improvements to the

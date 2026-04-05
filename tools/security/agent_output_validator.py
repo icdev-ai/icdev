@@ -18,7 +18,6 @@ import argparse
 import hashlib
 import json
 import re
-import sqlite3
 import sys
 import uuid
 from datetime import datetime, timezone, timedelta
@@ -26,6 +25,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import yaml
+from tools.db.storage import get_connection
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
@@ -72,12 +72,14 @@ class AgentOutputValidator:
 
         # Check size limit
         if len(output_text.encode("utf-8")) > self._max_size:
-            violations.append({
-                "type": "oversized_response",
-                "severity": "high",
-                "action": "flag",
-                "description": f"Output size ({len(output_text.encode('utf-8')):,} bytes) exceeds limit ({self._max_size:,} bytes)",
-            })
+            violations.append(
+                {
+                    "type": "oversized_response",
+                    "severity": "high",
+                    "action": "flag",
+                    "description": f"Output size ({len(output_text.encode('utf-8')):,} bytes) exceeds limit ({self._max_size:,} bytes)",
+                }
+            )
 
         # Check classification patterns from config
         for pat_def in self._patterns:
@@ -87,14 +89,16 @@ class AgentOutputValidator:
             try:
                 matches = re.findall(pattern, output_text)
                 if matches:
-                    violations.append({
-                        "type": "classification_pattern",
-                        "severity": pat_def.get("severity", "medium"),
-                        "action": pat_def.get("action", "flag"),
-                        "description": pat_def.get("description", "Pattern matched"),
-                        "pattern_name": pattern[:50],
-                        "match_count": len(matches),
-                    })
+                    violations.append(
+                        {
+                            "type": "classification_pattern",
+                            "severity": pat_def.get("severity", "medium"),
+                            "action": pat_def.get("action", "flag"),
+                            "description": pat_def.get("description", "Pattern matched"),
+                            "pattern_name": pattern[:50],
+                            "match_count": len(matches),
+                        }
+                    )
             except re.error:
                 pass
 
@@ -142,12 +146,14 @@ class AgentOutputValidator:
         ]
         for pattern, desc in above_cui:
             if re.search(pattern, text):
-                findings.append({
-                    "type": "classification_leak",
-                    "severity": "critical",
-                    "action": "block",
-                    "description": desc,
-                })
+                findings.append(
+                    {
+                        "type": "classification_leak",
+                        "severity": "critical",
+                        "action": "block",
+                        "description": desc,
+                    }
+                )
         return findings
 
     def check_sensitive_data(self, text: str) -> List[Dict]:
@@ -156,18 +162,24 @@ class AgentOutputValidator:
         sensitive_patterns = [
             (r"\b\d{3}-\d{2}-\d{4}\b", "Potential SSN", "high"),
             (r"(?i)(password|api_key|secret_key|private_key)\s*[=:]\s*['\"][^'\"]{8,}", "Credential value", "critical"),
-            (r"(?i)(BEGIN RSA PRIVATE KEY|BEGIN EC PRIVATE KEY|BEGIN OPENSSH PRIVATE KEY)", "Private key material", "critical"),
+            (
+                r"(?i)(BEGIN RSA PRIVATE KEY|BEGIN EC PRIVATE KEY|BEGIN OPENSSH PRIVATE KEY)",
+                "Private key material",
+                "critical",
+            ),
             (r"(?i)(AKIA[0-9A-Z]{16})", "AWS Access Key ID", "critical"),
             (r"(?i)(ghp_[A-Za-z0-9_]{36})", "GitHub Personal Access Token", "critical"),
         ]
         for pattern, desc, severity in sensitive_patterns:
             if re.search(pattern, text):
-                findings.append({
-                    "type": "sensitive_data",
-                    "severity": severity,
-                    "action": "block" if severity == "critical" else "flag",
-                    "description": desc,
-                })
+                findings.append(
+                    {
+                        "type": "sensitive_data",
+                        "severity": severity,
+                        "action": "block" if severity == "critical" else "flag",
+                        "description": desc,
+                    }
+                )
         return findings
 
     def _log_violation(
@@ -187,7 +199,7 @@ class AgentOutputValidator:
 
         entry_id = str(uuid.uuid4())
         try:
-            conn = sqlite3.connect(str(self._db_path))
+            conn = get_connection(db_path=str(self._db_path))
             conn.execute(
                 """INSERT INTO agent_output_violations
                    (id, project_id, agent_id, tool_name, violation_type,
@@ -195,9 +207,15 @@ class AgentOutputValidator:
                     classification, created_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'CUI', ?)""",
                 (
-                    entry_id, project_id, agent_id, tool_name,
-                    violation_type, severity, json.dumps(details),
-                    output_hash, action_taken,
+                    entry_id,
+                    project_id,
+                    agent_id,
+                    tool_name,
+                    violation_type,
+                    severity,
+                    json.dumps(details),
+                    output_hash,
+                    action_taken,
                     datetime.now(timezone.utc).isoformat(),
                 ),
             )
@@ -227,7 +245,7 @@ class AgentOutputValidator:
             return result
 
         try:
-            conn = sqlite3.connect(str(self._db_path))
+            conn = get_connection(db_path=str(self._db_path))
 
             where = "1=1"
             params: list = []
@@ -239,7 +257,7 @@ class AgentOutputValidator:
 
             for severity in ("critical", "high", "medium"):
                 row = conn.execute(
-                    f"SELECT COUNT(*) FROM agent_output_violations "
+                    f"SELECT COUNT(*) FROM agent_output_violations "  # nosec B608 -- table/column names are internal constants, not user input
                     f"WHERE {where} AND severity = ? AND created_at >= ?",
                     params + [severity, cutoff],
                 ).fetchone()
@@ -255,9 +273,7 @@ class AgentOutputValidator:
                         )
                 elif severity == "high":
                     if count > 5:
-                        result["warnings"].append(
-                            f"{count} high-severity output violations in last 24h"
-                        )
+                        result["warnings"].append(f"{count} high-severity output violations in last 24h")
 
             conn.close()
         except Exception as e:
@@ -267,9 +283,7 @@ class AgentOutputValidator:
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Agent Output Validator — content safety checker (D259)"
-    )
+    parser = argparse.ArgumentParser(description="Agent Output Validator — content safety checker (D259)")
     parser.add_argument("--text", help="Text to validate")
     parser.add_argument("--file", help="File to validate")
     parser.add_argument("--gate", action="store_true", help="Evaluate security gate")

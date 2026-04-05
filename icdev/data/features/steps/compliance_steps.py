@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-"""Step definitions for ICDEV compliance gates BDD scenarios."""
+"""Step definitions for ICDEV™ compliance gates BDD scenarios."""
 
 import json
 import os

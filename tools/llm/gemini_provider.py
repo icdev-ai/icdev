@@ -25,6 +25,7 @@ logger = logging.getLogger("icdev.llm.gemini")
 try:
     import google.generativeai as genai
     from google.generativeai import types as genai_types
+
     HAS_GEMINI = True
 except ImportError:
     genai = None  # type: ignore[assignment]
@@ -36,10 +37,11 @@ except ImportError:
 # Message format conversion: universal -> Gemini
 # ---------------------------------------------------------------------------
 
+
 def _convert_messages_to_gemini(
     messages: List[Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
-    """Convert ICDEV universal messages to Gemini content format.
+    """Convert ICDEV™ universal messages to Gemini content format.
 
     Handles three content shapes:
     1. Plain string: {"role": "user", "content": "hello"}
@@ -50,7 +52,6 @@ def _convert_messages_to_gemini(
       {"role": "user", "parts": ["text"]}
       {"role": "user", "parts": [{"text": "desc"}, {"inline_data": {"mime_type": ..., "data": ...}}]}
     """
-    import base64
 
     result: List[Dict[str, Any]] = []
 
@@ -83,12 +84,14 @@ def _convert_messages_to_gemini(
                     b64_data = source.get("data", "")
                     media_type = source.get("media_type", "image/png")
                     if b64_data:
-                        parts.append({
-                            "inline_data": {
-                                "mime_type": media_type,
-                                "data": b64_data,
+                        parts.append(
+                            {
+                                "inline_data": {
+                                    "mime_type": media_type,
+                                    "data": b64_data,
+                                }
                             }
-                        })
+                        )
 
                 elif btype == "image_url":
                     # OpenAI format:
@@ -99,12 +102,14 @@ def _convert_messages_to_gemini(
                         media_type = "image/png"
                         if ":" in header and ";" in header:
                             media_type = header.split(":")[1].split(";")[0]
-                        parts.append({
-                            "inline_data": {
-                                "mime_type": media_type,
-                                "data": b64_data,
+                        parts.append(
+                            {
+                                "inline_data": {
+                                    "mime_type": media_type,
+                                    "data": b64_data,
+                                }
                             }
-                        })
+                        )
 
                 elif btype == "tool_result":
                     # Flatten tool_result content to text
@@ -122,7 +127,7 @@ def _convert_messages_to_gemini(
 
 
 def _convert_tools_to_gemini(tools: List[Dict]) -> List[Any]:
-    """Convert ICDEV/OpenAI tool format to Gemini function declarations.
+    """Convert ICDEV™/OpenAI tool format to Gemini function declarations.
 
     Input (OpenAI): {"type": "function", "function": {"name": ..., "parameters": ...}}
     Input (Anthropic): {"name": ..., "description": ..., "input_schema": ...}
@@ -163,6 +168,7 @@ def _convert_tools_to_gemini(tools: List[Dict]) -> List[Any]:
 # Provider implementation
 # ---------------------------------------------------------------------------
 
+
 class GeminiProvider(LLMProvider):
     """Google Gemini API provider using the google-generativeai SDK.
 
@@ -179,10 +185,7 @@ class GeminiProvider(LLMProvider):
         if self._configured:
             return
         if not HAS_GEMINI:
-            raise ImportError(
-                "google-generativeai SDK required. "
-                "Install: pip install google-generativeai"
-            )
+            raise ImportError("google-generativeai SDK required. Install: pip install google-generativeai")
         if self._api_key:
             genai.configure(api_key=self._api_key)
         self._configured = True
@@ -191,8 +194,7 @@ class GeminiProvider(LLMProvider):
     def provider_name(self) -> str:
         return "gemini"
 
-    def invoke(self, request: LLMRequest, model_id: str,
-               model_config: dict) -> LLMResponse:
+    def invoke(self, request: LLMRequest, model_id: str, model_config: dict) -> LLMResponse:
         """Invoke Gemini API synchronously."""
         self._ensure_configured()
         start_time = time.time()
@@ -266,16 +268,20 @@ class GeminiProvider(LLMProvider):
                         text_parts.append(part.text)
                     elif hasattr(part, "function_call") and part.function_call:
                         fc = part.function_call
-                        tool_calls.append({
-                            "id": f"call_{len(tool_calls)}",
-                            "name": fc.name,
-                            "input": dict(fc.args) if fc.args else {},
-                        })
+                        tool_calls.append(
+                            {
+                                "id": f"call_{len(tool_calls)}",
+                                "name": fc.name,
+                                "input": dict(fc.args) if fc.args else {},
+                            }
+                        )
 
             # Stop reason
             finish_reason = getattr(candidate, "finish_reason", None)
             if finish_reason is not None:
-                resp.stop_reason = str(finish_reason.name).lower() if hasattr(finish_reason, "name") else str(finish_reason)
+                resp.stop_reason = (
+                    str(finish_reason.name).lower() if hasattr(finish_reason, "name") else str(finish_reason)
+                )
 
         resp.content = "\n".join(text_parts)
         resp.tool_calls = tool_calls
@@ -296,8 +302,7 @@ class GeminiProvider(LLMProvider):
 
         return resp
 
-    def invoke_streaming(self, request: LLMRequest, model_id: str,
-                         model_config: dict) -> Iterator[dict]:
+    def invoke_streaming(self, request: LLMRequest, model_id: str, model_config: dict) -> Iterator[dict]:
         """Invoke Gemini with streaming response."""
         self._ensure_configured()
         start_time = time.time()

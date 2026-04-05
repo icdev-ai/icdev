@@ -4,7 +4,7 @@
 
 ## Overview
 
-ICDEV provides a multi-layered monitoring and observability stack covering infrastructure health, agent behavior, compliance posture, and distributed request tracing. The system includes proactive self-healing capabilities that automatically detect, diagnose, and remediate common failure patterns.
+ICDEV™ provides a multi-layered monitoring and observability stack covering infrastructure health, agent behavior, compliance posture, and distributed request tracing. The system includes proactive self-healing capabilities that automatically detect, diagnose, and remediate common failure patterns.
 
 ---
 
@@ -147,7 +147,7 @@ Results are stored in the `cloud_provider_status` table.
 
 ## Monitoring Stack
 
-ICDEV integrates with multiple monitoring backends. Configure endpoints in `args/monitoring_config.yaml`.
+ICDEV™ integrates with multiple monitoring backends. Configure endpoints in `args/monitoring_config.yaml`.
 
 ### Supported Backends
 
@@ -233,7 +233,7 @@ Generates recommendations based on accumulated knowledge patterns, project histo
 
 ### Architecture
 
-ICDEV implements dual-mode tracing (D280):
+ICDEV™ implements dual-mode tracing (D280):
 
 | Mode | Backend | Activation |
 |------|---------|-----------|

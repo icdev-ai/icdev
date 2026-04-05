@@ -104,11 +104,7 @@ validation_patterns:
     - 'if\s+not\s+data'
     - 'if\s+["\x27]\w+["\x27]\s+not\s+in\s+data'
     - 'pydantic'
-    - 'request\.get_json'
-    - 'request\.json'
-    - 'request\.form'
-    - 'return.*40[0-9]'
-    - 'abort\(4'
+    - 'abort\s*\(\s*4[0-9]{2}'
   java:
     - '@Valid'
     - '@NotNull'
@@ -175,10 +171,10 @@ exempt_patterns:
 
 # Severity assignment
 # missing_auth is critical (direct exploit path — unauthorized access)
-# missing_validation is medium (defense-in-depth, not a direct exploit)
+# missing_validation_on_write is high (direct injection / SQLi / XSS vector)
 severity:
   missing_auth: critical
-  missing_validation_on_write: medium
+  missing_validation_on_write: high
   missing_idor_check: medium
 
 # Scan settings

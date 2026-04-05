@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-"""Step definitions for ICDEV project management BDD scenarios."""
+"""Step definitions for ICDEV™ project management BDD scenarios."""
 
 import os
 import subprocess
@@ -8,9 +8,9 @@ import sys
 from behave import given, then, when
 
 
-@given('the ICDEV database is initialized')
+@given('the ICDEV™ database is initialized')
 def step_icdev_db_initialized(context):
-    """Ensure the ICDEV database exists."""
+    """Ensure the ICDEV™ database exists."""
     db_path = os.path.join(os.getcwd(), 'data', 'icdev.db')
     if not os.path.exists(db_path):
         result = subprocess.run(
@@ -21,7 +21,7 @@ def step_icdev_db_initialized(context):
     context.db_path = db_path
 
 
-@given('a fresh ICDEV environment')
+@given('a fresh ICDEV™ environment')
 def step_fresh_environment(context):
     """Start with a fresh environment."""
     context.fresh = True
@@ -35,7 +35,7 @@ def step_project_exists(context, name):
 
 @when('I create a project with name "{name}" and type "{proj_type}"')
 def step_create_project(context, name, proj_type):
-    """Create a new ICDEV project."""
+    """Create a new ICDEV™ project."""
     result = subprocess.run(
         [sys.executable, 'tools/project/project_create.py',
          '--name', name, '--type', proj_type],
@@ -47,7 +47,7 @@ def step_create_project(context, name, proj_type):
 
 @when('I list all projects')
 def step_list_projects(context):
-    """List all ICDEV projects."""
+    """List all ICDEV™ projects."""
     result = subprocess.run(
         [sys.executable, 'tools/project/project_list.py'],
         capture_output=True, text=True, timeout=30

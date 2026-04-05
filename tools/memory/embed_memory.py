@@ -7,9 +7,9 @@ Uses vendor-agnostic LLM provider abstraction (D72) with OpenAI fallback.
 
 import argparse
 import json
-import sqlite3
 import struct
 import sys
+from tools.db.storage import get_connection
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -22,6 +22,7 @@ def get_embedding_client():
     try:
         sys.path.insert(0, str(BASE_DIR))
         from tools.llm import get_embedding_provider
+
         return get_embedding_provider(), "llm_provider"
     except Exception:
         pass
@@ -29,11 +30,13 @@ def get_embedding_client():
     # Fallback to direct OpenAI (backward compat)
     try:
         from dotenv import load_dotenv
+
         load_dotenv(BASE_DIR / ".env")
     except ImportError:
         pass
 
     import os
+
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
         print("Error: No embedding provider available. Set OPENAI_API_KEY or configure LLM provider.")
@@ -41,6 +44,7 @@ def get_embedding_client():
 
     try:
         import openai
+
         return openai.OpenAI(api_key=api_key), "openai_direct"
     except ImportError:
         print("Error: openai package not installed. Run: pip install openai")
@@ -58,7 +62,7 @@ def embed_all(user_id=None, json_output=False):
             print(json.dumps({"error": "no_provider", "embedded": 0}))
         return
 
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = get_connection(db_path=str(DB_PATH))
     c = conn.cursor()
 
     sql = "SELECT id, content FROM memory_entries WHERE embedding IS NULL"
@@ -72,8 +76,16 @@ def embed_all(user_id=None, json_output=False):
 
     if not rows:
         if json_output:
-            print(json.dumps({"classification": "CUI // SP-CTI", "embedded": 0,
-                              "status": "all_embedded", "provider": provider_name}))
+            print(
+                json.dumps(
+                    {
+                        "classification": "CUI // SP-CTI",
+                        "embedded": 0,
+                        "status": "all_embedded",
+                        "provider": provider_name,
+                    }
+                )
+            )
         else:
             print("All entries already have embeddings.")
         conn.close()
@@ -105,9 +117,7 @@ def embed_all(user_id=None, json_output=False):
                     total += 1
             else:
                 # Direct OpenAI client (fallback)
-                response = client.embeddings.create(
-                    input=texts, model="text-embedding-3-small"
-                )
+                response = client.embeddings.create(input=texts, model="text-embedding-3-small")
                 for j, emb_data in enumerate(response.data):
                     blob = embedding_to_blob(emb_data.embedding)
                     c.execute(
@@ -129,13 +139,18 @@ def embed_all(user_id=None, json_output=False):
     conn.close()
 
     if json_output:
-        print(json.dumps({
-            "classification": "CUI // SP-CTI",
-            "embedded": total,
-            "errors": errors,
-            "total_unembedded": len(rows),
-            "provider": provider_name,
-        }, indent=2))
+        print(
+            json.dumps(
+                {
+                    "classification": "CUI // SP-CTI",
+                    "embedded": total,
+                    "errors": errors,
+                    "total_unembedded": len(rows),
+                    "provider": provider_name,
+                },
+                indent=2,
+            )
+        )
     else:
         print(f"Done. {total} entries embedded via {provider_name}.")
 

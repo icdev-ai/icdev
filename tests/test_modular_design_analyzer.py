@@ -1,19 +1,17 @@
 # [TEMPLATE: CUI // SP-CTI]
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 """Tests for tools.mosa.modular_design_analyzer -- static modularity metrics."""
 
-import pytest
 
 from icdev.tools.mosa.modular_design_analyzer import (
     _build_dependency_graph,
-    _count_cycles,
     _detect_circular_deps,
     _extract_python_imports,
     _iter_source_files,
-    _module_name,
     analyze_modularity,
     evaluate_thresholds,
 )
@@ -22,6 +20,7 @@ from icdev.tools.mosa.modular_design_analyzer import (
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _write_py(path: Path, content: str):
     """Write a Python source file, creating parent dirs as needed."""
@@ -32,6 +31,7 @@ def _write_py(path: Path, content: str):
 # ---------------------------------------------------------------------------
 # TestSourceFileIteration
 # ---------------------------------------------------------------------------
+
 
 class TestSourceFileIteration:
     """_iter_source_files: recursive file collection with exclusions."""
@@ -67,6 +67,7 @@ class TestSourceFileIteration:
 # ---------------------------------------------------------------------------
 # TestPythonImportExtraction
 # ---------------------------------------------------------------------------
+
 
 class TestPythonImportExtraction:
     """_extract_python_imports: AST-based import + ABC detection."""
@@ -109,6 +110,7 @@ class TestPythonImportExtraction:
 # TestDependencyGraph
 # ---------------------------------------------------------------------------
 
+
 class TestDependencyGraph:
     """_build_dependency_graph: module-level graph construction."""
 
@@ -130,6 +132,7 @@ class TestDependencyGraph:
 # ---------------------------------------------------------------------------
 # TestCycleDetection
 # ---------------------------------------------------------------------------
+
 
 class TestCycleDetection:
     """_detect_circular_deps / _count_cycles: cycle detection via TopologicalSorter."""
@@ -156,6 +159,7 @@ class TestCycleDetection:
 # TestModularityAnalysis
 # ---------------------------------------------------------------------------
 
+
 class TestModularityAnalysis:
     """analyze_modularity: full metric computation."""
 
@@ -169,8 +173,7 @@ class TestModularityAnalysis:
         assert result["total_files_scanned"] == 0
 
     def test_well_structured_project(self, tmp_path):
-        _write_py(tmp_path / "svc" / "api.py",
-                   "from abc import ABC\nclass Base(ABC): ...\nimport os\n")
+        _write_py(tmp_path / "svc" / "api.py", "from abc import ABC\nclass Base(ABC): ...\nimport os\n")
         _write_py(tmp_path / "svc" / "handler.py", "import json\n")
         result = analyze_modularity(str(tmp_path))
         assert result["module_count"] >= 1

@@ -1,6 +1,6 @@
 # [TEMPLATE: CUI // SP-CTI]
 #!/usr/bin/env python3
-"""7R Migration Strategy Recommendation Engine for ICDEV DoD Modernization.
+"""7R Migration Strategy Recommendation Engine for ICDEV™ DoD Modernization.
 
 Evaluates legacy applications against the 7 Rs of cloud migration:
   Rehost, Replatform, Refactor, Rearchitect, Repurchase, Retire, Retain

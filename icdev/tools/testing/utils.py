@@ -1,8 +1,8 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Testing Utilities
+# ICDEV™ Testing Utilities
 # Adapted from ADW utils.py for Gov/DoD testing workflows
 
-"""Utility functions for ICDEV testing framework.
+"""Utility functions for ICDEV™ testing framework.
 
 Provides JSON parsing (handles markdown wrapping), logger setup,
 safe subprocess environments, and run ID generation.
@@ -77,7 +77,7 @@ def setup_logger(run_id: str, phase: str = "test_run") -> logging.Logger:
     logger.addHandler(file_handler)
     logger.addHandler(console_handler)
 
-    logger.info(f"ICDEV Test Logger initialized - Run: {run_id}, Phase: {phase}")
+    logger.info(f"ICDEV™ Test Logger initialized - Run: {run_id}, Phase: {phase}")
     logger.debug(f"Log file: {log_file}")
 
     return logger
@@ -159,14 +159,14 @@ def parse_json(text: str, target_type: Type[T] = None) -> Union[T, Any]:
 def get_safe_subprocess_env() -> Dict[str, str]:
     """Get filtered environment variables safe for subprocess execution.
 
-    Adapted from ADW get_safe_subprocess_env with ICDEV-specific variables.
+    Adapted from ADW get_safe_subprocess_env with ICDEV™-specific variables.
     Prevents accidental exposure of sensitive credentials to subprocesses.
 
     Returns:
         Dictionary containing only required environment variables
     """
     safe_env_vars = {
-        # ICDEV Configuration
+        # ICDEV™ Configuration
         "ICDEV_DB_PATH": os.getenv("ICDEV_DB_PATH", str(PROJECT_ROOT / "data" / "icdev.db")),
         "ICDEV_PROJECT_ROOT": os.getenv("ICDEV_PROJECT_ROOT", str(PROJECT_ROOT)),
 

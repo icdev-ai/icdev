@@ -1,7 +1,7 @@
 # [TEMPLATE: CUI // SP-CTI]
 """Model Code Generator -- generate code scaffolding from SysML model elements.
 
-Reads sysml_elements and sysml_relationships from the ICDEV database,
+Reads sysml_elements and sysml_relationships from the ICDEV™ database,
 generates code files (classes, modules, state machines, tests), and records
 model_code_mappings and digital_thread_links for full traceability.
 
@@ -1045,7 +1045,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Generate code from SysML model elements"
     )
-    parser.add_argument("--project-id", required=True, help="ICDEV project ID")
+    parser.add_argument("--project-id", required=True, help="ICDEV™ project ID")
     parser.add_argument(
         "--language", default="python",
         choices=["python", "java", "go", "rust", "csharp", "typescript"],

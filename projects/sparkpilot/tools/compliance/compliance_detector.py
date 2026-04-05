@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Compliance Framework Auto-Detection Engine.
 
 Analyzes project metadata, data categories, and environment context to

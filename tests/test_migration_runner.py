@@ -1,6 +1,7 @@
 # [TEMPLATE: CUI // SP-CTI]
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 """Tests for tools.db.migration_runner.MigrationRunner."""
@@ -10,7 +11,7 @@ import sqlite3
 
 import pytest
 
-from icdev.tools.db.migration_runner import MigrationRunner, SCHEMA_MIGRATIONS_DDL
+from icdev.tools.db.migration_runner import MigrationRunner
 
 
 @pytest.fixture
@@ -32,20 +33,24 @@ def runner_with_db(runner):
     return runner
 
 
-def _create_sql_migration(migrations_dir: Path, version: str, name: str, up_sql: str,
-                          down_sql: str = "-- rollback"):
+def _create_sql_migration(migrations_dir: Path, version: str, name: str, up_sql: str, down_sql: str = "-- rollback"):
     """Helper to create a migration directory with up.sql, down.sql, and meta.json."""
     dir_name = f"{version}_{name}"
     mdir = migrations_dir / dir_name
     mdir.mkdir(parents=True, exist_ok=True)
     (mdir / "up.sql").write_text(up_sql, encoding="utf-8")
     (mdir / "down.sql").write_text(down_sql, encoding="utf-8")
-    (mdir / "meta.json").write_text(json.dumps({
-        "description": name,
-        "date": "2026-01-01",
-        "author": "test",
-        "reversible": True,
-    }), encoding="utf-8")
+    (mdir / "meta.json").write_text(
+        json.dumps(
+            {
+                "description": name,
+                "date": "2026-01-01",
+                "author": "test",
+                "reversible": True,
+            }
+        ),
+        encoding="utf-8",
+    )
     return mdir
 
 
@@ -58,11 +63,16 @@ def _create_py_migration(migrations_dir: Path, version: str, name: str, up_body:
         f"# CUI // SP-CTI\ndef up(conn):\n{up_body}\n",
         encoding="utf-8",
     )
-    (mdir / "meta.json").write_text(json.dumps({
-        "description": name,
-        "date": "2026-01-01",
-        "author": "test",
-    }), encoding="utf-8")
+    (mdir / "meta.json").write_text(
+        json.dumps(
+            {
+                "description": name,
+                "date": "2026-01-01",
+                "author": "test",
+            }
+        ),
+        encoding="utf-8",
+    )
     return mdir
 
 
@@ -73,9 +83,7 @@ class TestEnsureMigrationsTable:
         """ensure_migrations_table should create schema_migrations in a new DB."""
         runner.ensure_migrations_table()
         conn = sqlite3.connect(str(runner.db_path))
-        row = conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_migrations'"
-        ).fetchone()
+        row = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_migrations'").fetchone()
         conn.close()
         assert row is not None
 
@@ -94,13 +102,9 @@ class TestDiscoverMigrations:
 
     def test_discover_migrations_finds_matching_dirs(self, runner):
         """discover_migrations should find NNN_description directories."""
+        _create_sql_migration(runner.migrations_dir, "001", "baseline", "CREATE TABLE test1 (id INTEGER PRIMARY KEY);")
         _create_sql_migration(
-            runner.migrations_dir, "001", "baseline",
-            "CREATE TABLE test1 (id INTEGER PRIMARY KEY);"
-        )
-        _create_sql_migration(
-            runner.migrations_dir, "002", "add_users",
-            "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT);"
+            runner.migrations_dir, "002", "add_users", "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT);"
         )
         migrations = runner.discover_migrations()
         assert len(migrations) == 2
@@ -111,10 +115,7 @@ class TestDiscoverMigrations:
 
     def test_discover_migrations_ignores_non_matching_dirs(self, runner):
         """Directories not matching NNN_description pattern should be ignored."""
-        _create_sql_migration(
-            runner.migrations_dir, "001", "baseline",
-            "CREATE TABLE t (id INTEGER PRIMARY KEY);"
-        )
+        _create_sql_migration(runner.migrations_dir, "001", "baseline", "CREATE TABLE t (id INTEGER PRIMARY KEY);")
         # Create non-matching dirs
         (runner.migrations_dir / "readme").mkdir()
         (runner.migrations_dir / "no_version_prefix").mkdir()
@@ -150,9 +151,8 @@ class TestApplyMigration:
     def test_apply_migration_records_in_schema_migrations(self, runner):
         """apply_migration should record the version in schema_migrations."""
         runner.ensure_migrations_table()
-        mdir = _create_sql_migration(
-            runner.migrations_dir, "001", "baseline",
-            "CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT);"
+        _create_sql_migration(
+            runner.migrations_dir, "001", "baseline", "CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT);"
         )
         migrations = runner.discover_migrations()
         result = runner.apply_migration(migrations[0])
@@ -168,16 +168,13 @@ class TestApplyMigration:
         """An up.sql migration should execute and create the specified table."""
         runner.ensure_migrations_table()
         _create_sql_migration(
-            runner.migrations_dir, "001", "create_items",
-            "CREATE TABLE items (id INTEGER PRIMARY KEY, value TEXT);"
+            runner.migrations_dir, "001", "create_items", "CREATE TABLE items (id INTEGER PRIMARY KEY, value TEXT);"
         )
         migrations = runner.discover_migrations()
         runner.apply_migration(migrations[0])
 
         conn = sqlite3.connect(str(runner.db_path))
-        row = conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='items'"
-        ).fetchone()
+        row = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='items'").fetchone()
         conn.close()
         assert row is not None
 
@@ -185,17 +182,17 @@ class TestApplyMigration:
         """An up.py migration should be loaded and its up() function called."""
         runner.ensure_migrations_table()
         _create_py_migration(
-            runner.migrations_dir, "001", "py_migration",
-            "    conn.execute('CREATE TABLE py_test (id INTEGER PRIMARY KEY, data TEXT)')\n    conn.commit()"
+            runner.migrations_dir,
+            "001",
+            "py_migration",
+            "    conn.execute('CREATE TABLE py_test (id INTEGER PRIMARY KEY, data TEXT)')\n    conn.commit()",
         )
         migrations = runner.discover_migrations()
         result = runner.apply_migration(migrations[0])
         assert result["success"] is True
 
         conn = sqlite3.connect(str(runner.db_path))
-        row = conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='py_test'"
-        ).fetchone()
+        row = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='py_test'").fetchone()
         conn.close()
         assert row is not None
 
@@ -207,9 +204,11 @@ class TestRollbackMigration:
         """rollback_migration should set rolled_back_at on the schema_migrations row."""
         runner.ensure_migrations_table()
         _create_sql_migration(
-            runner.migrations_dir, "001", "rollback_test",
+            runner.migrations_dir,
+            "001",
+            "rollback_test",
             "CREATE TABLE rollback_t (id INTEGER PRIMARY KEY);",
-            down_sql="DROP TABLE IF EXISTS rollback_t;"
+            down_sql="DROP TABLE IF EXISTS rollback_t;",
         )
         migrations = runner.discover_migrations()
         runner.apply_migration(migrations[0])
@@ -228,9 +227,7 @@ class TestRollbackMigration:
 
         # But the row should still exist with rolled_back_at set
         conn = sqlite3.connect(str(runner.db_path))
-        row = conn.execute(
-            "SELECT rolled_back_at FROM schema_migrations WHERE version = '001'"
-        ).fetchone()
+        row = conn.execute("SELECT rolled_back_at FROM schema_migrations WHERE version = '001'").fetchone()
         conn.close()
         assert row is not None
         assert row[0] is not None  # rolled_back_at is set
@@ -241,14 +238,8 @@ class TestMigrateUp:
 
     def test_migrate_up_applies_all_pending(self, runner):
         """migrate_up should apply all pending migrations."""
-        _create_sql_migration(
-            runner.migrations_dir, "001", "first",
-            "CREATE TABLE t1 (id INTEGER PRIMARY KEY);"
-        )
-        _create_sql_migration(
-            runner.migrations_dir, "002", "second",
-            "CREATE TABLE t2 (id INTEGER PRIMARY KEY);"
-        )
+        _create_sql_migration(runner.migrations_dir, "001", "first", "CREATE TABLE t1 (id INTEGER PRIMARY KEY);")
+        _create_sql_migration(runner.migrations_dir, "002", "second", "CREATE TABLE t2 (id INTEGER PRIMARY KEY);")
 
         results = runner.migrate_up()
         assert len(results) == 2
@@ -256,17 +247,10 @@ class TestMigrateUp:
 
     def test_migrate_up_stops_on_failure(self, runner):
         """migrate_up should stop processing when a migration fails."""
+        _create_sql_migration(runner.migrations_dir, "001", "good", "CREATE TABLE good_t (id INTEGER PRIMARY KEY);")
+        _create_sql_migration(runner.migrations_dir, "002", "bad", "THIS IS NOT VALID SQL AT ALL!!!")
         _create_sql_migration(
-            runner.migrations_dir, "001", "good",
-            "CREATE TABLE good_t (id INTEGER PRIMARY KEY);"
-        )
-        _create_sql_migration(
-            runner.migrations_dir, "002", "bad",
-            "THIS IS NOT VALID SQL AT ALL!!!"
-        )
-        _create_sql_migration(
-            runner.migrations_dir, "003", "never_reached",
-            "CREATE TABLE never_t (id INTEGER PRIMARY KEY);"
+            runner.migrations_dir, "003", "never_reached", "CREATE TABLE never_t (id INTEGER PRIMARY KEY);"
         )
 
         results = runner.migrate_up()
@@ -280,10 +264,7 @@ class TestValidateChecksums:
 
     def test_validate_checksums_detects_modified_files(self, runner):
         """validate_checksums should detect when a migration file has changed."""
-        _create_sql_migration(
-            runner.migrations_dir, "001", "original",
-            "CREATE TABLE orig (id INTEGER PRIMARY KEY);"
-        )
+        _create_sql_migration(runner.migrations_dir, "001", "original", "CREATE TABLE orig (id INTEGER PRIMARY KEY);")
         runner.migrate_up()
 
         # Modify the migration file after it was applied
@@ -302,8 +283,7 @@ class TestMarkApplied:
     def test_mark_applied_records_version(self, runner):
         """mark_applied should record the version without running the SQL."""
         _create_sql_migration(
-            runner.migrations_dir, "001", "baseline",
-            "CREATE TABLE should_not_run (id INTEGER PRIMARY KEY);"
+            runner.migrations_dir, "001", "baseline", "CREATE TABLE should_not_run (id INTEGER PRIMARY KEY);"
         )
         runner.mark_applied("001")
 
@@ -313,9 +293,7 @@ class TestMarkApplied:
 
         # The table should NOT have been created (mark_applied doesn't execute)
         conn = sqlite3.connect(str(runner.db_path))
-        row = conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='should_not_run'"
-        ).fetchone()
+        row = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='should_not_run'").fetchone()
         conn.close()
         assert row is None
 

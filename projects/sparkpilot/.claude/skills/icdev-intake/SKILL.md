@@ -20,7 +20,7 @@ Runs RICOAS Phase 1 — conversational requirements intake:
 4. **Detect ambiguities and gaps** in real-time using pattern matching
 5. **Score readiness** across 5 dimensions (completeness, clarity, feasibility, compliance, testability)
 6. **Decompose into SAFe hierarchy** — Epic > Capability > Feature > Story with BDD acceptance criteria
-7. **Export decomposed items** for handoff to Architect agent (ATLAS workflow)
+7. **Export decomposed items** for handoff to Architect agent (ANVIL workflow)
 
 All operations produce classification-marked output per project settings and record audit trail entries.
 
@@ -129,7 +129,7 @@ Print final summary:
 - Gaps resolved vs outstanding
 - SAFe items generated (count by level)
 - BDD scenarios count
-- Next step recommendation (proceed to ATLAS Architect phase)
+- Next step recommendation (proceed to ANVIL Architect phase)
 
 ## Error Handling
 - If session creation fails: check project exists, report error, suggest --new flag
@@ -145,6 +145,6 @@ Print final summary:
 
 ## Related Skills
 - `/icdev-init` — Initialize project (creates project record for intake to reference)
-- `/icdev-build` — Build code (ATLAS workflow consumes decomposed requirements)
+- `/icdev-build` — Build code (ANVIL workflow consumes decomposed requirements)
 - `/icdev-mbse` — MBSE integration (digital thread links to intake requirements)
 - `/icdev-comply` — Compliance artifacts (gap analysis feeds compliance workflow)

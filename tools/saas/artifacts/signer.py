@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""ICDEV SaaS Phase 5 -- Artifact Signer.
+"""ICDEV™ SaaS Phase 5 -- Artifact Signer.
 
 CUI // SP-CTI
 
@@ -57,13 +57,11 @@ logger = logging.getLogger("saas.artifacts.signer")
 try:
     from cryptography.hazmat.primitives import hashes, serialization
     from cryptography.hazmat.primitives.asymmetric import padding
+
     HAS_CRYPTO = True
 except ImportError:
     HAS_CRYPTO = False
-    logger.debug(
-        "cryptography library not available -- RSA signing disabled. "
-        "Hash-only mode remains functional."
-    )
+    logger.debug("cryptography library not available -- RSA signing disabled. Hash-only mode remains functional.")
 
 
 # ---------------------------------------------------------------------------
@@ -90,6 +88,7 @@ def _sha256_file(file_path: str) -> str:
 # Public API
 # ============================================================================
 
+
 def hash_artifact(file_path: str) -> dict:
     """Compute SHA-256 hash of an artifact file.
 
@@ -104,8 +103,7 @@ def hash_artifact(file_path: str) -> dict:
     """
     p = Path(file_path)
     if not p.exists():
-        raise FileNotFoundError(
-            "Artifact file not found: {}".format(file_path))
+        raise FileNotFoundError("Artifact file not found: {}".format(file_path))
 
     digest = _sha256_file(str(p))
     size = p.stat().st_size
@@ -138,8 +136,7 @@ def sign_artifact(file_path: str, private_key_path: str = None) -> dict:
     """
     p = Path(file_path)
     if not p.exists():
-        raise FileNotFoundError(
-            "Artifact file not found: {}".format(file_path))
+        raise FileNotFoundError("Artifact file not found: {}".format(file_path))
 
     digest = _sha256_file(str(p))
     size = p.stat().st_size
@@ -154,18 +151,14 @@ def sign_artifact(file_path: str, private_key_path: str = None) -> dict:
         }
 
     if not HAS_CRYPTO:
-        raise RuntimeError(
-            "cryptography library is required for RSA signing. "
-            "Install with: pip install cryptography")
+        raise RuntimeError("cryptography library is required for RSA signing. Install with: pip install cryptography")
 
     key_path = Path(private_key_path)
     if not key_path.exists():
-        raise FileNotFoundError(
-            "Private key not found: {}".format(private_key_path))
+        raise FileNotFoundError("Private key not found: {}".format(private_key_path))
 
     with open(str(key_path), "rb") as kf:
-        private_key = serialization.load_pem_private_key(
-            kf.read(), password=None)
+        private_key = serialization.load_pem_private_key(kf.read(), password=None)
 
     # Read file content for signing
     with open(str(p), "rb") as f:
@@ -187,8 +180,7 @@ def sign_artifact(file_path: str, private_key_path: str = None) -> dict:
     }
 
 
-def verify_signature(file_path: str, signature_b64: str,
-                     public_key_path: str) -> bool:
+def verify_signature(file_path: str, signature_b64: str, public_key_path: str) -> bool:
     """Verify an RSA-SHA256 signature against a file.
 
     Args:
@@ -205,18 +197,16 @@ def verify_signature(file_path: str, signature_b64: str,
     """
     if not HAS_CRYPTO:
         raise RuntimeError(
-            "cryptography library is required for signature verification. "
-            "Install with: pip install cryptography")
+            "cryptography library is required for signature verification. Install with: pip install cryptography"
+        )
 
     p = Path(file_path)
     if not p.exists():
-        raise FileNotFoundError(
-            "Artifact file not found: {}".format(file_path))
+        raise FileNotFoundError("Artifact file not found: {}".format(file_path))
 
     pub_path = Path(public_key_path)
     if not pub_path.exists():
-        raise FileNotFoundError(
-            "Public key not found: {}".format(public_key_path))
+        raise FileNotFoundError("Public key not found: {}".format(public_key_path))
 
     with open(str(pub_path), "rb") as kf:
         public_key = serialization.load_pem_public_key(kf.read())
@@ -242,27 +232,21 @@ def verify_signature(file_path: str, signature_b64: str,
 # CLI
 # ============================================================================
 
+
 def main():
     """CLI entry point for artifact hashing and signing."""
     parser = argparse.ArgumentParser(
-        description="CUI // SP-CTI -- ICDEV Artifact Signer",
+        description="CUI // SP-CTI -- ICDEV™ Artifact Signer",
     )
     action = parser.add_mutually_exclusive_group(required=True)
-    action.add_argument("--hash", dest="hash_file", type=str,
-                        help="Compute SHA-256 hash of a file")
-    action.add_argument("--sign", dest="sign_file", type=str,
-                        help="Hash and sign a file")
-    action.add_argument("--verify", dest="verify_file", type=str,
-                        help="Verify a signature against a file")
+    action.add_argument("--hash", dest="hash_file", type=str, help="Compute SHA-256 hash of a file")
+    action.add_argument("--sign", dest="sign_file", type=str, help="Hash and sign a file")
+    action.add_argument("--verify", dest="verify_file", type=str, help="Verify a signature against a file")
 
-    parser.add_argument("--key", type=str,
-                        help="Path to RSA private key (for --sign)")
-    parser.add_argument("--signature", type=str,
-                        help="Base64 signature string (for --verify)")
-    parser.add_argument("--pubkey", type=str,
-                        help="Path to RSA public key (for --verify)")
-    parser.add_argument("--json", action="store_true", dest="as_json",
-                        help="Output as JSON")
+    parser.add_argument("--key", type=str, help="Path to RSA private key (for --sign)")
+    parser.add_argument("--signature", type=str, help="Base64 signature string (for --verify)")
+    parser.add_argument("--pubkey", type=str, help="Path to RSA public key (for --verify)")
+    parser.add_argument("--json", action="store_true", dest="as_json", help="Output as JSON")
 
     args = parser.parse_args()
 
@@ -292,10 +276,8 @@ def main():
 
         elif args.verify_file:
             if not args.signature or not args.pubkey:
-                parser.error(
-                    "--verify requires --signature and --pubkey")
-            valid = verify_signature(
-                args.verify_file, args.signature, args.pubkey)
+                parser.error("--verify requires --signature and --pubkey")
+            valid = verify_signature(args.verify_file, args.signature, args.pubkey)
             if args.as_json:
                 print(json.dumps({"valid": valid}))
             else:

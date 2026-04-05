@@ -1,9 +1,9 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Test — Testing workflow
+# ICDEV™ Test — Testing workflow
 # Adapted from ADW adw_test.py with dual platform support
 
 """
-ICDEV Test — Run test suite with retry and resolution.
+ICDEV™ Test — Run test suite with retry and resolution.
 
 Usage:
     python tools/ci/workflows/icdev_test.py <issue-number> <run-id> [--skip-e2e]
@@ -153,7 +153,7 @@ def main():
 
     state = ICDevState.load(run_id)
     logger = setup_logger(run_id, "icdev_test")
-    logger.info(f"ICDEV Test starting — run_id: {run_id}, issue: #{issue_number}")
+    logger.info(f"ICDEV™ Test starting — run_id: {run_id}, issue: #{issue_number}")
 
     try:
         vcs = VCS()

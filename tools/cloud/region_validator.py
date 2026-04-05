@@ -64,8 +64,7 @@ class RegionValidator:
         csp_data = certs.get(csp.lower(), {})
         return csp_data.get(region)
 
-    def validate_region(self, csp: str, region: str,
-                        required_certs: List[str]) -> Dict:
+    def validate_region(self, csp: str, region: str, required_certs: List[str]) -> Dict:
         """Validate a region holds all required certifications.
 
         Args:
@@ -129,8 +128,7 @@ class RegionValidator:
             "region_data": region_data,
         }
 
-    def get_eligible_regions(self, csp: str,
-                             required_certs: List[str]) -> List[Dict]:
+    def get_eligible_regions(self, csp: str, required_certs: List[str]) -> List[Dict]:
         """Get all regions for a CSP that meet certification requirements.
 
         Returns:
@@ -143,16 +141,18 @@ class RegionValidator:
         for region_name, region_data in csp_data.items():
             result = self.validate_region(csp, region_name, required_certs)
             if result["valid"]:
-                eligible.append({
-                    "region": region_name,
-                    "certifications": region_data,
-                })
+                eligible.append(
+                    {
+                        "region": region_name,
+                        "certifications": region_data,
+                    }
+                )
 
         return eligible
 
-    def validate_deployment(self, csp: str, region: str,
-                            impact_level: str,
-                            frameworks: Optional[List[str]] = None) -> Dict:
+    def validate_deployment(
+        self, csp: str, region: str, impact_level: str, frameworks: Optional[List[str]] = None
+    ) -> Dict:
         """Validate a deployment against IL requirements and framework certs.
 
         Combines impact level requirements with explicit framework requirements.
@@ -236,45 +236,35 @@ def run_cli():
         description="CSP Region Validator — compliance-driven deployment validation (D234)"
     )
     parser.add_argument("--certs-file", help="Path to csp_certifications.json")
-    parser.add_argument("--json", action="store_true", dest="json_output",
-                        help="JSON output")
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
 
     # Common args shared by all subcommands (--json, --certs-file)
     common = argparse.ArgumentParser(add_help=False)
-    common.add_argument("--json", action="store_true", dest="json_output",
-                        help="JSON output")
+    common.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     common.add_argument("--certs-file", help="Path to csp_certifications.json")
 
     sub = parser.add_subparsers(dest="command")
 
     # Validate a specific region
-    val = sub.add_parser("validate", parents=[common],
-                         help="Validate a region against required certs")
+    val = sub.add_parser("validate", parents=[common], help="Validate a region against required certs")
     val.add_argument("--csp", required=True, help="Cloud provider (aws, azure, gcp, oci, ibm)")
     val.add_argument("--region", required=True, help="CSP region identifier")
-    val.add_argument("--frameworks", required=True,
-                     help="Comma-separated required certifications")
+    val.add_argument("--frameworks", required=True, help="Comma-separated required certifications")
 
     # Find eligible regions
-    elig = sub.add_parser("eligible", parents=[common],
-                          help="Find eligible regions for requirements")
+    elig = sub.add_parser("eligible", parents=[common], help="Find eligible regions for requirements")
     elig.add_argument("--csp", required=True, help="Cloud provider")
-    elig.add_argument("--frameworks", required=True,
-                      help="Comma-separated required certifications")
+    elig.add_argument("--frameworks", required=True, help="Comma-separated required certifications")
 
     # Deployment validation (IL + frameworks)
-    deploy = sub.add_parser("deployment-check", parents=[common],
-                            help="Validate deployment against IL + frameworks")
+    deploy = sub.add_parser("deployment-check", parents=[common], help="Validate deployment against IL + frameworks")
     deploy.add_argument("--csp", required=True, help="Cloud provider")
     deploy.add_argument("--region", required=True, help="CSP region")
-    deploy.add_argument("--impact-level", required=True,
-                        help="Impact level (IL2, IL4, IL5, IL6)")
-    deploy.add_argument("--frameworks", default="",
-                        help="Comma-separated additional framework requirements")
+    deploy.add_argument("--impact-level", required=True, help="Impact level (IL2, IL4, IL5, IL6)")
+    deploy.add_argument("--frameworks", default="", help="Comma-separated additional framework requirements")
 
     # List CSPs/regions
-    lst = sub.add_parser("list", parents=[common],
-                         help="List CSPs or regions")
+    lst = sub.add_parser("list", parents=[common], help="List CSPs or regions")
     lst.add_argument("--csp", help="List regions for this CSP (omit for CSP list)")
 
     args = parser.parse_args()
@@ -286,8 +276,7 @@ def run_cli():
         parser.add_argument("--csp", help="Cloud provider")
         parser.add_argument("--region", help="CSP region")
         parser.add_argument("--impact-level", help="Impact level")
-        parser.add_argument("--frameworks", default="",
-                            help="Comma-separated required certifications")
+        parser.add_argument("--frameworks", default="", help="Comma-separated required certifications")
         args = parser.parse_args()
 
         if not hasattr(args, "validate") or (not args.validate and not args.eligible):
@@ -320,9 +309,7 @@ def run_cli():
 
     elif args.command == "deployment-check":
         fw_list = [c.strip() for c in args.frameworks.split(",") if c.strip()] if args.frameworks else []
-        result = validator.validate_deployment(
-            args.csp, args.region, args.impact_level, fw_list
-        )
+        result = validator.validate_deployment(args.csp, args.region, args.impact_level, fw_list)
 
     elif args.command == "list":
         if args.csp:

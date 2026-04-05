@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 import sys
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
@@ -19,7 +20,7 @@ _TMP = tempfile.gettempdir().replace("'", "''")
 
 @pytest.fixture
 def db_path(tmp_path):
-    """Create a temporary ICDEV database with minimal schema."""
+    """Create a temporary ICDEV™ database with minimal schema."""
     db_file = tmp_path / "test_icdev.db"
     conn = sqlite3.connect(str(db_file))
     conn.execute(f"""
@@ -59,8 +60,7 @@ class TestResolveProjectMarking:
         """CUI project at IL5 should return CUI // SP-CTI marking."""
         conn = sqlite3.connect(str(db_path))
         conn.execute(
-            "INSERT INTO projects (id, name, classification, impact_level, directory_path) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO projects (id, name, classification, impact_level, directory_path) VALUES (?, ?, ?, ?, ?)",
             ("proj-cui", "CUI App", "CUI", "IL5", _TMP),
         )
         conn.commit()
@@ -77,8 +77,7 @@ class TestResolveProjectMarking:
         """Public project at IL2 should require no marking."""
         conn = sqlite3.connect(str(db_path))
         conn.execute(
-            "INSERT INTO projects (id, name, classification, impact_level, directory_path) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO projects (id, name, classification, impact_level, directory_path) VALUES (?, ?, ?, ?, ?)",
             ("proj-pub", "Public App", "Public", "IL2", _TMP),
         )
         conn.commit()
@@ -95,8 +94,7 @@ class TestResolveProjectMarking:
         """SECRET project at IL6 should return SECRET marking."""
         conn = sqlite3.connect(str(db_path))
         conn.execute(
-            "INSERT INTO projects (id, name, classification, impact_level, directory_path) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO projects (id, name, classification, impact_level, directory_path) VALUES (?, ?, ?, ?, ?)",
             ("proj-sec", "Secret App", "SECRET", "IL6", _TMP),
         )
         conn.commit()
@@ -111,8 +109,7 @@ class TestResolveProjectMarking:
         """IL2 should override even if classification says CUI."""
         conn = sqlite3.connect(str(db_path))
         conn.execute(
-            "INSERT INTO projects (id, name, classification, impact_level, directory_path) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO projects (id, name, classification, impact_level, directory_path) VALUES (?, ?, ?, ?, ?)",
             ("proj-il2", "IL2 App", "CUI", "IL2", _TMP),
         )
         conn.commit()
@@ -125,8 +122,7 @@ class TestResolveProjectMarking:
         """data_classifications table should take priority over project.classification."""
         conn = sqlite3.connect(str(db_path))
         conn.execute(
-            "INSERT INTO projects (id, name, classification, impact_level, directory_path) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO projects (id, name, classification, impact_level, directory_path) VALUES (?, ?, ?, ?, ?)",
             ("proj-phi", "Health App", "CUI", "IL5", _TMP),
         )
         conn.execute(
@@ -144,8 +140,7 @@ class TestResolveProjectMarking:
         """Multiple data categories should produce composite marking."""
         conn = sqlite3.connect(str(db_path))
         conn.execute(
-            "INSERT INTO projects (id, name, classification, impact_level, directory_path) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO projects (id, name, classification, impact_level, directory_path) VALUES (?, ?, ?, ?, ?)",
             ("proj-comp", "Composite App", "CUI", "IL5", _TMP),
         )
         conn.execute(
@@ -184,8 +179,7 @@ class TestResolveProjectMarking:
         """FOUO classification should resolve to CUI marking."""
         conn = sqlite3.connect(str(db_path))
         conn.execute(
-            "INSERT INTO projects (id, name, classification, impact_level, directory_path) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO projects (id, name, classification, impact_level, directory_path) VALUES (?, ?, ?, ?, ?)",
             ("proj-fouo", "FOUO App", "FOUO", "IL4", _TMP),
         )
         conn.commit()
@@ -194,4 +188,6 @@ class TestResolveProjectMarking:
         result = resolve_project_marking("proj-fouo", db_path)
         assert result["marking_required"] is True
         assert "CUI" in result["categories"]
+
+
 # [TEMPLATE: CUI // SP-CTI]

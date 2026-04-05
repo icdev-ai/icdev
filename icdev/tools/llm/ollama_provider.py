@@ -6,7 +6,7 @@ Uses requests.post() against the Ollama native API endpoints:
 - /api/tags    — model listing / availability check
 
 This provider handles the Anthropic-style multimodal message format
-(used internally by ICDEV's LLMRequest) and converts it to Ollama's
+(used internally by ICDEV™'s LLMRequest) and converts it to Ollama's
 native image format: {"role": "user", "content": "text", "images": ["base64"]}.
 """
 
@@ -37,7 +37,7 @@ except ImportError:
 
 def _convert_messages_to_ollama(messages: List[Dict[str, Any]],
                                 system_prompt: str = "") -> List[Dict[str, Any]]:
-    """Convert ICDEV universal messages to Ollama native chat format.
+    """Convert ICDEV™ universal messages to Ollama native chat format.
 
     Handles three content shapes:
     1. Plain string:  {"role": "user", "content": "hello"}

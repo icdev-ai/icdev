@@ -9,7 +9,7 @@
 | Status | Implemented |
 | Priority | P1 |
 | Dependencies | Phase 21 (SaaS Multi-Tenancy), Phase 35 (Innovation Engine), Phase 58 (Creative Engine) |
-| Author | ICDEV Architect Agent |
+| Author | ICDEV™ Architect Agent |
 | Date | 2026-02-27 |
 
 ---
@@ -18,17 +18,17 @@
 
 Government contracting capture is a manual, fragmented process. Business development teams monitor SAM.gov by hand, read hundreds of pages of solicitations looking for relevant requirements, assess capability fit in spreadsheets, and draft proposal responses from scratch for every RFP. Competitive intelligence comes from word-of-mouth. Compliance matrices are populated manually. There is no systematic way to know which requirement patterns are trending across the federal marketplace, which capabilities have gaps, or which competitors are winning in a given NAICS code.
 
-ICDEV already builds ATO-ready government applications, but without a capture pipeline, the platform has no systematic way to:
+ICDEV™ already builds ATO-ready government applications, but without a capture pipeline, the platform has no systematic way to:
 - Discover relevant SAM.gov opportunities automatically
 - Extract and cluster recurring "shall/must/will" requirement patterns across RFPs
-- Map those requirements to ICDEV's existing capabilities with quantitative coverage scores
+- Map those requirements to ICDEV™'s existing capabilities with quantitative coverage scores
 - Identify capability gaps and feed them into the Innovation Engine for prioritized enhancement
 - Draft proposal responses using two-tier LLM routing with knowledge base evidence
 - Auto-populate L/M/N compliance matrices from coverage scores
 - Track competitor award patterns for competitive intelligence
 - Generate strategic questions for government Q&A periods
 - Track RFP amendments and version changes
-- Close the flywheel: Win contracts, deliver ICDEV free on-prem, repeat
+- Close the flywheel: Win contracts, deliver ICDEV™ free on-prem, repeat
 
 Phase 59 closes this gap with a 4-stage capture pipeline (DISCOVER, EXTRACT, MAP, DRAFT) supported by a knowledge base, competitor profiler, question generator, amendment tracker, and question exporter — all integrated into the existing GovProposal lifecycle tracker and dashboard.
 
@@ -39,7 +39,7 @@ Phase 59 closes this gap with a 4-stage capture pipeline (DISCOVER, EXTRACT, MAP
 1. Scan SAM.gov Opportunities API for solicitations, pre-solicitations, RFIs, and award notices filtered by 8 NAICS codes
 2. Extract "shall/must/will" obligation statements via deterministic regex (no LLM) and classify into 9 domain categories
 3. Cluster requirement patterns by keyword fingerprint overlap using union-find (D364)
-4. Map requirement patterns to a declarative ICDEV capability catalog (~30 entries) with quantitative coverage scoring
+4. Map requirement patterns to a declarative ICDEV™ capability catalog (~30 entries) with quantitative coverage scoring
 5. Grade coverage as L (>=0.80), M (0.40-0.79), or N (<0.40) and auto-populate proposal compliance matrices
 6. Identify capability gaps and cross-register high-priority gaps to the Innovation Engine as signals
 7. Draft proposal responses via two-tier LLM (qwen3 compact draft, Claude review/polish) with template fallback
@@ -101,7 +101,7 @@ Phase 59 closes this gap with a 4-stage capture pipeline (DISCOVER, EXTRACT, MAP
 ### Key Design Principles
 
 - **Deterministic extraction** — Regex-based "shall/must/will" mining, no LLM required (D362)
-- **Declarative capability catalog** — JSON file defines ICDEV capabilities with keywords, tools, and compliance controls (D363)
+- **Declarative capability catalog** — JSON file defines ICDEV™ capabilities with keywords, tools, and compliance controls (D363)
 - **Two-tier LLM drafting** — qwen3 drafts compact structured responses, Claude reviews and polishes (D365)
 - **Template fallback** — If LLM unavailable, template-based responses ensure air-gap operation
 - **Append-only storage** — Shall statements, patterns, and drafts are immutable time-series (D371, D373)
@@ -133,7 +133,7 @@ Extracts obligation statements from opportunity descriptions using deterministic
 
 ### Component 3: Capability Mapper (`tools/govcon/capability_mapper.py`)
 
-Matches requirement patterns against the ICDEV capability catalog using keyword overlap scoring. Coverage grades:
+Matches requirement patterns against the ICDEV™ capability catalog using keyword overlap scoring. Coverage grades:
 
 | Grade | Score Range | Compliance Status |
 |-------|-------------|-------------------|
@@ -143,7 +143,7 @@ Matches requirement patterns against the ICDEV capability catalog using keyword 
 
 ### Component 4: Gap Analyzer (`tools/govcon/gap_analyzer.py`)
 
-Identifies unmet requirements where ICDEV coverage is insufficient. Produces:
+Identifies unmet requirements where ICDEV™ coverage is insufficient. Produces:
 - Prioritized gap list (frequency x gap severity)
 - Enhancement recommendations per gap
 - Domain-level gap heatmap
@@ -243,7 +243,7 @@ Individual extracted obligation statements linked to opportunities. Includes sta
 Clustered requirement patterns with frequency tracking across opportunities. Includes pattern text, keyword fingerprint, domain, frequency count, first/last seen timestamps (D371).
 
 ### `icdev_capability_map` (append-only)
-Bridge table mapping requirement patterns to ICDEV capabilities with coverage scores and L/M/N grades.
+Bridge table mapping requirement patterns to ICDEV™ capabilities with coverage scores and L/M/N grades.
 
 ### `govcon_awards` (append-only)
 Award notice records with awardee name, agency, amount, NAICS, contract type, award date.
@@ -285,7 +285,7 @@ Government Q&A responses linked to questions. Records response text, source amen
 ### `context/govcon/icdev_capability_catalog.json`
 
 Declarative capability catalog with ~30 entries including:
-- **Product-level entries** (`prod-*`): Whole products (ICDEV Platform, CPMP) with key capabilities, customer value, compliance controls
+- **Product-level entries** (`prod-*`): Whole products (ICDEV™ Platform, CPMP) with key capabilities, customer value, compliance controls
 - **Component-level entries** (`cap-*`): Individual capabilities (TDD/BDD, NIST 800-53, Zero Trust, etc.) with keywords, tools, and evidence
 
 ---
@@ -304,7 +304,7 @@ L/M/N coverage breakdown by domain, gap list with enhancement recommendations, c
 ### `/proposals/<id>` — GovCon Intelligence Action Bar
 Integrated into existing proposal detail page with action buttons:
 - **Extract** — Mine shall statements from opportunity description
-- **Map** — Match requirements to ICDEV capabilities
+- **Map** — Match requirements to ICDEV™ capabilities
 - **Compliance** — Auto-populate L/M/N compliance matrix
 - **Draft** — Generate AI response drafts for all shall statements
 - **Bid Rec** — Bid/no-bid recommendation based on coverage scores
@@ -496,11 +496,11 @@ Phase 59 closes the business flywheel:
 ```
 SAM.gov RFPs
     → Mine requirement patterns
-        → Map to ICDEV capabilities
+        → Map to ICDEV™ capabilities
             → Identify gaps → Build enhancements (Innovation Engine)
                 → Draft proposals via GovProposal
                     → Win contract
-                        → Deliver ICDEV free on-prem
+                        → Deliver ICDEV™ free on-prem
                             → Customer success drives past performance
                                 → Repeat
 ```

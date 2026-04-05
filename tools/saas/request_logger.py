@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ICDEV SaaS -- Request Logger.
+"""ICDEV™ SaaS -- Request Logger.
 
 CUI // SP-CTI
 
@@ -15,9 +15,9 @@ Usage:
 import json
 import logging
 import os
-import sqlite3
 import sys
 import time
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -30,9 +30,7 @@ if str(BASE_DIR) not in sys.path:
 
 logger = logging.getLogger("saas.request_logger")
 
-PLATFORM_DB_PATH = Path(
-    os.environ.get("PLATFORM_DB_PATH", str(BASE_DIR / "data" / "platform.db"))
-)
+PLATFORM_DB_PATH = Path(os.environ.get("PLATFORM_DB_PATH", str(BASE_DIR / "data" / "platform.db")))
 
 
 # ---------------------------------------------------------------------------
@@ -61,7 +59,7 @@ def log_request(
         metadata:    Optional dict of extra context.
     """
     try:
-        conn = sqlite3.connect(str(PLATFORM_DB_PATH))
+        conn = get_connection()
         conn.execute(
             """INSERT INTO usage_records
                (tenant_id, user_id, endpoint, method, tokens_used,
@@ -83,7 +81,10 @@ def log_request(
         conn.close()
         logger.debug(
             "Logged request: tenant=%s endpoint=%s status=%s duration=%dms",
-            tenant_id, endpoint, status_code, duration_ms,
+            tenant_id,
+            endpoint,
+            status_code,
+            duration_ms,
         )
     except Exception as exc:
         # Never let logging failures break the actual request

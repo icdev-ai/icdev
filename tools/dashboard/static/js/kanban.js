@@ -1,14 +1,15 @@
 /**
  * CUI // SP-CTI
- * ICDEV Dashboard - Kanban Board Auto-Refresh
+ * ICDEV™ Dashboard - Kanban Board Auto-Refresh
  * Fetches projects from /api/projects and re-renders Kanban columns.
  */
 
 (function () {
     "use strict";
 
-    var REFRESH_INTERVAL_MS = 30000;
+    var REFRESH_INTERVAL_MS = 300000; // 5 minutes
     var _kanbanTimer = null;
+    var _eventSource = null;
 
     /**
      * Render project cards into Kanban columns.
@@ -97,17 +98,51 @@
         }
     }
 
-    // Initialize on page load
+    /**
+     * Connect to SSE for real-time kanban updates.
+     * Falls back to polling on connection failure.
+     */
+    function connectKanbanSSE() {
+        if (_eventSource) _eventSource.close();
+        _eventSource = new EventSource("/api/events/stream");
+
+        _eventSource.addEventListener("kanban", function () {
+            // Any kanban event triggers a board refresh
+            refreshKanban();
+        });
+
+        _eventSource.onerror = function () {
+            // Fallback to polling on SSE failure
+            _eventSource.close();
+            _eventSource = null;
+            startKanbanRefresh();
+        };
+    }
+
+    function stopKanbanSSE() {
+        if (_eventSource) {
+            _eventSource.close();
+            _eventSource = null;
+        }
+    }
+
+    // Initialize on page load — prefer SSE, fall back to polling
     document.addEventListener("DOMContentLoaded", function () {
         if (document.getElementById("kanban-board")) {
-            startKanbanRefresh();
+            if (typeof EventSource !== "undefined") {
+                connectKanbanSSE();
+            } else {
+                startKanbanRefresh();
+            }
         }
     });
 
-    // Expose to global ICDEV namespace
+    // Expose to global ICDEV™ namespace
     if (window.ICDEV) {
         ICDEV.refreshKanban = refreshKanban;
         ICDEV.startKanbanRefresh = startKanbanRefresh;
         ICDEV.stopKanbanRefresh = stopKanbanRefresh;
+        ICDEV.connectKanbanSSE = connectKanbanSSE;
+        ICDEV.stopKanbanSSE = stopKanbanSSE;
     }
 })();

@@ -3,8 +3,8 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""COA (Course of Action) Generator for the ICDEV RICOAS Digital Program Twin.
+# POC: ICDEV™ System Administrator
+"""COA (Course of Action) Generator for the ICDEV™ RICOAS Digital Program Twin.
 
 Generates 3 standard Courses of Action (Speed / Balanced / Comprehensive) plus
 RED-tier alternative COAs.  Each COA includes architecture summary, PI roadmap,
@@ -41,9 +41,9 @@ Databases:
 import argparse
 import json
 import os
-import sqlite3
 import sys
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -55,9 +55,11 @@ RED_ALT_PATTERNS_PATH = BASE_DIR / "context" / "requirements" / "red_alternative
 # Graceful import of audit logger
 try:
     from tools.audit.audit_logger import log_event
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
+
     def log_event(**kwargs) -> int:  # type: ignore[misc]
         return -1
 
@@ -77,7 +79,7 @@ _TSHIRT_HOURS = {
 }
 
 # Blended hourly rate for cost range estimates (low / high)
-_RATE_LOW = 125   # USD/hr
+_RATE_LOW = 125  # USD/hr
 _RATE_HIGH = 200  # USD/hr
 
 # Tier rank for comparisons (lower is better from risk perspective)
@@ -89,15 +91,13 @@ _RANK_TIER = {v: k for k, v in _TIER_RANK.items()}
 # Database helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_connection(db_path=None):
     """Get database connection with dict-like row access."""
     path = db_path or DB_PATH
     if not path.exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py"
-        )
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -114,6 +114,7 @@ def _now_iso():
 # ---------------------------------------------------------------------------
 # Data loaders
 # ---------------------------------------------------------------------------
+
 
 def _load_requirements(conn, session_id):
     """Load intake requirements for a session, grouped by priority."""
@@ -148,9 +149,7 @@ def _load_boundary_assessments(conn, session_id):
 
 def _get_session(conn, session_id):
     """Load the intake session record."""
-    row = conn.execute(
-        "SELECT * FROM intake_sessions WHERE id = ?", (session_id,)
-    ).fetchone()
+    row = conn.execute("SELECT * FROM intake_sessions WHERE id = ?", (session_id,)).fetchone()
     if not row:
         raise ValueError(f"Intake session not found: {session_id}")
     return dict(row)
@@ -167,6 +166,7 @@ def _load_red_alternative_patterns():
 # ---------------------------------------------------------------------------
 # Cost estimation helpers
 # ---------------------------------------------------------------------------
+
 
 def _sum_tshirt_hours(items):
     """Sum estimated hours from T-shirt sizes of decomposition items."""
@@ -193,6 +193,7 @@ def _cost_estimate(hours, breakdown):
 # ---------------------------------------------------------------------------
 # Boundary tier aggregation
 # ---------------------------------------------------------------------------
+
 
 def _best_tier(assessments):
     """Return the best (lowest-impact) tier from assessments."""
@@ -224,59 +225,120 @@ def _average_tier(assessments):
 # Risk register generator
 # ---------------------------------------------------------------------------
 
+
 def _generate_risk_register(coa_type, reqs, assessments):
     """Generate top-5 risks for a COA type."""
     base_risks = {
         "speed": [
-            {"id": "R-01", "description": "Insufficient test coverage due to accelerated timeline",
-             "probability": "high", "impact": "high",
-             "mitigation": "Automated test generation, prioritize critical path tests"},
-            {"id": "R-02", "description": "Technical debt accumulation from shortcuts",
-             "probability": "high", "impact": "medium",
-             "mitigation": "Schedule refactoring sprint in next PI"},
-            {"id": "R-03", "description": "Incomplete compliance artifacts",
-             "probability": "medium", "impact": "high",
-             "mitigation": "Parallel compliance artifact generation"},
-            {"id": "R-04", "description": "Integration defects from limited scope testing",
-             "probability": "medium", "impact": "medium",
-             "mitigation": "API contract testing at integration points"},
-            {"id": "R-05", "description": "Rework required when adding deferred features",
-             "probability": "high", "impact": "medium",
-             "mitigation": "Design for extensibility in core architecture"},
+            {
+                "id": "R-01",
+                "description": "Insufficient test coverage due to accelerated timeline",
+                "probability": "high",
+                "impact": "high",
+                "mitigation": "Automated test generation, prioritize critical path tests",
+            },
+            {
+                "id": "R-02",
+                "description": "Technical debt accumulation from shortcuts",
+                "probability": "high",
+                "impact": "medium",
+                "mitigation": "Schedule refactoring sprint in next PI",
+            },
+            {
+                "id": "R-03",
+                "description": "Incomplete compliance artifacts",
+                "probability": "medium",
+                "impact": "high",
+                "mitigation": "Parallel compliance artifact generation",
+            },
+            {
+                "id": "R-04",
+                "description": "Integration defects from limited scope testing",
+                "probability": "medium",
+                "impact": "medium",
+                "mitigation": "API contract testing at integration points",
+            },
+            {
+                "id": "R-05",
+                "description": "Rework required when adding deferred features",
+                "probability": "high",
+                "impact": "medium",
+                "mitigation": "Design for extensibility in core architecture",
+            },
         ],
         "balanced": [
-            {"id": "R-01", "description": "Schedule pressure on P2 requirements",
-             "probability": "medium", "impact": "medium",
-             "mitigation": "WSJF prioritization, buffer sprints between PIs"},
-            {"id": "R-02", "description": "Resource contention across work streams",
-             "probability": "medium", "impact": "medium",
-             "mitigation": "SAFe capacity allocation, clear team assignments"},
-            {"id": "R-03", "description": "Boundary impact from YELLOW-tier items",
-             "probability": "low", "impact": "high",
-             "mitigation": "Early boundary assessment, incremental SSP updates"},
-            {"id": "R-04", "description": "Dependency on external system availability",
-             "probability": "low", "impact": "medium",
-             "mitigation": "Mock services for development, ISA tracking"},
-            {"id": "R-05", "description": "Compliance gap in deferred P3 items",
-             "probability": "low", "impact": "low",
-             "mitigation": "Compliance coverage tracking per PI"},
+            {
+                "id": "R-01",
+                "description": "Schedule pressure on P2 requirements",
+                "probability": "medium",
+                "impact": "medium",
+                "mitigation": "WSJF prioritization, buffer sprints between PIs",
+            },
+            {
+                "id": "R-02",
+                "description": "Resource contention across work streams",
+                "probability": "medium",
+                "impact": "medium",
+                "mitigation": "SAFe capacity allocation, clear team assignments",
+            },
+            {
+                "id": "R-03",
+                "description": "Boundary impact from YELLOW-tier items",
+                "probability": "low",
+                "impact": "high",
+                "mitigation": "Early boundary assessment, incremental SSP updates",
+            },
+            {
+                "id": "R-04",
+                "description": "Dependency on external system availability",
+                "probability": "low",
+                "impact": "medium",
+                "mitigation": "Mock services for development, ISA tracking",
+            },
+            {
+                "id": "R-05",
+                "description": "Compliance gap in deferred P3 items",
+                "probability": "low",
+                "impact": "low",
+                "mitigation": "Compliance coverage tracking per PI",
+            },
         ],
         "comprehensive": [
-            {"id": "R-01", "description": "Feature creep and scope growth beyond estimates",
-             "probability": "high", "impact": "medium",
-             "mitigation": "Strict change control board, PI commitment gates"},
-            {"id": "R-02", "description": "Extended timeline increases cost overrun risk",
-             "probability": "medium", "impact": "high",
-             "mitigation": "Earned value management, monthly burn-rate reviews"},
-            {"id": "R-03", "description": "Team fatigue on long-duration project",
-             "probability": "medium", "impact": "medium",
-             "mitigation": "Sprint rotation, innovation sprints between PIs"},
-            {"id": "R-04", "description": "Technology obsolescence during long build",
-             "probability": "low", "impact": "medium",
-             "mitigation": "Architecture Decision Records, modular design"},
-            {"id": "R-05", "description": "Stakeholder engagement decline over extended period",
-             "probability": "medium", "impact": "medium",
-             "mitigation": "PI demos, monthly stakeholder briefings"},
+            {
+                "id": "R-01",
+                "description": "Feature creep and scope growth beyond estimates",
+                "probability": "high",
+                "impact": "medium",
+                "mitigation": "Strict change control board, PI commitment gates",
+            },
+            {
+                "id": "R-02",
+                "description": "Extended timeline increases cost overrun risk",
+                "probability": "medium",
+                "impact": "high",
+                "mitigation": "Earned value management, monthly burn-rate reviews",
+            },
+            {
+                "id": "R-03",
+                "description": "Team fatigue on long-duration project",
+                "probability": "medium",
+                "impact": "medium",
+                "mitigation": "Sprint rotation, innovation sprints between PIs",
+            },
+            {
+                "id": "R-04",
+                "description": "Technology obsolescence during long build",
+                "probability": "low",
+                "impact": "medium",
+                "mitigation": "Architecture Decision Records, modular design",
+            },
+            {
+                "id": "R-05",
+                "description": "Stakeholder engagement decline over extended period",
+                "probability": "medium",
+                "impact": "medium",
+                "mitigation": "PI demos, monthly stakeholder briefings",
+            },
         ],
     }
     risks = base_risks.get(coa_type, base_risks["balanced"])
@@ -284,13 +346,15 @@ def _generate_risk_register(coa_type, reqs, assessments):
     # Add boundary-specific risk if RED-tier assessments exist
     red_count = sum(1 for a in assessments if a.get("impact_tier") == "RED")
     if red_count > 0 and len(risks) < 6:
-        risks.append({
-            "id": f"R-{len(risks)+1:02d}",
-            "description": f"{red_count} requirement(s) with RED boundary impact may invalidate ATO",
-            "probability": "high",
-            "impact": "critical",
-            "mitigation": "Generate alternative COAs, engage AO early",
-        })
+        risks.append(
+            {
+                "id": f"R-{len(risks) + 1:02d}",
+                "description": f"{red_count} requirement(s) with RED boundary impact may invalidate ATO",
+                "probability": "high",
+                "impact": "critical",
+                "mitigation": "Generate alternative COAs, engage AO early",
+            }
+        )
 
     return risks[:5]
 
@@ -298,6 +362,7 @@ def _generate_risk_register(coa_type, reqs, assessments):
 # ---------------------------------------------------------------------------
 # Architecture summary generator
 # ---------------------------------------------------------------------------
+
 
 def _generate_architecture(coa_type, reqs, decomposition):
     """Generate architecture summary for a COA type."""
@@ -342,6 +407,7 @@ def _generate_architecture(coa_type, reqs, decomposition):
 # PI roadmap generator
 # ---------------------------------------------------------------------------
 
+
 def _generate_pi_roadmap(coa_type, reqs_by_priority, decomposition):
     """Generate PI roadmap for a COA type."""
     # Determine how many PIs
@@ -362,16 +428,16 @@ def _generate_pi_roadmap(coa_type, reqs_by_priority, decomposition):
         # If no items mapped to this PI, assign based on COA type
         if not pi_items:
             if coa_type == "speed" and pi_num == 1:
-                pi_items = [(r.get("refined_text") or r.get("raw_text") or "Requirement")[:80]
-                            for r in reqs_by_priority.get("critical", [])
-                            + reqs_by_priority.get("high", [])]
+                pi_items = [
+                    (r.get("refined_text") or r.get("raw_text") or "Requirement")[:80]
+                    for r in reqs_by_priority.get("critical", []) + reqs_by_priority.get("high", [])
+                ]
             elif coa_type == "balanced":
                 if pi_num <= 2:
                     pool = reqs_by_priority.get("critical", []) + reqs_by_priority.get("high", [])
                 else:
                     pool = reqs_by_priority.get("medium", [])
-                pi_items = [(r.get("refined_text") or r.get("raw_text") or "Requirement")[:80]
-                            for r in pool[:5]]
+                pi_items = [(r.get("refined_text") or r.get("raw_text") or "Requirement")[:80] for r in pool[:5]]
             elif coa_type == "comprehensive":
                 all_reqs = []
                 for p in ("critical", "high", "medium", "low"):
@@ -379,8 +445,10 @@ def _generate_pi_roadmap(coa_type, reqs_by_priority, decomposition):
                 chunk = len(all_reqs) // num_pis if num_pis else 1
                 chunk = max(chunk, 1)
                 start = (pi_num - 1) * chunk
-                pi_items = [(r.get("refined_text") or r.get("raw_text") or "Requirement")[:80]
-                            for r in all_reqs[start:start + chunk]]
+                pi_items = [
+                    (r.get("refined_text") or r.get("raw_text") or "Requirement")[:80]
+                    for r in all_reqs[start : start + chunk]
+                ]
 
         milestones = []
         if pi_num == 1:
@@ -392,11 +460,13 @@ def _generate_pi_roadmap(coa_type, reqs_by_priority, decomposition):
         if 1 < pi_num < num_pis:
             milestones.append(f"PI-{pi_num} integration review")
 
-        roadmap.append({
-            "pi": pi_key,
-            "items": pi_items[:10],  # Cap at 10 items per PI
-            "milestones": milestones,
-        })
+        roadmap.append(
+            {
+                "pi": pi_key,
+                "items": pi_items[:10],  # Cap at 10 items per PI
+                "milestones": milestones,
+            }
+        )
 
     return roadmap
 
@@ -404,6 +474,7 @@ def _generate_pi_roadmap(coa_type, reqs_by_priority, decomposition):
 # ---------------------------------------------------------------------------
 # Compliance impact generator
 # ---------------------------------------------------------------------------
+
 
 def _generate_compliance_impact(coa_type, assessments):
     """Generate compliance impact summary for a COA type."""
@@ -424,9 +495,7 @@ def _generate_compliance_impact(coa_type, assessments):
     return {
         "coverage_pct": coverage,
         "affected_controls": sorted(affected_controls)[:20],
-        "ssp_update_required": any(
-            a.get("impact_tier") in ("ORANGE", "RED") for a in assessments
-        ),
+        "ssp_update_required": any(a.get("impact_tier") in ("ORANGE", "RED") for a in assessments),
         "poam_items_expected": max(0, int((100 - coverage) / 5)),
         "frameworks": ["NIST 800-53", "FedRAMP Moderate", "CMMC Level 2"],
     }
@@ -436,6 +505,7 @@ def _generate_compliance_impact(coa_type, assessments):
 # Supply chain impact generator
 # ---------------------------------------------------------------------------
 
+
 def _generate_supply_chain_impact(coa_type, reqs):
     """Generate supply chain impact summary."""
     vendor_count = {"speed": 2, "balanced": 4, "comprehensive": 6}
@@ -443,9 +513,7 @@ def _generate_supply_chain_impact(coa_type, reqs):
         "estimated_vendor_count": vendor_count.get(coa_type, 4),
         "scrm_assessment_required": coa_type != "speed",
         "section_889_review": True,
-        "isa_agreements_needed": 1 if coa_type == "speed" else (
-            2 if coa_type == "balanced" else 3
-        ),
+        "isa_agreements_needed": 1 if coa_type == "speed" else (2 if coa_type == "balanced" else 3),
         "cots_components": max(1, len(reqs) // 3),
     }
 
@@ -453,6 +521,7 @@ def _generate_supply_chain_impact(coa_type, reqs):
 # ---------------------------------------------------------------------------
 # Simulation helper (creates scenario + runs basic simulation)
 # ---------------------------------------------------------------------------
+
 
 def _create_simulation_for_coa(conn, coa_id, session_id, project_id, coa_type, coa_data):
     """Create a simulation scenario and basic results for a COA."""
@@ -477,11 +546,17 @@ def _create_simulation_for_coa(conn, coa_id, session_id, project_id, coa_type, c
             base_state, modifications, status, classification, created_by, created_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
-            scenario_id, project_id, session_id,
+            scenario_id,
+            project_id,
+            session_id,
             f"{coa_type.title()} COA Simulation",
             "coa_comparison",
-            json.dumps(base_state), json.dumps(modifications),
-            "completed", "CUI", "icdev-simulation-engine", now,
+            json.dumps(base_state),
+            json.dumps(modifications),
+            "completed",
+            "CUI",
+            "icdev-simulation-engine",
+            now,
         ),
     )
 
@@ -513,9 +588,7 @@ def _create_simulation_for_coa(conn, coa_id, session_id, project_id, coa_type, c
             "dimension": "risk",
             "metric_name": "risk_score",
             "baseline_value": 0.5,
-            "simulated_value": {"speed": 0.7, "balanced": 0.4, "comprehensive": 0.2}.get(
-                coa_type, 0.5
-            ),
+            "simulated_value": {"speed": 0.7, "balanced": 0.4, "comprehensive": 0.2}.get(coa_type, 0.5),
         },
     ]
 
@@ -540,11 +613,17 @@ def _create_simulation_for_coa(conn, coa_id, session_id, project_id, coa_type, c
                 details, calculated_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                scenario_id, dim["dimension"], dim["metric_name"],
-                dim["baseline_value"], dim["simulated_value"],
-                round(delta, 2), round(delta_pct, 2),
-                0.8, tier,
-                json.dumps({"coa_type": coa_type}), now,
+                scenario_id,
+                dim["dimension"],
+                dim["metric_name"],
+                dim["baseline_value"],
+                dim["simulated_value"],
+                round(delta, 2),
+                round(delta_pct, 2),
+                0.8,
+                tier,
+                json.dumps({"coa_type": coa_type}),
+                now,
             ),
         )
 
@@ -560,6 +639,7 @@ def _create_simulation_for_coa(conn, coa_id, session_id, project_id, coa_type, c
 # ---------------------------------------------------------------------------
 # Core functions
 # ---------------------------------------------------------------------------
+
 
 def generate_3_coas(session_id, project_id=None, simulate=False, db_path=None):
     """Generate 3 Courses of Action (Speed / Balanced / Comprehensive).
@@ -745,8 +825,12 @@ def generate_3_coas(session_id, project_id=None, simulate=False, db_path=None):
             sim_scenario_id = None
             if simulate:
                 sim_scenario_id = _create_simulation_for_coa(
-                    conn, coa_id, session_id, project_id,
-                    coa_data["coa_type"], coa_data,
+                    conn,
+                    coa_id,
+                    session_id,
+                    project_id,
+                    coa_data["coa_type"],
+                    coa_data,
                 )
                 coa_data["simulation_scenario_id"] = sim_scenario_id
 
@@ -758,30 +842,38 @@ def generate_3_coas(session_id, project_id=None, simulate=False, db_path=None):
                     simulation_scenario_id, status, classification, created_at, updated_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
-                    coa_id, session_id, project_id,
+                    coa_id,
+                    session_id,
+                    project_id,
                     coa_data["coa_type"],
                     coa_data["coa_name"],
                     coa_data["scope_description"],
                     json.dumps(coa_data["architecture_summary"]),
                     json.dumps(coa_data["cost_estimate"]),
-                    json.dumps({
-                        "risk_level": coa_data["risk_level"],
-                        "risk_register": coa_data["risk_register"],
-                        "advantages": coa_data["advantages"],
-                        "disadvantages": coa_data["disadvantages"],
-                    }),
-                    json.dumps({
-                        "timeline_sprints": coa_data["timeline_sprints"],
-                        "timeline_pis": coa_data["timeline_pis"],
-                        "pi_roadmap": coa_data["pi_roadmap"],
-                        "requirements_included": coa_data["requirements_included"],
-                    }),
+                    json.dumps(
+                        {
+                            "risk_level": coa_data["risk_level"],
+                            "risk_register": coa_data["risk_register"],
+                            "advantages": coa_data["advantages"],
+                            "disadvantages": coa_data["disadvantages"],
+                        }
+                    ),
+                    json.dumps(
+                        {
+                            "timeline_sprints": coa_data["timeline_sprints"],
+                            "timeline_pis": coa_data["timeline_pis"],
+                            "pi_roadmap": coa_data["pi_roadmap"],
+                            "requirements_included": coa_data["requirements_included"],
+                        }
+                    ),
                     json.dumps(coa_data["compliance_impact"]),
                     json.dumps(coa_data["supply_chain_impact"]),
                     coa_data["boundary_tier"],
                     sim_scenario_id,
                     "simulated" if simulate else "draft",
-                    "CUI", now, now,
+                    "CUI",
+                    now,
+                    now,
                 ),
             )
             coas.append(coa_data)
@@ -795,11 +887,13 @@ def generate_3_coas(session_id, project_id=None, simulate=False, db_path=None):
                 actor="icdev-simulation-engine",
                 action=f"Generated 3 COAs for session {session_id}",
                 project_id=project_id,
-                details=json.dumps({
-                    "session_id": session_id,
-                    "coa_ids": [c["id"] for c in coas],
-                    "simulated": simulate,
-                }),
+                details=json.dumps(
+                    {
+                        "session_id": session_id,
+                        "coa_ids": [c["id"] for c in coas],
+                        "simulated": simulate,
+                    }
+                ),
             )
 
         return {
@@ -900,25 +994,38 @@ def generate_alternative_coa(session_id, requirement_id, project_id=None, db_pat
 
         # If no patterns match, include the most generic ones
         if not applicable_patterns:
-            applicable_patterns = [
-                p for p in all_patterns
-                if p.get("id") in ("ALT-PHASE", "ALT-SCOPE-REDUCE")
-            ]
+            applicable_patterns = [p for p in all_patterns if p.get("id") in ("ALT-PHASE", "ALT-SCOPE-REDUCE")]
 
         now = _now_iso()
         alternatives = []
 
         # Score and sort patterns
-        tier_scores = selection_criteria.get("tier_scores", {
-            "GREEN": 1.0, "YELLOW": 0.75, "ORANGE": 0.5, "RED": 0.0,
-        })
-        cost_scores = selection_criteria.get("cost_scores", {
-            "low": 1.0, "medium": 0.6, "high": 0.3,
-        })
-        weights = selection_criteria.get("scoring_weights", {
-            "feasibility": 0.35, "resulting_tier_score": 0.25,
-            "timeline_score": 0.20, "cost_score": 0.20,
-        })
+        tier_scores = selection_criteria.get(
+            "tier_scores",
+            {
+                "GREEN": 1.0,
+                "YELLOW": 0.75,
+                "ORANGE": 0.5,
+                "RED": 0.0,
+            },
+        )
+        cost_scores = selection_criteria.get(
+            "cost_scores",
+            {
+                "low": 1.0,
+                "medium": 0.6,
+                "high": 0.3,
+            },
+        )
+        weights = selection_criteria.get(
+            "scoring_weights",
+            {
+                "feasibility": 0.35,
+                "resulting_tier_score": 0.25,
+                "timeline_score": 0.20,
+                "cost_score": 0.20,
+            },
+        )
 
         for pattern in applicable_patterns:
             # Compute composite score
@@ -963,35 +1070,50 @@ def generate_alternative_coa(session_id, requirement_id, project_id=None, db_pat
                     status, classification, created_at, updated_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
-                    coa_id, session_id, project_id,
+                    coa_id,
+                    session_id,
+                    project_id,
                     "alternative",
                     f"Alternative: {pattern.get('name', 'Unknown')}",
                     pattern.get("description", ""),
-                    json.dumps({
-                        "pattern_id": pattern.get("id"),
-                        "implementation_steps": pattern.get("implementation_steps", []),
-                    }),
-                    json.dumps({
-                        "cost_impact": cost_impact,
-                        "estimated_timeline_days": timeline_days,
-                    }),
-                    json.dumps({
-                        "risk_level": "varies",
-                        "feasibility": feasibility,
-                        "tradeoffs": pattern.get("tradeoffs", []),
-                    }),
-                    json.dumps({
-                        "estimated_timeline_days": timeline_days,
-                        "requirement_id": requirement_id,
-                    }),
-                    json.dumps({
-                        "original_requirement": requirement_id,
-                        "original_tier": "RED",
-                        "resulting_tier": resulting_tier,
-                    }),
+                    json.dumps(
+                        {
+                            "pattern_id": pattern.get("id"),
+                            "implementation_steps": pattern.get("implementation_steps", []),
+                        }
+                    ),
+                    json.dumps(
+                        {
+                            "cost_impact": cost_impact,
+                            "estimated_timeline_days": timeline_days,
+                        }
+                    ),
+                    json.dumps(
+                        {
+                            "risk_level": "varies",
+                            "feasibility": feasibility,
+                            "tradeoffs": pattern.get("tradeoffs", []),
+                        }
+                    ),
+                    json.dumps(
+                        {
+                            "estimated_timeline_days": timeline_days,
+                            "requirement_id": requirement_id,
+                        }
+                    ),
+                    json.dumps(
+                        {
+                            "original_requirement": requirement_id,
+                            "original_tier": "RED",
+                            "resulting_tier": resulting_tier,
+                        }
+                    ),
                     json.dumps({}),
                     resulting_tier,
-                    "draft", "CUI", now, now,
+                    "draft",
+                    "CUI",
+                    now,
+                    now,
                 ),
             )
             alternatives.append(alt_data)
@@ -1008,12 +1130,14 @@ def generate_alternative_coa(session_id, requirement_id, project_id=None, db_pat
                 actor="icdev-simulation-engine",
                 action=f"Generated {len(alternatives)} alternative COAs for RED-tier requirement {requirement_id}",
                 project_id=project_id,
-                details=json.dumps({
-                    "session_id": session_id,
-                    "requirement_id": requirement_id,
-                    "alternative_count": len(alternatives),
-                    "pattern_ids": [a.get("pattern_id") for a in alternatives],
-                }),
+                details=json.dumps(
+                    {
+                        "session_id": session_id,
+                        "requirement_id": requirement_id,
+                        "alternative_count": len(alternatives),
+                        "pattern_ids": [a.get("pattern_id") for a in alternatives],
+                    }
+                ),
             )
 
         return {
@@ -1075,7 +1199,11 @@ def compare_coas(session_id, db_path=None):
             compliance = {}
             if coa.get("compliance_impact"):
                 try:
-                    compliance = json.loads(coa["compliance_impact"]) if isinstance(coa["compliance_impact"], str) else coa["compliance_impact"]
+                    compliance = (
+                        json.loads(coa["compliance_impact"])
+                        if isinstance(coa["compliance_impact"], str)
+                        else coa["compliance_impact"]
+                    )
                 except (json.JSONDecodeError, TypeError):
                     pass
             scores["compliance"] = compliance.get("coverage_pct", 80.0) / 10.0
@@ -1084,7 +1212,11 @@ def compare_coas(session_id, db_path=None):
             supply = {}
             if coa.get("supply_chain_impact"):
                 try:
-                    supply = json.loads(coa["supply_chain_impact"]) if isinstance(coa["supply_chain_impact"], str) else coa["supply_chain_impact"]
+                    supply = (
+                        json.loads(coa["supply_chain_impact"])
+                        if isinstance(coa["supply_chain_impact"], str)
+                        else coa["supply_chain_impact"]
+                    )
                 except (json.JSONDecodeError, TypeError):
                     pass
             vendor_count = supply.get("estimated_vendor_count", 4)
@@ -1104,7 +1236,11 @@ def compare_coas(session_id, db_path=None):
             cost = {}
             if coa.get("cost_estimate"):
                 try:
-                    cost = json.loads(coa["cost_estimate"]) if isinstance(coa["cost_estimate"], str) else coa["cost_estimate"]
+                    cost = (
+                        json.loads(coa["cost_estimate"])
+                        if isinstance(coa["cost_estimate"], str)
+                        else coa["cost_estimate"]
+                    )
                 except (json.JSONDecodeError, TypeError):
                     pass
             hours = cost.get("hours", 200)
@@ -1114,7 +1250,9 @@ def compare_coas(session_id, db_path=None):
             risk = {}
             if coa.get("risk_profile"):
                 try:
-                    risk = json.loads(coa["risk_profile"]) if isinstance(coa["risk_profile"], str) else coa["risk_profile"]
+                    risk = (
+                        json.loads(coa["risk_profile"]) if isinstance(coa["risk_profile"], str) else coa["risk_profile"]
+                    )
                 except (json.JSONDecodeError, TypeError):
                     pass
             risk_level = risk.get("risk_level", "moderate")
@@ -1129,10 +1267,7 @@ def compare_coas(session_id, db_path=None):
                 "cost": 0.20,
                 "risk": 0.15,
             }
-            scores["overall"] = sum(
-                scores.get(d, 5.0) * overall_weights.get(d, 0.15)
-                for d in overall_weights
-            )
+            scores["overall"] = sum(scores.get(d, 5.0) * overall_weights.get(d, 0.15) for d in overall_weights)
 
             coa_scores[cid] = {"scores": scores, "coa": coa}
 
@@ -1166,31 +1301,35 @@ def compare_coas(session_id, db_path=None):
                             coa_a_score, coa_b_score, winner, rationale, created_at)
                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                         (
-                            session_id, cid_a, cid_b, dim,
-                            sa, sb, winner,
+                            session_id,
+                            cid_a,
+                            cid_b,
+                            dim,
+                            sa,
+                            sb,
+                            winner,
                             f"{coa_a['coa_type']}={sa} vs {coa_b['coa_type']}={sb}",
                             now,
                         ),
                     )
 
-                    comparisons.append({
-                        "coa_a_id": cid_a,
-                        "coa_a_type": coa_a["coa_type"],
-                        "coa_b_id": cid_b,
-                        "coa_b_type": coa_b["coa_type"],
-                        "dimension": dim,
-                        "coa_a_score": sa,
-                        "coa_b_score": sb,
-                        "winner": winner,
-                    })
+                    comparisons.append(
+                        {
+                            "coa_a_id": cid_a,
+                            "coa_a_type": coa_a["coa_type"],
+                            "coa_b_id": cid_b,
+                            "coa_b_type": coa_b["coa_type"],
+                            "dimension": dim,
+                            "coa_a_score": sa,
+                            "coa_b_score": sb,
+                            "winner": winner,
+                        }
+                    )
 
         conn.commit()
 
         # Determine overall recommendation
-        overall_scores = {
-            cid: coa_scores[cid]["scores"].get("overall", 0)
-            for cid in coa_ids
-        }
+        overall_scores = {cid: coa_scores[cid]["scores"].get("overall", 0) for cid in coa_ids}
         best_cid = max(overall_scores, key=overall_scores.get)
         recommendation = coa_scores[best_cid]["coa"]["coa_type"]
 
@@ -1200,20 +1339,21 @@ def compare_coas(session_id, db_path=None):
                 event_type="coa_compared",
                 actor="icdev-simulation-engine",
                 action=f"Compared {len(coas)} COAs across {len(dimensions)} dimensions",
-                details=json.dumps({
-                    "session_id": session_id,
-                    "coa_count": len(coas),
-                    "comparison_count": len(comparisons),
-                    "recommendation": recommendation,
-                }),
+                details=json.dumps(
+                    {
+                        "session_id": session_id,
+                        "coa_count": len(coas),
+                        "comparison_count": len(comparisons),
+                        "recommendation": recommendation,
+                    }
+                ),
             )
 
         return {
             "session_id": session_id,
             "comparison_matrix": comparisons,
             "coa_scores": {
-                coa_scores[cid]["coa"]["coa_type"]: round(coa_scores[cid]["scores"]["overall"], 2)
-                for cid in coa_ids
+                coa_scores[cid]["coa"]["coa_type"]: round(coa_scores[cid]["scores"]["overall"], 2) for cid in coa_ids
             },
             "recommendation": recommendation,
         }
@@ -1239,9 +1379,7 @@ def select_coa(coa_id, selected_by, rationale, db_path=None):
         now = _now_iso()
 
         # Load the COA
-        row = conn.execute(
-            "SELECT * FROM coa_definitions WHERE id = ?", (coa_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM coa_definitions WHERE id = ?", (coa_id,)).fetchone()
         if not row:
             raise ValueError(f"COA not found: {coa_id}")
         coa = dict(row)
@@ -1274,12 +1412,14 @@ def select_coa(coa_id, selected_by, rationale, db_path=None):
                 actor=selected_by,
                 action=f"Selected COA {coa_id} ({coa['coa_type']})",
                 project_id=project_id,
-                details=json.dumps({
-                    "coa_id": coa_id,
-                    "coa_type": coa["coa_type"],
-                    "session_id": session_id,
-                    "rationale": rationale,
-                }),
+                details=json.dumps(
+                    {
+                        "coa_id": coa_id,
+                        "coa_type": coa["coa_type"],
+                        "session_id": session_id,
+                        "rationale": rationale,
+                    }
+                ),
             )
 
         return {
@@ -1307,16 +1447,20 @@ def get_coa(coa_id, db_path=None):
     """
     conn = _get_connection(db_path)
     try:
-        row = conn.execute(
-            "SELECT * FROM coa_definitions WHERE id = ?", (coa_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM coa_definitions WHERE id = ?", (coa_id,)).fetchone()
         if not row:
             raise ValueError(f"COA not found: {coa_id}")
         coa = dict(row)
 
         # Parse JSON fields
-        for field in ("architecture_summary", "cost_estimate", "risk_profile",
-                      "timeline", "compliance_impact", "supply_chain_impact"):
+        for field in (
+            "architecture_summary",
+            "cost_estimate",
+            "risk_profile",
+            "timeline",
+            "compliance_impact",
+            "supply_chain_impact",
+        ):
             val = coa.get(field)
             if val and isinstance(val, str):
                 try:
@@ -1375,10 +1519,9 @@ def list_coas(session_id, db_path=None):
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
-    parser = argparse.ArgumentParser(
-        description="RICOAS COA Generator — Generate and manage Courses of Action"
-    )
+    parser = argparse.ArgumentParser(description="RICOAS COA Generator — Generate and manage Courses of Action")
     parser.add_argument("--session-id", help="Intake session ID")
     parser.add_argument("--project-id", help="Project ID (optional, read from session)")
     parser.add_argument("--coa-id", help="COA ID (for get/select)")
@@ -1386,26 +1529,20 @@ def main():
     parser.add_argument("--db", help="Database path override")
 
     # Actions
-    parser.add_argument("--generate-3-coas", action="store_true",
-                        help="Generate Speed/Balanced/Comprehensive COAs")
-    parser.add_argument("--simulate", action="store_true",
-                        help="Also create and run simulations for each COA")
-    parser.add_argument("--generate-alternative", action="store_true",
-                        help="Generate alternative COAs for RED-tier requirement")
-    parser.add_argument("--compare", action="store_true",
-                        help="Compare all COAs for a session")
-    parser.add_argument("--select", action="store_true",
-                        help="Select a COA")
+    parser.add_argument("--generate-3-coas", action="store_true", help="Generate Speed/Balanced/Comprehensive COAs")
+    parser.add_argument("--simulate", action="store_true", help="Also create and run simulations for each COA")
+    parser.add_argument(
+        "--generate-alternative", action="store_true", help="Generate alternative COAs for RED-tier requirement"
+    )
+    parser.add_argument("--compare", action="store_true", help="Compare all COAs for a session")
+    parser.add_argument("--select", action="store_true", help="Select a COA")
     parser.add_argument("--selected-by", help="Name of person selecting COA")
     parser.add_argument("--rationale", help="Selection rationale")
-    parser.add_argument("--list", action="store_true",
-                        help="List all COAs for a session")
-    parser.add_argument("--get", action="store_true",
-                        help="Get a single COA by ID")
+    parser.add_argument("--list", action="store_true", help="List all COAs for a session")
+    parser.add_argument("--get", action="store_true", help="Get a single COA by ID")
 
     # Output format
-    parser.add_argument("--json", action="store_true",
-                        help="Output as JSON")
+    parser.add_argument("--json", action="store_true", help="Output as JSON")
 
     args = parser.parse_args()
     db_path = Path(args.db) if args.db else None

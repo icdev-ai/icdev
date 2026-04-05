@@ -132,7 +132,7 @@ This prompt helps you determine what documentation to read based on the specific
 ### Slash Commands
 - `.claude/commands/classify_workflow.md`
   - Conditions:
-    - Adding or removing ICDEV workflow commands
+    - Adding or removing ICDEV™ workflow commands
     - Modifying the CI/CD workflow extraction
 
 - `.claude/commands/classify_issue.md`

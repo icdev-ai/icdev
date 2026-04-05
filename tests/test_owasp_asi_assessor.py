@@ -13,13 +13,14 @@ Validates:
 import json
 import sqlite3
 import sys
-import tempfile
 import uuid
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
+_PROJECT_ROOT = str(Path(__file__).resolve().parent.parent)
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools" / "compliance"))
 from owasp_asi_assessor import OWASPASIAssessor
 
@@ -28,7 +29,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 @pytest.fixture
 def icdev_db(tmp_path):
-    """Create a minimal ICDEV database with tables needed for ASI checks."""
+    """Create a minimal ICDEV™ database with tables needed for ASI checks."""
     db_path = tmp_path / "icdev.db"
     conn = sqlite3.connect(str(db_path))
     conn.executescript("""
@@ -102,8 +103,7 @@ def icdev_db(tmp_path):
         );
     """)
     project_id = f"proj-{uuid.uuid4().hex[:8]}"
-    conn.execute("INSERT INTO projects (id, name) VALUES (?, ?)",
-                 (project_id, "Test Project"))
+    conn.execute("INSERT INTO projects (id, name) VALUES (?, ?)", (project_id, "Test Project"))
     conn.commit()
     conn.close()
     return db_path, project_id

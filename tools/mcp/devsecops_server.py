@@ -35,10 +35,12 @@ from tools.mcp.base_server import MCPServer  # noqa: E402
 # Lazy tool imports
 # ---------------------------------------------------------------------------
 
+
 def _import_tool(module_path, func_name):
     """Dynamically import a function from a module."""
     try:
         import importlib
+
         mod = importlib.import_module(module_path)
         return getattr(mod, func_name, None)
     except (ImportError, ModuleNotFoundError, AttributeError):
@@ -48,6 +50,7 @@ def _import_tool(module_path, func_name):
 # ---------------------------------------------------------------------------
 # Tool handlers
 # ---------------------------------------------------------------------------
+
 
 def handle_devsecops_profile_create(args: dict) -> dict:
     """Create or update a DevSecOps profile for a project."""
@@ -110,6 +113,7 @@ def handle_zta_assess(args: dict) -> dict:
     """Run NIST 800-207 ZTA assessment."""
     try:
         from tools.compliance.nist_800_207_assessor import NIST800207Assessor
+
         assessor = NIST800207Assessor()
         project_id = args.get("project_id")
         if not project_id:
@@ -230,8 +234,7 @@ def handle_pdp_config_generate(args: dict) -> dict:
         gen = _import_tool("tools.devsecops.pdp_config_generator", "generate_pep_config")
         if not gen:
             return {"error": "pdp_config_generator not available"}
-        return gen(project_id, mesh=args.get("mesh", "istio"),
-                   pdp_type=args.get("pdp_type", "disa_icam"))
+        return gen(project_id, mesh=args.get("mesh", "istio"), pdp_type=args.get("pdp_type", "disa_icam"))
     else:
         gen = _import_tool("tools.devsecops.pdp_config_generator", "generate_pdp_reference")
         if not gen:
@@ -243,18 +246,26 @@ def handle_pdp_config_generate(args: dict) -> dict:
 # Server registration
 # ---------------------------------------------------------------------------
 
+
 def create_server() -> MCPServer:
     server = MCPServer(name="icdev-devsecops", version="1.0.0")
 
     server.register_tool(
         name="devsecops_profile_create",
-        description="Create or update a DevSecOps profile for a project. Sets maturity level and active pipeline security stages.",
+        description="Create or update a DevSecOps profile for a project. Sets maturity level and active pipeline security stages.",  # noqa: E501
         input_schema={
             "type": "object",
             "properties": {
                 "project_id": {"type": "string", "description": "Project identifier"},
-                "maturity_level": {"type": "string", "description": "Target maturity level (level_1_initial through level_5_optimized)"},
-                "stages": {"type": "array", "items": {"type": "string"}, "description": "Explicit list of active stage IDs"},
+                "maturity_level": {
+                    "type": "string",
+                    "description": "Target maturity level (level_1_initial through level_5_optimized)",
+                },
+                "stages": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Explicit list of active stage IDs",
+                },
             },
             "required": ["project_id"],
         },
@@ -263,7 +274,7 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="devsecops_profile_get",
-        description="Get a project's current DevSecOps profile including maturity level, active stages, and stage configurations.",
+        description="Get a project's current DevSecOps profile including maturity level, active stages, and stage configurations.",  # noqa: E501
         input_schema={
             "type": "object",
             "properties": {
@@ -289,7 +300,7 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="zta_maturity_score",
-        description="Score ZTA maturity across all 7 DoD pillars (User Identity, Device, Network, Application/Workload, Data, Visibility/Analytics, Automation/Orchestration). Returns per-pillar scores and weighted aggregate.",
+        description="Score ZTA maturity across all 7 DoD pillars (User Identity, Device, Network, Application/Workload, Data, Visibility/Analytics, Automation/Orchestration). Returns per-pillar scores and weighted aggregate.",  # noqa: E501
         input_schema={
             "type": "object",
             "properties": {
@@ -303,7 +314,7 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="zta_assess",
-        description="Run NIST SP 800-207 Zero Trust Architecture assessment. Evaluates ZTA requirements against project artifacts and crosswalks to NIST 800-53.",
+        description="Run NIST SP 800-207 Zero Trust Architecture assessment. Evaluates ZTA requirements against project artifacts and crosswalks to NIST 800-53.",  # noqa: E501
         input_schema={
             "type": "object",
             "properties": {
@@ -318,7 +329,7 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="pipeline_security_generate",
-        description="Generate GitLab CI security stages based on the project's DevSecOps profile. Only includes stages active in the profile.",
+        description="Generate GitLab CI security stages based on the project's DevSecOps profile. Only includes stages active in the profile.",  # noqa: E501
         input_schema={
             "type": "object",
             "properties": {
@@ -331,12 +342,16 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="policy_generate",
-        description="Generate Kyverno or OPA/Gatekeeper admission policies for pod security, image registry restriction, label enforcement, and resource limits.",
+        description="Generate Kyverno or OPA/Gatekeeper admission policies for pod security, image registry restriction, label enforcement, and resource limits.",  # noqa: E501
         input_schema={
             "type": "object",
             "properties": {
                 "project_id": {"type": "string", "description": "Project identifier"},
-                "engine": {"type": "string", "enum": ["kyverno", "opa"], "description": "Policy engine (default: kyverno)"},
+                "engine": {
+                    "type": "string",
+                    "enum": ["kyverno", "opa"],
+                    "description": "Policy engine (default: kyverno)",
+                },
             },
             "required": ["project_id"],
         },
@@ -345,12 +360,16 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="service_mesh_generate",
-        description="Generate Istio or Linkerd service mesh configurations including mTLS, authorization policies, traffic routing, and circuit breaking.",
+        description="Generate Istio or Linkerd service mesh configurations including mTLS, authorization policies, traffic routing, and circuit breaking.",  # noqa: E501
         input_schema={
             "type": "object",
             "properties": {
                 "project_id": {"type": "string", "description": "Project identifier"},
-                "mesh": {"type": "string", "enum": ["istio", "linkerd"], "description": "Service mesh type (default: istio)"},
+                "mesh": {
+                    "type": "string",
+                    "enum": ["istio", "linkerd"],
+                    "description": "Service mesh type (default: istio)",
+                },
             },
             "required": ["project_id"],
         },
@@ -359,14 +378,25 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="network_segmentation_generate",
-        description="Generate Kubernetes NetworkPolicy manifests for ZTA micro-segmentation: default-deny per namespace, DNS exceptions, per-service policies.",
+        description="Generate Kubernetes NetworkPolicy manifests for ZTA micro-segmentation: default-deny per namespace, DNS exceptions, per-service policies.",  # noqa: E501
         input_schema={
             "type": "object",
             "properties": {
                 "project_path": {"type": "string", "description": "Target project directory"},
-                "namespaces": {"type": "array", "items": {"type": "string"}, "description": "Namespace names for isolation policies"},
-                "microsegmentation": {"type": "boolean", "description": "Generate per-service micro-segmentation policies"},
-                "services": {"type": "array", "items": {"type": "string"}, "description": "Service names for micro-segmentation"},
+                "namespaces": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Namespace names for isolation policies",
+                },
+                "microsegmentation": {
+                    "type": "boolean",
+                    "description": "Generate per-service micro-segmentation policies",
+                },
+                "services": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Service names for micro-segmentation",
+                },
             },
         },
         handler=handle_network_segmentation_generate,
@@ -388,7 +418,7 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="zta_posture_check",
-        description="Check ZTA posture for cATO readiness. Returns overall maturity score, per-pillar scores, and whether the project meets minimum ZTA requirements for continuous authorization.",
+        description="Check ZTA posture for cATO readiness. Returns overall maturity score, per-pillar scores, and whether the project meets minimum ZTA requirements for continuous authorization.",  # noqa: E501
         input_schema={
             "type": "object",
             "properties": {
@@ -401,14 +431,21 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="pdp_config_generate",
-        description="Generate PDP (Policy Decision Point) reference documentation and PEP (Policy Enforcement Point) configs for Istio/Linkerd pointing to external identity/access providers.",
+        description="Generate PDP (Policy Decision Point) reference documentation and PEP (Policy Enforcement Point) configs for Istio/Linkerd pointing to external identity/access providers.",  # noqa: E501
         input_schema={
             "type": "object",
             "properties": {
                 "project_id": {"type": "string", "description": "Project identifier"},
-                "pdp_type": {"type": "string", "description": "PDP provider type (disa_icam, zscaler, palo_alto_prisma, crowdstrike, microsoft_entra, custom)"},
+                "pdp_type": {
+                    "type": "string",
+                    "description": "PDP provider type (disa_icam, zscaler, palo_alto_prisma, crowdstrike, microsoft_entra, custom)",  # noqa: E501
+                },
                 "pep": {"type": "boolean", "description": "Generate PEP config instead of PDP reference"},
-                "mesh": {"type": "string", "enum": ["istio", "linkerd"], "description": "Service mesh for PEP generation"},
+                "mesh": {
+                    "type": "string",
+                    "enum": ["istio", "linkerd"],
+                    "description": "Service mesh for PEP generation",
+                },
             },
             "required": ["project_id"],
         },
@@ -421,6 +458,7 @@ def create_server() -> MCPServer:
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+
 
 def main():
     server = create_server()

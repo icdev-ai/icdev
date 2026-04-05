@@ -14,11 +14,8 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import subprocess
-import sys
 from dataclasses import asdict, dataclass, field
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 
@@ -105,7 +102,7 @@ def _detect_via_torch() -> Optional[GPUDetectionResult]:
 
     for i in range(gpu_count):
         props = torch.cuda.get_device_properties(i)
-        total_mb = props.total_mem // (1024 * 1024)
+        total_mb = getattr(props, "total_memory", getattr(props, "total_mem", 0)) // (1024 * 1024)
         # Get current free memory
         try:
             torch.cuda.set_device(i)
@@ -220,7 +217,7 @@ def _detect_via_nvidia_smi() -> Optional[GPUDetectionResult]:
 def _set_recommendations(result: GPUDetectionResult) -> None:
     """Set training recommendations based on VRAM."""
     vram = result.max_single_gpu_vram_mb
-    result.can_train = vram >= 8192  # 8GB minimum for QLoRA
+    result.can_train = vram >= 7800  # ~8GB minimum for QLoRA (7800 accounts for driver overhead on 8GB cards)
 
     if vram >= 49152:  # 48GB+
         result.recommended_batch_size = 8
@@ -231,7 +228,7 @@ def _set_recommendations(result: GPUDetectionResult) -> None:
     elif vram >= 16384:  # 16GB+
         result.recommended_batch_size = 2
         result.recommended_lora_rank = 16
-    elif vram >= 8192:  # 8GB+
+    elif vram >= 7800:  # ~8GB (accounts for driver overhead on 8GB cards)
         result.recommended_batch_size = 1
         result.recommended_lora_rank = 8
     else:

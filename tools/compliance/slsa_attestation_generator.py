@@ -4,7 +4,7 @@
 
 Generates SLSA (Supply-chain Levels for Software Artifacts) v1.0 provenance
 statements and VEX (Vulnerability Exploitability eXchange) documents from
-ICDEV build pipeline evidence. Extends existing attestation_manager.py (D341).
+ICDEV™ build pipeline evidence. Extends existing attestation_manager.py (D341).
 
 Architecture Decisions:
   D341: SLSA attestation generator extends existing attestation_manager.py.
@@ -21,8 +21,8 @@ import argparse
 import hashlib
 import json
 import sqlite3
-import sys
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -80,14 +80,13 @@ def _get_connection(db_path=None):
     """Get a database connection."""
     path = db_path or DB_PATH
     if path.exists():
-        conn = sqlite3.connect(str(path))
-        conn.row_factory = sqlite3.Row
+        conn = get_connection(db_path=str(path))
         return conn
     return None
 
 
 def _collect_build_evidence(project_id: str, conn) -> dict:
-    """Collect build evidence from ICDEV databases."""
+    """Collect build evidence from ICDEV™ databases."""
     evidence = {
         "build_process_documented": False,
         "version_controlled_source": False,
@@ -197,21 +196,22 @@ def generate_slsa_provenance(
                 for row in rows:
                     version = row["version"] if row["version"] else "1"
                     file_path = row["file_path"] if row["file_path"] else f"sbom-{row['id']}"
-                    subjects.append({
-                        "name": file_path,
-                        "digest": {
-                            "sha256": hashlib.sha256(
-                                (row["id"] + version).encode()
-                            ).hexdigest()
-                        },
-                    })
+                    subjects.append(
+                        {
+                            "name": file_path,
+                            "digest": {"sha256": hashlib.sha256((row["id"] + version).encode()).hexdigest()},
+                        }
+                    )
             except (sqlite3.OperationalError, KeyError):
                 pass
 
         # Build the in-toto v1 statement
         provenance = {
             "_type": IN_TOTO_STATEMENT_TYPE,
-            "subject": subjects or [{"name": f"project-{project_id}", "digest": {"sha256": hashlib.sha256(project_id.encode()).hexdigest()}}],
+            "subject": subjects
+            or [
+                {"name": f"project-{project_id}", "digest": {"sha256": hashlib.sha256(project_id.encode()).hexdigest()}}
+            ],
             "predicateType": SLSA_PROVENANCE_TYPE,
             "predicate": {
                 "buildDefinition": {
@@ -250,10 +250,12 @@ def generate_slsa_provenance(
                     (project_id,),
                 ).fetchall()
                 for row in rows:
-                    provenance["predicate"]["buildDefinition"]["resolvedDependencies"].append({
-                        "uri": f"sbom://{project_id}/{row['id']}",
-                        "digest": {"sha256": hashlib.sha256(row["id"].encode()).hexdigest()},
-                    })
+                    provenance["predicate"]["buildDefinition"]["resolvedDependencies"].append(
+                        {
+                            "uri": f"sbom://{project_id}/{row['id']}",
+                            "digest": {"sha256": hashlib.sha256(row["id"].encode()).hexdigest()},
+                        }
+                    )
             except sqlite3.OperationalError:
                 pass
 
@@ -278,7 +280,7 @@ def generate_vex_document(
 ) -> dict:
     """Generate VEX (Vulnerability Exploitability eXchange) document.
 
-    Collects vulnerability data from ICDEV databases and produces a
+    Collects vulnerability data from ICDEV™ databases and produces a
     CycloneDX VEX document mapping vulnerabilities to exploitability status.
 
     Args:
@@ -311,7 +313,7 @@ def generate_vex_document(
                     justification = row["justification"] if row["justification"] else ""
                     vuln = {
                         "id": row["id"],
-                        "source": {"name": "ICDEV Vulnerability Scanner"},
+                        "source": {"name": "ICDEV™ Vulnerability Scanner"},
                         "ratings": [{"severity": severity}],
                         "analysis": {
                             "state": status,
@@ -340,7 +342,7 @@ def generate_vex_document(
                     triage_decision = row["triage_decision"] if row["triage_decision"] else "under_investigation"
                     vuln = {
                         "id": cve_id,
-                        "source": {"name": "ICDEV CVE Triager"},
+                        "source": {"name": "ICDEV™ CVE Triager"},
                         "ratings": [{"score": cvss_score, "method": "CVSSv3"}],
                         "analysis": {
                             "state": triage_decision,
@@ -358,7 +360,7 @@ def generate_vex_document(
             "serialNumber": f"urn:uuid:{uuid.uuid4()}",
             "metadata": {
                 "timestamp": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                "tools": [{"vendor": "ICDEV", "name": "slsa_attestation_generator", "version": "1.0"}],
+                "tools": [{"vendor": "ICDEV™", "name": "slsa_attestation_generator", "version": "1.0"}],
                 "component": {"name": project_id, "type": "application"},
             },
             "vulnerabilities": vulnerabilities,
@@ -431,9 +433,7 @@ def verify_slsa_level(
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="SLSA v1.0 Provenance Generator + VEX Document Generator"
-    )
+    parser = argparse.ArgumentParser(description="SLSA v1.0 Provenance Generator + VEX Document Generator")
     parser.add_argument("--project-id", required=True, help="Project ID", dest="project_id")
     parser.add_argument("--generate", action="store_true", help="Generate SLSA provenance")
     parser.add_argument("--vex", action="store_true", help="Generate VEX document")

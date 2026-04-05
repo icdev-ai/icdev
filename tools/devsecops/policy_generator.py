@@ -17,7 +17,7 @@ Usage:
 import argparse
 import json
 import os
-import sqlite3
+from tools.db.storage import get_connection
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -39,6 +39,7 @@ except ImportError:
 # Config
 # ---------------------------------------------------------------------------
 
+
 def _load_config() -> dict:
     config_path = BASE_DIR / "args" / "devsecops_config.yaml"
     if yaml and config_path.exists():
@@ -48,8 +49,7 @@ def _load_config() -> dict:
 
 
 def _get_db():
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
@@ -57,10 +57,7 @@ def _get_db():
 def _get_profile(project_id: str) -> dict:
     conn = _get_db()
     try:
-        row = conn.execute(
-            "SELECT * FROM devsecops_profiles WHERE project_id = ?",
-            (project_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM devsecops_profiles WHERE project_id = ?", (project_id,)).fetchone()
         if not row:
             return {}
         return {
@@ -76,8 +73,7 @@ def _get_project_info(project_id: str) -> dict:
     conn = _get_db()
     try:
         row = conn.execute(
-            "SELECT name, classification, impact_level FROM projects WHERE id = ?",
-            (project_id,)
+            "SELECT name, classification, impact_level FROM projects WHERE id = ?", (project_id,)
         ).fetchone()
         if row:
             return dict(row)
@@ -90,6 +86,7 @@ def _get_project_info(project_id: str) -> dict:
 # Kyverno policies
 # ---------------------------------------------------------------------------
 
+
 def _kyverno_pod_security() -> dict:
     """Kyverno policy: enforce pod security standards."""
     return {
@@ -101,7 +98,7 @@ def _kyverno_pod_security() -> dict:
                 "policies.kyverno.io/title": "Pod Security Standards",
                 "policies.kyverno.io/category": "DevSecOps",
                 "policies.kyverno.io/severity": "high",
-                "policies.kyverno.io/description": "Enforce pod security: non-root, read-only rootfs, drop capabilities",
+                "policies.kyverno.io/description": "Enforce pod security: non-root, read-only rootfs, drop capabilities",  # noqa: E501
             },
         },
         "spec": {
@@ -126,11 +123,7 @@ def _kyverno_pod_security() -> dict:
                     "match": {"any": [{"resources": {"kinds": ["Pod"]}}]},
                     "validate": {
                         "message": "Containers must use read-only root filesystem",
-                        "pattern": {
-                            "spec": {
-                                "containers": [{"securityContext": {"readOnlyRootFilesystem": True}}]
-                            }
-                        },
+                        "pattern": {"spec": {"containers": [{"securityContext": {"readOnlyRootFilesystem": True}}]}},
                     },
                 },
                 {
@@ -138,15 +131,7 @@ def _kyverno_pod_security() -> dict:
                     "match": {"any": [{"resources": {"kinds": ["Pod"]}}]},
                     "validate": {
                         "message": "Containers must drop ALL capabilities",
-                        "pattern": {
-                            "spec": {
-                                "containers": [{
-                                    "securityContext": {
-                                        "capabilities": {"drop": ["ALL"]}
-                                    }
-                                }]
-                            }
-                        },
+                        "pattern": {"spec": {"containers": [{"securityContext": {"capabilities": {"drop": ["ALL"]}}}]}},
                     },
                 },
             ],
@@ -174,18 +159,16 @@ def _kyverno_image_registry(allowed_registries: list = None) -> dict:
         "spec": {
             "validationFailureAction": "Enforce",
             "background": True,
-            "rules": [{
-                "name": "validate-image-registry",
-                "match": {"any": [{"resources": {"kinds": ["Pod"]}}]},
-                "validate": {
-                    "message": "Images must come from approved registries",
-                    "pattern": {
-                        "spec": {
-                            "containers": [{"image": f"{r}"} for r in registries]
-                        }
+            "rules": [
+                {
+                    "name": "validate-image-registry",
+                    "match": {"any": [{"resources": {"kinds": ["Pod"]}}]},
+                    "validate": {
+                        "message": "Images must come from approved registries",
+                        "pattern": {"spec": {"containers": [{"image": f"{r}"} for r in registries]}},
                     },
-                },
-            }],
+                }
+            ],
         },
     }
 
@@ -205,21 +188,23 @@ def _kyverno_require_labels(project_name: str, classification: str) -> dict:
         "spec": {
             "validationFailureAction": "Enforce",
             "background": True,
-            "rules": [{
-                "name": "require-classification-label",
-                "match": {"any": [{"resources": {"kinds": ["Pod", "Deployment", "StatefulSet"]}}]},
-                "validate": {
-                    "message": "Resources must have classification and managed-by labels",
-                    "pattern": {
-                        "metadata": {
-                            "labels": {
-                                "app.kubernetes.io/managed-by": "?*",
-                                "icdev.mil/classification": f"{classification}",
+            "rules": [
+                {
+                    "name": "require-classification-label",
+                    "match": {"any": [{"resources": {"kinds": ["Pod", "Deployment", "StatefulSet"]}}]},
+                    "validate": {
+                        "message": "Resources must have classification and managed-by labels",
+                        "pattern": {
+                            "metadata": {
+                                "labels": {
+                                    "app.kubernetes.io/managed-by": "?*",
+                                    "icdev.mil/classification": f"{classification}",
+                                }
                             }
-                        }
+                        },
                     },
-                },
-            }],
+                }
+            ],
         },
     }
 
@@ -239,22 +224,26 @@ def _kyverno_network_policy_required() -> dict:
         "spec": {
             "validationFailureAction": "Audit",
             "background": True,
-            "rules": [{
-                "name": "require-network-policy",
-                "match": {"any": [{"resources": {"kinds": ["Namespace"]}}]},
-                "validate": {
-                    "message": "Each namespace must have at least one NetworkPolicy (ZTA requirement)",
-                    "deny": {
-                        "conditions": {
-                            "any": [{
-                                "key": "{{request.object.metadata.labels.\"icdev.mil/network-policy\"}}",
-                                "operator": "Equals",
-                                "value": "",
-                            }]
-                        }
+            "rules": [
+                {
+                    "name": "require-network-policy",
+                    "match": {"any": [{"resources": {"kinds": ["Namespace"]}}]},
+                    "validate": {
+                        "message": "Each namespace must have at least one NetworkPolicy (ZTA requirement)",
+                        "deny": {
+                            "conditions": {
+                                "any": [
+                                    {
+                                        "key": '{{request.object.metadata.labels."icdev.mil/network-policy"}}',
+                                        "operator": "Equals",
+                                        "value": "",
+                                    }
+                                ]
+                            }
+                        },
                     },
-                },
-            }],
+                }
+            ],
         },
     }
 
@@ -274,25 +263,29 @@ def _kyverno_resource_limits() -> dict:
         "spec": {
             "validationFailureAction": "Enforce",
             "background": True,
-            "rules": [{
-                "name": "require-limits",
-                "match": {"any": [{"resources": {"kinds": ["Pod"]}}]},
-                "validate": {
-                    "message": "Containers must have CPU and memory limits set",
-                    "pattern": {
-                        "spec": {
-                            "containers": [{
-                                "resources": {
-                                    "limits": {
-                                        "cpu": "?*",
-                                        "memory": "?*",
+            "rules": [
+                {
+                    "name": "require-limits",
+                    "match": {"any": [{"resources": {"kinds": ["Pod"]}}]},
+                    "validate": {
+                        "message": "Containers must have CPU and memory limits set",
+                        "pattern": {
+                            "spec": {
+                                "containers": [
+                                    {
+                                        "resources": {
+                                            "limits": {
+                                                "cpu": "?*",
+                                                "memory": "?*",
+                                            }
+                                        }
                                     }
-                                }
-                            }]
-                        }
+                                ]
+                            }
+                        },
                     },
-                },
-            }],
+                }
+            ],
         },
     }
 
@@ -335,6 +328,7 @@ def generate_kyverno_policies(project_id: str, profile: dict = None) -> dict:
 # OPA/Gatekeeper policies
 # ---------------------------------------------------------------------------
 
+
 def _opa_pod_security_template() -> dict:
     """OPA ConstraintTemplate for pod security."""
     return {
@@ -347,9 +341,10 @@ def _opa_pod_security_template() -> dict:
                     "names": {"kind": "DevSecOpsPodPolicy"},
                 }
             },
-            "targets": [{
-                "target": "admission.k8s.gatekeeper.sh",
-                "rego": """
+            "targets": [
+                {
+                    "target": "admission.k8s.gatekeeper.sh",
+                    "rego": """
 package devsecopspodpolicy
 
 # Deny pods running as root
@@ -375,7 +370,8 @@ array_contains(arr, elem) {
     arr[_] == elem
 }
 """,
-            }],
+                }
+            ],
         },
     }
 
@@ -417,9 +413,10 @@ def _opa_image_registry_template() -> dict:
                     },
                 }
             },
-            "targets": [{
-                "target": "admission.k8s.gatekeeper.sh",
-                "rego": """
+            "targets": [
+                {
+                    "target": "admission.k8s.gatekeeper.sh",
+                    "rego": """
 package devsecopsimageregistry
 
 violation[{"msg": msg}] {
@@ -433,7 +430,8 @@ registry_allowed(image) {
     startswith(image, allowed)
 }
 """,
-            }],
+                }
+            ],
         },
     }
 
@@ -470,9 +468,10 @@ def _opa_resource_limits_template() -> dict:
                     "names": {"kind": "DevSecOpsResourceLimits"},
                 }
             },
-            "targets": [{
-                "target": "admission.k8s.gatekeeper.sh",
-                "rego": """
+            "targets": [
+                {
+                    "target": "admission.k8s.gatekeeper.sh",
+                    "rego": """
 package devsecopsresourcelimits
 
 violation[{"msg": msg}] {
@@ -487,7 +486,8 @@ violation[{"msg": msg}] {
     msg := sprintf("Container '%v' must have memory limits (DevSecOps policy)", [container.name])
 }
 """,
-            }],
+                }
+            ],
         },
     }
 
@@ -547,6 +547,7 @@ def generate_opa_policies(project_id: str, profile: dict = None) -> dict:
 # Admission controller config
 # ---------------------------------------------------------------------------
 
+
 def generate_admission_config(project_id: str, engine: str = "kyverno") -> dict:
     """Generate admission controller installation config.
 
@@ -597,14 +598,15 @@ def generate_admission_config(project_id: str, engine: str = "kyverno") -> dict:
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
     parser = argparse.ArgumentParser(description="Policy-as-Code Generator")
     parser.add_argument("--project-id", required=True, help="Project identifier")
-    parser.add_argument("--engine", choices=["kyverno", "opa"], default="kyverno",
-                        help="Policy engine (kyverno or opa)")
+    parser.add_argument(
+        "--engine", choices=["kyverno", "opa"], default="kyverno", help="Policy engine (kyverno or opa)"
+    )
     parser.add_argument("--output", help="Output directory for policy files")
-    parser.add_argument("--admission-config", action="store_true",
-                        help="Generate admission controller config")
+    parser.add_argument("--admission-config", action="store_true", help="Generate admission controller config")
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--human", action="store_true", help="Human-readable output")
     args = parser.parse_args()

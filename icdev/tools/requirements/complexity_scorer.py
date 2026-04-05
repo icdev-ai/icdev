@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Scale-adaptive project complexity scorer (BMAD pattern).
 
 Assesses project complexity from intake session data and recommends the
@@ -11,7 +11,7 @@ appropriate pipeline depth:
 
   - **Quick Flow**: Simple project, abbreviated workflow
     (< 5 requirements, no compliance frameworks, IL2, < 5 turns)
-  - **Standard**: Moderate complexity, standard ICDEV pipeline
+  - **Standard**: Moderate complexity, standard ICDEV™ pipeline
   - **Full Pipeline**: Complex project, all 4 tiers of validation needed
 
 Usage:
@@ -164,7 +164,7 @@ def _build_recommendation(overall_score: float, complexity_level: str) -> dict:
             "skip_tiers": ["tier_4"],
             "estimated_phases": 3,
             "rationale": (
-                "Moderate complexity project. Standard ICDEV pipeline recommended: "
+                "Moderate complexity project. Standard ICDEV™ pipeline recommended: "
                 "full TDD workflow, compliance artifact generation, and boundary "
                 "analysis. Tier 4 (full simulation/Monte Carlo) can be deferred."
             ),
@@ -196,7 +196,7 @@ def score_complexity(session_id: str, db_path=None) -> dict:
 
     Args:
         session_id: Intake session ID (e.g. "sess-abc123").
-        db_path: Optional Path override for the ICDEV database.
+        db_path: Optional Path override for the ICDEV™ database.
 
     Returns:
         Dict with status, scores, complexity_level, dimensions,
@@ -349,7 +349,7 @@ def score_complexity(session_id: str, db_path=None) -> dict:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Scale-Adaptive Complexity Scorer (BMAD pattern)"
+        description="ICDEV™ Scale-Adaptive Complexity Scorer (BMAD pattern)"
     )
     parser.add_argument("--session-id", required=True, help="Intake session ID")
     parser.add_argument("--json", action="store_true", help="JSON output")

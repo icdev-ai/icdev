@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ section.section_number }}: {{ section.title }} - Proposals - ICDEV{% endblock %}
+{% block title %}{{ section.section_number }}: {{ section.title }} - Proposals - ICDEV™{% endblock %}
 
 {% block content %}
 <div class="breadcrumbs">
@@ -29,7 +29,7 @@
                 <option value="{{ t }}">{{ t | replace('_', ' ') | title }}</option>
                 {% endfor %}
             </select>
-            <button class="btn btn-primary" onclick="ICDEV.proposals.advanceStatus('{{ section.id }}', document.getElementById('advance-status-select').value)">
+            <button class="btn btn-primary" onclick="ICDEV™.proposals.advanceStatus('{{ section.id }}', document.getElementById('advance-status-select').value)">
                 Advance
             </button>
         </div>
@@ -66,7 +66,7 @@
     <div class="card" style="padding:16px; margin-top:12px;">
         <textarea id="section-notes" rows="8" style="width:100%; background:var(--bg-secondary); border:1px solid var(--border-color,#2a2a4a); color:var(--text-primary); padding:12px; border-radius:4px; resize:vertical; font-family:inherit;">{{ section.notes or '' }}</textarea>
         <div style="margin-top:8px; display:flex; justify-content:flex-end;">
-            <button class="btn btn-primary" onclick="ICDEV.proposals.saveNotes('{{ section.id }}')">Save Notes</button>
+            <button class="btn btn-primary" onclick="ICDEV™.proposals.saveNotes('{{ section.id }}')">Save Notes</button>
         </div>
     </div>
 </div>
@@ -185,8 +185,8 @@ document.addEventListener("DOMContentLoaded", function() {
     });
 
     // Status pipeline
-    if (window.ICDEV && ICDEV.proposals) {
-        ICDEV.proposals.renderStatusPipeline("status-pipeline", "{{ section.status }}");
+    if (window.ICDEV™ && ICDEV™.proposals) {
+        ICDEV™.proposals.renderStatusPipeline("status-pipeline", "{{ section.status }}");
     }
 });
 </script>

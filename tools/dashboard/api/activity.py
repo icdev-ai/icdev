@@ -6,7 +6,7 @@ Merges audit_trail + hook_events via UNION ALL for a unified activity feed.
 Read-only, preserves append-only contract (D6).
 """
 
-import sqlite3
+from tools.db.storage import get_connection
 
 from flask import Blueprint, jsonify, request
 
@@ -16,8 +16,7 @@ activity_api = Blueprint("activity_api", __name__, url_prefix="/api/activity")
 
 
 def _get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(DB_PATH))
     return conn
 
 
@@ -130,9 +129,7 @@ def activity_filter_options():
     conn = _get_db()
     try:
         # Event types from both tables
-        audit_types = conn.execute(
-            "SELECT DISTINCT event_type FROM audit_trail ORDER BY event_type"
-        ).fetchall()
+        audit_types = conn.execute("SELECT DISTINCT event_type FROM audit_trail ORDER BY event_type").fetchall()
         hook_types = conn.execute(
             "SELECT DISTINCT hook_type AS event_type FROM hook_events ORDER BY hook_type"
         ).fetchall()
@@ -150,18 +147,21 @@ def activity_filter_options():
             "SELECT DISTINCT project_id FROM audit_trail WHERE project_id IS NOT NULL ORDER BY project_id"
         ).fetchall()
 
-        return jsonify({
-            "event_types": sorted(set(
-                [r["event_type"] for r in audit_types if r["event_type"]] +
-                [r["event_type"] for r in hook_types if r["event_type"]]
-            )),
-            "actors": sorted(set(
-                [r["actor"] for r in actors if r["actor"]] +
-                [r["agent_id"] for r in agents if r["agent_id"]]
-            )),
-            "projects": [r["project_id"] for r in projects if r["project_id"]],
-            "sources": ["audit", "hook"],
-        })
+        return jsonify(
+            {
+                "event_types": sorted(
+                    set(
+                        [r["event_type"] for r in audit_types if r["event_type"]]
+                        + [r["event_type"] for r in hook_types if r["event_type"]]
+                    )
+                ),
+                "actors": sorted(
+                    set([r["actor"] for r in actors if r["actor"]] + [r["agent_id"] for r in agents if r["agent_id"]])
+                ),
+                "projects": [r["project_id"] for r in projects if r["project_id"]],
+                "sources": ["audit", "hook"],
+            }
+        )
     finally:
         conn.close()
 
@@ -190,17 +190,24 @@ def activity_stats():
             "SELECT COUNT(*) as cnt FROM hook_events WHERE created_at >= datetime('now', '-1 hour')"
         ).fetchone()["cnt"]
 
-        return jsonify({
-            "total": audit_count + hook_count,
-            "audit_total": audit_count,
-            "hook_total": hook_count,
-            "today": audit_today + hook_today,
-            "last_hour": audit_hour + hook_hour,
-        })
+        return jsonify(
+            {
+                "total": audit_count + hook_count,
+                "audit_total": audit_count,
+                "hook_total": hook_count,
+                "today": audit_today + hook_today,
+                "last_hour": audit_hour + hook_hour,
+            }
+        )
     except Exception:
-        return jsonify({
-            "total": 0, "audit_total": 0, "hook_total": 0,
-            "today": 0, "last_hour": 0,
-        })
+        return jsonify(
+            {
+                "total": 0,
+                "audit_total": 0,
+                "hook_total": 0,
+                "today": 0,
+                "last_hour": 0,
+            }
+        )
     finally:
         conn.close()

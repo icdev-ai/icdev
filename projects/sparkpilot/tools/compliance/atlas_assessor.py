@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """MITRE ATLAS v5.4.0 Assessment Engine.
 
 Assesses projects against MITRE ATLAS (Adversarial Threat Landscape for

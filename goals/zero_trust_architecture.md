@@ -12,7 +12,7 @@ Implement NIST SP 800-207 Zero Trust Architecture assessment, ZTA maturity scori
 ## Prerequisites
 
 - [ ] Project initialized (`goals/init_project.md` completed)
-- [ ] ICDEV database initialized (`python tools/db/init_icdev_db.py`)
+- [ ] ICDEV™ database initialized (`python tools/db/init_icdev_db.py`)
 - [ ] `args/zta_config.yaml` present with pillar weights, maturity thresholds, and PDP provider settings
 - [ ] NIST 800-207 requirements catalog loaded (`context/compliance/nist_800_207_requirements.json`)
 - [ ] FIPS 199 categorization completed (`goals/security_categorization.md`) — baseline drives ZTA rigor
@@ -367,9 +367,9 @@ Posture gate: PASS (with warning)
 
 ---
 
-## GOTCHA Layer Mapping
+## FORGE Layer Mapping
 
-| Step | GOTCHA Layer | Component |
+| Step | FORGE Layer | Component |
 |------|-------------|-----------|
 | ZTA detection | Tools | nist_800_207_assessor.py (--detect) |
 | 800-207 assessment | Tools | nist_800_207_assessor.py (--assess) |

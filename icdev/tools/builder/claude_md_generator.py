@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Dynamic CLAUDE.md Generator - creates adaptive documentation for child apps.
 
 Architecture Decision D26: Jinja2 templates produce CLAUDE.md that documents
@@ -254,7 +254,7 @@ python tools/dashboard/app.py                        # Start web dashboard on po
 
 ---
 
-## Architecture: GOTCHA Framework
+## Architecture: FORGE Framework
 
 This is a 6-layer agentic system.  The AI (you) is the orchestration layer -- you read goals, call tools, apply args, reference context, and use hard prompts.  You never execute work directly; you delegate to deterministic Python scripts.
 
@@ -429,11 +429,11 @@ AST-based code quality metrics, smell detection, deterministic maintainability s
 - Runtime feedback: `runtime_feedback.py` (test-to-source mapping)
 {% endif %}
 
-### ATLAS Workflow
+### ANVIL Workflow
 
-Build process follows the ATLAS methodology:
-{% if atlas_config.get("model_phase", False) %}
-1. **Model** -- Import/validate SysML and DOORS models (M-ATLAS pre-phase)
+Build process follows the ANVIL methodology:
+{% if anvil_config.get("model_phase", False) %}
+1. **Model** -- Import/validate SysML and DOORS models (M-ANVIL pre-phase)
 {% endif %}
 {% for phase in atlas_phases %}{{ loop.index }}. **{{ phase | capitalize }}** -- {{ atlas_phase_descriptions.get(phase, phase) }}
 {% endfor %}
@@ -492,12 +492,12 @@ Build process follows the ATLAS methodology:
 {% endif %}{% if capabilities.get("ricoas", False) %}- RICOAS gates block on: readiness score < 0.7, unresolved critical gaps, RED requirements without alternative COAs
 {% endif %}{% if capabilities.get("observability", False) %}- Observability gates block on: tracing not active, provenance graph empty, XAI assessment not completed
 {% endif %}{% if capabilities.get("code_intelligence", False) %}- Code Quality gates block on: average cyclomatic complexity > 25
-{% endif %}- **This application CANNOT generate child applications** -- it is a generated child app of ICDEV.  The agentic fitness assessor, app blueprint engine, and child app generator are intentionally excluded.
+{% endif %}- **This application CANNOT generate child applications** -- it is a generated child app of ICDEV™.  The agentic fitness assessor, app blueprint engine, and child app generator are intentionally excluded.
 {% if parent_callback.get("enabled", False) %}
 
 ### A2A Parent Callback
 
-When this application needs capabilities not included locally, it calls back to parent ICDEV:
+When this application needs capabilities not included locally, it calls back to parent ICDEV™:
 - **Callback URL:** {{ parent_callback.url }}
 - **Auth method:** {{ parent_callback.auth }}
 - **Excluded capabilities:** app generation, modernization
@@ -532,10 +532,10 @@ Be direct.  Be reliable.  Get it done.
 
 
 # ===========================================================================
-# ATLAS phase descriptions -- used by both Jinja2 and fallback renderers
+# ANVIL phase descriptions -- used by both Jinja2 and fallback renderers
 # ===========================================================================
 
-ATLAS_PHASE_DESCRIPTIONS: Dict[str, str] = {
+ANVIL_PHASE_DESCRIPTIONS: Dict[str, str] = {
     "architect": "System design, component decomposition, interface contracts",
     "trace": "Requirements traceability matrix, compliance mapping",
     "link": "Wire components together, dependency injection, A2A registration",
@@ -550,7 +550,7 @@ ATLAS_PHASE_DESCRIPTIONS: Dict[str, str] = {
 
 GOAL_METADATA: Dict[str, Dict[str, str]] = {
     "build_app": {
-        "name": "ATLAS Workflow",
+        "name": "ANVIL Workflow",
         "purpose": "5-step build: Architect -> Trace -> Link -> Assemble -> Stress-test",
     },
     "tdd_workflow": {
@@ -755,7 +755,7 @@ def _build_template_context(blueprint: Dict[str, Any]) -> Dict[str, Any]:
     """Transform a raw blueprint dict into the template rendering context.
 
     Enriches the blueprint data with derived values needed by the Jinja2
-    template (agent tiers, goal metadata, ATLAS phase descriptions, etc.).
+    template (agent tiers, goal metadata, ANVIL phase descriptions, etc.).
 
     Args:
         blueprint: Raw blueprint dict from app_blueprint.py.
@@ -768,7 +768,7 @@ def _build_template_context(blueprint: Dict[str, Any]) -> Dict[str, Any]:
     classification = blueprint.get("classification", "CUI")
     impact_level = blueprint.get("impact_level", "IL4")
     agents_raw = blueprint.get("agents", [])
-    atlas_config = blueprint.get("atlas_config", {})
+    anvil_config = blueprint.get("anvil_config", {})
     parent_callback = blueprint.get("parent_callback", {})
     cloud_provider = blueprint.get("cloud_provider", {})
     goals_config = blueprint.get("goals_config", [])
@@ -784,8 +784,8 @@ def _build_template_context(blueprint: Dict[str, Any]) -> Dict[str, Any]:
     # Build MCP server list from agent roster
     mcp_servers = _derive_mcp_servers(agents, capabilities)
 
-    # Determine ATLAS phases (exclude fitness assessment)
-    atlas_phases = atlas_config.get("phases", [
+    # Determine ANVIL phases (exclude fitness assessment)
+    atlas_phases = anvil_config.get("phases", [
         "architect", "trace", "link", "assemble", "stress_test",
     ])
     # Ensure fitness is never present
@@ -828,9 +828,9 @@ def _build_template_context(blueprint: Dict[str, Any]) -> Dict[str, Any]:
         "impact_level": impact_level,
         "agents": agents,
         "mcp_servers": mcp_servers,
-        "atlas_config": atlas_config,
+        "anvil_config": anvil_config,
         "atlas_phases": atlas_phases,
-        "atlas_phase_descriptions": ATLAS_PHASE_DESCRIPTIONS,
+        "atlas_phase_descriptions": ANVIL_PHASE_DESCRIPTIONS,
         "parent_callback": parent_callback,
         "cloud_provider": cloud_provider,
         "goals_list": goals_list,
@@ -984,7 +984,7 @@ def _build_key_decisions(blueprint: Dict[str, Any]) -> List[Dict[str, str]]:
         })
         decisions.append({
             "id": "D9",
-            "text": "M-ATLAS adds Model pre-phase to ATLAS (backward compatible -- skips if no model)",
+            "text": "M-ANVIL adds Model pre-phase to ANVIL (backward compatible -- skips if no model)",
         })
         decisions.append({
             "id": "D12",
@@ -1144,7 +1144,7 @@ def _generate_fallback(blueprint: Dict[str, Any]) -> str:
         sections.append(f"## {ctx['app_name']} — Overview\n")
         sections.append(f"{ctx['app_description']}\n")
 
-    # -- GOTCHA Framework --
+    # -- FORGE Framework --
     sections.append("---\n")
     sections.append(_build_gotcha_section())
 
@@ -1287,8 +1287,8 @@ def _build_commands_section(ctx: Dict[str, Any]) -> str:
 
 
 def _build_gotcha_section() -> str:
-    """Build the GOTCHA framework section for fallback rendering."""
-    return """## Architecture: GOTCHA Framework
+    """Build the FORGE framework section for fallback rendering."""
+    return """## Architecture: FORGE Framework
 
 This is a 6-layer agentic system.  The AI (you) is the orchestration layer -- you read goals, call tools, apply args, reference context, and use hard prompts.  You never execute work directly; you delegate to deterministic Python scripts.
 
@@ -1414,16 +1414,16 @@ def _build_system_section(ctx: Dict[str, Any]) -> str:
         parts.append("- Drift detection: `sync_engine.py`")
         parts.append("- DES compliance: `des_assessor.py`, `des_report_generator.py`\n")
 
-    # ATLAS workflow
+    # ANVIL workflow
     atlas_phases = ctx["atlas_phases"]
-    parts.append("### ATLAS Workflow\n")
-    parts.append("Build process follows the ATLAS methodology:\n")
+    parts.append("### ANVIL Workflow\n")
+    parts.append("Build process follows the ANVIL methodology:\n")
     idx = 1
-    if ctx["atlas_config"].get("model_phase", False):
-        parts.append(f"{idx}. **Model** -- Import/validate SysML and DOORS models (M-ATLAS pre-phase)")
+    if ctx["anvil_config"].get("model_phase", False):
+        parts.append(f"{idx}. **Model** -- Import/validate SysML and DOORS models (M-ANVIL pre-phase)")
         idx += 1
     for phase in atlas_phases:
-        desc = ATLAS_PHASE_DESCRIPTIONS.get(phase, phase)
+        desc = ANVIL_PHASE_DESCRIPTIONS.get(phase, phase)
         parts.append(f"{idx}. **{phase.capitalize()}** -- {desc}")
         idx += 1
     parts.append("")
@@ -1539,7 +1539,7 @@ def _build_guardrails_section(ctx: Dict[str, Any]) -> str:
 
     parts.append(
         "- **This application CANNOT generate child applications** -- it is a generated "
-        "child app of ICDEV.  The agentic fitness assessor, app blueprint engine, and "
+        "child app of ICDEV™.  The agentic fitness assessor, app blueprint engine, and "
         "child app generator are intentionally excluded."
     )
 
@@ -1548,7 +1548,7 @@ def _build_guardrails_section(ctx: Dict[str, Any]) -> str:
     if parent.get("enabled", False):
         parts.append("")
         parts.append("### A2A Parent Callback\n")
-        parts.append("When this application needs capabilities not included locally, it calls back to parent ICDEV:")
+        parts.append("When this application needs capabilities not included locally, it calls back to parent ICDEV™:")
         parts.append(f"- **Callback URL:** {parent.get('url', 'N/A')}")
         parts.append(f"- **Auth method:** {parent.get('auth', 'N/A')}")
         parts.append("- **Excluded capabilities:** app generation, modernization")

@@ -1,9 +1,9 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV E2E Test Runner — Playwright Native + MCP Integration
+# ICDEV™ E2E Test Runner — Playwright Native + MCP Integration
 # Adapted from ADW E2E test execution patterns
 
 """
-E2E Test Runner for ICDEV — executes browser-based tests via native Playwright
+E2E Test Runner for ICDEV™ — executes browser-based tests via native Playwright
 or Playwright MCP (fallback).
 
 Usage:
@@ -39,13 +39,14 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from tools.testing.data_types import E2ETestResult
-from tools.testing.utils import make_run_id, setup_logger, ensure_run_dir
+from tools.testing.data_types import E2ETestResult  # noqa: E402
+from tools.testing.utils import make_run_id, setup_logger, ensure_run_dir  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
 # Discovery
 # ---------------------------------------------------------------------------
+
 
 def discover_e2e_tests(mode: str = "auto") -> list:
     """Discover all E2E test files.
@@ -110,13 +111,31 @@ def parse_test_spec(test_file: str) -> dict:
                 break
 
     # Count step-like lines (numbered items or bullet points with action verbs)
-    action_verbs = ["navigate", "click", "fill", "type", "select", "check",
-                    "assert", "verify", "wait", "screenshot", "scroll",
-                    "goto", "expect", "toContain", "toBeVisible", "toHaveTitle"]
+    action_verbs = [
+        "navigate",
+        "click",
+        "fill",
+        "type",
+        "select",
+        "check",
+        "assert",
+        "verify",
+        "wait",
+        "screenshot",
+        "scroll",
+        "goto",
+        "expect",
+        "toContain",
+        "toBeVisible",
+        "toHaveTitle",
+    ]
     for line in lines:
         lower = line.lower().strip()
         if any(verb in lower for verb in action_verbs):
-            if any(verb in lower for verb in ["assert", "verify", "check", "expect", "tocontain", "tobevisible", "tohavetitle"]):
+            if any(
+                verb in lower
+                for verb in ["assert", "verify", "check", "expect", "tocontain", "tobevisible", "tohavetitle"]
+            ):
                 spec["assertions"].append(line.strip())
             else:
                 spec["steps"].append(line.strip())
@@ -128,9 +147,11 @@ def parse_test_spec(test_file: str) -> dict:
 # Playwright availability check
 # ---------------------------------------------------------------------------
 
+
 def _npx_cmd() -> str:
     """Return correct npx command for the platform (npx.cmd on Windows)."""
     from tools.compat.platform_utils import get_npx_cmd
+
     return get_npx_cmd()
 
 
@@ -139,7 +160,9 @@ def check_playwright_installed() -> bool:
     try:
         result = subprocess.run(
             [_npx_cmd(), "playwright", "--version"],
-            capture_output=True, text=True, timeout=15,
+            capture_output=True,
+            text=True,
+            timeout=15,
             cwd=str(PROJECT_ROOT),
         )
         return result.returncode == 0
@@ -150,6 +173,7 @@ def check_playwright_installed() -> bool:
 # ---------------------------------------------------------------------------
 # Native Playwright Execution
 # ---------------------------------------------------------------------------
+
 
 def run_playwright_native(
     run_id: str,
@@ -180,9 +204,13 @@ def run_playwright_native(
 
     # Build command
     cmd = [
-        _npx_cmd(), "playwright", "test",
-        "--project", project,
-        "--reporter", "json",
+        _npx_cmd(),
+        "playwright",
+        "test",
+        "--project",
+        project,
+        "--reporter",
+        "json",
     ]
 
     if test_file:
@@ -221,38 +249,46 @@ def run_playwright_native(
         # If no parseable output, create result from exit code
         if proc.returncode == 0:
             test_name = os.path.basename(test_file).replace(".spec.ts", "") if test_file else "all_e2e"
-            return [E2ETestResult(
-                test_name=test_name,
-                status="passed",
-                test_path=test_file or "tests/e2e/",
-                screenshots=[],
-            )]
+            return [
+                E2ETestResult(
+                    test_name=test_name,
+                    status="passed",
+                    test_path=test_file or "tests/e2e/",
+                    screenshots=[],
+                )
+            ]
         else:
             error_msg = proc.stderr[:500] if proc.stderr else proc.stdout[:500]
             test_name = os.path.basename(test_file).replace(".spec.ts", "") if test_file else "all_e2e"
-            return [E2ETestResult(
-                test_name=test_name,
-                status="failed",
-                test_path=test_file or "tests/e2e/",
-                error=f"Playwright exited with code {proc.returncode}: {error_msg}",
-            )]
+            return [
+                E2ETestResult(
+                    test_name=test_name,
+                    status="failed",
+                    test_path=test_file or "tests/e2e/",
+                    error=f"Playwright exited with code {proc.returncode}: {error_msg}",
+                )
+            ]
 
     except subprocess.TimeoutExpired:
         logger.error("Playwright timed out after 300 seconds")
-        return [E2ETestResult(
-            test_name="playwright_timeout",
-            status="failed",
-            test_path=test_file or "tests/e2e/",
-            error="Playwright test execution timed out after 300 seconds",
-        )]
+        return [
+            E2ETestResult(
+                test_name="playwright_timeout",
+                status="failed",
+                test_path=test_file or "tests/e2e/",
+                error="Playwright test execution timed out after 300 seconds",
+            )
+        ]
     except FileNotFoundError:
         logger.error("npx not found — ensure Node.js is installed")
-        return [E2ETestResult(
-            test_name="playwright_not_found",
-            status="failed",
-            test_path=test_file or "tests/e2e/",
-            error="npx/playwright not found. Install with: npm install -D @playwright/test",
-        )]
+        return [
+            E2ETestResult(
+                test_name="playwright_not_found",
+                status="failed",
+                test_path=test_file or "tests/e2e/",
+                error="npx/playwright not found. Install with: npm install -D @playwright/test",
+            )
+        ]
 
 
 def _parse_playwright_json_results(results_file: Path, logger) -> list:
@@ -314,15 +350,17 @@ def _parse_playwright_report(report: dict, logger) -> list:
                     if not error:
                         error = last_result.get("error", {}).get("snippet", "Test failed")
 
-                results.append(E2ETestResult(
-                    test_name=test_name,
-                    status=pw_status,
-                    test_path=test_file,
-                    screenshots=screenshots,
-                    video_path=video_path,
-                    error=error[:500] if error else None,
-                    cui_banners_verified="cui" in test_name.lower() or "banner" in test_name.lower(),
-                ))
+                results.append(
+                    E2ETestResult(
+                        test_name=test_name,
+                        status=pw_status,
+                        test_path=test_file,
+                        screenshots=screenshots,
+                        video_path=video_path,
+                        error=error[:500] if error else None,
+                        cui_banners_verified="cui" in test_name.lower() or "banner" in test_name.lower(),
+                    )
+                )
 
     # Also parse nested suites recursively
     for suite in suites:
@@ -340,6 +378,7 @@ def _parse_playwright_report(report: dict, logger) -> list:
 # ---------------------------------------------------------------------------
 # MCP Execution (legacy)
 # ---------------------------------------------------------------------------
+
 
 def execute_e2e_test(
     test_file: str,
@@ -384,10 +423,7 @@ def execute_e2e_test(
     claude_path = os.getenv("CLAUDE_CODE_PATH", "claude")
     has_claude = False
     try:
-        result = subprocess.run(
-            [claude_path, "--version"],
-            capture_output=True, text=True, timeout=5
-        )
+        result = subprocess.run([claude_path, "--version"], capture_output=True, text=True, timeout=5)
         has_claude = result.returncode == 0
     except (FileNotFoundError, subprocess.TimeoutExpired):
         pass
@@ -424,27 +460,36 @@ def _execute_via_claude(
         f"Execute the following E2E test using the Playwright MCP server. "
         f"Navigate through each step, take screenshots, and verify all assertions. "
         f"Save screenshots to {screenshot_dir}. "
-        f"Return a JSON object with: test_name, status (passed/failed), screenshots (list of paths), error (null or message).\n\n"
+        f"Return a JSON object with: test_name, status (passed/failed), screenshots (list of paths), error (null or message).\n\n"  # noqa: E501
         f"Test Spec:\n{test_spec}"
     )
 
     try:
         cmd = [
-            claude_path, "-p", prompt,
-            "--model", "sonnet",
-            "--output-format", "json",
+            claude_path,
+            "-p",
+            prompt,
+            "--model",
+            "sonnet",
+            "--output-format",
+            "json",
             "--dangerously-skip-permissions",
         ]
 
         proc = subprocess.run(
-            cmd, capture_output=True, text=True, env=env,
-            timeout=120, cwd=str(PROJECT_ROOT),
+            cmd,
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=120,
+            cwd=str(PROJECT_ROOT),
             stdin=subprocess.DEVNULL,
         )
 
         if proc.returncode == 0 and proc.stdout.strip():
             try:
                 from tools.testing.utils import parse_json
+
                 result_data = parse_json(proc.stdout)
                 return E2ETestResult(
                     test_name=result_data.get("test_name", test_name),
@@ -509,6 +554,7 @@ def _validate_spec(spec: dict, test_name: str, test_file: str, logger) -> E2ETes
 # Vision-based screenshot validation (Phase 23)
 # ---------------------------------------------------------------------------
 
+
 def _run_vision_validation(results: list, logger, assertions=None, strict=False):
     """Run vision-based validation on screenshots from E2E test results.
 
@@ -533,8 +579,7 @@ def _run_vision_validation(results: list, logger, assertions=None, strict=False)
 
     avail = check_vision_available()
     if not avail["available"]:
-        logger.warning("Vision model not available — skipping screenshot validation: %s",
-                        avail.get("error", "unknown"))
+        logger.warning("Vision model not available — skipping screenshot validation: %s", avail.get("error", "unknown"))
         return results
 
     if assertions is None:
@@ -578,8 +623,10 @@ def _run_vision_validation(results: list, logger, assertions=None, strict=False)
 
         result.vision_analysis = vision_results if vision_results else None
 
-    logger.info(f"Vision validation complete: {total_passed} passed, {total_failed} failed, "
-                f"{total_validated - total_passed - total_failed} skipped")
+    logger.info(
+        f"Vision validation complete: {total_passed} passed, {total_failed} failed, "
+        f"{total_validated - total_passed - total_failed} skipped"
+    )
 
     return results
 
@@ -588,33 +635,36 @@ def _run_vision_validation(results: list, logger, assertions=None, strict=False)
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
     """Main entry point."""
-    parser = argparse.ArgumentParser(description="ICDEV E2E Test Runner")
+    parser = argparse.ArgumentParser(description="ICDEV™ E2E Test Runner")
     parser.add_argument("--test-file", help="Path to E2E test (.spec.ts or .md)")
     parser.add_argument("--discover", action="store_true", help="List available E2E tests")
     parser.add_argument("--run-all", action="store_true", help="Run all discovered E2E tests")
     parser.add_argument("--run-id", help="Test run ID (auto-generated if not provided)")
     parser.add_argument("--json", action="store_true", help="Output as JSON")
     parser.add_argument(
-        "--mode", choices=["native", "mcp", "auto"], default="auto",
-        help="Execution mode: native (Playwright CLI), mcp (Claude Code + MCP), auto (prefer native)"
+        "--mode",
+        choices=["native", "mcp", "auto"],
+        default="auto",
+        help="Execution mode: native (Playwright CLI), mcp (Claude Code + MCP), auto (prefer native)",
     )
-    parser.add_argument(
-        "--project", default="chromium",
-        help="Playwright browser project (chromium, firefox, webkit)"
-    )
+    parser.add_argument("--project", default="chromium", help="Playwright browser project (chromium, firefox, webkit)")
     # Vision validation (Phase 23)
     parser.add_argument(
-        "--validate-screenshots", action="store_true",
+        "--validate-screenshots",
+        action="store_true",
         help="Run vision-based validation on captured screenshots",
     )
     parser.add_argument(
-        "--vision-assertions", action="append",
+        "--vision-assertions",
+        action="append",
         help="Custom assertion for vision validation (can be repeated)",
     )
     parser.add_argument(
-        "--vision-strict", action="store_true",
+        "--vision-strict",
+        action="store_true",
         help="Treat vision validation failures as test failures",
     )
     args = parser.parse_args()
@@ -639,7 +689,9 @@ def main():
             print(f"Found {len(tests)} E2E tests (mode: {mode}):")
             for t in tests:
                 spec = parse_test_spec(t)
-                print(f"  {spec['name']}: {spec['description']} ({len(spec['steps'])} steps, {len(spec['assertions'])} assertions)")
+                print(
+                    f"  {spec['name']}: {spec['description']} ({len(spec['steps'])} steps, {len(spec['assertions'])} assertions)"  # noqa: E501
+                )
         return
 
     run_id = args.run_id or make_run_id()
@@ -663,7 +715,8 @@ def main():
         # Vision validation (Phase 23)
         if args.validate_screenshots:
             results = _run_vision_validation(
-                results, logger,
+                results,
+                logger,
                 assertions=args.vision_assertions,
                 strict=args.vision_strict,
             )
@@ -680,9 +733,15 @@ def main():
     elif args.test_file:
         if mode == "native" or args.test_file.endswith(".spec.ts"):
             results = run_playwright_native(run_id, logger, test_file=args.test_file, project=args.project_id)
-            result = results[0] if results else E2ETestResult(
-                test_name="unknown", status="failed", test_path=args.test_file,
-                error="No results from Playwright",
+            result = (
+                results[0]
+                if results
+                else E2ETestResult(
+                    test_name="unknown",
+                    status="failed",
+                    test_path=args.test_file,
+                    error="No results from Playwright",
+                )
             )
         else:
             result = execute_e2e_test(args.test_file, run_id, logger)
@@ -690,7 +749,8 @@ def main():
         # Vision validation (Phase 23)
         if args.validate_screenshots:
             [result] = _run_vision_validation(
-                [result], logger,
+                [result],
+                logger,
                 assertions=args.vision_assertions,
                 strict=args.vision_strict,
             )

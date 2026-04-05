@@ -3,9 +3,9 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """
-ICDEV Mermaid Diagram Definitions
+ICDEV™ Mermaid Diagram Definitions
 ==================================
 Centralized store of all Mermaid diagram strings used in the dashboard.
 Organized by category for the /diagrams catalog page and embedded views.
@@ -19,7 +19,7 @@ DIAGRAM_CATALOG = {
     # ── Workflow Diagrams ───────────────────────────────────────────
 
     "atlas_workflow": {
-        "title": "ATLAS Build Workflow",
+        "title": "ANVIL Build Workflow",
         "description": "5-step application build process: Architect, Trace, Link, Assemble, Stress-test",
         "category": "workflows",
         "roles": [],
@@ -37,7 +37,7 @@ DIAGRAM_CATALOG = {
     },
 
     "m_atlas_workflow": {
-        "title": "M-ATLAS Workflow (MBSE-Enabled)",
+        "title": "M-ANVIL Workflow (MBSE-Enabled)",
         "description": "6-step build with Model pre-phase for MBSE projects",
         "category": "workflows",
         "roles": [],
@@ -344,8 +344,8 @@ DIAGRAM_CATALOG = {
     },
 
     "gotcha_layers": {
-        "title": "GOTCHA Framework Layers",
-        "description": "6-layer agentic system: Goals, Orchestration, Tools, Context, Hard Prompts, Args",
+        "title": "FORGE Framework Layers",
+        "description": "6-layer agentic system: Frameworks, Orchestration, Routines, Guidance, Evidence, Args",
         "category": "architecture",
         "roles": [],
         "mermaid": """flowchart TD

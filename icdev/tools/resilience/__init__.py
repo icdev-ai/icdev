@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""ICDEV Resilience Package — Circuit Breaker, Retry, Correlation, Errors.
+"""ICDEV™ Resilience Package — Circuit Breaker, Retry, Correlation, Errors.
 
-Provides enterprise-grade resilience patterns for the ICDEV platform.
+Provides enterprise-grade resilience patterns for the ICDEV™ platform.
 All implementations use Python stdlib only (air-gap safe).
 
 ADRs: D146 (circuit breaker), D147 (retry), D148 (errors), D149 (correlation).

@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
+from __future__ import annotations
+
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """MOSA Modular Design Analyzer — Static analysis for MOSA modularity metrics.
 
 Analyzes source code to compute coupling, cohesion, interface coverage,
@@ -24,9 +26,9 @@ import ast
 import json
 import os
 import re
-import sqlite3
 import sys
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from graphlib import CycleError, TopologicalSorter
 from pathlib import Path
@@ -109,8 +111,20 @@ def _parse_config() -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 _EXCLUDE_DIRS = {
-    "venv", ".venv", "env", "node_modules", ".git", "__pycache__",
-    "build", "dist", ".tox", ".eggs", "vendor", "target", "bin", "obj",
+    "venv",
+    ".venv",
+    "env",
+    "node_modules",
+    ".git",
+    "__pycache__",
+    "build",
+    "dist",
+    ".tox",
+    ".eggs",
+    "vendor",
+    "target",
+    "bin",
+    "obj",
 }
 
 
@@ -162,7 +176,7 @@ def _extract_python_imports(filepath: Path) -> Tuple[Set[str], bool]:
                 imports.add(top)
                 # Check for ABC / Protocol / abstractmethod
                 if top in ("abc", "typing"):
-                    for alias in (node.names or []):
+                    for alias in node.names or []:
                         if alias.name in ("ABC", "ABCMeta", "abstractmethod", "Protocol"):
                             has_abstract = True
         elif isinstance(node, ast.ClassDef):
@@ -178,18 +192,18 @@ def _extract_python_imports(filepath: Path) -> Tuple[Set[str], bool]:
 
 
 # Regex patterns for non-Python languages
-_JAVA_IMPORT = re.compile(r'^\s*import\s+([\w.]+)', re.MULTILINE)
+_JAVA_IMPORT = re.compile(r"^\s*import\s+([\w.]+)", re.MULTILINE)
 _GO_IMPORT = re.compile(r'"([\w./-]+)"')
-_TS_IMPORT = re.compile(r'''(?:import|require)\s*\(?\s*['"]([^'"]+)['"]''', re.MULTILINE)
-_RUST_USE = re.compile(r'^\s*use\s+([\w:]+)', re.MULTILINE)
-_CS_USING = re.compile(r'^\s*using\s+([\w.]+)', re.MULTILINE)
+_TS_IMPORT = re.compile(r"""(?:import|require)\s*\(?\s*['"]([^'"]+)['"]""", re.MULTILINE)
+_RUST_USE = re.compile(r"^\s*use\s+([\w:]+)", re.MULTILINE)
+_CS_USING = re.compile(r"^\s*using\s+([\w.]+)", re.MULTILINE)
 
 _IFACE_PATTERNS: Dict[str, re.Pattern] = {
-    "java": re.compile(r'\b(interface|abstract\s+class)\b'),
-    "go": re.compile(r'\btype\s+\w+\s+interface\b'),
-    "typescript": re.compile(r'\b(interface|abstract\s+class)\b'),
-    "rust": re.compile(r'\btrait\b'),
-    "csharp": re.compile(r'\b(interface|abstract\s+class)\b'),
+    "java": re.compile(r"\b(interface|abstract\s+class)\b"),
+    "go": re.compile(r"\btype\s+\w+\s+interface\b"),
+    "typescript": re.compile(r"\b(interface|abstract\s+class)\b"),
+    "rust": re.compile(r"\btrait\b"),
+    "csharp": re.compile(r"\b(interface|abstract\s+class)\b"),
 }
 
 _LANG_EXT: Dict[str, Tuple[str, ...]] = {
@@ -235,6 +249,7 @@ def _regex_imports(filepath: Path, lang: str) -> Tuple[Set[str], bool]:
 # ---------------------------------------------------------------------------
 # Graph analysis
 # ---------------------------------------------------------------------------
+
 
 def _build_dependency_graph(
     root: Path,
@@ -306,7 +321,8 @@ def _count_cycles(dep_graph: Dict[str, Set[str]], project_modules: Set[str]) -> 
 
 
 def _detect_circular_deps(
-    dep_graph: Dict[str, Set[str]], project_modules: Set[str],
+    dep_graph: Dict[str, Set[str]],
+    project_modules: Set[str],
 ) -> int:
     """Use graphlib.TopologicalSorter to detect cycles (D40).
 
@@ -328,6 +344,7 @@ def _detect_circular_deps(
 # Metric computation
 # ---------------------------------------------------------------------------
 
+
 def analyze_modularity(project_dir: str) -> Dict[str, Any]:
     """Run full modularity analysis on *project_dir*.
 
@@ -337,8 +354,7 @@ def analyze_modularity(project_dir: str) -> Dict[str, Any]:
     if not root.is_dir():
         return {"error": f"Directory not found: {project_dir}"}
 
-    dep_graph, project_modules, iface_file_count, total_files = \
-        _build_dependency_graph(root)
+    dep_graph, project_modules, iface_file_count, total_files = _build_dependency_graph(root)
 
     module_count = len(project_modules)
     interface_count = iface_file_count  # files declaring interfaces
@@ -354,8 +370,7 @@ def analyze_modularity(project_dir: str) -> Dict[str, Any]:
         total_import_edges += len(deps)
 
     max_possible = module_count * (module_count - 1) if module_count > 1 else 1
-    coupling_score = round(min(cross_module_edges / max_possible, 1.0), 4) \
-        if max_possible > 0 else 0.0
+    coupling_score = round(min(cross_module_edges / max_possible, 1.0), 4) if max_possible > 0 else 0.0
 
     # --- cohesion: avg(internal_refs / total_refs) per module --------------
     cohesion_values: List[float] = []
@@ -371,9 +386,7 @@ def analyze_modularity(project_dir: str) -> Dict[str, Any]:
             cohesion_values.append(1.0)
         else:
             cohesion_values.append(round(internal / total, 4))
-    cohesion_score = round(
-        sum(cohesion_values) / len(cohesion_values), 4
-    ) if cohesion_values else 0.0
+    cohesion_score = round(sum(cohesion_values) / len(cohesion_values), 4) if cohesion_values else 0.0
 
     # --- interface coverage ------------------------------------------------
     # Heuristic: % of modules that import at least one interface-bearing module
@@ -382,9 +395,7 @@ def analyze_modularity(project_dir: str) -> Dict[str, Any]:
         # We approximate: if the module contributes to iface_file_count
         pass
     # Simpler: interface_coverage = interface_files / total_files * 100
-    interface_coverage_pct = round(
-        (iface_file_count / total_files * 100) if total_files > 0 else 0.0, 2
-    )
+    interface_coverage_pct = round((iface_file_count / total_files * 100) if total_files > 0 else 0.0, 2)
 
     # --- circular dependencies (D40) --------------------------------------
     circular_deps = _detect_circular_deps(dep_graph, project_modules)
@@ -392,10 +403,7 @@ def analyze_modularity(project_dir: str) -> Dict[str, Any]:
     # --- ICD / TSP placeholders (populated by other MOSA tools) -----------
     approved_icd_count = 0
     total_icd_required = max(cross_module_edges, 0)
-    icd_completeness = (
-        approved_icd_count / total_icd_required
-        if total_icd_required > 0 else 1.0
-    )
+    icd_completeness = approved_icd_count / total_icd_required if total_icd_required > 0 else 1.0
     tsp_currency = 0.0  # 0 or 1 — set by TSP manager externally
 
     # --- overall modularity score -----------------------------------------
@@ -431,6 +439,7 @@ def analyze_modularity(project_dir: str) -> Dict[str, Any]:
 # Threshold evaluation
 # ---------------------------------------------------------------------------
 
+
 def evaluate_thresholds(metrics: Dict[str, Any]) -> Dict[str, Any]:
     """Compare metrics against mosa_config.yaml thresholds.
 
@@ -449,26 +458,46 @@ def evaluate_thresholds(metrics: Dict[str, Any]) -> Dict[str, Any]:
             passed = value == threshold
         return {"metric": name, "value": value, "threshold": threshold, "op": op, "passed": passed}
 
-    checks.append(_check(
-        "coupling_score", metrics["coupling_score"],
-        "<=", thresholds.get("max_coupling_score", 0.4),
-    ))
-    checks.append(_check(
-        "cohesion_score", metrics["cohesion_score"],
-        ">=", thresholds.get("min_cohesion_score", 0.6),
-    ))
-    checks.append(_check(
-        "interface_coverage_pct", metrics["interface_coverage_pct"],
-        ">=", thresholds.get("min_interface_coverage_pct", 80),
-    ))
-    checks.append(_check(
-        "circular_deps", metrics["circular_deps"],
-        "<=", int(thresholds.get("max_circular_dependencies", 0)),
-    ))
-    checks.append(_check(
-        "overall_modularity_score", metrics["overall_modularity_score"],
-        ">=", thresholds.get("min_modularity_score", 0.6),
-    ))
+    checks.append(
+        _check(
+            "coupling_score",
+            metrics["coupling_score"],
+            "<=",
+            thresholds.get("max_coupling_score", 0.4),
+        )
+    )
+    checks.append(
+        _check(
+            "cohesion_score",
+            metrics["cohesion_score"],
+            ">=",
+            thresholds.get("min_cohesion_score", 0.6),
+        )
+    )
+    checks.append(
+        _check(
+            "interface_coverage_pct",
+            metrics["interface_coverage_pct"],
+            ">=",
+            thresholds.get("min_interface_coverage_pct", 80),
+        )
+    )
+    checks.append(
+        _check(
+            "circular_deps",
+            metrics["circular_deps"],
+            "<=",
+            int(thresholds.get("max_circular_dependencies", 0)),
+        )
+    )
+    checks.append(
+        _check(
+            "overall_modularity_score",
+            metrics["overall_modularity_score"],
+            ">=",
+            thresholds.get("min_modularity_score", 0.6),
+        )
+    )
 
     overall_pass = all(c["passed"] for c in checks)
     return {"passed": overall_pass, "checks": checks}
@@ -478,21 +507,19 @@ def evaluate_thresholds(metrics: Dict[str, Any]) -> Dict[str, Any]:
 # Database storage
 # ---------------------------------------------------------------------------
 
+
 def store_metrics(project_id: str, metrics: Dict[str, Any]) -> str:
     """Persist metrics to ``mosa_modularity_metrics`` table.
 
     Returns the generated metric record ID.
     """
     if not DB_PATH.exists():
-        raise FileNotFoundError(
-            f"Database not found: {DB_PATH}\n"
-            "Run: python tools/db/init_icdev_db.py"
-        )
+        raise FileNotFoundError(f"Database not found: {DB_PATH}\nRun: python tools/db/init_icdev_db.py")
 
     record_id = f"mosa-metric-{uuid.uuid4().hex[:12]}"
     now = datetime.now(timezone.utc).isoformat()
 
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = get_connection()
     try:
         conn.execute(
             """INSERT INTO mosa_modularity_metrics
@@ -527,6 +554,7 @@ def store_metrics(project_id: str, metrics: Dict[str, Any]) -> str:
 # ---------------------------------------------------------------------------
 # Human-readable output (--human)
 # ---------------------------------------------------------------------------
+
 
 def _color(code: str, text: str) -> str:
     """Wrap *text* in ANSI escape if stdout is a TTY."""
@@ -566,8 +594,7 @@ def print_human(metrics: Dict[str, Any], gate: Dict[str, Any]) -> None:
     print(f"\n  {_color('4', 'Gate Evaluation')}:")
     for check in gate["checks"]:
         status = _pass_fail(check["passed"])
-        print(f"    [{status}] {check['metric']}: "
-              f"{check['value']} {check['op']} {check['threshold']}")
+        print(f"    [{status}] {check['metric']}: {check['value']} {check['op']} {check['threshold']}")
 
     overall_status = _pass_fail(gate["passed"])
     print(f"\n  Overall Gate: [{overall_status}]")
@@ -578,28 +605,35 @@ def print_human(metrics: Dict[str, Any], gate: Dict[str, Any]) -> None:
 # CLI entry point
 # ---------------------------------------------------------------------------
 
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="MOSA Modular Design Analyzer — static modularity metrics",
     )
     parser.add_argument(
-        "--project-dir", required=True,
+        "--project-dir",
+        required=True,
         help="Path to the project source tree to analyze",
     )
     parser.add_argument(
-        "--project-id", default=None,
-        help="ICDEV project ID (required for --store)",
+        "--project-id",
+        default=None,
+        help="ICDEV™ project ID (required for --store)",
     )
     parser.add_argument(
-        "--store", action="store_true",
+        "--store",
+        action="store_true",
         help="Persist results to mosa_modularity_metrics table",
     )
     parser.add_argument(
-        "--json", dest="json_mode", action="store_true",
+        "--json",
+        dest="json_mode",
+        action="store_true",
         help="Output results as JSON",
     )
     parser.add_argument(
-        "--human", action="store_true",
+        "--human",
+        action="store_true",
         help="Output results as colored terminal tables",
     )
     args = parser.parse_args()
@@ -616,8 +650,7 @@ def main() -> None:
     record_id = None
     if args.store:
         if not args.project_id:
-            print("ERROR: --project-id is required when using --store",
-                  file=sys.stderr)
+            print("ERROR: --project-id is required when using --store", file=sys.stderr)
             sys.exit(1)
         try:
             record_id = store_metrics(args.project_id, metrics)
@@ -660,20 +693,27 @@ def main() -> None:
     else:
         # Default: concise text summary
         print(f"MOSA Modularity Analysis — {args.project_dir}")
-        print(f"  Modules: {metrics['module_count']}  |  "
-              f"Interfaces: {metrics['interface_count']}  |  "
-              f"Files: {metrics.get('total_files_scanned', '?')}")
-        print(f"  Coupling: {metrics['coupling_score']:.4f}  |  "
-              f"Cohesion: {metrics['cohesion_score']:.4f}  |  "
-              f"Coverage: {metrics['interface_coverage_pct']:.1f}%")
-        print(f"  Circular deps: {metrics['circular_deps']}  |  "
-              f"Overall score: {metrics['overall_modularity_score']:.4f}")
+        print(
+            f"  Modules: {metrics['module_count']}  |  "
+            f"Interfaces: {metrics['interface_count']}  |  "
+            f"Files: {metrics.get('total_files_scanned', '?')}"
+        )
+        print(
+            f"  Coupling: {metrics['coupling_score']:.4f}  |  "
+            f"Cohesion: {metrics['cohesion_score']:.4f}  |  "
+            f"Coverage: {metrics['interface_coverage_pct']:.1f}%"
+        )
+        print(
+            f"  Circular deps: {metrics['circular_deps']}  |  Overall score: {metrics['overall_modularity_score']:.4f}"
+        )
         status = "PASSED" if gate["passed"] else "FAILED"
         print(f"  Gate: {status}")
         for check in gate["checks"]:
             if not check["passed"]:
-                print(f"    VIOLATION: {check['metric']} = {check['value']} "
-                      f"(threshold {check['op']} {check['threshold']})")
+                print(
+                    f"    VIOLATION: {check['metric']} = {check['value']} "
+                    f"(threshold {check['op']} {check['threshold']})"
+                )
         if record_id:
             print(f"  Stored as: {record_id}")
 

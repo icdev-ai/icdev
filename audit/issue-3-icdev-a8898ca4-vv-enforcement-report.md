@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-# Validation Report: V&V Enforcement in ICDEV SDLC Pipeline
+# Validation Report: V&V Enforcement in ICDEV™ SDLC Pipeline
 
 ## Metadata
 - **Issue**: #3 (continuation — V&V enforcement for Dashboard Kanban)
@@ -68,7 +68,7 @@
 | `tests/test_acceptance_validator.py` | CREATED | 24 tests for V&V tool |
 | `tools/testing/data_types.py` | MODIFIED | +3 data types (AcceptanceCriterionResult, UIPageCheckResult, AcceptanceReport) |
 | `args/security_gates.yaml` | MODIFIED | +acceptance_validation gate + thresholds |
-| `goals/build_app.md` | MODIFIED | ATLAS Stress-test V&V integration |
+| `goals/build_app.md` | MODIFIED | ANVIL Stress-test V&V integration |
 | `.claude/commands/feature.md` | MODIFIED | +step 20d, validation report format, commit template |
 | `.claude/commands/bug.md` | MODIFIED | +step 20d, validation report format, commit template |
 | `.claude/commands/chore.md` | MODIFIED | +step 20d, validation report format, commit template |

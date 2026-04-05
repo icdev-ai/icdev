@@ -1,6 +1,7 @@
 # [TEMPLATE: CUI // SP-CTI]
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import sqlite3
@@ -10,15 +11,14 @@ import pytest
 
 import icdev.tools.saas.platform_db as platform_db_mod
 from icdev.tools.saas.platform_db import (
-    EXPECTED_TABLES,
     init_platform_db,
-    verify_platform_db,
 )
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _patch_sqlite_path(tmp_path):
     """Return mock patches that redirect platform_db to a temp directory."""
@@ -33,14 +33,17 @@ def _patch_sqlite_path(tmp_path):
 # Tests
 # ---------------------------------------------------------------------------
 
+
 class TestInitCreatesDatabase:
     """init_platform_db should create the SQLite database file."""
 
     def test_creates_database_file(self, tmp_path):
         db_path = tmp_path / "platform.db"
-        with mock.patch.object(platform_db_mod, "DATA_DIR", tmp_path), \
-             mock.patch.object(platform_db_mod, "SQLITE_PATH", db_path), \
-             mock.patch.dict("os.environ", {}, clear=False):
+        with (
+            mock.patch.object(platform_db_mod, "DATA_DIR", tmp_path),
+            mock.patch.object(platform_db_mod, "SQLITE_PATH", db_path),
+            mock.patch.dict("os.environ", {}, clear=False),
+        ):
             # Ensure PLATFORM_DB_URL is unset so SQLite is used
             with mock.patch.object(platform_db_mod, "_get_db_url", return_value=None):
                 init_platform_db()
@@ -53,9 +56,11 @@ class TestInitCreatesExpectedTables:
     @pytest.fixture(autouse=True)
     def _setup_db(self, tmp_path):
         self.db_path = tmp_path / "platform.db"
-        with mock.patch.object(platform_db_mod, "DATA_DIR", tmp_path), \
-             mock.patch.object(platform_db_mod, "SQLITE_PATH", self.db_path), \
-             mock.patch.object(platform_db_mod, "_get_db_url", return_value=None):
+        with (
+            mock.patch.object(platform_db_mod, "DATA_DIR", tmp_path),
+            mock.patch.object(platform_db_mod, "SQLITE_PATH", self.db_path),
+            mock.patch.object(platform_db_mod, "_get_db_url", return_value=None),
+        ):
             self.result = init_platform_db()
 
     def test_creates_tenants_table(self):
@@ -82,9 +87,11 @@ class TestInitIdempotent:
 
     def test_init_twice_succeeds(self, tmp_path):
         db_path = tmp_path / "platform.db"
-        with mock.patch.object(platform_db_mod, "DATA_DIR", tmp_path), \
-             mock.patch.object(platform_db_mod, "SQLITE_PATH", db_path), \
-             mock.patch.object(platform_db_mod, "_get_db_url", return_value=None):
+        with (
+            mock.patch.object(platform_db_mod, "DATA_DIR", tmp_path),
+            mock.patch.object(platform_db_mod, "SQLITE_PATH", db_path),
+            mock.patch.object(platform_db_mod, "_get_db_url", return_value=None),
+        ):
             result1 = init_platform_db()
             result2 = init_platform_db()
         assert result1["status"] == "ok"
@@ -96,9 +103,11 @@ class TestColumnTypes:
 
     def test_tenants_has_expected_columns(self, tmp_path):
         db_path = tmp_path / "platform.db"
-        with mock.patch.object(platform_db_mod, "DATA_DIR", tmp_path), \
-             mock.patch.object(platform_db_mod, "SQLITE_PATH", db_path), \
-             mock.patch.object(platform_db_mod, "_get_db_url", return_value=None):
+        with (
+            mock.patch.object(platform_db_mod, "DATA_DIR", tmp_path),
+            mock.patch.object(platform_db_mod, "SQLITE_PATH", db_path),
+            mock.patch.object(platform_db_mod, "_get_db_url", return_value=None),
+        ):
             init_platform_db()
 
         conn = sqlite3.connect(str(db_path))
@@ -121,9 +130,11 @@ class TestParentDirectoryCreation:
     def test_creates_parent_directories(self, tmp_path):
         nested = tmp_path / "a" / "b" / "c"
         db_path = nested / "platform.db"
-        with mock.patch.object(platform_db_mod, "DATA_DIR", nested), \
-             mock.patch.object(platform_db_mod, "SQLITE_PATH", db_path), \
-             mock.patch.object(platform_db_mod, "_get_db_url", return_value=None):
+        with (
+            mock.patch.object(platform_db_mod, "DATA_DIR", nested),
+            mock.patch.object(platform_db_mod, "SQLITE_PATH", db_path),
+            mock.patch.object(platform_db_mod, "_get_db_url", return_value=None),
+        ):
             init_platform_db()
         assert nested.exists()
         assert db_path.exists()
@@ -134,9 +145,11 @@ class TestReturnStructure:
 
     def test_result_contains_status_and_backend(self, tmp_path):
         db_path = tmp_path / "platform.db"
-        with mock.patch.object(platform_db_mod, "DATA_DIR", tmp_path), \
-             mock.patch.object(platform_db_mod, "SQLITE_PATH", db_path), \
-             mock.patch.object(platform_db_mod, "_get_db_url", return_value=None):
+        with (
+            mock.patch.object(platform_db_mod, "DATA_DIR", tmp_path),
+            mock.patch.object(platform_db_mod, "SQLITE_PATH", db_path),
+            mock.patch.object(platform_db_mod, "_get_db_url", return_value=None),
+        ):
             result = init_platform_db()
         assert result["status"] == "ok"
         assert result["backend"] == "sqlite"

@@ -1,10 +1,10 @@
 # [TEMPLATE: CUI // SP-CTI]
 #!/usr/bin/env python3
-"""SAFe PI-Cadenced Migration Progress Tracker for ICDEV DoD Modernization.
+"""SAFe PI-Cadenced Migration Progress Tracker for ICDEV™ DoD Modernization.
 
 Tracks migration progress across Program Increments (PIs) with velocity
 metrics, burndown projections, compliance gate checks, and detailed PI
-reporting.  Integrates with the ICDEV operational database to snapshot
+reporting.  Integrates with the ICDEV™ operational database to snapshot
 migration state, compute task-completion velocity, project remaining work,
 and enforce ATO compliance gates at PI boundaries.
 
@@ -55,6 +55,7 @@ import json
 import math
 import sqlite3
 import sys
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -76,6 +77,7 @@ COMPLIANCE_THRESHOLD = 0.95
 # Database helper
 # ---------------------------------------------------------------------------
 
+
 def _get_db(db_path=None):
     """Return a sqlite3 connection with Row factory enabled.
 
@@ -86,8 +88,7 @@ def _get_db(db_path=None):
         sqlite3.Connection with row_factory = sqlite3.Row.
     """
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(path))
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
@@ -135,8 +136,8 @@ def _log_audit(conn, event_type, actor, action, project_id=None, details=None):
 # 1. create_pi_migration_snapshot
 # ============================================================================
 
-def create_pi_migration_snapshot(plan_id, pi_number, snapshot_type="manual",
-                                  notes=None, db_path=None):
+
+def create_pi_migration_snapshot(plan_id, pi_number, snapshot_type="manual", notes=None, db_path=None):
     """Snapshot the current migration state for a given plan and PI.
 
     Queries migration_tasks for the plan, counts statuses, counts migrated
@@ -154,17 +155,13 @@ def create_pi_migration_snapshot(plan_id, pi_number, snapshot_type="manual",
         Dict containing all snapshot fields.
     """
     if snapshot_type not in VALID_SNAPSHOT_TYPES:
-        raise ValueError(
-            f"Invalid snapshot_type '{snapshot_type}'. "
-            f"Valid: {VALID_SNAPSHOT_TYPES}"
-        )
+        raise ValueError(f"Invalid snapshot_type '{snapshot_type}'. Valid: {VALID_SNAPSHOT_TYPES}")
 
     conn = _get_db(db_path)
     try:
         # -- Task status counts --
         rows = conn.execute(
-            "SELECT status, COUNT(*) as cnt FROM migration_tasks "
-            "WHERE plan_id = ? GROUP BY status",
+            "SELECT status, COUNT(*) as cnt FROM migration_tasks WHERE plan_id = ? GROUP BY status",
             (plan_id,),
         ).fetchall()
 
@@ -195,8 +192,7 @@ def create_pi_migration_snapshot(plan_id, pi_number, snapshot_type="manual",
         components_remaining = 0
         if legacy_app_id:
             total_comps = conn.execute(
-                "SELECT COUNT(*) as cnt FROM legacy_components "
-                "WHERE legacy_app_id = ?",
+                "SELECT COUNT(*) as cnt FROM legacy_components WHERE legacy_app_id = ?",
                 (legacy_app_id,),
             ).fetchone()["cnt"]
             components_remaining = max(0, total_comps - components_migrated)
@@ -283,12 +279,22 @@ def create_pi_migration_snapshot(plan_id, pi_number, snapshot_type="manual",
                 hours_spent, notes, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                plan_id, pi_number, snapshot_type,
-                tasks_total, tasks_completed, tasks_in_progress, tasks_blocked,
-                components_migrated, components_remaining,
-                apis_migrated, tables_migrated,
-                test_coverage, compliance_score,
-                hours_spent, notes, now,
+                plan_id,
+                pi_number,
+                snapshot_type,
+                tasks_total,
+                tasks_completed,
+                tasks_in_progress,
+                tasks_blocked,
+                components_migrated,
+                components_remaining,
+                apis_migrated,
+                tables_migrated,
+                test_coverage,
+                compliance_score,
+                hours_spent,
+                notes,
+                now,
             ),
         )
 
@@ -337,6 +343,7 @@ def create_pi_migration_snapshot(plan_id, pi_number, snapshot_type="manual",
 # 2. get_migration_velocity
 # ============================================================================
 
+
 def get_migration_velocity(plan_id, db_path=None):
     """Compute tasks/components completed per PI and velocity trends.
 
@@ -353,9 +360,7 @@ def get_migration_velocity(plan_id, db_path=None):
     conn = _get_db(db_path)
     try:
         rows = conn.execute(
-            "SELECT * FROM migration_progress "
-            "WHERE plan_id = ? AND snapshot_type = 'pi_end' "
-            "ORDER BY pi_number ASC",
+            "SELECT * FROM migration_progress WHERE plan_id = ? AND snapshot_type = 'pi_end' ORDER BY pi_number ASC",
             (plan_id,),
         ).fetchall()
     finally:
@@ -404,14 +409,8 @@ def get_migration_velocity(plan_id, db_path=None):
     if len(recent) >= 2:
         recent_tasks = [d["tasks_completed_delta"] for d in recent]
         # Check if trending up or down
-        increasing = all(
-            recent_tasks[j] >= recent_tasks[j - 1]
-            for j in range(1, len(recent_tasks))
-        )
-        decreasing = all(
-            recent_tasks[j] <= recent_tasks[j - 1]
-            for j in range(1, len(recent_tasks))
-        )
+        increasing = all(recent_tasks[j] >= recent_tasks[j - 1] for j in range(1, len(recent_tasks)))
+        decreasing = all(recent_tasks[j] <= recent_tasks[j - 1] for j in range(1, len(recent_tasks)))
         if increasing and recent_tasks[-1] > recent_tasks[0]:
             trend = "improving"
         elif decreasing and recent_tasks[-1] < recent_tasks[0]:
@@ -433,6 +432,7 @@ def get_migration_velocity(plan_id, db_path=None):
 # ============================================================================
 # 3. get_migration_burndown
 # ============================================================================
+
 
 def get_migration_burndown(plan_id, db_path=None):
     """Project remaining work vs velocity to estimate completion PI.
@@ -495,11 +495,13 @@ def get_migration_burndown(plan_id, db_path=None):
         snap_dict = dict(snap)
         tasks_remaining = total_tasks - snap_dict["tasks_completed"]
         ideal_remaining = max(0, total_tasks - ideal_per_pi * (idx + 1))
-        burndown_data.append({
-            "pi_number": snap_dict["pi_number"],
-            "tasks_remaining": tasks_remaining,
-            "ideal_remaining": round(ideal_remaining, 1),
-        })
+        burndown_data.append(
+            {
+                "pi_number": snap_dict["pi_number"],
+                "tasks_remaining": tasks_remaining,
+                "ideal_remaining": round(ideal_remaining, 1),
+            }
+        )
 
     # On-track: remaining work is at or below ideal line
     on_track = True
@@ -555,6 +557,7 @@ def _project_pi_label(current_pi, additional_pis):
 # 4. compare_pi_snapshots
 # ============================================================================
 
+
 def compare_pi_snapshots(plan_id, from_pi, to_pi, db_path=None):
     """Compute deltas between two PI snapshots for the same plan.
 
@@ -573,16 +576,12 @@ def compare_pi_snapshots(plan_id, from_pi, to_pi, db_path=None):
     conn = _get_db(db_path)
     try:
         from_row = conn.execute(
-            "SELECT * FROM migration_progress "
-            "WHERE plan_id = ? AND pi_number = ? "
-            "ORDER BY created_at DESC LIMIT 1",
+            "SELECT * FROM migration_progress WHERE plan_id = ? AND pi_number = ? ORDER BY created_at DESC LIMIT 1",
             (plan_id, from_pi),
         ).fetchone()
 
         to_row = conn.execute(
-            "SELECT * FROM migration_progress "
-            "WHERE plan_id = ? AND pi_number = ? "
-            "ORDER BY created_at DESC LIMIT 1",
+            "SELECT * FROM migration_progress WHERE plan_id = ? AND pi_number = ? ORDER BY created_at DESC LIMIT 1",
             (plan_id, to_pi),
         ).fetchone()
     finally:
@@ -598,10 +597,17 @@ def compare_pi_snapshots(plan_id, from_pi, to_pi, db_path=None):
 
     # Numeric fields to compare
     compare_fields = [
-        "tasks_total", "tasks_completed", "tasks_in_progress", "tasks_blocked",
-        "components_migrated", "components_remaining",
-        "apis_migrated", "tables_migrated",
-        "test_coverage", "compliance_score", "hours_spent",
+        "tasks_total",
+        "tasks_completed",
+        "tasks_in_progress",
+        "tasks_blocked",
+        "components_migrated",
+        "components_remaining",
+        "apis_migrated",
+        "tables_migrated",
+        "test_coverage",
+        "compliance_score",
+        "hours_spent",
     ]
 
     deltas = {}
@@ -620,10 +626,7 @@ def compare_pi_snapshots(plan_id, from_pi, to_pi, db_path=None):
         highlights.append(f"{abs(deltas['tasks_blocked'])} blockers resolved")
     if deltas["compliance_score"] != 0:
         direction = "improved" if deltas["compliance_score"] > 0 else "decreased"
-        highlights.append(
-            f"Compliance score {direction} by "
-            f"{abs(deltas['compliance_score']):.4f}"
-        )
+        highlights.append(f"Compliance score {direction} by {abs(deltas['compliance_score']):.4f}")
     if deltas["hours_spent"] > 0:
         highlights.append(f"{deltas['hours_spent']:.1f} hours spent")
 
@@ -641,6 +644,7 @@ def compare_pi_snapshots(plan_id, from_pi, to_pi, db_path=None):
 # ============================================================================
 # 5. assign_tasks_to_pi
 # ============================================================================
+
 
 def assign_tasks_to_pi(plan_id, pi_number, task_ids, db_path=None):
     """Assign one or more migration tasks to a specific PI.
@@ -664,8 +668,7 @@ def assign_tasks_to_pi(plan_id, pi_number, task_ids, db_path=None):
         assigned = 0
         for tid in task_ids:
             cursor = conn.execute(
-                "UPDATE migration_tasks SET pi_number = ? "
-                "WHERE id = ? AND plan_id = ?",
+                "UPDATE migration_tasks SET pi_number = ? WHERE id = ? AND plan_id = ?",
                 (pi_number, tid, plan_id),
             )
             assigned += cursor.rowcount
@@ -688,6 +691,7 @@ def assign_tasks_to_pi(plan_id, pi_number, task_ids, db_path=None):
 # ============================================================================
 # 6. get_pi_tasks
 # ============================================================================
+
 
 def get_pi_tasks(plan_id, pi_number, db_path=None):
     """Retrieve all migration tasks assigned to a specific PI.
@@ -744,8 +748,8 @@ def get_pi_tasks(plan_id, pi_number, db_path=None):
 # 7. generate_pi_migration_report
 # ============================================================================
 
-def generate_pi_migration_report(plan_id, pi_number, output_dir=None,
-                                  db_path=None):
+
+def generate_pi_migration_report(plan_id, pi_number, output_dir=None, db_path=None):
     """Generate a CUI-marked markdown PI migration report.
 
     Combines task data, velocity, burndown, snapshot comparison, and
@@ -812,10 +816,10 @@ def generate_pi_migration_report(plan_id, pi_number, output_dir=None,
     lines.append("|-------------|-------|------------|")
     lines.append(f"| Completed   | {completed:>5} | {pct:>9.1f}% |")
     if total_pi > 0:
-        lines.append(f"| In Progress | {in_prog:>5} | {in_prog/total_pi*100:>9.1f}% |")
-        lines.append(f"| Blocked     | {blocked:>5} | {blocked/total_pi*100:>9.1f}% |")
-        lines.append(f"| Pending     | {pending:>5} | {pending/total_pi*100:>9.1f}% |")
-        lines.append(f"| Skipped     | {skipped:>5} | {skipped/total_pi*100:>9.1f}% |")
+        lines.append(f"| In Progress | {in_prog:>5} | {in_prog / total_pi * 100:>9.1f}% |")
+        lines.append(f"| Blocked     | {blocked:>5} | {blocked / total_pi * 100:>9.1f}% |")
+        lines.append(f"| Pending     | {pending:>5} | {pending / total_pi * 100:>9.1f}% |")
+        lines.append(f"| Skipped     | {skipped:>5} | {skipped / total_pi * 100:>9.1f}% |")
     lines.append(f"| **Total**   | **{total_pi}** |            |")
     lines.append("")
 
@@ -840,10 +844,7 @@ def generate_pi_migration_report(plan_id, pi_number, output_dir=None,
         for d in velocity["snapshots"]:
             bar_len = int(d["tasks_completed_delta"] / max_tasks * bar_width)
             bar = "#" * bar_len
-            lines.append(
-                f"  {d['pi']:<10} | {bar:<{bar_width}} | "
-                f"{d['tasks_completed_delta']} tasks"
-            )
+            lines.append(f"  {d['pi']:<10} | {bar:<{bar_width}} | {d['tasks_completed_delta']} tasks")
         lines.append("```")
         lines.append("")
 
@@ -855,26 +856,16 @@ def generate_pi_migration_report(plan_id, pi_number, output_dir=None,
     lines.append(f"**Remaining:** {burndown.get('remaining_tasks', 'N/A')}  ")
     lines.append(f"**Avg Velocity:** {burndown.get('avg_tasks_per_pi', 'N/A')} tasks/PI  ")
     remaining_pis = burndown.get("remaining_pis")
-    lines.append(
-        f"**Projected Remaining PIs:** "
-        f"{remaining_pis if remaining_pis is not None else 'N/A'}  "
-    )
-    lines.append(
-        f"**Projected Completion:** "
-        f"{burndown.get('projected_completion_pi', 'N/A')}  "
-    )
+    lines.append(f"**Projected Remaining PIs:** {remaining_pis if remaining_pis is not None else 'N/A'}  ")
+    lines.append(f"**Projected Completion:** {burndown.get('projected_completion_pi', 'N/A')}  ")
     lines.append(f"**On Track:** {'YES' if burndown.get('on_track') else 'NO'}  ")
     lines.append("")
 
     # --- Hours ---
     lines.append("## Hours: Estimated vs Actual")
     lines.append("")
-    est_total = sum(
-        (t.get("estimated_hours") or 0) for t in pi_data["tasks"]
-    )
-    act_total = sum(
-        (t.get("actual_hours") or 0) for t in pi_data["tasks"]
-    )
+    est_total = sum((t.get("estimated_hours") or 0) for t in pi_data["tasks"])
+    act_total = sum((t.get("actual_hours") or 0) for t in pi_data["tasks"])
     variance = act_total - est_total
     lines.append("| Metric    | Hours |")
     lines.append("|-----------|-------|")
@@ -888,10 +879,7 @@ def generate_pi_migration_report(plan_id, pi_number, output_dir=None,
     lines.append("")
     gate_status = "PASS" if gate.get("passed") else "FAIL"
     lines.append(f"**Status:** {gate_status}  ")
-    lines.append(
-        f"**Score:** {gate.get('score', 0):.4f} "
-        f"(threshold: {gate.get('threshold', COMPLIANCE_THRESHOLD)})  "
-    )
+    lines.append(f"**Score:** {gate.get('score', 0):.4f} (threshold: {gate.get('threshold', COMPLIANCE_THRESHOLD)})  ")
     if gate.get("issues"):
         lines.append("")
         lines.append("**Issues:**")
@@ -916,18 +904,13 @@ def generate_pi_migration_report(plan_id, pi_number, output_dir=None,
     next_pi = _next_pi_label(pi_number)
     next_data = get_pi_tasks(plan_id, next_pi, db_path=db_path)
     if next_data["tasks"]:
-        high_pri = [
-            t for t in next_data["tasks"]
-            if t["priority"] in (1, 2, "1", "2", "critical", "high")
-        ]
+        high_pri = [t for t in next_data["tasks"] if t["priority"] in (1, 2, "1", "2", "critical", "high")]
         if high_pri:
             lines.append(f"High-priority tasks for {next_pi}:")
             for t in high_pri[:10]:
                 lines.append(f"- [{t['id']}] {t['title']} (priority: {t['priority']})")
         else:
-            lines.append(
-                f"{next_data['task_count']} tasks assigned to {next_pi}."
-            )
+            lines.append(f"{next_data['task_count']} tasks assigned to {next_pi}.")
     else:
         lines.append(f"No tasks yet assigned to {next_pi}.")
     lines.append("")
@@ -997,6 +980,7 @@ def _next_pi_label(pi_label):
 # 8. check_pi_compliance_gate
 # ============================================================================
 
+
 def check_pi_compliance_gate(plan_id, pi_number, db_path=None):
     """Verify that ATO compliance is maintained for the given PI.
 
@@ -1035,11 +1019,14 @@ def check_pi_compliance_gate(plan_id, pi_number, db_path=None):
 
         # Check compliance-affecting tasks
         compliance_task_types = (
-            "compliance_check", "stig_remediation", "ssp_update", "cui_marking",
+            "compliance_check",
+            "stig_remediation",
+            "ssp_update",
+            "cui_marking",
         )
         placeholders = ",".join("?" * len(compliance_task_types))
         incomplete_compliance = conn.execute(
-            f"SELECT COUNT(*) as cnt FROM migration_tasks "
+            f"SELECT COUNT(*) as cnt FROM migration_tasks "  # nosec B608 -- table/column names are internal constants, not user input
             f"WHERE plan_id = ? AND pi_number = ? "
             f"AND task_type IN ({placeholders}) "
             f"AND status NOT IN ('completed', 'skipped')",
@@ -1054,22 +1041,15 @@ def check_pi_compliance_gate(plan_id, pi_number, db_path=None):
 
     if score < COMPLIANCE_THRESHOLD:
         passed = False
-        issues.append(
-            f"Compliance score {score:.4f} is below threshold "
-            f"{COMPLIANCE_THRESHOLD}"
-        )
+        issues.append(f"Compliance score {score:.4f} is below threshold {COMPLIANCE_THRESHOLD}")
 
     if blocked_critical > 0:
         passed = False
-        issues.append(
-            f"{blocked_critical} critical blocker(s) remain unresolved"
-        )
+        issues.append(f"{blocked_critical} critical blocker(s) remain unresolved")
 
     if incomplete_compliance > 0:
         passed = False
-        issues.append(
-            f"{incomplete_compliance} compliance task(s) not yet completed"
-        )
+        issues.append(f"{incomplete_compliance} compliance task(s) not yet completed")
 
     return {
         "plan_id": plan_id,
@@ -1084,6 +1064,7 @@ def check_pi_compliance_gate(plan_id, pi_number, db_path=None):
 # ============================================================================
 # 9. update_task_status
 # ============================================================================
+
 
 def update_task_status(task_id, status, actual_hours=None, db_path=None):
     """Update the status (and optionally actual_hours) of a migration task.
@@ -1101,9 +1082,7 @@ def update_task_status(task_id, status, actual_hours=None, db_path=None):
         Dict with the updated task fields.
     """
     if status not in VALID_TASK_STATUSES:
-        raise ValueError(
-            f"Invalid status '{status}'. Valid: {VALID_TASK_STATUSES}"
-        )
+        raise ValueError(f"Invalid status '{status}'. Valid: {VALID_TASK_STATUSES}")
 
     conn = _get_db(db_path)
     try:
@@ -1125,21 +1104,17 @@ def update_task_status(task_id, status, actual_hours=None, db_path=None):
         # Build update
         if actual_hours is not None and completed_at:
             conn.execute(
-                "UPDATE migration_tasks "
-                "SET status = ?, actual_hours = ?, completed_at = ? "
-                "WHERE id = ?",
+                "UPDATE migration_tasks SET status = ?, actual_hours = ?, completed_at = ? WHERE id = ?",
                 (status, actual_hours, completed_at, task_id),
             )
         elif actual_hours is not None:
             conn.execute(
-                "UPDATE migration_tasks SET status = ?, actual_hours = ? "
-                "WHERE id = ?",
+                "UPDATE migration_tasks SET status = ?, actual_hours = ? WHERE id = ?",
                 (status, actual_hours, task_id),
             )
         elif completed_at:
             conn.execute(
-                "UPDATE migration_tasks SET status = ?, completed_at = ? "
-                "WHERE id = ?",
+                "UPDATE migration_tasks SET status = ?, completed_at = ? WHERE id = ?",
                 (status, completed_at, task_id),
             )
         else:
@@ -1150,14 +1125,12 @@ def update_task_status(task_id, status, actual_hours=None, db_path=None):
 
         # Update migration_plans completed_tasks count
         completed_count = conn.execute(
-            "SELECT COUNT(*) as cnt FROM migration_tasks "
-            "WHERE plan_id = ? AND status = 'completed'",
+            "SELECT COUNT(*) as cnt FROM migration_tasks WHERE plan_id = ? AND status = 'completed'",
             (plan_id,),
         ).fetchone()["cnt"]
 
         conn.execute(
-            "UPDATE migration_plans SET completed_tasks = ?, updated_at = ? "
-            "WHERE id = ?",
+            "UPDATE migration_plans SET completed_tasks = ?, updated_at = ? WHERE id = ?",
             (completed_count, _now_iso(), plan_id),
         )
 
@@ -1192,6 +1165,7 @@ def update_task_status(task_id, status, actual_hours=None, db_path=None):
 # ============================================================================
 # 10. get_dashboard
 # ============================================================================
+
 
 def get_dashboard(plan_id, db_path=None):
     """Generate a summary dashboard for the migration plan.
@@ -1265,9 +1239,7 @@ def get_dashboard(plan_id, db_path=None):
     # Compliance
     compliance_gate = None
     if current_pi:
-        compliance_gate = check_pi_compliance_gate(
-            plan_id, current_pi, db_path=db_path
-        )
+        compliance_gate = check_pi_compliance_gate(plan_id, current_pi, db_path=db_path)
 
     # Progress percentage
     progress_pct = 0.0
@@ -1298,8 +1270,7 @@ def get_dashboard(plan_id, db_path=None):
             "tasks_completed": current_pi_tasks["completed"],
         },
         "velocity": {
-            "last_3_pis": velocity["snapshots"][-3:]
-                if velocity["snapshots"] else [],
+            "last_3_pis": velocity["snapshots"][-3:] if velocity["snapshots"] else [],
             "trend": velocity["trend"],
             "averages": velocity["averages"],
         },
@@ -1311,16 +1282,12 @@ def get_dashboard(plan_id, db_path=None):
         },
         "compliance": {
             "score": compliance_gate["score"] if compliance_gate else 0.0,
-            "gate_passed": compliance_gate["passed"]
-                if compliance_gate else False,
+            "gate_passed": compliance_gate["passed"] if compliance_gate else False,
             "issues": compliance_gate["issues"] if compliance_gate else [],
         },
         "blockers": {
             "count": len(blockers),
-            "top_items": [
-                {"id": b["id"], "title": b["title"], "priority": b["priority"]}
-                for b in blockers
-            ],
+            "top_items": [{"id": b["id"], "title": b["title"], "priority": b["priority"]} for b in blockers],
         },
     }
 
@@ -1328,6 +1295,7 @@ def get_dashboard(plan_id, db_path=None):
 # ============================================================================
 # CLI display helpers
 # ============================================================================
+
 
 def _print_dashboard(dashboard):
     """Pretty-print the dashboard to stdout with CUI markings.
@@ -1369,9 +1337,11 @@ def _print_dashboard(dashboard):
     if vel["last_3_pis"]:
         print("  Recent PIs:")
         for d in vel["last_3_pis"]:
-            print(f"    {d['pi']}: {d['tasks_completed_delta']} tasks, "
-                  f"{d['components_delta']} components, "
-                  f"{d['hours_delta']} hours")
+            print(
+                f"    {d['pi']}: {d['tasks_completed_delta']} tasks, "
+                f"{d['components_delta']} components, "
+                f"{d['hours_delta']} hours"
+            )
     print()
 
     bd = dashboard["burndown"]
@@ -1409,6 +1379,7 @@ def _print_dashboard(dashboard):
 # CLI entry point
 # ============================================================================
 
+
 def main():
     """CLI entry point for the PI-cadenced migration progress tracker.
 
@@ -1424,53 +1395,65 @@ def main():
     )
 
     parser.add_argument(
-        "--plan-id", required=True,
+        "--plan-id",
+        required=True,
         help="Migration plan identifier (e.g. MP-001)",
     )
 
     # Action flags (mutually exclusive)
     action = parser.add_mutually_exclusive_group(required=True)
     action.add_argument(
-        "--snapshot", action="store_true",
+        "--snapshot",
+        action="store_true",
         help="Create a PI migration snapshot",
     )
     action.add_argument(
-        "--velocity", action="store_true",
+        "--velocity",
+        action="store_true",
         help="Show velocity metrics across PIs",
     )
     action.add_argument(
-        "--burndown", action="store_true",
+        "--burndown",
+        action="store_true",
         help="Show burndown projection",
     )
     action.add_argument(
-        "--compare", action="store_true",
+        "--compare",
+        action="store_true",
         help="Compare two PI snapshots (requires --from-pi and --to-pi)",
     )
     action.add_argument(
-        "--assign", action="store_true",
+        "--assign",
+        action="store_true",
         help="Assign tasks to a PI (requires --pi and --tasks)",
     )
     action.add_argument(
-        "--pi-report", action="store_true",
+        "--pi-report",
+        action="store_true",
         help="Generate a PI migration report (requires --pi)",
     )
     action.add_argument(
-        "--gate", action="store_true",
+        "--gate",
+        action="store_true",
         help="Check compliance gate for a PI (requires --pi)",
     )
     action.add_argument(
-        "--update-task", action="store_true",
+        "--update-task",
+        action="store_true",
         help="Update a task status (requires --task-id and --status)",
     )
     action.add_argument(
-        "--dashboard", action="store_true",
+        "--dashboard",
+        action="store_true",
         help="Show migration dashboard summary",
     )
 
     # Supporting arguments
     parser.add_argument("--pi", help="PI label (e.g. PI-25.3)")
     parser.add_argument(
-        "--type", dest="snapshot_type", default="manual",
+        "--type",
+        dest="snapshot_type",
+        default="manual",
         choices=VALID_SNAPSHOT_TYPES,
         help="Snapshot type (default: manual)",
     )
@@ -1488,12 +1471,15 @@ def main():
         help="Task status (for --update-task)",
     )
     parser.add_argument(
-        "--hours", type=float,
+        "--hours",
+        type=float,
         help="Actual hours spent (for --update-task)",
     )
     parser.add_argument("--output-dir", help="Output directory for reports")
     parser.add_argument(
-        "--json", action="store_true", dest="output_json",
+        "--json",
+        action="store_true",
+        dest="output_json",
         help="Output results as JSON",
     )
 
@@ -1582,9 +1568,7 @@ def main():
                     print("  Burndown Data:")
                     for bd in result["burndown_data"]:
                         print(
-                            f"    {bd['pi_number']}: "
-                            f"{bd['tasks_remaining']} remaining "
-                            f"(ideal: {bd['ideal_remaining']})"
+                            f"    {bd['pi_number']}: {bd['tasks_remaining']} remaining (ideal: {bd['ideal_remaining']})"
                         )
                 print("=" * 60)
                 print("CUI // SP-CTI")
@@ -1595,7 +1579,9 @@ def main():
             if not args.from_pi or not args.to_pi:
                 parser.error("--from-pi and --to-pi are required for --compare")
             result = compare_pi_snapshots(
-                args.plan_id, args.from_pi, args.to_pi,
+                args.plan_id,
+                args.from_pi,
+                args.to_pi,
             )
             if args.output_json:
                 print(json.dumps(result, indent=2, default=str))
@@ -1629,12 +1615,17 @@ def main():
             task_ids = [t.strip() for t in args.tasks.split(",") if t.strip()]
             count = assign_tasks_to_pi(args.plan_id, args.pi, task_ids)
             if args.output_json:
-                print(json.dumps({
-                    "plan_id": args.plan_id,
-                    "pi_number": args.pi,
-                    "tasks_requested": len(task_ids),
-                    "tasks_assigned": count,
-                }, indent=2))
+                print(
+                    json.dumps(
+                        {
+                            "plan_id": args.plan_id,
+                            "pi_number": args.pi,
+                            "tasks_requested": len(task_ids),
+                            "tasks_assigned": count,
+                        },
+                        indent=2,
+                    )
+                )
             else:
                 print(f"Assigned {count}/{len(task_ids)} tasks to {args.pi}")
 

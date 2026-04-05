@@ -1,7 +1,7 @@
 # [TEMPLATE: CUI // SP-CTI]
 """Config-driven LLM router.
 
-Reads args/llm_config.yaml and resolves each ICDEV function to a
+Reads args/llm_config.yaml and resolves each ICDEV™ function to a
 provider + model via fallback chain. Probes provider availability
 and caches results.
 """
@@ -43,7 +43,7 @@ def _expand_env(value):
 
 
 class LLMRouter:
-    """Config-driven router that maps ICDEV functions to LLM providers.
+    """Config-driven router that maps ICDEV™ functions to LLM providers.
 
     Walks fallback chains, probes availability, and returns the first
     responsive provider + model pair.
@@ -487,7 +487,7 @@ class LLMRouter:
         the next model in the chain rather than raising immediately.
 
         Args:
-            function: ICDEV function name (e.g. 'code_generation', 'nlq_sql').
+            function: ICDEV™ function name (e.g. 'code_generation', 'nlq_sql').
             request: Vendor-agnostic LLM request.
 
         Returns:

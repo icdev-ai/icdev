@@ -62,9 +62,9 @@ test:agent-health:
   script:
     - pip install --cache-dir .cache/pip pytest pyyaml
     - echo "Running agent health tests..."
-    - python -m pytest tools/builder/agentic_test_templates/test_agent_health.py -v --tb=short --junitxml=agent-health-report.xml || true
+    - python -m pytest tools/builder/agentic_test_templates/test_agent_health.py -v --tb=short --junitxml=agent-health-report.xml || true  # noqa: E501
     - echo "Running A2A callback tests..."
-    - python -m pytest tools/builder/agentic_test_templates/test_a2a_callback.py -v --tb=short --junitxml=a2a-callback-report.xml || true
+    - python -m pytest tools/builder/agentic_test_templates/test_a2a_callback.py -v --tb=short --junitxml=a2a-callback-report.xml || true  # noqa: E501
   artifacts:
     when: always
     paths:
@@ -196,14 +196,20 @@ def generate_pipeline(project_path: str, project_config: dict = None) -> list:
     stages_filter = config.get("stages", None)  # None = all stages
 
     all_stages = [
-        "lint", "test", "agent-test", "security-scan", "build",
-        "devsecops-check", "compliance-check", "deploy-staging", "deploy-prod",
+        "lint",
+        "test",
+        "agent-test",
+        "security-scan",
+        "build",
+        "devsecops-check",
+        "compliance-check",
+        "deploy-staging",
+        "deploy-prod",
     ]
     if stages_filter:
         stages = [s for s in all_stages if s in stages_filter]
     else:
         stages = all_stages
-
 
     pipeline = f"""{_cui_header()}
 # =============================================================================
@@ -266,7 +272,7 @@ lint:python:
   script:
     - pip install --cache-dir .cache/pip flake8 black isort mypy
     - echo "Running flake8..."
-    - flake8 --max-line-length=120 --exclude=.git,__pycache__,venv --format=json --output-file=flake8-report.json . || true
+    - flake8 --max-line-length=120 --exclude=.git,__pycache__,venv --format=json --output-file=flake8-report.json . || true  # noqa: E501
     - flake8 --max-line-length=120 --exclude=.git,__pycache__,venv .
     - echo "Checking black formatting..."
     - black --check --diff .
@@ -333,7 +339,7 @@ test:unit:
   script:
     - pip install --cache-dir .cache/pip -r requirements.txt
     - pip install pytest pytest-cov pytest-asyncio
-    - python -m pytest tests/ -v --cov=. --cov-report=xml:coverage.xml --cov-report=html:htmlcov --junitxml=junit-report.xml
+    - python -m pytest tests/ -v --cov=. --cov-report=xml:coverage.xml --cov-report=html:htmlcov --junitxml=junit-report.xml  # noqa: E501
   coverage: '/TOTAL.*\\s+(\\d+%)/'
   artifacts:
     when: always
@@ -541,6 +547,7 @@ build:docker:
         if project_id or devsecops_profile:
             try:
                 from tools.devsecops.pipeline_security_generator import generate_security_stages
+
                 ds_result = generate_security_stages(
                     project_id or project_name,
                     profile=devsecops_profile,
@@ -646,7 +653,7 @@ compliance:sbom:
   script:
     - pip install cyclonedx-bom
     - echo "Generating SBOM..."
-    - cyclonedx-py environment --output sbom.json --format json 2>/dev/null || cyclonedx-py -r -i requirements.txt -o sbom.json --format json 2>/dev/null || echo '{"bomFormat":"CycloneDX","specVersion":"1.5","components":[]}' > sbom.json
+    - cyclonedx-py environment --output sbom.json --format json 2>/dev/null || cyclonedx-py -r -i requirements.txt -o sbom.json --format json 2>/dev/null || echo '{"bomFormat":"CycloneDX","specVersion":"1.5","components":[]}' > sbom.json  # noqa: E501
     - echo "SBOM generated successfully"
   artifacts:
     paths:
@@ -735,7 +742,7 @@ deploy:prod:
     - kubectl config use-context production
     - |
       # Record current version for rollback
-      CURRENT_IMAGE=$(kubectl get deployment/${CI_PROJECT_NAME} -n ${K8S_NAMESPACE_PROD} -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || echo "none")
+      CURRENT_IMAGE=$(kubectl get deployment/${CI_PROJECT_NAME} -n ${K8S_NAMESPACE_PROD} -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || echo "none")  # noqa: E501
       echo "Current image: ${CURRENT_IMAGE}"
       echo "${CURRENT_IMAGE}" > rollback-image.txt
     - |
@@ -782,7 +789,7 @@ rollback:prod:
     - echo "Waiting for rollback to complete..."
     - kubectl rollout status deployment/${CI_PROJECT_NAME} -n ${K8S_NAMESPACE_PROD} --timeout=300s
     - echo "Rollback completed. Current image:"
-    - kubectl get deployment/${CI_PROJECT_NAME} -n ${K8S_NAMESPACE_PROD} -o jsonpath='{.spec.template.spec.containers[0].image}'
+    - kubectl get deployment/${CI_PROJECT_NAME} -n ${K8S_NAMESPACE_PROD} -o jsonpath='{.spec.template.spec.containers[0].image}'  # noqa: E501
   when: manual
   needs:
     - job: deploy:prod

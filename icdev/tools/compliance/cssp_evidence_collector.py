@@ -514,7 +514,7 @@ def collect_evidence(project_id, project_dir=None, output_dir=None, db_path=None
     a CUI-marked markdown report.
 
     Args:
-        project_id: The project identifier in the ICDEV database.
+        project_id: The project identifier in the ICDEV™ database.
         project_dir: Override project directory (defaults to DB project record).
         output_dir: Output directory for manifest and report files.
         db_path: Override database path.
@@ -709,7 +709,7 @@ def collect_evidence(project_id, project_dir=None, output_dir=None, db_path=None
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Collect CSSP evidence artifacts")
-    parser.add_argument("--project-id", required=True, help="Project ID in ICDEV database")
+    parser.add_argument("--project-id", required=True, help="Project ID in ICDEV™ database")
     parser.add_argument("--project-dir", type=Path, help="Project directory to scan (overrides DB)")
     parser.add_argument("--output-dir", type=Path, help="Output directory for evidence manifest and report")
     parser.add_argument("--db-path", type=Path, default=DB_PATH, help="Database path")

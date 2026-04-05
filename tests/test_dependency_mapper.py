@@ -2,11 +2,9 @@
 # CUI // SP-CTI
 """Tests for tools/translation/dependency_mapper.py — Phase 43 dependency mapping."""
 
-import json
 import sys
 from pathlib import Path
 
-import pytest
 
 # Ensure project root on path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -23,6 +21,7 @@ from icdev.tools.translation.dependency_mapper import (
 # ---------------------------------------------------------------------------
 # Tests: Language normalization
 # ---------------------------------------------------------------------------
+
 
 class TestLanguageNormalization:
     """Tests for language name normalization."""
@@ -50,6 +49,7 @@ class TestLanguageNormalization:
 # Tests: Load mappings
 # ---------------------------------------------------------------------------
 
+
 class TestLoadMappings:
     """Tests for loading dependency mappings from JSON."""
 
@@ -64,7 +64,11 @@ class TestLoadMappings:
         mappings = load_mappings()
         domains = mappings.get("domains", {})
         expected_domains = [
-            "http_client", "web_framework", "json", "testing", "logging",
+            "http_client",
+            "web_framework",
+            "json",
+            "testing",
+            "logging",
         ]
         for domain in expected_domains:
             assert domain in domains, f"Missing domain: {domain}"
@@ -83,6 +87,7 @@ class TestLoadMappings:
 # ---------------------------------------------------------------------------
 # Tests: Single import resolution
 # ---------------------------------------------------------------------------
+
 
 class TestResolveImport:
     """Tests for resolving a single import."""
@@ -133,6 +138,7 @@ class TestResolveImport:
 # Tests: Batch import resolution
 # ---------------------------------------------------------------------------
 
+
 class TestResolveImports:
     """Tests for batch import resolution."""
 
@@ -141,7 +147,8 @@ class TestResolveImports:
         mappings = load_mappings()
         results = resolve_imports(
             ["flask", "requests", "json", "os"],
-            "python", "java",
+            "python",
+            "java",
             mappings,
         )
         assert isinstance(results, list)
@@ -157,6 +164,7 @@ class TestResolveImports:
 # ---------------------------------------------------------------------------
 # Tests: Domain coverage
 # ---------------------------------------------------------------------------
+
 
 class TestDomainCoverage:
     """Tests for coverage reporting."""
@@ -191,6 +199,7 @@ class TestDomainCoverage:
 # ---------------------------------------------------------------------------
 # Tests: Edge cases
 # ---------------------------------------------------------------------------
+
 
 class TestEdgeCases:
     """Edge case tests for dependency mapper."""

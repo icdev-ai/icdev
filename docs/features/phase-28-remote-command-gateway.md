@@ -9,16 +9,16 @@
 | Status | Implemented |
 | Priority | P2 |
 | Dependencies | Phase 21 (SaaS Multi-Tenancy), Phase 24 (DevSecOps Pipeline Security) |
-| Author | ICDEV Architect Agent |
+| Author | ICDEV™ Architect Agent |
 | Date | 2026-02-23 |
 
 ---
 
 ## 1. Problem Statement
 
-Field users, PMs, and ISSOs often need to issue ICDEV commands without access to a full development environment. A PM checking project status from a mobile device, an ISSO reviewing compliance posture from a tablet, or a field analyst requesting a quick security scan should not need VPN access, SSH tunnels, or the VSCode extension installed. Messaging platforms (Slack, Teams, Mattermost) are already the primary communication channels for most government and defense teams, making them a natural interface for lightweight command access.
+Field users, PMs, and ISSOs often need to issue ICDEV™ commands without access to a full development environment. A PM checking project status from a mobile device, an ISSO reviewing compliance posture from a tablet, or a field analyst requesting a quick security scan should not need VPN access, SSH tunnels, or the VSCode extension installed. Messaging platforms (Slack, Teams, Mattermost) are already the primary communication channels for most government and defense teams, making them a natural interface for lightweight command access.
 
-However, exposing a powerful agentic system to messaging channels introduces significant security risks. Without proper identity verification, an attacker could impersonate a legitimate user and execute commands. Without classification filtering, CUI or SECRET content could leak to channels not authorized for that classification level. Without command allowlists, destructive operations (deploy, delete) could be triggered from low-security channels. Without rate limiting, a compromised account could flood the system with automated requests. The challenge is enabling convenience without compromising the security posture that ICDEV's entire architecture is designed to protect.
+However, exposing a powerful agentic system to messaging channels introduces significant security risks. Without proper identity verification, an attacker could impersonate a legitimate user and execute commands. Without classification filtering, CUI or SECRET content could leak to channels not authorized for that classification level. Without command allowlists, destructive operations (deploy, delete) could be triggered from low-security channels. Without rate limiting, a compromised account could flood the system with automated requests. The challenge is enabling convenience without compromising the security posture that ICDEV™'s entire architecture is designed to protect.
 
 Phase 28 implements a Remote Command Gateway (port 8458) that receives commands from 5 messaging channels (Telegram, Slack, Teams, Mattermost, internal chat) and validates every request through an 8-gate security chain (signature, bot/replay, identity, authentication, classification, RBAC, rate limit, domain authority). Responses are filtered by Impact Level so content above a channel's maximum classification is redacted with a dashboard link. User binding is mandatory before any command execution, with a challenge-response ceremony for connected environments and admin pre-provisioning for air-gapped deployments. Air-gapped mode (`environment.mode: air_gapped`) auto-disables internet-dependent channels (Telegram, Slack, Teams), leaving only Mattermost and internal chat available.
 
@@ -26,7 +26,7 @@ Phase 28 implements a Remote Command Gateway (port 8458) that receives commands 
 
 ## 2. Goals
 
-1. Enable users to **issue ICDEV commands from messaging channels** (Telegram, Slack, Teams, Mattermost, internal chat) with full security validation and audit trail
+1. Enable users to **issue ICDEV™ commands from messaging channels** (Telegram, Slack, Teams, Mattermost, internal chat) with full security validation and audit trail
 2. Implement an **8-gate security chain** that validates every command: signature verification, bot/replay rejection, identity resolution, authentication, classification check, RBAC, rate limiting, and domain authority
 3. Enforce **IL-aware response filtering** so content above a channel's maximum classification level is redacted and replaced with a dashboard link
 4. Require **mandatory user binding** before command execution, with challenge-response ceremony (connected mode) and admin pre-provisioning (air-gapped mode)
@@ -51,7 +51,7 @@ Phase 28 implements a Remote Command Gateway (port 8458) that receives commands 
 [8-Gate Security Chain]
   |-- Gate 1: Signature (HMAC verification of webhook payload)
   |-- Gate 2: Bot/Replay (reject bots, reject timestamps >5min old)
-  |-- Gate 3: Identity (resolve channel user -> ICDEV user binding)
+  |-- Gate 3: Identity (resolve channel user -> ICDEV™ user binding)
   |-- Gate 4: Authentication (validate user is active)
   |-- Gate 5: Classification (reject commands above channel max_il)
   |-- Gate 6: RBAC (check role permissions for command category)
@@ -114,10 +114,10 @@ Gate 7 SHALL enforce per-user rate limits (30 requests/minute) and per-channel r
 ### 4.2 Identity and Binding
 
 #### REQ-28-005: Mandatory User Binding
-The system SHALL require a verified user binding (channel user ID to ICDEV user) before any command execution. Unbound users are rejected at Gate 3 with instructions to initiate binding.
+The system SHALL require a verified user binding (channel user ID to ICDEV™ user) before any command execution. Unbound users are rejected at Gate 3 with instructions to initiate binding.
 
 #### REQ-28-006: Binding Ceremony (Connected)
-In connected environments, user binding SHALL use a challenge-response ceremony: user sends `/bind`, gateway returns an 8-character hex challenge code with 10-minute TTL, user enters the code in the ICDEV dashboard.
+In connected environments, user binding SHALL use a challenge-response ceremony: user sends `/bind`, gateway returns an 8-character hex challenge code with 10-minute TTL, user enters the code in the ICDEV™ dashboard.
 
 #### REQ-28-007: Admin Pre-Provisioning (Air-Gapped)
 In air-gapped environments, the system SHALL support admin pre-provisioning of user bindings via CLI (`user_binder.py --provision`) without requiring internet connectivity.
@@ -157,7 +157,7 @@ The Mattermost adapter SHALL use REST API (not WebSocket) for compatibility with
 
 | Table | Purpose |
 |-------|---------|
-| `remote_user_bindings` | Channel user ID to ICDEV user mappings with TTL and status |
+| `remote_user_bindings` | Channel user ID to ICDEV™ user mappings with TTL and status |
 | `remote_command_log` | Append-only command execution log (NIST AU compliant) |
 | `remote_command_allowlist` | Per-channel command permissions and restrictions |
 
@@ -169,7 +169,7 @@ The Mattermost adapter SHALL use REST API (not WebSocket) for compatibility with
 |------|---------|
 | `tools/gateway/gateway_agent.py` | Flask gateway app on port 8458 with webhook routes |
 | `tools/gateway/security_chain.py` | 8-gate security validation pipeline |
-| `tools/gateway/command_router.py` | Command dispatch to ICDEV tools |
+| `tools/gateway/command_router.py` | Command dispatch to ICDEV™ tools |
 | `tools/gateway/response_filter.py` | IL-aware content redaction |
 | `tools/gateway/user_binder.py` | User binding management (ceremony + pre-provision) |
 | `tools/gateway/adapters/` | Channel adapters (ABC pattern: Telegram, Slack, Teams, Mattermost, Internal) |

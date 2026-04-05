@@ -4,7 +4,7 @@ You are running a FedRAMP security assessment against a project. Follow these st
 
 ## Context
 
-FedRAMP (Federal Risk and Authorization Management Program) provides a standardized approach to security assessment for cloud products. ICDEV supports Moderate and High baselines aligned with NIST SP 800-53 Rev 5.
+FedRAMP (Federal Risk and Authorization Management Program) provides a standardized approach to security assessment for cloud products. ICDEV™ supports Moderate and High baselines aligned with NIST SP 800-53 Rev 5.
 
 ## Steps
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Dirty-tracking state push for ICDEV dashboard (Phase 44 — D268-D270).
+"""Dirty-tracking state push for ICDEV™ dashboard (Phase 44 — D268-D270).
 
 Per-client dirty/pushed version counters with debounced coalescing.
 Adapted from Agent Zero's StateMonitor pattern.

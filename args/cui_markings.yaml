@@ -1,5 +1,5 @@
 # CUI Classification Marking Configuration
-# Applied to all ICDEV-generated artifacts per DoD CUI Program
+# Applied to all ICDEV™-generated artifacts per DoD CUI Program
 
 enabled: false
 
@@ -10,7 +10,7 @@ designation_indicator:
   controlled_by: "Department of Defense"
   categories: "CTI"
   distribution: "Distribution D"
-  poc: "ICDEV System Administrator"
+  poc: "ICDEV™ System Administrator"
 
 portion_marking: "(CUI)"
 decontrol_instructions: "Decontrol on: 10 years from creation date"
@@ -21,7 +21,7 @@ code_header: |
   Controlled by: Department of Defense
   CUI Category: CTI
   Distribution: D
-  POC: ICDEV System Administrator
+  POC: ICDEV™ System Administrator
 
 document_header: |
   //////////////////////////////////////////////////////////////////

@@ -335,7 +335,7 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="search_knowledge",
-        description="Search the ICDEV knowledge base for patterns, solutions, and best practices. Supports keyword search with optional pattern type filtering.",
+        description="Search the ICDEV™ knowledge base for patterns, solutions, and best practices. Supports keyword search with optional pattern type filtering.",
         input_schema={
             "type": "object",
             "properties": {

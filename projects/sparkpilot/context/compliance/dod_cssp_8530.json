@@ -5,7 +5,7 @@
     "source": "Department of Defense, Office of the DoD CIO",
     "classification": "CUI // SP-CTI",
     "last_updated": "2026-02-15",
-    "description": "CSSP requirements catalog aligned to DoDI 8530.01 Cybersecurity Activities Support to DoD Information Network Operations. Covers the five CSSP functional areas: Identify, Protect, Detect, Respond, and Sustain. Each requirement maps to NIST 800-53 controls and includes automation level for ICDEV integration."
+    "description": "CSSP requirements catalog aligned to DoDI 8530.01 Cybersecurity Activities Support to DoD Information Network Operations. Covers the five CSSP functional areas: Identify, Protect, Detect, Respond, and Sustain. Each requirement maps to NIST 800-53 controls and includes automation level for ICDEV™ integration."
   },
   "requirements": [
     {

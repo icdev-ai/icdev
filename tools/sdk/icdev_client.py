@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""ICDEV Python SDK client — thin wrapper around CLI tools (D191).
+"""ICDEV™ Python SDK client — thin wrapper around CLI tools (D191).
 
-Wraps existing ICDEV CLI tools via subprocess.run() with --json flag.
+Wraps existing ICDEV™ CLI tools via subprocess.run() with --json flag.
 Works offline, air-gap safe, no server dependency.  Project-scoped —
 set project_id once, use everywhere.
 
@@ -25,17 +25,17 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 
 class ICDEVError(Exception):
-    """Raised when an ICDEV CLI tool returns a non-zero exit code."""
+    """Raised when an ICDEV™ CLI tool returns a non-zero exit code."""
 
     def __init__(self, tool: str, returncode: int, stderr: str):
         self.tool = tool
         self.returncode = returncode
         self.stderr = stderr
-        super().__init__(f"ICDEV tool '{tool}' failed (exit {returncode}): {stderr}")
+        super().__init__(f"ICDEV™ tool '{tool}' failed (exit {returncode}): {stderr}")
 
 
 class ICDEVClient:
-    """Thin Python SDK wrapping ICDEV CLI tools.
+    """Thin Python SDK wrapping ICDEV™ CLI tools.
 
     Args:
         project_id: Project UUID (used for compliance/security tools).
@@ -68,7 +68,7 @@ class ICDEVClient:
             Parsed JSON dict from tool stdout.
 
         Raises:
-            ICDEVError: If tool exits with non-zero code.
+            ICDEV™Error: If tool exits with non-zero code.
         """
         full_path = str(BASE_DIR / tool_path)
         cmd = [self._python, full_path] + (args or []) + ["--json"]
@@ -116,54 +116,45 @@ class ICDEVClient:
 
     def generate_ssp(self) -> dict:
         """Generate System Security Plan."""
-        return self._run("tools/compliance/ssp_generator.py",
-                         ["--project-id", self.project_id])
+        return self._run("tools/compliance/ssp_generator.py", ["--project-id", self.project_id])
 
     def generate_poam(self) -> dict:
         """Generate Plan of Action and Milestones."""
-        return self._run("tools/compliance/poam_generator.py",
-                         ["--project-id", self.project_id])
+        return self._run("tools/compliance/poam_generator.py", ["--project-id", self.project_id])
 
     def check_stig(self) -> dict:
         """Run STIG compliance check."""
-        return self._run("tools/compliance/stig_checker.py",
-                         ["--project-id", self.project_id])
+        return self._run("tools/compliance/stig_checker.py", ["--project-id", self.project_id])
 
     def generate_sbom(self, project_dir: str = None) -> dict:
         """Generate Software Bill of Materials."""
         pdir = project_dir or self.project_dir or "."
-        return self._run("tools/compliance/sbom_generator.py",
-                         ["--project-dir", pdir])
+        return self._run("tools/compliance/sbom_generator.py", ["--project-dir", pdir])
 
     def query_crosswalk(self, control: str) -> dict:
         """Query the compliance crosswalk engine."""
-        return self._run("tools/compliance/crosswalk_engine.py",
-                         ["--control", control])
+        return self._run("tools/compliance/crosswalk_engine.py", ["--control", control])
 
     def assess_compliance(self) -> dict:
         """Multi-framework compliance assessment."""
-        return self._run("tools/compliance/multi_regime_assessor.py",
-                         ["--project-id", self.project_id])
+        return self._run("tools/compliance/multi_regime_assessor.py", ["--project-id", self.project_id])
 
     # ── Security ────────────────────────────────────────────────────
 
     def run_sast(self, project_dir: str = None) -> dict:
         """Run SAST scan."""
         pdir = project_dir or self.project_dir or "."
-        return self._run("tools/security/sast_runner.py",
-                         ["--project-dir", pdir])
+        return self._run("tools/security/sast_runner.py", ["--project-dir", pdir])
 
     def audit_dependencies(self, project_dir: str = None) -> dict:
         """Run dependency audit."""
         pdir = project_dir or self.project_dir or "."
-        return self._run("tools/security/dependency_auditor.py",
-                         ["--project-dir", pdir])
+        return self._run("tools/security/dependency_auditor.py", ["--project-dir", pdir])
 
     def detect_secrets(self, project_dir: str = None) -> dict:
         """Run secret detection."""
         pdir = project_dir or self.project_dir or "."
-        return self._run("tools/security/secret_detector.py",
-                         ["--project-dir", pdir])
+        return self._run("tools/security/secret_detector.py", ["--project-dir", pdir])
 
     # ── Builder ─────────────────────────────────────────────────────
 
@@ -177,21 +168,20 @@ class ICDEVClient:
     def run_tests(self, project_dir: str = None) -> dict:
         """Run test suite."""
         pdir = project_dir or self.project_dir or "."
-        return self._run("tools/testing/test_orchestrator.py",
-                         ["--project-dir", pdir])
+        return self._run("tools/testing/test_orchestrator.py", ["--project-dir", pdir])
 
     # ── Dev Profiles ────────────────────────────────────────────────
 
     def resolve_profile(self, scope: str = "project") -> dict:
         """Resolve the effective dev profile (5-layer cascade)."""
         scope_id = self.project_id or "unknown"
-        return self._run("tools/builder/dev_profile_manager.py",
-                         ["--scope", scope, "--scope-id", scope_id, "--resolve"])
+        return self._run(
+            "tools/builder/dev_profile_manager.py", ["--scope", scope, "--scope-id", scope_id, "--resolve"]
+        )
 
     def detect_profile(self, repo_path: str) -> dict:
         """Auto-detect dev profile from repository."""
-        return self._run("tools/builder/profile_detector.py",
-                         ["--repo-path", repo_path])
+        return self._run("tools/builder/profile_detector.py", ["--repo-path", repo_path])
 
     # ── Context ─────────────────────────────────────────────────────
 

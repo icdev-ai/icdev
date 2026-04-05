@@ -23,17 +23,23 @@ Usage:
     python tools/compliance/oscal_tools.py --catalog-stats --json
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import logging
 import os
 import shutil
-import sqlite3
 import subprocess
 import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+
+_BASE = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(_BASE))
+
+from tools.db.storage import get_connection  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -44,9 +50,9 @@ CONFIG_PATH = BASE_DIR / "args" / "oscal_tools_config.yaml"
 # ---------------------------------------------------------------------------
 # Cached detection results (D302)
 # ---------------------------------------------------------------------------
-_JAVA_INFO = None       # {"available": bool, "version": str, "path": str}
+_JAVA_INFO = None  # {"available": bool, "version": str, "path": str}
 _OSCAL_CLI_INFO = None  # {"available": bool, "version": str, "jar_path": str}
-_PYDANTIC_INFO = None   # {"available": bool, "version": str}
+_PYDANTIC_INFO = None  # {"available": bool, "version": str}
 
 # OSCAL JSON key → internal artifact type mapping (shared across validators)
 _OSCAL_TYPE_MAP = {
@@ -73,6 +79,7 @@ def _get_pydantic_version():
     """Return installed pydantic major version (0 if not installed)."""
     try:
         import pydantic
+
         return int(pydantic.VERSION.split(".")[0])
     except Exception:
         return 0
@@ -82,6 +89,7 @@ def _load_config():
     """Load oscal_tools_config.yaml. Returns dict or defaults."""
     try:
         import yaml
+
         if CONFIG_PATH.exists():
             with open(CONFIG_PATH, "r", encoding="utf-8") as f:
                 return yaml.safe_load(f) or {}
@@ -93,6 +101,7 @@ def _load_config():
 # ---------------------------------------------------------------------------
 # Tool Detection (D302-D304)
 # ---------------------------------------------------------------------------
+
 
 def _detect_java():
     """Detect Java Runtime availability and version."""
@@ -115,13 +124,16 @@ def _detect_java():
     try:
         proc = subprocess.run(
             [java_cmd, "-version"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
             stdin=subprocess.DEVNULL,
         )
         # Java outputs version to stderr
         output = proc.stderr or proc.stdout or ""
         # Extract version like "11.0.20" or "17.0.8"
         import re
+
         match = re.search(r'"?(\d+)[\._](\d+)', output)
         version = match.group(0).strip('"') if match else "unknown"
         major = int(match.group(1)) if match else 0
@@ -206,13 +218,17 @@ def _detect_oscal_cli():
 
     if not java["available"]:
         _OSCAL_CLI_INFO = {
-            "available": False, "version": None, "jar_path": cli_path,
+            "available": False,
+            "version": None,
+            "jar_path": cli_path,
             "mode": cli_mode,
             "error": f"Java not available: {java.get('error', 'not found')}",
         }
     elif not cli_path:
         _OSCAL_CLI_INFO = {
-            "available": False, "version": None, "jar_path": None,
+            "available": False,
+            "version": None,
+            "jar_path": None,
             "mode": None,
             "error": "oscal-cli not found (set OSCAL_CLI_PATH or place in vendor/oscal-cli/)",
         }
@@ -229,16 +245,23 @@ def _detect_oscal_cli():
                 jvm_args = config.get("oscal_cli", {}).get("jvm_args", ["-Xmx512m"])
                 cmd = [java_cmd] + jvm_args + ["-jar", cli_path, "--version"]
             proc = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=15,
-                stdin=subprocess.DEVNULL, env=env,
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=15,
+                stdin=subprocess.DEVNULL,
+                env=env,
             )
             version = (proc.stdout or proc.stderr or "").strip()
         except Exception:
             version = "unknown"
 
         _OSCAL_CLI_INFO = {
-            "available": True, "version": version, "jar_path": cli_path,
-            "mode": cli_mode, "error": None,
+            "available": True,
+            "version": version,
+            "jar_path": cli_path,
+            "mode": cli_mode,
+            "error": None,
         }
 
     return _OSCAL_CLI_INFO
@@ -260,6 +283,7 @@ def _detect_oscal_pydantic():
     oscal_pkg = None
     try:
         import importlib.metadata
+
         oscal_pkg = importlib.metadata.version("oscal-pydantic")
     except Exception:
         pass
@@ -267,30 +291,39 @@ def _detect_oscal_pydantic():
     if oscal_pkg and pv >= 2:
         # oscal-pydantic installed + pydantic v2 → v1_compat or builtin fallback
         _PYDANTIC_INFO = {
-            "available": True, "version": oscal_pkg,
-            "pydantic_version": pv, "compat_mode": "v1_compat_or_builtin_v2",
+            "available": True,
+            "version": oscal_pkg,
+            "pydantic_version": pv,
+            "compat_mode": "v1_compat_or_builtin_v2",
             "error": None,
         }
     elif oscal_pkg and pv >= 1:
         # oscal-pydantic + pydantic v1 → native
         _PYDANTIC_INFO = {
-            "available": True, "version": oscal_pkg,
-            "pydantic_version": pv, "compat_mode": "native",
+            "available": True,
+            "version": oscal_pkg,
+            "pydantic_version": pv,
+            "compat_mode": "native",
             "error": None,
         }
     elif pv >= 2:
         # No oscal-pydantic but pydantic v2 → builtin models
         _PYDANTIC_INFO = {
-            "available": True, "version": f"builtin_v2 (pydantic {pv})",
-            "pydantic_version": pv, "compat_mode": "builtin_v2",
+            "available": True,
+            "version": f"builtin_v2 (pydantic {pv})",
+            "pydantic_version": pv,
+            "compat_mode": "builtin_v2",
             "error": None,
         }
     else:
         _PYDANTIC_INFO = {
-            "available": pv > 0, "version": None,
-            "pydantic_version": pv, "compat_mode": None,
-            "error": ("pydantic not installed" if pv == 0
-                      else "oscal-pydantic not installed (pip install oscal-pydantic)"),
+            "available": pv > 0,
+            "version": None,
+            "pydantic_version": pv,
+            "compat_mode": None,
+            "error": (
+                "pydantic not installed" if pv == 0 else "oscal-pydantic not installed (pip install oscal-pydantic)"
+            ),
         }
 
     return _PYDANTIC_INFO
@@ -353,6 +386,7 @@ def detect_oscal_tools():
 # oscal-cli subprocess wrapper (D302)
 # ---------------------------------------------------------------------------
 
+
 def _run_oscal_cli(subcommand, cli_args, timeout=None):
     """Run oscal-cli via subprocess.
 
@@ -387,8 +421,13 @@ def _run_oscal_cli(subcommand, cli_args, timeout=None):
     try:
         env = _cli_env()
         proc = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=timeout,
-            cwd=str(BASE_DIR), stdin=subprocess.DEVNULL, env=env,
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            cwd=str(BASE_DIR),
+            stdin=subprocess.DEVNULL,
+            env=env,
         )
         return {
             "success": proc.returncode == 0,
@@ -406,11 +445,13 @@ def _run_oscal_cli(subcommand, cli_args, timeout=None):
 # Multi-layer Validation (D302, D303, D306)
 # ---------------------------------------------------------------------------
 
+
 def _validate_structural(file_path, artifact_type=None):
-    """Layer 1: ICDEV built-in structural validation (always available)."""
+    """Layer 1: ICDEV™ built-in structural validation (always available)."""
     start = time.monotonic()
     try:
         from tools.compliance.oscal_generator import validate_oscal
+
         result = validate_oscal(file_path, artifact_type)
     except ImportError:
         result = {"valid": False, "errors": ["oscal_generator not available"]}
@@ -498,6 +539,7 @@ def _get_builtin_v2_model(artifact_type):
         oscal_version: str = Field(alias="oscal-version")
 
     if artifact_type == "ssp":
+
         class _SSP(PydanticBaseModel):
             model_config = ConfigDict(extra="allow", populate_by_name=True)
             uuid: str
@@ -510,9 +552,11 @@ def _get_builtin_v2_model(artifact_type):
         class _Doc(PydanticBaseModel):
             model_config = ConfigDict(extra="allow", populate_by_name=True)
             system_security_plan: _SSP = Field(alias="system-security-plan")
+
         return _Doc
 
     elif artifact_type == "poam":
+
         class _POAM(PydanticBaseModel):
             model_config = ConfigDict(extra="allow", populate_by_name=True)
             uuid: str
@@ -521,9 +565,11 @@ def _get_builtin_v2_model(artifact_type):
         class _Doc(PydanticBaseModel):
             model_config = ConfigDict(extra="allow", populate_by_name=True)
             poam: _POAM = Field(alias="plan-of-action-and-milestones")
+
         return _Doc
 
     elif artifact_type == "assessment_results":
+
         class _AR(PydanticBaseModel):
             model_config = ConfigDict(extra="allow", populate_by_name=True)
             uuid: str
@@ -532,9 +578,11 @@ def _get_builtin_v2_model(artifact_type):
         class _Doc(PydanticBaseModel):
             model_config = ConfigDict(extra="allow", populate_by_name=True)
             assessment_results: _AR = Field(alias="assessment-results")
+
         return _Doc
 
     elif artifact_type == "component_definition":
+
         class _CD(PydanticBaseModel):
             model_config = ConfigDict(extra="allow", populate_by_name=True)
             uuid: str
@@ -543,6 +591,7 @@ def _get_builtin_v2_model(artifact_type):
         class _Doc(PydanticBaseModel):
             model_config = ConfigDict(extra="allow", populate_by_name=True)
             component_definition: _CD = Field(alias="component-definition")
+
         return _Doc
 
     return None
@@ -576,6 +625,7 @@ def _load_oscal_model(artifact_type):
     try:
         import importlib
         import warnings
+
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             mod = importlib.import_module(module_name)
@@ -622,8 +672,7 @@ def _validate_pydantic(file_path, artifact_type=None):
     """
     pv = _get_pydantic_version()
     if pv == 0:
-        return {"validator": "oscal_pydantic", "skipped": True,
-                "reason": "pydantic not installed"}
+        return {"validator": "oscal_pydantic", "skipped": True, "reason": "pydantic not installed"}
 
     start = time.monotonic()
     errors = []
@@ -646,8 +695,7 @@ def _validate_pydantic(file_path, artifact_type=None):
             model_cls, compat_mode, is_document = _load_oscal_model(artifact_type)
 
             if model_cls is None:
-                errors.append(
-                    f"No pydantic model available for artifact type: {artifact_type}")
+                errors.append(f"No pydantic model available for artifact type: {artifact_type}")
             else:
                 # For content models (oscal-pydantic), extract inner object;
                 # for document models (builtin_v2), pass the full JSON.
@@ -706,9 +754,12 @@ def _validate_metaschema(file_path, artifact_type=None):
         try:
             with open(file_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            for key, at in {"system-security-plan": "ssp", "plan-of-action-and-milestones": "poam",
-                            "assessment-results": "assessment_results",
-                            "component-definition": "component_definition"}.items():
+            for key, at in {
+                "system-security-plan": "ssp",
+                "plan-of-action-and-milestones": "poam",
+                "assessment-results": "assessment_results",
+                "component-definition": "component_definition",
+            }.items():
                 if key in data:
                     artifact_type = at
                     break
@@ -747,7 +798,7 @@ def _log_validation(project_id, artifact_type, file_path, validator_result, db_p
         return
 
     try:
-        conn = sqlite3.connect(str(db_path))
+        conn = get_connection(db_path=str(db_path))
         conn.execute(
             """INSERT INTO oscal_validation_log
                (project_id, artifact_type, file_path, validator, valid,
@@ -771,12 +822,11 @@ def _log_validation(project_id, artifact_type, file_path, validator_result, db_p
         logger.debug("Failed to log validation: %s", exc)
 
 
-def validate_oscal_deep(file_path, artifact_type=None, validators=None,
-                        project_id=None, db_path=None):
+def validate_oscal_deep(file_path, artifact_type=None, validators=None, project_id=None, db_path=None):
     """Multi-layer OSCAL validation pipeline (D305).
 
     Runs up to 3 validation layers in order:
-      1. ICDEV structural (always)
+      1. ICDEV™ structural (always)
       2. oscal-pydantic model (if installed)
       3. oscal-cli Metaschema (if installed + Java present)
 
@@ -833,6 +883,7 @@ def validate_oscal_deep(file_path, artifact_type=None, validators=None,
 # Format Conversion (D302)
 # ---------------------------------------------------------------------------
 
+
 def convert_oscal_format(input_path, output_format, output_path=None):
     """Convert OSCAL artifact between JSON, XML, and YAML.
 
@@ -862,10 +913,12 @@ def convert_oscal_format(input_path, output_format, output_path=None):
     try:
         with open(input_path, "r", encoding="utf-8") as f:
             data = json.load(f)
-        for key, cmd in {"system-security-plan": "ssp",
-                         "plan-of-action-and-milestones": "poam",
-                         "assessment-results": "assessment-results",
-                         "component-definition": "component-definition"}.items():
+        for key, cmd in {
+            "system-security-plan": "ssp",
+            "plan-of-action-and-milestones": "poam",
+            "assessment-results": "assessment-results",
+            "component-definition": "component-definition",
+        }.items():
             if key in data:
                 subcmd = cmd
                 break
@@ -898,6 +951,7 @@ def convert_oscal_format(input_path, output_format, output_path=None):
 # Profile Resolution (D302)
 # ---------------------------------------------------------------------------
 
+
 def resolve_oscal_profile(profile_path, output_path=None):
     """Flatten an OSCAL Profile into a resolved Catalog.
 
@@ -915,9 +969,7 @@ def resolve_oscal_profile(profile_path, output_path=None):
         return {"error": f"Profile not found: {profile_path}", "success": False}
 
     if output_path is None:
-        output_path = profile_path.with_name(
-            profile_path.stem + "-resolved" + profile_path.suffix
-        )
+        output_path = profile_path.with_name(profile_path.stem + "-resolved" + profile_path.suffix)
     output_path = Path(output_path)
 
     result = _run_oscal_cli(
@@ -944,6 +996,7 @@ def resolve_oscal_profile(profile_path, output_path=None):
 # ---------------------------------------------------------------------------
 # Catalog Operations (D304)
 # ---------------------------------------------------------------------------
+
 
 def catalog_lookup(control_id, catalog_source="auto", catalog_path=None):
     """Look up a control from the NIST catalog.
@@ -1034,35 +1087,29 @@ def catalog_stats(catalog_source="auto", catalog_path=None):
 # CLI Entry Point
 # ---------------------------------------------------------------------------
 
+
 def main():
     """CLI entry point for OSCAL ecosystem tools."""
-    parser = argparse.ArgumentParser(
-        description="OSCAL Ecosystem Tools — validation, conversion, catalog (D302-D306)"
-    )
+    parser = argparse.ArgumentParser(description="OSCAL Ecosystem Tools — validation, conversion, catalog (D302-D306)")
     group = parser.add_mutually_exclusive_group()
-    group.add_argument("--detect", action="store_true",
-                       help="Detect available OSCAL ecosystem tools")
-    group.add_argument("--validate", metavar="FILE",
-                       help="Deep-validate an OSCAL artifact (multi-layer pipeline)")
-    group.add_argument("--convert", metavar="FILE",
-                       help="Convert OSCAL artifact to another format")
-    group.add_argument("--resolve-profile", metavar="FILE",
-                       help="Resolve OSCAL Profile into flattened Catalog")
-    group.add_argument("--catalog-lookup", metavar="CONTROL_ID",
-                       help="Look up a control by ID (e.g., AC-2)")
-    group.add_argument("--catalog-list", action="store_true",
-                       help="List catalog controls")
-    group.add_argument("--catalog-stats", action="store_true",
-                       help="Show catalog statistics")
+    group.add_argument("--detect", action="store_true", help="Detect available OSCAL ecosystem tools")
+    group.add_argument("--validate", metavar="FILE", help="Deep-validate an OSCAL artifact (multi-layer pipeline)")
+    group.add_argument("--convert", metavar="FILE", help="Convert OSCAL artifact to another format")
+    group.add_argument("--resolve-profile", metavar="FILE", help="Resolve OSCAL Profile into flattened Catalog")
+    group.add_argument("--catalog-lookup", metavar="CONTROL_ID", help="Look up a control by ID (e.g., AC-2)")
+    group.add_argument("--catalog-list", action="store_true", help="List catalog controls")
+    group.add_argument("--catalog-stats", action="store_true", help="Show catalog statistics")
 
-    parser.add_argument("--format", choices=["json", "xml", "yaml"],
-                        help="Output format for --convert")
+    parser.add_argument("--format", choices=["json", "xml", "yaml"], help="Output format for --convert")
     parser.add_argument("--output", help="Output file path")
-    parser.add_argument("--artifact-type",
-                        choices=["ssp", "poam", "assessment_results", "component_definition"],
-                        help="OSCAL artifact type (auto-detected if omitted)")
-    parser.add_argument("--catalog-source", choices=["auto", "official", "icdev"],
-                        default="auto", help="Catalog source preference")
+    parser.add_argument(
+        "--artifact-type",
+        choices=["ssp", "poam", "assessment_results", "component_definition"],
+        help="OSCAL artifact type (auto-detected if omitted)",
+    )
+    parser.add_argument(
+        "--catalog-source", choices=["auto", "official", "icdev"], default="auto", help="Catalog source preference"
+    )
     parser.add_argument("--family", help="Filter by control family (e.g., AC)")
     parser.add_argument("--project-id", help="Project ID for audit logging")
     parser.add_argument("--db-path", help="Override database path")
@@ -1086,16 +1133,17 @@ def main():
 
     if args.validate:
         result = validate_oscal_deep(
-            args.validate, artifact_type=args.artifact_type,
-            project_id=args.project_id, db_path=args.db_path,
+            args.validate,
+            artifact_type=args.artifact_type,
+            project_id=args.project_id,
+            db_path=args.db_path,
         )
         if args.json:
             print(json.dumps(result, indent=2))
         else:
             status = "VALID" if result["valid"] else "INVALID"
             print(f"{status}: {args.validate}")
-            print(f"  Validators run: {result['validators_run']}, "
-                  f"skipped: {result['validators_skipped']}")
+            print(f"  Validators run: {result['validators_run']}, skipped: {result['validators_skipped']}")
             for v in result["validators"]:
                 name = v["validator"]
                 if v.get("skipped"):
@@ -1168,9 +1216,11 @@ def main():
         else:
             print(f"Source:   {result.get('source_path', 'none')}")
             print(f"Format:   {result.get('source_format', 'none')}")
-            print(f"Controls: {result.get('total_controls', 0)} total "
-                  f"({result.get('base_controls', 0)} base, "
-                  f"{result.get('enhancements', 0)} enhancements)")
+            print(
+                f"Controls: {result.get('total_controls', 0)} total "
+                f"({result.get('base_controls', 0)} base, "
+                f"{result.get('enhancements', 0)} enhancements)"
+            )
             print(f"Families: {result.get('family_count', 0)}")
         sys.exit(0)
 

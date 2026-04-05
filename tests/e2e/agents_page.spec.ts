@@ -1,6 +1,6 @@
 // CUI // SP-CTI
 // E2E Test: Agents Page
-// Verifies the ICDEV dashboard agents page loads with agent grid and status indicators.
+// Verifies the ICDEV™ dashboard agents page loads with agent grid and status indicators.
 
 import { test, expect } from '@playwright/test';
 

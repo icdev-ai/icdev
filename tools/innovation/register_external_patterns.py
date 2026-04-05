@@ -18,9 +18,9 @@ import json
 import sqlite3
 import sys
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
 
 # Centralized DB path resolution (D145 pattern)
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
@@ -251,6 +251,7 @@ SCORING_WEIGHTS = {
 # Registration functions
 # ---------------------------------------------------------------------------
 
+
 def _content_hash(text: str) -> str:
     """Generate content hash for dedup."""
     return hashlib.sha256(text.encode()).hexdigest()[:16]
@@ -266,8 +267,7 @@ def register_pattern(pattern: dict, db_path: Path = DB_PATH) -> dict:
     content_hash = _content_hash(title + description)
 
     try:
-        conn = sqlite3.connect(str(db_path))
-        conn.row_factory = sqlite3.Row
+        conn = get_connection(db_path=str(db_path))
 
         # Check for duplicate
         existing = conn.execute(
@@ -290,10 +290,7 @@ def register_pattern(pattern: dict, db_path: Path = DB_PATH) -> dict:
 
         # Compute score
         hints = pattern.get("scoring_hints", {})
-        score = sum(
-            hints.get(dim, 0.5) * weight
-            for dim, weight in SCORING_WEIGHTS.items()
-        )
+        score = sum(hints.get(dim, 0.5) * weight for dim, weight in SCORING_WEIGHTS.items())
 
         conn.execute(
             """INSERT INTO innovation_signals
@@ -306,7 +303,10 @@ def register_pattern(pattern: dict, db_path: Path = DB_PATH) -> dict:
                        'triaged', ?, ?,
                        'CUI', ?, ?)""",
             (
-                signal_id, pattern["source"], title, description,
+                signal_id,
+                pattern["source"],
+                title,
+                description,
                 pattern.get("url", ""),
                 pattern.get("category", "architecture"),
                 round(score, 4),
@@ -314,7 +314,8 @@ def register_pattern(pattern: dict, db_path: Path = DB_PATH) -> dict:
                 content_hash,
                 pattern.get("gotcha_layer", "Tools"),
                 pattern.get("implementation_status", "pending"),
-                now, now,
+                now,
+                now,
             ),
         )
         conn.commit()
@@ -365,18 +366,17 @@ def score_patterns() -> dict:
     scored = []
     for pattern in EXTERNAL_PATTERNS:
         hints = pattern.get("scoring_hints", {})
-        score = sum(
-            hints.get(dim, 0.5) * weight
-            for dim, weight in SCORING_WEIGHTS.items()
+        score = sum(hints.get(dim, 0.5) * weight for dim, weight in SCORING_WEIGHTS.items())
+        scored.append(
+            {
+                "title": pattern["title"],
+                "source": pattern["source"],
+                "score": round(score, 4),
+                "breakdown": hints,
+                "category": pattern.get("category", ""),
+                "implementation_status": pattern.get("implementation_status", "pending"),
+            }
         )
-        scored.append({
-            "title": pattern["title"],
-            "source": pattern["source"],
-            "score": round(score, 4),
-            "breakdown": hints,
-            "category": pattern.get("category", ""),
-            "implementation_status": pattern.get("implementation_status", "pending"),
-        })
 
     scored.sort(key=lambda x: x["score"], reverse=True)
     return {"patterns": scored, "scoring_weights": SCORING_WEIGHTS}
@@ -389,12 +389,14 @@ def get_implementation_status(db_path: Path = DB_PATH) -> dict:
     """
     patterns = []
     for p in EXTERNAL_PATTERNS:
-        patterns.append({
-            "title": p["title"],
-            "source": p["source"],
-            "category": p.get("category", ""),
-            "implementation_status": p.get("implementation_status", "pending"),
-        })
+        patterns.append(
+            {
+                "title": p["title"],
+                "source": p["source"],
+                "category": p.get("category", ""),
+                "implementation_status": p.get("implementation_status", "pending"),
+            }
+        )
 
     implemented = sum(1 for p in patterns if p["implementation_status"] == "implemented")
     return {

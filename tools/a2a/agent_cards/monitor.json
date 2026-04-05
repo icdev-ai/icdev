@@ -1,5 +1,5 @@
 {
-  "name": "ICDEV Monitor",
+  "name": "ICDEV™ Monitor",
   "description": "Production monitoring agent. Performs log analysis, metric collection, alert correlation, health checking, and makes rollback decisions based on real-time observability data.",
   "url": "https://localhost:8450",
   "version": "1.0.0",

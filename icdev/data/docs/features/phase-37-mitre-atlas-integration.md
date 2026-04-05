@@ -9,26 +9,26 @@
 | Status | Requirements |
 | Priority | P1 |
 | Dependencies | Phase 17 (Multi-Framework Compliance), Phase 23 (Universal Compliance), Phase 35 (Innovation Engine) |
-| Author | ICDEV Architect Agent |
+| Author | ICDEV™ Architect Agent |
 | Date | 2026-02-21 |
 
 ---
 
 ## 1. Problem Statement
 
-ICDEV is an AI-powered agentic development system that uses LLMs extensively for code generation, compliance assessment, requirements intake, and autonomous decision-making. Despite its comprehensive security posture (SAST, dependency audit, secret detection, container scanning, STIG hardening), ICDEV has **zero AI-specific threat defenses**.
+ICDEV™ is an AI-powered agentic development system that uses LLMs extensively for code generation, compliance assessment, requirements intake, and autonomous decision-making. Despite its comprehensive security posture (SAST, dependency audit, secret detection, container scanning, STIG hardening), ICDEV™ has **zero AI-specific threat defenses**.
 
-MITRE ATLAS (Adversarial Threat Landscape for AI Systems) — the ATT&CK equivalent for AI/ML — documents 84+ techniques across 16 tactics that adversaries use to attack AI systems. As of February 2026 (v5.4.0), ATLAS includes 51 real-world case studies, several of which describe attacks against **agentic coding assistants with MCP servers** — architecturally identical to ICDEV.
+MITRE ATLAS (Adversarial Threat Landscape for AI Systems) — the ATT&CK equivalent for AI/ML — documents 84+ techniques across 16 tactics that adversaries use to attack AI systems. As of February 2026 (v5.4.0), ATLAS includes 51 real-world case studies, several of which describe attacks against **agentic coding assistants with MCP servers** — architecturally identical to ICDEV™.
 
-Key case studies directly relevant to ICDEV:
+Key case studies directly relevant to ICDEV™:
 - **AML.CS0041** — Rules File Backdoor: supply chain attack via AI config file manipulation (analogous to CLAUDE.md, goals/, args/)
-- **AML.CS0045** — Data Exfiltration from MCP Server (Cursor): data stolen through MCP tool invocations (ICDEV has 14 MCP servers)
+- **AML.CS0045** — Data Exfiltration from MCP Server (Cursor): data stolen through MCP tool invocations (ICDEV™ has 14 MCP servers)
 - **AML.CS0047** — Malicious AI Agent (Amazon Q VSCode): deployed malicious agent inside IDE extension
-- **AML.CS0049** — Poisoned Agent Skill: trojanized skills published to registries (ICDEV Marketplace, Phase 22)
+- **AML.CS0049** — Poisoned Agent Skill: trojanized skills published to registries (ICDEV™ Marketplace, Phase 22)
 - **AML.CS0050** — 1-Click RCE via Agent: sandbox escape from agent to host system
 - **AML.CS0051** — C2 via Prompt Injection: command and control through prompt injection
 
-ICDEV processes untrusted external inputs from Jira, ServiceNow, DOORS NG, uploaded documents, code files, issue trackers, and user prompts — all documented prompt injection vectors.
+ICDEV™ processes untrusted external inputs from Jira, ServiceNow, DOORS NG, uploaded documents, code files, issue trackers, and user prompts — all documented prompt injection vectors.
 
 ---
 
@@ -65,17 +65,17 @@ ICDEV processes untrusted external inputs from Jira, ServiceNow, DOORS NG, uploa
 | AML.TA0015 | Lateral Movement | LLM response rendering, prompt self-replication (v5.1.0) | No |
 | AML.TA0016 | Impact | DoS, model integrity erosion, cost harvesting, data destruction | No |
 
-### 2.3 Key Techniques Relevant to ICDEV
+### 2.3 Key Techniques Relevant to ICDEV™
 
 #### Prompt Injection (AML.T0051) — CRITICAL
-| Sub-technique | Description | ICDEV Attack Surface |
+| Sub-technique | Description | ICDEV™ Attack Surface |
 |--------------|-------------|---------------------|
 | AML.T0051.000 | Direct Prompt Injection | User prompts to Claude Code, dashboard chat |
 | AML.T0051.001 | Indirect Prompt Injection | Jira tickets, DOORS exports, uploaded SOWs, code files, README files |
 | AML.T0051.002 | Triggered Prompt Injection | Time-delayed injections in CI/CD artifacts |
 
 #### Agentic AI Attacks (v5.0.0–v5.4.0)
-| Technique | Description | ICDEV Attack Surface |
+| Technique | Description | ICDEV™ Attack Surface |
 |-----------|-------------|---------------------|
 | AML.T0080 | AI Agent Context Poisoning | MEMORY.md, memory.db manipulation |
 | AML.T0080.001 | Memory Poisoning | Corrupting long-term memory to persist across sessions |
@@ -92,11 +92,11 @@ ICDEV processes untrusted external inputs from Jira, ServiceNow, DOORS NG, uploa
 | AML.T0099 | AI Agent Tool Data Poisoning | Poison data at tool invocation points |
 | AML.T0100 | AI Agent Clickbait | Lure browser agents via UI manipulation |
 | AML.T0101 | Data Destruction via Agent Tool Invocation | Use destructive tools (terraform_apply, rollback) as weapons |
-| AML.T0104 | Publish Poisoned AI Agent Tool | Trojanized skills on ICDEV Marketplace |
+| AML.T0104 | Publish Poisoned AI Agent Tool | Trojanized skills on ICDEV™ Marketplace |
 | AML.T0105 | Escape to Host | Break out of agent sandbox to host system |
 
 #### Supply Chain Attacks
-| Technique | Description | ICDEV Attack Surface |
+| Technique | Description | ICDEV™ Attack Surface |
 |-----------|-------------|---------------------|
 | AML.T0010.001 | AI Software Compromise | Compromised Python packages in requirements.txt |
 | AML.T0010.003 | Model Compromise | Backdoored models for embeddings/code generation |
@@ -157,11 +157,11 @@ ICDEV processes untrusted external inputs from Jira, ServiceNow, DOORS NG, uploa
 
 ---
 
-## 3. Current ICDEV Coverage Gap Analysis
+## 3. Current ICDEV™ Coverage Gap Analysis
 
 ### 3.1 Already Covered (~60%)
 
-| ATLAS Mitigation | ICDEV Implementation | Status |
+| ATLAS Mitigation | ICDEV™ Implementation | Status |
 |-----------------|---------------------|--------|
 | AML.M0005 | Per-tenant DB isolation (D60), K8s RBAC | Covered |
 | AML.M0011 | STIG-hardened containers, read-only rootfs | Covered |
@@ -319,7 +319,7 @@ All memory writes SHALL be scanned for injection patterns before storage. Extern
 
 #### REQ-37-062: Memory Trust Segmentation
 Memory entries SHALL be tagged with trust levels:
-- **system**: Generated by ICDEV core (highest trust)
+- **system**: Generated by ICDEV™ core (highest trust)
 - **user**: Entered by authenticated user
 - **external**: Imported from external sources (lowest trust)
 - **child**: Reported by child applications (medium trust)
@@ -327,7 +327,7 @@ Memory entries SHALL be tagged with trust levels:
 ### 4.8 ATLAS Red Teaming
 
 #### REQ-37-070: AI Red Team Scanner
-The system SHALL implement an automated AI red team capability that tests ICDEV's own defenses against ATLAS techniques.
+The system SHALL implement an automated AI red team capability that tests ICDEV™'s own defenses against ATLAS techniques.
 
 #### REQ-37-071: Red Team Test Categories
 The red team scanner SHALL test:
@@ -472,7 +472,7 @@ The system SHALL add ISO/IEC 42001:2023 (AI Management System) as a compliance f
 
 ## 11. Compliance Framework Summary
 
-After Phase 37, ICDEV will support the following AI-specific frameworks in addition to existing frameworks:
+After Phase 37, ICDEV™ will support the following AI-specific frameworks in addition to existing frameworks:
 
 | Framework | Type | Hub | Status |
 |-----------|------|-----|--------|

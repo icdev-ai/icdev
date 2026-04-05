@@ -18,9 +18,10 @@ import json
 import logging
 import re
 import sqlite3
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
 logger = logging.getLogger("icdev.memory_consolidation")
 
@@ -102,6 +103,7 @@ class MemoryConsolidator:
         # Try hybrid search first
         try:
             from tools.memory.hybrid_search import hybrid_search
+
             results = hybrid_search(
                 query=content[:200],
                 top_k=max_candidates,
@@ -109,20 +111,21 @@ class MemoryConsolidator:
             for r in results:
                 sim = r.get("score", 0)
                 if sim >= self.similarity_threshold:
-                    similar.append({
-                        "id": r.get("id"),
-                        "content": r.get("content", ""),
-                        "entry_type": r.get("entry_type", ""),
-                        "similarity": sim,
-                    })
+                    similar.append(
+                        {
+                            "id": r.get("id"),
+                            "content": r.get("content", ""),
+                            "entry_type": r.get("entry_type", ""),
+                            "similarity": sim,
+                        }
+                    )
             return similar
         except (ImportError, Exception):
             pass
 
         # Fallback: Jaccard keyword search against recent entries
         try:
-            conn = sqlite3.connect(str(DB_PATH))
-            conn.row_factory = sqlite3.Row
+            conn = get_connection()
             rows = conn.execute(
                 """SELECT id, content, entry_type
                    FROM memory_entries
@@ -142,12 +145,14 @@ class MemoryConsolidator:
 
                 jaccard = self._jaccard_similarity(content_kw, entry_kw)
                 if jaccard >= self.similarity_threshold:
-                    similar.append({
-                        "id": row_dict["id"],
-                        "content": row_dict["content"],
-                        "entry_type": row_dict["entry_type"],
-                        "similarity": jaccard,
-                    })
+                    similar.append(
+                        {
+                            "id": row_dict["id"],
+                            "content": row_dict["content"],
+                            "entry_type": row_dict["entry_type"],
+                            "similarity": jaccard,
+                        }
+                    )
 
             # Sort by similarity descending
             similar.sort(key=lambda x: x["similarity"], reverse=True)
@@ -165,6 +170,7 @@ class MemoryConsolidator:
         """Use LLM to decide consolidation action."""
         try:
             from tools.llm.router import LLMRouter
+
             router = LLMRouter()
 
             # Build context for LLM
@@ -173,7 +179,7 @@ class MemoryConsolidator:
                 for e in existing_entries[:5]
             )
 
-            prompt = f"""You are a memory consolidation system. Given a NEW entry and EXISTING similar entries, decide the best action.
+            prompt = f"""You are a memory consolidation system. Given a NEW entry and EXISTING similar entries, decide the best action.  # noqa: E501
 
 NEW ENTRY: {new_content[:500]}
 
@@ -187,18 +193,21 @@ Choose ONE action:
 - UPDATE: Modify existing entry with new information (return updated content)
 - SKIP: New entry is duplicate, don't store it
 
-Respond as JSON: {{"action": "ACTION", "target_id": <id_or_null>, "merged_content": "<text_or_null>", "reasoning": "<brief_explanation>", "confidence": <0.0-1.0>}}"""
+Respond as JSON: {{"action": "ACTION", "target_id": <id_or_null>, "merged_content": "<text_or_null>", "reasoning": "<brief_explanation>", "confidence": <0.0-1.0>}}"""  # noqa: E501
 
-            response = router.generate(
-                function_name="memory_consolidation",
+            from tools.llm.provider import LLMRequest
+
+            request = LLMRequest(
                 messages=[{"role": "user", "content": prompt}],
             )
+            response = router.invoke("memory_consolidation", request)
 
-            text = response.get("content", str(response)) if isinstance(response, dict) else str(response)
+            text = response.content if response.content else str(response)
 
             # Parse JSON from response
             import re as _re
-            json_match = _re.search(r'\{[^}]+\}', text, _re.DOTALL)
+
+            json_match = _re.search(r"\{[^}]+\}", text, _re.DOTALL)
             if json_match:
                 decision = json.loads(json_match.group())
                 action = decision.get("action", "KEEP_SEPARATE").upper()
@@ -306,7 +315,7 @@ Respond as JSON: {{"action": "ACTION", "target_id": <id_or_null>, "merged_conten
 
         if action == "REPLACE" and target_id:
             try:
-                conn = sqlite3.connect(str(DB_PATH))
+                conn = get_connection()
                 conn.execute(
                     "UPDATE memory_entries SET content = ?, updated_at = ? WHERE id = ?",
                     (new_content, datetime.now(timezone.utc).isoformat(), target_id),
@@ -319,7 +328,7 @@ Respond as JSON: {{"action": "ACTION", "target_id": <id_or_null>, "merged_conten
 
         if action in ("MERGE", "UPDATE") and target_id and merged_content:
             try:
-                conn = sqlite3.connect(str(DB_PATH))
+                conn = get_connection()
                 conn.execute(
                     "UPDATE memory_entries SET content = ?, updated_at = ? WHERE id = ?",
                     (merged_content, datetime.now(timezone.utc).isoformat(), target_id),
@@ -341,8 +350,7 @@ Respond as JSON: {{"action": "ACTION", "target_id": <id_or_null>, "merged_conten
         processed = 0
 
         try:
-            conn = sqlite3.connect(str(DB_PATH))
-            conn.row_factory = sqlite3.Row
+            conn = get_connection()
             rows = conn.execute(
                 "SELECT id, content, entry_type FROM memory_entries ORDER BY created_at DESC LIMIT ?",
                 (batch_size,),
@@ -374,8 +382,7 @@ Respond as JSON: {{"action": "ACTION", "target_id": <id_or_null>, "merged_conten
     def get_stats(self) -> dict:
         """Get consolidation statistics from the log."""
         try:
-            conn = sqlite3.connect(str(ICDEV_DB_PATH))
-            conn.row_factory = sqlite3.Row
+            conn = get_connection()
             rows = conn.execute(
                 """SELECT action, method, COUNT(*) as cnt,
                           AVG(similarity_score) as avg_sim
@@ -394,12 +401,36 @@ Respond as JSON: {{"action": "ACTION", "target_id": <id_or_null>, "merged_conten
     @staticmethod
     def _extract_keywords(text: str) -> set:
         """Extract keywords from text."""
-        words = re.findall(r'\b[a-zA-Z]{3,}\b', text.lower())
-        stopwords = frozenset({
-            "the", "a", "an", "is", "are", "was", "were", "have", "has",
-            "had", "do", "does", "did", "will", "would", "could", "should",
-            "this", "that", "not", "and", "but", "for", "with", "from",
-        })
+        words = re.findall(r"\b[a-zA-Z]{3,}\b", text.lower())
+        stopwords = frozenset(
+            {
+                "the",
+                "a",
+                "an",
+                "is",
+                "are",
+                "was",
+                "were",
+                "have",
+                "has",
+                "had",
+                "do",
+                "does",
+                "did",
+                "will",
+                "would",
+                "could",
+                "should",
+                "this",
+                "that",
+                "not",
+                "and",
+                "but",
+                "for",
+                "with",
+                "from",
+            }
+        )
         return {w for w in words if w not in stopwords}
 
     @staticmethod
@@ -423,15 +454,19 @@ Respond as JSON: {{"action": "ACTION", "target_id": <id_or_null>, "merged_conten
     ) -> None:
         """Log consolidation decision (append-only, D6)."""
         try:
-            conn = sqlite3.connect(str(ICDEV_DB_PATH))
+            conn = get_connection()
             conn.execute(
                 """INSERT INTO memory_consolidation_log
                    (source_entry_id, target_entry_id, action, method,
                     similarity_score, reasoning, merged_content, dry_run, created_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
-                    source_entry_id, target_entry_id, action, method,
-                    similarity_score, reasoning,
+                    source_entry_id,
+                    target_entry_id,
+                    action,
+                    method,
+                    similarity_score,
+                    reasoning,
                     merged_content[:2000] if merged_content else None,
                     1 if self.dry_run else 0,
                     datetime.now(timezone.utc).isoformat(),

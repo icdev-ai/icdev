@@ -1,6 +1,6 @@
 # E2E Test: Genesis v2.0 Autonomous Research Lab Dashboard
 
-Verify the Genesis v2.0 dashboard loads correctly with daemon status, 12 reflexes table, GKP promoter stats, and feedback-driven priorities.
+Verify the Genesis v2.0 dashboard loads correctly with daemon status, 14 reflexes table, GKP promoter stats, and feedback-driven priorities.
 
 ## Prerequisites
 - Flask dashboard running on http://localhost:5050
@@ -23,15 +23,15 @@ Example: `browser_take_screenshot` with filename `playwright/screenshots/genesis
 
 ### Daemon Status Cards
 8. Assert stat cards exist: "Daemon Status", "Active Reflexes", "Circuit Breakers Open", "Audit Events (24h)"
-9. Assert "Active Reflexes" shows "12"
+9. Assert "Active Reflexes" shows "14"
 10. Assert "Circuit Breakers Open" shows "0"
 
-### 12 Reflexes Table
+### 14 Reflexes Table
 11. Assert the reflex table has headers: Reflex, Tier, Schedule, Status, Last Run, Successes, Failures, Last Metric, Action
-12. Assert 12 rows are present in the table (one per reflex)
-13. Assert GREEN tier badges appear for: research, scout, audit, comply, ingest, market, report
+12. Assert 14 rows are present in the table (one per reflex)
+13. Assert GREEN tier badges appear for: research, scout, audit, comply, ingest, market, report, docs
 14. Assert YELLOW tier badges appear for: publish, test, learn, heal
-15. Assert ORANGE tier badge appears for: evolve
+15. Assert ORANGE tier badge appears for: evolve, experiment
 16. Assert all reflexes show "ACTIVE" status (no TRIPPED or DISABLED)
 17. Assert each row has a "Run" button
 
@@ -52,7 +52,7 @@ Example: `browser_take_screenshot` with filename `playwright/screenshots/genesis
 27. Scroll to "Feedback-Driven Priorities" section
 28. Click "Check Priorities" button
 29. Wait 1 second for API response
-30. Assert 12 priority cards appear (one per reflex)
+30. Assert 14 priority cards appear (one per reflex)
 31. Assert each card shows a priority level (NORMAL, BOOST, or REDUCE)
 32. Assert each card shows a reason text
 
@@ -72,7 +72,7 @@ Example: `browser_take_screenshot` with filename `playwright/screenshots/genesis
 41. Check network requests for any 4xx/5xx responses (should be 0)
 
 ## Expected Results
-- All 12 reflexes render with correct tier badges (GREEN/YELLOW/ORANGE)
+- All 14 reflexes render with correct tier badges (GREEN/YELLOW/ORANGE)
 - Interactive buttons (Refresh, Load Stats, Check Priorities, Run) all trigger API calls and update UI
 - No console errors
 - No failed network requests

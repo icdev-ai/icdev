@@ -11,7 +11,6 @@ Validates:
     - Maturity level determination
 """
 
-import json
 import sqlite3
 import sys
 import uuid
@@ -19,6 +18,9 @@ from pathlib import Path
 
 import pytest
 
+_PROJECT_ROOT = str(Path(__file__).resolve().parent.parent)
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools" / "compliance"))
 from fedramp_ksi_generator import (
     generate_all_ksis,
@@ -33,7 +35,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 @pytest.fixture
 def icdev_db(tmp_path):
-    """Create a minimal ICDEV database for KSI evidence checks."""
+    """Create a minimal ICDEV™ database for KSI evidence checks."""
     db_path = tmp_path / "icdev.db"
     conn = sqlite3.connect(str(db_path))
     conn.executescript("""
@@ -66,8 +68,7 @@ def icdev_db(tmp_path):
         );
     """)
     project_id = f"proj-{uuid.uuid4().hex[:8]}"
-    conn.execute("INSERT INTO projects (id, name) VALUES (?, ?)",
-                 (project_id, "Test FedRAMP Project"))
+    conn.execute("INSERT INTO projects (id, name) VALUES (?, ?)", (project_id, "Test FedRAMP Project"))
     conn.commit()
     conn.close()
     return db_path, project_id
@@ -160,10 +161,14 @@ class TestKSIGeneration:
     def test_generate_all_with_data(self, icdev_db):
         db_path, project_id = icdev_db
         conn = sqlite3.connect(str(db_path))
-        conn.execute("INSERT INTO audit_trail (id, project_id, event_type) VALUES (?, ?, ?)",
-                     (str(uuid.uuid4()), project_id, "test"))
-        conn.execute("INSERT INTO prompt_injection_log (id, project_id, input_text) VALUES (?, ?, ?)",
-                     (str(uuid.uuid4()), project_id, "test"))
+        conn.execute(
+            "INSERT INTO audit_trail (id, project_id, event_type) VALUES (?, ?, ?)",
+            (str(uuid.uuid4()), project_id, "test"),
+        )
+        conn.execute(
+            "INSERT INTO prompt_injection_log (id, project_id, input_text) VALUES (?, ?, ?)",
+            (str(uuid.uuid4()), project_id, "test"),
+        )
         conn.commit()
         conn.close()
         result = generate_all_ksis(project_id, db_path)

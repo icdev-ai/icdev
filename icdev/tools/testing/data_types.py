@@ -1,8 +1,8 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Testing Data Types
+# ICDEV™ Testing Data Types
 # Adapted from ADW data_types.py for Gov/DoD testing workflows
 
-"""Pydantic data models for ICDEV testing framework.
+"""Pydantic data models for ICDEV™ testing framework.
 
 Provides structured types for unit test results, E2E test results,
 health checks, compliance gate results, and test orchestration state.
@@ -40,7 +40,7 @@ class TestResult(BaseModel):
     execution_command: str
     test_purpose: str
     error: Optional[str] = None
-    # ICDEV additions
+    # ICDEV™ additions
     test_type: Literal["unit", "integration", "bdd", "security", "compliance"] = "unit"
     duration_ms: Optional[int] = None
     nist_controls: List[str] = []  # Controls satisfied by this test (e.g., ["SA-11"])
@@ -56,7 +56,7 @@ class E2ETestResult(BaseModel):
     test_path: str  # Path to the .md test spec file
     screenshots: List[str] = []
     error: Optional[str] = None
-    # ICDEV additions
+    # ICDEV™ additions
     cui_banners_verified: bool = False  # Whether CUI banners were checked in UI
     video_path: Optional[str] = None
     # Vision-based screenshot validation (Phase 23)
@@ -79,7 +79,7 @@ class CheckResult(BaseModel):
 
 
 class HealthCheckResult(BaseModel):
-    """Aggregate health check results for the ICDEV system."""
+    """Aggregate health check results for the ICDEV™ system."""
     success: bool
     timestamp: str
     checks: Dict[str, CheckResult] = {}
@@ -87,7 +87,7 @@ class HealthCheckResult(BaseModel):
     errors: List[str] = []
 
 
-# --- Compliance Gate Types (ICDEV-specific) ---
+# --- Compliance Gate Types (ICDEV™-specific) ---
 
 class GateResult(BaseModel):
     """Result of a single security/compliance gate evaluation."""

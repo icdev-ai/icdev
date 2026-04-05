@@ -5,7 +5,7 @@
 
 ## Purpose
 
-Translate entire codebases between ICDEV's 6 supported languages (Python, Java, JavaScript/TypeScript, Go, Rust, C#) using a 5-phase hybrid pipeline that combines deterministic extraction/assembly with LLM-assisted translation. Preserves ATO compliance (95% NIST 800-53 control coverage), CUI markings, and audit trail throughout.
+Translate entire codebases between ICDEV™'s 6 supported languages (Python, Java, JavaScript/TypeScript, Go, Rust, C#) using a 5-phase hybrid pipeline that combines deterministic extraction/assembly with LLM-assisted translation. Preserves ATO compliance (95% NIST 800-53 control coverage), CUI markings, and audit trail throughout.
 
 ## When to Use
 
@@ -19,7 +19,7 @@ Translate entire codebases between ICDEV's 6 supported languages (Python, Java, 
 1. Source code accessible at a local path
 2. Source and target language identified (must be different, both in VALID_LANGUAGES)
 3. LLM provider configured in `args/llm_config.yaml` (or Ollama for air-gapped)
-4. ICDEV database initialized (`python tools/db/init_icdev_db.py`)
+4. ICDEV™ database initialized (`python tools/db/init_icdev_db.py`)
 
 ## Workflow (7 Steps)
 
@@ -166,6 +166,6 @@ python tools/translation/translation_manager.py \
 | Phase 29 (Monitoring) | Translation jobs emit heartbeat events |
 | Phase 35 (Innovation) | Translation metrics feed innovation engine |
 | Phase 36 (Evolutionary) | Translation capability tracked as genome dimension |
-| Phase 37 (ATLAS) | Prompt injection scanning on translation prompts |
+| Phase 37 (ANVIL) | Prompt injection scanning on translation prompts |
 | Phase 38 (Cloud) | Multi-cloud LLM selection via router |
 | Phase 39 (Observability) | Translation events logged to audit trail |

@@ -7,7 +7,7 @@ Parses MagicDraw/Cameo XMI files using Python stdlib xml.etree.ElementTree
 activities, requirements, state machines, use cases, and all relationship types
 (structural + SysML dependency stereotypes).
 
-Stores parsed elements into the ICDEV SQLite database (sysml_elements,
+Stores parsed elements into the ICDEV™ SQLite database (sysml_elements,
 sysml_relationships, model_imports tables) and records an immutable audit
 trail entry.
 
@@ -24,6 +24,7 @@ import sqlite3
 import sys
 import uuid
 import xml.etree.ElementTree as ET
+from tools.db.storage import get_connection
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -39,12 +40,14 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 # ---------------------------------------------------------------------------
 try:
     from tools.audit.audit_logger import log_event  # type: ignore
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
 
     def log_event(**kwargs) -> int:  # noqa: D103 – stub
         return -1
+
 
 # ---------------------------------------------------------------------------
 # Well-known XMI / UML / SysML / MagicDraw namespace URIs
@@ -84,12 +87,19 @@ NAMESPACE_ALTERNATIVES: Dict[str, List[str]] = {
 
 # SysML relationship stereotype keywords (lower-cased for matching)
 SYSML_REL_STEREOTYPES = {
-    "satisfy", "derive", "verify", "refine", "trace", "allocate", "copy",
+    "satisfy",
+    "derive",
+    "verify",
+    "refine",
+    "trace",
+    "allocate",
+    "copy",
 }
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _new_id() -> str:
     """Generate a prefixed UUID for a SysML element."""
@@ -157,8 +167,7 @@ def _qualified_name(element: ET.Element, root: ET.Element) -> str:
     return "::".join(parts) if parts else ""
 
 
-def _find_all_ns(root: ET.Element, tag_local: str, ns: Dict[str, str],
-                 ns_key: str = "uml") -> List[ET.Element]:
+def _find_all_ns(root: ET.Element, tag_local: str, ns: Dict[str, str], ns_key: str = "uml") -> List[ET.Element]:
     """Find all descendant elements matching *tag_local* under any known
     namespace variant for *ns_key*.
     """
@@ -196,6 +205,7 @@ def _get_description(element: ET.Element, ns: Dict[str, str]) -> str:
 # Namespace detection
 # ---------------------------------------------------------------------------
 
+
 def _detect_namespaces(root: ET.Element) -> Dict[str, str]:
     """Detect XMI/UML/SysML/MagicDraw namespaces from the root element.
 
@@ -212,18 +222,18 @@ def _detect_namespaces(root: ET.Element) -> Dict[str, str]:
     # Root tag may carry a namespace: {uri}LocalName
     root_tag = root.tag
     if root_tag.startswith("{"):
-        uri = root_tag[1:root_tag.index("}")]
+        uri = root_tag[1 : root_tag.index("}")]
         declared_uris.add(uri)
 
     # Walk all elements for additional namespace URIs
     for elem in root.iter():
         tag = elem.tag
         if tag.startswith("{"):
-            declared_uris.add(tag[1:tag.index("}")])
+            declared_uris.add(tag[1 : tag.index("}")])
         # Attributes may also carry namespace URIs
         for attr_name in elem.attrib:
             if attr_name.startswith("{"):
-                declared_uris.add(attr_name[1:attr_name.index("}")])
+                declared_uris.add(attr_name[1 : attr_name.index("}")])
 
     # 2. Match declared URIs to known namespace keys
     for key, alternatives in NAMESPACE_ALTERNATIVES.items():
@@ -243,6 +253,7 @@ def _detect_namespaces(root: ET.Element) -> Dict[str, str]:
 # ---------------------------------------------------------------------------
 # Stereotype resolution
 # ---------------------------------------------------------------------------
+
 
 def _build_stereotype_map(root: ET.Element, ns: Dict[str, str]) -> Dict[str, str]:
     """Build a mapping from xmi:id → stereotype name.
@@ -290,6 +301,7 @@ def _build_stereotype_map(root: ET.Element, ns: Dict[str, str]) -> Dict[str, str
 # Element extraction functions
 # ---------------------------------------------------------------------------
 
+
 def _extract_blocks(root: ET.Element, ns: Dict[str, str]) -> List[Dict[str, Any]]:
     """Extract <<Block>> stereotyped classes from XMI.
 
@@ -324,12 +336,14 @@ def _extract_blocks(root: ET.Element, ns: Dict[str, str]) -> List[Dict[str, Any]
             prop_type = _xmi_type(attr, ns) or ""
             prop_id = _xmi_id(attr, ns) or ""
             if prop_name:
-                properties.append({
-                    "name": prop_name,
-                    "type": prop_type,
-                    "xmi_id": prop_id,
-                    "visibility": attr.get("visibility", "public"),
-                })
+                properties.append(
+                    {
+                        "name": prop_name,
+                        "type": prop_type,
+                        "xmi_id": prop_id,
+                        "visibility": attr.get("visibility", "public"),
+                    }
+                )
 
         # Collect ports
         ports: List[Dict[str, str]] = []
@@ -337,26 +351,32 @@ def _extract_blocks(root: ET.Element, ns: Dict[str, str]) -> List[Dict[str, Any]
             port_name = port.get("name", "")
             port_id = _xmi_id(port, ns) or ""
             if port_name or port_id:
-                ports.append({
-                    "name": port_name,
-                    "xmi_id": port_id,
-                    "type": _xmi_type(port, ns) or "port",
-                })
+                ports.append(
+                    {
+                        "name": port_name,
+                        "xmi_id": port_id,
+                        "type": _xmi_type(port, ns) or "port",
+                    }
+                )
 
-        blocks.append({
-            "id": _new_id(),
-            "xmi_id": xid,
-            "element_type": "block",
-            "name": name,
-            "qualified_name": _qualified_name(elem, root),
-            "stereotype": stereo or "Block",
-            "description": _get_description(elem, ns),
-            "properties": json.dumps({
-                "attributes": properties,
-                "ports": ports,
-            }),
-            "diagram_type": "bdd",
-        })
+        blocks.append(
+            {
+                "id": _new_id(),
+                "xmi_id": xid,
+                "element_type": "block",
+                "name": name,
+                "qualified_name": _qualified_name(elem, root),
+                "stereotype": stereo or "Block",
+                "description": _get_description(elem, ns),
+                "properties": json.dumps(
+                    {
+                        "attributes": properties,
+                        "ports": ports,
+                    }
+                ),
+                "diagram_type": "bdd",
+            }
+        )
 
     return blocks
 
@@ -387,24 +407,28 @@ def _extract_interface_blocks(root: ET.Element, ns: Dict[str, str]) -> List[Dict
         for attr in elem.iter("ownedAttribute"):
             prop_name = attr.get("name", "")
             if prop_name:
-                flow_props.append({
-                    "name": prop_name,
-                    "type": _xmi_type(attr, ns) or "",
-                    "xmi_id": _xmi_id(attr, ns) or "",
-                    "direction": attr.get("direction", "inout"),
-                })
+                flow_props.append(
+                    {
+                        "name": prop_name,
+                        "type": _xmi_type(attr, ns) or "",
+                        "xmi_id": _xmi_id(attr, ns) or "",
+                        "direction": attr.get("direction", "inout"),
+                    }
+                )
 
-        iblocks.append({
-            "id": _new_id(),
-            "xmi_id": xid,
-            "element_type": "interface_block",
-            "name": name,
-            "qualified_name": _qualified_name(elem, root),
-            "stereotype": stereo or "InterfaceBlock",
-            "description": _get_description(elem, ns),
-            "properties": json.dumps({"flow_properties": flow_props}),
-            "diagram_type": "bdd",
-        })
+        iblocks.append(
+            {
+                "id": _new_id(),
+                "xmi_id": xid,
+                "element_type": "interface_block",
+                "name": name,
+                "qualified_name": _qualified_name(elem, root),
+                "stereotype": stereo or "InterfaceBlock",
+                "description": _get_description(elem, ns),
+                "properties": json.dumps({"flow_properties": flow_props}),
+                "diagram_type": "bdd",
+            }
+        )
 
     return iblocks
 
@@ -433,20 +457,24 @@ def _extract_activities(root: ET.Element, ns: Dict[str, str]) -> List[Dict[str, 
                 node_name = node.get("name", "")
                 node_id = _xmi_id(node, ns) or ""
                 if node_name or node_id:
-                    actions.append({
-                        "name": node_name,
-                        "type": node_type,
-                        "xmi_id": node_id,
-                    })
+                    actions.append(
+                        {
+                            "name": node_name,
+                            "type": node_type,
+                            "xmi_id": node_id,
+                        }
+                    )
 
         # Also look for OpaqueAction, CallBehaviorAction, etc.
         for action_tag in ("ownedAction",):
             for act in elem.iter(action_tag):
-                actions.append({
-                    "name": act.get("name", ""),
-                    "type": _xmi_type(act, ns) or "action",
-                    "xmi_id": _xmi_id(act, ns) or "",
-                })
+                actions.append(
+                    {
+                        "name": act.get("name", ""),
+                        "type": _xmi_type(act, ns) or "action",
+                        "xmi_id": _xmi_id(act, ns) or "",
+                    }
+                )
 
         # Collect edges (control flow / object flow)
         control_flows: List[Dict[str, str]] = []
@@ -465,21 +493,25 @@ def _extract_activities(root: ET.Element, ns: Dict[str, str]) -> List[Dict[str, 
                 else:
                     control_flows.append(edge_data)
 
-        activities.append({
-            "id": _new_id(),
-            "xmi_id": xid,
-            "element_type": "activity",
-            "name": name,
-            "qualified_name": _qualified_name(elem, root),
-            "stereotype": "",
-            "description": _get_description(elem, ns),
-            "properties": json.dumps({
-                "actions": actions,
-                "control_flows": control_flows,
-                "object_flows": object_flows,
-            }),
-            "diagram_type": "act",
-        })
+        activities.append(
+            {
+                "id": _new_id(),
+                "xmi_id": xid,
+                "element_type": "activity",
+                "name": name,
+                "qualified_name": _qualified_name(elem, root),
+                "stereotype": "",
+                "description": _get_description(elem, ns),
+                "properties": json.dumps(
+                    {
+                        "actions": actions,
+                        "control_flows": control_flows,
+                        "object_flows": object_flows,
+                    }
+                ),
+                "diagram_type": "act",
+            }
+        )
 
     return activities
 
@@ -525,20 +557,24 @@ def _extract_requirements(root: ET.Element, ns: Dict[str, str]) -> List[Dict[str
         if not req_text:
             req_text = _get_description(elem, ns)
 
-        requirements.append({
-            "id": _new_id(),
-            "xmi_id": xid,
-            "element_type": "requirement",
-            "name": name or f"REQ-{xid[:8]}",
-            "qualified_name": _qualified_name(elem, root),
-            "stereotype": stereo or "Requirement",
-            "description": req_text,
-            "properties": json.dumps({
-                "requirement_id": req_id,
-                "text": req_text,
-            }),
-            "diagram_type": "req",
-        })
+        requirements.append(
+            {
+                "id": _new_id(),
+                "xmi_id": xid,
+                "element_type": "requirement",
+                "name": name or f"REQ-{xid[:8]}",
+                "qualified_name": _qualified_name(elem, root),
+                "stereotype": stereo or "Requirement",
+                "description": req_text,
+                "properties": json.dumps(
+                    {
+                        "requirement_id": req_id,
+                        "text": req_text,
+                    }
+                ),
+                "diagram_type": "req",
+            }
+        )
 
     # Strategy 2: SysML namespace Requirement elements
     sysml_uri = ns.get("sysml", "")
@@ -553,20 +589,24 @@ def _extract_requirements(root: ET.Element, ns: Dict[str, str]) -> List[Dict[str
             name = elem.get("name", "")
             req_id = elem.get("id", elem.get("Id", ""))
             req_text = elem.get("text", elem.get("Text", ""))
-            requirements.append({
-                "id": _new_id(),
-                "xmi_id": xid,
-                "element_type": "requirement",
-                "name": name or f"REQ-{xid[:8]}",
-                "qualified_name": "",
-                "stereotype": "Requirement",
-                "description": req_text or "",
-                "properties": json.dumps({
-                    "requirement_id": req_id,
-                    "text": req_text or "",
-                }),
-                "diagram_type": "req",
-            })
+            requirements.append(
+                {
+                    "id": _new_id(),
+                    "xmi_id": xid,
+                    "element_type": "requirement",
+                    "name": name or f"REQ-{xid[:8]}",
+                    "qualified_name": "",
+                    "stereotype": "Requirement",
+                    "description": req_text or "",
+                    "properties": json.dumps(
+                        {
+                            "requirement_id": req_id,
+                            "text": req_text or "",
+                        }
+                    ),
+                    "diagram_type": "req",
+                }
+            )
 
     return requirements
 
@@ -597,60 +637,72 @@ def _extract_state_machines(root: ET.Element, ns: Dict[str, str]) -> List[Dict[s
                     state_id = _xmi_id(state, ns) or ""
                     kind = state.get("kind", "")
                     if state_name or state_id:
-                        states.append({
-                            "name": state_name,
-                            "type": state_type,
-                            "xmi_id": state_id,
-                            "kind": kind,
-                        })
+                        states.append(
+                            {
+                                "name": state_name,
+                                "type": state_type,
+                                "xmi_id": state_id,
+                                "kind": kind,
+                            }
+                        )
         # Fallback: look for State elements directly under StateMachine
         if not states:
             for state in elem.iter("subvertex"):
-                states.append({
-                    "name": state.get("name", ""),
-                    "type": _xmi_type(state, ns) or "",
-                    "xmi_id": _xmi_id(state, ns) or "",
-                    "kind": state.get("kind", ""),
-                })
+                states.append(
+                    {
+                        "name": state.get("name", ""),
+                        "type": _xmi_type(state, ns) or "",
+                        "xmi_id": _xmi_id(state, ns) or "",
+                        "kind": state.get("kind", ""),
+                    }
+                )
 
         # Collect transitions
         transitions: List[Dict[str, str]] = []
         for region in elem.iter("region"):
             for trans in region.iter("transition"):
-                transitions.append({
-                    "name": trans.get("name", ""),
-                    "xmi_id": _xmi_id(trans, ns) or "",
-                    "source": trans.get("source", ""),
-                    "target": trans.get("target", ""),
-                    "guard": _get_guard_text(trans),
-                    "trigger": _get_trigger_name(trans),
-                })
+                transitions.append(
+                    {
+                        "name": trans.get("name", ""),
+                        "xmi_id": _xmi_id(trans, ns) or "",
+                        "source": trans.get("source", ""),
+                        "target": trans.get("target", ""),
+                        "guard": _get_guard_text(trans),
+                        "trigger": _get_trigger_name(trans),
+                    }
+                )
         # Fallback
         if not transitions:
             for trans in elem.iter("transition"):
-                transitions.append({
-                    "name": trans.get("name", ""),
-                    "xmi_id": _xmi_id(trans, ns) or "",
-                    "source": trans.get("source", ""),
-                    "target": trans.get("target", ""),
-                    "guard": _get_guard_text(trans),
-                    "trigger": _get_trigger_name(trans),
-                })
+                transitions.append(
+                    {
+                        "name": trans.get("name", ""),
+                        "xmi_id": _xmi_id(trans, ns) or "",
+                        "source": trans.get("source", ""),
+                        "target": trans.get("target", ""),
+                        "guard": _get_guard_text(trans),
+                        "trigger": _get_trigger_name(trans),
+                    }
+                )
 
-        machines.append({
-            "id": _new_id(),
-            "xmi_id": xid,
-            "element_type": "state_machine",
-            "name": name,
-            "qualified_name": _qualified_name(elem, root),
-            "stereotype": "",
-            "description": _get_description(elem, ns),
-            "properties": json.dumps({
-                "states": states,
-                "transitions": transitions,
-            }),
-            "diagram_type": "stm",
-        })
+        machines.append(
+            {
+                "id": _new_id(),
+                "xmi_id": xid,
+                "element_type": "state_machine",
+                "name": name,
+                "qualified_name": _qualified_name(elem, root),
+                "stereotype": "",
+                "description": _get_description(elem, ns),
+                "properties": json.dumps(
+                    {
+                        "states": states,
+                        "transitions": transitions,
+                    }
+                ),
+                "diagram_type": "stm",
+            }
+        )
 
     return machines
 
@@ -707,10 +759,12 @@ def _extract_use_cases(root: ET.Element, ns: Dict[str, str]) -> List[Dict[str, A
         ext_points: List[Dict[str, str]] = []
         if not is_actor:
             for ep in elem.iter("extensionPoint"):
-                ext_points.append({
-                    "name": ep.get("name", ""),
-                    "xmi_id": _xmi_id(ep, ns) or "",
-                })
+                ext_points.append(
+                    {
+                        "name": ep.get("name", ""),
+                        "xmi_id": _xmi_id(ep, ns) or "",
+                    }
+                )
 
         # Collect included use cases
         includes: List[str] = []
@@ -719,20 +773,26 @@ def _extract_use_cases(root: ET.Element, ns: Dict[str, str]) -> List[Dict[str, A
             if addition:
                 includes.append(addition)
 
-        use_cases.append({
-            "id": _new_id(),
-            "xmi_id": xid,
-            "element_type": element_type,
-            "name": name,
-            "qualified_name": _qualified_name(elem, root),
-            "stereotype": "Actor" if is_actor else "",
-            "description": _get_description(elem, ns),
-            "properties": json.dumps({
-                "extension_points": ext_points,
-                "includes": includes,
-            }) if not is_actor else json.dumps({}),
-            "diagram_type": "uc",
-        })
+        use_cases.append(
+            {
+                "id": _new_id(),
+                "xmi_id": xid,
+                "element_type": element_type,
+                "name": name,
+                "qualified_name": _qualified_name(elem, root),
+                "stereotype": "Actor" if is_actor else "",
+                "description": _get_description(elem, ns),
+                "properties": json.dumps(
+                    {
+                        "extension_points": ext_points,
+                        "includes": includes,
+                    }
+                )
+                if not is_actor
+                else json.dumps({}),
+                "diagram_type": "uc",
+            }
+        )
 
     return use_cases
 
@@ -740,6 +800,7 @@ def _extract_use_cases(root: ET.Element, ns: Dict[str, str]) -> List[Dict[str, A
 # ---------------------------------------------------------------------------
 # Relationship extraction
 # ---------------------------------------------------------------------------
+
 
 def _extract_relationships(root: ET.Element, ns: Dict[str, str]) -> List[Dict[str, Any]]:
     """Extract all relationships from XMI.
@@ -767,8 +828,7 @@ def _extract_relationships(root: ET.Element, ns: Dict[str, str]) -> List[Dict[st
             _parse_simple_rel(elem, ns, "dependency", relationships)
 
         # Realizations
-        elif xmi_t in ("uml:Realization", "Realization",
-                        "uml:InterfaceRealization", "InterfaceRealization"):
+        elif xmi_t in ("uml:Realization", "Realization", "uml:InterfaceRealization", "InterfaceRealization"):
             _parse_simple_rel(elem, ns, "realization", relationships)
 
         # Usages
@@ -803,13 +863,15 @@ def _extract_relationships(root: ET.Element, ns: Dict[str, str]) -> List[Dict[st
                 source_id = _xmi_id(p, ns) or ""
 
         if source_id and general:
-            relationships.append({
-                "source_xmi_id": source_id,
-                "target_xmi_id": general,
-                "relationship_type": "generalization",
-                "name": gen.get("name", ""),
-                "properties": json.dumps({}),
-            })
+            relationships.append(
+                {
+                    "source_xmi_id": source_id,
+                    "target_xmi_id": general,
+                    "relationship_type": "generalization",
+                    "name": gen.get("name", ""),
+                    "properties": json.dumps({}),
+                }
+            )
 
     # --- SysML stereotype relationships (top-level in profile application) ---
     _parse_sysml_stereo_rels(root, ns, relationships)
@@ -817,8 +879,7 @@ def _extract_relationships(root: ET.Element, ns: Dict[str, str]) -> List[Dict[st
     return relationships
 
 
-def _parse_association(elem: ET.Element, ns: Dict[str, str],
-                       rels: List[Dict[str, Any]]) -> None:
+def _parse_association(elem: ET.Element, ns: Dict[str, str], rels: List[Dict[str, Any]]) -> None:
     """Parse a UML Association into one or more relationship records."""
     name = elem.get("name", "")
     member_ends: List[str] = []
@@ -849,8 +910,8 @@ def _parse_association(elem: ET.Element, ns: Dict[str, str],
     elif len(owned_ends) == 1:
         target_id = owned_ends[0].get("type", "") or _xmi_id(owned_ends[0], ns) or ""
         if member_ends:
-            source_id = member_ends[0] if member_ends[0] != target_id else (
-                member_ends[1] if len(member_ends) > 1 else ""
+            source_id = (
+                member_ends[0] if member_ends[0] != target_id else (member_ends[1] if len(member_ends) > 1 else "")
             )
 
     if not source_id or not target_id:
@@ -863,17 +924,18 @@ def _parse_association(elem: ET.Element, ns: Dict[str, str],
     else:
         rel_type = "association"
 
-    rels.append({
-        "source_xmi_id": source_id,
-        "target_xmi_id": target_id,
-        "relationship_type": rel_type,
-        "name": name,
-        "properties": json.dumps({"aggregation": aggregation}),
-    })
+    rels.append(
+        {
+            "source_xmi_id": source_id,
+            "target_xmi_id": target_id,
+            "relationship_type": rel_type,
+            "name": name,
+            "properties": json.dumps({"aggregation": aggregation}),
+        }
+    )
 
 
-def _parse_simple_rel(elem: ET.Element, ns: Dict[str, str],
-                       rel_type: str, rels: List[Dict[str, Any]]) -> None:
+def _parse_simple_rel(elem: ET.Element, ns: Dict[str, str], rel_type: str, rels: List[Dict[str, Any]]) -> None:
     """Parse a simple directed relationship (Dependency, Realization, Usage)."""
     name = elem.get("name", "")
 
@@ -892,17 +954,18 @@ def _parse_simple_rel(elem: ET.Element, ns: Dict[str, str],
             supplier = supplier_el.get("href", "") or _xmi_id(supplier_el, ns) or ""
 
     if client and supplier:
-        rels.append({
-            "source_xmi_id": client,
-            "target_xmi_id": supplier,
-            "relationship_type": rel_type,
-            "name": name,
-            "properties": json.dumps({}),
-        })
+        rels.append(
+            {
+                "source_xmi_id": client,
+                "target_xmi_id": supplier,
+                "relationship_type": rel_type,
+                "name": name,
+                "properties": json.dumps({}),
+            }
+        )
 
 
-def _parse_abstraction(elem: ET.Element, ns: Dict[str, str],
-                        root: ET.Element, rels: List[Dict[str, Any]]) -> None:
+def _parse_abstraction(elem: ET.Element, ns: Dict[str, str], root: ET.Element, rels: List[Dict[str, Any]]) -> None:
     """Parse a UML Abstraction, checking for SysML stereotype overlay."""
     name = elem.get("name", "")
     xid = _xmi_id(elem, ns)
@@ -931,17 +994,18 @@ def _parse_abstraction(elem: ET.Element, ns: Dict[str, str],
                 rel_type = kw
                 break
 
-    rels.append({
-        "source_xmi_id": client,
-        "target_xmi_id": supplier,
-        "relationship_type": rel_type,
-        "name": name,
-        "properties": json.dumps({}),
-    })
+    rels.append(
+        {
+            "source_xmi_id": client,
+            "target_xmi_id": supplier,
+            "relationship_type": rel_type,
+            "name": name,
+            "properties": json.dumps({}),
+        }
+    )
 
 
-def _parse_sysml_stereo_rels(root: ET.Element, ns: Dict[str, str],
-                              rels: List[Dict[str, Any]]) -> None:
+def _parse_sysml_stereo_rels(root: ET.Element, ns: Dict[str, str], rels: List[Dict[str, Any]]) -> None:
     """Parse SysML stereotype relationship applications at the top level.
 
     Cameo exports «satisfy», «derive», «verify», «refine», «trace», «allocate»
@@ -989,23 +1053,26 @@ def _parse_sysml_stereo_rels(root: ET.Element, ns: Dict[str, str],
                     break
             if not found:
                 # Store as unresolved — will attempt resolution in _resolve step
-                rels.append({
-                    "source_xmi_id": base_ref,
-                    "target_xmi_id": "",
-                    "relationship_type": matched_type,
-                    "name": child.get("name", ""),
-                    "properties": json.dumps({"base_ref": base_ref}),
-                    "_unresolved": True,
-                })
+                rels.append(
+                    {
+                        "source_xmi_id": base_ref,
+                        "target_xmi_id": "",
+                        "relationship_type": matched_type,
+                        "name": child.get("name", ""),
+                        "properties": json.dumps({"base_ref": base_ref}),
+                        "_unresolved": True,
+                    }
+                )
 
 
 # ---------------------------------------------------------------------------
 # Cross-reference resolution
 # ---------------------------------------------------------------------------
 
-def _resolve_xmi_refs(elements: List[Dict[str, Any]],
-                      relationships: List[Dict[str, Any]]) -> Tuple[
-                          List[Dict[str, Any]], List[Dict[str, Any]]]:
+
+def _resolve_xmi_refs(
+    elements: List[Dict[str, Any]], relationships: List[Dict[str, Any]]
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """Resolve xmi:idref cross-references between elements.
 
     Builds a lookup from xmi_id → generated id so that relationship
@@ -1043,22 +1110,26 @@ def _resolve_xmi_refs(elements: List[Dict[str, Any]],
         tgt_el = xmi_lookup.get(tgt_xmi)
 
         if src_el and tgt_el:
-            resolved_rels.append({
-                "source_element_id": src_el["id"],
-                "target_element_id": tgt_el["id"],
-                "relationship_type": rel["relationship_type"],
-                "name": rel.get("name", ""),
-                "properties": rel.get("properties", "{}"),
-            })
+            resolved_rels.append(
+                {
+                    "source_element_id": src_el["id"],
+                    "target_element_id": tgt_el["id"],
+                    "relationship_type": rel["relationship_type"],
+                    "name": rel.get("name", ""),
+                    "properties": rel.get("properties", "{}"),
+                }
+            )
         # If only one side resolved, still keep with xmi_id as fallback
         elif src_el or tgt_el:
-            resolved_rels.append({
-                "source_element_id": src_el["id"] if src_el else src_xmi,
-                "target_element_id": tgt_el["id"] if tgt_el else tgt_xmi,
-                "relationship_type": rel["relationship_type"],
-                "name": rel.get("name", ""),
-                "properties": rel.get("properties", "{}"),
-            })
+            resolved_rels.append(
+                {
+                    "source_element_id": src_el["id"] if src_el else src_xmi,
+                    "target_element_id": tgt_el["id"] if tgt_el else tgt_xmi,
+                    "relationship_type": rel["relationship_type"],
+                    "name": rel.get("name", ""),
+                    "properties": rel.get("properties", "{}"),
+                }
+            )
 
     # Clean internal keys from relationships
     for rel in resolved_rels:
@@ -1071,6 +1142,7 @@ def _resolve_xmi_refs(elements: List[Dict[str, Any]],
 # ---------------------------------------------------------------------------
 # Validation
 # ---------------------------------------------------------------------------
+
 
 def validate_xmi(file_path: str) -> Dict[str, Any]:
     """Validate XMI structure before import.
@@ -1102,7 +1174,7 @@ def validate_xmi(file_path: str) -> Dict[str, Any]:
 
     # Attempt parse
     try:
-        tree = ET.parse(str(fpath))
+        tree = ET.parse(str(fpath))  # nosec B314 -- parsing trusted internal MBSE/config XML
         root = tree.getroot()
     except ET.ParseError as exc:
         return {
@@ -1119,8 +1191,7 @@ def validate_xmi(file_path: str) -> Dict[str, Any]:
     root_local = root.tag.split("}", 1)[-1] if "}" in root.tag else root.tag
     if root_local.upper() != "XMI" and root_local != "Model":
         errors.append(
-            f"Root element is <{root_local}>, expected <xmi:XMI> or <XMI>. "
-            "File may not be a valid XMI export."
+            f"Root element is <{root_local}>, expected <xmi:XMI> or <XMI>. File may not be a valid XMI export."
         )
 
     # Check for XMI version attribute
@@ -1143,10 +1214,10 @@ def validate_xmi(file_path: str) -> Dict[str, Any]:
     found_uml = False
     for pe in root.iter("packagedElement"):
         xmi_t = _xmi_type(pe, namespaces)
-        if xmi_t and ("uml:" in str(xmi_t) or xmi_t in (
-            "Class", "Activity", "StateMachine", "UseCase", "Actor",
-            "Association", "Package", "Interface"
-        )):
+        if xmi_t and (
+            "uml:" in str(xmi_t)
+            or xmi_t in ("Class", "Activity", "StateMachine", "UseCase", "Actor", "Association", "Package", "Interface")
+        ):
             found_uml = True
             break
     if not found_uml and element_count > 0:
@@ -1163,6 +1234,7 @@ def validate_xmi(file_path: str) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Full parse
 # ---------------------------------------------------------------------------
+
 
 def parse_xmi(file_path: str) -> Dict[str, Any]:
     """Parse an XMI file and return structured data.
@@ -1186,7 +1258,7 @@ def parse_xmi(file_path: str) -> Dict[str, Any]:
     if not fpath.exists():
         raise FileNotFoundError(f"XMI file not found: {file_path}")
 
-    tree = ET.parse(str(fpath))
+    tree = ET.parse(str(fpath))  # nosec B314 -- parsing trusted internal MBSE/config XML
     root = tree.getroot()
     ns = _detect_namespaces(root)
     source_hash = _file_hash(file_path)
@@ -1234,23 +1306,19 @@ def parse_xmi(file_path: str) -> Dict[str, Any]:
 # Database import
 # ---------------------------------------------------------------------------
 
+
 def _get_connection(db_path: Optional[str] = None) -> sqlite3.Connection:
-    """Open a connection to the ICDEV database."""
+    """Open a connection to the ICDEV™ database."""
     path = Path(db_path) if db_path else DB_PATH
     if not path.exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\n"
-            "Run: python tools/db/init_icdev_db.py"
-        )
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
+    conn = get_connection(db_path=str(db_path))
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
 
 
-def import_xmi(project_id: str, file_path: str,
-               db_path: str = None) -> Dict[str, Any]:
+def import_xmi(project_id: str, file_path: str, db_path: str = None) -> Dict[str, Any]:
     """Full import pipeline: validate -> parse -> store in DB -> audit trail.
 
     Steps:
@@ -1455,15 +1523,14 @@ def import_xmi(project_id: str, file_path: str,
 # Import summary
 # ---------------------------------------------------------------------------
 
+
 def get_import_summary(import_id: int, db_path: str = None) -> Dict[str, Any]:
     """Return import details from the model_imports table.
 
     Returns the full row as a dict, or an error dict if not found.
     """
     conn = _get_connection(db_path)
-    row = conn.execute(
-        "SELECT * FROM model_imports WHERE id = ?", (import_id,)
-    ).fetchone()
+    row = conn.execute("SELECT * FROM model_imports WHERE id = ?", (import_id,)).fetchone()
     conn.close()
 
     if not row:
@@ -1484,29 +1551,35 @@ def get_import_summary(import_id: int, db_path: str = None) -> Dict[str, Any]:
 # CLI entry point
 # ---------------------------------------------------------------------------
 
+
 def main() -> None:
     """Command-line interface for XMI parsing and import."""
-    parser = argparse.ArgumentParser(
-        description="Import SysML XMI from Cameo Systems Modeler"
+    parser = argparse.ArgumentParser(description="Import SysML XMI from Cameo Systems Modeler")
+    parser.add_argument(
+        "--project-id",
+        required=True,
+        help="ICDEV™ project identifier (e.g. proj-123)",
     )
     parser.add_argument(
-        "--project-id", required=True,
-        help="ICDEV project identifier (e.g. proj-123)",
-    )
-    parser.add_argument(
-        "--file", required=True,
+        "--file",
+        required=True,
         help="Path to XMI file exported from Cameo/MagicDraw",
     )
     parser.add_argument(
-        "--validate-only", action="store_true",
+        "--validate-only",
+        action="store_true",
         help="Validate XMI structure without importing",
     )
     parser.add_argument(
-        "--json", action="store_true", dest="json_output",
+        "--json",
+        action="store_true",
+        dest="json_output",
         help="Output results as JSON",
     )
     parser.add_argument(
-        "--db-path", type=Path, default=None,
+        "--db-path",
+        type=Path,
+        default=None,
         help="Override database path (default: data/icdev.db)",
     )
     args = parser.parse_args()

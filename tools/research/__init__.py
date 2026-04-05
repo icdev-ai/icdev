@@ -3,9 +3,9 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """
-ICDEV Industry Research Engine — deep industry vertical research for child app generation.
+ICDEV™ Industry Research Engine — deep industry vertical research for child app generation.
 
 Architecture:
   D-RES-1:  Session-based lifecycle (created → scoping → ... → child_app_triggered)

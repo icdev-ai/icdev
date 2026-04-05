@@ -6,9 +6,8 @@ Joins digital thread, provenance, and audit trail into unified DAG data
 for the lineage visualization dashboard.
 """
 
-import json
-import sqlite3
 import sys
+from tools.db.storage import get_connection
 from pathlib import Path
 
 from flask import Blueprint, jsonify, request
@@ -23,8 +22,7 @@ lineage_api = Blueprint("lineage_api", __name__, url_prefix="/api/lineage")
 
 
 def _get_db():
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(DB_PATH))
     return conn
 
 
@@ -60,12 +58,18 @@ def lineage_graph():
                 src_key = f"{r['source_type']}:{r['source_id']}"
                 tgt_key = f"{r['target_type']}:{r['target_id']}"
                 if src_key not in seen:
-                    nodes.append({"id": src_key, "type": r["source_type"], "label": r["source_id"], "source": "digital_thread"})
+                    nodes.append(
+                        {"id": src_key, "type": r["source_type"], "label": r["source_id"], "source": "digital_thread"}
+                    )
                     seen.add(src_key)
                 if tgt_key not in seen:
-                    nodes.append({"id": tgt_key, "type": r["target_type"], "label": r["target_id"], "source": "digital_thread"})
+                    nodes.append(
+                        {"id": tgt_key, "type": r["target_type"], "label": r["target_id"], "source": "digital_thread"}
+                    )
                     seen.add(tgt_key)
-                edges.append({"source": src_key, "target": tgt_key, "relation": r["link_type"], "origin": "digital_thread"})
+                edges.append(
+                    {"source": src_key, "target": tgt_key, "relation": r["link_type"], "origin": "digital_thread"}
+                )
 
         # --- Provenance entities (W3C PROV) ---
         if _table_exists(conn, "prov_entities") and _table_exists(conn, "prov_relations"):
@@ -75,19 +79,28 @@ def lineage_graph():
             ).fetchall()
             for e in entities:
                 node_id = f"prov:{e['entity_id']}"
-                nodes.append({"id": node_id, "type": e["entity_type"], "label": e["label"] or e["entity_id"], "source": "provenance"})
+                nodes.append(
+                    {
+                        "id": node_id,
+                        "type": e["entity_type"],
+                        "label": e["label"] or e["entity_id"],
+                        "source": "provenance",
+                    }
+                )
 
             relations = conn.execute(
                 "SELECT source_id, target_id, relation_type FROM prov_relations WHERE project_id = ?",
                 (project_id,),
             ).fetchall()
             for r in relations:
-                edges.append({
-                    "source": f"prov:{r['source_id']}",
-                    "target": f"prov:{r['target_id']}",
-                    "relation": r["relation_type"],
-                    "origin": "provenance",
-                })
+                edges.append(
+                    {
+                        "source": f"prov:{r['source_id']}",
+                        "target": f"prov:{r['target_id']}",
+                        "relation": r["relation_type"],
+                        "origin": "provenance",
+                    }
+                )
 
         # --- Audit trail events ---
         if _table_exists(conn, "audit_trail"):
@@ -98,13 +111,15 @@ def lineage_graph():
             ).fetchall()
             for a in audit_rows:
                 node_id = f"audit:{a['id']}"
-                nodes.append({
-                    "id": node_id,
-                    "type": "audit_event",
-                    "label": f"{a['action']} ({a['actor']})",
-                    "source": "audit_trail",
-                    "timestamp": a["created_at"],
-                })
+                nodes.append(
+                    {
+                        "id": node_id,
+                        "type": "audit_event",
+                        "label": f"{a['action']} ({a['actor']})",
+                        "source": "audit_trail",
+                        "timestamp": a["created_at"],
+                    }
+                )
 
         # --- SBOM components ---
         if _table_exists(conn, "sbom_records"):
@@ -115,26 +130,30 @@ def lineage_graph():
             for s in sbom_rows:
                 node_id = f"sbom:{s['id']}"
                 version = s["component_version"] if "component_version" in s.keys() and s["component_version"] else ""
-                nodes.append({
-                    "id": node_id,
-                    "type": "sbom_component",
-                    "label": f"{s['component_name']}@{version}" if version else s["component_name"],
-                    "source": "sbom",
-                })
+                nodes.append(
+                    {
+                        "id": node_id,
+                        "type": "sbom_component",
+                        "label": f"{s['component_name']}@{version}" if version else s["component_name"],
+                        "source": "sbom",
+                    }
+                )
 
     finally:
         conn.close()
 
-    return jsonify({
-        "project_id": project_id,
-        "nodes": nodes,
-        "edges": edges,
-        "summary": {
-            "total_nodes": len(nodes),
-            "total_edges": len(edges),
-            "sources": list(set(n["source"] for n in nodes)),
-        },
-    })
+    return jsonify(
+        {
+            "project_id": project_id,
+            "nodes": nodes,
+            "edges": edges,
+            "summary": {
+                "total_nodes": len(nodes),
+                "total_edges": len(edges),
+                "sources": list(set(n["source"] for n in nodes)),
+            },
+        }
+    )
 
 
 @lineage_api.route("/stats", methods=["GET"])
@@ -152,7 +171,7 @@ def lineage_stats():
             ("sbom_records", "SBOM Components"),
         ]:
             if _table_exists(conn, table):
-                row = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()
+                row = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()  # nosec B608 -- table/column names are internal constants, not user input
                 stats[table] = {"label": label, "count": row[0]}
             else:
                 stats[table] = {"label": label, "count": 0, "missing": True}

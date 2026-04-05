@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """AI Transparency Audit — cross-framework transparency assessment.
 
 Runs all 4 AI transparency assessors, checks model/system cards,
@@ -17,8 +17,8 @@ Usage:
 
 import argparse
 import json
-import sqlite3
 import sys
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Optional
@@ -44,10 +44,13 @@ def _safe_assess(assessor_class, project_id: str, project_dir: Optional[str], db
         }
 
 
-def _safe_import_assess(module_name: str, class_name: str, project_id: str, project_dir: Optional[str], db_path: Path) -> Dict:
+def _safe_import_assess(
+    module_name: str, class_name: str, project_id: str, project_dir: Optional[str], db_path: Path
+) -> Dict:
     """Import and run an assessor by name."""
     try:
         import importlib
+
         mod = importlib.import_module(module_name)
         cls = getattr(mod, class_name)
         return _safe_assess(cls, project_id, project_dir, db_path)
@@ -57,10 +60,9 @@ def _safe_import_assess(module_name: str, class_name: str, project_id: str, proj
 
 def _count_table(db_path: Path, table: str, project_id: str) -> int:
     try:
-        conn = sqlite3.connect(str(db_path))
-        conn.row_factory = sqlite3.Row
+        conn = get_connection(db_path=str(db_path))
         row = conn.execute(
-            f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = ?",
+            f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = ?",  # nosec B608 -- table/column names are internal constants, not user input
             (project_id,),
         ).fetchone()
         conn.close()
@@ -109,6 +111,7 @@ def run_transparency_audit(
     # Build GAO evidence summary
     try:
         from gao_evidence_builder import build_evidence
+
         gao_evidence = build_evidence(project_id, db_path)
         gao_coverage = gao_evidence.get("summary", {}).get("overall_coverage_pct", 0)
     except Exception:
@@ -117,54 +120,74 @@ def run_transparency_audit(
     # Identify gaps
     gaps = []
     if artifacts["model_cards"] == 0:
-        gaps.append({
-            "area": "Model Documentation",
-            "gap": "No model cards generated",
-            "framework": "OMB M-26-04",
-            "priority": "high",
-            "action": "Run: python tools/compliance/model_card_generator.py --project-id {pid} --model-name <name>".format(pid=project_id),
-        })
+        gaps.append(
+            {
+                "area": "Model Documentation",
+                "gap": "No model cards generated",
+                "framework": "OMB M-26-04",
+                "priority": "high",
+                "action": "Run: python tools/compliance/model_card_generator.py --project-id {pid} --model-name <name>".format(  # noqa: E501
+                    pid=project_id
+                ),
+            }
+        )
     if artifacts["system_cards"] == 0:
-        gaps.append({
-            "area": "System Documentation",
-            "gap": "No system card generated",
-            "framework": "OMB M-26-04",
-            "priority": "high",
-            "action": "Run: python tools/compliance/system_card_generator.py --project-id {pid}".format(pid=project_id),
-        })
+        gaps.append(
+            {
+                "area": "System Documentation",
+                "gap": "No system card generated",
+                "framework": "OMB M-26-04",
+                "priority": "high",
+                "action": "Run: python tools/compliance/system_card_generator.py --project-id {pid}".format(
+                    pid=project_id
+                ),
+            }
+        )
     if artifacts["ai_inventory"] == 0:
-        gaps.append({
-            "area": "AI Inventory",
-            "gap": "No AI components registered in inventory",
-            "framework": "OMB M-25-21",
-            "priority": "high",
-            "action": "Run: python tools/compliance/ai_inventory_manager.py --project-id {pid} --register --name <name>".format(pid=project_id),
-        })
+        gaps.append(
+            {
+                "area": "AI Inventory",
+                "gap": "No AI components registered in inventory",
+                "framework": "OMB M-25-21",
+                "priority": "high",
+                "action": "Run: python tools/compliance/ai_inventory_manager.py --project-id {pid} --register --name <name>".format(  # noqa: E501
+                    pid=project_id
+                ),
+            }
+        )
     if artifacts["fairness_assessments"] == 0:
-        gaps.append({
-            "area": "Bias & Fairness",
-            "gap": "No fairness assessment conducted",
-            "framework": "OMB M-26-04",
-            "priority": "medium",
-            "action": "Run: python tools/compliance/fairness_assessor.py --project-id {pid}".format(pid=project_id),
-        })
+        gaps.append(
+            {
+                "area": "Bias & Fairness",
+                "gap": "No fairness assessment conducted",
+                "framework": "OMB M-26-04",
+                "priority": "medium",
+                "action": "Run: python tools/compliance/fairness_assessor.py --project-id {pid}".format(pid=project_id),
+            }
+        )
     if artifacts["confabulation_checks"] == 0:
-        gaps.append({
-            "area": "Confabulation Detection",
-            "gap": "No confabulation checks recorded",
-            "framework": "NIST AI 600-1",
-            "priority": "medium",
-            "action": "Run: python tools/security/confabulation_detector.py --project-id {pid} --check-output <text>".format(pid=project_id),
-        })
+        gaps.append(
+            {
+                "area": "Confabulation Detection",
+                "gap": "No confabulation checks recorded",
+                "framework": "NIST AI 600-1",
+                "priority": "medium",
+                "action": "Run: python tools/security/confabulation_detector.py --project-id {pid} --check-output <text>".format(  # noqa: E501
+                    pid=project_id
+                ),
+            }
+        )
 
     for fid, data in assessments.items():
         if data["coverage_pct"] < 50 and not data.get("error"):
-            gaps.append({
-                "area": data["name"],
-                "gap": f"Coverage below 50% ({data['coverage_pct']}%)",
-                "framework": data["name"],
-                "priority": "high",
-            })
+            gaps.append(
+                {
+                    "area": data["name"],
+                    "gap": f"Coverage below 50% ({data['coverage_pct']}%)",
+                    "framework": data["name"],
+                    "priority": "high",
+                }
+            )
 
     # Overall score
     assessment_scores = [d["coverage_pct"] for d in assessments.values() if not d.get("error")]

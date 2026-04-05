@@ -37,6 +37,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 # Deterministic metrics (air-gap safe, no LLM needed)
 # ---------------------------------------------------------------------------
 
+
 def ndcg_at_k(
     retrieved_ids: List[str],
     relevant_ids: List[str],
@@ -94,6 +95,7 @@ def mrr(
 # LLM-as-judge metrics (requires Ollama qwen3)
 # ---------------------------------------------------------------------------
 
+
 def _llm_judge(prompt: str, system: str = "") -> str:
     """Invoke qwen3 as LLM judge via scanner_function."""
     try:
@@ -108,7 +110,7 @@ def _llm_judge(prompt: str, system: str = "") -> str:
             temperature=0.0,
             classification="CUI",
         )
-        response = router.invoke(request, function="rag_evaluate")
+        response = router.invoke("rag_evaluate", request)
         return response.content.strip()
     except Exception as exc:
         logger.debug("LLM judge failed: %s", exc)
@@ -128,7 +130,6 @@ def _safe_extract_json(text: str, container: str = "{") -> Any:
     Returns:
         Parsed JSON value, or None on failure.
     """
-    import re
     if not text:
         return None
     open_br = container
@@ -159,7 +160,7 @@ def _safe_extract_json(text: str, container: str = "{") -> Any:
             depth -= 1
             if depth == 0:
                 try:
-                    return json.loads(text[start:i + 1])
+                    return json.loads(text[start : i + 1])
                 except json.JSONDecodeError:
                     return None
     return None
@@ -204,12 +205,9 @@ def faithfulness(
 
     system = (
         "You are a faithfulness evaluator. Score how well the answer is grounded "
-        "in the provided context. Return ONLY a JSON object: {\"score\": 0.0-1.0, \"reason\": \"...\"}"
+        'in the provided context. Return ONLY a JSON object: {"score": 0.0-1.0, "reason": "..."}'
     )
-    prompt = (
-        f"Query: {query}\n\nContext:\n{context[:2000]}\n\n"
-        f"Answer:\n{answer[:1000]}\n\nEvaluate faithfulness:"
-    )
+    prompt = f"Query: {query}\n\nContext:\n{context[:2000]}\n\nAnswer:\n{answer[:1000]}\n\nEvaluate faithfulness:"
 
     result = _llm_judge(prompt, system)
     parsed = _safe_extract_json(result, "{")
@@ -231,7 +229,7 @@ def answer_relevancy(
 
     system = (
         "You are a relevancy evaluator. Score how well the answer addresses the query. "
-        "Return ONLY a JSON object: {\"score\": 0.0-1.0, \"reason\": \"...\"}"
+        'Return ONLY a JSON object: {"score": 0.0-1.0, "reason": "..."}'
     )
     prompt = f"Query: {query}\n\nAnswer:\n{answer[:1000]}\n\nEvaluate relevancy:"
 
@@ -245,6 +243,7 @@ def answer_relevancy(
 # ---------------------------------------------------------------------------
 # RAGEvaluator
 # ---------------------------------------------------------------------------
+
 
 class RAGEvaluator:
     """RAGAS-style evaluation for RAG pipeline quality (D-RAG-22)."""
@@ -295,28 +294,44 @@ class RAGEvaluator:
         query: str,
         context: str,
         answer: str,
+        ground_truth: str = "",
+        scoring_mode: str = "ragas",
     ) -> Dict[str, Any]:
-        """Evaluate generation quality (LLM-as-judge metrics).
+        """Evaluate generation quality (LLM-as-judge + optional CRAG metrics).
 
         Args:
             query: Original query.
             context: Injected RAG context.
             answer: LLM-generated answer.
+            ground_truth: Expected answer (required for CRAG scoring).
+            scoring_mode: "ragas", "crag", or "both" (D-RAG-23).
 
         Returns:
-            Dict with faithfulness and answer_relevancy scores.
+            Dict with faithfulness, answer_relevancy, and optional crag_score.
         """
         metrics: Dict[str, Any] = {"query": query}
 
-        try:
-            metrics["faithfulness"] = round(faithfulness(query, context, answer), 4)
-        except Exception:
-            pass
+        if scoring_mode in ("ragas", "both"):
+            try:
+                metrics["faithfulness"] = round(faithfulness(query, context, answer), 4)
+            except Exception:
+                pass
 
-        try:
-            metrics["answer_relevancy"] = round(answer_relevancy(query, answer), 4)
-        except Exception:
-            pass
+            try:
+                metrics["answer_relevancy"] = round(answer_relevancy(query, answer), 4)
+            except Exception:
+                pass
+
+        if scoring_mode in ("crag", "both") and ground_truth:
+            try:
+                from tools.rag.crag_evaluator import CRAGScorer
+
+                scorer = CRAGScorer()
+                crag_result = scorer.score_answer(answer, ground_truth)
+                metrics["crag_score"] = crag_result.get("score", 0.0)
+                metrics["crag_label"] = crag_result.get("label", "")
+            except ImportError:
+                pass
 
         return metrics
 
@@ -335,9 +350,13 @@ class RAGEvaluator:
         Returns:
             Aggregate metrics across all test cases.
         """
-        path = Path(test_set_path or self._config.get(
-            "test_set_path", str(BASE_DIR / "data" / "rag" / "evaluation_set.json"),
-        ))
+        path = Path(
+            test_set_path
+            or self._config.get(
+                "test_set_path",
+                str(BASE_DIR / "data" / "rag" / "evaluation_set.json"),
+            )
+        )
         if not path.exists():
             return {"error": f"Test set not found: {path}", "results": []}
 
@@ -352,6 +371,7 @@ class RAGEvaluator:
 
         try:
             from tools.rag.retriever import RAGRetriever
+
             retriever = RAGRetriever()
         except ImportError:
             return {"error": "RAG subsystem not available", "results": []}
@@ -388,7 +408,9 @@ class RAGEvaluator:
             "aggregate": {
                 "avg_ndcg_at_5": round(sum(agg_ndcg) / max(len(agg_ndcg), 1), 4) if agg_ndcg else None,
                 "avg_mrr": round(sum(agg_mrr) / max(len(agg_mrr), 1), 4) if agg_mrr else None,
-                "avg_context_precision": round(sum(agg_precision) / max(len(agg_precision), 1), 4) if agg_precision else None,
+                "avg_context_precision": round(sum(agg_precision) / max(len(agg_precision), 1), 4)
+                if agg_precision
+                else None,
             },
             "results": results_list,
         }
@@ -419,11 +441,14 @@ def main():
 
     elif args.evaluate_retrieval and args.query:
         from tools.rag.retriever import RAGRetriever
+
         retriever = RAGRetriever()
         results = retriever.search(query=args.query, top_k=5)
         expected = args.expected_ids.split(",") if args.expected_ids else []
         eval_result = evaluator.evaluate_retrieval(
-            query=args.query, results=results, ground_truth_ids=expected,
+            query=args.query,
+            results=results,
+            ground_truth_ids=expected,
         )
         if args.json_output:
             print(json.dumps(eval_result, indent=2))

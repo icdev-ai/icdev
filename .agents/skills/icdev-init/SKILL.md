@@ -1,13 +1,13 @@
 ---
 name: icdev-init
-description: Initialize a new ICDEV project with compliance scaffolding, CUI markings, and NIST 800-53 control baseline
+description: Initialize a new ICDEV™ project with compliance scaffolding, CUI markings, and NIST 800-53 control baseline
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep
 ---
 
 # $icdev-init
 
 ## What This Does
-1. Creates a new project with UUID in the ICDEV database
+1. Creates a new project with UUID in the ICDEV™ database
 2. Scaffolds directory structure with CUI markings on all files
 3. Sets up compliance directory (SSP, POAM, STIG templates)
 4. Initializes test scaffolding (pytest + behave/Gherkin BDD)
@@ -23,7 +23,7 @@ allowed-tools: Bash, Read, Write, Edit, Glob, Grep
 ls icdev.yaml 2>/dev/null
 ```
 If `icdev.yaml` exists:
-1. Run `python tools/project/session_context_builder.py --init --json` to register the project in the ICDEV database from the manifest
+1. Run `python tools/project/session_context_builder.py --init --json` to register the project in the ICDEV™ database from the manifest
 2. If successful, run `python tools/project/session_context_builder.py --format markdown` to display the loaded context
 3. Run `python tools/ci/pipeline_config_generator.py --dir . --dry-run --json` to preview CI/CD pipeline configuration
 4. Skip to Step 3 (scaffolding) — project metadata comes from the manifest

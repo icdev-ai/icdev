@@ -24,6 +24,7 @@ import json
 import sqlite3
 import time
 import uuid
+from tools.db.storage import get_connection
 from base64 import urlsafe_b64decode, urlsafe_b64encode
 from datetime import datetime, timezone
 from pathlib import Path
@@ -37,7 +38,7 @@ class MCPOAuthVerifier:
 
     Supports three verification modes:
     1. JWT verification (connected environments)
-    2. API key verification (standard ICDEV auth)
+    2. API key verification (standard ICDEV™ auth)
     3. Offline HMAC verification (air-gapped environments)
     """
 
@@ -57,6 +58,7 @@ class MCPOAuthVerifier:
         """Get HMAC secret key from environment or generate one."""
         import os
         import secrets as _secrets
+
         key = os.environ.get("ICDEV_MCP_OAUTH_SECRET", "")
         if not key:
             key = os.environ.get("ICDEV_DASHBOARD_SECRET", "")
@@ -82,7 +84,7 @@ class MCPOAuthVerifier:
         if cached and cached["expires_at"] > time.time():
             return cached["result"]
 
-        # Try API key verification first (most common in ICDEV)
+        # Try API key verification first (most common in ICDEV™)
         result = self._verify_api_key(token)
         if result["verified"]:
             self._cache_result(cache_key, result)
@@ -103,9 +105,9 @@ class MCPOAuthVerifier:
         return {"verified": False, "error": "Token verification failed"}
 
     def _verify_api_key(self, token: str) -> dict:
-        """Verify against ICDEV API key database."""
+        """Verify against ICDEV™ API key database."""
         if not token.startswith("icdev_"):
-            return {"verified": False, "error": "Not an ICDEV API key"}
+            return {"verified": False, "error": "Not an ICDEV™ API key"}
 
         key_hash = hashlib.sha256(token.encode()).hexdigest()
 
@@ -113,11 +115,10 @@ class MCPOAuthVerifier:
             if not Path(self.db_path).exists():
                 return {"verified": False, "error": "Platform database not found"}
 
-            conn = sqlite3.connect(str(self.db_path))
-            conn.row_factory = sqlite3.Row
+            conn = get_connection(db_path=str(self.db_path))
 
             row = conn.execute(
-                "SELECT ak.*, u.email, u.role FROM api_keys ak JOIN users u ON ak.user_id = u.id WHERE ak.key_hash = ? AND ak.is_active = 1",
+                "SELECT ak.*, u.email, u.role FROM api_keys ak JOIN users u ON ak.user_id = u.id WHERE ak.key_hash = ? AND ak.is_active = 1",  # noqa: E501
                 (key_hash,),
             ).fetchone()
             conn.close()
@@ -153,9 +154,7 @@ class MCPOAuthVerifier:
             signature = urlsafe_b64decode(sig_b64 + "==")
 
             # Verify HMAC
-            expected_sig = hmac.new(
-                self.secret_key.encode(), payload_bytes, hashlib.sha256
-            ).digest()
+            expected_sig = hmac.new(self.secret_key.encode(), payload_bytes, hashlib.sha256).digest()
 
             if not hmac.compare_digest(signature, expected_sig):
                 return {"verified": False, "error": "HMAC signature mismatch"}
@@ -205,7 +204,9 @@ class MCPOAuthVerifier:
                 "user_id": payload.get("sub", "unknown"),
                 "email": payload.get("email", ""),
                 "role": payload.get("role", "developer"),
-                "scopes": payload.get("scope", "").split() if isinstance(payload.get("scope"), str) else payload.get("scopes", []),
+                "scopes": payload.get("scope", "").split()
+                if isinstance(payload.get("scope"), str)
+                else payload.get("scopes", []),
                 "tenant_id": payload.get("tenant_id"),
             }
         except Exception:
@@ -252,9 +253,7 @@ class MCPOAuthVerifier:
         }
 
         payload_bytes = json.dumps(payload, separators=(",", ":")).encode()
-        signature = hmac.new(
-            self.secret_key.encode(), payload_bytes, hashlib.sha256
-        ).digest()
+        signature = hmac.new(self.secret_key.encode(), payload_bytes, hashlib.sha256).digest()
 
         payload_b64 = urlsafe_b64encode(payload_bytes).rstrip(b"=").decode()
         sig_b64 = urlsafe_b64encode(signature).rstrip(b"=").decode()

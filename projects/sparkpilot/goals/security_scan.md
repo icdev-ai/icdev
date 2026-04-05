@@ -354,9 +354,9 @@ NEXT STEPS:
 
 ---
 
-## GOTCHA Layer Mapping
+## FORGE Layer Mapping
 
-| Step | GOTCHA Layer | Component |
+| Step | FORGE Layer | Component |
 |------|-------------|-----------|
 | Run SAST | Tools | sast_runner.py |
 | Dependency audit | Tools | dependency_auditor.py |

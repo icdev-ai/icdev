@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-# ICDEV GovCon Intelligence Engine — Phase 59 (Sub-Phase 59E)
+# ICDEV™ GovCon Intelligence Engine — Phase 59 (Sub-Phase 59E)
 # Pipeline orchestrator: DISCOVER → EXTRACT → MAP → DRAFT
 
 """
@@ -8,7 +8,7 @@ GovCon Intelligence Engine — unified orchestrator for the capture-to-delivery 
 Pipeline stages:
     1. DISCOVER  — Scan SAM.gov for new opportunities + award notices
     2. EXTRACT   — Mine "shall/must/will" requirements from opportunity descriptions
-    3. MAP       — Match requirements to ICDEV capability catalog, identify gaps
+    3. MAP       — Match requirements to ICDEV™ capability catalog, identify gaps
     4. DRAFT     — Auto-draft responses via two-tier LLM (qwen3 → Claude review)
 
 Daemon mode runs on schedule with quiet hours.
@@ -27,10 +27,9 @@ Usage:
 import argparse
 import json
 import os
-import sqlite3
-import sys
 import time
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -43,9 +42,9 @@ STAGES = ["discover", "extract", "map", "draft"]
 
 # ── helpers ───────────────────────────────────────────────────────────
 
+
 def _get_db():
-    conn = sqlite3.connect(str(_DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
@@ -57,7 +56,7 @@ def _now():
 def _audit(conn, action, details="", actor="govcon_engine"):
     try:
         conn.execute(
-            "INSERT INTO audit_trail (id, timestamp, event_type, actor, action, details, session_id) "
+            "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (str(uuid.uuid4()), _now(), "govcon.pipeline", actor, action, details, "govcon"),
         )
@@ -69,6 +68,7 @@ def _load_config():
     """Load govcon_config.yaml with graceful fallback."""
     try:
         import yaml
+
         with open(_CONFIG_PATH, "r") as f:
             return yaml.safe_load(f)
     except Exception:
@@ -94,6 +94,7 @@ def _in_quiet_hours(config):
 
 # ── pipeline stages ──────────────────────────────────────────────────
 
+
 def stage_discover(config):
     """Stage 1: Scan SAM.gov for opportunities and awards."""
     results = {"stage": "discover", "opportunities": 0, "awards": 0, "errors": []}
@@ -101,6 +102,7 @@ def stage_discover(config):
     # Scan opportunities
     try:
         from tools.govcon.sam_scanner import scan_opportunities
+
         opp_result = scan_opportunities()
         results["opportunities"] = opp_result.get("new_opportunities", 0)
         results["opp_details"] = {
@@ -113,6 +115,7 @@ def stage_discover(config):
     # Scan award notices
     try:
         from tools.govcon.award_tracker import scan_awards
+
         award_result = scan_awards()
         results["awards"] = award_result.get("new_awards", 0)
         results["award_details"] = {
@@ -132,6 +135,7 @@ def stage_extract(config):
 
     try:
         from tools.govcon.requirement_extractor import extract_all_requirements
+
         ext_result = extract_all_requirements()
         results["extracted"] = ext_result.get("total_extracted", 0)
         results["by_domain"] = ext_result.get("by_domain", {})
@@ -141,6 +145,7 @@ def stage_extract(config):
     # Run clustering
     try:
         from tools.govcon.requirement_extractor import cluster_patterns
+
         pat_result = cluster_patterns()
         results["patterns"] = pat_result.get("total_patterns", 0)
     except Exception as e:
@@ -151,12 +156,13 @@ def stage_extract(config):
 
 
 def stage_map(config):
-    """Stage 3: Map requirements to ICDEV capabilities, analyze gaps."""
+    """Stage 3: Map requirements to ICDEV™ capabilities, analyze gaps."""
     results = {"stage": "map", "mapped": 0, "gaps": 0, "errors": []}
 
     # Map capabilities
     try:
         from tools.govcon.capability_mapper import map_all_requirements
+
         map_result = map_all_requirements()
         results["mapped"] = map_result.get("total_mapped", 0)
         results["coverage"] = {
@@ -170,6 +176,7 @@ def stage_map(config):
     # Analyze gaps
     try:
         from tools.govcon.gap_analyzer import analyze_gaps
+
         gap_result = analyze_gaps()
         results["gaps"] = gap_result.get("total_gaps", 0)
         results["gap_details"] = {
@@ -182,6 +189,7 @@ def stage_map(config):
     # Cross-register gaps to Innovation Engine
     try:
         from tools.govcon.gap_analyzer import register_gaps_as_innovation_signals
+
         cross_result = register_gaps_as_innovation_signals()
         results["innovation_signals_registered"] = cross_result.get("registered", 0)
     except Exception as e:
@@ -216,6 +224,7 @@ def stage_draft(config):
         # Draft responses
         try:
             from tools.govcon.response_drafter import draft_all_for_opportunity
+
             draft_result = draft_all_for_opportunity(opp_id)
             results["drafted"] += draft_result.get("drafts_created", 0)
         except Exception as e:
@@ -224,6 +233,7 @@ def stage_draft(config):
         # Auto-populate compliance matrix
         try:
             from tools.govcon.compliance_populator import populate_compliance_matrix
+
             comp_result = populate_compliance_matrix(opp_id)
             results["compliance_populated"] += comp_result.get("populated_items", 0)
         except Exception as e:
@@ -235,6 +245,7 @@ def stage_draft(config):
 
 
 # ── pipeline orchestration ───────────────────────────────────────────
+
 
 def run_pipeline(stages=None):
     """Execute the full GovCon pipeline or specific stages."""
@@ -302,10 +313,13 @@ def run_pipeline(stages=None):
     }
 
     conn = _get_db()
-    _audit(conn, "pipeline_complete",
-           f"Pipeline {pipeline_id}: opps={discover.get('opportunities', 0)} "
-           f"reqs={extract.get('extracted', 0)} gaps={mapping.get('gaps', 0)} "
-           f"drafts={draft.get('drafted', 0)} errors={len(total_errors)}")
+    _audit(
+        conn,
+        "pipeline_complete",
+        f"Pipeline {pipeline_id}: opps={discover.get('opportunities', 0)} "
+        f"reqs={extract.get('extracted', 0)} gaps={mapping.get('gaps', 0)} "
+        f"drafts={draft.get('drafted', 0)} errors={len(total_errors)}",
+    )
     conn.commit()
     conn.close()
 
@@ -382,10 +396,10 @@ def get_status():
         # Last pipeline run (from audit trail)
         try:
             r = conn.execute(
-                "SELECT timestamp FROM audit_trail WHERE event_type='govcon.pipeline' "
-                "AND action='pipeline_complete' ORDER BY timestamp DESC LIMIT 1"
+                "SELECT created_at FROM audit_trail WHERE event_type='govcon.pipeline' "
+                "AND action='pipeline_complete' ORDER BY created_at DESC LIMIT 1"
             ).fetchone()
-            stats["last_pipeline_run"] = r["timestamp"] if r else None
+            stats["last_pipeline_run"] = r["created_at"] if r else None
         except Exception:
             stats["last_pipeline_run"] = None
 
@@ -414,11 +428,11 @@ def get_pipeline_report():
         # Recent pipeline runs
         try:
             runs = conn.execute(
-                "SELECT timestamp, details FROM audit_trail "
+                "SELECT created_at, details FROM audit_trail "
                 "WHERE event_type='govcon.pipeline' AND action='pipeline_complete' "
-                "ORDER BY timestamp DESC LIMIT 10"
+                "ORDER BY created_at DESC LIMIT 10"
             ).fetchall()
-            status["recent_runs"] = [{"timestamp": r["timestamp"], "details": r["details"]} for r in runs]
+            status["recent_runs"] = [{"timestamp": r["created_at"], "details": r["details"]} for r in runs]
         except Exception:
             status["recent_runs"] = []
 
@@ -462,6 +476,7 @@ def get_pipeline_report():
 
 # ── daemon mode ──────────────────────────────────────────────────────
 
+
 def run_daemon():
     """Run as daemon with scheduled scans and quiet hours."""
     config = _load_config()
@@ -483,11 +498,13 @@ def run_daemon():
                 try:
                     result = run_pipeline()
                     summary = result.get("summary", {})
-                    print(f"[govcon_engine] Pipeline complete: "
-                          f"opps={summary.get('new_opportunities', 0)} "
-                          f"reqs={summary.get('requirements_extracted', 0)} "
-                          f"gaps={summary.get('gaps_identified', 0)} "
-                          f"drafts={summary.get('drafts_created', 0)}")
+                    print(
+                        f"[govcon_engine] Pipeline complete: "
+                        f"opps={summary.get('new_opportunities', 0)} "
+                        f"reqs={summary.get('requirements_extracted', 0)} "
+                        f"gaps={summary.get('gaps_identified', 0)} "
+                        f"drafts={summary.get('drafts_created', 0)}"
+                    )
                 except Exception as e:
                     print(f"[govcon_engine] Pipeline error: {e}")
             last_run = now
@@ -496,8 +513,9 @@ def run_daemon():
 
 # ── CLI ──────────────────────────────────────────────────────────────
 
+
 def main():
-    parser = argparse.ArgumentParser(description="ICDEV GovCon Intelligence Engine (Phase 59E)")
+    parser = argparse.ArgumentParser(description="ICDEV™ GovCon Intelligence Engine (Phase 59E)")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--run", action="store_true", help="Run full pipeline")
     group.add_argument("--stage", choices=STAGES, help="Run a specific stage")
@@ -524,7 +542,7 @@ def main():
 
     if args.human:
         print(f"\n{'=' * 60}")
-        print("  ICDEV GovCon Intelligence Engine")
+        print("  ICDEV™ GovCon Intelligence Engine")
         print(f"{'=' * 60}")
         if "summary" in result:
             s = result["summary"]
@@ -545,7 +563,7 @@ def main():
             print(f"  KB Blocks:      {result.get('knowledge_blocks', 0)}")
             print(f"  Linked Proposals: {result.get('linked_proposals', 0)}")
             if result.get("domain_distribution"):
-                print(f"\n  Domain Distribution:")
+                print("\n  Domain Distribution:")
                 for domain, cnt in result["domain_distribution"].items():
                     print(f"    {domain:20s} {cnt}")
         if result.get("total_errors", 0) > 0:

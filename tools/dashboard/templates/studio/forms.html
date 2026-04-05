@@ -1,0 +1,219 @@
+{% extends "studio/base_studio.html" %}
+
+{% block studio_content %}
+<div class="studio-container">
+
+  <!-- Header -->
+  <div class="studio-header">
+    <div class="studio-header__left">
+      <div class="studio-header__icon">&#128221;</div>
+      <div>
+        <div class="studio-header__title">Form Builder</div>
+        <div class="studio-header__subtitle">Create custom forms for intake, compliance, and data collection</div>
+      </div>
+    </div>
+    <div class="studio-header__actions">
+      <button class="studio-btn studio-btn--secondary" onclick="FormBuilder.showTemplates()">
+        <span>&#128218;</span> Templates
+      </button>
+      <button class="studio-btn studio-btn--primary studio-btn--lg" onclick="FormBuilder.createNew()">
+        <span>&#43;</span> New Form
+      </button>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="studio-tabs">
+    <button class="studio-tab studio-tab--active" data-tab="designer" onclick="FormBuilder.switchTab(this)">
+      <span>&#9998;</span> Designer
+    </button>
+    <button class="studio-tab" data-tab="saved" onclick="FormBuilder.switchTab(this)">
+      <span>&#128451;</span> Saved Forms
+      <span class="studio-tab__count" id="fb-saved-count">0</span>
+    </button>
+    <button class="studio-tab" data-tab="submissions" onclick="FormBuilder.switchTab(this)">
+      <span>&#128196;</span> Submissions
+    </button>
+  </div>
+
+  <!-- Tab: Designer -->
+  <div class="studio-tab-panel" id="panel-designer">
+    <div class="fb-designer">
+      <!-- Field palette -->
+      <div class="fb-palette">
+        <div class="fb-palette__header">Field Types</div>
+        <div class="fb-palette__hint">Click to add field to form</div>
+        <div id="fb-field-types">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+
+      <!-- Form canvas -->
+      <div class="fb-canvas">
+        <div class="studio-toolbar studio-mb-4">
+          <input type="text" class="studio-input" id="fb-form-name" value="Untitled Form"
+                 placeholder="Form name..." style="max-width:260px;font-weight:600;">
+          <div class="studio-toolbar__spacer"></div>
+          <span class="studio-badge studio-badge--neutral" id="fb-field-count">0 fields</span>
+          <button class="studio-btn studio-btn--secondary" onclick="FormBuilder.preview()">Preview</button>
+          <button class="studio-btn studio-btn--primary" onclick="FormBuilder.save()">Save Form</button>
+        </div>
+
+        <div class="studio-card" id="fb-form-canvas" style="min-height:300px;">
+          <div class="studio-card__body" id="fb-fields-container">
+            <div class="studio-empty" id="fb-empty">
+              <div class="studio-empty__icon">&#128221;</div>
+              <div class="studio-empty__title">Start Building</div>
+              <div class="studio-empty__description">
+                Click field types on the left to add them to your form,
+                or start from a template.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab: Saved -->
+  <div class="studio-tab-panel" id="panel-saved" style="display:none;">
+    <div class="studio-grid studio-grid--auto" id="fb-saved-grid">
+      <div class="studio-spinner studio-spinner--lg" style="margin:48px auto;"></div>
+    </div>
+  </div>
+
+  <!-- Tab: Submissions -->
+  <div class="studio-tab-panel" id="panel-submissions" style="display:none;">
+    <div class="studio-table-wrap">
+      <table class="studio-table">
+        <thead><tr><th>Form</th><th>Submitted By</th><th>Date</th><th>Data</th></tr></thead>
+        <tbody id="fb-submissions-body">
+          <tr><td colspan="4" class="studio-text-muted" style="text-align:center;padding:32px;">No submissions yet</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Field Config Modal -->
+<div class="studio-modal-overlay" id="fb-field-modal" style="display:none;">
+  <div class="studio-modal">
+    <div class="studio-modal__header">
+      <div class="studio-modal__title">Configure Field</div>
+      <button class="studio-btn studio-btn--ghost studio-btn--sm" onclick="FormBuilder.closeFieldModal()">&times;</button>
+    </div>
+    <div class="studio-modal__body" id="fb-field-modal-body"></div>
+    <div class="studio-modal__footer">
+      <button class="studio-btn studio-btn--danger studio-btn--sm" id="fb-delete-field-btn">Delete Field</button>
+      <div class="studio-toolbar__spacer"></div>
+      <button class="studio-btn studio-btn--ghost" onclick="FormBuilder.closeFieldModal()">Cancel</button>
+      <button class="studio-btn studio-btn--primary" onclick="FormBuilder.saveFieldConfig()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Templates Modal -->
+<div class="studio-modal-overlay" id="fb-templates-modal" style="display:none;">
+  <div class="studio-modal studio-modal--lg">
+    <div class="studio-modal__header">
+      <div class="studio-modal__title">Form Templates</div>
+      <button class="studio-btn studio-btn--ghost studio-btn--sm"
+              onclick="document.getElementById('fb-templates-modal').style.display='none'">&times;</button>
+    </div>
+    <div class="studio-modal__body">
+      <div class="studio-grid studio-grid--2" id="fb-templates-grid"></div>
+    </div>
+  </div>
+</div>
+
+<div class="studio-toast-container" id="studio-toasts"></div>
+
+<style>
+  .fb-designer {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    gap: var(--studio-space-6);
+    min-height: calc(100vh - 280px);
+  }
+  @media (max-width: 768px) { .fb-designer { grid-template-columns: 1fr; } }
+
+  .fb-palette {
+    background: var(--studio-bg-surface);
+    border: 1px solid var(--studio-border);
+    border-radius: var(--studio-radius-lg);
+    padding: var(--studio-space-4);
+  }
+  .fb-palette__header {
+    font-size: var(--studio-text-xs);
+    font-weight: 600;
+    color: var(--studio-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: var(--studio-space-2);
+  }
+  .fb-palette__hint {
+    font-size: 0.7rem;
+    color: var(--studio-text-muted);
+    margin-bottom: var(--studio-space-3);
+  }
+  .fb-field-type-btn {
+    display: flex;
+    align-items: center;
+    gap: var(--studio-space-2);
+    width: 100%;
+    padding: var(--studio-space-2) var(--studio-space-3);
+    font-family: var(--studio-font);
+    font-size: var(--studio-text-xs);
+    color: var(--studio-text-secondary);
+    background: none;
+    border: 1px solid transparent;
+    border-radius: var(--studio-radius-sm);
+    cursor: pointer;
+    text-align: left;
+    transition: all var(--studio-duration-fast) var(--studio-ease);
+    margin-bottom: 2px;
+  }
+  .fb-field-type-btn:hover {
+    background: var(--studio-bg-hover);
+    border-color: var(--studio-border);
+    color: var(--studio-text-primary);
+  }
+  .fb-field-type-icon {
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(99,102,241,0.1);
+    color: var(--studio-accent-light);
+    border-radius: 5px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+
+  .fb-field {
+    display: flex;
+    align-items: center;
+    gap: var(--studio-space-3);
+    padding: var(--studio-space-3) var(--studio-space-4);
+    background: var(--studio-bg-elevated);
+    border: 1px solid var(--studio-border);
+    border-radius: var(--studio-radius-sm);
+    margin-bottom: var(--studio-space-2);
+    cursor: pointer;
+    transition: all var(--studio-duration-fast) var(--studio-ease);
+  }
+  .fb-field:hover {
+    border-color: var(--studio-accent);
+    background: var(--studio-accent-glow);
+  }
+  .fb-field__icon { width: 28px; text-align: center; color: var(--studio-accent-light); font-weight: 700; }
+  .fb-field__label { flex: 1; font-size: var(--studio-text-sm); color: var(--studio-text-primary); }
+  .fb-field__type { font-size: var(--studio-text-xs); color: var(--studio-text-muted); }
+  .fb-field__required { color: var(--studio-error); font-size: var(--studio-text-xs); }
+  .fb-field__actions { display: flex; gap: 4px; }
+</style>
+
+<script src="/static/js/form-builder.js"></script>
+{% endblock %}

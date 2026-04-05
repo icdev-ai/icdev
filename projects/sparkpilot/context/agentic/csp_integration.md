@@ -27,4 +27,4 @@ These MCP servers are configured in `.mcp.json` and available to Claude Code.
 Use them for cloud-native operations specific to the target deployment environment.
 
 For capabilities not available via AWS MCP servers, use the A2A
-callback to parent ICDEV.
+callback to parent ICDEV™.

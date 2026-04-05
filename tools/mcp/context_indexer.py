@@ -69,7 +69,7 @@ class ClaudeMdIndexer:
 
         for i, line in enumerate(lines):
             # Match ## or ### headers
-            match = re.match(r'^(#{2,3})\s+(.+)$', line)
+            match = re.match(r"^(#{2,3})\s+(.+)$", line)
             if match:
                 # Save previous section
                 if current_name:
@@ -128,8 +128,7 @@ class ClaudeMdIndexer:
         matches = []
 
         for name, data in self._sections.items():
-            if (keyword_lower in name.lower() or
-                    keyword_lower in data["content"].lower()):
+            if keyword_lower in name.lower() or keyword_lower in data["content"].lower():
                 matches.append(name)
 
         return matches
@@ -142,11 +141,13 @@ class ClaudeMdIndexer:
         self._refresh()
         toc = []
         for name, data in self._sections.items():
-            toc.append({
-                "name": name,
-                "level": data["level"],
-                "line_number": data["line_number"],
-            })
+            toc.append(
+                {
+                    "name": name,
+                    "level": data["level"],
+                    "line_number": data["line_number"],
+                }
+            )
         return toc
 
     def get_sections_for_role(self, role: str) -> str:
@@ -166,12 +167,12 @@ class ClaudeMdIndexer:
             "compliance-agent": ["Compliance", "Crosswalk", "Gates", "Security Gates", "NIST", "FedRAMP"],
             "security": ["Security", "SAST", "Vulnerability", "Secret", "Gates", "ATLAS"],
             "security-agent": ["Security", "SAST", "Vulnerability", "Secret", "Gates", "ATLAS"],
-            "architect": ["Architecture", "GOTCHA", "ATLAS", "MCP", "Agent"],
-            "architect-agent": ["Architecture", "GOTCHA", "ATLAS", "MCP", "Agent"],
+            "architect": ["Architecture", "FORGE", "ANVIL", "MCP", "Agent"],
+            "architect-agent": ["Architecture", "FORGE", "ANVIL", "MCP", "Agent"],
             "infrastructure": ["Infrastructure", "Terraform", "K8s", "Docker", "Cloud", "Deploy"],
             "infrastructure-agent": ["Infrastructure", "Terraform", "K8s", "Docker", "Cloud", "Deploy"],
-            "orchestrator": ["Architecture", "Agent", "Workflow", "MCP", "GOTCHA"],
-            "orchestrator-agent": ["Architecture", "Agent", "Workflow", "MCP", "GOTCHA"],
+            "orchestrator": ["Architecture", "Agent", "Workflow", "MCP", "FORGE"],
+            "orchestrator-agent": ["Architecture", "Agent", "Workflow", "MCP", "FORGE"],
         }
 
         keywords = role_keywords.get(role, [])

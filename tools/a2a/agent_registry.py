@@ -14,6 +14,8 @@ Provides:
 import argparse
 import json
 import sqlite3
+from tools.db.storage import get_connection
+from tools.common.helpers import row_to_dict_json
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -25,23 +27,8 @@ AGENT_CARDS_DIR = Path(__file__).resolve().parent / "agent_cards"
 def _get_db(db_path: Path = None) -> sqlite3.Connection:
     """Get a database connection with row factory."""
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(path))
     return conn
-
-
-def _row_to_dict(row: sqlite3.Row) -> dict:
-    """Convert a sqlite3.Row to a plain dict."""
-    if row is None:
-        return None
-    d = dict(row)
-    # Parse capabilities JSON if present
-    if d.get("capabilities") and isinstance(d["capabilities"], str):
-        try:
-            d["capabilities"] = json.loads(d["capabilities"])
-        except json.JSONDecodeError:
-            pass
-    return d
 
 
 def register_agent(
@@ -86,7 +73,7 @@ def register_agent(
 
         c.execute("SELECT * FROM agents WHERE id = ?", (agent_id,))
         row = c.fetchone()
-        result = _row_to_dict(row)
+        result = row_to_dict_json(row)
         print(f"Agent registered: {agent_id} ({name}) at {url}")
         return result
     finally:
@@ -129,7 +116,7 @@ def discover_agents(db_path: Path = None) -> List[dict]:
         c = conn.cursor()
         c.execute("SELECT * FROM agents WHERE status = 'active' ORDER BY name")
         rows = c.fetchall()
-        return [_row_to_dict(r) for r in rows]
+        return [row_to_dict_json(r) for r in rows]
     finally:
         conn.close()
 
@@ -148,7 +135,7 @@ def get_agent(agent_id: str, db_path: Path = None) -> Optional[dict]:
         c = conn.cursor()
         c.execute("SELECT * FROM agents WHERE id = ?", (agent_id,))
         row = c.fetchone()
-        return _row_to_dict(row)
+        return row_to_dict_json(row)
     finally:
         conn.close()
 
@@ -194,7 +181,7 @@ def find_agent_for_skill(skill_id: str, db_path: Path = None) -> Optional[dict]:
         rows = c.fetchall()
 
         for row in rows:
-            agent = _row_to_dict(row)
+            agent = row_to_dict_json(row)
             caps = agent.get("capabilities")
             if isinstance(caps, dict):
                 skills = caps.get("skills", [])
@@ -250,7 +237,7 @@ def discover_agents_healthy(staleness_seconds: int = 120, db_path: Path = None) 
             (staleness_seconds,),
         )
         rows = c.fetchall()
-        return [_row_to_dict(r) for r in rows]
+        return [row_to_dict_json(r) for r in rows]
     finally:
         conn.close()
 

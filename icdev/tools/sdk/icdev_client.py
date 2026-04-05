@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""ICDEV Python SDK client — thin wrapper around CLI tools (D191).
+"""ICDEV™ Python SDK client — thin wrapper around CLI tools (D191).
 
-Wraps existing ICDEV CLI tools via subprocess.run() with --json flag.
+Wraps existing ICDEV™ CLI tools via subprocess.run() with --json flag.
 Works offline, air-gap safe, no server dependency.  Project-scoped —
 set project_id once, use everywhere.
 
 Usage:
     from icdev.tools.sdk.icdev_client import ICDEVClient
-from icdev._paths import get_project_root
 
     client = ICDEVClient(project_id="proj-123", project_dir="/path/to/project")
     status = client.project_status()
@@ -17,6 +16,7 @@ from icdev._paths import get_project_root
     context = client.build_context()
 """
 
+from icdev._paths import get_project_root
 import json
 import subprocess
 import sys
@@ -24,17 +24,17 @@ from pathlib import Path
 
 BASE_DIR = get_project_root()
 class ICDEVError(Exception):
-    """Raised when an ICDEV CLI tool returns a non-zero exit code."""
+    """Raised when an ICDEV™ CLI tool returns a non-zero exit code."""
 
     def __init__(self, tool: str, returncode: int, stderr: str):
         self.tool = tool
         self.returncode = returncode
         self.stderr = stderr
-        super().__init__(f"ICDEV tool '{tool}' failed (exit {returncode}): {stderr}")
+        super().__init__(f"ICDEV™ tool '{tool}' failed (exit {returncode}): {stderr}")
 
 
 class ICDEVClient:
-    """Thin Python SDK wrapping ICDEV CLI tools.
+    """Thin Python SDK wrapping ICDEV™ CLI tools.
 
     Args:
         project_id: Project UUID (used for compliance/security tools).

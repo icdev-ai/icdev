@@ -8,6 +8,7 @@ from typing import Optional, List, Dict, Any
 
 class RetryCode(Enum):
     """Retry decision codes for agent execution."""
+
     SUCCESS = "success"
     RETRYABLE_ERROR = "retryable_error"
     FATAL_ERROR = "fatal_error"
@@ -18,6 +19,7 @@ class RetryCode(Enum):
 @dataclass
 class AgentPromptRequest:
     """Request to execute an agent prompt via Claude Code CLI."""
+
     prompt: str
     model: str = "sonnet"  # sonnet, opus, haiku
     project_dir: Optional[str] = None
@@ -33,6 +35,7 @@ class AgentPromptRequest:
 @dataclass
 class AgentPromptResponse:
     """Response from an agent prompt execution."""
+
     execution_id: str = ""
     status: str = "pending"  # started, completed, failed, retried, timeout
     retry_code: RetryCode = RetryCode.SUCCESS

@@ -1,8 +1,8 @@
-# Bug Fix — End-to-End (ATLAS Workflow)
+# Bug Fix — End-to-End (ANVIL Workflow)
 
 Plan, implement, validate through the full sparkpilot DevSecOps pipeline, and commit a bug fix in one shot. The user provides only a description — sparkpilot handles everything else.
 
-Follows the ATLAS workflow: Architect → Trace → Link → Assemble → Stress-test.
+Follows the ANVIL workflow: Architect → Navigate → Verify → Integrate → Launch.
 
 ## Instructions
 

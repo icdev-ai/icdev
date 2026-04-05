@@ -150,7 +150,7 @@ The following evidence artifacts were collected during this assessment:
 | Field | Value |
 |-------|-------|
 | Assessor | {{assessor}} |
-| Assessment Engine | ICDEV Compliance Engine v{{icdev_version}} |
+| Assessment Engine | ICDEV™ Compliance Engine v{{icdev_version}} |
 | Assessment Date | {{assessment_date}} |
 | Report Generated | {{generation_timestamp}} |
 | Report Version | {{version}} |
@@ -159,7 +159,7 @@ The following evidence artifacts were collected during this assessment:
 
 ## 11. Assessment Methodology
 
-This assessment was conducted using the ICDEV FedRAMP Assessment Engine against the NIST SP 800-53 Rev 5 control catalog at the {{baseline}} baseline. Each control was evaluated for implementation status and supporting evidence.
+This assessment was conducted using the ICDEV™ FedRAMP Assessment Engine against the NIST SP 800-53 Rev 5 control catalog at the {{baseline}} baseline. Each control was evaluated for implementation status and supporting evidence.
 
 **Scoring Formula:** Readiness Score = 100 x (satisfied + risk_accepted x 0.75) / (total - not_applicable)
 

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Fine-Tuning — ICDEV Dashboard{% endblock %}
+{% block title %}Fine-Tuning — ICDEV™ Dashboard{% endblock %}
 {% block content %}
 
 <div class="container">
@@ -177,9 +177,16 @@
         .then(r => r.json())
         .then(d => {
             const el = document.getElementById('gpu-info');
-            if (d.available) {
-                el.innerHTML = '<span style="color:#4caf50;">' + (d.gpu_name || 'GPU available') +
-                    ' (' + (d.total_vram_mb || 0) + ' MB VRAM, ' + (d.gpu_count || 1) + ' GPU)</span>';
+            const hasGpu = d.has_gpu || d.available;
+            const gpuName = (d.gpus && d.gpus[0] ? d.gpus[0].name : null) || d.gpu_name || 'GPU';
+            const vram = d.total_vram_mb || (d.gpus && d.gpus[0] ? d.gpus[0].vram_total_mb : 0) || 0;
+            const canTrain = d.can_train;
+            if (hasGpu) {
+                const trainBadge = canTrain
+                    ? ' <span style="background:#4caf50;color:#fff;padding:2px 8px;border-radius:4px;font-size:0.8em;">QLoRA Ready</span>'
+                    : ' <span style="background:#ff9800;color:#fff;padding:2px 8px;border-radius:4px;font-size:0.8em;">Serve Only</span>';
+                el.innerHTML = '<span style="color:#4caf50;">' + gpuName +
+                    ' (' + vram + ' MB VRAM, CUDA ' + (d.cuda_version || '?') + ')</span>' + trainBadge;
             } else {
                 el.innerHTML = '<span style="color:#ff9800;">No GPU detected (CPU serving only via Ollama)</span>';
             }

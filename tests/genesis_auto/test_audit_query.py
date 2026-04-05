@@ -18,7 +18,7 @@ import pytest
 def test_audit_query_imports():
     """Verify module can be imported without errors."""
     try:
-        import tools.audit.audit_query
+        import tools.audit.audit_query  # noqa: F401
     except ImportError as e:
         pytest.skip(f"Import dependency missing: {e}")
 

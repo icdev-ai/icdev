@@ -12,10 +12,10 @@ CLI: --check-all, --check-service <name>, --history [--hours N], --json
 import argparse
 import json
 import logging
-import sqlite3
 import sys
 import time
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -46,6 +46,7 @@ class CSPHealthChecker:
         """Lazy-load CSPProviderFactory."""
         if self._factory is None:
             from tools.cloud.provider_factory import CSPProviderFactory
+
             self._factory = CSPProviderFactory(config_path=self._config_path)
         return self._factory
 
@@ -70,15 +71,12 @@ class CSPHealthChecker:
             return getter()
         return None
 
-    def _record_status(self, provider_name: str, service: str, status: str,
-                       latency_ms: float, error_message: str = ""):
+    def _record_status(self, provider_name: str, service: str, status: str, latency_ms: float, error_message: str = ""):
         """Record health check status to cloud_provider_status table."""
         try:
-            conn = sqlite3.connect(self._db_path)
+            conn = get_connection(db_path=str(self._db_path))
             # Check if table exists (migration 007 may not have run yet)
-            cursor = conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='cloud_provider_status'"
-            )
+            cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='cloud_provider_status'")
             if not cursor.fetchone():
                 logger.debug("cloud_provider_status table not found — skipping history recording")
                 conn.close()
@@ -88,9 +86,15 @@ class CSPHealthChecker:
                 "INSERT INTO cloud_provider_status "
                 "(id, provider, service, status, latency_ms, error_message, checked_at) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (entry_id, provider_name, service, status, latency_ms,
-                 error_message or None,
-                 datetime.now(timezone.utc).isoformat()),
+                (
+                    entry_id,
+                    provider_name,
+                    service,
+                    status,
+                    latency_ms,
+                    error_message or None,
+                    datetime.now(timezone.utc).isoformat(),
+                ),
             )
             conn.commit()
             conn.close()
@@ -128,8 +132,11 @@ class CSPHealthChecker:
             result["error"] = str(e)
 
         self._record_status(
-            result["provider"], service, result["status"],
-            result["latency_ms"], result.get("error", ""),
+            result["provider"],
+            service,
+            result["status"],
+            result["latency_ms"],
+            result.get("error", ""),
         )
         return result
 
@@ -147,9 +154,7 @@ class CSPHealthChecker:
             if check["status"] == "healthy":
                 healthy_count += 1
 
-        overall = "healthy" if healthy_count == total_count else (
-            "degraded" if healthy_count > 0 else "unhealthy"
-        )
+        overall = "healthy" if healthy_count == total_count else ("degraded" if healthy_count > 0 else "unhealthy")
 
         return {
             "overall_status": overall,
@@ -166,23 +171,20 @@ class CSPHealthChecker:
     def get_status_history(self, hours: int = 24) -> List[Dict]:
         """Get status history from cloud_provider_status table."""
         try:
-            conn = sqlite3.connect(self._db_path)
-            conn.row_factory = sqlite3.Row
+            conn = get_connection(db_path=str(self._db_path))
             # Check if table exists
-            cursor = conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='cloud_provider_status'"
-            )
+            cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='cloud_provider_status'")
             if not cursor.fetchone():
                 conn.close()
                 return []
 
             cutoff = datetime.now(timezone.utc)
             from datetime import timedelta
+
             cutoff = (cutoff - timedelta(hours=hours)).isoformat()
 
             rows = conn.execute(
-                "SELECT * FROM cloud_provider_status WHERE checked_at >= ? "
-                "ORDER BY checked_at DESC LIMIT 500",
+                "SELECT * FROM cloud_provider_status WHERE checked_at >= ? ORDER BY checked_at DESC LIMIT 500",
                 (cutoff,),
             ).fetchall()
             conn.close()
@@ -194,40 +196,36 @@ class CSPHealthChecker:
 
 def main():
     """CLI entry point."""
-    parser = argparse.ArgumentParser(
-        description="CSP Health Checker — check cloud service provider health"
+    parser = argparse.ArgumentParser(description="CSP Health Checker — check cloud service provider health")
+    parser.add_argument("--check-all", action="store_true", help="Check all CSP services")
+    parser.add_argument(
+        "--check-service", type=str, help="Check a specific service (secrets, storage, kms, monitoring, iam, registry)"
     )
-    parser.add_argument("--check-all", action="store_true",
-                        help="Check all CSP services")
-    parser.add_argument("--check-service", type=str,
-                        help="Check a specific service (secrets, storage, kms, monitoring, iam, registry)")
-    parser.add_argument("--history", action="store_true",
-                        help="Show status history")
-    parser.add_argument("--hours", type=int, default=24,
-                        help="History window in hours (default: 24)")
-    parser.add_argument("--config", type=str, default=None,
-                        help="Path to cloud_config.yaml")
-    parser.add_argument("--db", type=str, default=None,
-                        help="Path to icdev.db")
-    parser.add_argument("--json", action="store_true",
-                        help="JSON output")
+    parser.add_argument("--history", action="store_true", help="Show status history")
+    parser.add_argument("--hours", type=int, default=24, help="History window in hours (default: 24)")
+    parser.add_argument("--config", type=str, default=None, help="Path to cloud_config.yaml")
+    parser.add_argument("--db", type=str, default=None, help="Path to icdev.db")
+    parser.add_argument("--json", action="store_true", help="JSON output")
 
     args = parser.parse_args()
     checker = CSPHealthChecker(config_path=args.config, db_path=args.db)
 
     if args.check_service:
         if args.check_service not in CSPHealthChecker.SERVICE_NAMES:
-            print(f"Unknown service: {args.check_service}. "
-                  f"Available: {', '.join(CSPHealthChecker.SERVICE_NAMES)}",
-                  file=sys.stderr)
+            print(
+                f"Unknown service: {args.check_service}. Available: {', '.join(CSPHealthChecker.SERVICE_NAMES)}",
+                file=sys.stderr,
+            )
             sys.exit(1)
         result = checker.check_service(args.check_service)
         if args.json:
             print(json.dumps(result, indent=2))
         else:
             status_icon = "OK" if result["status"] == "healthy" else "FAIL"
-            print(f"[{status_icon}] {result['service']}: {result['provider']} "
-                  f"({result['status']}, {result['latency_ms']}ms)")
+            print(
+                f"[{status_icon}] {result['service']}: {result['provider']} "
+                f"({result['status']}, {result['latency_ms']}ms)"
+            )
             if result.get("error"):
                 print(f"  Error: {result['error']}")
 
@@ -239,9 +237,11 @@ def main():
             print(f"Status history (last {args.hours}h): {len(history)} entries")
             for entry in history[:20]:
                 status_icon = "OK" if entry["status"] == "healthy" else "FAIL"
-                print(f"  [{status_icon}] {entry['checked_at']} "
-                      f"{entry['service']}:{entry['provider']} "
-                      f"({entry['status']}, {entry.get('latency_ms', 0)}ms)")
+                print(
+                    f"  [{status_icon}] {entry['checked_at']} "
+                    f"{entry['service']}:{entry['provider']} "
+                    f"({entry['status']}, {entry.get('latency_ms', 0)}ms)"
+                )
 
     else:
         # Default: check all
@@ -249,16 +249,19 @@ def main():
         if args.json:
             print(json.dumps(result, indent=2))
         else:
-            print(f"CSP Health: {result['overall_status'].upper()} "
-                  f"({result['healthy_count']}/{result['total_count']} healthy)")
-            print(f"  Provider: {result['global_provider']} | "
-                  f"Region: {result['region']} | "
-                  f"IL: {result['impact_level']} | "
-                  f"Air-gapped: {result['air_gapped']}")
+            print(
+                f"CSP Health: {result['overall_status'].upper()} "
+                f"({result['healthy_count']}/{result['total_count']} healthy)"
+            )
+            print(
+                f"  Provider: {result['global_provider']} | "
+                f"Region: {result['region']} | "
+                f"IL: {result['impact_level']} | "
+                f"Air-gapped: {result['air_gapped']}"
+            )
             for name, svc in result["services"].items():
                 status_icon = "OK" if svc["status"] == "healthy" else "FAIL"
-                print(f"  [{status_icon}] {name}: {svc['provider']} "
-                      f"({svc['status']}, {svc['latency_ms']}ms)")
+                print(f"  [{status_icon}] {name}: {svc['provider']} ({svc['status']}, {svc['latency_ms']}ms)")
                 if svc.get("error"):
                     print(f"       Error: {svc['error']}")
 

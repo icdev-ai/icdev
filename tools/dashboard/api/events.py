@@ -14,12 +14,14 @@ networks, works with Flask's synchronous WSGI, and avoids long-lived connections
 """
 
 import json
-import sqlite3
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
 from flask import Blueprint, Response, jsonify, request
+
+from tools.dashboard.config import DEFAULT_CLASSIFICATION
 
 events_bp = Blueprint("events_api", __name__)
 
@@ -31,8 +33,7 @@ DEFAULT_POLL_INTERVAL_MS = 3000
 
 
 def _get_db():
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(DB_PATH))
     return conn
 
 
@@ -64,17 +65,17 @@ def get_recent_events():
         params.extend([limit, offset])
 
         rows = conn.execute(query, params).fetchall()
-        total = conn.execute(
-            "SELECT COUNT(*) as cnt FROM hook_events"
-        ).fetchone()["cnt"]
+        total = conn.execute("SELECT COUNT(*) as cnt FROM hook_events").fetchone()["cnt"]
 
-        return jsonify({
-            "events": [dict(r) for r in rows],
-            "total": total,
-            "limit": limit,
-            "offset": offset,
-            "classification": "CUI",
-        })
+        return jsonify(
+            {
+                "events": [dict(r) for r in rows],
+                "total": total,
+                "limit": limit,
+                "offset": offset,
+                "classification": DEFAULT_CLASSIFICATION,
+            }
+        )
     finally:
         conn.close()
 
@@ -129,13 +130,15 @@ def poll_events():
         # New cursor = most recent event timestamp, or pass through old cursor
         new_cursor = events[0]["created_at"] if events else since
 
-        return jsonify({
-            "events": events,
-            "cursor": new_cursor,
-            "count": len(events),
-            "poll_interval_ms": DEFAULT_POLL_INTERVAL_MS,
-            "classification": "CUI",
-        })
+        return jsonify(
+            {
+                "events": events,
+                "cursor": new_cursor,
+                "count": len(events),
+                "poll_interval_ms": DEFAULT_POLL_INTERVAL_MS,
+                "classification": DEFAULT_CLASSIFICATION,
+            }
+        )
     finally:
         conn.close()
 
@@ -167,22 +170,63 @@ def event_stream():
     )
 
 
+@events_bp.route("/api/events/progress")
+def progress_stream():
+    """SSE endpoint for real-time progress updates on long-running operations.
+
+    Clients subscribe and receive structured progress events:
+        event: progress
+        data: {"operation_id": "...", "operation_type": "genesis_reflex",
+               "phase": "scan_item_23", "completed": 23, "total": 50,
+               "percent": 46.0, "status": "running"}
+
+    Supported operation_types: genesis_reflex, compliance_scan,
+    batch_workflow, marketplace_install, pulse_pipeline, filesync,
+    proposal_genesis, stig_check, vulnerability_scan.
+    """
+    from tools.dashboard.sse_manager import sse_manager
+
+    client_queue = sse_manager.add_client()
+
+    def generate():
+        try:
+            yield from sse_manager.generate_stream(client_queue)
+        finally:
+            sse_manager.remove_client(client_queue)
+
+    return Response(
+        generate(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
+
+
 @events_bp.route("/api/events/filter-options", methods=["GET"])
 def get_filter_options():
     """Return distinct hook types and tool names for filter dropdowns."""
     conn = _get_db()
     try:
-        hook_types = [r["hook_type"] for r in conn.execute(
-            "SELECT DISTINCT hook_type FROM hook_events ORDER BY hook_type"
-        ).fetchall()]
-        tool_names = [r["tool_name"] for r in conn.execute(
-            "SELECT DISTINCT tool_name FROM hook_events WHERE tool_name IS NOT NULL ORDER BY tool_name"
-        ).fetchall()]
-        return jsonify({
-            "hook_types": hook_types,
-            "tool_names": tool_names,
-            "classification": "CUI",
-        })
+        hook_types = [
+            r["hook_type"]
+            for r in conn.execute("SELECT DISTINCT hook_type FROM hook_events ORDER BY hook_type").fetchall()
+        ]
+        tool_names = [
+            r["tool_name"]
+            for r in conn.execute(
+                "SELECT DISTINCT tool_name FROM hook_events WHERE tool_name IS NOT NULL ORDER BY tool_name"
+            ).fetchall()
+        ]
+        return jsonify(
+            {
+                "hook_types": hook_types,
+                "tool_names": tool_names,
+                "classification": DEFAULT_CLASSIFICATION,
+            }
+        )
     finally:
         conn.close()
 
@@ -233,16 +277,19 @@ def ingest_event():
     # WebSocket broadcast for activity feed (D170)
     try:
         from tools.dashboard.websocket import broadcast_activity
-        broadcast_activity({
-            "source": "hook",
-            "id": data.get("id", ""),
-            "event_type": data.get("hook_type", ""),
-            "actor_or_agent": data.get("agent_id", data.get("tool_name", "")),
-            "summary": data.get("tool_name", data.get("message", "")),
-            "project_id": data.get("project_id", ""),
-            "classification": data.get("classification", ""),
-            "created_at": data.get("timestamp", data.get("created_at", "")),
-        })
+
+        broadcast_activity(
+            {
+                "source": "hook",
+                "id": data.get("id", ""),
+                "event_type": data.get("hook_type", ""),
+                "actor_or_agent": data.get("agent_id", data.get("tool_name", "")),
+                "summary": data.get("tool_name", data.get("message", "")),
+                "project_id": data.get("project_id", ""),
+                "classification": data.get("classification", ""),
+                "created_at": data.get("timestamp", data.get("created_at", "")),
+            }
+        )
     except Exception:
         pass  # WebSocket broadcast is best-effort
 

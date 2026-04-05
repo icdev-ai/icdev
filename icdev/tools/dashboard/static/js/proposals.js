@@ -1,15 +1,15 @@
 // CUI // SP-CTI
-// ICDEV Dashboard — Proposal Lifecycle Tracker (Zero Dependencies)
+// ICDEV™ Dashboard — Proposal Lifecycle Tracker (Zero Dependencies)
 // Classification: CUI // SP-CTI
 (function () {
   'use strict';
 
-  var NS = window.ICDEV || (window.ICDEV = {});
+  var NS = window.ICDEV™ || (window.ICDEV™ = {});
 
   // ─── Helpers ─────────────────────────────────────────────────────────────
 
   function escapeHTML(s) {
-    return ICDEV.escapeHTML ? ICDEV.escapeHTML(String(s || '')) : String(s || '');
+    return ICDEV™.escapeHTML ? ICDEV™.escapeHTML(String(s || '')) : String(s || '');
   }
 
   function cssVar(name, fallback) {
@@ -66,7 +66,7 @@
   }
 
   function toast(msg, type) {
-    if (ICDEV.showToast) { ICDEV.showToast(msg, type || 'success'); return; }
+    if (ICDEV™.showToast) { ICDEV™.showToast(msg, type || 'success'); return; }
     console.log('[Proposals]', type || 'info', msg);
   }
 

@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Tests for GAO AI Accountability assessor (Phase 48).
 
 Coverage: framework metadata, base class inheritance, catalog loading,
@@ -15,7 +15,6 @@ import json
 import sqlite3
 import sys
 from pathlib import Path
-from unittest.mock import patch, MagicMock
 
 import pytest
 
@@ -198,6 +197,7 @@ def mock_db_path(tmp_path):
 # Import & Metadata
 # ============================================================
 
+
 class TestImportAndMetadata:
     def test_import(self):
         """GAOAIAssessor can be imported."""
@@ -231,6 +231,7 @@ class TestImportAndMetadata:
 # ============================================================
 # Catalog Loading
 # ============================================================
+
 
 class TestCatalogLoading:
     def test_catalog_file_exists(self):
@@ -269,6 +270,7 @@ class TestCatalogLoading:
 # Automated Checks — Assessment
 # ============================================================
 
+
 class TestAssessment:
     def test_automated_checks_returns_dict(self, mock_db_path):
         """get_automated_checks returns a dict with string values."""
@@ -301,19 +303,15 @@ class TestAssessment:
         project = {"id": "proj-test"}
         results = assessor.get_automated_checks(project, project_dir=None)
         # Data-dependent keys must not be satisfied on an empty DB
-        assert results.get("GAO-PERF-4") != "satisfied", \
-            "GAO-PERF-4 should not be satisfied with empty audit_trail"
-        assert results.get("GAO-PERF-1") != "satisfied", \
-            "GAO-PERF-1 should not be satisfied with empty ai_telemetry"
-        assert results.get("GAO-DATA-2") != "satisfied", \
-            "GAO-DATA-2 should not be satisfied with empty provenance data"
+        assert results.get("GAO-PERF-4") != "satisfied", "GAO-PERF-4 should not be satisfied with empty audit_trail"
+        assert results.get("GAO-PERF-1") != "satisfied", "GAO-PERF-1 should not be satisfied with empty ai_telemetry"
+        assert results.get("GAO-DATA-2") != "satisfied", "GAO-DATA-2 should not be satisfied with empty provenance data"
 
     def test_audit_trail_check_satisfied_with_data(self, mock_db_path):
         """Populated audit_trail -> audit trail check improves."""
         conn = sqlite3.connect(str(mock_db_path))
         conn.execute(
-            "INSERT INTO audit_trail (project_id, event_type, actor, action, details) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO audit_trail (project_id, event_type, actor, action, details) VALUES (?, ?, ?, ?, ?)",
             ("proj-test", "code.commit", "builder-agent", "Committed module X", '{"files": 3}'),
         )
         conn.commit()
@@ -334,15 +332,13 @@ class TestAssessment:
         assessor = GAOAIAssessor(db_path=mock_db_path)
         project = {"id": "proj-test"}
         results = assessor.get_automated_checks(project, project_dir=str(tmp_path))
-        assert results.get("GAO-GOV-1") == "satisfied", \
-            "Agent governance YAML should satisfy GAO-GOV-1"
+        assert results.get("GAO-GOV-1") == "satisfied", "Agent governance YAML should satisfy GAO-GOV-1"
 
     def test_telemetry_check_satisfied_with_data(self, mock_db_path):
         """Populated ai_telemetry -> telemetry check improves."""
         conn = sqlite3.connect(str(mock_db_path))
         conn.execute(
-            "INSERT INTO ai_telemetry (project_id, agent_id, event_type, model_id) "
-            "VALUES (?, ?, ?, ?)",
+            "INSERT INTO ai_telemetry (project_id, agent_id, event_type, model_id) VALUES (?, ?, ?, ?)",
             ("proj-test", "builder-agent", "llm_call", "claude-opus-4"),
         )
         conn.commit()
@@ -358,8 +354,7 @@ class TestAssessment:
         """Populated prov_entities -> provenance check improves."""
         conn = sqlite3.connect(str(mock_db_path))
         conn.execute(
-            "INSERT INTO prov_entities (id, entity_type, label, project_id) "
-            "VALUES (?, ?, ?, ?)",
+            "INSERT INTO prov_entities (id, entity_type, label, project_id) VALUES (?, ?, ?, ?)",
             ("ent-1", "prompt", "User query for analysis", "proj-test"),
         )
         conn.commit()
@@ -385,6 +380,7 @@ class TestAssessment:
 # ============================================================
 # Gate Evaluation
 # ============================================================
+
 
 class TestGateEvaluation:
     def test_gate_not_assessed_empty(self, mock_db_path):

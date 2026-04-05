@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Learning Collector -- ingests and evaluates learned behaviors reported by child applications.
 
 Children report behaviors via A2A protocol. Parent evaluates each behavior
@@ -699,7 +699,7 @@ class LearningCollector:
 def main():
     parser = argparse.ArgumentParser(
         description=(
-            "ICDEV Learning Collector -- ingest and evaluate "
+            "ICDEV™ Learning Collector -- ingest and evaluate "
             "learned behaviors from child applications (D213)"
         )
     )

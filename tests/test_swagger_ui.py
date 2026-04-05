@@ -1,6 +1,7 @@
 # [TEMPLATE: CUI // SP-CTI]
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest
@@ -12,6 +13,7 @@ from icdev.tools.saas.swagger_ui import swagger_bp
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture()
 def app():
@@ -32,11 +34,13 @@ def client(app):
 # Tests
 # ---------------------------------------------------------------------------
 
+
 class TestSwaggerBlueprint:
     """Verify swagger_bp is a properly configured Flask Blueprint."""
 
     def test_swagger_bp_is_blueprint(self):
         from flask import Blueprint
+
         assert isinstance(swagger_bp, Blueprint)
 
     def test_swagger_bp_has_url_prefix(self):

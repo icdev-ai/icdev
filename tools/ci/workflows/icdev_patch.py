@@ -1,9 +1,9 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Patch — Quick fix workflow for single-issue patches
+# ICDEV™ Patch — Quick fix workflow for single-issue patches
 # Adapted from ADW adw_patch.py with dual platform support
 
 """
-ICDEV Patch — Create and implement a focused patch from issue content.
+ICDEV™ Patch — Create and implement a focused patch from issue content.
 
 Usage:
     python tools/ci/workflows/icdev_patch.py <issue-number> [run-id]
@@ -23,11 +23,11 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from tools.ci.modules.state import ICDevState
-from tools.ci.modules.git_ops import create_branch, commit_changes, finalize_git_operations
-from tools.ci.modules.vcs import VCS
-from tools.ci.modules.agent import execute_template
-from tools.ci.modules.workflow_ops import (
+from tools.ci.modules.state import ICDevState  # noqa: E402
+from tools.ci.modules.git_ops import create_branch, commit_changes, finalize_git_operations  # noqa: E402
+from tools.ci.modules.vcs import VCS  # noqa: E402
+from tools.ci.modules.agent import execute_template  # noqa: E402
+from tools.ci.modules.workflow_ops import (  # noqa: E402
     classify_issue,
     generate_branch_name,
     create_commit,
@@ -35,8 +35,8 @@ from tools.ci.modules.workflow_ops import (
     format_issue_message,
     ensure_run_id,
 )
-from tools.testing.data_types import AgentTemplateRequest
-from tools.testing.utils import setup_logger
+from tools.testing.data_types import AgentTemplateRequest  # noqa: E402
+from tools.testing.utils import setup_logger  # noqa: E402
 
 AGENT_PATCH_PLANNER = "patch_planner"
 AGENT_PATCH_IMPLEMENTOR = "patch_implementor"
@@ -77,7 +77,7 @@ def main():
     run_id = ensure_run_id(issue_number, run_id)
     state = ICDevState.load(run_id)
     logger = setup_logger(run_id, "icdev_patch")
-    logger.info(f"ICDEV Patch starting — run_id: {run_id}, issue: #{issue_number}")
+    logger.info(f"ICDEV™ Patch starting — run_id: {run_id}, issue: #{issue_number}")
 
     try:
         vcs = VCS()
@@ -159,9 +159,7 @@ def main():
         sys.exit(1)
 
     # Commit
-    commit_msg, error = create_commit(
-        AGENT_PATCH_IMPLEMENTOR, issue_json, "/patch", run_id, logger
-    )
+    commit_msg, error = create_commit(AGENT_PATCH_IMPLEMENTOR, issue_json, "/patch", run_id, logger)
     if error:
         commit_msg = f"{AGENT_PATCH_IMPLEMENTOR}: patch for issue #{issue_number}"
 

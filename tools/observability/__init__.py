@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""ICDEV Observability — Pluggable distributed tracing (D280).
+"""ICDEV™ Observability — Pluggable distributed tracing (D280).
 
 Provides a Haystack-style ProxyTracer with three backends:
   - OTelTracer   (production, requires opentelemetry-sdk)
@@ -72,13 +72,16 @@ def enable_tracing(backend: str = "auto") -> Tracer:
     if backend == "otel":
         try:
             from tools.observability.otel_tracer import OTelTracer
+
             tracer = OTelTracer()
         except ImportError:
             # D73: Graceful fallback when opentelemetry-sdk not installed
             from tools.observability.sqlite_tracer import SQLiteTracer
+
             tracer = SQLiteTracer()
     elif backend == "sqlite":
         from tools.observability.sqlite_tracer import SQLiteTracer
+
         tracer = SQLiteTracer()
     else:
         tracer = NullTracer()

@@ -1,6 +1,6 @@
 # [TEMPLATE: CUI // SP-CTI]
 #!/usr/bin/env python3
-"""Migration Code Generator — ICDEV DoD Modernization System.
+"""Migration Code Generator — ICDEV™ DoD Modernization System.
 
 Produces adapters, facades, microservice scaffolds, data access layers,
 migration tests, and rollback scripts from migration plans stored in
@@ -32,8 +32,8 @@ import collections
 import hashlib
 import json
 import os
-import sqlite3
 import textwrap
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -68,10 +68,10 @@ _DEFAULT_FRAMEWORK = {
 # Database helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_db():
     """Return a sqlite3 connection with Row factory."""
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     return conn
 
 
@@ -87,8 +87,15 @@ def _record_artifact(plan_id, task_id, artifact_type, file_path, description):
         "INSERT INTO migration_artifacts "
         "(plan_id, task_id, artifact_type, file_path, file_hash, description, created_at) "
         "VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (plan_id, task_id, artifact_type, file_path_str, file_hash, description,
-         datetime.now(timezone.utc).isoformat()),
+        (
+            plan_id,
+            task_id,
+            artifact_type,
+            file_path_str,
+            file_hash,
+            description,
+            datetime.now(timezone.utc).isoformat(),
+        ),
     )
     conn.commit()
     conn.close()
@@ -130,13 +137,12 @@ def _safe_var_name(name):
 # 1. generate_adapter
 # ---------------------------------------------------------------------------
 
+
 def generate_adapter(plan_id, legacy_component_id, language="python", output_dir="."):
     """Generate an adapter-pattern wrapper for a legacy component."""
     conn = _get_db()
 
-    comp = conn.execute(
-        "SELECT * FROM legacy_components WHERE id = ?", (legacy_component_id,)
-    ).fetchone()
+    comp = conn.execute("SELECT * FROM legacy_components WHERE id = ?", (legacy_component_id,)).fetchone()
     if not comp:
         conn.close()
         raise ValueError(f"Legacy component {legacy_component_id} not found")
@@ -172,11 +178,13 @@ def generate_adapter(plan_id, legacy_component_id, language="python", output_dir
         for m in methods:
             params_str = ", ".join(m.get("params", []))
             sig = f"self, {params_str}" if params_str else "self"
-            method_defs.append(textwrap.dedent(f"""\
-                def {m['name']}({sig}):
-                    \"\"\"Delegate to legacy {qualified}.{m['name']}.\"\"\"
-                    return self._legacy.{m['name']}({params_str})
-            """))
+            method_defs.append(
+                textwrap.dedent(f"""\
+                def {m["name"]}({sig}):
+                    \"\"\"Delegate to legacy {qualified}.{m["name"]}.\"\"\"
+                    return self._legacy.{m["name"]}({params_str})
+            """)
+            )
         body = "\n    ".join("\n".join(method_defs).split("\n"))
         code = textwrap.dedent(f"""\
             {_banner_top(language)}
@@ -287,6 +295,7 @@ def generate_adapter(plan_id, legacy_component_id, language="python", output_dir
 # 2. generate_facade
 # ---------------------------------------------------------------------------
 
+
 def generate_facade(plan_id, language="python", output_dir="."):
     """Generate an API facade with routing for all legacy endpoints."""
     conn = _get_db()
@@ -297,14 +306,13 @@ def generate_facade(plan_id, language="python", output_dir="."):
         raise ValueError(f"Migration plan {plan_id} not found")
 
     app_id = plan["legacy_app_id"]
-    apis = conn.execute(
-        "SELECT * FROM legacy_apis WHERE legacy_app_id = ? ORDER BY path", (app_id,)
-    ).fetchall()
+    apis = conn.execute("SELECT * FROM legacy_apis WHERE legacy_app_id = ? ORDER BY path", (app_id,)).fetchall()
 
     # Group by service boundary from extract_service tasks
     service_tasks = conn.execute(
         "SELECT mt.id, mt.title, mt.legacy_component_id FROM migration_tasks mt "
-        "WHERE mt.plan_id = ? AND mt.task_type = 'extract_service'", (plan_id,)
+        "WHERE mt.plan_id = ? AND mt.task_type = 'extract_service'",
+        (plan_id,),
     ).fetchall()
 
     # Map component_id -> service name
@@ -330,20 +338,22 @@ def generate_facade(plan_id, language="python", output_dir="."):
             handler = api["handler_function"] or "handler"
             svc = comp_to_service.get(api["component_id"], "legacy")
             func_name = _safe_var_name(f"{method}_{path.replace('/', '_')}")
-            route_blocks.append(textwrap.dedent(f"""\
+            route_blocks.append(
+                textwrap.dedent(f"""\
                 @app.route("{path}", methods=["{method.upper()}"])
                 def {func_name}():
                     \"\"\"Proxy to {svc} service (legacy: {handler}).\"\"\"
                     backend = BACKENDS.get("{svc}", BACKENDS["legacy"])
                     resp = requests.request("{method}", backend + "{path}", json=request.get_json(), headers=dict(request.headers))
                     return (resp.content, resp.status_code, dict(resp.headers))
-            """))
+            """)
+            )
         routes_code = "\n\n".join(route_blocks) if route_blocks else "# No legacy APIs found\npass\n"
         code = textwrap.dedent(f"""\
             {_banner_top(language)}
             \"\"\"API Facade — routes traffic between legacy and modern services.
 
-            Generated by ICDEV Migration Code Generator.
+            Generated by ICDEV™ Migration Code Generator.
             Classification: {CUI_BANNER}
             \"\"\"
             import os
@@ -376,13 +386,13 @@ def generate_facade(plan_id, language="python", output_dir="."):
             handler = api["handler_function"] or "handler"
             svc = comp_to_service.get(api["component_id"], "legacy")
             method_name = _safe_var_name(f"{method.lower()}_{path.replace('/', '_')}")
-            annotation = f"@RequestMapping(value = \"{path}\", method = RequestMethod.{method})"
+            annotation = f'@RequestMapping(value = "{path}", method = RequestMethod.{method})'
             mappings.append(
                 f"    {annotation}\n"
                 f"    public ResponseEntity<String> {method_name}(HttpServletRequest req) {{\n"
                 f"        // Proxy to {svc} service (legacy: {handler})\n"
-                f"        String backend = backends.getOrDefault(\"{svc}\", backends.get(\"legacy\"));\n"
-                f"        return proxyRequest(req, backend + \"{path}\");\n"
+                f'        String backend = backends.getOrDefault("{svc}", backends.get("legacy"));\n'
+                f'        return proxyRequest(req, backend + "{path}");\n'
                 f"    }}"
             )
         mappings_block = "\n\n".join(mappings) if mappings else "    // No legacy APIs found"
@@ -390,7 +400,7 @@ def generate_facade(plan_id, language="python", output_dir="."):
             {_banner_top(language)}
             /**
              * API Facade - routes traffic between legacy and modern services.
-             * Generated by ICDEV Migration Code Generator.
+             * Generated by ICDEV™ Migration Code Generator.
              * Classification: {CUI_BANNER}
              */
             import org.springframework.web.bind.annotation.*;
@@ -429,16 +439,21 @@ def generate_facade(plan_id, language="python", output_dir="."):
             path = api["path"] or "/"
             handler = api["handler_function"] or "handler"
             svc = comp_to_service.get(api["component_id"], "legacy")
-            attr = {"GET": "HttpGet", "POST": "HttpPost", "PUT": "HttpPut",
-                     "DELETE": "HttpDelete", "PATCH": "HttpPatch"}.get(method, "HttpGet")
+            attr = {
+                "GET": "HttpGet",
+                "POST": "HttpPost",
+                "PUT": "HttpPut",
+                "DELETE": "HttpDelete",
+                "PATCH": "HttpPatch",
+            }.get(method, "HttpGet")
             method_name = _safe_class_name(f"{method.lower()}_{path.replace('/', '_')}")
             actions.append(
-                f"        [{attr}(\"{path}\")]\n"
+                f'        [{attr}("{path}")]\n'
                 f"        public async Task<IActionResult> {method_name}()\n"
                 f"        {{\n"
                 f"            // Proxy to {svc} service (legacy: {handler})\n"
-                f"            var backend = _backends.GetValueOrDefault(\"{svc}\", _backends[\"legacy\"]);\n"
-                f"            return await ProxyRequest(backend + \"{path}\");\n"
+                f'            var backend = _backends.GetValueOrDefault("{svc}", _backends["legacy"]);\n'
+                f'            return await ProxyRequest(backend + "{path}");\n'
                 f"        }}"
             )
         actions_block = "\n\n".join(actions) if actions else "        // No legacy APIs found"
@@ -446,7 +461,7 @@ def generate_facade(plan_id, language="python", output_dir="."):
             {_banner_top(language)}
             /// <summary>
             /// API Facade - routes traffic between legacy and modern services.
-            /// Generated by ICDEV Migration Code Generator.
+            /// Generated by ICDEV™ Migration Code Generator.
             /// Classification: {CUI_BANNER}
             /// </summary>
             using Microsoft.AspNetCore.Mvc;
@@ -491,8 +506,8 @@ def generate_facade(plan_id, language="python", output_dir="."):
 # 3. generate_service_scaffold
 # ---------------------------------------------------------------------------
 
-def generate_service_scaffold(plan_id, service_name, language="python",
-                              framework=None, output_dir="."):
+
+def generate_service_scaffold(plan_id, service_name, language="python", framework=None, output_dir="."):
     """Generate a microservice skeleton for the given service name."""
     framework = framework or _DEFAULT_FRAMEWORK.get(language, "flask")
     svc_dir = Path(output_dir) / "services" / service_name
@@ -503,17 +518,17 @@ def generate_service_scaffold(plan_id, service_name, language="python",
 
     conn = _get_db()
     task = conn.execute(
-        "SELECT id FROM migration_tasks WHERE plan_id = ? AND task_type = 'extract_service' "
-        "AND title LIKE ? LIMIT 1",
+        "SELECT id FROM migration_tasks WHERE plan_id = ? AND task_type = 'extract_service' AND title LIKE ? LIMIT 1",
         (plan_id, f"%{service_name}%"),
     ).fetchone()
     task_id = task["id"] if task else None
     conn.close()
 
-
     # -- Python / Flask -------------------------------------------------
     if language == "python" and framework in ("flask", "flask"):
-        _write_file(svc_dir / "app.py", textwrap.dedent(f"""\
+        _write_file(
+            svc_dir / "app.py",
+            textwrap.dedent(f"""\
             {ban_top}
             \"\"\"Flask application for {service_name}. Classification: {CUI_BANNER}\"\"\"
             from flask import Flask
@@ -530,8 +545,11 @@ def generate_service_scaffold(plan_id, service_name, language="python",
             if __name__ == "__main__":
                 app.run(host="0.0.0.0", port=8080)
             {ban_bot}
-        """))
-        _write_file(svc_dir / "config.py", textwrap.dedent(f"""\
+        """),
+        )
+        _write_file(
+            svc_dir / "config.py",
+            textwrap.dedent(f"""\
             {ban_top}
             \"\"\"Configuration for {service_name}. Classification: {CUI_BANNER}\"\"\"
             import os
@@ -540,8 +558,11 @@ def generate_service_scaffold(plan_id, service_name, language="python",
             SECRET_KEY = os.environ.get("SECRET_KEY", "change-me")
             DEBUG = os.environ.get("DEBUG", "false").lower() == "true"
             {ban_bot}
-        """))
-        _write_file(svc_dir / "routes" / "__init__.py", textwrap.dedent(f"""\
+        """),
+        )
+        _write_file(
+            svc_dir / "routes" / "__init__.py",
+            textwrap.dedent(f"""\
             {ban_top}
             \"\"\"Route registration for {service_name}. Classification: {CUI_BANNER}\"\"\"
             from flask import Flask, jsonify
@@ -555,10 +576,13 @@ def generate_service_scaffold(plan_id, service_name, language="python",
                 def get_{svc_var}(item_id):
                     return jsonify({{"id": item_id}})
             {ban_bot}
-        """))
+        """),
+        )
         _write_file(svc_dir / "models" / "__init__.py", f"{ban_top}\n# Models for {service_name}\n{ban_bot}\n")
         _write_file(svc_dir / "tests" / "__init__.py", f"{ban_top}\n# Tests for {service_name}\n{ban_bot}\n")
-        _write_file(svc_dir / "tests" / "test_health.py", textwrap.dedent(f"""\
+        _write_file(
+            svc_dir / "tests" / "test_health.py",
+            textwrap.dedent(f"""\
             {ban_top}
             \"\"\"Health check tests for {service_name}. Classification: {CUI_BANNER}\"\"\"
             import pytest
@@ -576,9 +600,12 @@ def generate_service_scaffold(plan_id, service_name, language="python",
                 data = rv.get_json()
                 assert data["status"] == "healthy"
             {ban_bot}
-        """))
+        """),
+        )
         _write_file(svc_dir / "requirements.txt", "flask>=3.0\npytest>=7.0\nSQLAlchemy>=2.0\n")
-        _write_file(svc_dir / "Dockerfile", textwrap.dedent(f"""\
+        _write_file(
+            svc_dir / "Dockerfile",
+            textwrap.dedent(f"""\
             # {CUI_BANNER}
             FROM python:3.11-slim
             RUN useradd -r -u 1000 appuser
@@ -590,11 +617,14 @@ def generate_service_scaffold(plan_id, service_name, language="python",
             EXPOSE 8080
             CMD ["python", "app.py"]
             # {CUI_BANNER}
-        """))
+        """),
+        )
 
     # -- Python / FastAPI -----------------------------------------------
     elif language == "python" and framework == "fastapi":
-        _write_file(svc_dir / "main.py", textwrap.dedent(f"""\
+        _write_file(
+            svc_dir / "main.py",
+            textwrap.dedent(f"""\
             {ban_top}
             \"\"\"FastAPI application for {service_name}. Classification: {CUI_BANNER}\"\"\"
             from fastapi import FastAPI
@@ -607,16 +637,22 @@ def generate_service_scaffold(plan_id, service_name, language="python",
             def health():
                 return {{"status": "healthy", "service": "{service_name}"}}
             {ban_bot}
-        """))
-        _write_file(svc_dir / "config.py", textwrap.dedent(f"""\
+        """),
+        )
+        _write_file(
+            svc_dir / "config.py",
+            textwrap.dedent(f"""\
             {ban_top}
             \"\"\"Configuration for {service_name}. Classification: {CUI_BANNER}\"\"\"
             import os
             DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///data.db")
             SECRET_KEY = os.environ.get("SECRET_KEY", "change-me")
             {ban_bot}
-        """))
-        _write_file(svc_dir / "routers" / f"{svc_var}_router.py", textwrap.dedent(f"""\
+        """),
+        )
+        _write_file(
+            svc_dir / "routers" / f"{svc_var}_router.py",
+            textwrap.dedent(f"""\
             {ban_top}
             \"\"\"Router for {service_name}. Classification: {CUI_BANNER}\"\"\"
             from fastapi import APIRouter
@@ -630,10 +666,13 @@ def generate_service_scaffold(plan_id, service_name, language="python",
             def get_item(item_id: str):
                 return {{"id": item_id}}
             {ban_bot}
-        """))
+        """),
+        )
         _write_file(svc_dir / "models" / "__init__.py", f"{ban_top}\n# Models for {service_name}\n{ban_bot}\n")
         _write_file(svc_dir / "tests" / "__init__.py", f"{ban_top}\n# Tests for {service_name}\n{ban_bot}\n")
-        _write_file(svc_dir / "tests" / "test_health.py", textwrap.dedent(f"""\
+        _write_file(
+            svc_dir / "tests" / "test_health.py",
+            textwrap.dedent(f"""\
             {ban_top}
             \"\"\"Health tests for {service_name}. Classification: {CUI_BANNER}\"\"\"
             from fastapi.testclient import TestClient
@@ -646,9 +685,14 @@ def generate_service_scaffold(plan_id, service_name, language="python",
                 assert resp.status_code == 200
                 assert resp.json()["status"] == "healthy"
             {ban_bot}
-        """))
-        _write_file(svc_dir / "requirements.txt", "fastapi>=0.110\nuvicorn>=0.29\npytest>=7.0\nSQLAlchemy>=2.0\nhttpx>=0.27\n")
-        _write_file(svc_dir / "Dockerfile", textwrap.dedent(f"""\
+        """),
+        )
+        _write_file(
+            svc_dir / "requirements.txt", "fastapi>=0.110\nuvicorn>=0.29\npytest>=7.0\nSQLAlchemy>=2.0\nhttpx>=0.27\n"
+        )
+        _write_file(
+            svc_dir / "Dockerfile",
+            textwrap.dedent(f"""\
             # {CUI_BANNER}
             FROM python:3.11-slim
             RUN useradd -r -u 1000 appuser
@@ -660,13 +704,16 @@ def generate_service_scaffold(plan_id, service_name, language="python",
             EXPOSE 8080
             CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
             # {CUI_BANNER}
-        """))
+        """),
+        )
 
     # -- Java / Spring Boot ---------------------------------------------
     elif language == "java" and framework == "spring-boot":
         pkg = f"com.icdev.{svc_var}"
         pkg_path = pkg.replace(".", "/")
-        _write_file(svc_dir / f"src/main/java/{pkg_path}/{svc_class}Application.java", textwrap.dedent(f"""\
+        _write_file(
+            svc_dir / f"src/main/java/{pkg_path}/{svc_class}Application.java",
+            textwrap.dedent(f"""\
             {ban_top}
             package {pkg};
             import org.springframework.boot.SpringApplication;
@@ -679,8 +726,11 @@ def generate_service_scaffold(plan_id, service_name, language="python",
                 }}
             }}
             {ban_bot}
-        """))
-        _write_file(svc_dir / f"src/main/java/{pkg_path}/controller/{svc_class}Controller.java", textwrap.dedent(f"""\
+        """),
+        )
+        _write_file(
+            svc_dir / f"src/main/java/{pkg_path}/controller/{svc_class}Controller.java",
+            textwrap.dedent(f"""\
             {ban_top}
             package {pkg}.controller;
             import org.springframework.web.bind.annotation.*;
@@ -697,10 +747,13 @@ def generate_service_scaffold(plan_id, service_name, language="python",
                 }}
             }}
             {ban_bot}
-        """))
+        """),
+        )
         for sub in ("service", "repository", "model"):
             _write_file(svc_dir / f"src/main/java/{pkg_path}/{sub}/.gitkeep", "")
-        _write_file(svc_dir / "pom.xml", textwrap.dedent(f"""\
+        _write_file(
+            svc_dir / "pom.xml",
+            textwrap.dedent(f"""\
             <?xml version="1.0" encoding="UTF-8"?>
             <!-- {CUI_BANNER} -->
             <project xmlns="http://maven.apache.org/POM/4.0.0">
@@ -720,8 +773,11 @@ def generate_service_scaffold(plan_id, service_name, language="python",
                 </dependencies>
             </project>
             <!-- {CUI_BANNER} -->
-        """))
-        _write_file(svc_dir / "Dockerfile", textwrap.dedent(f"""\
+        """),
+        )
+        _write_file(
+            svc_dir / "Dockerfile",
+            textwrap.dedent(f"""\
             # {CUI_BANNER}
             FROM eclipse-temurin:17-jre-alpine
             RUN adduser -D -u 1000 appuser
@@ -731,11 +787,14 @@ def generate_service_scaffold(plan_id, service_name, language="python",
             EXPOSE 8080
             CMD ["java", "-jar", "app.jar"]
             # {CUI_BANNER}
-        """))
+        """),
+        )
 
     # -- C# / ASP.NET Core ---------------------------------------------
     elif language == "csharp" and framework == "aspnet-core":
-        _write_file(svc_dir / "Program.cs", textwrap.dedent(f"""\
+        _write_file(
+            svc_dir / "Program.cs",
+            textwrap.dedent(f"""\
             {ban_top}
             // Classification: {CUI_BANNER}
             var builder = WebApplication.CreateBuilder(args);
@@ -745,8 +804,11 @@ def generate_service_scaffold(plan_id, service_name, language="python",
             app.MapGet("/health", () => Results.Ok(new {{ Status = "healthy", Service = "{service_name}" }}));
             app.Run();
             {ban_bot}
-        """))
-        _write_file(svc_dir / f"Controllers/{svc_class}Controller.cs", textwrap.dedent(f"""\
+        """),
+        )
+        _write_file(
+            svc_dir / f"Controllers/{svc_class}Controller.cs",
+            textwrap.dedent(f"""\
             {ban_top}
             using Microsoft.AspNetCore.Mvc;
             // Classification: {CUI_BANNER}
@@ -761,10 +823,13 @@ def generate_service_scaffold(plan_id, service_name, language="python",
                 public IActionResult Get(string id) => Ok(new {{ Id = id }});
             }}
             {ban_bot}
-        """))
+        """),
+        )
         for sub in ("Services", "Models"):
             _write_file(svc_dir / sub / ".gitkeep", "")
-        _write_file(svc_dir / f"{svc_var}.csproj", textwrap.dedent(f"""\
+        _write_file(
+            svc_dir / f"{svc_var}.csproj",
+            textwrap.dedent(f"""\
             <!-- {CUI_BANNER} -->
             <Project Sdk="Microsoft.NET.Sdk.Web">
               <PropertyGroup>
@@ -772,8 +837,11 @@ def generate_service_scaffold(plan_id, service_name, language="python",
               </PropertyGroup>
             </Project>
             <!-- {CUI_BANNER} -->
-        """))
-        _write_file(svc_dir / "Dockerfile", textwrap.dedent(f"""\
+        """),
+        )
+        _write_file(
+            svc_dir / "Dockerfile",
+            textwrap.dedent(f"""\
             # {CUI_BANNER}
             FROM mcr.microsoft.com/dotnet/aspnet:8.0-alpine
             RUN adduser -D -u 1000 appuser
@@ -783,12 +851,14 @@ def generate_service_scaffold(plan_id, service_name, language="python",
             EXPOSE 8080
             CMD ["dotnet", "{svc_var}.dll"]
             # {CUI_BANNER}
-        """))
+        """),
+        )
     else:
         raise ValueError(f"Unsupported language/framework: {language}/{framework}")
 
-    _record_artifact(plan_id, task_id, "scaffold_code", svc_dir,
-                     f"Service scaffold for {service_name} ({language}/{framework})")
+    _record_artifact(
+        plan_id, task_id, "scaffold_code", svc_dir, f"Service scaffold for {service_name} ({language}/{framework})"
+    )
     return str(svc_dir)
 
 
@@ -796,8 +866,8 @@ def generate_service_scaffold(plan_id, service_name, language="python",
 # 4. generate_data_access_layer
 # ---------------------------------------------------------------------------
 
-def generate_data_access_layer(plan_id, service_name, tables, language="python",
-                               output_dir="."):
+
+def generate_data_access_layer(plan_id, service_name, tables, language="python", output_dir="."):
     """Generate repository/DAO code from legacy DB schema definitions."""
     conn = _get_db()
     plan = conn.execute("SELECT * FROM migration_plans WHERE id = ?", (plan_id,)).fetchone()
@@ -812,8 +882,7 @@ def generate_data_access_layer(plan_id, service_name, tables, language="python",
 
     for table in tables:
         columns = conn.execute(
-            "SELECT * FROM legacy_db_schemas WHERE legacy_app_id = ? AND table_name = ? "
-            "ORDER BY column_name",
+            "SELECT * FROM legacy_db_schemas WHERE legacy_app_id = ? AND table_name = ? ORDER BY column_name",
             (app_id, table),
         ).fetchall()
         if not columns:
@@ -828,25 +897,33 @@ def generate_data_access_layer(plan_id, service_name, tables, language="python",
             field_defs = []
             pk_cols = []
             for col in columns:
-                sa_type = {"integer": "Integer", "varchar": "String", "text": "Text",
-                           "boolean": "Boolean", "date": "Date", "timestamp": "DateTime",
-                           "real": "Float", "float": "Float", "double": "Float",
-                           "bigint": "BigInteger", "smallint": "SmallInteger",
-                           }.get(col["data_type"].lower(), "String")
+                sa_type = {
+                    "integer": "Integer",
+                    "varchar": "String",
+                    "text": "Text",
+                    "boolean": "Boolean",
+                    "date": "Date",
+                    "timestamp": "DateTime",
+                    "real": "Float",
+                    "float": "Float",
+                    "double": "Float",
+                    "bigint": "BigInteger",
+                    "smallint": "SmallInteger",
+                }.get(col["data_type"].lower(), "String")
                 pk = ", primary_key=True" if col["is_primary_key"] else ""
                 fk = ""
                 if col["is_foreign_key"] and col["foreign_table"] and col["foreign_column"]:
                     fk = f", ForeignKey('{col['foreign_table']}.{col['foreign_column']}')"
                 nullable = "" if col["is_primary_key"] else f", nullable={bool(col['is_nullable'])}"
-                field_defs.append(
-                    f"    {col['column_name']} = Column({sa_type}{pk}{fk}{nullable})"
-                )
+                field_defs.append(f"    {col['column_name']} = Column({sa_type}{pk}{fk}{nullable})")
                 if col["is_primary_key"]:
                     pk_cols.append(col["column_name"])
 
             fields_block = "\n".join(field_defs)
             model_path = svc_dir / "models" / f"{model_var}.py"
-            _write_file(model_path, textwrap.dedent(f"""\
+            _write_file(
+                model_path,
+                textwrap.dedent(f"""\
                 {ban_top}
                 \"\"\"SQLAlchemy model for {table}. Classification: {CUI_BANNER}\"\"\"
                 from sqlalchemy import Column, Integer, String, Text, Boolean, Date, DateTime, Float
@@ -863,13 +940,16 @@ def generate_data_access_layer(plan_id, service_name, tables, language="python",
                     def to_dict(self):
                         return {{c.name: getattr(self, c.name) for c in self.__table__.columns}}
                 {ban_bot}
-            """))
+            """),
+            )
             all_paths.append(str(model_path))
 
             # Repository file
             pk_param = pk_cols[0] if pk_cols else "id"
             repo_path = svc_dir / "repository" / f"{model_var}_repository.py"
-            _write_file(repo_path, textwrap.dedent(f"""\
+            _write_file(
+                repo_path,
+                textwrap.dedent(f"""\
                 {ban_top}
                 \"\"\"Repository for {table}. Classification: {CUI_BANNER}\"\"\"
                 from models.{model_var} import {model_class}
@@ -901,7 +981,8 @@ def generate_data_access_layer(plan_id, service_name, tables, language="python",
                             self.session.commit()
                         return obj
                 {ban_bot}
-            """))
+            """),
+            )
             all_paths.append(str(repo_path))
 
         elif language == "java":
@@ -911,18 +992,26 @@ def generate_data_access_layer(plan_id, service_name, tables, language="python",
 
             field_defs = []
             for col in columns:
-                jtype = {"integer": "Integer", "varchar": "String", "text": "String",
-                         "boolean": "Boolean", "date": "java.time.LocalDate",
-                         "timestamp": "java.time.LocalDateTime", "real": "Double",
-                         "float": "Double", "bigint": "Long",
-                         }.get(col["data_type"].lower(), "String")
+                jtype = {
+                    "integer": "Integer",
+                    "varchar": "String",
+                    "text": "String",
+                    "boolean": "Boolean",
+                    "date": "java.time.LocalDate",
+                    "timestamp": "java.time.LocalDateTime",
+                    "real": "Double",
+                    "float": "Double",
+                    "bigint": "Long",
+                }.get(col["data_type"].lower(), "String")
                 annotations = []
                 if col["is_primary_key"]:
                     annotations.append("    @Id")
                 field_defs.append("\n".join(annotations + [f"    private {jtype} {col['column_name']};"]))
             fields_block = "\n".join(field_defs)
             model_path = svc_dir_java / "model" / f"{model_class}.java"
-            _write_file(model_path, textwrap.dedent(f"""\
+            _write_file(
+                model_path,
+                textwrap.dedent(f"""\
                 {ban_top}
                 package {pkg}.model;
                 import javax.persistence.*;
@@ -933,11 +1022,14 @@ def generate_data_access_layer(plan_id, service_name, tables, language="python",
                 {fields_block}
                 }}
                 {ban_bot}
-            """))
+            """),
+            )
             all_paths.append(str(model_path))
 
             repo_path = svc_dir_java / "repository" / f"{model_class}Repository.java"
-            _write_file(repo_path, textwrap.dedent(f"""\
+            _write_file(
+                repo_path,
+                textwrap.dedent(f"""\
                 {ban_top}
                 package {pkg}.repository;
                 import {pkg}.model.{model_class};
@@ -946,21 +1038,33 @@ def generate_data_access_layer(plan_id, service_name, tables, language="python",
                 public interface {model_class}Repository extends JpaRepository<{model_class}, Long> {{
                 }}
                 {ban_bot}
-            """))
+            """),
+            )
             all_paths.append(str(repo_path))
 
         elif language == "csharp":
             field_defs = []
             for col in columns:
-                cstype = {"integer": "int", "varchar": "string", "text": "string",
-                          "boolean": "bool", "date": "DateTime", "timestamp": "DateTime",
-                          "real": "double", "float": "double", "bigint": "long",
-                          }.get(col["data_type"].lower(), "string")
+                cstype = {
+                    "integer": "int",
+                    "varchar": "string",
+                    "text": "string",
+                    "boolean": "bool",
+                    "date": "DateTime",
+                    "timestamp": "DateTime",
+                    "real": "double",
+                    "float": "double",
+                    "bigint": "long",
+                }.get(col["data_type"].lower(), "string")
                 nullable_q = "?" if (not col["is_primary_key"] and col["is_nullable"]) and cstype != "string" else ""
-                field_defs.append(f"        public {cstype}{nullable_q} {_safe_class_name(col['column_name'])} {{ get; set; }}")
+                field_defs.append(
+                    f"        public {cstype}{nullable_q} {_safe_class_name(col['column_name'])} {{ get; set; }}"
+                )
             fields_block = "\n".join(field_defs)
             model_path = svc_dir / "Models" / f"{model_class}.cs"
-            _write_file(model_path, textwrap.dedent(f"""\
+            _write_file(
+                model_path,
+                textwrap.dedent(f"""\
                 {ban_top}
                 // Entity for {table}. Classification: {CUI_BANNER}
                 using System.ComponentModel.DataAnnotations;
@@ -972,11 +1076,14 @@ def generate_data_access_layer(plan_id, service_name, tables, language="python",
                 {fields_block}
                 }}
                 {ban_bot}
-            """))
+            """),
+            )
             all_paths.append(str(model_path))
 
             ctx_path = svc_dir / "Models" / f"{_safe_class_name(service_name)}DbContext.cs"
-            _write_file(ctx_path, textwrap.dedent(f"""\
+            _write_file(
+                ctx_path,
+                textwrap.dedent(f"""\
                 {ban_top}
                 // EF Core DbContext for {service_name}. Classification: {CUI_BANNER}
                 using Microsoft.EntityFrameworkCore;
@@ -987,7 +1094,8 @@ def generate_data_access_layer(plan_id, service_name, tables, language="python",
                     public DbSet<{model_class}> {model_class}s {{ get; set; }}
                 }}
                 {ban_bot}
-            """))
+            """),
+            )
             all_paths.append(str(ctx_path))
 
     task = conn.execute(
@@ -998,14 +1106,14 @@ def generate_data_access_layer(plan_id, service_name, tables, language="python",
     conn.close()
 
     for p in all_paths:
-        _record_artifact(plan_id, task_id, "scaffold_code", p,
-                         f"DAL file for {service_name}")
+        _record_artifact(plan_id, task_id, "scaffold_code", p, f"DAL file for {service_name}")
     return all_paths
 
 
 # ---------------------------------------------------------------------------
 # 5. generate_migration_tests
 # ---------------------------------------------------------------------------
+
 
 def generate_migration_tests(plan_id, output_dir="."):
     """Generate API compatibility, data integrity, and functional equivalence tests."""
@@ -1020,9 +1128,7 @@ def generate_migration_tests(plan_id, output_dir="."):
     ban_top = _banner_top(language)
     ban_bot = _banner_bottom(language)
 
-    apis = conn.execute(
-        "SELECT * FROM legacy_apis WHERE legacy_app_id = ?", (app_id,)
-    ).fetchall()
+    apis = conn.execute("SELECT * FROM legacy_apis WHERE legacy_app_id = ?", (app_id,)).fetchall()
 
     tables = conn.execute(
         "SELECT DISTINCT table_name FROM legacy_db_schemas WHERE legacy_app_id = ?",
@@ -1032,7 +1138,8 @@ def generate_migration_tests(plan_id, output_dir="."):
     components = conn.execute(
         "SELECT lc.* FROM legacy_components lc "
         "JOIN migration_tasks mt ON mt.legacy_component_id = lc.id "
-        "WHERE mt.plan_id = ?", (plan_id,)
+        "WHERE mt.plan_id = ?",
+        (plan_id,),
     ).fetchall()
 
     task = conn.execute(
@@ -1052,7 +1159,8 @@ def generate_migration_tests(plan_id, output_dir="."):
             method = (api["method"] or "GET").lower()
             path = api["path"] or "/"
             func = _safe_var_name(f"test_api_{method}_{path.replace('/', '_')}")
-            api_tests.append(textwrap.dedent(f"""\
+            api_tests.append(
+                textwrap.dedent(f"""\
                 def {func}(legacy_base, modern_base):
                     \"\"\"Compare legacy and modern responses for {method.upper()} {path}.\"\"\"
                     legacy_resp = requests.{method}(legacy_base + "{path}")
@@ -1061,10 +1169,13 @@ def generate_migration_tests(plan_id, output_dir="."):
                         f"Status mismatch: {{legacy_resp.status_code}} vs {{modern_resp.status_code}}"
                     )
                     assert legacy_resp.json() == modern_resp.json(), "Response body mismatch"
-            """))
+            """)
+            )
         api_block = "\n\n".join(api_tests) if api_tests else "# No legacy APIs to test\npass\n"
         api_path = test_dir / "test_api_compatibility.py"
-        _write_file(api_path, textwrap.dedent(f"""\
+        _write_file(
+            api_path,
+            textwrap.dedent(f"""\
             {ban_top}
             \"\"\"API compatibility tests — compares legacy vs modern responses.
 
@@ -1086,7 +1197,8 @@ def generate_migration_tests(plan_id, output_dir="."):
 
             {api_block}
             {ban_bot}
-        """))
+        """),
+        )
         all_paths.append(str(api_path))
 
         # --- Data integrity tests ---
@@ -1094,7 +1206,8 @@ def generate_migration_tests(plan_id, output_dir="."):
         for trow in tables:
             tname = trow["table_name"]
             func = _safe_var_name(f"test_data_{tname}")
-            data_tests.append(textwrap.dedent(f"""\
+            data_tests.append(
+                textwrap.dedent(f"""
                 def {func}(legacy_conn, modern_conn):
                     \"\"\"Verify row counts match for table {tname}.\"\"\"
                     legacy_count = legacy_conn.execute("SELECT COUNT(*) FROM {tname}").fetchone()[0]
@@ -1102,10 +1215,13 @@ def generate_migration_tests(plan_id, output_dir="."):
                     assert legacy_count == modern_count, (
                         f"Row count mismatch for {tname}: {{legacy_count}} vs {{modern_count}}"
                     )
-            """))
+            """)  # nosec B608 -- table/column names are internal constants, not user input
+            )
         data_block = "\n\n".join(data_tests) if data_tests else "# No tables to test\npass\n"
         data_path = test_dir / "test_data_integrity.py"
-        _write_file(data_path, textwrap.dedent(f"""\
+        _write_file(
+            data_path,
+            textwrap.dedent(f"""\
             {ban_top}
             \"\"\"Data integrity tests — compares legacy vs modern row counts.
 
@@ -1128,7 +1244,8 @@ def generate_migration_tests(plan_id, output_dir="."):
 
             {data_block}
             {ban_bot}
-        """))
+        """),
+        )
         all_paths.append(str(data_path))
 
         # --- Functional equivalence tests ---
@@ -1136,7 +1253,8 @@ def generate_migration_tests(plan_id, output_dir="."):
         for comp in components:
             cname = comp["name"]
             func = _safe_var_name(f"test_equivalence_{cname}")
-            func_tests.append(textwrap.dedent(f"""\
+            func_tests.append(
+                textwrap.dedent(f"""\
                 def {func}():
                     \"\"\"Functional equivalence test for {cname}.\"\"\"
                     # TODO: implement test that exercises both legacy and modern {cname}
@@ -1144,10 +1262,13 @@ def generate_migration_tests(plan_id, output_dir="."):
                     legacy_result = None   # call legacy {cname}
                     modern_result = None   # call modern {cname}
                     assert legacy_result == modern_result, "Functional equivalence failed for {cname}"
-            """))
+            """)
+            )
         func_block = "\n\n".join(func_tests) if func_tests else "# No components to test\npass\n"
         func_path = test_dir / "test_functional_equivalence.py"
-        _write_file(func_path, textwrap.dedent(f"""\
+        _write_file(
+            func_path,
+            textwrap.dedent(f"""\
             {ban_top}
             \"\"\"Functional equivalence tests — skeleton with TODO markers.
 
@@ -1157,7 +1278,8 @@ def generate_migration_tests(plan_id, output_dir="."):
 
             {func_block}
             {ban_bot}
-        """))
+        """),
+        )
         all_paths.append(str(func_path))
 
     elif language == "java":
@@ -1173,7 +1295,9 @@ def generate_migration_tests(plan_id, output_dir="."):
                 f"    }}"
             )
         api_block = "\n\n".join(api_methods) if api_methods else "    // No legacy APIs to test"
-        _write_file(api_path, textwrap.dedent(f"""\
+        _write_file(
+            api_path,
+            textwrap.dedent(f"""\
             {ban_top}
             /** API compatibility tests. Classification: {CUI_BANNER} */
             import org.junit.jupiter.api.Test;
@@ -1183,7 +1307,8 @@ def generate_migration_tests(plan_id, output_dir="."):
             {api_block}
             }}
             {ban_bot}
-        """))
+        """),
+        )
         all_paths.append(str(api_path))
 
     elif language == "csharp":
@@ -1200,7 +1325,9 @@ def generate_migration_tests(plan_id, output_dir="."):
                 f"        }}"
             )
         api_block = "\n\n".join(api_methods) if api_methods else "        // No legacy APIs to test"
-        _write_file(api_path, textwrap.dedent(f"""\
+        _write_file(
+            api_path,
+            textwrap.dedent(f"""\
             {ban_top}
             // API compatibility tests. Classification: {CUI_BANNER}
             using Xunit;
@@ -1211,7 +1338,8 @@ def generate_migration_tests(plan_id, output_dir="."):
             {api_block}
             }}
             {ban_bot}
-        """))
+        """),
+        )
         all_paths.append(str(api_path))
 
     for p in all_paths:
@@ -1222,6 +1350,7 @@ def generate_migration_tests(plan_id, output_dir="."):
 # ---------------------------------------------------------------------------
 # 6. generate_rollback_scripts
 # ---------------------------------------------------------------------------
+
 
 def generate_rollback_scripts(plan_id, output_dir="."):
     """Generate rollback scripts for completed/in-progress migration tasks."""
@@ -1242,9 +1371,7 @@ def generate_rollback_scripts(plan_id, output_dir="."):
         (plan_id,),
     ).fetchall()
 
-    apis = conn.execute(
-        "SELECT * FROM legacy_apis WHERE legacy_app_id = ?", (app_id,)
-    ).fetchall()
+    apis = conn.execute("SELECT * FROM legacy_apis WHERE legacy_app_id = ?", (app_id,)).fetchall()
 
     schema_cols = conn.execute(
         "SELECT DISTINCT table_name FROM legacy_db_schemas WHERE legacy_app_id = ?",
@@ -1324,10 +1451,12 @@ def generate_rollback_scripts(plan_id, output_dir="."):
             ddl_stmts.append("")
         ddl_block = "\n".join(ddl_stmts)
         sql_path = rb_dir / "rollback_schema.sql"
-        _write_file(sql_path, textwrap.dedent(f"""\
+        _write_file(
+            sql_path,
+            textwrap.dedent(f"""\
             -- {CUI_BANNER}
             -- Schema Rollback Script
-            -- Generated by ICDEV Migration Code Generator
+            -- Generated by ICDEV™ Migration Code Generator
             -- Plan: {plan_id}
             -- Classification: {CUI_BANNER}
             --
@@ -1340,7 +1469,8 @@ def generate_rollback_scripts(plan_id, output_dir="."):
 
             COMMIT;
             -- {CUI_BANNER}
-        """))
+        """),
+        )
         all_paths.append(str(sql_path))
 
     # Per-task rollback summaries
@@ -1349,12 +1479,14 @@ def generate_rollback_scripts(plan_id, output_dir="."):
         t_title = t["title"]
         t_id = t["id"]
         note_path = rb_dir / f"rollback_{_safe_var_name(t_title)}.txt"
-        _write_file(note_path, textwrap.dedent(f"""\
+        _write_file(
+            note_path,
+            textwrap.dedent(f"""\
             {CUI_BANNER}
             Rollback Procedure for: {t_title}
             Task ID: {t_id}
             Task Type: {t_type}
-            Status: {t['status']}
+            Status: {t["status"]}
 
             Steps:
             1. Verify the current deployment state.
@@ -1364,7 +1496,8 @@ def generate_rollback_scripts(plan_id, output_dir="."):
             5. Update migration_tasks status to 'pending'.
 
             Classification: {CUI_BANNER}
-        """))
+        """),
+        )
         all_paths.append(str(note_path))
 
     for p in all_paths:
@@ -1375,6 +1508,7 @@ def generate_rollback_scripts(plan_id, output_dir="."):
 # ---------------------------------------------------------------------------
 # 7. generate_all
 # ---------------------------------------------------------------------------
+
 
 def generate_all(plan_id, output_dir="."):
     """Orchestrate all code generation for a migration plan."""
@@ -1515,10 +1649,11 @@ def generate_all(plan_id, output_dir="."):
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Migration Code Generator — produce adapters, facades, scaffolds, "
-                    "DAL, tests, and rollback scripts from a migration plan.",
+        description="ICDEV™ Migration Code Generator — produce adapters, facades, scaffolds, "
+        "DAL, tests, and rollback scripts from a migration plan.",
     )
     parser.add_argument("--plan-id", required=True, help="Migration plan ID (from migration_plans table)")
     parser.add_argument("--output", required=True, help="Output directory for generated code")
@@ -1571,7 +1706,8 @@ def main():
         comps = conn.execute(
             "SELECT DISTINCT lc.id FROM legacy_components lc "
             "JOIN migration_tasks mt ON mt.legacy_component_id = lc.id "
-            "WHERE mt.plan_id = ?", (args.plan_id,)
+            "WHERE mt.plan_id = ?",
+            (args.plan_id,),
         ).fetchall()
         conn.close()
         result = []
@@ -1581,8 +1717,7 @@ def main():
         result = generate_facade(args.plan_id, language, output_dir)
     elif args.generate == "scaffolds":
         if args.service_name:
-            result = generate_service_scaffold(args.plan_id, args.service_name,
-                                               language, framework, output_dir)
+            result = generate_service_scaffold(args.plan_id, args.service_name, language, framework, output_dir)
         else:
             conn = _get_db()
             svc_tasks = conn.execute(
@@ -1592,9 +1727,11 @@ def main():
             conn.close()
             result = []
             for st in svc_tasks:
-                result.append(generate_service_scaffold(
-                    args.plan_id, _safe_var_name(st["title"]),
-                    language, framework, output_dir))
+                result.append(
+                    generate_service_scaffold(
+                        args.plan_id, _safe_var_name(st["title"]), language, framework, output_dir
+                    )
+                )
     elif args.generate == "dal":
         conn = _get_db()
         app_id = plan["legacy_app_id"]

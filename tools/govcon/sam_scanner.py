@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """SAM.gov Opportunity Scanner — discover federal contracting opportunities.
 
 Polls the SAM.gov Opportunities API v2 for solicitations, pre-solicitations,
@@ -36,6 +36,7 @@ import sqlite3
 import sys
 import time
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
@@ -50,33 +51,58 @@ DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db
 CONFIG_PATH = BASE_DIR / "args" / "govcon_config.yaml"
 
 # =========================================================================
+# LOAD .env (API keys)
+# =========================================================================
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(BASE_DIR / ".env")
+except ImportError:
+    pass
+
+# =========================================================================
 # GRACEFUL IMPORTS
 # =========================================================================
 try:
     import yaml
+
     _HAS_YAML = True
 except ImportError:
     _HAS_YAML = False
 
 try:
     import requests
+
     _HAS_REQUESTS = True
 except ImportError:
     _HAS_REQUESTS = False
 
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
+
     def audit_log_event(**kwargs):
         return -1
 
+
 try:
-    from tools.resilience.circuit_breaker import InMemoryCircuitBreaker
     _HAS_CB = True
 except ImportError:
     _HAS_CB = False
+
+try:
+    from tools.govcon.quota_tracker import (
+        check_quota,
+        increment_quota,
+        record_429,
+    )
+
+    _HAS_QUOTA = True
+except ImportError:
+    _HAS_QUOTA = False
 
 # =========================================================================
 # CONSTANTS
@@ -95,8 +121,7 @@ def _get_db(db_path=None):
     path = db_path or DB_PATH
     if not path.exists():
         raise FileNotFoundError(f"Database not found: {path}")
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -143,17 +168,40 @@ def _load_config():
 # =========================================================================
 # HTTP HELPER
 # =========================================================================
-def _safe_get(url, headers=None, params=None, timeout=DEFAULT_TIMEOUT):
-    """HTTP GET with error handling and rate limit awareness.
+def _safe_get(url, headers=None, params=None, timeout=DEFAULT_TIMEOUT, track_quota=True):
+    """HTTP GET with error handling, rate limit awareness, and quota tracking.
+
+    Args:
+        url: Request URL.
+        headers: Optional headers dict.
+        params: Optional query params dict.
+        timeout: Request timeout in seconds.
+        track_quota: If True, check/increment SAM.gov daily quota.
 
     Returns:
         Tuple of (data, error).  On success error is None.
     """
     if not _HAS_REQUESTS:
         return None, "requests library not installed"
+
+    # Proactive quota check — refuse to call if daily limit approached
+    if track_quota and _HAS_QUOTA:
+        quota = check_quota()
+        if not quota.get("allowed", True):
+            reset = quota.get("reset_at", "unknown")
+            return None, f"quota_exhausted:resets_{reset}"
+
     try:
         resp = requests.get(url, headers=headers, params=params, timeout=timeout)
+
+        # Track successful call
+        if track_quota and _HAS_QUOTA:
+            increment_quota(1)
+
         if resp.status_code == 429:
+            # Record 429 with response body for reset time parsing
+            if _HAS_QUOTA:
+                record_429(response_body=resp.text)
             return None, "rate_limited"
         if resp.status_code == 403:
             return None, "forbidden"
@@ -175,8 +223,7 @@ def _safe_get(url, headers=None, params=None, timeout=DEFAULT_TIMEOUT):
 # =========================================================================
 # SAM.GOV API SCANNER
 # =========================================================================
-def scan_sam_gov(config=None, naics_filter=None, notice_type_filter=None,
-                 db_path=None):
+def scan_sam_gov(config=None, naics_filter=None, notice_type_filter=None, db_path=None):
     """Scan SAM.gov Opportunities API for new opportunities.
 
     Args:
@@ -197,7 +244,7 @@ def scan_sam_gov(config=None, naics_filter=None, notice_type_filter=None,
         return {"error": "SAM_GOV_API_KEY not set in environment", "opportunities": []}
 
     rate_config = sam_config.get("rate_limit", {})
-    delay = rate_config.get("delay_between_requests", 0.15)
+    delay = rate_config.get("delay_between_requests", 1.0)  # 1s default (was 0.15)
     lookback_days = sam_config.get("lookback_days", 30)
     max_per_poll = sam_config.get("max_per_poll", 100)
     max_desc = sam_config.get("description_max_chars", MAX_DESCRIPTION_LENGTH)
@@ -206,8 +253,28 @@ def scan_sam_gov(config=None, naics_filter=None, notice_type_filter=None,
     naics_codes = [naics_filter] if naics_filter else sam_config.get("naics_codes", [])
     notice_types = [notice_type_filter] if notice_type_filter else sam_config.get("notice_types", [])
 
-    # Date range
-    posted_from = (datetime.now(timezone.utc) - timedelta(days=lookback_days)).strftime("%m/%d/%Y")
+    # Incremental scan: use last_synced watermark to avoid re-scanning
+    # known opportunities. Only look back to last successful sync + 1 day buffer.
+    try:
+        conn_check = _get_db(db_path)
+        last_row = conn_check.execute("SELECT MAX(last_synced) AS last_sync FROM sam_gov_opportunities").fetchone()
+        conn_check.close()
+        last_sync = last_row["last_sync"] if last_row and last_row["last_sync"] else None
+    except Exception:
+        last_sync = None
+
+    if last_sync:
+        # Parse last_synced and use it as posted_from (with 1-day buffer)
+        try:
+            last_dt = datetime.fromisoformat(last_sync.replace("Z", "+00:00"))
+            # 1-day buffer to catch any late-posted opportunities
+            incremental_from = last_dt - timedelta(days=1)
+            posted_from = incremental_from.strftime("%m/%d/%Y")
+        except (ValueError, AttributeError):
+            posted_from = (datetime.now(timezone.utc) - timedelta(days=lookback_days)).strftime("%m/%d/%Y")
+    else:
+        # First scan: use full lookback
+        posted_from = (datetime.now(timezone.utc) - timedelta(days=lookback_days)).strftime("%m/%d/%Y")
     posted_to = datetime.now(timezone.utc).strftime("%m/%d/%Y")
 
     start_time = time.time()
@@ -222,8 +289,8 @@ def scan_sam_gov(config=None, naics_filter=None, notice_type_filter=None,
     except FileNotFoundError as e:
         return {"error": str(e), "opportunities": []}
 
-    for naics in (naics_codes or [""]):
-        for ntype in (notice_types or [""]):
+    for naics in naics_codes or [""]:
+        for ntype in notice_types or [""]:
             params = {
                 "api_key": api_key,
                 "postedFrom": posted_from,
@@ -239,7 +306,14 @@ def scan_sam_gov(config=None, naics_filter=None, notice_type_filter=None,
             data, err = _safe_get(api_url, params=params)
             if err:
                 errors.append({"naics": naics, "notice_type": ntype, "error": err})
-                time.sleep(delay)
+                if "rate_limit" in str(err):
+                    # Exponential backoff on rate limit: wait 5s, then 10s, etc.
+                    backoff = min(
+                        60, delay * (2 ** len([e for e in errors if "rate_limit" in str(e.get("error", ""))]))
+                    )
+                    time.sleep(backoff)
+                else:
+                    time.sleep(delay)
                 continue
 
             opportunities = []
@@ -255,8 +329,7 @@ def scan_sam_gov(config=None, naics_filter=None, notice_type_filter=None,
 
                 # Dedup by content_hash
                 existing = conn.execute(
-                    "SELECT id, content_hash FROM sam_gov_opportunities WHERE id = ?",
-                    (normalized["id"],)
+                    "SELECT id, content_hash FROM sam_gov_opportunities WHERE id = ?", (normalized["id"],)
                 ).fetchone()
 
                 if existing:
@@ -266,9 +339,16 @@ def scan_sam_gov(config=None, naics_filter=None, notice_type_filter=None,
                             "UPDATE sam_gov_opportunities SET title=?, description=?, "
                             "response_deadline=?, content_hash=?, last_synced=?, "
                             "metadata=?, active=? WHERE id=?",
-                            (normalized["title"], normalized["description"],
-                             normalized["response_deadline"], normalized["content_hash"],
-                             _now(), normalized["metadata"], "true", normalized["id"])
+                            (
+                                normalized["title"],
+                                normalized["description"],
+                                normalized["response_deadline"],
+                                normalized["content_hash"],
+                                _now(),
+                                normalized["metadata"],
+                                "true",
+                                normalized["id"],
+                            ),
                         )
                         updated_count += 1
                     else:
@@ -283,16 +363,29 @@ def scan_sam_gov(config=None, naics_filter=None, notice_type_filter=None,
                         "place_of_performance, attachment_urls, active, content_hash, "
                         "metadata, first_seen, last_synced, classification) "
                         "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                        (normalized["id"], normalized["solicitation_number"],
-                         normalized["title"], normalized["agency"],
-                         normalized["agency_hierarchy"], normalized["naics_code"],
-                         normalized["classification_code"], normalized["notice_type"],
-                         normalized["posted_date"], normalized["response_deadline"],
-                         normalized["description"], normalized["point_of_contact"],
-                         normalized["set_aside_type"], normalized["place_of_performance"],
-                         json.dumps(normalized.get("attachment_urls", [])),
-                         "true", normalized["content_hash"],
-                         normalized["metadata"], _now(), _now(), "CUI")
+                        (
+                            normalized["id"],
+                            normalized["solicitation_number"],
+                            normalized["title"],
+                            normalized["agency"],
+                            normalized["agency_hierarchy"],
+                            normalized["naics_code"],
+                            normalized["classification_code"],
+                            normalized["notice_type"],
+                            normalized["posted_date"],
+                            normalized["response_deadline"],
+                            normalized["description"],
+                            normalized["point_of_contact"],
+                            normalized["set_aside_type"],
+                            normalized["place_of_performance"],
+                            json.dumps(normalized.get("attachment_urls", [])),
+                            "true",
+                            normalized["content_hash"],
+                            normalized["metadata"],
+                            _now(),
+                            _now(),
+                            "CUI",
+                        ),
                     )
                     new_count += 1
 
@@ -304,8 +397,12 @@ def scan_sam_gov(config=None, naics_filter=None, notice_type_filter=None,
     conn.close()
     duration = round(time.time() - start_time, 2)
 
-    _audit("govcon.scan", "govcon-scanner", f"Scanned SAM.gov: {new_count} new, {updated_count} updated",
-           details={"new": new_count, "updated": updated_count, "skipped": skipped_count, "errors": len(errors)})
+    _audit(
+        "govcon.scan",
+        "govcon-scanner",
+        f"Scanned SAM.gov: {new_count} new, {updated_count} updated",
+        details={"new": new_count, "updated": updated_count, "skipped": skipped_count, "errors": len(errors)},
+    )
 
     return {
         "opportunities": all_opportunities,
@@ -340,6 +437,32 @@ def _normalize_opportunity(raw, max_desc=MAX_DESCRIPTION_LENGTH):
         title = raw.get("subject", "Untitled")
 
     description = raw.get("description", "") or ""
+
+    # SAM.gov v1 API returns a URL for full description — fetch it
+    if description.startswith("https://api.sam.gov/") and "noticedesc" in description:
+        api_key = os.environ.get("SAM_GOV_API_KEY", "")
+        desc_url = description
+        if api_key and "api_key" not in desc_url:
+            sep = "&" if "?" in desc_url else "?"
+            desc_url = f"{desc_url}{sep}api_key={api_key}"
+        desc_data, desc_err = _safe_get(desc_url, timeout=10)
+        if desc_data and not desc_err:
+            if isinstance(desc_data, dict):
+                # API returns {"description": "..full text.."} or HTML content
+                fetched = desc_data.get("description", "") or desc_data.get("content", "")
+                if isinstance(fetched, str) and len(fetched) > 50:
+                    description = fetched
+            elif isinstance(desc_data, dict) and desc_data.get("_raw"):
+                # Might be HTML — extract text
+                raw_text = desc_data["_raw"]
+                import re as _re
+
+                # Strip HTML tags
+                clean = _re.sub(r"<[^>]+>", " ", raw_text)
+                clean = _re.sub(r"\s+", " ", clean).strip()
+                if len(clean) > 50:
+                    description = clean
+
     if len(description) > max_desc:
         description = description[:max_desc]
 
@@ -380,21 +503,24 @@ def _normalize_opportunity(raw, max_desc=MAX_DESCRIPTION_LENGTH):
         "place_of_performance": json.dumps(raw.get("placeOfPerformance", {})),
         "attachment_urls": attachment_urls,
         "content_hash": content,
-        "metadata": json.dumps({
-            "award_amount": raw.get("award", {}).get("amount") if isinstance(raw.get("award"), dict) else None,
-            "awardee": raw.get("award", {}).get("awardee", {}).get("name") if isinstance(raw.get("award"), dict) else None,
-            "archive_type": raw.get("archiveType", ""),
-            "archive_date": raw.get("archiveDate", ""),
-            "ui_link": raw.get("uiLink", ""),
-        }),
+        "metadata": json.dumps(
+            {
+                "award_amount": raw.get("award", {}).get("amount") if isinstance(raw.get("award"), dict) else None,
+                "awardee": raw.get("award", {}).get("awardee", {}).get("name")
+                if isinstance(raw.get("award"), dict)
+                else None,
+                "archive_type": raw.get("archiveType", ""),
+                "archive_date": raw.get("archiveDate", ""),
+                "ui_link": raw.get("uiLink", ""),
+            }
+        ),
     }
 
 
 # =========================================================================
 # QUERY FUNCTIONS
 # =========================================================================
-def list_cached(db_path=None, naics_filter=None, notice_type_filter=None,
-                active_only=True, limit=100):
+def list_cached(db_path=None, naics_filter=None, notice_type_filter=None, active_only=True, limit=100):
     """List cached SAM.gov opportunities from local database.
 
     Returns:
@@ -442,33 +568,32 @@ def get_history(db_path=None, days=30):
     type_counts = conn.execute(
         "SELECT notice_type, COUNT(*) as count FROM sam_gov_opportunities "
         "WHERE first_seen >= ? GROUP BY notice_type ORDER BY count DESC",
-        (cutoff,)
+        (cutoff,),
     ).fetchall()
 
     # Count by NAICS
     naics_counts = conn.execute(
         "SELECT naics_code, COUNT(*) as count FROM sam_gov_opportunities "
         "WHERE first_seen >= ? GROUP BY naics_code ORDER BY count DESC",
-        (cutoff,)
+        (cutoff,),
     ).fetchall()
 
     # Count by agency
     agency_counts = conn.execute(
         "SELECT agency, COUNT(*) as count FROM sam_gov_opportunities "
         "WHERE first_seen >= ? GROUP BY agency ORDER BY count DESC LIMIT 20",
-        (cutoff,)
+        (cutoff,),
     ).fetchall()
 
     # Daily counts
     daily = conn.execute(
         "SELECT DATE(first_seen) as day, COUNT(*) as count FROM sam_gov_opportunities "
         "WHERE first_seen >= ? GROUP BY DATE(first_seen) ORDER BY day",
-        (cutoff,)
+        (cutoff,),
     ).fetchall()
 
     total = conn.execute(
-        "SELECT COUNT(*) as total FROM sam_gov_opportunities WHERE first_seen >= ?",
-        (cutoff,)
+        "SELECT COUNT(*) as total FROM sam_gov_opportunities WHERE first_seen >= ?", (cutoff,)
     ).fetchone()
 
     conn.close()
@@ -496,9 +621,7 @@ def get_stats(db_path=None):
 
     total = conn.execute("SELECT COUNT(*) as c FROM sam_gov_opportunities").fetchone()
     active = conn.execute("SELECT COUNT(*) as c FROM sam_gov_opportunities WHERE active='true'").fetchone()
-    latest = conn.execute(
-        "SELECT MAX(last_synced) as latest FROM sam_gov_opportunities"
-    ).fetchone()
+    latest = conn.execute("SELECT MAX(last_synced) as latest FROM sam_gov_opportunities").fetchone()
 
     # Upcoming deadlines (next 30 days)
     now = _now()
@@ -506,7 +629,7 @@ def get_stats(db_path=None):
     upcoming = conn.execute(
         "SELECT COUNT(*) as c FROM sam_gov_opportunities "
         "WHERE response_deadline >= ? AND response_deadline <= ? AND active='true'",
-        (now, future)
+        (now, future),
     ).fetchone()
 
     conn.close()
@@ -550,9 +673,7 @@ def cross_register_to_innovation(opportunities, config=None, db_path=None):
     for opp in opportunities:
         sig_id = f"sig-sam-{opp['id'][:12]}"
         # Check for existing
-        existing = conn.execute(
-            "SELECT id FROM innovation_signals WHERE id = ?", (sig_id,)
-        ).fetchone()
+        existing = conn.execute("SELECT id FROM innovation_signals WHERE id = ?", (sig_id,)).fetchone()
         if existing:
             continue
 
@@ -561,8 +682,19 @@ def cross_register_to_innovation(opportunities, config=None, db_path=None):
         combined = f"{title} {desc}".lower()
 
         # Only register if it mentions key capability areas
-        capability_keywords = ["devsecops", "ci/cd", "ai", "machine learning", "cato",
-                               "fedramp", "cloud", "zero trust", "ato", "rmf", "nist"]
+        capability_keywords = [
+            "devsecops",
+            "ci/cd",
+            "ai",
+            "machine learning",
+            "cato",
+            "fedramp",
+            "cloud",
+            "zero trust",
+            "ato",
+            "rmf",
+            "nist",
+        ]
         if not any(kw in combined for kw in capability_keywords):
             continue
 
@@ -573,12 +705,27 @@ def cross_register_to_innovation(opportunities, config=None, db_path=None):
                 "community_score, content_hash, discovered_at, created_at, "
                 "status, category) "
                 "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (sig_id, "sam_gov", "govcon_opportunity", title,
-                 desc[:2000], opp.get("metadata", "{}"),
-                 json.dumps({"naics": opp.get("naics_code"), "agency": opp.get("agency"),
-                             "deadline": opp.get("response_deadline")}),
-                 0.5, opp.get("content_hash", ""),
-                 _now(), _now(), "new", "govcon_opportunity")
+                (
+                    sig_id,
+                    "sam_gov",
+                    "govcon_opportunity",
+                    title,
+                    desc[:2000],
+                    opp.get("metadata", "{}"),
+                    json.dumps(
+                        {
+                            "naics": opp.get("naics_code"),
+                            "agency": opp.get("agency"),
+                            "deadline": opp.get("response_deadline"),
+                        }
+                    ),
+                    0.5,
+                    opp.get("content_hash", ""),
+                    _now(),
+                    _now(),
+                    "new",
+                    "govcon_opportunity",
+                ),
             )
             registered += 1
         except sqlite3.IntegrityError:
@@ -615,9 +762,7 @@ def cross_register_to_creative(opportunities, config=None, db_path=None):
     registered = 0
     for opp in opportunities:
         sig_id = f"csig-sam-{opp['id'][:10]}"
-        existing = conn.execute(
-            "SELECT id FROM creative_signals WHERE id = ?", (sig_id,)
-        ).fetchone()
+        existing = conn.execute("SELECT id FROM creative_signals WHERE id = ?", (sig_id,)).fetchone()
         if existing:
             continue
 
@@ -628,14 +773,29 @@ def cross_register_to_creative(opportunities, config=None, db_path=None):
                 "author, rating, upvotes, sentiment, content_hash, metadata, "
                 "discovered_at, classification) "
                 "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (sig_id, "sam_gov", "rfp_opportunity", None,
-                 opp.get("title", ""), opp.get("description", "")[:4000],
-                 "", opp.get("agency", ""), None, 0, "neutral",
-                 opp.get("content_hash", ""),
-                 json.dumps({"naics": opp.get("naics_code"),
-                             "deadline": opp.get("response_deadline"),
-                             "set_aside": opp.get("set_aside_type")}),
-                 _now(), "CUI")
+                (
+                    sig_id,
+                    "sam_gov",
+                    "rfp_opportunity",
+                    None,
+                    opp.get("title", ""),
+                    opp.get("description", "")[:4000],
+                    "",
+                    opp.get("agency", ""),
+                    None,
+                    0,
+                    "neutral",
+                    opp.get("content_hash", ""),
+                    json.dumps(
+                        {
+                            "naics": opp.get("naics_code"),
+                            "deadline": opp.get("response_deadline"),
+                            "set_aside": opp.get("set_aside_type"),
+                        }
+                    ),
+                    _now(),
+                    "CUI",
+                ),
             )
             registered += 1
         except sqlite3.IntegrityError:
@@ -653,6 +813,7 @@ def main():
     parser = argparse.ArgumentParser(description="SAM.gov Opportunity Scanner")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--scan", action="store_true", help="Scan SAM.gov for new opportunities")
+    group.add_argument("--backfill", action="store_true", help="Backfill full descriptions for URL-only entries")
     group.add_argument("--list-cached", action="store_true", help="List cached opportunities")
     group.add_argument("--history", action="store_true", help="Show scan history")
     group.add_argument("--stats", action="store_true", help="Show scanner statistics")
@@ -661,8 +822,9 @@ def main():
     parser.add_argument("--notice-type", help="Filter by notice type (o/p/r/k/a)")
     parser.add_argument("--days", type=int, default=30, help="History lookback days")
     parser.add_argument("--limit", type=int, default=100, help="Max results for list")
-    parser.add_argument("--cross-register", action="store_true", default=True,
-                        help="Cross-register to Innovation/Creative engines")
+    parser.add_argument(
+        "--cross-register", action="store_true", default=True, help="Cross-register to Innovation/Creative engines"
+    )
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--human", action="store_true", help="Human-readable output")
 
@@ -677,9 +839,16 @@ def main():
                 "innovation_signals": inno.get("registered_count", 0),
                 "creative_signals": creative.get("registered_count", 0),
             }
+        # Auto-backfill URL-only descriptions after scan
+        bf = backfill_descriptions(limit=50, delay=0.3)
+        result["backfill"] = {
+            "updated": bf.get("updated_count", 0),
+            "checked": bf.get("total_checked", 0),
+        }
+    elif args.backfill:
+        result = backfill_descriptions(limit=args.limit, delay=0.3)
     elif args.list_cached:
-        result = list_cached(naics_filter=args.naics, notice_type_filter=args.notice_type,
-                             limit=args.limit)
+        result = list_cached(naics_filter=args.naics, notice_type_filter=args.notice_type, limit=args.limit)
     elif args.history:
         result = get_history(days=args.days)
     elif args.stats:
@@ -700,8 +869,8 @@ def _print_human(result, args):
         return
 
     if args.scan:
-        print(f"\n  SAM.gov Scan Complete")
-        print(f"  {'='*40}")
+        print("\n  SAM.gov Scan Complete")
+        print(f"  {'=' * 40}")
         print(f"  New:     {result.get('new_count', 0)}")
         print(f"  Updated: {result.get('updated_count', 0)}")
         print(f"  Skipped: {result.get('skipped_count', 0)}")
@@ -709,12 +878,12 @@ def _print_human(result, args):
         print(f"  Duration: {result.get('scan_duration_seconds', 0)}s")
         if result.get("cross_registration"):
             cr = result["cross_registration"]
-            print(f"\n  Cross-Registration:")
+            print("\n  Cross-Registration:")
             print(f"    Innovation signals: {cr.get('innovation_signals', 0)}")
             print(f"    Creative signals:   {cr.get('creative_signals', 0)}")
     elif args.stats:
-        print(f"\n  SAM.gov Scanner Stats")
-        print(f"  {'='*40}")
+        print("\n  SAM.gov Scanner Stats")
+        print(f"  {'=' * 40}")
         print(f"  Total:    {result.get('total_opportunities', 0)}")
         print(f"  Active:   {result.get('active_opportunities', 0)}")
         print(f"  Upcoming: {result.get('upcoming_deadlines_30d', 0)} (30d)")
@@ -722,12 +891,110 @@ def _print_human(result, args):
     elif args.list_cached:
         opps = result.get("opportunities", [])
         print(f"\n  Cached Opportunities ({len(opps)})")
-        print(f"  {'='*60}")
+        print(f"  {'=' * 60}")
         for o in opps[:20]:
             deadline = o.get("response_deadline", "N/A")
-            print(f"  [{o.get('notice_type','?')}] {o.get('title','')[:50]}")
-            print(f"      NAICS: {o.get('naics_code','')} | Agency: {o.get('agency','')[:30]} | Due: {deadline}")
+            print(f"  [{o.get('notice_type', '?')}] {o.get('title', '')[:50]}")
+            print(f"      NAICS: {o.get('naics_code', '')} | Agency: {o.get('agency', '')[:30]} | Due: {deadline}")
     print()
+
+
+def backfill_descriptions(db_path=None, limit=50, delay=0.5):
+    """Fetch full descriptions for opportunities with URL placeholders or short text.
+
+    SAM.gov v2 search API often returns a URL in the description field pointing
+    to the v1 notice description endpoint.  This function fetches the actual
+    content from those URLs and updates the DB.  It also picks up any entries
+    whose description is suspiciously short (< 200 chars) since the search
+    endpoint frequently truncates.
+
+    Args:
+        db_path: Optional database path override.
+        limit: Max opportunities to backfill per run.
+        delay: Delay between API calls (seconds).
+
+    Returns:
+        Dict with updated_count, skipped_count, errors.
+    """
+    import re as _re
+    import time as _time
+
+    api_key = os.environ.get("SAM_GOV_API_KEY", "")
+    if not api_key:
+        return {"error": "SAM_GOV_API_KEY not set", "updated_count": 0}
+
+    conn = _get_db(db_path)
+
+    # Find opportunities needing backfill: URL descriptions OR very short text
+    rows = conn.execute(
+        "SELECT id, description FROM sam_gov_opportunities "
+        "WHERE description LIKE 'https://api.sam.gov%%noticedesc%%' "
+        "   OR LENGTH(COALESCE(description, '')) < 200 "
+        "ORDER BY posted_date DESC "
+        "LIMIT ?",
+        (limit,),
+    ).fetchall()
+
+    updated = 0
+    skipped = 0
+    errors = []
+
+    for row in rows:
+        opp_id = row[0]
+        current_desc = row[1] or ""
+
+        # Determine the fetch URL
+        if current_desc.startswith("https://api.sam.gov") and "noticedesc" in current_desc:
+            # Already a URL — use it directly
+            desc_url = current_desc
+        else:
+            # Build the v1 noticedesc URL from the opportunity ID
+            desc_url = f"https://api.sam.gov/prod/opportunities/v1/noticedesc?noticeid={opp_id}"
+
+        # Add API key
+        sep = "&" if "?" in desc_url else "?"
+        full_url = f"{desc_url}{sep}api_key={api_key}"
+
+        data, err = _safe_get(full_url, timeout=15)
+        if err:
+            errors.append({"id": opp_id, "error": err})
+            if err == "rate_limited":
+                break  # Stop on rate limit
+            _time.sleep(delay)
+            continue
+
+        description = ""
+        if isinstance(data, dict):
+            # JSON response — look for description or content field
+            fetched = data.get("description", "") or data.get("content", "")
+            if isinstance(fetched, str) and len(fetched) > 50:
+                description = fetched
+            elif data.get("_raw"):
+                # HTML response — strip tags
+                clean = _re.sub(r"<[^>]+>", " ", data["_raw"])
+                clean = _re.sub(r"\s+", " ", clean).strip()
+                if len(clean) > 50:
+                    description = clean
+        elif isinstance(data, str) and len(data) > 50:
+            # Plain text response
+            description = data
+
+        # Only update if we got something meaningfully longer than what we had
+        if description and len(description) > len(current_desc):
+            content_hash = _content_hash(f"{opp_id}|{description[:500]}")
+            conn.execute(
+                "UPDATE sam_gov_opportunities SET description = ?, content_hash = ?, last_synced = ? WHERE id = ?",
+                (description[:10000], content_hash, _now(), opp_id),
+            )
+            conn.commit()
+            updated += 1
+        else:
+            skipped += 1
+
+        _time.sleep(delay)
+
+    conn.close()
+    return {"updated_count": updated, "skipped_count": skipped, "errors": errors, "total_checked": len(rows)}
 
 
 if __name__ == "__main__":

@@ -28,8 +28,12 @@ def _run_tool(cmd: List[str], timeout: int = 120) -> Dict[str, Any]:
     """Run a tool as subprocess, capture JSON output."""
     try:
         result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=timeout,
-            cwd=str(BASE_DIR), env={**os.environ, "PYTHONPATH": str(BASE_DIR)},
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            cwd=str(BASE_DIR),
+            env={**os.environ, "PYTHONPATH": str(BASE_DIR)},
         )
         stdout = result.stdout.strip()
         json_start = stdout.find("{")
@@ -48,10 +52,17 @@ def _run_tool(cmd: List[str], timeout: int = 120) -> Dict[str, Any]:
 def _check_cato_evidence() -> Dict[str, Any]:
     """Check cATO evidence freshness via cato_live_engine."""
     print("  Comply: checking cATO evidence freshness...")
-    result = _run_tool([
-        sys.executable, "tools/compliance/cato_live_engine.py",
-        "--project-id", "sparkpilot", "--dashboard", "--json",
-    ], timeout=120)
+    result = _run_tool(
+        [
+            sys.executable,
+            "tools/compliance/cato_live_engine.py",
+            "--project-id",
+            "sparkpilot",
+            "--dashboard",
+            "--json",
+        ],
+        timeout=120,
+    )
 
     if result.get("success"):
         data = result.get("data", {})
@@ -71,10 +82,16 @@ def _check_cato_evidence() -> Dict[str, Any]:
 def _run_crosswalk() -> Dict[str, Any]:
     """Run compliance crosswalk to sync control coverage."""
     print("  Comply: running crosswalk engine...")
-    result = _run_tool([
-        sys.executable, "tools/compliance/crosswalk_engine.py",
-        "--project-id", "sparkpilot", "--coverage",
-    ], timeout=120)
+    result = _run_tool(
+        [
+            sys.executable,
+            "tools/compliance/crosswalk_engine.py",
+            "--project-id",
+            "sparkpilot",
+            "--coverage",
+        ],
+        timeout=120,
+    )
 
     if result.get("success"):
         data = result.get("data", {})
@@ -93,10 +110,18 @@ def _run_crosswalk() -> Dict[str, Any]:
 def _check_sbd_posture() -> Dict[str, Any]:
     """Run Secure by Design assessment."""
     print("  Comply: running SbD assessment...")
-    result = _run_tool([
-        sys.executable, "tools/compliance/sbd_assessor.py",
-        "--project-id", "sparkpilot", "--project-dir", ".", "--json",
-    ], timeout=120)
+    result = _run_tool(
+        [
+            sys.executable,
+            "tools/compliance/sbd_assessor.py",
+            "--project-id",
+            "sparkpilot",
+            "--project-dir",
+            ".",
+            "--json",
+        ],
+        timeout=120,
+    )
 
     if result.get("success"):
         data = result.get("data", {})

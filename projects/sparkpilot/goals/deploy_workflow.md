@@ -361,9 +361,9 @@ python tools/monitor/health_checker.py --url <deployed-url> --retries 5
 
 ---
 
-## GOTCHA Layer Mapping
+## FORGE Layer Mapping
 
-| Step | GOTCHA Layer | Component |
+| Step | FORGE Layer | Component |
 |------|-------------|-----------|
 | Generate Terraform | Tools | terraform_generator.py |
 | Generate Ansible | Tools | ansible_generator.py |

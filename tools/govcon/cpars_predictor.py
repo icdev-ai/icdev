@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-# ICDEV GovProposal — CPARS Predictor (Phase 60, D-CPMP-3)
+# ICDEV™ GovProposal — CPARS Predictor (Phase 60, D-CPMP-3)
 # Deterministic weighted CPARS scoring with NDAA negative-event penalties.
 
 """
@@ -39,9 +39,9 @@ Usage:
 import argparse
 import json
 import os
-import sqlite3
 import sys
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -54,6 +54,7 @@ _CONFIG_PATH = _ROOT / "args" / "govcon_config.yaml"
 
 # -- Config ----------------------------------------------------------------
 
+
 def _load_config():
     if _CONFIG_PATH.exists():
         with open(_CONFIG_PATH) as f:
@@ -64,45 +65,54 @@ def _load_config():
 _CFG = _load_config()
 _CPARS_CFG = _CFG.get("cpars", {})
 
-PREDICTION_WEIGHTS = _CPARS_CFG.get("prediction_weights", {
-    "quality": 0.25,
-    "schedule": 0.25,
-    "cost": 0.20,
-    "management": 0.15,
-    "small_business": 0.15,
-})
+PREDICTION_WEIGHTS = _CPARS_CFG.get(
+    "prediction_weights",
+    {
+        "quality": 0.25,
+        "schedule": 0.25,
+        "cost": 0.20,
+        "management": 0.15,
+        "small_business": 0.15,
+    },
+)
 
-RATING_THRESHOLDS = _CPARS_CFG.get("rating_thresholds", {
-    "exceptional": 0.90,
-    "very_good": 0.75,
-    "satisfactory": 0.60,
-    "marginal": 0.40,
-})
+RATING_THRESHOLDS = _CPARS_CFG.get(
+    "rating_thresholds",
+    {
+        "exceptional": 0.90,
+        "very_good": 0.75,
+        "satisfactory": 0.60,
+        "marginal": 0.40,
+    },
+)
 
 CORRECTIVE_ACTION_DISCOUNT = _CPARS_CFG.get("corrective_action_discount", 0.50)
 
 _NEG_CFG = _CFG.get("negative_events", {})
-PENALTY_TABLE = _NEG_CFG.get("penalty_table", {
-    "delinquent_delivery": 0.05,
-    "cost_overrun": 0.08,
-    "quality_rejection": 0.06,
-    "cybersecurity_breach": 0.10,
-    "flowdown_failure": 0.04,
-    "safety_violation": 0.12,
-    "compliance_violation": 0.06,
-    "cure_notice": 0.15,
-    "show_cause": 0.20,
-    "stop_work": 0.25,
-    "termination_default": 0.50,
-    "fraud_waste_abuse": 0.50,
-})
+PENALTY_TABLE = _NEG_CFG.get(
+    "penalty_table",
+    {
+        "delinquent_delivery": 0.05,
+        "cost_overrun": 0.08,
+        "quality_rejection": 0.06,
+        "cybersecurity_breach": 0.10,
+        "flowdown_failure": 0.04,
+        "safety_violation": 0.12,
+        "compliance_violation": 0.06,
+        "cure_notice": 0.15,
+        "show_cause": 0.20,
+        "stop_work": 0.25,
+        "termination_default": 0.50,
+        "fraud_waste_abuse": 0.50,
+    },
+)
 
 
 # -- Helpers ---------------------------------------------------------------
 
+
 def _get_db():
-    conn = sqlite3.connect(str(_DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
@@ -119,7 +129,7 @@ def _uuid():
 def _audit(conn, action, details="", actor="cpars_predictor"):
     try:
         conn.execute(
-            "INSERT INTO audit_trail (id, timestamp, event_type, actor, action, details, session_id) "
+            "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (_uuid(), _now(), "cpmp.cpars_predictor", actor, action, details, "cpmp"),
         )
@@ -151,6 +161,7 @@ def _score_to_rating(score):
 
 # -- Dimension Scorers -----------------------------------------------------
 
+
 def _score_quality(conn, contract_id):
     """Quality dimension: ratio of accepted deliverables / total submitted.
 
@@ -159,12 +170,16 @@ def _score_quality(conn, contract_id):
     Returns 1.0 if no submitted deliverables exist yet.
     """
     submitted_statuses = (
-        "submitted", "government_review", "accepted", "rejected", "resubmitted",
+        "submitted",
+        "government_review",
+        "accepted",
+        "rejected",
+        "resubmitted",
     )
     placeholders = ",".join("?" for _ in submitted_statuses)
 
     total = conn.execute(
-        f"SELECT COUNT(*) FROM cpmp_deliverables "
+        f"SELECT COUNT(*) FROM cpmp_deliverables "  # nosec B608 -- table/column names are internal constants, not user input
         f"WHERE contract_id = ? AND status IN ({placeholders})",
         (contract_id, *submitted_statuses),
     ).fetchone()[0]
@@ -173,8 +188,7 @@ def _score_quality(conn, contract_id):
         return 1.0
 
     accepted = conn.execute(
-        "SELECT COUNT(*) FROM cpmp_deliverables "
-        "WHERE contract_id = ? AND status = 'accepted'",
+        "SELECT COUNT(*) FROM cpmp_deliverables WHERE contract_id = ? AND status = 'accepted'",
         (contract_id,),
     ).fetchone()[0]
 
@@ -195,8 +209,7 @@ def _score_schedule(conn, contract_id):
         return 1.0
 
     overdue = conn.execute(
-        "SELECT COUNT(*) FROM cpmp_deliverables "
-        "WHERE contract_id = ? AND status = 'overdue'",
+        "SELECT COUNT(*) FROM cpmp_deliverables WHERE contract_id = ? AND status = 'overdue'",
         (contract_id,),
     ).fetchone()[0]
 
@@ -209,8 +222,7 @@ def _score_cost(conn, contract_id):
     CPI > 1.0 is favorable but capped. Returns 1.0 if no EVM data.
     """
     row = conn.execute(
-        "SELECT cpi FROM cpmp_evm_periods "
-        "WHERE contract_id = ? ORDER BY period_date DESC LIMIT 1",
+        "SELECT cpi FROM cpmp_evm_periods WHERE contract_id = ? ORDER BY period_date DESC LIMIT 1",
         (contract_id,),
     ).fetchone()
 
@@ -242,8 +254,7 @@ def _score_small_business(conn, contract_id):
     Returns 1.0 if no SB plan or no goals set.
     """
     row = conn.execute(
-        "SELECT * FROM cpmp_small_business_plan "
-        "WHERE contract_id = ? ORDER BY created_at DESC LIMIT 1",
+        "SELECT * FROM cpmp_small_business_plan WHERE contract_id = ? ORDER BY created_at DESC LIMIT 1",
         (contract_id,),
     ).fetchone()
 
@@ -254,7 +265,11 @@ def _score_small_business(conn, contract_id):
 
     # SB categories stored as goal/actual column pairs
     sb_categories = [
-        "sb", "sdb", "wosb", "hubzone", "sdvosb",
+        "sb",
+        "sdb",
+        "wosb",
+        "hubzone",
+        "sdvosb",
     ]
 
     ratios = []
@@ -273,6 +288,7 @@ def _score_small_business(conn, contract_id):
 
 
 # -- NDAA Penalty ----------------------------------------------------------
+
 
 def _compute_ndaa_penalty(conn, contract_id):
     """Compute total NDAA penalty from open/in-progress negative events.
@@ -302,17 +318,20 @@ def _compute_ndaa_penalty(conn, contract_id):
             effective_penalty = base_penalty
 
         total_penalty += effective_penalty
-        details.append({
-            "event_type": event_type,
-            "corrective_action_status": ca_status,
-            "base_penalty": base_penalty,
-            "effective_penalty": round(effective_penalty, 4),
-        })
+        details.append(
+            {
+                "event_type": event_type,
+                "corrective_action_status": ca_status,
+                "base_penalty": base_penalty,
+                "effective_penalty": round(effective_penalty, 4),
+            }
+        )
 
     return round(total_penalty, 4), details
 
 
 # -- Prediction ------------------------------------------------------------
+
 
 def predict_cpars(contract_id):
     """Main CPARS prediction function.
@@ -327,9 +346,7 @@ def predict_cpars(contract_id):
         dict with dimension_scores, ndaa_penalty, predicted_score, predicted_rating
     """
     conn = _get_db()
-    row = conn.execute(
-        "SELECT id FROM cpmp_contracts WHERE id = ?", (contract_id,)
-    ).fetchone()
+    row = conn.execute("SELECT id FROM cpmp_contracts WHERE id = ?", (contract_id,)).fetchone()
     if not row:
         conn.close()
         return {"status": "error", "message": f"Contract {contract_id} not found"}
@@ -347,17 +364,13 @@ def predict_cpars(contract_id):
     ndaa_penalty, penalty_details = _compute_ndaa_penalty(conn, contract_id)
 
     # c. Weighted average minus penalty
-    weighted_sum = sum(
-        dimension_scores[dim] * PREDICTION_WEIGHTS.get(dim, 0.0)
-        for dim in dimension_scores
-    )
+    weighted_sum = sum(dimension_scores[dim] * PREDICTION_WEIGHTS.get(dim, 0.0) for dim in dimension_scores)
     predicted_score = max(0.0, min(1.0, weighted_sum - ndaa_penalty))
 
     # d. Map to rating
     predicted_rating = _score_to_rating(predicted_score)
 
-    _audit(conn, "predict_cpars",
-           f"Contract {contract_id}: score={predicted_score:.4f}, rating={predicted_rating}")
+    _audit(conn, "predict_cpars", f"Contract {contract_id}: score={predicted_score:.4f}, rating={predicted_rating}")
     conn.commit()
     conn.close()
 
@@ -376,6 +389,7 @@ def predict_cpars(contract_id):
 
 # -- Assessments -----------------------------------------------------------
 
+
 def create_assessment(contract_id, period_start, period_end, data=None):
     """Create a new CPARS assessment record.
 
@@ -383,9 +397,7 @@ def create_assessment(contract_id, period_start, period_end, data=None):
     Status starts as 'draft'.
     """
     conn = _get_db()
-    row = conn.execute(
-        "SELECT id FROM cpmp_contracts WHERE id = ?", (contract_id,)
-    ).fetchone()
+    row = conn.execute("SELECT id FROM cpmp_contracts WHERE id = ?", (contract_id,)).fetchone()
     if not row:
         conn.close()
         return {"status": "error", "message": f"Contract {contract_id} not found"}
@@ -413,7 +425,10 @@ def create_assessment(contract_id, period_start, period_end, data=None):
         "created_at, updated_at) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
-            assessment_id, contract_id, period_start, period_end,
+            assessment_id,
+            contract_id,
+            period_start,
+            period_end,
             data.get("quality_rating"),
             data.get("schedule_rating"),
             data.get("cost_rating"),
@@ -424,15 +439,17 @@ def create_assessment(contract_id, period_start, period_end, data=None):
             data.get("narrative"),
             neg_event_count,
             "draft",
-            _now(), _now(),
+            _now(),
+            _now(),
         ),
     )
 
-    _record_status_change(conn, "cpars_assessment", assessment_id, None, "draft",
-                          "system", "Assessment created")
-    _audit(conn, "create_assessment",
-           f"Created CPARS assessment {assessment_id} for contract {contract_id} "
-           f"({period_start} to {period_end})")
+    _record_status_change(conn, "cpars_assessment", assessment_id, None, "draft", "system", "Assessment created")
+    _audit(
+        conn,
+        "create_assessment",
+        f"Created CPARS assessment {assessment_id} for contract {contract_id} ({period_start} to {period_end})",
+    )
     conn.commit()
     conn.close()
 
@@ -464,9 +481,14 @@ def update_assessment(assessment_id, data):
 
     old_status = row["status"]
     updatable = [
-        "quality_rating", "schedule_rating", "cost_rating",
-        "management_rating", "small_business_rating", "overall_rating",
-        "narrative", "status",
+        "quality_rating",
+        "schedule_rating",
+        "cost_rating",
+        "management_rating",
+        "small_business_rating",
+        "overall_rating",
+        "narrative",
+        "status",
     ]
 
     sets = []
@@ -485,18 +507,17 @@ def update_assessment(assessment_id, data):
     params.append(assessment_id)
 
     conn.execute(
-        f"UPDATE cpmp_cpars_assessments SET {', '.join(sets)} WHERE id = ?",
+        f"UPDATE cpmp_cpars_assessments SET {', '.join(sets)} WHERE id = ?",  # nosec B608 -- table/column names are internal constants, not user input
         params,
     )
 
     # Record status change if status was updated
     if "status" in data and data["status"] != old_status:
-        _record_status_change(conn, "cpars_assessment", assessment_id,
-                              old_status, data["status"], None,
-                              "Assessment status updated")
+        _record_status_change(
+            conn, "cpars_assessment", assessment_id, old_status, data["status"], None, "Assessment status updated"
+        )
 
-    _audit(conn, "update_assessment",
-           f"Updated assessment {assessment_id}: {list(data.keys())}")
+    _audit(conn, "update_assessment", f"Updated assessment {assessment_id}: {list(data.keys())}")
     conn.commit()
     conn.close()
 
@@ -546,16 +567,13 @@ def get_assessment(assessment_id):
 def list_assessments(contract_id):
     """List all CPARS assessments for a contract, ordered by period_end descending."""
     conn = _get_db()
-    row = conn.execute(
-        "SELECT id FROM cpmp_contracts WHERE id = ?", (contract_id,)
-    ).fetchone()
+    row = conn.execute("SELECT id FROM cpmp_contracts WHERE id = ?", (contract_id,)).fetchone()
     if not row:
         conn.close()
         return {"status": "error", "message": f"Contract {contract_id} not found"}
 
     rows = conn.execute(
-        "SELECT * FROM cpmp_cpars_assessments "
-        "WHERE contract_id = ? ORDER BY period_end DESC",
+        "SELECT * FROM cpmp_cpars_assessments WHERE contract_id = ? ORDER BY period_end DESC",
         (contract_id,),
     ).fetchall()
     conn.close()
@@ -575,9 +593,7 @@ def get_cpars_trend(contract_id):
     ordered chronologically.
     """
     conn = _get_db()
-    row = conn.execute(
-        "SELECT id FROM cpmp_contracts WHERE id = ?", (contract_id,)
-    ).fetchone()
+    row = conn.execute("SELECT id FROM cpmp_contracts WHERE id = ?", (contract_id,)).fetchone()
     if not row:
         conn.close()
         return {"status": "error", "message": f"Contract {contract_id} not found"}
@@ -610,23 +626,16 @@ def get_cpars_trend(contract_id):
 
 # -- CLI -------------------------------------------------------------------
 
+
 def main():
-    parser = argparse.ArgumentParser(
-        description="ICDEV GovProposal CPARS Predictor (Phase 60, D-CPMP-3)"
-    )
+    parser = argparse.ArgumentParser(description="ICDEV™ GovProposal CPARS Predictor (Phase 60, D-CPMP-3)")
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--predict", action="store_true",
-                       help="Run CPARS prediction for a contract")
-    group.add_argument("--create", action="store_true",
-                       help="Create a new CPARS assessment")
-    group.add_argument("--update", action="store_true",
-                       help="Update an existing CPARS assessment")
-    group.add_argument("--get", action="store_true",
-                       help="Get a single CPARS assessment")
-    group.add_argument("--list", action="store_true",
-                       help="List all CPARS assessments for a contract")
-    group.add_argument("--trend", action="store_true",
-                       help="Get CPARS score trend for charting")
+    group.add_argument("--predict", action="store_true", help="Run CPARS prediction for a contract")
+    group.add_argument("--create", action="store_true", help="Create a new CPARS assessment")
+    group.add_argument("--update", action="store_true", help="Update an existing CPARS assessment")
+    group.add_argument("--get", action="store_true", help="Get a single CPARS assessment")
+    group.add_argument("--list", action="store_true", help="List all CPARS assessments for a contract")
+    group.add_argument("--trend", action="store_true", help="Get CPARS score trend for charting")
 
     parser.add_argument("--contract-id", help="Contract ID")
     parser.add_argument("--assessment-id", help="Assessment ID")
@@ -651,8 +660,7 @@ def main():
         if not args.period_start or not args.period_end:
             print("Error: --period-start and --period-end required", file=sys.stderr)
             sys.exit(1)
-        result = create_assessment(args.contract_id, args.period_start,
-                                   args.period_end, data)
+        result = create_assessment(args.contract_id, args.period_start, args.period_end, data)
 
     elif args.update:
         if not args.assessment_id:

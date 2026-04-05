@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Propagation Manager -- deploy capabilities to children with HITL approval.
 
 REQ-36-040: All capability deployments to production children SHALL require
@@ -765,7 +765,7 @@ class PropagationManager:
 # =========================================================================
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Propagation Manager -- deploy capabilities to children with HITL (REQ-36-040)"
+        description="ICDEV™ Propagation Manager -- deploy capabilities to children with HITL (REQ-36-040)"
     )
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument(

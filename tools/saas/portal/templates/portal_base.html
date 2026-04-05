@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ICDEV Portal - {% block title %}{{ tenant_name }}{% endblock %}</title>
+    <title>ICDEV™ Portal - {% block title %}{{ tenant_name }}{% endblock %}</title>
     <link rel="stylesheet" href="{{ url_for('portal.static', filename='portal.css') }}">
     {% if session.get('portal_session_token') %}
     <meta name="api-key" content="{{ session.get('portal_session_token', '') }}">
@@ -30,7 +30,7 @@
                     </svg>
                 </div>
                 <div class="sidebar-title">
-                    <span class="sidebar-brand">ICDEV</span>
+                    <span class="sidebar-brand">ICDEV™</span>
                     <span class="sidebar-tenant">{{ tenant_name }}</span>
                 </div>
             </div>
@@ -81,12 +81,7 @@
                         <span class="nav-icon">&#9733;</span> CMMC
                     </a>
                 </li>
-                <li class="{% if active_page == 'phases' %}active{% endif %}">
-                    <a href="{{ url_for('portal.phases') }}">
-                        <span class="nav-icon">&#9670;</span> Phases
-                    </a>
-                </li>
-                <li class="{% if active_page == 'translations' %}active{% endif %}">
+<li class="{% if active_page == 'translations' %}active{% endif %}">
                     <a href="{{ url_for('portal.translations') }}">
                         <span class="nav-icon">&#8644;</span> Translations
                     </a>
@@ -146,9 +141,18 @@
     <!-- Toast Container -->
     <div id="toast-container" aria-live="polite"></div>
 
+    <!-- Codebase Assistant Widget (Phase 69 — D-CA-3) -->
+    {% include "includes/assistant_widget.html" ignore missing %}
+    <script>window.ROUTE_MODULE_MAP = {{ route_module_map|default({})|tojson }};</script>
+
     {% block modals %}{% endblock %}
 
     <script src="{{ url_for('portal.static', filename='portal.js') }}"></script>
+    <!-- Vendor: Markdown + Syntax Highlighting (Phase 69) -->
+    <script defer src="{{ url_for('static', filename='vendor/marked/marked.min.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='vendor/hljs/highlight.min.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='js/chat-renderers.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='js/assistant-widget.js') }}"></script>
     {% block scripts %}{% endblock %}
 </body>
 </html>

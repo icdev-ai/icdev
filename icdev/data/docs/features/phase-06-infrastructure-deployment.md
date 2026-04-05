@@ -9,7 +9,7 @@
 | Status | Implemented |
 | Priority | P0 |
 | Dependencies | Phase 3 (TDD/BDD Testing Framework), Phase 4 (NIST 800-53 Compliance), Phase 5 (Security Scanning) |
-| Author | ICDEV Architect Agent |
+| Author | ICDEV™ Architect Agent |
 | Date | 2026-02-23 |
 
 ---
@@ -20,7 +20,7 @@ Manual deployments are unreproducible, error-prone, and unauditable. In governme
 
 The gap between "code works on my machine" and "code runs securely in GovCloud" is enormous. Applications require hardened infrastructure (STIG-compliant OS, encrypted storage, least-privilege IAM, private networking), orchestration (Kubernetes with security contexts, network policies, pod disruption budgets), configuration management (Ansible with vault-encrypted secrets), and a multi-stage CI/CD pipeline that enforces security gates between every stage.
 
-ICDEV generates all infrastructure-as-code artifacts deterministically from project configuration: Terraform for cloud resources (AWS GovCloud by default, multi-cloud via Phase 38), Ansible for STIG-hardened configuration management, Kubernetes manifests with security-hardened pod specifications, and a 7-stage GitLab CI/CD pipeline with gates between every stage. A 10-gate pre-deployment verification ensures no artifact ships without passing all security, compliance, and quality checks. Rollback capability provides immediate recovery when deployments fail.
+ICDEV™ generates all infrastructure-as-code artifacts deterministically from project configuration: Terraform for cloud resources (AWS GovCloud by default, multi-cloud via Phase 38), Ansible for STIG-hardened configuration management, Kubernetes manifests with security-hardened pod specifications, and a 7-stage GitLab CI/CD pipeline with gates between every stage. A 10-gate pre-deployment verification ensures no artifact ships without passing all security, compliance, and quality checks. Rollback capability provides immediate recovery when deployments fail.
 
 ---
 
@@ -220,7 +220,7 @@ The system SHALL provide rollback to the last known-good deployment via `tools/i
 
 | ID | Decision | Rationale |
 |----|----------|-----------|
-| D1 | SQLite for ICDEV internals; PostgreSQL for apps ICDEV builds | Generated applications get production-grade databases |
+| D1 | SQLite for ICDEV™ internals; PostgreSQL for apps ICDEV™ builds | Generated applications get production-grade databases |
 | D3 | Flask over FastAPI | Simpler, fewer dependencies, auditable SSR, smaller STIG attack surface |
 | D141 | HPA with CPU/memory metrics as baseline | Cloud-agnostic auto-scaling; works on EKS, GKE, AKS, OpenShift |
 | D143 | PDB with minAvailable=1 for core agents | Guarantees availability during rolling updates and node maintenance |

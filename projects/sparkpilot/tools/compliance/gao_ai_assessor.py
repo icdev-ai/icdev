@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """GAO AI Accountability Assessor.
 
 Assesses compliance with GAO-21-519SP — Artificial Intelligence:
@@ -12,7 +12,7 @@ Governance, Data, Performance, Monitoring.
 
 Pattern: tools/compliance/base_assessor.py (BaseAssessor ABC).
 ADR D307: All Phase 48 assessors use BaseAssessor.
-ADR D313: Reuses existing ICDEV data as evidence.
+ADR D313: Reuses existing ICDEV™ data as evidence.
 
 Usage:
     python tools/compliance/gao_ai_assessor.py --project-id proj-123
@@ -44,7 +44,7 @@ class GAOAIAssessor(BaseAssessor):
     ) -> Dict[str, str]:
         """GAO AI Accountability automated checks.
 
-        Checks existing ICDEV data for GAO evidence:
+        Checks existing ICDEV™ data for GAO evidence:
         - GAO-GOV-1: Governance structure (agent config, authority matrix)
         - GAO-GOV-4: Risk management (risk assessments exist)
         - GAO-DATA-2: Data provenance (PROV records or AI BOM)

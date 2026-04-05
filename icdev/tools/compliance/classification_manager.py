@@ -3,8 +3,8 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""Classification and Marking Manager for ICDEV.
+# POC: ICDEV™ System Administrator
+"""Classification and Marking Manager for ICDEV™.
 
 Handles CUI, SECRET, and TOP SECRET classification markings and maps DoD
 Impact Levels (IL2-IL6) to compliance baselines, encryption requirements,
@@ -170,7 +170,7 @@ def load_markings_config() -> Dict:
             "controlled_by": "Department of Defense",
             "categories": "CTI",
             "distribution": "Distribution D",
-            "poc": "ICDEV System Administrator",
+            "poc": "ICDEV™ System Administrator",
         },
         "portion_marking": "(CUI)",
         "decontrol_instructions": "Decontrol on: 10 years from creation date",
@@ -179,7 +179,7 @@ def load_markings_config() -> Dict:
             "Controlled by: Department of Defense\n"
             "CUI Category: CTI\n"
             "Distribution: D\n"
-            "POC: ICDEV System Administrator"
+            "POC: ICDEV™ System Administrator"
         ),
         "document_header": (
             "////////////////////////////////////////////////////////////////////\n"
@@ -491,7 +491,7 @@ def get_code_header(
             "Controlled by: Department of Defense",
             f"CUI Category: {category}",
             "Distribution: D",
-            "POC: ICDEV System Administrator",
+            "POC: ICDEV™ System Administrator",
         ]
         # Try language_support module for CUI (it has registry-aware logic)
         if language.lower() in ("python", "ruby", "java", "go", "rust",
@@ -510,7 +510,7 @@ def get_code_header(
             "Controlled by: Department of Defense",
             "Classification: SECRET",
             "Distribution: Authorized SECRET-cleared personnel only",
-            "POC: ICDEV System Administrator",
+            "POC: ICDEV™ System Administrator",
         ]
     elif cls_upper in ("TOP SECRET", "TOP SECRET//SCI"):
         header_lines = [
@@ -518,7 +518,7 @@ def get_code_header(
             "Controlled by: Department of Defense",
             "Classification: TOP SECRET // SCI",
             "Distribution: Authorized TS/SCI-cleared personnel only",
-            "POC: ICDEV System Administrator",
+            "POC: ICDEV™ System Administrator",
         ]
     elif cls_upper == "PUBLIC":
         header_lines = [
@@ -997,7 +997,7 @@ def upgrade_markings(
 def main() -> None:
     """CLI entry point and demonstration of all capabilities."""
     parser = argparse.ArgumentParser(
-        description="Classification & Marking Manager for ICDEV"
+        description="Classification & Marking Manager for ICDEV™"
     )
     parser.add_argument(
         "--impact-level",
@@ -1224,7 +1224,7 @@ def main() -> None:
 def _run_demo(as_json: bool = False) -> None:
     """Demonstrate all classification manager capabilities."""
     print("=" * 70)
-    print("  ICDEV Classification & Marking Manager -- Demo")
+    print("  ICDEV™ Classification & Marking Manager -- Demo")
     print("=" * 70)
     print()
 

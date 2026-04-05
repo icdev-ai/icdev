@@ -7,9 +7,9 @@
 
 ## Overview
 
-ICDEV's Innovation, Creative, and Research engines produce structured intelligence (signals, pain points, dossiers, forecasts). Compliance artifacts (SSP, POAM, STIG, SBOM) add per-ATO system data. Today, each LLM call starts from scratch with no pre-retrieved context and no cross-engine knowledge reuse. This wastes tokens and misses connections across engines.
+ICDEV™'s Innovation, Creative, and Research engines produce structured intelligence (signals, pain points, dossiers, forecasts). Compliance artifacts (SSP, POAM, STIG, SBOM) add per-ATO system data. Today, each LLM call starts from scratch with no pre-retrieved context and no cross-engine knowledge reuse. This wastes tokens and misses connections across engines.
 
-The RAG subsystem solves this by: (1) indexing all ICDEV data into a unified vector store, (2) auto-retrieving relevant context before every two-tier LLM call, (3) enabling natural language search across all knowledge, and (4) providing child apps with federated knowledge access.
+The RAG subsystem solves this by: (1) indexing all ICDEV™ data into a unified vector store, (2) auto-retrieving relevant context before every two-tier LLM call, (3) enabling natural language search across all knowledge, and (4) providing child apps with federated knowledge access.
 
 Design principles:
 - Air-gap safe: Ollama nomic-embed-text for embeddings, no cloud dependency

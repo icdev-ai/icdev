@@ -1,9 +1,9 @@
 # [TEMPLATE: CUI // SP-CTI]
 """
-ICDEV CLI Output Formatter
+ICDEV™ CLI Output Formatter
 ===========================
 
-Human-friendly terminal output formatting for ICDEV tools.
+Human-friendly terminal output formatting for ICDEV™ tools.
 
 When tools are invoked with ``--human`` (instead of ``--json``), they use
 this module for colorized, table-formatted, readable terminal output.
@@ -576,7 +576,7 @@ def human_output(func: Callable) -> Callable:
 def add_human_flag(parser: argparse.ArgumentParser) -> None:
     """Add ``--human`` flag to an argparse parser.
 
-    This flag is mutually informational with ``--json`` (the existing ICDEV
+    This flag is mutually informational with ``--json`` (the existing ICDEV™
     convention).  When ``--human`` is supplied, tool output is rendered as
     colorized terminal text instead of raw JSON.
     """
@@ -599,7 +599,7 @@ def should_use_human(args: argparse.Namespace) -> bool:
 if __name__ == "__main__":
     print()
     print(C.wrap("=" * 70, "bold"))
-    print(C.wrap("  ICDEV Output Formatter Demo", "bold", "cyan"))
+    print(C.wrap("  ICDEV™ Output Formatter Demo", "bold", "cyan"))
     print(C.wrap("=" * 70, "bold"))
     print()
 
@@ -628,7 +628,7 @@ if __name__ == "__main__":
             ["MBSE",         "8451", "healthy",  "99.5%"],
             ["Monitor",      "8450", "healthy",  "99.6%"],
         ],
-        title="ICDEV Agent Fleet",
+        title="ICDEV™ Agent Fleet",
     ))
     print()
 
@@ -656,7 +656,7 @@ if __name__ == "__main__":
     print()
 
     # -- Pipeline --
-    print(format_section("ATLAS Workflow"))
+    print(format_section("ANVIL Workflow"))
     print()
     print(format_pipeline([
         {"name": "Model",     "status": "completed"},

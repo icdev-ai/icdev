@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """ATO Boundary Impact Analyzer — 4-tier (GREEN/YELLOW/ORANGE/RED) scoring.
 
 Registers ATO system boundaries, assesses how new requirements affect an
@@ -43,6 +43,7 @@ import json
 import os
 import sqlite3
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -52,9 +53,11 @@ DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db
 # Graceful import of audit logger
 try:
     from tools.audit.audit_logger import log_event
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
+
     def log_event(**kwargs) -> int:  # type: ignore[misc]
         return -1
 
@@ -63,15 +66,13 @@ except ImportError:
 # Database helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_connection(db_path=None):
     """Get database connection with dict-like row access."""
     path = db_path or DB_PATH
     if not path.exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py"
-        )
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -86,30 +87,73 @@ def _generate_id(prefix="bia"):
 
 # Keywords that push the score toward each tier
 _GREEN_KEYWORDS = [
-    "existing", "current", "internal", "within boundary", "already authorized",
-    "minor update", "configuration change", "patch", "maintenance",
-    "existing component", "existing service", "within enclave",
+    "existing",
+    "current",
+    "internal",
+    "within boundary",
+    "already authorized",
+    "minor update",
+    "configuration change",
+    "patch",
+    "maintenance",
+    "existing component",
+    "existing service",
+    "within enclave",
 ]
 
 _YELLOW_KEYWORDS = [
-    "new component", "new role", "additional service", "internal service",
-    "new user type", "new module", "add feature", "minor integration",
-    "new port", "new protocol", "additional logging", "new database table",
+    "new component",
+    "new role",
+    "additional service",
+    "internal service",
+    "new user type",
+    "new module",
+    "add feature",
+    "minor integration",
+    "new port",
+    "new protocol",
+    "additional logging",
+    "new database table",
 ]
 
 _ORANGE_KEYWORDS = [
-    "external", "interconnect", "cross-boundary", "new data flow",
-    "api integration", "third-party", "new interface", "new connection",
-    "cross-domain", "mobile", "byod", "cloud service", "saas",
-    "new network segment", "dmz", "partner system", "vendor api",
+    "external",
+    "interconnect",
+    "cross-boundary",
+    "new data flow",
+    "api integration",
+    "third-party",
+    "new interface",
+    "new connection",
+    "cross-domain",
+    "mobile",
+    "byod",
+    "cloud service",
+    "saas",
+    "new network segment",
+    "dmz",
+    "partner system",
+    "vendor api",
 ]
 
 _RED_KEYWORDS = [
-    "classification change", "secret", "ts/sci", "top secret",
-    "boundary expansion", "prohibited", "new network", "air gap",
-    "classification upgrade", "new enclave", "sipr", "jwics",
-    "foreign national", "non-us entity", "unapproved technology",
-    "remove encryption", "bypass authentication",
+    "classification change",
+    "secret",
+    "ts/sci",
+    "top secret",
+    "boundary expansion",
+    "prohibited",
+    "new network",
+    "air gap",
+    "classification upgrade",
+    "new enclave",
+    "sipr",
+    "jwics",
+    "foreign national",
+    "non-us entity",
+    "unapproved technology",
+    "remove encryption",
+    "bypass authentication",
 ]
 
 # NIST 800-53 control families to keyword mapping for affected control detection
@@ -145,29 +189,62 @@ _SSP_SECTION_MAP = {
     "Section 2 - System Categorization": ["classification", "impact level", "categoriz"],
     "Section 3 - System Owner": ["owner", "authorizing official", "isso"],
     "Section 9 - System Interconnections": [
-        "interconnect", "interface", "external system", "isa", "mou",
-        "cross-boundary", "data flow", "api integration", "third-party",
+        "interconnect",
+        "interface",
+        "external system",
+        "isa",
+        "mou",
+        "cross-boundary",
+        "data flow",
+        "api integration",
+        "third-party",
     ],
     "Section 10 - Applicable Laws and Regulations": ["regulation", "law", "policy", "mandate"],
     "Section 11 - Minimum Security Controls": [
-        "control", "nist", "baseline", "security requirement",
+        "control",
+        "nist",
+        "baseline",
+        "security requirement",
     ],
     "Section 13 - System Architecture": [
-        "architecture", "component", "network", "topology", "boundary",
-        "new service", "new module", "new component",
+        "architecture",
+        "component",
+        "network",
+        "topology",
+        "boundary",
+        "new service",
+        "new module",
+        "new component",
     ],
     "Section 14 - Network Diagram": [
-        "network", "diagram", "topology", "segment", "dmz", "enclave",
+        "network",
+        "diagram",
+        "topology",
+        "segment",
+        "dmz",
+        "enclave",
     ],
     "Section 15 - Data Flow Diagram": [
-        "data flow", "information flow", "cross-boundary", "data path",
+        "data flow",
+        "information flow",
+        "cross-boundary",
+        "data path",
     ],
     "Section 16 - Ports, Protocols, and Services": [
-        "port", "protocol", "service", "firewall rule",
+        "port",
+        "protocol",
+        "service",
+        "firewall rule",
     ],
     "Section 17 - Hardware/Software Inventory": [
-        "hardware", "software", "component", "inventory", "new server",
-        "new application", "cots", "gots",
+        "hardware",
+        "software",
+        "component",
+        "inventory",
+        "new server",
+        "new application",
+        "cots",
+        "gots",
     ],
 }
 
@@ -195,6 +272,7 @@ _IMPACT_CATEGORY_KEYWORDS = {
 # Core functions
 # ---------------------------------------------------------------------------
 
+
 def register_system(
     project_id: str,
     system_name: str,
@@ -212,7 +290,7 @@ def register_system(
     """Register an existing ATO system boundary in ato_system_registry.
 
     Args:
-        project_id: ICDEV project ID.
+        project_id: ICDEV™ project ID.
         system_name: Human-readable system name.
         ato_status: One of active, provisional, expired, pending.
         boundary_definition: JSON-serializable dict describing the boundary.
@@ -230,15 +308,11 @@ def register_system(
     """
     valid_statuses = ("active", "provisional", "expired", "pending")
     if ato_status not in valid_statuses:
-        raise ValueError(
-            f"Invalid ato_status '{ato_status}'. Must be one of: {valid_statuses}"
-        )
+        raise ValueError(f"Invalid ato_status '{ato_status}'. Must be one of: {valid_statuses}")
 
     valid_levels = ("IL2", "IL4", "IL5", "IL6")
     if impact_level not in valid_levels:
-        raise ValueError(
-            f"Invalid impact_level '{impact_level}'. Must be one of: {valid_levels}"
-        )
+        raise ValueError(f"Invalid impact_level '{impact_level}'. Must be one of: {valid_levels}")
 
     system_id = _generate_id("sys")
     boundary_def = boundary_definition or {}
@@ -258,9 +332,7 @@ def register_system(
     conn = _get_connection(db_path)
 
     # Validate project exists
-    row = conn.execute(
-        "SELECT id FROM projects WHERE id = ?", (project_id,)
-    ).fetchone()
+    row = conn.execute("SELECT id FROM projects WHERE id = ?", (project_id,)).fetchone()
     if not row:
         conn.close()
         raise ValueError(f"Project '{project_id}' not found in database.")
@@ -328,9 +400,7 @@ def get_system(system_id: str, db_path=None) -> dict:
         dict with full system details.
     """
     conn = _get_connection(db_path)
-    row = conn.execute(
-        "SELECT * FROM ato_system_registry WHERE id = ?", (system_id,)
-    ).fetchone()
+    row = conn.execute("SELECT * FROM ato_system_registry WHERE id = ?", (system_id,)).fetchone()
     conn.close()
 
     if not row:
@@ -338,8 +408,13 @@ def get_system(system_id: str, db_path=None) -> dict:
 
     data = dict(row)
     # Parse JSON fields
-    for field in ("accreditation_boundary", "data_types", "interconnections",
-                  "baseline_controls", "component_inventory"):
+    for field in (
+        "accreditation_boundary",
+        "data_types",
+        "interconnections",
+        "baseline_controls",
+        "component_inventory",
+    ):
         val = data.get(field)
         if val and isinstance(val, str):
             try:
@@ -354,7 +429,7 @@ def list_systems(project_id: str, db_path=None) -> dict:
     """List all registered ATO systems for a project.
 
     Args:
-        project_id: ICDEV project ID.
+        project_id: ICDEV™ project ID.
         db_path: Optional database path override.
 
     Returns:
@@ -405,6 +480,7 @@ def _ato_type_to_status(ato_type, ato_expiry):
 # ---------------------------------------------------------------------------
 # Boundary impact assessment
 # ---------------------------------------------------------------------------
+
 
 def _score_text_against_keywords(text_lower: str, keywords: list) -> int:
     """Count how many keywords match in the text."""
@@ -459,12 +535,7 @@ def _determine_impact_tier(text_lower: str, system_data: dict) -> tuple:
 
     # Score-based determination
     # Weight: RED=25, ORANGE=15, YELLOW=8, GREEN=2 (per hit)
-    raw_score = (
-        red_hits * 25
-        + orange_hits * 15
-        + yellow_hits * 8
-        + green_hits * 2
-    )
+    raw_score = red_hits * 25 + orange_hits * 15 + yellow_hits * 8 + green_hits * 2
 
     # Normalize to 0-100, clamped
     # If no keywords matched at all, default to GREEN with low score
@@ -540,8 +611,7 @@ def _detect_affected_ssp_sections(text_lower: str) -> list:
     return affected
 
 
-def _generate_remediation_steps(tier: str, category: str, affected_controls: list,
-                                affected_sections: list) -> list:
+def _generate_remediation_steps(tier: str, category: str, affected_controls: list, affected_sections: list) -> list:
     """Generate remediation steps based on tier and impact."""
     steps = []
 
@@ -554,9 +624,7 @@ def _generate_remediation_steps(tier: str, category: str, affected_controls: lis
     if tier == "YELLOW":
         steps.append("Prepare SSP addendum documenting the change.")
         if affected_controls:
-            steps.append(
-                f"Update control implementations for: {', '.join(affected_controls[:5])}."
-            )
+            steps.append(f"Update control implementations for: {', '.join(affected_controls[:5])}.")
         steps.append("Submit change to ISSO for review and approval.")
         if category == "component_addition":
             steps.append("Update hardware/software inventory (SSP Section 17).")
@@ -575,9 +643,7 @@ def _generate_remediation_steps(tier: str, category: str, affected_controls: lis
         if "Section 15 - Data Flow Diagram" in affected_sections:
             steps.append("Update data flow diagrams showing new cross-boundary flows.")
         if affected_controls:
-            steps.append(
-                f"Re-assess controls: {', '.join(affected_controls[:8])}."
-            )
+            steps.append(f"Re-assess controls: {', '.join(affected_controls[:8])}.")
         steps.append("Conduct risk assessment for the boundary modification.")
         steps.append("Determine if partial re-authorization is sufficient or full ATO required.")
         steps.append("Update POA&M with any new findings.")
@@ -590,9 +656,7 @@ def _generate_remediation_steps(tier: str, category: str, affected_controls: lis
     steps.append("Conduct formal risk assessment with AO participation.")
     steps.append("If proceeding, initiate full re-authorization process.")
     if affected_controls:
-        steps.append(
-            f"All affected controls require full re-assessment: {', '.join(affected_controls)}."
-        )
+        steps.append(f"All affected controls require full re-assessment: {', '.join(affected_controls)}.")
     steps.append("Budget 90-180 days for re-authorization timeline.")
     return steps
 
@@ -606,7 +670,7 @@ def assess_boundary_impact(
     """Assess a single requirement's impact on an existing ATO boundary.
 
     Args:
-        project_id: ICDEV project ID.
+        project_id: ICDEV™ project ID.
         system_id: Registered ATO system ID.
         requirement_id: Intake requirement ID to assess.
         db_path: Optional database path override.
@@ -618,18 +682,14 @@ def assess_boundary_impact(
     conn = _get_connection(db_path)
 
     # Load the requirement
-    req_row = conn.execute(
-        "SELECT * FROM intake_requirements WHERE id = ?", (requirement_id,)
-    ).fetchone()
+    req_row = conn.execute("SELECT * FROM intake_requirements WHERE id = ?", (requirement_id,)).fetchone()
     if not req_row:
         conn.close()
         raise ValueError(f"Requirement '{requirement_id}' not found.")
     req_data = dict(req_row)
 
     # Load the system boundary
-    sys_row = conn.execute(
-        "SELECT * FROM ato_system_registry WHERE id = ?", (system_id,)
-    ).fetchone()
+    sys_row = conn.execute("SELECT * FROM ato_system_registry WHERE id = ?", (system_id,)).fetchone()
     if not sys_row:
         conn.close()
         raise ValueError(f"System '{system_id}' not found in ato_system_registry.")
@@ -638,10 +698,7 @@ def assess_boundary_impact(
     # Verify project matches
     if sys_data["project_id"] != project_id:
         conn.close()
-        raise ValueError(
-            f"System '{system_id}' belongs to project '{sys_data['project_id']}', "
-            f"not '{project_id}'."
-        )
+        raise ValueError(f"System '{system_id}' belongs to project '{sys_data['project_id']}', not '{project_id}'.")
 
     # Build the text corpus for analysis
     raw_text = req_data.get("raw_text", "")
@@ -663,16 +720,12 @@ def assess_boundary_impact(
         affected_ssp_sections.append("Section 13 - System Architecture")
 
     # Generate remediation steps
-    remediation_steps = _generate_remediation_steps(
-        tier, category, affected_controls, affected_ssp_sections
-    )
+    remediation_steps = _generate_remediation_steps(tier, category, affected_controls, affected_ssp_sections)
 
     # Build alternative approaches placeholder (populated only for RED)
     alternative_approaches = []
     if tier == "RED":
-        alternative_approaches = [
-            "Run generate_alternatives() for detailed COA analysis."
-        ]
+        alternative_approaches = ["Run generate_alternatives() for detailed COA analysis."]
 
     # Create assessment ID
     assessment_id = _generate_id("bia")
@@ -718,14 +771,18 @@ def assess_boundary_impact(
                    risk_score = ?, assessed_by = ?, assessed_at = ?
                WHERE requirement_id = ? AND system_id = ?""",
             (
-                tier, category, description,
+                tier,
+                category,
+                description,
                 json.dumps(affected_controls),
                 json.dumps(affected_ssp_sections),
                 json.dumps(remediation_steps),
                 json.dumps(alternative_approaches) if alternative_approaches else None,
                 float(score),
-                "boundary-analyzer", now,
-                requirement_id, system_id,
+                "boundary-analyzer",
+                now,
+                requirement_id,
+                system_id,
             ),
         )
         # Retrieve the existing ID
@@ -743,10 +800,7 @@ def assess_boundary_impact(
         log_event(
             event_type="boundary_impact_assessed",
             actor="boundary-analyzer",
-            action=(
-                f"Assessed requirement {requirement_id} against system {system_id}: "
-                f"{tier} (score={score})"
-            ),
+            action=(f"Assessed requirement {requirement_id} against system {system_id}: {tier} (score={score})"),
             project_id=project_id,
             details={
                 "assessment_id": assessment_id,
@@ -776,6 +830,7 @@ def assess_boundary_impact(
 # Alternative COA generation
 # ---------------------------------------------------------------------------
 
+
 def generate_alternatives(
     project_id: str,
     assessment_id: str,
@@ -787,7 +842,7 @@ def generate_alternatives(
     the existing ATO or with minimal boundary disruption.
 
     Args:
-        project_id: ICDEV project ID.
+        project_id: ICDEV™ project ID.
         assessment_id: Boundary impact assessment ID (must be RED tier).
         db_path: Optional database path override.
 
@@ -797,9 +852,7 @@ def generate_alternatives(
     conn = _get_connection(db_path)
 
     # Load the assessment
-    bia_row = conn.execute(
-        "SELECT * FROM boundary_impact_assessments WHERE id = ?", (assessment_id,)
-    ).fetchone()
+    bia_row = conn.execute("SELECT * FROM boundary_impact_assessments WHERE id = ?", (assessment_id,)).fetchone()
     if not bia_row:
         conn.close()
         raise ValueError(f"Assessment '{assessment_id}' not found.")
@@ -808,8 +861,7 @@ def generate_alternatives(
     if bia_data["project_id"] != project_id:
         conn.close()
         raise ValueError(
-            f"Assessment '{assessment_id}' belongs to project '{bia_data['project_id']}', "
-            f"not '{project_id}'."
+            f"Assessment '{assessment_id}' belongs to project '{bia_data['project_id']}', not '{project_id}'."
         )
 
     if bia_data["impact_tier"] != "RED":
@@ -829,23 +881,21 @@ def generate_alternatives(
         ).fetchone()
         if req_row:
             req_data = dict(req_row)
-            req_text = (req_data.get("raw_text", "") + " " +
-                        (req_data.get("refined_text", "") or "")).strip()
+            req_text = (req_data.get("raw_text", "") + " " + (req_data.get("refined_text", "") or "")).strip()
 
     text_lower = req_text.lower()
 
     # Parse affected controls from assessment
     affected_controls_raw = bia_data.get("affected_controls", "[]")
     try:
-        affected_controls = json.loads(affected_controls_raw) if isinstance(
-            affected_controls_raw, str) else affected_controls_raw or []
+        affected_controls = (
+            json.loads(affected_controls_raw) if isinstance(affected_controls_raw, str) else affected_controls_raw or []
+        )
     except (json.JSONDecodeError, TypeError):
         affected_controls = []
 
     # Load system data for context
-    sys_row = conn.execute(
-        "SELECT * FROM ato_system_registry WHERE id = ?", (bia_data["system_id"],)
-    ).fetchone()
+    sys_row = conn.execute("SELECT * FROM ato_system_registry WHERE id = ?", (bia_data["system_id"],)).fetchone()
     sys_data = dict(sys_row) if sys_row else {}
     system_level = sys_data.get("impact_level", "IL5")
 
@@ -863,22 +913,22 @@ def generate_alternatives(
     ]
     if any(kw in text_lower for kw in ["secret", "ts/sci", "top secret"]):
         cds_feasibility = 0.7
-        cds_tradeoffs.append(
-            "CDS is the standard approach for cross-classification data sharing."
-        )
-    alternatives.append({
-        "approach_name": "Cross-Domain Solution (CDS)",
-        "description": (
-            "Use an approved Cross-Domain Solution to mediate data exchange between "
-            f"the {system_level} boundary and the higher-classification requirement. "
-            "Data flows through the CDS with content inspection, filtering, and "
-            "audit logging. The existing ATO boundary remains intact."
-        ),
-        "boundary_tier_after": "YELLOW",
-        "feasibility_score": round(cds_feasibility, 2),
-        "tradeoffs": cds_tradeoffs,
-        "affected_controls": sorted(cds_controls),
-    })
+        cds_tradeoffs.append("CDS is the standard approach for cross-classification data sharing.")
+    alternatives.append(
+        {
+            "approach_name": "Cross-Domain Solution (CDS)",
+            "description": (
+                "Use an approved Cross-Domain Solution to mediate data exchange between "
+                f"the {system_level} boundary and the higher-classification requirement. "
+                "Data flows through the CDS with content inspection, filtering, and "
+                "audit logging. The existing ATO boundary remains intact."
+            ),
+            "boundary_tier_after": "YELLOW",
+            "feasibility_score": round(cds_feasibility, 2),
+            "tradeoffs": cds_tradeoffs,
+            "affected_controls": sorted(cds_controls),
+        }
+    )
 
     # Alternative 2: Data Downgrade
     downgrade_controls = list(set(affected_controls) | {"SC-8", "SC-28", "AC-3"})
@@ -894,19 +944,21 @@ def generate_alternatives(
         downgrade_tradeoffs.append(
             "Classification downgrade requires formal review by Original Classification Authority (OCA)."
         )
-    alternatives.append({
-        "approach_name": "Data Downgrade / Sanitization",
-        "description": (
-            f"Process data at {system_level} (current boundary level) after sanitization "
-            "or downgrade. Higher-classification aggregation occurs on a separate "
-            "authorized system. Only downgraded/sanitized results flow into the "
-            "current boundary."
-        ),
-        "boundary_tier_after": "GREEN",
-        "feasibility_score": round(downgrade_feasibility, 2),
-        "tradeoffs": downgrade_tradeoffs,
-        "affected_controls": sorted(downgrade_controls),
-    })
+    alternatives.append(
+        {
+            "approach_name": "Data Downgrade / Sanitization",
+            "description": (
+                f"Process data at {system_level} (current boundary level) after sanitization "
+                "or downgrade. Higher-classification aggregation occurs on a separate "
+                "authorized system. Only downgraded/sanitized results flow into the "
+                "current boundary."
+            ),
+            "boundary_tier_after": "GREEN",
+            "feasibility_score": round(downgrade_feasibility, 2),
+            "tradeoffs": downgrade_tradeoffs,
+            "affected_controls": sorted(downgrade_controls),
+        }
+    )
 
     # Alternative 3: Phased Approach
     phased_controls = list(set(affected_controls) | {"CM-3", "CA-2"})
@@ -917,20 +969,22 @@ def generate_alternatives(
         "Phase 2+ requires separate authorization action.",
         "Must maintain phase boundary documentation.",
     ]
-    alternatives.append({
-        "approach_name": "Phased Implementation",
-        "description": (
-            "Split the requirement into phases. Phase 1 implements functionality "
-            "that fits within the current ATO boundary (GREEN/YELLOW tier). "
-            "Phase 2 addresses cross-boundary or classification changes through "
-            "a separate authorization action, running in parallel without blocking "
-            "Phase 1 delivery."
-        ),
-        "boundary_tier_after": "YELLOW",
-        "feasibility_score": round(phased_feasibility, 2),
-        "tradeoffs": phased_tradeoffs,
-        "affected_controls": sorted(phased_controls),
-    })
+    alternatives.append(
+        {
+            "approach_name": "Phased Implementation",
+            "description": (
+                "Split the requirement into phases. Phase 1 implements functionality "
+                "that fits within the current ATO boundary (GREEN/YELLOW tier). "
+                "Phase 2 addresses cross-boundary or classification changes through "
+                "a separate authorization action, running in parallel without blocking "
+                "Phase 1 delivery."
+            ),
+            "boundary_tier_after": "YELLOW",
+            "feasibility_score": round(phased_feasibility, 2),
+            "tradeoffs": phased_tradeoffs,
+            "affected_controls": sorted(phased_controls),
+        }
+    )
 
     # Alternative 4: Proxy Pattern
     proxy_controls = list(set(affected_controls) | {"SA-9", "CA-3", "SC-7"})
@@ -943,23 +997,23 @@ def generate_alternatives(
     ]
     if any(kw in text_lower for kw in ["external", "third-party", "vendor"]):
         proxy_feasibility = 0.7
-        proxy_tradeoffs.append(
-            "Existing API gateways or ESBs may serve as the authorized intermediary."
-        )
-    alternatives.append({
-        "approach_name": "Proxy Pattern (Authorized Intermediary)",
-        "description": (
-            "Route the requirement through an existing authorized system that "
-            "already has the necessary boundary scope. The intermediary handles "
-            "cross-boundary or cross-classification mediation. The current system "
-            "connects only to the authorized intermediary via an approved "
-            "interconnection (ISA/MOU), keeping the existing ATO intact."
-        ),
-        "boundary_tier_after": "ORANGE",
-        "feasibility_score": round(proxy_feasibility, 2),
-        "tradeoffs": proxy_tradeoffs,
-        "affected_controls": sorted(proxy_controls),
-    })
+        proxy_tradeoffs.append("Existing API gateways or ESBs may serve as the authorized intermediary.")
+    alternatives.append(
+        {
+            "approach_name": "Proxy Pattern (Authorized Intermediary)",
+            "description": (
+                "Route the requirement through an existing authorized system that "
+                "already has the necessary boundary scope. The intermediary handles "
+                "cross-boundary or cross-classification mediation. The current system "
+                "connects only to the authorized intermediary via an approved "
+                "interconnection (ISA/MOU), keeping the existing ATO intact."
+            ),
+            "boundary_tier_after": "ORANGE",
+            "feasibility_score": round(proxy_feasibility, 2),
+            "tradeoffs": proxy_tradeoffs,
+            "affected_controls": sorted(proxy_controls),
+        }
+    )
 
     # Update the assessment with alternatives
     conn.execute(
@@ -975,9 +1029,7 @@ def generate_alternatives(
         log_event(
             event_type="alternatives_generated",
             actor="boundary-analyzer",
-            action=(
-                f"Generated {len(alternatives)} alternative COAs for assessment {assessment_id}"
-            ),
+            action=(f"Generated {len(alternatives)} alternative COAs for assessment {assessment_id}"),
             project_id=project_id,
             details={
                 "assessment_id": assessment_id,
@@ -999,6 +1051,7 @@ def generate_alternatives(
 # Listing
 # ---------------------------------------------------------------------------
 
+
 def list_assessments(
     project_id: str,
     system_id: str = None,
@@ -1008,7 +1061,7 @@ def list_assessments(
     """List all boundary assessments, optionally filtered by system or tier.
 
     Args:
-        project_id: ICDEV project ID.
+        project_id: ICDEV™ project ID.
         system_id: Optional filter by ATO system.
         tier: Optional filter by tier (GREEN, YELLOW, ORANGE, RED).
         db_path: Optional database path override.
@@ -1017,9 +1070,7 @@ def list_assessments(
         dict with assessments list and summary counts.
     """
     if tier and tier not in ("GREEN", "YELLOW", "ORANGE", "RED"):
-        raise ValueError(
-            f"Invalid tier '{tier}'. Must be one of: GREEN, YELLOW, ORANGE, RED"
-        )
+        raise ValueError(f"Invalid tier '{tier}'. Must be one of: GREEN, YELLOW, ORANGE, RED")
 
     conn = _get_connection(db_path)
 
@@ -1049,9 +1100,13 @@ def list_assessments(
             tier_counts[t] += 1
 
         # Parse JSON fields for output
-        for field in ("affected_controls", "affected_components",
-                      "ssp_sections_impacted", "remediation_required",
-                      "alternative_approach"):
+        for field in (
+            "affected_controls",
+            "affected_components",
+            "ssp_sections_impacted",
+            "remediation_required",
+            "alternative_approach",
+        ):
             val = d.get(field)
             if val and isinstance(val, str):
                 try:
@@ -1076,24 +1131,19 @@ def list_assessments(
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
-    parser = argparse.ArgumentParser(
-        description="ICDEV ATO Boundary Impact Analyzer (4-tier GREEN/YELLOW/ORANGE/RED)"
-    )
-    parser.add_argument("--project-id", required=True, help="ICDEV project ID")
+    parser = argparse.ArgumentParser(description="ICDEV™ ATO Boundary Impact Analyzer (4-tier GREEN/YELLOW/ORANGE/RED)")
+    parser.add_argument("--project-id", required=True, help="ICDEV™ project ID")
 
     # System registration
-    parser.add_argument("--register-system", action="store_true",
-                        help="Register a new ATO system boundary")
+    parser.add_argument("--register-system", action="store_true", help="Register a new ATO system boundary")
     parser.add_argument("--system-name", help="System name (for registration)")
-    parser.add_argument("--ato-status",
-                        choices=["active", "provisional", "expired", "pending"],
-                        default="active", help="ATO status")
-    parser.add_argument("--classification", default="CUI",
-                        help="Classification marking")
-    parser.add_argument("--impact-level",
-                        choices=["IL2", "IL4", "IL5", "IL6"],
-                        default="IL5", help="Impact level")
+    parser.add_argument(
+        "--ato-status", choices=["active", "provisional", "expired", "pending"], default="active", help="ATO status"
+    )
+    parser.add_argument("--classification", default="CUI", help="Classification marking")
+    parser.add_argument("--impact-level", choices=["IL2", "IL4", "IL5", "IL6"], default="IL5", help="Impact level")
     parser.add_argument("--boundary-definition", help="JSON boundary definition")
     parser.add_argument("--baseline-controls", help="Comma-separated control IDs")
     parser.add_argument("--ato-expiry", help="ATO expiry date (ISO format)")
@@ -1105,20 +1155,16 @@ def main():
     parser.add_argument("--requirement-id", help="Requirement ID to assess")
 
     # Alternatives
-    parser.add_argument("--generate-alternatives", action="store_true",
-                        help="Generate alternative COAs for RED assessment")
+    parser.add_argument(
+        "--generate-alternatives", action="store_true", help="Generate alternative COAs for RED assessment"
+    )
     parser.add_argument("--assessment-id", help="Assessment ID (for alternatives)")
 
     # Listing
-    parser.add_argument("--list-systems", action="store_true",
-                        help="List all registered ATO systems")
-    parser.add_argument("--list-assessments", action="store_true",
-                        help="List boundary impact assessments")
-    parser.add_argument("--tier",
-                        choices=["GREEN", "YELLOW", "ORANGE", "RED"],
-                        help="Filter assessments by tier")
-    parser.add_argument("--get-system", action="store_true",
-                        help="Get system details")
+    parser.add_argument("--list-systems", action="store_true", help="List all registered ATO systems")
+    parser.add_argument("--list-assessments", action="store_true", help="List boundary impact assessments")
+    parser.add_argument("--tier", choices=["GREEN", "YELLOW", "ORANGE", "RED"], help="Filter assessments by tier")
+    parser.add_argument("--get-system", action="store_true", help="Get system details")
 
     # Output
     parser.add_argument("--json", action="store_true", help="JSON output")
@@ -1141,8 +1187,7 @@ def main():
 
             controls = []
             if args.baseline_controls:
-                controls = [c.strip() for c in args.baseline_controls.split(",")
-                            if c.strip()]
+                controls = [c.strip() for c in args.baseline_controls.split(",") if c.strip()]
 
             result = register_system(
                 project_id=args.project_id,
@@ -1258,19 +1303,24 @@ def _print_human_readable(result: dict):
     if "systems" in result:
         print(f"ATO Systems ({result.get('system_count', 0)}):")
         for sys in result.get("systems", []):
-            print(f"  {sys.get('id')}: {sys.get('system_name')} "
-                  f"[{sys.get('ato_status', 'unknown')}] ({sys.get('impact_level')})")
+            print(
+                f"  {sys.get('id')}: {sys.get('system_name')} "
+                f"[{sys.get('ato_status', 'unknown')}] ({sys.get('impact_level')})"
+            )
         return
 
     # Assessment list
     if "assessments" in result:
         counts = result.get("tier_counts", {})
         print(f"Boundary Assessments ({result.get('total_assessments', 0)}):")
-        print(f"  GREEN={counts.get('GREEN', 0)} YELLOW={counts.get('YELLOW', 0)} "
-              f"ORANGE={counts.get('ORANGE', 0)} RED={counts.get('RED', 0)}")
+        print(
+            f"  GREEN={counts.get('GREEN', 0)} YELLOW={counts.get('YELLOW', 0)} "
+            f"ORANGE={counts.get('ORANGE', 0)} RED={counts.get('RED', 0)}"
+        )
         for a in result.get("assessments", []):
-            print(f"  [{a.get('impact_tier')}] {a.get('id')} — "
-                  f"req={a.get('requirement_id')} score={a.get('risk_score')}")
+            print(
+                f"  [{a.get('impact_tier')}] {a.get('id')} — req={a.get('requirement_id')} score={a.get('risk_score')}"
+            )
         return
 
     # System details

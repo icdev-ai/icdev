@@ -1,21 +1,21 @@
 ---
 name: icdev-market
-description: "Manage the ICDEV Federated GOTCHA Asset Marketplace — publish, install, search, review, and sync skills, goals, hardprompts, context, args, and compliance extensions across tenant organizations."
+description: "Manage the ICDEV™ Federated FORGE Asset Marketplace — publish, install, search, review, and sync skills, goals, hardprompts, context, args, and compliance extensions across tenant organizations."
 context: fork
 allowed-tools: ["Bash", "Read", "Write", "Edit", "Glob", "Grep", "Task", "TodoWrite"]
 ---
 
-# ICDEV Marketplace Manager
+# ICDEV™ Marketplace Manager
 
 CUI // SP-CTI
 
 ## Overview
-The ICDEV Marketplace is a federated GOTCHA asset registry where customer developer communities share skills, plugins, goals, hardprompts, context files, and compliance extensions — with mandatory security, compliance, and governance enforcement.
+The ICDEV™ Marketplace is a federated FORGE asset registry where customer developer communities share skills, plugins, goals, hardprompts, context files, and compliance extensions — with mandatory security, compliance, and governance enforcement.
 
 ## Before Starting
 1. Read `goals/marketplace.md` for the full workflow
 2. Read `args/marketplace_config.yaml` for configuration
-3. Ensure the ICDEV database is initialized (`python tools/db/init_icdev_db.py`)
+3. Ensure the ICDEV™ database is initialized (`python tools/db/init_icdev_db.py`)
 
 ## Available Operations
 

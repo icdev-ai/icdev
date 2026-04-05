@@ -125,7 +125,7 @@ def _build_test_prompt(source_test_code, source_language, target_language,
     from icdev.tools.translation.code_translator import CUI_HEADERS, NAMING_CONVENTIONS, PROVENANCE_TEMPLATES
 
     cui_header = CUI_HEADERS.get(target_language, "// CUI // SP-CTI")
-    provenance = PROVENANCE_TEMPLATES.get(target_language, "// Translated by ICDEV").format(
+    provenance = PROVENANCE_TEMPLATES.get(target_language, "// Translated by ICDEV™").format(
         source_lang=source_language
     )
 
@@ -287,7 +287,7 @@ def translate_tests(source_test_dir, source_language, target_language,
 
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Phase 43 — Test file translation (D250)",
+        description="ICDEV™ Phase 43 — Test file translation (D250)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--source-test-dir", required=True,

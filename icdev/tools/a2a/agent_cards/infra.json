@@ -1,5 +1,5 @@
 {
-  "name": "ICDEV Infrastructure",
+  "name": "ICDEV™ Infrastructure",
   "description": "Infrastructure as Code generation for GovCloud: Terraform, Ansible playbooks, Kubernetes manifests, STIG-hardened Dockerfiles, and CI/CD pipeline configuration.",
   "url": "https://localhost:8448",
   "version": "1.0.0",

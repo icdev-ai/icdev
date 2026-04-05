@@ -2,7 +2,7 @@
 """NLQ (Natural Language Query) API blueprint — compliance database queries.
 
 Endpoints:
-    POST /api/nlq/query   — Execute NLQ against ICDEV database
+    POST /api/nlq/query   — Execute NLQ against ICDEV™ database
     GET  /api/nlq/schema  — Return database schema for context
     GET  /api/nlq/history — Query history (audit trail)
 
@@ -10,10 +10,12 @@ Decision D30: Bedrock for NLQ→SQL (air-gap safe, GovCloud available).
 Decision D34: Read-only SQL enforcement (append-only audit must not be compromised).
 """
 
-import sqlite3
+from tools.db.storage import get_connection
 from pathlib import Path
 
 from flask import Blueprint, jsonify, request
+
+from tools.dashboard.config import DEFAULT_CLASSIFICATION
 
 nlq_bp = Blueprint("nlq_api", __name__)
 
@@ -22,14 +24,13 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 
 def _get_db():
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(DB_PATH))
     return conn
 
 
 @nlq_bp.route("/api/nlq/query", methods=["POST"])
 def execute_nlq():
-    """Execute a natural language query against the ICDEV database."""
+    """Execute a natural language query against the ICDEV™ database."""
     from tools.dashboard.nlq_processor import process_nlq_query
 
     data = request.get_json(force=True)
@@ -49,7 +50,7 @@ def get_schema():
     from tools.dashboard.nlq_processor import extract_schema
 
     schema = extract_schema(DB_PATH)
-    return jsonify({"schema": schema, "classification": "CUI"})
+    return jsonify({"schema": schema, "classification": DEFAULT_CLASSIFICATION})
 
 
 @nlq_bp.route("/api/nlq/history", methods=["GET"])
@@ -63,9 +64,11 @@ def get_history():
             "SELECT * FROM nlq_queries ORDER BY created_at DESC LIMIT ?",
             (limit,),
         ).fetchall()
-        return jsonify({
-            "queries": [dict(r) for r in rows],
-            "classification": "CUI",
-        })
+        return jsonify(
+            {
+                "queries": [dict(r) for r in rows],
+                "classification": DEFAULT_CLASSIFICATION,
+            }
+        )
     finally:
         conn.close()

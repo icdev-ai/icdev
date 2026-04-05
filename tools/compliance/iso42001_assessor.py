@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """ISO/IEC 42001:2023 Assessor — AI Management System assessment.
 
 Bridged through ISO 27001 international hub (D111).
@@ -30,7 +30,9 @@ class ISO42001Assessor(BaseAssessor):
     CATALOG_FILENAME = "iso42001_controls.json"
 
     def get_automated_checks(
-        self, project: Dict, project_dir: Optional[str] = None,
+        self,
+        project: Dict,
+        project_dir: Optional[str] = None,
     ) -> Dict[str, str]:
         """ISO 42001 automated checks bridged through ISO 27001.
 

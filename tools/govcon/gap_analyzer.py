@@ -1,9 +1,9 @@
 # CUI // SP-CTI
-# ICDEV GovCon Gap Analyzer — Phase 59 (D363)
+# ICDEV™ GovCon Gap Analyzer — Phase 59 (D363)
 # Identifies unmet requirements and generates enhancement recommendations.
 
 """
-Gap Analyzer — find requirement patterns where ICDEV coverage is insufficient.
+Gap Analyzer — find requirement patterns where ICDEV™ coverage is insufficient.
 
 Reads from:
     - icdev_capability_map (coverage scores)
@@ -26,9 +26,8 @@ Usage:
 import argparse
 import json
 import os
-import sqlite3
-import sys
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -39,9 +38,9 @@ _CONFIG_PATH = _ROOT / "args" / "govcon_config.yaml"
 
 # ── helpers ───────────────────────────────────────────────────────────
 
+
 def _get_db():
-    conn = sqlite3.connect(str(_DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
@@ -53,7 +52,7 @@ def _now():
 def _audit(conn, action, details="", actor="gap_analyzer"):
     try:
         conn.execute(
-            "INSERT INTO audit_trail (id, timestamp, event_type, actor, action, details, session_id) "
+            "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (str(uuid.uuid4()), _now(), "govcon.gap_analysis", actor, action, details, "govcon"),
         )
@@ -62,6 +61,7 @@ def _audit(conn, action, details="", actor="gap_analyzer"):
 
 
 # ── gap analysis ──────────────────────────────────────────────────────
+
 
 def analyze_gaps():
     """Identify and prioritize all coverage gaps.
@@ -257,7 +257,7 @@ def _generate_action(gap, template):
 
     if coverage == 0:
         return (
-            f"NEW CAPABILITY NEEDED: '{name}' appears in {freq} RFPs with zero ICDEV coverage. "
+            f"NEW CAPABILITY NEEDED: '{name}' appears in {freq} RFPs with zero ICDEV™ coverage. "
             f"Create new tool in tools/ targeting {domain} domain. "
             f"Follow BaseAssessor pattern (D116) if compliance-related."
         )
@@ -270,6 +270,7 @@ def _generate_action(gap, template):
 
 
 # ── heatmap ───────────────────────────────────────────────────────────
+
 
 def get_heatmap():
     """Domain × Grade heatmap for visualization."""
@@ -306,9 +307,7 @@ def get_heatmap():
     for domain, data in heatmap.items():
         total = data["L"] + data["M"] + data["N"]
         if total > 0:
-            data["health_score"] = round(
-                (data["L"] * 1.0 + data["M"] * 0.5 + data["N"] * 0.0) / total, 2
-            )
+            data["health_score"] = round((data["L"] * 1.0 + data["M"] * 0.5 + data["N"] * 0.0) / total, 2)
         else:
             data["health_score"] = 0
 
@@ -316,6 +315,7 @@ def get_heatmap():
 
 
 # ── innovation cross-registration ─────────────────────────────────────
+
 
 def register_gaps_as_innovation_signals():
     """Register high-priority gaps as innovation signals for self-improvement.
@@ -361,11 +361,13 @@ def register_gaps_as_innovation_signals():
                     "",
                     "new",
                     _now(),
-                    json.dumps({
-                        "source": "gap_analyzer",
-                        "frequency": gap["frequency"],
-                        "best_coverage": gap["best_coverage"],
-                    }),
+                    json.dumps(
+                        {
+                            "source": "gap_analyzer",
+                            "frequency": gap["frequency"],
+                            "best_coverage": gap["best_coverage"],
+                        }
+                    ),
                 ),
             )
             registered += 1
@@ -387,8 +389,9 @@ def register_gaps_as_innovation_signals():
 
 # ── CLI ───────────────────────────────────────────────────────────────
 
+
 def main():
-    parser = argparse.ArgumentParser(description="ICDEV GovCon Gap Analyzer (D363)")
+    parser = argparse.ArgumentParser(description="ICDEV™ GovCon Gap Analyzer (D363)")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--analyze", action="store_true", help="Full gap analysis")
     group.add_argument("--recommendations", action="store_true", help="Enhancement recommendations")
@@ -420,7 +423,7 @@ def main():
 def _print_human(result, args):
     """Human-readable output."""
     print(f"\n{'=' * 60}")
-    print(f"  ICDEV Gap Analyzer — {result.get('status', 'unknown').upper()}")
+    print(f"  ICDEV™ Gap Analyzer — {result.get('status', 'unknown').upper()}")
     print(f"{'=' * 60}")
 
     if "summary" in result:
@@ -432,9 +435,11 @@ def _print_human(result, args):
         print(f"  Gap rate:       {s['gap_rate']:.0%}")
 
     if "gaps" in result:
-        print(f"\n  Top Gaps (priority-ranked):")
+        print("\n  Top Gaps (priority-ranked):")
         for g in result["gaps"][:15]:
-            print(f"  ❌ [{g['domain']:12s}] priority={g['priority']:5.1f}  freq={g['frequency']:3d}  {g['pattern_name'][:45]}")
+            print(
+                f"  ❌ [{g['domain']:12s}] priority={g['priority']:5.1f}  freq={g['frequency']:3d}  {g['pattern_name'][:45]}"
+            )
 
     if "recommendations" in result:
         print(f"\n  Recommendations: {result['total_recommendations']}")
@@ -450,7 +455,9 @@ def _print_human(result, args):
         for domain, data in sorted(result["heatmap"].items()):
             health = data["health_score"]
             bar = "🟢" if health >= 0.7 else ("🟡" if health >= 0.4 else "🔴")
-            print(f"  {domain:<15s} {data['L']:>4d} {data['M']:>4d} {data['N']:>4d}   {bar} {health:.2f} {data['total_frequency']:>6d}")
+            print(
+                f"  {domain:<15s} {data['L']:>4d} {data['M']:>4d} {data['N']:>4d}   {bar} {health:.2f} {data['total_frequency']:>6d}"
+            )
 
     if "registered" in result:
         print(f"\n  Innovation signals registered: {result['registered']}/{result['total_gaps']}")

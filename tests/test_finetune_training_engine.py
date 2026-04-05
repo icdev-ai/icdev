@@ -9,11 +9,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import sqlite3
-import tempfile
 from pathlib import Path
-from typing import Any, Dict
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -242,8 +239,9 @@ def _seed_dataset(db_path: Path, dataset_id: str = "ds-test001", status: str = "
     return dataset_id
 
 
-def _seed_example(db_path: Path, dataset_id: str, user_input: str = "What is X?",
-                  expected_output: str = "X is Y.", approved: int = 1) -> int:
+def _seed_example(
+    db_path: Path, dataset_id: str, user_input: str = "What is X?", expected_output: str = "X is Y.", approved: int = 1
+) -> int:
     """Insert a test example and return its ID."""
     content_hash = hashlib.sha256(f"|{user_input}|{expected_output}".encode()).hexdigest()[:16]
     conn = sqlite3.connect(str(db_path))
@@ -259,9 +257,13 @@ def _seed_example(db_path: Path, dataset_id: str, user_input: str = "What is X?"
     return example_id
 
 
-def _seed_model_version(db_path: Path, model_version_id: str = "mv-test001",
-                        model_name: str = "test-model", version: int = 1,
-                        ollama_name: str = "test-model-v1") -> str:
+def _seed_model_version(
+    db_path: Path,
+    model_version_id: str = "mv-test001",
+    model_name: str = "test-model",
+    version: int = 1,
+    ollama_name: str = "test-model-v1",
+) -> str:
     """Insert a test model version."""
     conn = sqlite3.connect(str(db_path))
     conn.execute(
@@ -282,6 +284,7 @@ def _seed_model_version(db_path: Path, model_version_id: str = "mv-test001",
 class TestModelRegistryGetVersion:
     def test_get_existing(self, ft_db):
         from tools.finetune.model_registry import get_model_version
+
         _seed_model_version(ft_db)
         result = get_model_version("mv-test001", db_path=ft_db)
         assert result["success"]
@@ -289,6 +292,7 @@ class TestModelRegistryGetVersion:
 
     def test_get_nonexistent(self, ft_db):
         from tools.finetune.model_registry import get_model_version
+
         result = get_model_version("mv-missing", db_path=ft_db)
         assert not result["success"]
 
@@ -296,12 +300,14 @@ class TestModelRegistryGetVersion:
 class TestModelRegistryList:
     def test_list_empty(self, ft_db):
         from tools.finetune.model_registry import list_model_versions
+
         result = list_model_versions(db_path=ft_db)
         assert result["success"]
         assert result["count"] == 0
 
     def test_list_with_filter(self, ft_db):
         from tools.finetune.model_registry import list_model_versions
+
         _seed_model_version(ft_db)
         _seed_model_version(ft_db, "mv-test002", "other-model", 1, "other-v1")
         result = list_model_versions(model_name="test-model", db_path=ft_db)
@@ -312,10 +318,14 @@ class TestModelRegistryList:
 class TestModelRegistryEvalScores:
     def test_update_scores(self, ft_db):
         from tools.finetune.model_registry import update_eval_scores, get_model_version
+
         _seed_model_version(ft_db)
         result = update_eval_scores(
-            "mv-test001", eval_bleu=0.40, eval_rouge_l=0.50,
-            eval_perplexity=10.0, db_path=ft_db,
+            "mv-test001",
+            eval_bleu=0.40,
+            eval_rouge_l=0.50,
+            eval_perplexity=10.0,
+            db_path=ft_db,
         )
         assert result["success"]
         assert result["status"] == "evaluated"
@@ -325,6 +335,7 @@ class TestModelRegistryEvalScores:
 
     def test_update_nonexistent(self, ft_db):
         from tools.finetune.model_registry import update_eval_scores
+
         result = update_eval_scores("mv-missing", db_path=ft_db)
         assert not result["success"]
 
@@ -332,10 +343,13 @@ class TestModelRegistryEvalScores:
 class TestModelRegistryPromotion:
     def test_promote_model(self, ft_db):
         from tools.finetune.model_registry import promote_model, get_active_model
+
         _seed_model_version(ft_db)
         result = promote_model(
-            "mv-test001", "code_generation",
-            activated_by="test", db_path=ft_db,
+            "mv-test001",
+            "code_generation",
+            activated_by="test",
+            db_path=ft_db,
         )
         assert result["success"]
         assert result["ollama_model_name"] == "test-model-v1"
@@ -346,6 +360,7 @@ class TestModelRegistryPromotion:
 
     def test_promote_replaces_previous(self, ft_db):
         from tools.finetune.model_registry import promote_model
+
         _seed_model_version(ft_db)
         _seed_model_version(ft_db, "mv-test002", "test-model", 2, "test-model-v2")
 
@@ -357,6 +372,7 @@ class TestModelRegistryPromotion:
     def test_promote_no_ollama_name(self, ft_db):
         """Model without Ollama name cannot be promoted."""
         from tools.finetune.model_registry import promote_model
+
         conn = sqlite3.connect(str(ft_db))
         conn.execute(
             """INSERT INTO ft_model_versions
@@ -374,6 +390,7 @@ class TestModelRegistryPromotion:
 class TestModelRegistryDemotion:
     def test_demote_active(self, ft_db):
         from tools.finetune.model_registry import promote_model, demote_model, get_active_model
+
         _seed_model_version(ft_db)
         promote_model("mv-test001", "code_generation", db_path=ft_db)
 
@@ -386,6 +403,7 @@ class TestModelRegistryDemotion:
 
     def test_demote_nothing(self, ft_db):
         from tools.finetune.model_registry import demote_model
+
         result = demote_model("code_generation", db_path=ft_db)
         assert not result["success"]
 
@@ -393,6 +411,7 @@ class TestModelRegistryDemotion:
 class TestModelRegistryActiveModels:
     def test_list_active(self, ft_db):
         from tools.finetune.model_registry import promote_model, list_active_models
+
         _seed_model_version(ft_db)
         _seed_model_version(ft_db, "mv-test002", "other-model", 1, "other-v1")
         promote_model("mv-test001", "code_generation", db_path=ft_db)
@@ -406,6 +425,7 @@ class TestModelRegistryActiveModels:
 class TestPromotionHistory:
     def test_history_recorded(self, ft_db):
         from tools.finetune.model_registry import promote_model, get_promotion_history
+
         _seed_model_version(ft_db)
         promote_model("mv-test001", "code_generation", activated_by="admin", db_path=ft_db)
 
@@ -421,6 +441,7 @@ class TestPromotionHistory:
 class TestGGUFExporter:
     def test_register_model_version(self, ft_db):
         from tools.finetune.gguf_exporter import register_model_version
+
         # Need a training job for foreign key
         conn = sqlite3.connect(str(ft_db))
         conn.execute(
@@ -444,6 +465,7 @@ class TestGGUFExporter:
 
     def test_register_auto_increments_version(self, ft_db):
         from tools.finetune.gguf_exporter import register_model_version
+
         conn = sqlite3.connect(str(ft_db))
         conn.execute(
             """INSERT INTO ft_training_jobs
@@ -494,6 +516,7 @@ class TestGGUFExporter:
     @patch("tools.finetune.gguf_exporter.subprocess")
     def test_register_with_ollama_file_not_found(self, mock_sub):
         from tools.finetune.gguf_exporter import register_with_ollama
+
         result = register_with_ollama("test-model", "/nonexistent.gguf")
         assert not result["success"]
         assert "not found" in result["error"]
@@ -505,11 +528,13 @@ class TestGGUFExporter:
 class TestTrainingEngineJobStatus:
     def test_get_status_not_found(self, ft_db):
         from tools.finetune.training_engine import get_job_status
+
         result = get_job_status("ft-missing", db_path=ft_db)
         assert not result["success"]
 
     def test_get_status_completed(self, ft_db):
         from tools.finetune.training_engine import get_job_status
+
         _seed_dataset(ft_db)
         conn = sqlite3.connect(str(ft_db))
         conn.execute(
@@ -528,6 +553,7 @@ class TestTrainingEngineJobStatus:
 class TestTrainingEngineCancelJob:
     def test_cancel_terminal(self, ft_db):
         from tools.finetune.training_engine import cancel_job
+
         conn = sqlite3.connect(str(ft_db))
         conn.execute(
             """INSERT INTO ft_training_jobs
@@ -545,12 +571,14 @@ class TestTrainingEngineCancelJob:
 class TestTrainingEngineListJobs:
     def test_list_empty(self, ft_db):
         from tools.finetune.training_engine import list_jobs
+
         result = list_jobs(db_path=ft_db)
         assert result["success"]
         assert result["count"] == 0
 
     def test_list_with_filter(self, ft_db):
         from tools.finetune.training_engine import list_jobs
+
         conn = sqlite3.connect(str(ft_db))
         conn.execute(
             """INSERT INTO ft_training_jobs
@@ -578,6 +606,7 @@ class TestTrainingEngineListJobs:
 class TestDocExtractorText:
     def test_extract_txt(self, tmp_path):
         from tools.finetune.doc_extractor import extract_document
+
         txt = tmp_path / "test.txt"
         txt.write_text("This is a test document with enough content to be meaningful.\n" * 20)
 
@@ -588,6 +617,7 @@ class TestDocExtractorText:
 
     def test_extract_md(self, tmp_path):
         from tools.finetune.doc_extractor import extract_document
+
         md = tmp_path / "test.md"
         md.write_text("# Heading\n\nThis is markdown content.\n" * 20)
 
@@ -596,12 +626,14 @@ class TestDocExtractorText:
 
     def test_extract_nonexistent(self):
         from tools.finetune.doc_extractor import extract_document
+
         result = extract_document("/nonexistent.txt")
         assert not result["success"]
         assert "not found" in result["error"]
 
     def test_extract_unsupported(self, tmp_path):
         from tools.finetune.doc_extractor import extract_document
+
         f = tmp_path / "test.xyz"
         f.write_text("content")
         result = extract_document(str(f))
@@ -610,6 +642,7 @@ class TestDocExtractorText:
 
     def test_extract_empty_file(self, tmp_path):
         from tools.finetune.doc_extractor import extract_document
+
         f = tmp_path / "empty.txt"
         f.write_text("")
         result = extract_document(str(f))
@@ -620,6 +653,7 @@ class TestDocExtractorText:
 class TestDocExtractorDirectory:
     def test_extract_dir(self, tmp_path):
         from tools.finetune.doc_extractor import extract_directory
+
         (tmp_path / "a.txt").write_text("Content A.\n" * 20)
         (tmp_path / "b.txt").write_text("Content B.\n" * 20)
         (tmp_path / "c.xyz").write_text("Ignored")
@@ -630,6 +664,7 @@ class TestDocExtractorDirectory:
 
     def test_extract_dir_nonexistent(self):
         from tools.finetune.doc_extractor import extract_directory
+
         result = extract_directory("/nonexistent_dir")
         assert not result["success"]
 
@@ -637,6 +672,7 @@ class TestDocExtractorDirectory:
 class TestDocExtractorChunking:
     def test_simple_chunker_fallback(self):
         from tools.finetune.doc_extractor import _chunk_text_simple
+
         # Use newlines as the simple chunker splits on \n
         text = "\n".join([f"This is paragraph {i} with enough content." for i in range(100)])
         chunks = _chunk_text_simple(text, "test-doc", max_chunk_size=500)
@@ -652,10 +688,13 @@ class TestDocExtractorChunking:
 class TestPairGeneratorTemplates:
     def test_template_fallback(self):
         from tools.finetune.pair_generator import _generate_pairs_template
-        text = "The system uses AES-256 encryption for data at rest. " \
-               "All API endpoints require mutual TLS authentication. " \
-               "Audit logs are immutable and append-only per NIST AU-2. " \
-               "Classification markings are applied at generation time."
+
+        text = (
+            "The system uses AES-256 encryption for data at rest. "
+            "All API endpoints require mutual TLS authentication. "
+            "Audit logs are immutable and append-only per NIST AU-2. "
+            "Classification markings are applied at generation time."
+        )
         pairs = _generate_pairs_template(text, "general", 3)
         assert len(pairs) >= 1
         for p in pairs:
@@ -664,6 +703,7 @@ class TestPairGeneratorTemplates:
 
     def test_template_short_content(self):
         from tools.finetune.pair_generator import _generate_pairs_template
+
         pairs = _generate_pairs_template("Short text.", "general", 3)
         assert len(pairs) == 0  # Sentences too short
 
@@ -671,30 +711,43 @@ class TestPairGeneratorTemplates:
 class TestPairGeneratorParsing:
     def test_parse_valid_json(self):
         from tools.finetune.pair_generator import _parse_pairs_response
-        response = json.dumps([
-            {"question": "What is encryption?", "answer": "Encryption is a security measure that protects data."},
-            {"question": "What is TLS?", "answer": "TLS provides secure communication between endpoints."},
-        ])
+
+        response = json.dumps(
+            [
+                {"question": "What is encryption?", "answer": "Encryption is a security measure that protects data."},
+                {"question": "What is TLS?", "answer": "TLS provides secure communication between endpoints."},
+            ]
+        )
         pairs = _parse_pairs_response(response)
         assert len(pairs) == 2
 
     def test_parse_markdown_wrapped(self):
         from tools.finetune.pair_generator import _parse_pairs_response
-        response = '```json\n[{"question": "What is AES?", "answer": "AES is an encryption standard used widely."}]\n```'
+
+        response = (
+            '```json\n[{"question": "What is AES?", "answer": "AES is an encryption standard used widely."}]\n```'
+        )
         pairs = _parse_pairs_response(response)
         assert len(pairs) == 1
 
     def test_parse_invalid_json(self):
         from tools.finetune.pair_generator import _parse_pairs_response
+
         pairs = _parse_pairs_response("not json at all")
         assert len(pairs) == 0
 
     def test_parse_filters_short(self):
         from tools.finetune.pair_generator import _parse_pairs_response
-        response = json.dumps([
-            {"question": "Short?", "answer": "Too short"},
-            {"question": "What is a proper question?", "answer": "This is a sufficiently long answer that passes the filter."},
-        ])
+
+        response = json.dumps(
+            [
+                {"question": "Short?", "answer": "Too short"},
+                {
+                    "question": "What is a proper question?",
+                    "answer": "This is a sufficiently long answer that passes the filter.",
+                },
+            ]
+        )
         pairs = _parse_pairs_response(response)
         assert len(pairs) == 1  # First pair too short
 
@@ -712,13 +765,16 @@ class TestPairGeneratorFromDocument:
             {"content": "Too short."},  # Should be skipped
         ]
 
-        result = generate_from_document(
-            dataset_id=dataset_id,
-            chunks=chunks,
-            purpose="general",
-            questions_per_chunk=2,
-            db_path=ft_db,
-        )
+        # Mock LLM router to avoid live Ollama inference calls
+        with patch("tools.llm.router.LLMRouter") as mock_router_cls:
+            mock_router_cls.return_value.invoke.side_effect = RuntimeError("LLM unavailable in test")
+            result = generate_from_document(
+                dataset_id=dataset_id,
+                chunks=chunks,
+                purpose="general",
+                questions_per_chunk=2,
+                db_path=ft_db,
+            )
         assert result["success"]
         assert result["chunks_processed"] == 2
         assert result["pairs_generated"] >= 0  # Template fallback may generate 0 if LLM unavailable
@@ -727,6 +783,7 @@ class TestPairGeneratorFromDocument:
 class TestPairGeneratorStats:
     def test_stats_empty(self, ft_db):
         from tools.finetune.pair_generator import get_generation_stats
+
         _seed_dataset(ft_db)
         result = get_generation_stats("ds-test001", db_path=ft_db)
         assert result["success"]
@@ -734,6 +791,7 @@ class TestPairGeneratorStats:
 
     def test_stats_with_data(self, ft_db):
         from tools.finetune.pair_generator import get_generation_stats
+
         _seed_dataset(ft_db)
         conn = sqlite3.connect(str(ft_db))
         for i in range(5):
@@ -772,7 +830,10 @@ class TestUnslothProviderAvailability:
         from tools.finetune.gpu_detector import GPUDetectionResult
 
         mock_gpu.return_value = GPUDetectionResult(
-            has_gpu=True, gpu_count=1, can_train=True, total_vram_mb=24000,
+            has_gpu=True,
+            gpu_count=1,
+            can_train=True,
+            total_vram_mb=24000,
         )
         provider = UnslothLocalProvider()
         with patch.object(provider, "_check_unsloth_installed", return_value=False):
@@ -797,6 +858,7 @@ class TestUnslothProviderTraining:
 
     def test_build_training_command_single_gpu(self):
         from tools.finetune.unsloth_provider import UnslothLocalProvider
+
         provider = UnslothLocalProvider()
         config = {"distributed": False, "gpu_count": 1}
         cmd = provider._build_training_command(config, Path("/tmp/config.json"))
@@ -805,6 +867,7 @@ class TestUnslothProviderTraining:
 
     def test_build_training_command_multi_gpu(self):
         from tools.finetune.unsloth_provider import UnslothLocalProvider
+
         provider = UnslothLocalProvider()
         config = {"distributed": True, "gpu_count": 4}
         cmd = provider._build_training_command(config, Path("/tmp/config.json"))

@@ -7,7 +7,7 @@
 
 ## Overview
 
-ICDEV analyzes its own codebase to provide read-only, advisory-only code quality intelligence. All 4 components are deterministic, append-only, and never modify source files. They make ICDEV **smarter about its own code** without making it **autonomous over its own code**.
+ICDEV™ analyzes its own codebase to provide read-only, advisory-only code quality intelligence. All 4 components are deterministic, append-only, and never modify source files. They make ICDEV™ **smarter about its own code** without making it **autonomous over its own code**.
 
 ## Architecture Decisions
 

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""ICDEV .claude Directory Governance Validator.
+"""ICDEV™ .claude Directory Governance Validator.
 
 Cross-references .claude directory configuration (hooks, settings, commands,
-E2E specs) against the ICDEV codebase to detect drift. Ensures append-only
+E2E specs) against the ICDEV™ codebase to detect drift. Ensures append-only
 table protection, route documentation, deny rules, E2E coverage, and hook
 integrity stay aligned as new phases are added.
 
@@ -24,6 +24,8 @@ Usage:
 Exit codes: 0 = all checks pass, 1 = at least one check failed
 """
 
+from __future__ import annotations
+
 import argparse
 import ast
 import dataclasses
@@ -41,9 +43,11 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 # Result types (follows ConsistencyResult pattern from consistency_analyzer.py)
 # ---------------------------------------------------------------------------
 
+
 @dataclasses.dataclass
 class ClaudeConfigCheck:
     """Result of a single .claude configuration alignment check."""
+
     check_id: str
     check_name: str
     status: str  # "pass", "fail", "warn"
@@ -64,6 +68,7 @@ class ClaudeConfigCheck:
 @dataclasses.dataclass
 class ClaudeConfigReport:
     """Aggregate validation report for .claude directory governance."""
+
     overall_pass: bool
     timestamp: str
     checks: List[ClaudeConfigCheck]
@@ -87,6 +92,7 @@ class ClaudeConfigReport:
 # ---------------------------------------------------------------------------
 # Discovery functions
 # ---------------------------------------------------------------------------
+
 
 def discover_append_only_tables(init_db_path: Path) -> Set[str]:
     """Parse init_icdev_db.py to find all tables with append-only/immutable comments.
@@ -114,7 +120,8 @@ def discover_append_only_tables(init_db_path: Path) -> Set[str]:
         # Look for CREATE TABLE
         table_match = re.match(
             r"\s*CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)",
-            line, re.IGNORECASE,
+            line,
+            re.IGNORECASE,
         )
         if not table_match:
             continue
@@ -212,6 +219,7 @@ def discover_documented_routes(start_md_path: Path) -> Set[str]:
 # ---------------------------------------------------------------------------
 # Check functions (each returns a ClaudeConfigCheck)
 # ---------------------------------------------------------------------------
+
 
 def check_append_only_table_coverage(
     init_db_path: Optional[Path] = None,
@@ -370,13 +378,13 @@ def check_e2e_test_coverage(
 
     # Major page groups that should have E2E coverage
     required_groups = [
-        "dashboard",    # / (home)
-        "agents",       # /agents, /monitoring
-        "activity",     # /activity, /usage
-        "compliance",   # compliance artifacts
-        "security",     # security scan results
-        "chat",         # /chat (unified multi-stream + RICOAS)
-        "portal",       # SaaS portal
+        "dashboard",  # / (home)
+        "agents",  # /agents, /monitoring
+        "activity",  # /activity, /usage
+        "compliance",  # compliance artifacts
+        "security",  # security scan results
+        "chat",  # /chat (unified multi-stream + RICOAS)
+        "portal",  # SaaS portal
     ]
 
     if not e2e_dir.exists():
@@ -434,7 +442,10 @@ def check_hook_syntax(
             check_id="hook_syntax",
             check_name="Hook Syntax Validation",
             status="fail",
-            expected=[], actual=[], missing=[], extra=[],
+            expected=[],
+            actual=[],
+            missing=[],
+            extra=[],
             message="Hooks directory not found",
         )
 
@@ -483,7 +494,10 @@ def check_settings_hook_references(
             check_id="hook_references",
             check_name="Hook File References",
             status="fail",
-            expected=[], actual=[], missing=[], extra=[],
+            expected=[],
+            actual=[],
+            missing=[],
+            extra=[],
             message="settings.json not found",
         )
 
@@ -494,7 +508,10 @@ def check_settings_hook_references(
             check_id="hook_references",
             check_name="Hook File References",
             status="fail",
-            expected=[], actual=[], missing=[], extra=[],
+            expected=[],
+            actual=[],
+            missing=[],
+            extra=[],
             message="settings.json is invalid JSON",
         )
 
@@ -527,7 +544,9 @@ def check_settings_hook_references(
         check_name="Hook File References",
         status=status,
         expected=sorted(set(referenced_files)),
-        actual=[f.name for f in sorted(hooks_dir.glob("*.py")) if f.name != "__init__.py"] if hooks_dir.exists() else [],
+        actual=[f.name for f in sorted(hooks_dir.glob("*.py")) if f.name != "__init__.py"]
+        if hooks_dir.exists()
+        else [],
         missing=missing_files,
         extra=[],
         message=message,
@@ -548,7 +567,7 @@ _JSON_FLAG_EXCLUDES = {
     "tools/cli/output_formatter.py",  # utility library with demo __main__
 }
 
-# Tools where --project refers to something other than ICDEV project ID
+# Tools where --project refers to something other than ICDEV™ project ID
 _PROJECT_NAMING_EXCLUDES = {
     "tools/testing/e2e_runner.py",  # --project = Playwright browser type
 }
@@ -568,7 +587,7 @@ def _scan_argparse_tools(tools_dir: Path, excludes: Optional[Set[str]] = None) -
             content = py_file.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             continue
-        if "ArgumentParser" in content and '__name__' in content and '"__main__"' in content:
+        if "ArgumentParser" in content and "__name__" in content and '"__main__"' in content:
             results.append(py_file)
     return results
 
@@ -630,10 +649,11 @@ def check_cli_project_naming(
             continue
         checked.append(rel)
         # Check for bare --project (not --project-id, --project-dir, --project-path)
-        if re.search(r'''['"]--project['"]''', content) and \
-           not re.search(r'''['"]--project-(?:id|dir|path)['"]''', content):
+        if re.search(r"""['"]--project['"]""", content) and not re.search(
+            r"""['"]--project-(?:id|dir|path)['"]""", content
+        ):
             violations.append(rel)
-        elif re.search(r'''['"]--project['"]''', content):
+        elif re.search(r"""['"]--project['"]""", content):
             # Has both --project and --project-id/dir/path — bare --project is a compat alias (ok)
             pass
 
@@ -672,8 +692,8 @@ def check_db_path_centralization(
         tools_dir = PROJECT_ROOT / "tools"
 
     hardcoded_pattern = re.compile(
-        r'''(?:Path\s*\([^)]*\)\s*(?:/\s*["']data["']\s*){1,2}/\s*["'](?:icdev|memory|platform)\.db["'])'''
-        r'''|(?:["']\S*data[/\\](?:icdev|memory|platform)\.db["'])''',
+        r"""(?:Path\s*\([^)]*\)\s*(?:/\s*["']data["']\s*){1,2}/\s*["'](?:icdev|memory|platform)\.db["'])"""
+        r"""|(?:["']\S*data[/\\](?:icdev|memory|platform)\.db["'])""",
     )
 
     violations = []
@@ -740,9 +760,7 @@ CHECK_REGISTRY: Dict[str, callable] = {
 
 def run_all_checks(selected: Optional[List[str]] = None) -> ClaudeConfigReport:
     """Run selected (or all) checks and produce aggregate report."""
-    checks_to_run = CHECK_REGISTRY if selected is None else {
-        k: v for k, v in CHECK_REGISTRY.items() if k in selected
-    }
+    checks_to_run = CHECK_REGISTRY if selected is None else {k: v for k, v in CHECK_REGISTRY.items() if k in selected}
 
     results: List[ClaudeConfigCheck] = []
     for _name, check_fn in sorted(checks_to_run.items()):
@@ -767,11 +785,12 @@ def run_all_checks(selected: Optional[List[str]] = None) -> ClaudeConfigReport:
 # Output formatting
 # ---------------------------------------------------------------------------
 
+
 def format_human(report: ClaudeConfigReport) -> str:
     """Format report for terminal output with ANSI colors."""
     lines = []
     lines.append("=" * 60)
-    lines.append("  ICDEV .claude Directory Governance Report")
+    lines.append("  ICDEV™ .claude Directory Governance Report")
     lines.append("=" * 60)
     lines.append("")
 
@@ -804,14 +823,14 @@ def format_human(report: ClaudeConfigReport) -> str:
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
-    parser = argparse.ArgumentParser(
-        description="Validate .claude directory alignment with ICDEV codebase"
-    )
+    parser = argparse.ArgumentParser(description="Validate .claude directory alignment with ICDEV™ codebase")
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--human", action="store_true", help="Colored terminal output")
     parser.add_argument(
-        "--check", default="all",
+        "--check",
+        default="all",
         help="Specific check or 'all'. Options: " + ", ".join(CHECK_REGISTRY.keys()),
     )
     args = parser.parse_args()

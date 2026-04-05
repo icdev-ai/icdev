@@ -269,7 +269,7 @@ class GCPArtifactRegistryProvider(RegistryProvider):
             parent = f"projects/{self._project_id}/locations/{self._location}"
             repo = _gcp_ar.Repository(
                 format_=_gcp_ar.Repository.Format.DOCKER,
-                description=kwargs.get("description", "ICDEV container repository"),
+                description=kwargs.get("description", "ICDEV™ container repository"),
             )
             op = client.create_repository(
                 request={"parent": parent, "repository_id": name, "repository": repo}

@@ -8,6 +8,8 @@ Implements:
 - CLI: python tools/security/secret_detector.py --project-path PATH [--gate]
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import re
@@ -75,18 +77,52 @@ BUILTIN_PATTERNS = [
 
 # File extensions to skip
 SKIP_EXTENSIONS = {
-    ".pyc", ".pyo", ".so", ".dylib", ".dll", ".exe", ".bin",
-    ".jpg", ".jpeg", ".png", ".gif", ".ico", ".svg", ".bmp",
-    ".pdf", ".doc", ".docx", ".xls", ".xlsx",
-    ".zip", ".tar", ".gz", ".bz2", ".7z", ".rar",
-    ".woff", ".woff2", ".ttf", ".eot",
-    ".db", ".sqlite", ".sqlite3",
+    ".pyc",
+    ".pyo",
+    ".so",
+    ".dylib",
+    ".dll",
+    ".exe",
+    ".bin",
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".gif",
+    ".ico",
+    ".svg",
+    ".bmp",
+    ".pdf",
+    ".doc",
+    ".docx",
+    ".xls",
+    ".xlsx",
+    ".zip",
+    ".tar",
+    ".gz",
+    ".bz2",
+    ".7z",
+    ".rar",
+    ".woff",
+    ".woff2",
+    ".ttf",
+    ".eot",
+    ".db",
+    ".sqlite",
+    ".sqlite3",
     ".lock",
 }
 
 SKIP_DIRS = {
-    "venv", "node_modules", ".git", "__pycache__", "build", "dist",
-    ".eggs", ".tox", ".mypy_cache", ".pytest_cache",
+    "venv",
+    "node_modules",
+    ".git",
+    "__pycache__",
+    "build",
+    "dist",
+    ".eggs",
+    ".tox",
+    ".mypy_cache",
+    ".pytest_cache",
 }
 
 
@@ -138,13 +174,17 @@ def _run_detect_secrets(project_path: str) -> Dict:
     try:
         version_check = subprocess.run(
             [sys.executable, "-m", "detect_secrets", "--version"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         if version_check.returncode != 0:
             # Try direct command
             version_check = subprocess.run(
                 ["detect-secrets", "--version"],
-                capture_output=True, text=True, timeout=10,
+                capture_output=True,
+                text=True,
+                timeout=10,
             )
             if version_check.returncode != 0:
                 return result
@@ -155,15 +195,23 @@ def _run_detect_secrets(project_path: str) -> Dict:
 
     # Run detect-secrets scan
     cmd = [
-        sys.executable, "-m", "detect_secrets", "scan",
+        sys.executable,
+        "-m",
+        "detect_secrets",
+        "scan",
         "--all-files",
-        "--exclude-files", r"(venv|node_modules|\.git|__pycache__|build|dist|\.lock)",
+        "--exclude-files",
+        r"(venv|node_modules|\.git|__pycache__|build|dist|\.lock)",
         str(root),
     ]
 
     try:
         proc = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=300, cwd=str(root),
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=300,
+            cwd=str(root),
         )
         result["raw_output"] = proc.stdout + proc.stderr
 
@@ -199,14 +247,16 @@ def _parse_detect_secrets_output(json_str: str) -> List[Dict]:
     results = data.get("results", {})
     for file_path, secrets in results.items():
         for secret in secrets:
-            findings.append({
-                "file": file_path,
-                "line": secret.get("line_number", 0),
-                "type": secret.get("type", "Unknown"),
-                "hashed_secret": secret.get("hashed_secret", ""),
-                "is_verified": secret.get("is_verified", False),
-                "severity": "critical",
-            })
+            findings.append(
+                {
+                    "file": file_path,
+                    "line": secret.get("line_number", 0),
+                    "type": secret.get("type", "Unknown"),
+                    "hashed_secret": secret.get("hashed_secret", ""),
+                    "is_verified": secret.get("is_verified", False),
+                    "severity": "critical",
+                }
+            )
 
     return findings
 
@@ -223,10 +273,7 @@ def _run_builtin_scan(project_path: str) -> Dict:
         "raw_output": "Using built-in pattern scanner (detect-secrets not available)",
     }
 
-    compiled_patterns = [
-        (re.compile(p["pattern"], re.IGNORECASE), p["name"], p["severity"])
-        for p in BUILTIN_PATTERNS
-    ]
+    compiled_patterns = [(re.compile(p["pattern"], re.IGNORECASE), p["name"], p["severity"]) for p in BUILTIN_PATTERNS]
 
     files_scanned = 0
     for file_path in _walk_files(root):
@@ -247,13 +294,15 @@ def _run_builtin_scan(project_path: str) -> Dict:
                             if "AKIA" not in line and "BEGIN PRIVATE KEY" not in line:
                                 continue
 
-                        result["findings"].append({
-                            "file": str(file_path.relative_to(root)),
-                            "line": line_num,
-                            "type": name,
-                            "severity": severity,
-                            "match_preview": _redact_line(line.strip(), 80),
-                        })
+                        result["findings"].append(
+                            {
+                                "file": str(file_path.relative_to(root)),
+                                "line": line_num,
+                                "type": name,
+                                "severity": severity,
+                                "match_preview": _redact_line(line.strip(), 80),
+                            }
+                        )
         except (IOError, UnicodeDecodeError):
             continue
 

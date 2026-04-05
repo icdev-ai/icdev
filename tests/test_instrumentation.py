@@ -13,7 +13,6 @@ Covers:
   - Edge cases: nested traced calls, no tracer
 """
 
-import json
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -22,6 +21,7 @@ import pytest
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture(autouse=True)
 def mock_tracer():
@@ -40,6 +40,7 @@ def mock_tracer():
 # ---------------------------------------------------------------------------
 # @traced() Tests
 # ---------------------------------------------------------------------------
+
 
 class TestTraced:
     def test_basic_decoration(self, mock_tracer):
@@ -203,6 +204,7 @@ class TestTraced:
 # @traced_generator() Tests
 # ---------------------------------------------------------------------------
 
+
 class TestTracedGenerator:
     def test_generator_decoration(self):
         from icdev.tools.observability.instrumentation import traced_generator
@@ -212,6 +214,7 @@ class TestTracedGenerator:
         mock_t.start_span.return_value = mock_span
 
         with patch("icdev.tools.observability.get_tracer", return_value=mock_t):
+
             @traced_generator()
             def gen_func():
                 yield 1
@@ -232,6 +235,7 @@ class TestTracedGenerator:
         mock_t.start_span.return_value = mock_span
 
         with patch("icdev.tools.observability.get_tracer", return_value=mock_t):
+
             @traced_generator()
             def bad_gen():
                 yield 1
@@ -253,10 +257,11 @@ class TestTracedGenerator:
         mock_t.start_span.return_value = mock_span
 
         with patch("icdev.tools.observability.get_tracer", return_value=mock_t):
+
             @traced_generator()
             def empty_gen():
                 return
-                yield  # noqa: unreachable
+                yield  # noqa: F811
 
             items = list(empty_gen())
             assert items == []

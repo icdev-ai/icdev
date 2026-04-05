@@ -168,9 +168,7 @@ class MCPToolAuthorizer:
             for allow_pat in allow_list:
                 for deny_pat in deny_list:
                     if allow_pat == deny_pat:
-                        errors.append(
-                            f"Role '{role}': pattern '{allow_pat}' in both allow and deny"
-                        )
+                        errors.append(f"Role '{role}': pattern '{allow_pat}' in both allow and deny")
 
         return {
             "valid": len(errors) == 0,
@@ -183,9 +181,7 @@ class MCPToolAuthorizer:
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="MCP Tool Authorizer — per-tool RBAC (D261)"
-    )
+    parser = argparse.ArgumentParser(description="MCP Tool Authorizer — per-tool RBAC (D261)")
     parser.add_argument("--check", action="store_true", help="Check tool authorization")
     parser.add_argument("--list", action="store_true", help="List allowed tools for role")
     parser.add_argument("--validate", action="store_true", help="Validate configuration")
@@ -198,14 +194,12 @@ def main():
 
     if args.check:
         if not args.role or not args.tool:
-            print("Error: --check requires --role and --tool",
-                  file=__import__("sys").stderr)
+            print("Error: --check requires --role and --tool", file=__import__("sys").stderr)
             __import__("sys").exit(1)
         result = authorizer.authorize(args.role, args.tool)
     elif args.list:
         if not args.role:
-            print("Error: --list requires --role",
-                  file=__import__("sys").stderr)
+            print("Error: --list requires --role", file=__import__("sys").stderr)
             __import__("sys").exit(1)
         result = authorizer.list_allowed_tools(args.role)
     elif args.validate:

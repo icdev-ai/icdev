@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 import os
-import struct
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -32,7 +31,6 @@ class FAISSVectorStore(VectorStoreProvider):
 
     def __init__(self, index_dir: str = "", tenant_id: str = "", dim: int = 768):
         import faiss
-        import numpy as np
 
         self._tenant_id = tenant_id
         base_dir = index_dir or str(BASE_DIR / "data" / "rag" / "faiss")
@@ -63,13 +61,15 @@ class FAISSVectorStore(VectorStoreProvider):
     def _save(self):
         """Persist index and metadata."""
         import faiss
+
         faiss.write_index(self._index, self._index_path)
         with open(self._meta_path, "w") as f:
             json.dump(self._metadata, f)
 
-    def _normalize(self, vec: List[float]) -> "np.ndarray":
+    def _normalize(self, vec: List[float]) -> "np.ndarray":  # noqa: F821
         """L2 normalize for cosine similarity via inner product."""
         import numpy as np
+
         v = np.array(vec, dtype=np.float32).reshape(1, -1)
         norm = np.linalg.norm(v)
         if norm > 0:
@@ -81,7 +81,6 @@ class FAISSVectorStore(VectorStoreProvider):
         return "faiss"
 
     def upsert(self, chunks: List[VectorChunk]) -> int:
-        import numpy as np
 
         if not chunks:
             return 0
@@ -97,7 +96,7 @@ class FAISSVectorStore(VectorStoreProvider):
 
             vec = self._normalize(chunk.embedding)
             self._index.add(vec)
-            idx = len(self._id_list)
+            len(self._id_list)
             self._id_list.append(chunk.chunk_id)
             self._metadata[chunk.chunk_id] = {
                 "content": chunk.content,
@@ -125,7 +124,6 @@ class FAISSVectorStore(VectorStoreProvider):
         top_k: int = 50,
         filters: Optional[Dict[str, Any]] = None,
     ) -> List[SearchResult]:
-        import numpy as np
 
         if self._index.ntotal == 0:
             return []
@@ -157,19 +155,21 @@ class FAISSVectorStore(VectorStoreProvider):
 
             score = float(distances[0][i])  # Already cosine similarity (inner product on normalized)
 
-            results.append(SearchResult(
-                chunk_id=cid,
-                content=meta.get("content", ""),
-                source_type=meta.get("source_type", ""),
-                source_id=meta.get("source_id", ""),
-                source_table=meta.get("source_table", ""),
-                chunk_index=meta.get("chunk_index", 0),
-                score=score,
-                final_score=score,
-                metadata=meta.get("metadata", {}),
-                tier=meta.get("tier", "hot"),
-                classification=meta.get("classification", "CUI"),
-            ))
+            results.append(
+                SearchResult(
+                    chunk_id=cid,
+                    content=meta.get("content", ""),
+                    source_type=meta.get("source_type", ""),
+                    source_id=meta.get("source_id", ""),
+                    source_table=meta.get("source_table", ""),
+                    chunk_index=meta.get("chunk_index", 0),
+                    score=score,
+                    final_score=score,
+                    metadata=meta.get("metadata", {}),
+                    tier=meta.get("tier", "hot"),
+                    classification=meta.get("classification", "CUI"),
+                )
+            )
 
             if len(results) >= top_k:
                 break

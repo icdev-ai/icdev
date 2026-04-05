@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""ICDEV SaaS Phase 5 -- Bedrock Token Metering.
+"""ICDEV™ SaaS Phase 5 -- Bedrock Token Metering.
 
 CUI // SP-CTI
 
@@ -89,9 +89,10 @@ def _get_period_filter(period: str) -> str:
 # Public API
 # ============================================================================
 
-def record_token_usage(tenant_id: str, user_id: str,
-                       model_id: str, input_tokens: int,
-                       output_tokens: int, endpoint: str = "bedrock_proxy"):
+
+def record_token_usage(
+    tenant_id: str, user_id: str, model_id: str, input_tokens: int, output_tokens: int, endpoint: str = "bedrock_proxy"
+):
     """Record a Bedrock token usage event in platform.db.
 
     Writes to the ``usage_records`` table with total tokens (input + output)
@@ -106,11 +107,13 @@ def record_token_usage(tenant_id: str, user_id: str,
         endpoint:      API endpoint label (default 'bedrock_proxy').
     """
     total_tokens = input_tokens + output_tokens
-    metadata = json.dumps({
-        "model_id": model_id,
-        "input_tokens": input_tokens,
-        "output_tokens": output_tokens,
-    })
+    metadata = json.dumps(
+        {
+            "model_id": model_id,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+        }
+    )
 
     conn = get_platform_connection()
     try:
@@ -119,13 +122,10 @@ def record_token_usage(tenant_id: str, user_id: str,
                (tenant_id, user_id, endpoint, method, tokens_used,
                 status_code, duration_ms, metadata, recorded_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (tenant_id, user_id, endpoint, "BEDROCK",
-             total_tokens, 200, 0, metadata, _utcnow()),
+            (tenant_id, user_id, endpoint, "BEDROCK", total_tokens, 200, 0, metadata, _utcnow()),
         )
         conn.commit()
-        logger.debug(
-            "Recorded %d tokens for tenant %s (model=%s)",
-            total_tokens, tenant_id, model_id)
+        logger.debug("Recorded %d tokens for tenant %s (model=%s)", total_tokens, tenant_id, model_id)
     except Exception as exc:
         conn.rollback()
         logger.error("Failed to record token usage: %s", exc)
@@ -225,8 +225,7 @@ def check_token_budget(tenant_id: str) -> dict:
         ).fetchone()
 
         if not row:
-            raise ValueError(
-                "Tenant not found: {}".format(tenant_id))
+            raise ValueError("Tenant not found: {}".format(tenant_id))
 
         raw_config = row[0] if isinstance(row, (list, tuple)) else row["bedrock_config"]
         tier = row[1] if isinstance(row, (list, tuple)) else row["tier"]
@@ -277,25 +276,22 @@ def check_token_budget(tenant_id: str) -> dict:
 # CLI
 # ============================================================================
 
+
 def main():
     """CLI entry point for token metering queries."""
     parser = argparse.ArgumentParser(
-        description="CUI // SP-CTI -- ICDEV Bedrock Token Metering",
+        description="CUI // SP-CTI -- ICDEV™ Bedrock Token Metering",
     )
-    parser.add_argument("--tenant-id", required=True,
-                        help="Target tenant ID")
+    parser.add_argument("--tenant-id", required=True, help="Target tenant ID")
 
     action = parser.add_mutually_exclusive_group(required=True)
-    action.add_argument("--usage", action="store_true",
-                        help="Show token usage summary")
-    action.add_argument("--budget", action="store_true",
-                        help="Check token budget status")
+    action.add_argument("--usage", action="store_true", help="Show token usage summary")
+    action.add_argument("--budget", action="store_true", help="Check token budget status")
 
-    parser.add_argument("--period", type=str, default="day",
-                        choices=["day", "month"],
-                        help="Usage period (default: day)")
-    parser.add_argument("--json", action="store_true", dest="as_json",
-                        help="Output as JSON")
+    parser.add_argument(
+        "--period", type=str, default="day", choices=["day", "month"], help="Usage period (default: day)"
+    )
+    parser.add_argument("--json", action="store_true", dest="as_json", help="Output as JSON")
 
     args = parser.parse_args()
 
@@ -305,18 +301,12 @@ def main():
             if args.as_json:
                 print(json.dumps(result, indent=2))
             else:
-                print("Token Usage -- {} ({})".format(
-                    args.tenant_id, result["period"]))
-                print("  Period start:    {}".format(
-                    result["period_start"]))
-                print("  Total tokens:    {:,}".format(
-                    result["total_tokens"]))
-                print("  Input tokens:    {:,}".format(
-                    result["input_tokens"]))
-                print("  Output tokens:   {:,}".format(
-                    result["output_tokens"]))
-                print("  Total requests:  {:,}".format(
-                    result["total_requests"]))
+                print("Token Usage -- {} ({})".format(args.tenant_id, result["period"]))
+                print("  Period start:    {}".format(result["period_start"]))
+                print("  Total tokens:    {:,}".format(result["total_tokens"]))
+                print("  Input tokens:    {:,}".format(result["input_tokens"]))
+                print("  Output tokens:   {:,}".format(result["output_tokens"]))
+                print("  Total requests:  {:,}".format(result["total_requests"]))
 
         elif args.budget:
             result = check_token_budget(args.tenant_id)
@@ -324,8 +314,7 @@ def main():
                 print(json.dumps(result, indent=2))
             else:
                 status = "WITHIN BUDGET" if result["within_budget"] else "OVER BUDGET"
-                print("[{}] Token Budget -- {}".format(
-                    status, args.tenant_id))
+                print("[{}] Token Budget -- {}".format(status, args.tenant_id))
                 print("  Tier:       {}".format(result["tier"]))
                 print("  Used:       {:,}".format(result["used"]))
                 if result["limit"] == -1:

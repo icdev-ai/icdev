@@ -3,7 +3,7 @@
 # Git Worktree Task Isolation
 
 ## Description
-Create and manage isolated git worktrees for parallel ICDEV task execution.
+Create and manage isolated git worktrees for parallel ICDEV™ task execution.
 
 ## Usage
 /icdev-worktree create <task-id> <target-dir>

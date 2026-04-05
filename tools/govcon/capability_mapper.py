@@ -1,9 +1,9 @@
 # CUI // SP-CTI
-# ICDEV GovCon Capability Mapper — Phase 59 (D363)
-# Maps ICDEV capabilities to RFP requirement patterns via keyword overlap.
+# ICDEV™ GovCon Capability Mapper — Phase 59 (D363)
+# Maps ICDEV™ capabilities to RFP requirement patterns via keyword overlap.
 
 """
-Capability Mapper — match requirement patterns against ICDEV capability catalog.
+Capability Mapper — match requirement patterns against ICDEV™ capability catalog.
 
 Reads from:
     - context/govcon/icdev_capability_catalog.json (capability definitions)
@@ -28,12 +28,12 @@ Usage:
 """
 
 import argparse
-import hashlib
 import json
 import os
 import sqlite3
 import sys
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -45,9 +45,9 @@ _CONFIG_PATH = _ROOT / "args" / "govcon_config.yaml"
 
 # ── helpers (adapted from source_scanner.py) ──────────────────────────
 
+
 def _get_db():
-    conn = sqlite3.connect(str(_DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
@@ -59,7 +59,7 @@ def _now():
 def _audit(conn, action, details="", actor="capability_mapper"):
     try:
         conn.execute(
-            "INSERT INTO audit_trail (id, timestamp, event_type, actor, action, details, session_id) "
+            "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (str(uuid.uuid4()), _now(), "govcon.capability_map", actor, action, details, "govcon"),
         )
@@ -70,6 +70,7 @@ def _audit(conn, action, details="", actor="capability_mapper"):
 def _load_config():
     try:
         import yaml
+
         with open(_CONFIG_PATH) as f:
             return yaml.safe_load(f) or {}
     except Exception:
@@ -78,8 +79,9 @@ def _load_config():
 
 # ── catalog loading ───────────────────────────────────────────────────
 
+
 def load_capability_catalog():
-    """Load ICDEV capability catalog from JSON."""
+    """Load ICDEV™ capability catalog from JSON."""
     if not _CATALOG_PATH.exists():
         return []
     with open(_CATALOG_PATH) as f:
@@ -88,6 +90,7 @@ def load_capability_catalog():
 
 
 # ── keyword matching ──────────────────────────────────────────────────
+
 
 def _normalize_keywords(keywords):
     """Normalize keywords to lowercase set."""
@@ -165,6 +168,7 @@ def coverage_to_grade(score):
 
 # ── mapping ───────────────────────────────────────────────────────────
 
+
 def map_pattern_to_capabilities(pattern, capabilities):
     """Map a single requirement pattern to matching capabilities.
 
@@ -193,22 +197,24 @@ def map_pattern_to_capabilities(pattern, capabilities):
             overlap_count = len(cap_kw & pat_kw)
             if overlap_count >= min_overlap or score >= 0.40:
                 grade = coverage_to_grade(score)
-                results.append({
-                    "capability_id": cap["id"],
-                    "capability_name": cap["name"],
-                    "category": cap.get("category", ""),
-                    "score": score,
-                    "grade": grade,
-                    "matched_keywords": sorted(cap_kw & pat_kw),
-                    "evidence": cap.get("evidence", ""),
-                })
+                results.append(
+                    {
+                        "capability_id": cap["id"],
+                        "capability_name": cap["name"],
+                        "category": cap.get("category", ""),
+                        "score": score,
+                        "grade": grade,
+                        "matched_keywords": sorted(cap_kw & pat_kw),
+                        "evidence": cap.get("evidence", ""),
+                    }
+                )
 
     results.sort(key=lambda x: x["score"], reverse=True)
     return results
 
 
 def map_all_patterns(store=True):
-    """Map all requirement patterns to ICDEV capabilities.
+    """Map all requirement patterns to ICDEV™ capabilities.
 
     Returns mapping results and optionally stores in icdev_capability_map.
     """
@@ -217,9 +223,7 @@ def map_all_patterns(store=True):
         return {"status": "error", "message": "Capability catalog not found or empty"}
 
     conn = _get_db()
-    patterns = conn.execute(
-        "SELECT * FROM rfp_requirement_patterns ORDER BY frequency DESC"
-    ).fetchall()
+    patterns = conn.execute("SELECT * FROM rfp_requirement_patterns ORDER BY frequency DESC").fetchall()
 
     if not patterns:
         conn.close()
@@ -245,7 +249,7 @@ def map_all_patterns(store=True):
                 try:
                     conn.execute(
                         "INSERT INTO icdev_capability_map "
-                        "(id, pattern_id, capability_id, coverage_score, grade, matched_keywords, created_at, metadata) "
+                        "(id, pattern_id, capability_id, coverage_score, grade, matched_keywords, created_at, metadata) "  # noqa: E501
                         "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                         (
                             str(uuid.uuid4()),
@@ -280,9 +284,7 @@ def map_single_pattern(pattern_id, store=True):
     capabilities = load_capability_catalog()
     conn = _get_db()
 
-    pattern = conn.execute(
-        "SELECT * FROM rfp_requirement_patterns WHERE id = ?", (pattern_id,)
-    ).fetchone()
+    pattern = conn.execute("SELECT * FROM rfp_requirement_patterns WHERE id = ?", (pattern_id,)).fetchone()
 
     if not pattern:
         conn.close()
@@ -325,6 +327,7 @@ def map_single_pattern(pattern_id, store=True):
 
 # ── coverage analysis ─────────────────────────────────────────────────
 
+
 def get_coverage(domain=None):
     """Get coverage analysis by domain.
 
@@ -365,13 +368,15 @@ def get_coverage(domain=None):
         if grade in ("L", "M", "N"):
             domains[d][grade] += 1
         domains[d]["scores"].append(row["coverage_score"])
-        domains[d]["mappings"].append({
-            "pattern_name": row["pattern_name"],
-            "capability_id": row["capability_id"],
-            "score": row["coverage_score"],
-            "grade": grade,
-            "frequency": row["frequency"],
-        })
+        domains[d]["mappings"].append(
+            {
+                "pattern_name": row["pattern_name"],
+                "capability_id": row["capability_id"],
+                "score": row["coverage_score"],
+                "grade": grade,
+                "frequency": row["frequency"],
+            }
+        )
 
     summary = {}
     for d, data in domains.items():
@@ -410,16 +415,18 @@ def get_gaps():
 
     gaps = []
     for row in low_coverage:
-        gaps.append({
-            "pattern_id": row["id"],
-            "pattern_name": row["pattern_name"],
-            "domain": row["domain_category"],
-            "frequency": row["frequency"],
-            "best_coverage": row["best_score"] or 0.0,
-            "representative_text": (row["representative_text"] or "")[:200],
-            "grade": "N",
-            "recommendation": "New capability or enhancement needed",
-        })
+        gaps.append(
+            {
+                "pattern_id": row["id"],
+                "pattern_name": row["pattern_name"],
+                "domain": row["domain_category"],
+                "frequency": row["frequency"],
+                "best_coverage": row["best_score"] or 0.0,
+                "representative_text": (row["representative_text"] or "")[:200],
+                "grade": "N",
+                "recommendation": "New capability or enhancement needed",
+            }
+        )
 
     conn.close()
 
@@ -467,17 +474,19 @@ def get_compliance_matrix(opportunity_id):
                 best_match = cap
 
         grade = coverage_to_grade(best_score)
-        matrix.append({
-            "shall_id": s_dict["id"],
-            "statement": (s_dict.get("statement_text", "") or "")[:200],
-            "domain": s_dict.get("domain_category", ""),
-            "statement_type": s_dict.get("statement_type", ""),
-            "best_capability": best_match["name"] if best_match else "None",
-            "best_capability_id": best_match["id"] if best_match else None,
-            "coverage_score": best_score,
-            "grade": grade,
-            "evidence": (best_match.get("evidence", "") if best_match else ""),
-        })
+        matrix.append(
+            {
+                "shall_id": s_dict["id"],
+                "statement": (s_dict.get("statement_text", "") or "")[:200],
+                "domain": s_dict.get("domain_category", ""),
+                "statement_type": s_dict.get("statement_type", ""),
+                "best_capability": best_match["name"] if best_match else "None",
+                "best_capability_id": best_match["id"] if best_match else None,
+                "coverage_score": best_score,
+                "grade": grade,
+                "evidence": (best_match.get("evidence", "") if best_match else ""),
+            }
+        )
 
     # Summary
     l_count = sum(1 for m in matrix if m["grade"] == "L")
@@ -501,8 +510,9 @@ def get_compliance_matrix(opportunity_id):
 
 # ── CLI ───────────────────────────────────────────────────────────────
 
+
 def main():
-    parser = argparse.ArgumentParser(description="ICDEV GovCon Capability Mapper (D363)")
+    parser = argparse.ArgumentParser(description="ICDEV™ GovCon Capability Mapper (D363)")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--map-all", action="store_true", help="Map all patterns to capabilities")
     group.add_argument("--map-pattern", action="store_true", help="Map single pattern")
@@ -541,10 +551,14 @@ def main():
             "status": "ok",
             "total_capabilities": len(caps),
             "capabilities": [
-                {"id": c["id"], "name": c["name"], "category": c["category"],
-                 "keywords_count": len(c.get("keywords", [])),
-                 "tools_count": len(c.get("tools", [])),
-                 "controls_count": len(c.get("compliance_controls", []))}
+                {
+                    "id": c["id"],
+                    "name": c["name"],
+                    "category": c["category"],
+                    "keywords_count": len(c.get("keywords", [])),
+                    "tools_count": len(c.get("tools", [])),
+                    "controls_count": len(c.get("compliance_controls", [])),
+                }
                 for c in caps
             ],
         }
@@ -561,7 +575,7 @@ def _print_human(result, args):
     """Human-readable output."""
     status = result.get("status", "unknown")
     print(f"\n{'=' * 60}")
-    print(f"  ICDEV Capability Mapper — {status.upper()}")
+    print(f"  ICDEV™ Capability Mapper — {status.upper()}")
     print(f"{'=' * 60}")
 
     if "mappings" in result:
@@ -570,7 +584,9 @@ def _print_human(result, args):
         for m in result["mappings"][:20]:
             grade = m.get("grade", "?")
             color = {"L": "✅", "M": "⚠️", "N": "❌"}.get(grade, "?")
-            print(f"  {color} [{grade}] {m.get('pattern_name', '')[:40]:40s} → {m.get('capability_name', '')[:30]:30s} ({m.get('score', 0):.2f})")
+            print(
+                f"  {color} [{grade}] {m.get('pattern_name', '')[:40]:40s} → {m.get('capability_name', '')[:30]:30s} ({m.get('score', 0):.2f})"  # noqa: E501
+            )
 
     if "domains" in result:
         for domain, data in result["domains"].items():
@@ -583,7 +599,9 @@ def _print_human(result, args):
 
     if "matrix" in result:
         print(f"\n  Compliance Matrix — {result['total_requirements']} requirements")
-        print(f"  L={result['L_compliant']} M={result['M_partial']} N={result['N_gap']}  rate={result.get('compliance_rate', 0):.0%}")
+        print(
+            f"  L={result['L_compliant']} M={result['M_partial']} N={result['N_gap']}  rate={result.get('compliance_rate', 0):.0%}"  # noqa: E501
+        )
         for m in result["matrix"]:
             grade = m["grade"]
             color = {"L": "✅", "M": "⚠️", "N": "❌"}.get(grade, "?")

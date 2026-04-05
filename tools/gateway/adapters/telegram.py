@@ -13,7 +13,6 @@ Decision D133: Channel adapters are ABC + implementations.
 Decision D134: Disabled in air-gapped environments (requires_internet: true).
 """
 
-import hashlib
 import hmac
 import json
 import logging
@@ -29,8 +28,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from tools.gateway.adapters.base import BaseChannelAdapter
-from tools.gateway.event_envelope import CommandEnvelope, parse_command_text
+from tools.gateway.adapters.base import BaseChannelAdapter  # noqa: E402
+from tools.gateway.event_envelope import CommandEnvelope, parse_command_text  # noqa: E402
 
 logger = logging.getLogger("icdev.gateway.adapters.telegram")
 
@@ -59,8 +58,7 @@ class TelegramAdapter(BaseChannelAdapter):
 
         return hmac.compare_digest(signature, self.webhook_secret)
 
-    def parse_webhook(self, request_data: Dict[str, Any],
-                      headers: Dict[str, str]) -> Optional[CommandEnvelope]:
+    def parse_webhook(self, request_data: Dict[str, Any], headers: Dict[str, str]) -> Optional[CommandEnvelope]:
         """Parse a Telegram Update object into a CommandEnvelope.
 
         Handles:
@@ -80,15 +78,14 @@ class TelegramAdapter(BaseChannelAdapter):
         if chat_type in ("group", "supergroup") and not text.startswith("/"):
             return None
 
-        # Strip bot mention in group chats (e.g., /icdev-status@ICDEVBot)
+        # Strip bot mention in group chats (e.g., /icdev-status@ICDEV™Bot)
         if "@" in text.split()[0]:
             first_word = text.split()[0]
             text = first_word.split("@")[0] + " " + " ".join(text.split()[1:])
             text = text.strip()
 
-        # Only process ICDEV commands
-        if not (text.startswith("/icdev") or text.startswith("/bind")
-                or text.startswith("icdev-")):
+        # Only process ICDEV™ commands
+        if not (text.startswith("/icdev") or text.startswith("/bind") or text.startswith("icdev-")):
             return None
 
         command, args = parse_command_text(text)
@@ -109,15 +106,14 @@ class TelegramAdapter(BaseChannelAdapter):
             args=args,
             project_id=args.get("project_id", ""),
             is_bot=from_user.get("is_bot", False),
-            timestamp=datetime.fromtimestamp(
-                message.get("date", 0), tz=timezone.utc
-            ).isoformat() if message.get("date") else datetime.now(timezone.utc).isoformat(),
+            timestamp=datetime.fromtimestamp(message.get("date", 0), tz=timezone.utc).isoformat()
+            if message.get("date")
+            else datetime.now(timezone.utc).isoformat(),
         )
 
         return envelope
 
-    def send_message(self, channel_user_id: str, text: str,
-                     thread_id: str = "") -> bool:
+    def send_message(self, channel_user_id: str, text: str, thread_id: str = "") -> bool:
         """Send a message via Telegram Bot API.
 
         Args:
@@ -132,16 +128,17 @@ class TelegramAdapter(BaseChannelAdapter):
         chat_id = thread_id or channel_user_id
         url = f"{TELEGRAM_API_BASE.format(token=self.bot_token)}/sendMessage"
 
-        payload = json.dumps({
-            "chat_id": chat_id,
-            "text": text,
-            "parse_mode": "Markdown",
-        }).encode("utf-8")
+        payload = json.dumps(
+            {
+                "chat_id": chat_id,
+                "text": text,
+                "parse_mode": "Markdown",
+            }
+        ).encode("utf-8")
 
         try:
-            req = Request(url, data=payload,
-                          headers={"Content-Type": "application/json"})
-            with urlopen(req, timeout=10) as resp:
+            req = Request(url, data=payload, headers={"Content-Type": "application/json"})
+            with urlopen(req, timeout=10) as resp:  # nosec B310 -- URL scheme validated; internal/configured endpoints only
                 return resp.status == 200
         except (URLError, Exception) as e:
             logger.error("Telegram send failed: %s", e)

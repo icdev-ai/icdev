@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""FIPS 199 Security Categorization Engine for ICDEV.
+"""FIPS 199 Security Categorization Engine for ICDEV™.
 
 Implements FIPS Publication 199 security categorization by mapping information
 types from NIST SP 800-60 Vol 2 to CIA impact levels, computing the high
@@ -19,8 +19,8 @@ Usage:
 
 import argparse
 import json
-import sqlite3
 import sys
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -37,23 +37,19 @@ IMPACT_REVERSE = {0: "N/A", 1: "Low", 2: "Moderate", 3: "High"}
 # DB & Project helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_connection(db_path=None):
-    """Standard ICDEV DB connection with Row factory."""
+    """Standard ICDEV™ DB connection with Row factory."""
     path = db_path or DB_PATH
     if not Path(path).exists():
-        raise FileNotFoundError(
-            f"Database not found at {path}. Run: python tools/db/init_icdev_db.py"
-        )
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+        raise FileNotFoundError(f"Database not found at {path}. Run: python tools/db/init_icdev_db.py")
+    conn = get_connection(db_path=str(path))
     return conn
 
 
 def _get_project(conn, project_id):
     """Load project from DB. Raises ValueError if not found."""
-    row = conn.execute(
-        "SELECT * FROM projects WHERE id = ?", (project_id,)
-    ).fetchone()
+    row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
     if not row:
         raise ValueError(f"Project '{project_id}' not found")
     return dict(row)
@@ -62,6 +58,7 @@ def _get_project(conn, project_id):
 # ---------------------------------------------------------------------------
 # Catalog functions
 # ---------------------------------------------------------------------------
+
 
 def _load_catalog():
     """Load NIST SP 800-60 information type catalog."""
@@ -86,9 +83,7 @@ def _find_information_type(catalog, type_id):
                     it["_category_path"] = f"{category['name']} > {sub['name']}"
                     it["_category_id"] = sub["id"]
                     return it
-    raise ValueError(
-        f"Information type '{type_id}' not found in SP 800-60 catalog"
-    )
+    raise ValueError(f"Information type '{type_id}' not found in SP 800-60 catalog")
 
 
 def list_catalog(category=None):
@@ -102,19 +97,22 @@ def list_catalog(category=None):
             if category and len(category) > 3 and not sub["id"].startswith(category):
                 continue
             for it in sub.get("information_types", []):
-                result.append({
-                    "id": it["id"],
-                    "name": it["name"],
-                    "category": f"{cat['name']} > {sub['name']}",
-                    "provisional_impact": it["provisional_impact"],
-                    "special_factors": it.get("special_factors", []),
-                })
+                result.append(
+                    {
+                        "id": it["id"],
+                        "name": it["name"],
+                        "category": f"{cat['name']} > {sub['name']}",
+                        "provisional_impact": it["provisional_impact"],
+                        "special_factors": it.get("special_factors", []),
+                    }
+                )
     return result
 
 
 # ---------------------------------------------------------------------------
 # High watermark computation
 # ---------------------------------------------------------------------------
+
 
 def _compute_high_watermark(info_types):
     """Compute FIPS 199 high watermark across all assigned information types.
@@ -153,6 +151,7 @@ def _compute_high_watermark(info_types):
 # ---------------------------------------------------------------------------
 # CNSSI 1253 overlay
 # ---------------------------------------------------------------------------
+
 
 def _load_cnssi_overlay():
     """Load CNSSI 1253 overlay data."""
@@ -207,9 +206,10 @@ def _apply_cnssi_1253(project, watermark):
 # Core operations
 # ---------------------------------------------------------------------------
 
-def add_information_type(project_id, type_id, adjust_c=None, adjust_i=None,
-                         adjust_a=None, adjustment_justification=None,
-                         db_path=None):
+
+def add_information_type(
+    project_id, type_id, adjust_c=None, adjust_i=None, adjust_a=None, adjustment_justification=None, db_path=None
+):
     """Add an information type to a project's FIPS 199 profile."""
     catalog = _load_catalog()
     info_type = _find_information_type(catalog, type_id)
@@ -222,9 +222,7 @@ def add_information_type(project_id, type_id, adjust_c=None, adjust_i=None,
         (adjust_a, "availability"),
     ]:
         if adj and adj not in valid_levels:
-            raise ValueError(
-                f"Invalid {name} adjustment: {adj}. Must be Low, Moderate, or High"
-            )
+            raise ValueError(f"Invalid {name} adjustment: {adj}. Must be Low, Moderate, or High")
 
     conn = _get_connection(db_path)
     try:
@@ -240,12 +238,16 @@ def add_information_type(project_id, type_id, adjust_c=None, adjust_i=None,
              adjustment_justification)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                project_id, type_id, info_type["name"],
+                project_id,
+                type_id,
+                info_type["name"],
                 info_type["_category_path"],
                 prov.get("confidentiality", "Low"),
                 prov.get("integrity", "Low"),
                 prov.get("availability", "Low"),
-                adjust_c, adjust_i, adjust_a,
+                adjust_c,
+                adjust_i,
+                adjust_a,
                 adjustment_justification,
             ),
         )
@@ -274,8 +276,7 @@ def remove_information_type(project_id, type_id, db_path=None):
     conn = _get_connection(db_path)
     try:
         result = conn.execute(
-            "DELETE FROM project_information_types "
-            "WHERE project_id = ? AND information_type_id = ?",
+            "DELETE FROM project_information_types WHERE project_id = ? AND information_type_id = ?",
             (project_id, type_id),
         )
         conn.commit()
@@ -293,8 +294,7 @@ def list_information_types(project_id, db_path=None):
     conn = _get_connection(db_path)
     try:
         rows = conn.execute(
-            "SELECT * FROM project_information_types "
-            "WHERE project_id = ? ORDER BY information_type_id",
+            "SELECT * FROM project_information_types WHERE project_id = ? ORDER BY information_type_id",
             (project_id,),
         ).fetchall()
         return [dict(r) for r in rows]
@@ -326,9 +326,10 @@ def get_categorization(project_id, db_path=None):
 # Main categorization function
 # ---------------------------------------------------------------------------
 
-def categorize_project(project_id, method="information_type", manual_c=None,
-                       manual_i=None, manual_a=None, justification=None,
-                       db_path=None):
+
+def categorize_project(
+    project_id, method="information_type", manual_c=None, manual_i=None, manual_a=None, justification=None, db_path=None
+):
     """Run FIPS 199 categorization for a project.
 
     Methods:
@@ -343,9 +344,7 @@ def categorize_project(project_id, method="information_type", manual_c=None,
 
         if method == "manual":
             if not all([manual_c, manual_i, manual_a]):
-                raise ValueError(
-                    "Manual method requires --manual-c, --manual-i, --manual-a"
-                )
+                raise ValueError("Manual method requires --manual-c, --manual-i, --manual-a")
             for val, name in [
                 (manual_c, "C"),
                 (manual_i, "I"),
@@ -419,7 +418,7 @@ def categorize_project(project_id, method="information_type", manual_c=None,
         )
 
         # Insert new categorization
-        conn.execute(
+        cur = conn.execute(
             """INSERT INTO fips199_categorizations
             (project_id, categorization_date, confidentiality_impact,
              integrity_impact, availability_impact, overall_categorization,
@@ -427,17 +426,22 @@ def categorize_project(project_id, method="information_type", manual_c=None,
              cnssi_1253_applied, cnssi_overlay_ids, baseline_selected, status)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft')""",
             (
-                project_id, now,
-                watermark["confidentiality"], watermark["integrity"],
-                watermark["availability"], watermark["overall"],
-                method, justification, types_summary,
+                project_id,
+                now,
+                watermark["confidentiality"],
+                watermark["integrity"],
+                watermark["availability"],
+                watermark["overall"],
+                method,
+                justification,
+                types_summary,
                 1 if cnssi_result["cnssi_applied"] else 0,
                 json.dumps(cnssi_result.get("overlay_ids", [])),
                 baseline,
             ),
         )
 
-        cat_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        cat_id = cur.lastrowid
 
         # Update project with categorization columns
         conn.execute(
@@ -448,19 +452,21 @@ def categorize_project(project_id, method="information_type", manual_c=None,
             nss_system = ?, updated_at = ?
             WHERE id = ?""",
             (
-                watermark["confidentiality"], watermark["integrity"],
-                watermark["availability"], watermark["overall"],
+                watermark["confidentiality"],
+                watermark["integrity"],
+                watermark["availability"],
+                watermark["overall"],
                 cat_id,
                 1 if cnssi_result["cnssi_applied"] else 0,
-                now, project_id,
+                now,
+                project_id,
             ),
         )
 
         # Link information types to this categorization
         if info_types:
             conn.execute(
-                "UPDATE project_information_types "
-                "SET categorization_id = ? WHERE project_id = ?",
+                "UPDATE project_information_types SET categorization_id = ? WHERE project_id = ?",
                 (cat_id, project_id),
             )
 
@@ -476,14 +482,16 @@ def categorize_project(project_id, method="information_type", manual_c=None,
                 f"(C:{watermark['confidentiality']} "
                 f"I:{watermark['integrity']} "
                 f"A:{watermark['availability']})",
-                json.dumps({
-                    "method": method,
-                    "categorization_id": cat_id,
-                    "overall": watermark["overall"],
-                    "baseline": baseline,
-                    "cnssi_applied": cnssi_result["cnssi_applied"],
-                    "info_types_count": len(info_types),
-                }),
+                json.dumps(
+                    {
+                        "method": method,
+                        "categorization_id": cat_id,
+                        "overall": watermark["overall"],
+                        "baseline": baseline,
+                        "cnssi_applied": cnssi_result["cnssi_applied"],
+                        "info_types_count": len(info_types),
+                    }
+                ),
             ),
         )
 
@@ -512,6 +520,7 @@ def categorize_project(project_id, method="information_type", manual_c=None,
 # Gate evaluation
 # ---------------------------------------------------------------------------
 
+
 def evaluate_gate(project_id, db_path=None):
     """Evaluate FIPS 199 gate.
 
@@ -530,43 +539,21 @@ def evaluate_gate(project_id, db_path=None):
 
         findings = []
         if not cat:
-            findings.append(
-                "No FIPS 199 categorization exists for this project"
-            )
+            findings.append("No FIPS 199 categorization exists for this project")
         else:
             cat = dict(cat)
-            if (
-                project.get("impact_level") == "IL6"
-                and not cat.get("cnssi_1253_applied")
-            ):
-                findings.append(
-                    "IL6/SECRET system requires CNSSI 1253 overlay"
-                )
+            if project.get("impact_level") == "IL6" and not cat.get("cnssi_1253_applied"):
+                findings.append("IL6/SECRET system requires CNSSI 1253 overlay")
             if cat.get("status") == "draft":
-                findings.append(
-                    "Categorization is still in draft status (not approved)"
-                )
+                findings.append("Categorization is still in draft status (not approved)")
             info_count = conn.execute(
-                "SELECT COUNT(*) FROM project_information_types "
-                "WHERE project_id = ?",
+                "SELECT COUNT(*) FROM project_information_types WHERE project_id = ?",
                 (project_id,),
             ).fetchone()[0]
-            if (
-                info_count == 0
-                and cat.get("categorization_method") == "information_type"
-            ):
+            if info_count == 0 and cat.get("categorization_method") == "information_type":
                 findings.append("No information types assigned")
 
-        passed = (
-            len(
-                [
-                    f
-                    for f in findings
-                    if "No FIPS 199" in f or "CNSSI 1253" in f
-                ]
-            )
-            == 0
-        )
+        passed = len([f for f in findings if "No FIPS 199" in f or "CNSSI 1253" in f]) == 0
         return {
             "gate": "fips199",
             "project_id": project_id,
@@ -583,17 +570,12 @@ def evaluate_gate(project_id, db_path=None):
 # CLI main
 # ---------------------------------------------------------------------------
 
+
 def main():
-    parser = argparse.ArgumentParser(
-        description="FIPS 199 Security Categorization Engine"
-    )
+    parser = argparse.ArgumentParser(description="FIPS 199 Security Categorization Engine")
     parser.add_argument("--project-id", help="Project ID")
-    parser.add_argument(
-        "--add-type", help="Add information type by SP 800-60 ID"
-    )
-    parser.add_argument(
-        "--remove-type", help="Remove information type by SP 800-60 ID"
-    )
+    parser.add_argument("--add-type", help="Add information type by SP 800-60 ID")
+    parser.add_argument("--remove-type", help="Remove information type by SP 800-60 ID")
     parser.add_argument(
         "--adjust-c",
         choices=["Low", "Moderate", "High"],
@@ -609,26 +591,16 @@ def main():
         choices=["Low", "Moderate", "High"],
         help="Adjusted availability",
     )
-    parser.add_argument(
-        "--adjustment-justification", help="Justification for adjustment"
-    )
-    parser.add_argument(
-        "--categorize", action="store_true", help="Run categorization"
-    )
+    parser.add_argument("--adjustment-justification", help="Justification for adjustment")
+    parser.add_argument("--categorize", action="store_true", help="Run categorization")
     parser.add_argument(
         "--method",
         default="information_type",
         choices=["information_type", "manual", "cnssi_1253"],
     )
-    parser.add_argument(
-        "--manual-c", choices=["Low", "Moderate", "High"]
-    )
-    parser.add_argument(
-        "--manual-i", choices=["Low", "Moderate", "High"]
-    )
-    parser.add_argument(
-        "--manual-a", choices=["Low", "Moderate", "High"]
-    )
+    parser.add_argument("--manual-c", choices=["Low", "Moderate", "High"])
+    parser.add_argument("--manual-i", choices=["Low", "Moderate", "High"])
+    parser.add_argument("--manual-a", choices=["Low", "Moderate", "High"])
     parser.add_argument("--justification", help="Categorization justification")
     parser.add_argument(
         "--list-types",
@@ -640,15 +612,9 @@ def main():
         action="store_true",
         help="List SP 800-60 catalog",
     )
-    parser.add_argument(
-        "--category", help="Filter catalog (D.1, D.2, D.3)"
-    )
-    parser.add_argument(
-        "--gate", action="store_true", help="Evaluate FIPS 199 gate"
-    )
-    parser.add_argument(
-        "--json", action="store_true", help="JSON output"
-    )
+    parser.add_argument("--category", help="Filter catalog (D.1, D.2, D.3)")
+    parser.add_argument("--gate", action="store_true", help="Evaluate FIPS 199 gate")
+    parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--db-path", type=Path, default=DB_PATH)
     args = parser.parse_args()
 
@@ -656,15 +622,9 @@ def main():
         if args.list_catalog:
             result = list_catalog(args.category)
             if args.json:
-                print(
-                    json.dumps(
-                        {"catalog": result, "count": len(result)}, indent=2
-                    )
-                )
+                print(json.dumps({"catalog": result, "count": len(result)}, indent=2))
             else:
-                print(
-                    f"NIST SP 800-60 Information Types ({len(result)} types):"
-                )
+                print(f"NIST SP 800-60 Information Types ({len(result)} types):")
                 print("-" * 80)
                 for t in result:
                     prov = t["provisional_impact"]
@@ -676,10 +636,7 @@ def main():
                         f"A:{prov['availability']:8s}"
                     )
                     if t.get("special_factors"):
-                        print(
-                            f"               Special: "
-                            f"{', '.join(t['special_factors'])}"
-                        )
+                        print(f"               Special: {', '.join(t['special_factors'])}")
             return
 
         if not args.project_id:
@@ -701,10 +658,7 @@ def main():
                 it = result["information_type"]
                 print(f"Added: {it['id']} — {it['name']}")
                 prov = it["provisional"]
-                print(
-                    f"  Provisional: C:{prov['confidentiality']} "
-                    f"I:{prov['integrity']} A:{prov['availability']}"
-                )
+                print(f"  Provisional: C:{prov['confidentiality']} I:{prov['integrity']} A:{prov['availability']}")
                 adj = it["adjusted"]
                 if any(v for v in adj.values()):
                     print(
@@ -715,23 +669,15 @@ def main():
                     )
 
         elif args.remove_type:
-            result = remove_information_type(
-                args.project_id, args.remove_type, db_path=args.db_path
-            )
+            result = remove_information_type(args.project_id, args.remove_type, db_path=args.db_path)
             if args.json:
                 print(json.dumps(result, indent=2))
             else:
-                status_label = (
-                    "Removed"
-                    if result["status"] == "removed"
-                    else "Not found"
-                )
+                status_label = "Removed" if result["status"] == "removed" else "Not found"
                 print(f"{status_label}: {args.remove_type}")
 
         elif args.list_types:
-            result = list_information_types(
-                args.project_id, db_path=args.db_path
-            )
+            result = list_information_types(args.project_id, db_path=args.db_path)
             if args.json:
                 print(
                     json.dumps(
@@ -745,23 +691,11 @@ def main():
                     )
                 )
             else:
-                print(
-                    f"Information types for {args.project_id} "
-                    f"({len(result)} types):"
-                )
+                print(f"Information types for {args.project_id} ({len(result)} types):")
                 for t in result:
-                    c = (
-                        t.get("adjusted_confidentiality")
-                        or t["provisional_confidentiality"]
-                    )
-                    i = (
-                        t.get("adjusted_integrity")
-                        or t["provisional_integrity"]
-                    )
-                    a = (
-                        t.get("adjusted_availability")
-                        or t["provisional_availability"]
-                    )
+                    c = t.get("adjusted_confidentiality") or t["provisional_confidentiality"]
+                    i = t.get("adjusted_integrity") or t["provisional_integrity"]
+                    a = t.get("adjusted_availability") or t["provisional_availability"]
                     adj_flag = (
                         " [adjusted]"
                         if any(
@@ -795,9 +729,7 @@ def main():
                 if "error" in result:
                     print(f"Error: {result['error']}")
                     sys.exit(1)
-                print(
-                    f"FIPS 199 Security Categorization — {args.project_id}"
-                )
+                print(f"FIPS 199 Security Categorization — {args.project_id}")
                 print("=" * 60)
                 print(f"  Confidentiality:  {result['confidentiality']}")
                 print(f"  Integrity:        {result['integrity']}")
@@ -807,19 +739,12 @@ def main():
                 print(f"  Method:           {result['method']}")
                 print(f"  Info Types:       {result['information_types_count']}")
                 if result.get("cnssi_1253_applied"):
-                    overlay_list = ", ".join(
-                        result.get("cnssi_overlay_ids", [])
-                    )
-                    print(
-                        f"  CNSSI 1253:       Applied "
-                        f"(overlays: {overlay_list})"
-                    )
+                    overlay_list = ", ".join(result.get("cnssi_overlay_ids", []))
+                    print(f"  CNSSI 1253:       Applied (overlays: {overlay_list})")
                 print(f"  Gate:             {result['gate_status']}")
 
         elif args.gate:
-            result = evaluate_gate(
-                args.project_id, db_path=args.db_path
-            )
+            result = evaluate_gate(args.project_id, db_path=args.db_path)
             if args.json:
                 print(json.dumps(result, indent=2, default=str))
             else:
@@ -832,34 +757,21 @@ def main():
 
         else:
             # Default: show current categorization
-            result = get_categorization(
-                args.project_id, db_path=args.db_path
-            )
+            result = get_categorization(args.project_id, db_path=args.db_path)
             if result:
                 if args.json:
                     print(json.dumps(result, indent=2, default=str))
                 else:
-                    print(
-                        f"Current categorization for {args.project_id}:"
-                    )
+                    print(f"Current categorization for {args.project_id}:")
                     print(
                         f"  C:{result['confidentiality_impact']} "
                         f"I:{result['integrity_impact']} "
                         f"A:{result['availability_impact']}"
                     )
-                    print(
-                        f"  Overall: {result['overall_categorization']} "
-                        f"| Baseline: {result['baseline_selected']}"
-                    )
-                    print(
-                        f"  Status: {result['status']} "
-                        f"| Method: {result['categorization_method']}"
-                    )
+                    print(f"  Overall: {result['overall_categorization']} | Baseline: {result['baseline_selected']}")
+                    print(f"  Status: {result['status']} | Method: {result['categorization_method']}")
             else:
-                print(
-                    f"No FIPS 199 categorization found for "
-                    f"{args.project_id}"
-                )
+                print(f"No FIPS 199 categorization found for {args.project_id}")
                 if args.json:
                     print(
                         json.dumps(

@@ -3,8 +3,8 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""Multi-Regime Compliance Assessor for ICDEV.
+# POC: ICDEV™ System Administrator
+"""Multi-Regime Compliance Assessor for ICDEV™.
 
 Orchestrates assessment across ALL applicable frameworks for a project,
 deduplicates overlapping controls via the crosswalk engine (ADR D113),

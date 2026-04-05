@@ -269,7 +269,7 @@ def generate_poam(project_id, output_path=None, db_path=None):
             "",
             f"**Date Generated:** {now.strftime('%Y-%m-%d %H:%M UTC')}",
             "",
-            "**Prepared By:** ICDEV Compliance Engine",
+            "**Prepared By:** ICDEV™ Compliance Engine",
             "",
             "**Classification:** CUI // SP-CTI",
             "",

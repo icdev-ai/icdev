@@ -7,7 +7,6 @@ import sys
 from pathlib import Path
 from unittest import mock
 
-import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from icdev.tools.compat.db_utils import (
@@ -35,7 +34,7 @@ class TestGetProjectRoot:
 
 
 class TestGetIcdevDbPath:
-    """Test ICDEV DB path resolution with fallback chain."""
+    """Test ICDEV™ DB path resolution with fallback chain."""
 
     def test_default_path(self):
         with mock.patch.dict(os.environ, {}, clear=False):

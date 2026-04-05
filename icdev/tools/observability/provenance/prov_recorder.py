@@ -11,7 +11,6 @@ Relation types: wasGeneratedBy, used, wasInformedBy, wasDerivedFrom, wasAttribut
 
 Usage:
     from icdev.tools.observability.provenance.prov_recorder import ProvRecorder
-from icdev._paths import get_project_root
     recorder = ProvRecorder()
 
     entity_id = recorder.record_entity("prompt", "User query", content_hash="abc...")
@@ -19,6 +18,7 @@ from icdev._paths import get_project_root
     recorder.record_relation("wasGeneratedBy", entity_id, activity_id)
 """
 
+from icdev._paths import get_project_root
 import hashlib
 import json
 import logging

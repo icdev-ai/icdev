@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """OWASP LLM Top 10 v2025 Assessment Engine.
 
 Assesses projects against the OWASP Top 10 for Large Language Model
@@ -36,7 +36,9 @@ class OWASPLLMAssessor(BaseAssessor):
     CATALOG_FILENAME = "owasp_llm_top10.json"
 
     def get_automated_checks(
-        self, project: Dict, project_dir: Optional[str] = None,
+        self,
+        project: Dict,
+        project_dir: Optional[str] = None,
     ) -> Dict[str, str]:
         """OWASP LLM-specific automated checks.
 
@@ -229,7 +231,7 @@ class OWASPLLMAssessor(BaseAssessor):
             try:
                 row = conn.execute(
                     """SELECT COUNT(*) as cnt FROM ai_telemetry
-                       WHERE timestamp > datetime('now', '-30 days')"""
+                       WHERE logged_at > datetime('now', '-30 days')"""
                 ).fetchone()
                 return row and row["cnt"] > 0
             except Exception:

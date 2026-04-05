@@ -9,7 +9,7 @@
   },
   "spec_type": {
     "id": "ST-REQ",
-    "long_name": "ICDEV Requirement",
+    "long_name": "ICDEV™ Requirement",
     "attributes": [
       {"id": "AT-TITLE", "long_name": "Title", "datatype": "DT-STRING"},
       {"id": "AT-DESC", "long_name": "Description", "datatype": "DT-STRING"},

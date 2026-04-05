@@ -18,7 +18,7 @@ from __future__ import annotations
 import argparse
 import json
 import sqlite3
-import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -28,8 +28,7 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 
 def _get_db(db_path: Optional[Path] = None) -> sqlite3.Connection:
-    conn = sqlite3.connect(str(db_path or DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(db_path))
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
@@ -120,8 +119,7 @@ def update_eval_scores(
                SET eval_bleu = ?, eval_rouge_l = ?, eval_perplexity = ?,
                    eval_custom = ?, status = 'evaluated'
                WHERE id = ?""",
-            (eval_bleu, eval_rouge_l, eval_perplexity,
-             json.dumps(eval_custom or {}), model_version_id),
+            (eval_bleu, eval_rouge_l, eval_perplexity, json.dumps(eval_custom or {}), model_version_id),
         )
         conn.commit()
         return {
@@ -191,9 +189,16 @@ def promote_model(
                    (model_version_id, action, function_name, previous_model,
                     reason, actor, tenant_id, project_id, created_at)
                    VALUES (?, 'demoted', ?, ?, ?, ?, ?, ?, ?)""",
-                (current["model_version_id"], function_name, "",
-                 f"Replaced by {model_version_id}", activated_by,
-                 tenant_id, project_id, now),
+                (
+                    current["model_version_id"],
+                    function_name,
+                    "",
+                    f"Replaced by {model_version_id}",
+                    activated_by,
+                    tenant_id,
+                    project_id,
+                    now,
+                ),
             )
 
         # Insert new active model
@@ -202,9 +207,17 @@ def promote_model(
                (function_name, model_version_id, ollama_model_name, routing_tier,
                 activated_by, activation_reason, tenant_id, project_id, activated_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (function_name, model_version_id, mv["ollama_model_name"],
-             routing_tier, activated_by, activation_reason,
-             tenant_id, project_id, now),
+            (
+                function_name,
+                model_version_id,
+                mv["ollama_model_name"],
+                routing_tier,
+                activated_by,
+                activation_reason,
+                tenant_id,
+                project_id,
+                now,
+            ),
         )
 
         # Update model version status
@@ -219,13 +232,23 @@ def promote_model(
                (model_version_id, action, function_name, previous_model,
                 eval_score_summary, reason, actor, tenant_id, project_id, created_at)
                VALUES (?, 'promoted', ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (model_version_id, function_name, previous_model,
-             json.dumps({
-                 "bleu": mv["eval_bleu"],
-                 "rouge_l": mv["eval_rouge_l"],
-                 "perplexity": mv["eval_perplexity"],
-             }),
-             activation_reason, activated_by, tenant_id, project_id, now),
+            (
+                model_version_id,
+                function_name,
+                previous_model,
+                json.dumps(
+                    {
+                        "bleu": mv["eval_bleu"],
+                        "rouge_l": mv["eval_rouge_l"],
+                        "perplexity": mv["eval_perplexity"],
+                    }
+                ),
+                activation_reason,
+                activated_by,
+                tenant_id,
+                project_id,
+                now,
+            ),
         )
         conn.commit()
 
@@ -281,9 +304,16 @@ def demote_model(
                (model_version_id, action, function_name, previous_model,
                 reason, actor, tenant_id, project_id, created_at)
                VALUES (?, 'demoted', ?, ?, ?, ?, ?, ?, ?)""",
-            (current["model_version_id"], function_name,
-             current["ollama_model_name"], reason, demoted_by,
-             tenant_id, project_id, now),
+            (
+                current["model_version_id"],
+                function_name,
+                current["ollama_model_name"],
+                reason,
+                demoted_by,
+                tenant_id,
+                project_id,
+                now,
+            ),
         )
         conn.commit()
 
@@ -416,27 +446,36 @@ def main():
         result = get_model_version(args.model_version_id)
     elif args.list:
         result = list_model_versions(
-            model_name=args.model_name, status=args.status,
-            tenant_id=args.tenant_id, project_id=args.project_id, limit=args.limit,
+            model_name=args.model_name,
+            status=args.status,
+            tenant_id=args.tenant_id,
+            project_id=args.project_id,
+            limit=args.limit,
         )
     elif args.promote:
         result = promote_model(
-            model_version_id=args.model_version_id, function_name=args.function,
-            routing_tier=args.routing_tier, activated_by=args.activated_by,
-            activation_reason=args.reason, tenant_id=args.tenant_id,
+            model_version_id=args.model_version_id,
+            function_name=args.function,
+            routing_tier=args.routing_tier,
+            activated_by=args.activated_by,
+            activation_reason=args.reason,
+            tenant_id=args.tenant_id,
             project_id=args.project_id,
         )
     elif args.demote:
         result = demote_model(
-            function_name=args.function, tenant_id=args.tenant_id,
-            project_id=args.project_id, demoted_by=args.activated_by,
+            function_name=args.function,
+            tenant_id=args.tenant_id,
+            project_id=args.project_id,
+            demoted_by=args.activated_by,
             reason=args.reason,
         )
     elif args.active:
         result = list_active_models(tenant_id=args.tenant_id, project_id=args.project_id)
     elif args.history:
         result = get_promotion_history(
-            model_version_id=args.model_version_id, function_name=args.function,
+            model_version_id=args.model_version_id,
+            function_name=args.function,
             limit=args.limit,
         )
     else:

@@ -1,9 +1,9 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Test — Testing workflow
+# ICDEV™ Test — Testing workflow
 # Adapted from ADW adw_test.py with dual platform support
 
 """
-ICDEV Test — Run test suite with retry and resolution.
+ICDEV™ Test — Run test suite with retry and resolution.
 
 Usage:
     python tools/ci/workflows/icdev_test.py <issue-number> <run-id> [--skip-e2e]
@@ -26,13 +26,13 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from tools.ci.modules.state import ICDevState
-from tools.ci.modules.git_ops import commit_changes, finalize_git_operations
-from tools.ci.modules.vcs import VCS
-from tools.ci.modules.workflow_ops import (
+from tools.ci.modules.state import ICDevState  # noqa: E402
+from tools.ci.modules.git_ops import commit_changes, finalize_git_operations  # noqa: E402
+from tools.ci.modules.vcs import VCS  # noqa: E402
+from tools.ci.modules.workflow_ops import (  # noqa: E402
     format_issue_message,
 )
-from tools.testing.utils import setup_logger
+from tools.testing.utils import setup_logger  # noqa: E402
 
 AGENT_TESTER = "icdev_tester"
 MAX_TEST_RETRY = 4
@@ -75,7 +75,9 @@ def run_test_suite(run_id: str, logger: logging.Logger, skip_e2e: bool = False) 
         logger.info("Running E2E tests...")
         try:
             e2e_results, e2e_passed, e2e_failed = run_e2e_tests_with_resolution(
-                run_id, logger, max_attempts=MAX_E2E_RETRY,
+                run_id,
+                logger,
+                max_attempts=MAX_E2E_RETRY,
             )
             results["e2e_tests"] = e2e_results
             if e2e_failed > 0:
@@ -153,7 +155,7 @@ def main():
 
     state = ICDevState.load(run_id)
     logger = setup_logger(run_id, "icdev_test")
-    logger.info(f"ICDEV Test starting — run_id: {run_id}, issue: #{issue_number}")
+    logger.info(f"ICDEV™ Test starting — run_id: {run_id}, issue: #{issue_number}")
 
     try:
         vcs = VCS()
@@ -198,18 +200,21 @@ def main():
             engine = RecoveryEngine()
             failure_text = json.dumps(results, default=str)
             recovery_result = engine.attempt_recovery(
-                "test", failure_text, run_id, issue_number, state,
+                "test",
+                failure_text,
+                run_id,
+                issue_number,
+                state,
             )
 
             if recovery_result.recovered:
                 recovered = True
-                logger.info(
-                    f"Test recovery succeeded after {recovery_result.attempts} attempt(s)"
-                )
+                logger.info(f"Test recovery succeeded after {recovery_result.attempts} attempt(s)")
                 vcs.comment_on_issue(
                     int(issue_number),
                     format_issue_message(
-                        run_id, "recovery",
+                        run_id,
+                        "recovery",
                         f"Test failures recovered after {recovery_result.attempts} attempt(s). "
                         f"Fixed files: {', '.join(recovery_result.fixed_files)}",
                     ),

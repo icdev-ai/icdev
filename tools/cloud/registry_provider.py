@@ -7,11 +7,9 @@ Pattern: tools/llm/provider.py (D66 provider ABC).
 Each implementation ~40-60 lines with try/except ImportError.
 """
 
-import json
 import logging
 import os
-import sqlite3
-import uuid
+from tools.db.storage import get_connection
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from pathlib import Path
@@ -58,6 +56,7 @@ class RegistryProvider(ABC):
 # ============================================================
 try:
     import boto3 as _boto3_ecr
+
     _HAS_BOTO3_ECR = True
 except ImportError:
     _HAS_BOTO3_ECR = False
@@ -91,8 +90,7 @@ class AWSECRProvider(RegistryProvider):
                 encryptionConfiguration={"encryptionType": "AES256"},
             )
             repo = resp["repository"]
-            return {"name": repo["repositoryName"], "uri": repo["repositoryUri"],
-                    "arn": repo["repositoryArn"]}
+            return {"name": repo["repositoryName"], "uri": repo["repositoryUri"], "arn": repo["repositoryArn"]}
         except Exception:
             return None
 
@@ -102,9 +100,10 @@ class AWSECRProvider(RegistryProvider):
             return []
         try:
             resp = client.describe_repositories(maxResults=100)
-            return [{"name": r["repositoryName"], "uri": r["repositoryUri"],
-                      "arn": r["repositoryArn"]}
-                     for r in resp.get("repositories", [])]
+            return [
+                {"name": r["repositoryName"], "uri": r["repositoryUri"], "arn": r["repositoryArn"]}
+                for r in resp.get("repositories", [])
+            ]
         except Exception:
             return []
 
@@ -114,9 +113,10 @@ class AWSECRProvider(RegistryProvider):
             return []
         try:
             resp = client.list_images(repositoryName=repository, maxResults=100)
-            return [{"tag": img.get("imageTag", "untagged"),
-                      "digest": img.get("imageDigest", "")}
-                     for img in resp.get("imageIds", [])]
+            return [
+                {"tag": img.get("imageTag", "untagged"), "digest": img.get("imageDigest", "")}
+                for img in resp.get("imageIds", [])
+            ]
         except Exception:
             return []
 
@@ -162,6 +162,7 @@ class AWSECRProvider(RegistryProvider):
 try:
     from azure.containerregistry import ContainerRegistryClient
     from azure.identity import DefaultAzureCredential as _AzureCredACR
+
     _HAS_AZURE_ACR = True
 except ImportError:
     _HAS_AZURE_ACR = False
@@ -182,22 +183,25 @@ class AzureACRProvider(RegistryProvider):
         if self._client is None and _HAS_AZURE_ACR and self._registry_url:
             credential = _AzureCredACR()
             self._client = ContainerRegistryClient(
-                endpoint=self._registry_url, credential=credential,
+                endpoint=self._registry_url,
+                credential=credential,
             )
         return self._client
 
     def create_repository(self, name: str, **kwargs) -> Optional[Dict]:
         # ACR repositories are created implicitly on first push
-        return {"name": name, "uri": f"{self._registry_url}/{name}",
-                "note": "ACR repositories are created on first push"}
+        return {
+            "name": name,
+            "uri": f"{self._registry_url}/{name}",
+            "note": "ACR repositories are created on first push",
+        }
 
     def list_repositories(self) -> List[Dict]:
         client = self._get_client()
         if not client:
             return []
         try:
-            return [{"name": name, "uri": f"{self._registry_url}/{name}"}
-                     for name in client.list_repository_names()]
+            return [{"name": name, "uri": f"{self._registry_url}/{name}"} for name in client.list_repository_names()]
         except Exception:
             return []
 
@@ -208,7 +212,7 @@ class AzureACRProvider(RegistryProvider):
         try:
             results = []
             for manifest in client.list_manifest_properties(repository):
-                for tag in (manifest.tags or []):
+                for tag in manifest.tags or []:
                     results.append({"tag": tag, "digest": manifest.digest})
             return results
         except Exception:
@@ -239,6 +243,7 @@ class AzureACRProvider(RegistryProvider):
 # ============================================================
 try:
     from google.cloud import artifactregistry_v1 as _gcp_ar
+
     _HAS_GCP_AR = True
 except ImportError:
     _HAS_GCP_AR = False
@@ -269,11 +274,9 @@ class GCPArtifactRegistryProvider(RegistryProvider):
             parent = f"projects/{self._project_id}/locations/{self._location}"
             repo = _gcp_ar.Repository(
                 format_=_gcp_ar.Repository.Format.DOCKER,
-                description=kwargs.get("description", "ICDEV container repository"),
+                description=kwargs.get("description", "ICDEV™ container repository"),
             )
-            op = client.create_repository(
-                request={"parent": parent, "repository_id": name, "repository": repo}
-            )
+            op = client.create_repository(request={"parent": parent, "repository_id": name, "repository": repo})
             result = op.result()
             return {"name": result.name, "uri": f"{self._location}-docker.pkg.dev/{self._project_id}/{name}"}
         except Exception:
@@ -286,9 +289,7 @@ class GCPArtifactRegistryProvider(RegistryProvider):
         try:
             parent = f"projects/{self._project_id}/locations/{self._location}"
             repos = client.list_repositories(request={"parent": parent})
-            return [{"name": r.name.split("/")[-1],
-                      "format": str(r.format_)}
-                     for r in repos]
+            return [{"name": r.name.split("/")[-1], "format": str(r.format_)} for r in repos]
         except Exception:
             return []
 
@@ -299,9 +300,7 @@ class GCPArtifactRegistryProvider(RegistryProvider):
         try:
             parent = f"projects/{self._project_id}/locations/{self._location}/repositories/{repository}"
             images = client.list_docker_images(request={"parent": parent})
-            return [{"uri": img.uri, "tags": list(img.tags),
-                      "upload_time": str(img.upload_time)}
-                     for img in images]
+            return [{"uri": img.uri, "tags": list(img.tags), "upload_time": str(img.upload_time)} for img in images]
         except Exception:
             return []
 
@@ -323,6 +322,7 @@ class GCPArtifactRegistryProvider(RegistryProvider):
 # ============================================================
 try:
     import oci as _oci_reg
+
     _HAS_OCI_REG = True
 except ImportError:
     _HAS_OCI_REG = False
@@ -403,8 +403,11 @@ class IBMRegistryProvider(RegistryProvider):
 
     def create_repository(self, name: str, **kwargs) -> Optional[Dict]:
         # IBM CR repositories are created implicitly on first push
-        return {"name": name, "uri": f"{self._registry_url}/{name}",
-                "note": "IBM CR repositories are created on first push"}
+        return {
+            "name": name,
+            "uri": f"{self._registry_url}/{name}",
+            "note": "IBM CR repositories are created on first push",
+        }
 
     def list_repositories(self) -> List[Dict]:
         if not self._api_key:
@@ -412,15 +415,18 @@ class IBMRegistryProvider(RegistryProvider):
         try:
             import json as _json
             import urllib.request
+
             url = f"{self._registry_url}/api/v1/images"
-            req = urllib.request.Request(url, headers={
-                "Authorization": f"Bearer {self._api_key}",
-                "Accept": "application/json",
-            })
-            resp = urllib.request.urlopen(req, timeout=10)
+            req = urllib.request.Request(
+                url,
+                headers={
+                    "Authorization": f"Bearer {self._api_key}",
+                    "Accept": "application/json",
+                },
+            )
+            resp = urllib.request.urlopen(req, timeout=10)  # nosec B310 -- URL scheme validated; internal/configured endpoints only
             data = _json.loads(resp.read().decode())
-            repos = list({img.get("RepoTags", [""])[0].rsplit(":", 1)[0]
-                         for img in data if img.get("RepoTags")})
+            repos = list({img.get("RepoTags", [""])[0].rsplit(":", 1)[0] for img in data if img.get("RepoTags")})
             return [{"name": r, "uri": f"{self._registry_url}/{r}"} for r in repos]
         except Exception:
             return []
@@ -431,12 +437,16 @@ class IBMRegistryProvider(RegistryProvider):
         try:
             import json as _json
             import urllib.request
+
             url = f"{self._registry_url}/v2/{repository}/tags/list"
-            req = urllib.request.Request(url, headers={
-                "Authorization": f"Bearer {self._api_key}",
-                "Accept": "application/json",
-            })
-            resp = urllib.request.urlopen(req, timeout=10)
+            req = urllib.request.Request(
+                url,
+                headers={
+                    "Authorization": f"Bearer {self._api_key}",
+                    "Accept": "application/json",
+                },
+            )
+            resp = urllib.request.urlopen(req, timeout=10)  # nosec B310 -- URL scheme validated; internal/configured endpoints only
             data = _json.loads(resp.read().decode())
             return [{"tag": t} for t in data.get("tags", [])]
         except Exception:
@@ -468,7 +478,7 @@ class LocalDockerProvider(RegistryProvider):
     def _init_db(self):
         """Create registry tracking tables if not exists."""
         try:
-            conn = sqlite3.connect(str(self._db_path))
+            conn = get_connection(db_path=str(self._db_path))
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS local_repositories (
                     name TEXT PRIMARY KEY,
@@ -503,7 +513,7 @@ class LocalDockerProvider(RegistryProvider):
     def create_repository(self, name: str, **kwargs) -> Optional[Dict]:
         try:
             now = datetime.now(timezone.utc).isoformat()
-            conn = sqlite3.connect(str(self._db_path))
+            conn = get_connection(db_path=str(self._db_path))
             conn.execute(
                 "INSERT OR IGNORE INTO local_repositories (name, created_at) VALUES (?, ?)",
                 (name, now),
@@ -516,35 +526,33 @@ class LocalDockerProvider(RegistryProvider):
 
     def list_repositories(self) -> List[Dict]:
         try:
-            conn = sqlite3.connect(str(self._db_path))
-            conn.row_factory = sqlite3.Row
-            rows = conn.execute(
-                "SELECT * FROM local_repositories ORDER BY created_at DESC"
-            ).fetchall()
+            conn = get_connection(db_path=str(self._db_path))
+            rows = conn.execute("SELECT * FROM local_repositories ORDER BY created_at DESC").fetchall()
             conn.close()
-            return [{"name": r["name"], "uri": f"localhost:5000/{r['name']}",
-                      "created_at": r["created_at"]} for r in rows]
+            return [
+                {"name": r["name"], "uri": f"localhost:5000/{r['name']}", "created_at": r["created_at"]} for r in rows
+            ]
         except Exception:
             return []
 
     def list_images(self, repository: str) -> List[Dict]:
         try:
-            conn = sqlite3.connect(str(self._db_path))
-            conn.row_factory = sqlite3.Row
+            conn = get_connection(db_path=str(self._db_path))
             rows = conn.execute(
                 "SELECT * FROM local_images WHERE repository = ? ORDER BY pushed_at DESC",
                 (repository,),
             ).fetchall()
             conn.close()
-            return [{"tag": r["tag"], "digest": r["digest"],
-                      "size_bytes": r["size_bytes"], "pushed_at": r["pushed_at"]}
-                     for r in rows]
+            return [
+                {"tag": r["tag"], "digest": r["digest"], "size_bytes": r["size_bytes"], "pushed_at": r["pushed_at"]}
+                for r in rows
+            ]
         except Exception:
             return []
 
     def delete_image(self, repository: str, tag: str) -> bool:
         try:
-            conn = sqlite3.connect(str(self._db_path))
+            conn = get_connection(db_path=str(self._db_path))
             cursor = conn.execute(
                 "DELETE FROM local_images WHERE repository = ? AND tag = ?",
                 (repository, tag),

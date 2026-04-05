@@ -471,7 +471,7 @@ def run_remediation(
     # Step 1: Get or run audit
     if stream:
         print("\n" + "=" * 60, file=sys.stderr)
-        print("  ICDEV Production Remediation", file=sys.stderr)
+        print("  ICDEV™ Production Remediation", file=sys.stderr)
         print("=" * 60, file=sys.stderr)
 
     audit_report = None
@@ -675,7 +675,7 @@ def run_remediation(
             conn = _get_db()
             conn.execute(
                 """UPDATE remediation_audit_log SET report_json = ?
-                   WHERE rowid = (SELECT MAX(rowid) FROM remediation_audit_log)""",
+                   WHERE id = (SELECT MAX(id) FROM remediation_audit_log)""",
                 (json.dumps(report.to_dict()),),
             )
             conn.commit()
@@ -695,7 +695,7 @@ def _format_human(report: RemediationReport) -> str:
     lines = []
     lines.append("")
     lines.append("=" * 60)
-    lines.append("  ICDEV Production Remediation Report")
+    lines.append("  ICDEV™ Production Remediation Report")
     lines.append("=" * 60)
     lines.append("")
 
@@ -764,7 +764,7 @@ def _format_human(report: RemediationReport) -> str:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Production Remediation — auto-fix audit blockers"
+        description="ICDEV™ Production Remediation — auto-fix audit blockers"
     )
     parser.add_argument("--auto", action="store_true", help="Execute auto-fix commands without prompting")
     parser.add_argument("--dry-run", action="store_true", help="Preview what would be fixed without executing")

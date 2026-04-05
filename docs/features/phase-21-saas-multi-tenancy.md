@@ -9,16 +9,16 @@
 | Status | Implemented |
 | Priority | P0 |
 | Dependencies | Phase 17 (Multi-Framework Compliance), Phase 20 (FIPS 199/200 Security Categorization) |
-| Author | ICDEV Architect Agent |
+| Author | ICDEV™ Architect Agent |
 | Date | 2026-02-23 |
 
 ---
 
 ## 1. Problem Statement
 
-ICDEV was originally designed as a single-tenant CLI tool running on a developer's local machine. As adoption grows across government programs, defense contractors, and compliance-focused organizations, each team must maintain its own separate ICDEV installation. This creates operational overhead (installation, updates, configuration), inconsistent environments, and no ability to share compliance artifacts, patterns, or tooling across organizational boundaries.
+ICDEV™ was originally designed as a single-tenant CLI tool running on a developer's local machine. As adoption grows across government programs, defense contractors, and compliance-focused organizations, each team must maintain its own separate ICDEV™ installation. This creates operational overhead (installation, updates, configuration), inconsistent environments, and no ability to share compliance artifacts, patterns, or tooling across organizational boundaries.
 
-Transforming ICDEV into a multi-tenant SaaS platform requires solving multiple hard problems simultaneously: per-tenant data isolation that satisfies DoD classification requirements (IL2 through IL6), three distinct authentication methods (API keys, OAuth/OIDC, CAC/PIV), dual API transport (REST for generic clients and MCP Streamable HTTP for Claude Code users), subscription-based feature gating, and on-premises deployment for air-gapped environments via Helm charts.
+Transforming ICDEV™ into a multi-tenant SaaS platform requires solving multiple hard problems simultaneously: per-tenant data isolation that satisfies DoD classification requirements (IL2 through IL6), three distinct authentication methods (API keys, OAuth/OIDC, CAC/PIV), dual API transport (REST for generic clients and MCP Streamable HTTP for Claude Code users), subscription-based feature gating, and on-premises deployment for air-gapped environments via Helm charts.
 
 The SaaS layer must wrap existing tools without rewriting them. Twenty phases of deterministic Python scripts must continue to function identically -- the API gateway adds auth, tenant resolution, and routing, while tools remain stateless and tenant-unaware. Each REST or MCP endpoint resolves the tenant, routes to their isolated database, calls the existing Python tool, and returns the result.
 
@@ -26,7 +26,7 @@ The SaaS layer must wrap existing tools without rewriting them. Twenty phases of
 
 ## 2. Goals
 
-1. Expose ICDEV compliance automation tools as a multi-tenant SaaS platform via REST API and MCP Streamable HTTP transport
+1. Expose ICDEV™ compliance automation tools as a multi-tenant SaaS platform via REST API and MCP Streamable HTTP transport
 2. Implement 3 authentication methods: API key (SHA-256 hashed), OAuth 2.0/OIDC (JWT + JWKS), and CAC/PIV (X.509 certificate CN lookup)
 3. Enforce per-tenant database isolation: dedicated SQLite (dev) or PostgreSQL (prod) per tenant, not row-level separation
 4. Support 3 subscription tiers (Starter, Professional, Enterprise) with feature gating, rate limiting, and impact level restrictions
@@ -79,7 +79,7 @@ The SaaS layer must wrap existing tools without rewriting them. Twenty phases of
                     |                  |                  |
            +--------v------+  +--------v------+  +-------v-------+
            | Tenant A DB   |  | Tenant B DB   |  | Tenant C DB   |
-           | (full ICDEV   |  | (full ICDEV   |  | (full ICDEV   |
+           | (full ICDEV™   |  | (full ICDEV™   |  | (full ICDEV™   |
            |  schema)      |  |  schema)      |  |  schema)      |
            +---------------+  +---------------+  +---------------+
 ```
@@ -100,10 +100,10 @@ The SaaS architecture follows a strict layering principle:
 ### 4.1 API Transport
 
 #### REQ-21-001: REST API
-The system SHALL expose ICDEV tools via REST API at `/api/v1/*` endpoints using standard HTTP JSON for generic clients, with Swagger UI at `/api/v1/docs` and OpenAPI 3.0.3 spec at `/api/v1/openapi.json`.
+The system SHALL expose ICDEV™ tools via REST API at `/api/v1/*` endpoints using standard HTTP JSON for generic clients, with Swagger UI at `/api/v1/docs` and OpenAPI 3.0.3 spec at `/api/v1/openapi.json`.
 
 #### REQ-21-002: MCP Streamable HTTP
-The system SHALL expose ICDEV tools via MCP Streamable HTTP transport at `/mcp/v1/` using JSON-RPC 2.0 per the MCP specification (2025-03-26) for Claude Code clients.
+The system SHALL expose ICDEV™ tools via MCP Streamable HTTP transport at `/mcp/v1/` using JSON-RPC 2.0 per the MCP specification (2025-03-26) for Claude Code clients.
 
 ### 4.2 Authentication
 
@@ -119,7 +119,7 @@ The system SHALL authenticate requests via `X-Client-Cert-CN` header (from nginx
 ### 4.3 Tenant Isolation
 
 #### REQ-21-006: Dedicated Database Per Tenant
-The system SHALL provision a dedicated database per tenant (SQLite for dev, PostgreSQL for prod) containing the full ICDEV schema. No row-level tenant filtering (D60).
+The system SHALL provision a dedicated database per tenant (SQLite for dev, PostgreSQL for prod) containing the full ICDEV™ schema. No row-level tenant filtering (D60).
 
 #### REQ-21-007: Classification-Scaled Isolation
 Tenant compute isolation SHALL scale with classification: shared K8s namespace (IL2-IL4), dedicated K8s namespace + node pool (IL5), dedicated AWS sub-account on SIPR (IL6).
@@ -149,7 +149,7 @@ On license expiration, the system SHALL allow read-only access for 30 days, then
 ### 4.6 Tenant Lifecycle
 
 #### REQ-21-014: Provisioning Pipeline
-Tenant provisioning SHALL follow the pipeline: pending -> provisioning -> active, including: dedicated DB creation, full ICDEV schema application, K8s namespace creation, network policy application, admin API key generation, and webhook notification.
+Tenant provisioning SHALL follow the pipeline: pending -> provisioning -> active, including: dedicated DB creation, full ICDEV™ schema application, K8s namespace creation, network policy application, admin API key generation, and webhook notification.
 
 #### REQ-21-015: IL5+ Admin Approval
 Tenants requesting IL5 or IL6 impact levels SHALL require explicit admin approval before provisioning proceeds.
@@ -185,7 +185,7 @@ Tenants requesting IL5 or IL6 impact levels SHALL require explicit admin approva
 | `tools/saas/tenant_db_adapter.py` | Route tool DB calls to tenant-specific database |
 | `tools/saas/rate_limiter.py` | Per-tenant rate limiting by subscription tier |
 | `tools/saas/db/db_compat.py` | SQLite-PostgreSQL compatibility layer |
-| `tools/saas/db/pg_schema.py` | Full ICDEV schema ported to PostgreSQL DDL |
+| `tools/saas/db/pg_schema.py` | Full ICDEV™ schema ported to PostgreSQL DDL |
 | `tools/saas/artifacts/delivery_engine.py` | Push artifacts to tenant S3/Git/SFTP |
 | `tools/saas/bedrock/bedrock_proxy.py` | Route LLM calls to BYOK or shared Bedrock pool |
 | `tools/saas/licensing/license_generator.py` | Generate RSA-SHA256 signed offline license keys |

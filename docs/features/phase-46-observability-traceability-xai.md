@@ -9,16 +9,16 @@
 | Status | Implemented |
 | Priority | P1 |
 | Dependencies | Phase 39 (Observability & Operations), Phase 37 (MITRE ATLAS Integration), Phase 45 (OWASP Agentic AI Security) |
-| Author | ICDEV Architect Agent |
+| Author | ICDEV™ Architect Agent |
 | Date | 2026-02-23 |
 
 ---
 
 ## 1. Problem Statement
 
-ICDEV's 15-agent multi-agent architecture makes autonomous decisions across code generation, compliance assessment, security scanning, infrastructure provisioning, and deployment. Phase 39 provides hook-based event capture and SIEM forwarding, but operators still cannot answer fundamental questions: Which agent made a specific decision? What tool calls contributed to a given output? Why did the system choose one approach over another? Can we trace the lineage of a compliance artifact back to the requirements that drove it?
+ICDEV™'s 15-agent multi-agent architecture makes autonomous decisions across code generation, compliance assessment, security scanning, infrastructure provisioning, and deployment. Phase 39 provides hook-based event capture and SIEM forwarding, but operators still cannot answer fundamental questions: Which agent made a specific decision? What tool calls contributed to a given output? Why did the system choose one approach over another? Can we trace the lineage of a compliance artifact back to the requirements that drove it?
 
-These questions are not academic — they are mandated by compliance frameworks. NIST AI RMF MEASURE 2.5/2.7/2.8 requires traceable AI decision-making. The DoD Responsible AI (RAI) "Traceable" principle demands that AI systems provide audit trails of their reasoning. ISO 42001 requires documentation of AI system behavior and outputs. Without distributed tracing, provenance tracking, and explainability metrics, ICDEV cannot satisfy these requirements for ATO submissions involving agentic AI components.
+These questions are not academic — they are mandated by compliance frameworks. NIST AI RMF MEASURE 2.5/2.7/2.8 requires traceable AI decision-making. The DoD Responsible AI (RAI) "Traceable" principle demands that AI systems provide audit trails of their reasoning. ISO 42001 requires documentation of AI system behavior and outputs. Without distributed tracing, provenance tracking, and explainability metrics, ICDEV™ cannot satisfy these requirements for ATO submissions involving agentic AI components.
 
 Phase 46 delivers three interconnected capabilities: distributed tracing (OpenTelemetry + SQLite dual-mode) for span-level visibility into every tool call, LLM invocation, and A2A message; W3C PROV-AGENT provenance tracking for entity-activity-relation lineage of all artifacts; and AgentSHAP tool attribution using Monte Carlo Shapley values for quantitative explainability of which tools contributed most to each outcome. These capabilities are exposed through 3 new dashboard pages (/traces, /provenance, /xai), an MCP server with 6 tools, and an XAI compliance assessor with 10 automated checks.
 

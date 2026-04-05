@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Dashboard CI/CD API — pipeline status, conversations, connectors
+# ICDEV™ Dashboard CI/CD API — pipeline status, conversations, connectors
 
 """
 Dashboard API endpoints for CI/CD pipeline monitoring.
@@ -12,8 +12,8 @@ Provides:
     GET /api/cicd/queue/<key>        — Queued events for a session
 """
 
-import sqlite3
 import sys
+from tools.db.storage import get_connection
 from pathlib import Path
 
 from flask import Blueprint, jsonify, request
@@ -29,8 +29,7 @@ cicd_api = Blueprint("cicd_api", __name__)
 
 def _get_db():
     """Get database connection with row_factory."""
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(DB_PATH))
     return conn
 
 
@@ -62,16 +61,15 @@ def list_pipelines():
         pipelines = [dict(r) for r in rows]
 
         # Summary counts
-        summary = conn.execute(
-            "SELECT status, COUNT(*) as cnt FROM ci_pipeline_runs "
-            "GROUP BY status"
-        ).fetchall()
+        summary = conn.execute("SELECT status, COUNT(*) as cnt FROM ci_pipeline_runs GROUP BY status").fetchall()
 
-        return jsonify({
-            "pipelines": pipelines,
-            "total": len(pipelines),
-            "summary": {r["status"]: r["cnt"] for r in summary},
-        })
+        return jsonify(
+            {
+                "pipelines": pipelines,
+                "total": len(pipelines),
+                "summary": {r["status"]: r["cnt"] for r in summary},
+            }
+        )
     except Exception as e:
         return jsonify({"pipelines": [], "total": 0, "error": str(e)})
     finally:
@@ -96,9 +94,7 @@ def pipeline_detail(run_id):
         # Fetch recovery attempts from audit trail
         try:
             recovery = conn.execute(
-                "SELECT * FROM audit_trail "
-                "WHERE event_type = 'ci.recovery' AND project_id = ? "
-                "ORDER BY created_at ASC",
+                "SELECT * FROM audit_trail WHERE event_type = 'ci.recovery' AND project_id = ? ORDER BY created_at ASC",
                 (run_id,),
             ).fetchall()
             result["recovery_attempts"] = [dict(r) for r in recovery]
@@ -108,15 +104,13 @@ def pipeline_detail(run_id):
         # Fetch conversation if exists
         try:
             conversation = conn.execute(
-                "SELECT * FROM ci_conversations "
-                "WHERE run_id = ? ORDER BY created_at DESC LIMIT 1",
+                "SELECT * FROM ci_conversations WHERE run_id = ? ORDER BY created_at DESC LIMIT 1",
                 (run_id,),
             ).fetchone()
             if conversation:
                 conv = dict(conversation)
                 turns = conn.execute(
-                    "SELECT * FROM ci_conversation_turns "
-                    "WHERE session_id = ? ORDER BY turn_number ASC",
+                    "SELECT * FROM ci_conversation_turns WHERE session_id = ? ORDER BY turn_number ASC",
                     (conv["id"],),
                 ).fetchall()
                 conv["turns"] = [dict(t) for t in turns]
@@ -137,8 +131,7 @@ def conversation_view(session_key):
     conn = _get_db()
     try:
         conversation = conn.execute(
-            "SELECT * FROM ci_conversations "
-            "WHERE session_key = ? ORDER BY created_at DESC LIMIT 1",
+            "SELECT * FROM ci_conversations WHERE session_key = ? ORDER BY created_at DESC LIMIT 1",
             (session_key,),
         ).fetchone()
 
@@ -147,8 +140,7 @@ def conversation_view(session_key):
 
         conv = dict(conversation)
         turns = conn.execute(
-            "SELECT * FROM ci_conversation_turns "
-            "WHERE session_id = ? ORDER BY turn_number ASC",
+            "SELECT * FROM ci_conversation_turns WHERE session_id = ? ORDER BY turn_number ASC",
             (conv["id"],),
         ).fetchall()
         conv["turns"] = [dict(t) for t in turns]
@@ -165,6 +157,7 @@ def connector_status():
     """Get enabled connector status."""
     try:
         from tools.ci.connectors.connector_registry import ConnectorRegistry
+
         connectors = ConnectorRegistry.list_connectors()
     except ImportError:
         connectors = {}
@@ -172,6 +165,7 @@ def connector_status():
     # Also load config to show all configured channels
     try:
         import yaml
+
         config_path = BASE_DIR / "args" / "cicd_config.yaml"
         if config_path.exists():
             with open(config_path) as f:
@@ -207,11 +201,13 @@ def event_queue(session_key):
             (session_key,),
         ).fetchall()
 
-        return jsonify({
-            "session_key": session_key,
-            "queued_events": [dict(r) for r in rows],
-            "total": len(rows),
-        })
+        return jsonify(
+            {
+                "session_key": session_key,
+                "queued_events": [dict(r) for r in rows],
+                "total": len(rows),
+            }
+        )
     except Exception as e:
         return jsonify({"queued_events": [], "total": 0, "error": str(e)})
     finally:

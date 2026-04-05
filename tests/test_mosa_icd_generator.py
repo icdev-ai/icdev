@@ -1,6 +1,7 @@
 # [TEMPLATE: CUI // SP-CTI]
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 """Tests for tools.mosa.icd_generator -- ICD generation for MOSA compliance."""
@@ -15,7 +16,6 @@ from icdev.tools.mosa.icd_generator import (
     CUI_BANNER,
     _build_icd_content,
     _discover_interfaces,
-    _ensure_table,
     generate_icd,
 )
 
@@ -23,6 +23,7 @@ from icdev.tools.mosa.icd_generator import (
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_db(tmp_path):
     """Create an in-memory-style SQLite DB with projects + audit_trail tables."""
@@ -95,6 +96,7 @@ def _default_config():
 # TestDiscoverInterfaces
 # ---------------------------------------------------------------------------
 
+
 class TestDiscoverInterfaces:
     """_discover_interfaces: scanning project directory for OpenAPI specs."""
 
@@ -139,6 +141,7 @@ class TestDiscoverInterfaces:
 # ---------------------------------------------------------------------------
 # TestBuildICDContent
 # ---------------------------------------------------------------------------
+
 
 class TestBuildICDContent:
     """_build_icd_content: generating markdown ICD from interface + project."""
@@ -191,6 +194,7 @@ class TestBuildICDContent:
 # TestGenerateICD
 # ---------------------------------------------------------------------------
 
+
 class TestGenerateICD:
     """generate_icd: end-to-end ICD generation + DB persist."""
 
@@ -203,8 +207,7 @@ class TestGenerateICD:
         assert result["status"] == "draft"
         assert result["approval_status"] == "pending"
         assert Path(result["file_path"]).exists()
-        row = conn.execute("SELECT * FROM icd_documents WHERE id = ?",
-                           (result["id"],)).fetchone()
+        row = conn.execute("SELECT * FROM icd_documents WHERE id = ?", (result["id"],)).fetchone()
         assert row is not None
         assert dict(row)["interface_name"] == "Widget API"
         conn.close()
@@ -214,8 +217,7 @@ class TestGenerateICD:
         out_dir = tmp_path / "audit_out"
         ifc = {"name": "AuditSvc", "spec": _sample_spec(), "path": ""}
         generate_icd(conn, "proj-1", ifc, str(out_dir), _default_config())
-        rows = conn.execute("SELECT * FROM audit_trail WHERE project_id = ?",
-                            ("proj-1",)).fetchall()
+        rows = conn.execute("SELECT * FROM audit_trail WHERE project_id = ?", ("proj-1",)).fetchall()
         assert len(rows) >= 1
         assert "ICD generated" in dict(rows[0])["action"]
         conn.close()
@@ -224,6 +226,7 @@ class TestGenerateICD:
 # ---------------------------------------------------------------------------
 # TestCuiBanners
 # ---------------------------------------------------------------------------
+
 
 class TestCuiBanners:
     """CUI banner and classification marking presence."""
@@ -246,18 +249,21 @@ class TestCuiBanners:
 # TestCLI
 # ---------------------------------------------------------------------------
 
+
 class TestCLI:
     """CLI argument handling in main()."""
 
     def test_requires_project_id(self):
         with pytest.raises(SystemExit):
             from icdev.tools.mosa.icd_generator import main
+
             with patch("sys.argv", ["icd_generator.py", "--all"]):
                 main()
 
     def test_requires_interface_id_or_all(self):
         with pytest.raises(SystemExit):
             from icdev.tools.mosa.icd_generator import main
+
             with patch("sys.argv", ["icd_generator.py", "--project-id", "proj-1"]):
                 main()
 

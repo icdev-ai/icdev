@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Backup and restore manager for ICDEV databases (SQLite and PostgreSQL).
+"""Backup and restore manager for ICDEV™ databases (SQLite and PostgreSQL).
 
 Provides WAL-safe online backup via sqlite3 backup() API, SHA-256 integrity
 verification, optional AES-256-CBC encryption, per-tenant backup, and
@@ -156,7 +156,7 @@ def _log_audit(event_type: str, action: str, details: dict = None) -> None:
 
 class BackupManager:
     """Manages backup, restore, verify, encrypt, and prune operations for
-    ICDEV SQLite and PostgreSQL databases.
+    ICDEV™ SQLite and PostgreSQL databases.
 
     All paths are constructed with pathlib.Path and ``/`` operators.
     Thread-safe: no global mutable state; configuration is read-only after init.

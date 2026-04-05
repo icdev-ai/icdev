@@ -9,28 +9,28 @@
 | Status | Implemented |
 | Priority | P2 |
 | Dependencies | Phase 22 (Marketplace), Phase 23 (Universal Compliance), Phase 29 (Proactive Monitoring) |
-| Author | ICDEV Architect Agent |
+| Author | ICDEV™ Architect Agent |
 | Date | 2026-02-23 |
 
 ---
 
 ## 1. Problem Statement
 
-ICDEV builds and maintains Gov/DoD applications in a rapidly evolving threat landscape. New CVEs are published daily, compliance frameworks are updated quarterly, competitor tools release new capabilities monthly, and developer communities continuously discover better patterns and practices. Currently, ICDEV discovers these changes only when a human operator manually investigates -- after a gate fails, a vulnerability is exploited, or a customer reports a gap. This reactive posture means ICDEV is always behind the curve, patching yesterday's problems instead of anticipating tomorrow's.
+ICDEV™ builds and maintains Gov/DoD applications in a rapidly evolving threat landscape. New CVEs are published daily, compliance frameworks are updated quarterly, competitor tools release new capabilities monthly, and developer communities continuously discover better patterns and practices. Currently, ICDEV™ discovers these changes only when a human operator manually investigates -- after a gate fails, a vulnerability is exploited, or a customer reports a gap. This reactive posture means ICDEV™ is always behind the curve, patching yesterday's problems instead of anticipating tomorrow's.
 
 The cost of this lag is compounded in the Gov/DoD context. A compliance framework update that goes unnoticed for 90 days can invalidate an ATO. A critical CVE that is not triaged within SLA can trigger a CSSP incident. A competitor capability gap that is not addressed can lose a contract re-compete. An internal optimization that works in one child application but is never propagated wastes engineering effort across the fleet.
 
-The Innovation Engine transforms ICDEV from a reactive tool that waits for instructions into a proactive system that continuously discovers, evaluates, and integrates improvements. It scans external sources (GitHub trending, NVD, Stack Overflow, Hacker News, package registries, compliance feeds), mines internal telemetry (failed self-heals, gate failure frequency, unused tools, slow pipeline stages, NLQ gaps), monitors competitors and standards bodies, and feeds all discoveries through a 5-stage compliance triage pipeline before generating solution specifications. The entire pipeline operates within strict guardrails: budget caps (max 10 auto-solutions per PI), license scanning (no GPL/AGPL/SSPL), boundary impact assessment, and mandatory compliance preservation.
+The Innovation Engine transforms ICDEV™ from a reactive tool that waits for instructions into a proactive system that continuously discovers, evaluates, and integrates improvements. It scans external sources (GitHub trending, NVD, Stack Overflow, Hacker News, package registries, compliance feeds), mines internal telemetry (failed self-heals, gate failure frequency, unused tools, slow pipeline stages, NLQ gaps), monitors competitors and standards bodies, and feeds all discoveries through a 5-stage compliance triage pipeline before generating solution specifications. The entire pipeline operates within strict guardrails: budget caps (max 10 auto-solutions per PI), license scanning (no GPL/AGPL/SSPL), boundary impact assessment, and mandatory compliance preservation.
 
 ---
 
 ## 2. Goals
 
 1. Implement web intelligence scanning across 6 external source categories (GitHub, NVD, Stack Overflow, Hacker News, package registries, compliance feeds) with per-source configurable scan frequency
-2. Enable introspective analysis that mines internal ICDEV telemetry for improvement opportunities: failed self-heals, gate failure frequency, unused tools, slow pipeline stages, NLQ gaps, and knowledge gaps -- fully air-gap safe (D203)
+2. Enable introspective analysis that mines internal ICDEV™ telemetry for improvement opportunities: failed self-heals, gate failure frequency, unused tools, slow pipeline stages, NLQ gaps, and knowledge gaps -- fully air-gap safe (D203)
 3. Score all discovered signals across 5 weighted dimensions: community demand (0.30), impact breadth (0.25), feasibility (0.20), compliance alignment (0.15), and novelty (0.10)
-4. Triage signals through a 5-stage compliance gate: classify signal, GOTCHA fit check, boundary impact assessment, compliance pre-check, and duplicate/license check
-5. Generate template-based solution specifications (not LLM-generated) with problem statement, GOTCHA layer mapping, acceptance criteria, compliance impact, and test plan (D208)
+4. Triage signals through a 5-stage compliance gate: classify signal, FORGE fit check, boundary impact assessment, compliance pre-check, and duplicate/license check
+5. Generate template-based solution specifications (not LLM-generated) with problem statement, FORGE layer mapping, acceptance criteria, compliance impact, and test plan (D208)
 6. Support competitive intelligence by monitoring GitHub-based competitors (backstage, snyk, trivy, checkov) for feature releases and performing gap analysis (D205)
 7. Monitor standards body publications (NIST CSRC, CISA advisories, DoD CIO memos, FedRAMP updates) with graceful degradation when offline (D204)
 8. Implement feedback calibration that adjusts scoring weights based on marketplace adoption metrics, with a maximum 0.02 step per calibration cycle and minimum 10 data points
@@ -72,19 +72,19 @@ The Innovation Engine transforms ICDEV from a reactive tool that waits for instr
 |  STAGE 3: TRIAGE      v                                        |
 |  +---------------------------------------------------+        |
 |  | 5-Stage Compliance Gate                            |        |
-|  | 1. Classify -> 2. GOTCHA Fit -> 3. Boundary       |        |
+|  | 1. Classify -> 2. FORGE Fit -> 3. Boundary       |        |
 |  | 4. Compliance Pre-Check -> 5. Dedup/License        |        |
 |  +---------------------------------------------------+        |
 |                       |                                        |
 |  STAGE 4: GENERATE    v                                        |
 |  +---------------------------------------------------+        |
 |  | Solution Generator (template-based, not LLM)      |        |
-|  | Problem + GOTCHA Map + Acceptance + Tests          |        |
+|  | Problem + FORGE Map + Acceptance + Tests          |        |
 |  +---------------------------------------------------+        |
 |                       |                                        |
 |  STAGES 5-7           v                                        |
 |  +---------------------------------------------------+        |
-|  | BUILD (ATLAS/M-ATLAS) -> PUBLISH (marketplace     |        |
+|  | BUILD (ANVIL/M-ANVIL) -> PUBLISH (marketplace     |        |
 |  | 7-gate) -> MEASURE + CALIBRATE (feedback loop)    |        |
 |  +---------------------------------------------------+        |
 +---------------------------------------------------------------+
@@ -114,10 +114,10 @@ The Innovation Engine transforms ICDEV from a reactive tool that waits for instr
 The system SHALL scan 6 external source categories (GitHub, NVD, Stack Overflow, Hacker News, package registries, compliance feeds) for innovation signals, with per-source configurable scan frequency defined in `args/innovation_config.yaml`.
 
 #### REQ-35-002: Introspective Analysis (D203)
-The system SHALL perform introspective analysis that mines internal ICDEV telemetry (failed self-heals, gate failures, unused tools, slow pipelines, NLQ gaps, knowledge gaps) for improvement opportunities. This analysis SHALL be fully air-gap safe with no external network dependency.
+The system SHALL perform introspective analysis that mines internal ICDEV™ telemetry (failed self-heals, gate failures, unused tools, slow pipelines, NLQ gaps, knowledge gaps) for improvement opportunities. This analysis SHALL be fully air-gap safe with no external network dependency.
 
 #### REQ-35-003: Competitive Intelligence (D205)
-The system SHALL monitor GitHub-based competitor repositories (backstage, snyk, trivy, checkov) for feature releases and generate gap analysis reports comparing competitor capabilities to ICDEV features.
+The system SHALL monitor GitHub-based competitor repositories (backstage, snyk, trivy, checkov) for feature releases and generate gap analysis reports comparing competitor capabilities to ICDEV™ features.
 
 #### REQ-35-004: Standards Monitoring (D204)
 The system SHALL monitor standards body publications (NIST CSRC, CISA, DoD CIO, FedRAMP) and degrade gracefully when offline, skipping HTTP requests and logging warnings without failing the pipeline.
@@ -133,7 +133,7 @@ The system SHALL apply human-in-the-loop thresholds: score >= 0.80 auto-queues f
 ### 4.3 Triage
 
 #### REQ-35-007: Five-Stage Compliance Triage
-Every signal SHALL pass through all 5 triage stages: (1) classify signal by category, (2) GOTCHA fit check (must map to Goal/Tool/Arg/Context/HardPrompt), (3) boundary impact assessment (GREEN/YELLOW/ORANGE/RED), (4) compliance pre-check (must not weaken compliance posture), and (5) duplicate and license check.
+Every signal SHALL pass through all 5 triage stages: (1) classify signal by category, (2) FORGE fit check (must map to Goal/Tool/Arg/Context/HardPrompt), (3) boundary impact assessment (GREEN/YELLOW/ORANGE/RED), (4) compliance pre-check (must not weaken compliance posture), and (5) duplicate and license check.
 
 #### REQ-35-008: License Blocking (D202)
 The triage engine SHALL block signals associated with GPL, AGPL, or SSPL licensed components (copyleft risk for Gov/DoD environments).
@@ -144,7 +144,7 @@ The triage engine SHALL detect duplicate signals using content hash comparison w
 ### 4.4 Generation and Feedback
 
 #### REQ-35-010: Template-Based Solution Specs (D208)
-The system SHALL generate solution specifications from templates (not LLM-generated) containing: problem statement, GOTCHA layer mapping, proposed solution, acceptance criteria (BDD-style), compliance impact assessment, test plan, marketplace asset type, and estimated effort.
+The system SHALL generate solution specifications from templates (not LLM-generated) containing: problem statement, FORGE layer mapping, proposed solution, acceptance criteria (BDD-style), compliance impact assessment, test plan, marketplace asset type, and estimated effort.
 
 #### REQ-35-011: Budget Cap (D201)
 The system SHALL enforce a maximum of 10 auto-generated solutions per Program Increment to prevent scope creep.
@@ -212,7 +212,7 @@ The system SHALL support continuous background scanning in daemon mode with conf
 - License check: no GPL/AGPL/SSPL components (copyleft risk for Gov/DoD)
 - Boundary impact: RED items blocked from auto-generation, require manual review
 - Compliance alignment: signals that would weaken existing compliance posture are blocked
-- GOTCHA fit: signals must map to at least one GOTCHA layer (Goal/Tool/Arg/Context/HardPrompt)
+- FORGE fit: signals must map to at least one FORGE layer (Goal/Tool/Arg/Context/HardPrompt)
 - Duplicate detection: content hash dedup with similarity > 0.85 prevents redundant work
 - Budget cap: max 10 auto-solutions per PI enforced at the solution generation stage
 - Build gates: all generated solutions must pass existing security gates (SAST, deps, secrets, CUI)

@@ -6,8 +6,8 @@
 Automate the government contracting capture pipeline from SAM.gov opportunity discovery through proposal response drafting. The flywheel:
 
 ```
-SAM.gov RFPs → Mine requirement patterns → Map to ICDEV capabilities → Identify gaps →
-Build enhancements → Draft proposals via GovProposal → Win → Deliver ICDEV free on-prem → Repeat
+SAM.gov RFPs → Mine requirement patterns → Map to ICDEV™ capabilities → Identify gaps →
+Build enhancements → Draft proposals via GovProposal → Win → Deliver ICDEV™ free on-prem → Repeat
 ```
 
 ## Pipeline Stages
@@ -29,7 +29,7 @@ Build enhancements → Draft proposals via GovProposal → Win → Deliver ICDEV
 
 ### 3. MAP
 **Tool:** `tools/govcon/capability_mapper.py`, `tools/govcon/gap_analyzer.py`
-- Match requirement patterns to ICDEV capability catalog (`context/govcon/icdev_capability_catalog.json`)
+- Match requirement patterns to ICDEV™ capability catalog (`context/govcon/icdev_capability_catalog.json`)
 - Compute coverage scores using keyword overlap
 - Grade: L (>= 0.80), M (0.40-0.79), N (< 0.40)
 - Identify gaps and generate enhancement recommendations
@@ -83,7 +83,7 @@ Build enhancements → Draft proposals via GovProposal → Win → Deliver ICDEV
 
 | Model | Description |
 |-------|-------------|
-| `on_prem_free` | Winning customers get ICDEV free on-prem |
+| `on_prem_free` | Winning customers get ICDEV™ free on-prem |
 | `saas_paid` | Other bidders pay SaaS pricing |
 | `negotiated` | Custom terms |
 | `tbd` | Not yet decided |

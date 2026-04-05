@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Event Envelope — unified event format for all CI/CD triggers (D132)
+# ICDEV™ Event Envelope — unified event format for all CI/CD triggers (D132)
 
 """
 Unified event envelope for all CI/CD trigger sources.
@@ -19,13 +19,14 @@ Usage:
     result = router.route(envelope)
 """
 
+import re
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Optional
 
 
-BOT_IDENTIFIER = "[ICDEV-BOT]"
+BOT_IDENTIFIER = "[ICDEV™-BOT]"
 
 
 @dataclass
@@ -33,19 +34,19 @@ class EventEnvelope:
     """Unified event format for all CI/CD trigger sources."""
 
     event_id: str
-    source: str             # github_webhook, gitlab_webhook, github_poll, gitlab_poll,
-                            # gitlab_task_monitor, slack, mattermost, chat_plugin
-    event_type: str         # issue_opened, issue_comment, mr_opened, mr_comment,
-                            # chat_message, slash_command
-    platform: str           # github, gitlab, slack, mattermost
-    session_key: str        # Issue/MR number or channel:thread — one active run per key
+    source: str  # github_webhook, gitlab_webhook, github_poll, gitlab_poll,
+    # gitlab_task_monitor, slack, mattermost, chat_plugin
+    event_type: str  # issue_opened, issue_comment, mr_opened, mr_comment,
+    # chat_message, slash_command
+    platform: str  # github, gitlab, slack, mattermost
+    session_key: str  # Issue/MR number or channel:thread — one active run per key
     raw_payload: dict
-    content: str            # Text body (issue body, comment, chat message)
+    content: str  # Text body (issue body, comment, chat message)
     author: str
     is_bot: bool
-    workflow_command: str    # Extracted: "icdev_plan", "icdev_sdlc", etc. or ""
-    run_id: str             # Extracted from content, or ""
-    timestamp: str          # ISO 8601
+    workflow_command: str  # Extracted: "icdev_plan", "icdev_sdlc", etc. or ""
+    run_id: str  # Extracted from content, or ""
+    timestamp: str  # ISO 8601
     classification: str = "CUI"
     metadata: dict = field(default_factory=dict)
 
@@ -65,16 +66,12 @@ class EventEnvelope:
         run_id = ""
 
         # Match icdev_ commands
-        cmd_match = re.search(
-            r"(?:/?)(icdev_\w+)", text, re.IGNORECASE
-        )
+        cmd_match = re.search(r"(?:/?)(icdev_\w+)", text, re.IGNORECASE)
         if cmd_match:
             workflow_command = cmd_match.group(1).lower()
 
         # Match run_id patterns: run_id:abc123 or run_id: abc123
-        rid_match = re.search(
-            r"run_id[:\s]+([a-zA-Z0-9_-]+)", text, re.IGNORECASE
-        )
+        rid_match = re.search(r"run_id[:\s]+([a-zA-Z0-9_-]+)", text, re.IGNORECASE)
         if rid_match:
             run_id = rid_match.group(1)
 
@@ -82,11 +79,22 @@ class EventEnvelope:
 
     @staticmethod
     def _check_bot(text: str, author: str = "") -> bool:
-        """Check if the message is from a bot."""
+        """Check if the message is from a bot.
+
+        Handles Unicode variance in the trademark symbol (™, \ufffd,
+        stripped, or mangled) so bot detection works regardless of
+        encoding/decoding artifacts on Windows or cross-platform.
+        """
         if BOT_IDENTIFIER in text:
             return True
-        if author and author.lower() in ("icdev-bot", "icdev"):
+        # Also check with ™ stripped (handles encoding corruption)
+        if "[ICDEV-BOT]" in text.upper():
             return True
+        if author:
+            # Strip ALL non-alphanumeric except hyphen, then lowercase
+            clean = re.sub(r"[^a-zA-Z0-9-]", "", author).lower()
+            if clean in ("icdev-bot", "icdev"):
+                return True
         return False
 
     @staticmethod
@@ -305,16 +313,11 @@ class EventEnvelope:
     # ── Poll Trigger Factory ────────────────────────────────────────────
 
     @classmethod
-    def from_poll_issue(
-        cls, issue_data: dict, platform: str, latest_comment: str = ""
-    ) -> "EventEnvelope":
+    def from_poll_issue(cls, issue_data: dict, platform: str, latest_comment: str = "") -> "EventEnvelope":
         """Create envelope from a polled issue."""
         content = latest_comment or issue_data.get("body", "") or ""
         issue_number = issue_data.get("number") or issue_data.get("iid")
-        author = (
-            issue_data.get("user", {}).get("login", "")
-            or issue_data.get("author", {}).get("username", "")
-        )
+        author = issue_data.get("user", {}).get("login", "") or issue_data.get("author", {}).get("username", "")
         wf, rid = cls._extract_command(content)
         return cls(
             event_id=cls._make_id(),
@@ -345,12 +348,18 @@ class EventEnvelope:
 
         # Map tag to workflow command
         tag_map = {
-            "intake": "icdev_intake", "build": "icdev_build",
-            "sdlc": "icdev_sdlc", "comply": "icdev_comply",
-            "secure": "icdev_secure", "modernize": "icdev_modernize",
-            "deploy": "icdev_deploy", "maintain": "icdev_maintain",
-            "test": "icdev_test", "review": "icdev_review",
-            "plan": "icdev_plan", "plan_build": "icdev_plan_build",
+            "intake": "icdev_intake",
+            "build": "icdev_build",
+            "sdlc": "icdev_sdlc",
+            "comply": "icdev_comply",
+            "secure": "icdev_secure",
+            "modernize": "icdev_modernize",
+            "deploy": "icdev_deploy",
+            "maintain": "icdev_maintain",
+            "test": "icdev_test",
+            "review": "icdev_review",
+            "plan": "icdev_plan",
+            "plan_build": "icdev_plan_build",
         }
         workflow_command = tag_map.get(icdev_tag.lower(), "")
 
@@ -458,8 +467,13 @@ class EventEnvelope:
 
     @classmethod
     def from_chat_plugin(
-        cls, source: str, channel_id: str, text: str, author: str,
-        thread_id: str = "", metadata: dict = None,
+        cls,
+        source: str,
+        channel_id: str,
+        text: str,
+        author: str,
+        thread_id: str = "",
+        metadata: dict = None,
     ) -> "EventEnvelope":
         """Create envelope from a marketplace chat connector plugin."""
         session_key = f"{channel_id}:{thread_id}" if thread_id else channel_id

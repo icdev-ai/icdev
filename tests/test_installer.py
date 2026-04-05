@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-"""Tests for ICDEV Installer — module registry, compliance configurator, installer.
+"""Tests for ICDEV™ Installer — module registry, compliance configurator, installer.
 
 Validates ModuleRegistry dependency tracking, ComplianceConfigurator framework
 mapping, ModularDBInitializer selective table creation, and the main installer
@@ -9,31 +9,29 @@ Run: pytest tests/test_installer.py -v --tb=short
 """
 
 import json
-import os
 import sqlite3
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest
 
 try:
-    from icdev.tools.installer.module_registry import ModuleRegistry, DEFAULT_MODULES
+    from icdev.tools.installer.module_registry import ModuleRegistry, DEFAULT_MODULES  # noqa: F401
     from icdev.tools.installer.compliance_configurator import (
         ComplianceConfigurator,
-        FRAMEWORK_MODULE_MAP,
-        DATA_CATEGORY_FRAMEWORK_MAP,
-        POSTURE_DESCRIPTIONS,
+        FRAMEWORK_MODULE_MAP,  # noqa: F401
+        DATA_CATEGORY_FRAMEWORK_MAP,  # noqa: F401
+        POSTURE_DESCRIPTIONS,  # noqa: F401
     )
     from icdev.tools.installer.installer import (
         ModularDBInitializer,
         install,
         add_module,
         add_compliance,
-        show_status,
-        _topological_sort,
+        show_status,  # noqa: F401
+        _topological_sort,  # noqa: F401
     )
 except ImportError:
     pytestmark = pytest.mark.skip("tools.installer modules not available")
@@ -42,6 +40,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def registry_path(tmp_path):
@@ -76,6 +75,7 @@ def configurator(manifest_path, registry_path):
 # ============================================================================
 # TestModuleRegistry
 # ============================================================================
+
 
 class TestModuleRegistry:
     """Tests for tools.installer.module_registry.ModuleRegistry."""
@@ -186,6 +186,7 @@ class TestModuleRegistry:
 # TestComplianceConfigurator
 # ============================================================================
 
+
 class TestComplianceConfigurator:
     """Tests for tools.installer.compliance_configurator.ComplianceConfigurator."""
 
@@ -253,6 +254,7 @@ class TestComplianceConfigurator:
 # ============================================================================
 # TestModularDBInitializer
 # ============================================================================
+
 
 class TestModularDBInitializer:
     """Tests for tools.installer.installer.ModularDBInitializer."""
@@ -336,20 +338,15 @@ class TestModularDBInitializer:
 # TestInstaller
 # ============================================================================
 
+
 class TestInstaller:
     """Tests for tools.installer.installer top-level functions."""
 
     def test_dry_run_returns_plan_without_executing(self, tmp_path, monkeypatch):
         """install() with dry_run=True returns plan and does not create files."""
-        monkeypatch.setattr(
-            "icdev.tools.installer.installer.DATA_DIR", tmp_path / "data"
-        )
-        monkeypatch.setattr(
-            "icdev.tools.installer.installer.DB_PATH", tmp_path / "data" / "icdev.db"
-        )
-        monkeypatch.setattr(
-            "icdev.tools.installer.installer.REGISTRY_PATH", tmp_path / "data" / "installation.json"
-        )
+        monkeypatch.setattr("icdev.tools.installer.installer.DATA_DIR", tmp_path / "data")
+        monkeypatch.setattr("icdev.tools.installer.installer.DB_PATH", tmp_path / "data" / "icdev.db")
+        monkeypatch.setattr("icdev.tools.installer.installer.REGISTRY_PATH", tmp_path / "data" / "installation.json")
         result = install(
             modules=["core"],
             compliance_frameworks=[],
@@ -381,9 +378,7 @@ class TestInstaller:
 
         monkeypatch.setattr("icdev.tools.installer.installer.DATA_DIR", tmp_path / "data")
         monkeypatch.setattr("icdev.tools.installer.installer.DB_PATH", tmp_path / "data" / "icdev.db")
-        monkeypatch.setattr(
-            "icdev.tools.installer.installer.REGISTRY_PATH", tmp_path / "data" / "installation.json"
-        )
+        monkeypatch.setattr("icdev.tools.installer.installer.REGISTRY_PATH", tmp_path / "data" / "installation.json")
         monkeypatch.setattr("icdev.tools.installer.installer.MANIFEST_PATH", manifest_path)
         result = install(
             modules=["core"],
@@ -421,9 +416,7 @@ class TestInstaller:
 
         monkeypatch.setattr("icdev.tools.installer.installer.DATA_DIR", tmp_path / "data")
         monkeypatch.setattr("icdev.tools.installer.installer.DB_PATH", tmp_path / "data" / "icdev.db")
-        monkeypatch.setattr(
-            "icdev.tools.installer.installer.REGISTRY_PATH", tmp_path / "data" / "installation.json"
-        )
+        monkeypatch.setattr("icdev.tools.installer.installer.REGISTRY_PATH", tmp_path / "data" / "installation.json")
         monkeypatch.setattr("icdev.tools.installer.installer.MANIFEST_PATH", manifest_path)
         result = add_module("llm", dry_run=True)
         assert result["success"] is True
@@ -436,12 +429,8 @@ class TestInstaller:
         """add_module for unknown module returns error."""
         monkeypatch.setattr("icdev.tools.installer.installer.DATA_DIR", tmp_path / "data")
         monkeypatch.setattr("icdev.tools.installer.installer.DB_PATH", tmp_path / "data" / "icdev.db")
-        monkeypatch.setattr(
-            "icdev.tools.installer.installer.REGISTRY_PATH", tmp_path / "data" / "installation.json"
-        )
-        monkeypatch.setattr(
-            "icdev.tools.installer.installer.MANIFEST_PATH", tmp_path / "nonexistent.yaml"
-        )
+        monkeypatch.setattr("icdev.tools.installer.installer.REGISTRY_PATH", tmp_path / "data" / "installation.json")
+        monkeypatch.setattr("icdev.tools.installer.installer.MANIFEST_PATH", tmp_path / "nonexistent.yaml")
         result = add_module("totally_fake_module_xyz", dry_run=True)
         assert result["success"] is False
         assert "Unknown module" in result["error"]
@@ -450,12 +439,8 @@ class TestInstaller:
         """add_compliance with dry_run returns expected framework info."""
         monkeypatch.setattr("icdev.tools.installer.installer.DATA_DIR", tmp_path / "data")
         monkeypatch.setattr("icdev.tools.installer.installer.DB_PATH", tmp_path / "data" / "icdev.db")
-        monkeypatch.setattr(
-            "icdev.tools.installer.installer.REGISTRY_PATH", tmp_path / "data" / "installation.json"
-        )
-        monkeypatch.setattr(
-            "icdev.tools.installer.installer.MANIFEST_PATH", tmp_path / "nonexistent.yaml"
-        )
+        monkeypatch.setattr("icdev.tools.installer.installer.REGISTRY_PATH", tmp_path / "data" / "installation.json")
+        monkeypatch.setattr("icdev.tools.installer.installer.MANIFEST_PATH", tmp_path / "nonexistent.yaml")
         result = add_compliance("hipaa", dry_run=True)
         assert result["success"] is True
         assert result["framework_id"] == "hipaa"
@@ -465,12 +450,8 @@ class TestInstaller:
         """add_compliance for unknown framework returns error."""
         monkeypatch.setattr("icdev.tools.installer.installer.DATA_DIR", tmp_path / "data")
         monkeypatch.setattr("icdev.tools.installer.installer.DB_PATH", tmp_path / "data" / "icdev.db")
-        monkeypatch.setattr(
-            "icdev.tools.installer.installer.REGISTRY_PATH", tmp_path / "data" / "installation.json"
-        )
-        monkeypatch.setattr(
-            "icdev.tools.installer.installer.MANIFEST_PATH", tmp_path / "nonexistent.yaml"
-        )
+        monkeypatch.setattr("icdev.tools.installer.installer.REGISTRY_PATH", tmp_path / "data" / "installation.json")
+        monkeypatch.setattr("icdev.tools.installer.installer.MANIFEST_PATH", tmp_path / "nonexistent.yaml")
         result = add_compliance("fake_framework_xyz", dry_run=True)
         assert result["success"] is False
         assert "Unknown framework" in result["error"]

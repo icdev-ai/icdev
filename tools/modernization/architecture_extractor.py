@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-"""ICDEV Architecture Extractor — reverse-engineering extraction tool.
+"""ICDEV™ Architecture Extractor — reverse-engineering extraction tool.
 
 Extracts call graphs, component diagrams, data flows, service boundaries,
 database schemas, and architecture summaries from legacy applications
@@ -12,74 +12,145 @@ Usage:
 
 Classification: CUI // SP-CTI
 """
+
+from __future__ import annotations
+
 import argparse
 import collections
 import json
 import re
 import sqlite3
 import uuid
+from tools.db.storage import get_connection
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 CALL_GRAPH_DEP_TYPES = ("method_call", "import", "inheritance", "injection")
 COMPLEXITY_THRESHOLDS = {"low": 10, "medium": 20, "high": 50}
-LAYER_ORDER = ["api_endpoint", "controller", "servlet", "service", "ejb",
-               "repository", "model", "entity", "stored_procedure", "trigger",
-               "function", "util", "config", "migration"]
+LAYER_ORDER = [
+    "api_endpoint",
+    "controller",
+    "servlet",
+    "service",
+    "ejb",
+    "repository",
+    "model",
+    "entity",
+    "stored_procedure",
+    "trigger",
+    "function",
+    "util",
+    "config",
+    "migration",
+]
 DB_LAYER_TYPES = {"repository", "model", "entity", "stored_procedure", "trigger", "migration"}
-GENERIC_WORDS = {"service", "controller", "repository", "model", "impl", "base",
-                 "abstract", "interface", "test", "util", "helper", "manager",
-                 "handler", "the", "class", "module", "component", "config"}
-_FT = {"String": "VARCHAR", "Text": "TEXT", "Integer": "INTEGER", "Float": "FLOAT",
-       "Boolean": "BOOLEAN", "DateTime": "TIMESTAMP", "Date": "DATE", "BigInteger": "BIGINT",
-       "CharField": "VARCHAR", "TextField": "TEXT", "IntegerField": "INTEGER",
-       "FloatField": "FLOAT", "BooleanField": "BOOLEAN", "DateTimeField": "TIMESTAMP",
-       "DateField": "DATE", "AutoField": "INTEGER", "DecimalField": "NUMERIC",
-       "UUIDField": "UUID", "ForeignKey": "INTEGER", "int": "INTEGER", "long": "BIGINT",
-       "Long": "BIGINT", "Double": "DOUBLE", "boolean": "BOOLEAN",
-       "LocalDate": "DATE", "LocalDateTime": "TIMESTAMP", "BigDecimal": "NUMERIC"}
+GENERIC_WORDS = {
+    "service",
+    "controller",
+    "repository",
+    "model",
+    "impl",
+    "base",
+    "abstract",
+    "interface",
+    "test",
+    "util",
+    "helper",
+    "manager",
+    "handler",
+    "the",
+    "class",
+    "module",
+    "component",
+    "config",
+}
+_FT = {
+    "String": "VARCHAR",
+    "Text": "TEXT",
+    "Integer": "INTEGER",
+    "Float": "FLOAT",
+    "Boolean": "BOOLEAN",
+    "DateTime": "TIMESTAMP",
+    "Date": "DATE",
+    "BigInteger": "BIGINT",
+    "CharField": "VARCHAR",
+    "TextField": "TEXT",
+    "IntegerField": "INTEGER",
+    "FloatField": "FLOAT",
+    "BooleanField": "BOOLEAN",
+    "DateTimeField": "TIMESTAMP",
+    "DateField": "DATE",
+    "AutoField": "INTEGER",
+    "DecimalField": "NUMERIC",
+    "UUIDField": "UUID",
+    "ForeignKey": "INTEGER",
+    "int": "INTEGER",
+    "long": "BIGINT",
+    "Long": "BIGINT",
+    "Double": "DOUBLE",
+    "boolean": "BOOLEAN",
+    "LocalDate": "DATE",
+    "LocalDateTime": "TIMESTAMP",
+    "BigDecimal": "NUMERIC",
+}
 
 # -- Compiled regex patterns --------------------------------------------------
 _RE = {
     "sa_table": re.compile(r'__tablename__\s*=\s*["\'](\w+)["\']'),
-    "sa_col": re.compile(r'(\w+)\s*=\s*(?:db\.)?Column\(\s*(?:db\.)?(\w+)'),
+    "sa_col": re.compile(r"(\w+)\s*=\s*(?:db\.)?Column\(\s*(?:db\.)?(\w+)"),
     "sa_fk": re.compile(r"ForeignKey\(\s*['\"](\w+)\.(\w+)['\"]\s*\)"),
-    "sa_cls": re.compile(r'class\s+(\w+)\s*\('),
-    "dj_cls": re.compile(r'class\s+(\w+)\s*\(.*?models\.Model.*?\)'),
-    "dj_fld": re.compile(r'(\w+)\s*=\s*models\.(\w+Field)\('),
+    "sa_cls": re.compile(r"class\s+(\w+)\s*\("),
+    "dj_cls": re.compile(r"class\s+(\w+)\s*\(.*?models\.Model.*?\)"),
+    "dj_fld": re.compile(r"(\w+)\s*=\s*models\.(\w+Field)\("),
     "dj_fk": re.compile(r"(\w+)\s*=\s*models\.ForeignKey\(\s*['\"]?(\w+)['\"]?"),
     "dj_meta": re.compile(r'db_table\s*=\s*["\'](\w+)["\']'),
-    "hb_ent": re.compile(r'@Entity'), "hb_tbl": re.compile(r'@Table\s*\(\s*name\s*=\s*"(\w+)"'),
+    "hb_ent": re.compile(r"@Entity"),
+    "hb_tbl": re.compile(r'@Table\s*\(\s*name\s*=\s*"(\w+)"'),
     "hb_col": re.compile(r'@Column\s*\(.*?name\s*=\s*"(\w+)".*?\)\s*(?:private|protected|public)\s+(\w+)\s+(\w+)'),
-    "hb_fld": re.compile(r'(?:private|protected|public)\s+(\w+)\s+(\w+)\s*;'),
-    "hb_id": re.compile(r'@Id'), "hb_cls": re.compile(r'public\s+class\s+(\w+)'),
-    "hb_m2o": re.compile(r'@ManyToOne.*?(?:private|protected|public)\s+(\w+)\s+(\w+)', re.DOTALL),
-    "hb_o2m": re.compile(r'@OneToMany.*?(?:private|protected|public)\s+\w+<(\w+)>\s+(\w+)', re.DOTALL),
-    "ef_dbs": re.compile(r'DbSet<(\w+)>\s+(\w+)'),
-    "ef_key": re.compile(r'\[Key\]'), "ef_fk": re.compile(r'\[ForeignKey\("(\w+)"\)\]'),
-    "ef_tbl": re.compile(r'\[Table\("(\w+)"\)\]'), "ef_cls": re.compile(r'public\s+class\s+(\w+)'),
-    "ef_prop": re.compile(r'public\s+(\w+\??)\s+(\w+)\s*\{\s*get;\s*set;\s*\}'),
-    "ef_h1": re.compile(r'\.HasOne<(\w+)>\('), "ef_hm": re.compile(r'\.HasMany<(\w+)>\('),
+    "hb_fld": re.compile(r"(?:private|protected|public)\s+(\w+)\s+(\w+)\s*;"),
+    "hb_id": re.compile(r"@Id"),
+    "hb_cls": re.compile(r"public\s+class\s+(\w+)"),
+    "hb_m2o": re.compile(r"@ManyToOne.*?(?:private|protected|public)\s+(\w+)\s+(\w+)", re.DOTALL),
+    "hb_o2m": re.compile(r"@OneToMany.*?(?:private|protected|public)\s+\w+<(\w+)>\s+(\w+)", re.DOTALL),
+    "ef_dbs": re.compile(r"DbSet<(\w+)>\s+(\w+)"),
+    "ef_key": re.compile(r"\[Key\]"),
+    "ef_fk": re.compile(r'\[ForeignKey\("(\w+)"\)\]'),
+    "ef_tbl": re.compile(r'\[Table\("(\w+)"\)\]'),
+    "ef_cls": re.compile(r"public\s+class\s+(\w+)"),
+    "ef_prop": re.compile(r"public\s+(\w+\??)\s+(\w+)\s*\{\s*get;\s*set;\s*\}"),
+    "ef_h1": re.compile(r"\.HasOne<(\w+)>\("),
+    "ef_hm": re.compile(r"\.HasMany<(\w+)>\("),
     "sql_ct": re.compile(r'CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?[`"\[]?(\w+)[`"\]]?', re.I),
     "sql_cd": re.compile(r'^\s+[`"\[]?(\w+)[`"\]]?\s+([\w()]+)', re.M),
-    "sql_pki": re.compile(r'(\w+)\s+\w+.*?PRIMARY\s+KEY', re.I),
-    "sql_pkc": re.compile(r'PRIMARY\s+KEY\s*\(([^)]+)\)', re.I),
-    "sql_fkc": re.compile(r'FOREIGN\s+KEY\s*\(\s*[`"\[]?(\w+)[`"\]]?\s*\)\s*REFERENCES\s+[`"\[]?(\w+)[`"\]]?\s*\(\s*[`"\[]?(\w+)[`"\]]?\s*\)', re.I),
-    "sql_ac": re.compile(r'ALTER\s+TABLE\s+[`"\[]?(\w+)[`"\]]?\s+ADD\s+(?:COLUMN\s+)?[`"\[]?(\w+)[`"\]]?\s+([\w()]+)', re.I),
-    "sql_afk": re.compile(r'ALTER\s+TABLE\s+[`"\[]?(\w+)[`"\]]?\s+ADD\s+.*?FOREIGN\s+KEY\s*\(\s*[`"\[]?(\w+)[`"\]]?\s*\)\s*REFERENCES\s+[`"\[]?(\w+)[`"\]]?\s*\(\s*[`"\[]?(\w+)[`"\]]?\s*\)', re.I),
+    "sql_pki": re.compile(r"(\w+)\s+\w+.*?PRIMARY\s+KEY", re.I),
+    "sql_pkc": re.compile(r"PRIMARY\s+KEY\s*\(([^)]+)\)", re.I),
+    "sql_fkc": re.compile(
+        r'FOREIGN\s+KEY\s*\(\s*[`"\[]?(\w+)[`"\]]?\s*\)\s*REFERENCES\s+[`"\[]?(\w+)[`"\]]?\s*\(\s*[`"\[]?(\w+)[`"\]]?\s*\)',
+        re.I,
+    ),
+    "sql_ac": re.compile(
+        r'ALTER\s+TABLE\s+[`"\[]?(\w+)[`"\]]?\s+ADD\s+(?:COLUMN\s+)?[`"\[]?(\w+)[`"\]]?\s+([\w()]+)', re.I
+    ),
+    "sql_afk": re.compile(
+        r'ALTER\s+TABLE\s+[`"\[]?(\w+)[`"\]]?\s+ADD\s+.*?FOREIGN\s+KEY\s*\(\s*[`"\[]?(\w+)[`"\]]?\s*\)\s*REFERENCES\s+[`"\[]?(\w+)[`"\]]?\s*\(\s*[`"\[]?(\w+)[`"\]]?\s*\)',
+        re.I,
+    ),
 }
+
 
 # -- Helpers -------------------------------------------------------------------
 def _get_db() -> sqlite3.Connection:
-    """Return sqlite3 connection to ICDEV database with WAL mode and Row factory."""
+    """Return sqlite3 connection to ICDEV™ database with WAL mode and Row factory."""
     if not DB_PATH.exists():
-        raise FileNotFoundError(f"ICDEV database not found at {DB_PATH}. Run 'python tools/db/init_icdev_db.py' first.")
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
+        raise FileNotFoundError(
+            f"ICDEV™ database not found at {DB_PATH}. Run 'python tools/db/init_icdev_db.py' first."
+        )
+    conn = get_connection()
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
+
 
 def _complexity_bucket(v: float) -> str:
     if v <= 10:
@@ -90,6 +161,7 @@ def _complexity_bucket(v: float) -> str:
         return "high"
     return "very_high"
 
+
 # -- 1. Call Graph Extraction --------------------------------------------------
 def extract_call_graph(app_id: str) -> dict:
     """Build directed graph from legacy_dependencies (method_call/import/inheritance/injection).
@@ -98,9 +170,11 @@ def extract_call_graph(app_id: str) -> dict:
     try:
         ph = ",".join("?" for _ in CALL_GRAPH_DEP_TYPES)
         edge_rows = conn.execute(
-            f"SELECT source_component_id, target_component_id, dependency_type, weight "
+            f"SELECT source_component_id, target_component_id, dependency_type, weight "  # nosec B608 -- table/column names are internal constants, not user input
             f"FROM legacy_dependencies WHERE legacy_app_id=? AND dependency_type IN ({ph}) "
-            f"AND target_component_id IS NOT NULL", (app_id, *CALL_GRAPH_DEP_TYPES)).fetchall()
+            f"AND target_component_id IS NOT NULL",
+            (app_id, *CALL_GRAPH_DEP_TYPES),
+        ).fetchall()
         cids = set()
         for r in edge_rows:
             cids.add(r["source_component_id"])
@@ -108,12 +182,32 @@ def extract_call_graph(app_id: str) -> dict:
         nodes = []
         if cids:
             iph = ",".join("?" for _ in cids)
-            for c in conn.execute(f"SELECT id,name,component_type,loc,cyclomatic_complexity FROM legacy_components WHERE id IN ({iph})", list(cids)).fetchall():
-                nodes.append({"id": c["id"], "name": c["name"], "type": c["component_type"], "loc": c["loc"] or 0, "complexity": c["cyclomatic_complexity"] or 0.0})
-        edges = [{"source": r["source_component_id"], "target": r["target_component_id"], "type": r["dependency_type"], "weight": r["weight"] or 1.0} for r in edge_rows]
+            for c in conn.execute(
+                f"SELECT id,name,component_type,loc,cyclomatic_complexity FROM legacy_components WHERE id IN ({iph})",
+                list(cids),
+            ).fetchall():  # nosec B608 -- table/column names are internal constants, not user input
+                nodes.append(
+                    {
+                        "id": c["id"],
+                        "name": c["name"],
+                        "type": c["component_type"],
+                        "loc": c["loc"] or 0,
+                        "complexity": c["cyclomatic_complexity"] or 0.0,
+                    }
+                )
+        edges = [
+            {
+                "source": r["source_component_id"],
+                "target": r["target_component_id"],
+                "type": r["dependency_type"],
+                "weight": r["weight"] or 1.0,
+            }
+            for r in edge_rows
+        ]
         return {"nodes": nodes, "edges": edges}
     finally:
         conn.close()
+
 
 # -- 2. Component Diagram Extraction -------------------------------------------
 def extract_component_diagram(app_id: str) -> dict:
@@ -121,8 +215,13 @@ def extract_component_diagram(app_id: str) -> dict:
     Returns {packages: [...], inter_package_edges: [...]}."""
     conn = _get_db()
     try:
-        comps = conn.execute("SELECT id,name,component_type,qualified_name FROM legacy_components WHERE legacy_app_id=?", (app_id,)).fetchall()
-        deps = conn.execute("SELECT source_component_id,target_component_id FROM legacy_dependencies WHERE legacy_app_id=? AND target_component_id IS NOT NULL", (app_id,)).fetchall()
+        comps = conn.execute(
+            "SELECT id,name,component_type,qualified_name FROM legacy_components WHERE legacy_app_id=?", (app_id,)
+        ).fetchall()
+        deps = conn.execute(
+            "SELECT source_component_id,target_component_id FROM legacy_dependencies WHERE legacy_app_id=? AND target_component_id IS NOT NULL",
+            (app_id,),
+        ).fetchall()
         c2p, pkg_comps = {}, collections.defaultdict(list)
         for c in comps:
             qn = c["qualified_name"] or c["name"] or ""
@@ -140,11 +239,17 @@ def extract_component_diagram(app_id: str) -> dict:
             else:
                 pe[sp] += 1
                 ipe[(sp, tp)] += 1
-        packages = [{"name": p, "components": pkg_comps[p], "internal_deps": pi.get(p, 0), "external_deps": pe.get(p, 0)} for p in sorted(pkg_comps)]
-        inter = [{"source_pkg": s, "target_pkg": t, "count": c} for (s, t), c in sorted(ipe.items(), key=lambda x: -x[1])]
+        packages = [
+            {"name": p, "components": pkg_comps[p], "internal_deps": pi.get(p, 0), "external_deps": pe.get(p, 0)}
+            for p in sorted(pkg_comps)
+        ]
+        inter = [
+            {"source_pkg": s, "target_pkg": t, "count": c} for (s, t), c in sorted(ipe.items(), key=lambda x: -x[1])
+        ]
         return {"packages": packages, "inter_package_edges": inter}
     finally:
         conn.close()
+
 
 # -- 3. Data Flow Extraction ---------------------------------------------------
 def extract_data_flow(app_id: str) -> dict:
@@ -152,17 +257,35 @@ def extract_data_flow(app_id: str) -> dict:
     Returns {flows: [{api_endpoint, method, path, chain: [...], reaches_database: bool}]}."""
     conn = _get_db()
     try:
-        apis = conn.execute("SELECT id,component_id,method,path FROM legacy_apis WHERE legacy_app_id=?", (app_id,)).fetchall()
-        cm = {c["id"]: dict(c) for c in conn.execute("SELECT id,name,component_type FROM legacy_components WHERE legacy_app_id=?", (app_id,)).fetchall()}
+        apis = conn.execute(
+            "SELECT id,component_id,method,path FROM legacy_apis WHERE legacy_app_id=?", (app_id,)
+        ).fetchall()
+        cm = {
+            c["id"]: dict(c)
+            for c in conn.execute(
+                "SELECT id,name,component_type FROM legacy_components WHERE legacy_app_id=?", (app_id,)
+            ).fetchall()
+        }
         adj = collections.defaultdict(set)
-        for d in conn.execute("SELECT source_component_id,target_component_id FROM legacy_dependencies WHERE legacy_app_id=? AND target_component_id IS NOT NULL", (app_id,)).fetchall():
+        for d in conn.execute(
+            "SELECT source_component_id,target_component_id FROM legacy_dependencies WHERE legacy_app_id=? AND target_component_id IS NOT NULL",
+            (app_id,),
+        ).fetchall():
             adj[d["source_component_id"]].add(d["target_component_id"])
         lr = {t: i for i, t in enumerate(LAYER_ORDER)}
         flows = []
         for api in apis:
             sid = api["component_id"]
             if not sid or sid not in cm:
-                flows.append({"api_endpoint": api["id"], "method": api["method"], "path": api["path"], "chain": [], "reaches_database": False})
+                flows.append(
+                    {
+                        "api_endpoint": api["id"],
+                        "method": api["method"],
+                        "path": api["path"],
+                        "chain": [],
+                        "reaches_database": False,
+                    }
+                )
                 continue
             visited, queue, chain, rdb = set(), collections.deque([sid]), [], False
             while queue:
@@ -180,10 +303,19 @@ def extract_data_flow(app_id: str) -> dict:
                     if nb not in visited:
                         queue.append(nb)
             chain.sort(key=lambda x: lr.get(x["component_type"], 999))
-            flows.append({"api_endpoint": api["id"], "method": api["method"], "path": api["path"], "chain": chain, "reaches_database": rdb})
+            flows.append(
+                {
+                    "api_endpoint": api["id"],
+                    "method": api["method"],
+                    "path": api["path"],
+                    "chain": chain,
+                    "reaches_database": rdb,
+                }
+            )
         return {"flows": flows}
     finally:
         conn.close()
+
 
 # -- 4. Service Boundary Detection (Louvain-like) -----------------------------
 def _suggest_service_name(mids: list, ci: dict) -> str:
@@ -194,23 +326,38 @@ def _suggest_service_name(mids: list, ci: dict) -> str:
     for m in mids:
         info = ci.get(m, {})
         tc[info.get("type", "unknown")] += 1
-        for w in re.findall(r'[A-Z][a-z]+|[a-z]+|[A-Z]+(?=[A-Z]|$)', info.get("name", "")):
+        for w in re.findall(r"[A-Z][a-z]+|[a-z]+|[A-Z]+(?=[A-Z]|$)", info.get("name", "")):
             if w.lower() not in GENERIC_WORDS:
                 nw[w.lower()] += 1
     dt = tc.most_common(1)[0][0]
     dh = nw.most_common(1)[0][0] if nw else ""
     return f"{dh}-{dt}-service" if dh else f"{dt}-service"
 
+
 def detect_service_boundaries(app_id: str) -> dict:
     """Community detection via Louvain-like modularity optimization (stdlib only).
     Returns {communities: [{id, name, components, cohesion, coupling, suggested_service_name}], modularity_score}."""
     conn = _get_db()
     try:
-        comps = conn.execute("SELECT id,name,component_type,coupling_score,cohesion_score FROM legacy_components WHERE legacy_app_id=?", (app_id,)).fetchall()
-        deps = conn.execute("SELECT source_component_id,target_component_id,weight FROM legacy_dependencies WHERE legacy_app_id=? AND target_component_id IS NOT NULL", (app_id,)).fetchall()
+        comps = conn.execute(
+            "SELECT id,name,component_type,coupling_score,cohesion_score FROM legacy_components WHERE legacy_app_id=?",
+            (app_id,),
+        ).fetchall()
+        deps = conn.execute(
+            "SELECT source_component_id,target_component_id,weight FROM legacy_dependencies WHERE legacy_app_id=? AND target_component_id IS NOT NULL",
+            (app_id,),
+        ).fetchall()
         if not comps:
             return {"communities": [], "modularity_score": 0.0}
-        ci = {c["id"]: {"name": c["name"], "type": c["component_type"], "coupling": c["coupling_score"] or 0.0, "cohesion": c["cohesion_score"] or 0.0} for c in comps}
+        ci = {
+            c["id"]: {
+                "name": c["name"],
+                "type": c["component_type"],
+                "coupling": c["coupling_score"] or 0.0,
+                "cohesion": c["cohesion_score"] or 0.0,
+            }
+            for c in comps
+        }
         nids = list(ci.keys())
         nidx = {v: i for i, v in enumerate(nids)}
         n = len(nids)
@@ -225,9 +372,17 @@ def detect_service_boundaries(app_id: str) -> dict:
             adj[j][i] += w
             tw += w
         if tw == 0:
-            out = [{"id": str(uuid.uuid4()), "name": _suggest_service_name([nid], ci), "components": [nid],
-                    "cohesion": ci[nid]["cohesion"], "coupling": ci[nid]["coupling"],
-                    "suggested_service_name": _suggest_service_name([nid], ci)} for nid in nids]
+            out = [
+                {
+                    "id": str(uuid.uuid4()),
+                    "name": _suggest_service_name([nid], ci),
+                    "components": [nid],
+                    "cohesion": ci[nid]["cohesion"],
+                    "coupling": ci[nid]["coupling"],
+                    "suggested_service_name": _suggest_service_name([nid], ci),
+                }
+                for nid in nids
+            ]
             return {"communities": out, "modularity_score": 0.0}
         m2 = 2.0 * tw
         deg = [sum(adj[i].values()) for i in range(n)]
@@ -247,7 +402,9 @@ def detect_service_boundaries(app_id: str) -> dict:
                 for tc2, ki_t in ce.items():
                     if tc2 == cc:
                         continue
-                    delta = (ki_t / tw - st[tc2] * ki / (m2 * tw)) - (ce.get(cc, 0.0) / tw - (st[cc] - ki) * ki / (m2 * tw))
+                    delta = (ki_t / tw - st[tc2] * ki / (m2 * tw)) - (
+                        ce.get(cc, 0.0) / tw - (st[cc] - ki) * ki / (m2 * tw)
+                    )
                     if delta > best_d:
                         best_d = delta
                         best_c = tc2
@@ -269,35 +426,61 @@ def detect_service_boundaries(app_id: str) -> dict:
         for _, mids in sorted(cm2.items()):
             ch = [ci[m]["cohesion"] for m in mids]
             cp = [ci[m]["coupling"] for m in mids]
-            out.append({"id": str(uuid.uuid4()), "name": _suggest_service_name(mids, ci),
-                        "components": mids, "cohesion": round(sum(ch)/len(ch), 4) if ch else 0.0,
-                        "coupling": round(sum(cp)/len(cp), 4) if cp else 0.0,
-                        "suggested_service_name": _suggest_service_name(mids, ci)})
+            out.append(
+                {
+                    "id": str(uuid.uuid4()),
+                    "name": _suggest_service_name(mids, ci),
+                    "components": mids,
+                    "cohesion": round(sum(ch) / len(ch), 4) if ch else 0.0,
+                    "coupling": round(sum(cp) / len(cp), 4) if cp else 0.0,
+                    "suggested_service_name": _suggest_service_name(mids, ci),
+                }
+            )
         return {"communities": out, "modularity_score": round(mod, 4)}
     finally:
         conn.close()
 
+
 # -- 5. Database Schema Extraction ---------------------------------------------
 def _detect_db_type(source: Path, framework: str) -> str:
     """Heuristic DB type detection from config files and framework name."""
-    for pat in ("application.properties", "application.yml", "settings.py",
-                "database.yml", "appsettings.json", "persistence.xml"):
+    for pat in (
+        "application.properties",
+        "application.yml",
+        "settings.py",
+        "database.yml",
+        "appsettings.json",
+        "persistence.xml",
+    ):
         for f in source.rglob(pat):
             try:
                 lo = f.read_text(encoding="utf-8", errors="ignore").lower()
-                for kw, db in [("postgresql", "postgresql"), ("postgres", "postgresql"),
-                               ("mysql", "mysql"), ("oracle", "oracle"),
-                               ("sqlserver", "mssql"), ("mssql", "mssql"),
-                               ("sqlite", "sqlite"), ("h2", "h2"), ("db2", "db2")]:
+                for kw, db in [
+                    ("postgresql", "postgresql"),
+                    ("postgres", "postgresql"),
+                    ("mysql", "mysql"),
+                    ("oracle", "oracle"),
+                    ("sqlserver", "mssql"),
+                    ("mssql", "mssql"),
+                    ("sqlite", "sqlite"),
+                    ("h2", "h2"),
+                    ("db2", "db2"),
+                ]:
                     if kw in lo:
                         return db
             except OSError:
                 continue
-    for kw, db in [("django", "postgresql"), ("spring", "postgresql"),
-                   ("hibernate", "postgresql"), ("entity", "mssql"), (".net", "mssql")]:
+    for kw, db in [
+        ("django", "postgresql"),
+        ("spring", "postgresql"),
+        ("hibernate", "postgresql"),
+        ("entity", "mssql"),
+        (".net", "mssql"),
+    ]:
         if kw in framework:
             return db
     return "postgresql"
+
 
 def _parse_sqlalchemy(src: Path, tbls: dict, rels: list):
     for pf in src.rglob("*.py"):
@@ -328,6 +511,7 @@ def _parse_sqlalchemy(src: Path, tbls: dict, rels: list):
                         rels.append({"from_table": ct, "from_col": cn, "to_table": fk.group(1), "to_col": fk.group(2)})
                     tbls[ct]["columns"].append(entry)
 
+
 def _parse_django(src: Path, tbls: dict, rels: list):
     for pf in src.rglob("*.py"):
         try:
@@ -352,12 +536,17 @@ def _parse_django(src: Path, tbls: dict, rels: list):
                 fk = _RE["dj_fk"].search(ln)
                 if fk:
                     cn, rt = fk.group(1), fk.group(2).lower()
-                    tbls[ct]["columns"].append({"name": f"{cn}_id", "type": "INTEGER", "pk": False, "fk_table": rt, "fk_col": "id"})
+                    tbls[ct]["columns"].append(
+                        {"name": f"{cn}_id", "type": "INTEGER", "pk": False, "fk_table": rt, "fk_col": "id"}
+                    )
                     rels.append({"from_table": ct, "from_col": f"{cn}_id", "to_table": rt, "to_col": "id"})
                     continue
                 fm = _RE["dj_fld"].search(ln)
                 if fm:
-                    tbls[ct]["columns"].append({"name": fm.group(1), "type": _FT.get(fm.group(2), fm.group(2)), "pk": "primary_key=True" in ln})
+                    tbls[ct]["columns"].append(
+                        {"name": fm.group(1), "type": _FT.get(fm.group(2), fm.group(2)), "pk": "primary_key=True" in ln}
+                    )
+
 
 def _parse_hibernate(src: Path, tbls: dict, rels: list):
     for jf in list(src.rglob("*.java")) + list(src.rglob("*.kt")):
@@ -385,9 +574,12 @@ def _parse_hibernate(src: Path, tbls: dict, rels: list):
                 pk = any(abs(p - fm.start()) < 80 and p < fm.start() for p in idpos)
                 tbls[tn]["columns"].append({"name": fm.group(2), "type": _FT.get(fm.group(1), fm.group(1)), "pk": pk})
         for m in _RE["hb_m2o"].finditer(content):
-            rels.append({"from_table": tn, "from_col": f"{m.group(2)}_id", "to_table": m.group(1).lower(), "to_col": "id"})
+            rels.append(
+                {"from_table": tn, "from_col": f"{m.group(2)}_id", "to_table": m.group(1).lower(), "to_col": "id"}
+            )
         for m in _RE["hb_o2m"].finditer(content):
             rels.append({"from_table": m.group(1).lower(), "from_col": f"{tn}_id", "to_table": tn, "to_col": "id"})
+
 
 def _parse_ef(src: Path, tbls: dict, rels: list):
     for cf in src.rglob("*.cs"):
@@ -420,9 +612,17 @@ def _parse_ef(src: Path, tbls: dict, rels: list):
                     break
             tbls[tn]["columns"].append(entry)
         for m in _RE["ef_h1"].finditer(content):
-            rels.append({"from_table": tn, "from_col": f"{m.group(1).lower()}_id", "to_table": m.group(1).lower(), "to_col": "Id"})
+            rels.append(
+                {
+                    "from_table": tn,
+                    "from_col": f"{m.group(1).lower()}_id",
+                    "to_table": m.group(1).lower(),
+                    "to_col": "Id",
+                }
+            )
         for m in _RE["ef_hm"].finditer(content):
             rels.append({"from_table": m.group(1).lower(), "from_col": f"{tn}_id", "to_table": tn, "to_col": "Id"})
+
 
 def _parse_sql(src: Path, tbls: dict, rels: list):
     skip = {"primary", "foreign", "unique", "constraint", "check", "index", "key", "create", "alter"}
@@ -431,7 +631,7 @@ def _parse_sql(src: Path, tbls: dict, rels: list):
             content = sf.read_text(encoding="utf-8", errors="ignore")
         except OSError:
             continue
-        for stmt in re.split(r';\s*\n', content):
+        for stmt in re.split(r";\s*\n", content):
             s = stmt.strip()
             if not s:
                 continue
@@ -447,7 +647,7 @@ def _parse_sql(src: Path, tbls: dict, rels: list):
                         pks.add(c.strip().strip('`"[] ').lower())
                 ps, pe = s.find("("), s.rfind(")")
                 if ps >= 0 and pe > ps:
-                    for cm in _RE["sql_cd"].finditer(s[ps+1:pe]):
+                    for cm in _RE["sql_cd"].finditer(s[ps + 1 : pe]):
                         cn = cm.group(1).lower()
                         if cn in skip:
                             continue
@@ -464,7 +664,15 @@ def _parse_sql(src: Path, tbls: dict, rels: list):
                 tbls.setdefault(t2, {"columns": []})
                 tbls[t2]["columns"].append({"name": m.group(2).lower(), "type": m.group(3).upper(), "pk": False})
             for m in _RE["sql_afk"].finditer(s):
-                rels.append({"from_table": m.group(1).lower(), "from_col": m.group(2).lower(), "to_table": m.group(3).lower(), "to_col": m.group(4).lower()})
+                rels.append(
+                    {
+                        "from_table": m.group(1).lower(),
+                        "from_col": m.group(2).lower(),
+                        "to_table": m.group(3).lower(),
+                        "to_col": m.group(4).lower(),
+                    }
+                )
+
 
 def extract_database_schema(app_id: str, source_path: str) -> dict:
     """Parse ORM models (SQLAlchemy/Django/Hibernate/JPA/EF) and SQL migrations.
@@ -490,8 +698,21 @@ def extract_database_schema(app_id: str, source_path: str) -> dict:
         for tn, ti in tbls.items():
             for col in ti.get("columns", []):
                 try:
-                    conn.execute("INSERT OR IGNORE INTO legacy_db_schemas (id,legacy_app_id,db_type,schema_name,table_name,column_name,data_type,is_primary_key,is_foreign_key,foreign_table,foreign_column) VALUES (?,?,?,'public',?,?,?,?,?,?,?)",
-                                 (str(uuid.uuid4()), app_id, dbt, tn, col["name"], col["type"], 1 if col.get("pk") else 0, 1 if col.get("fk_table") else 0, col.get("fk_table"), col.get("fk_col")))
+                    conn.execute(
+                        "INSERT OR IGNORE INTO legacy_db_schemas (id,legacy_app_id,db_type,schema_name,table_name,column_name,data_type,is_primary_key,is_foreign_key,foreign_table,foreign_column) VALUES (?,?,?,'public',?,?,?,?,?,?,?)",
+                        (
+                            str(uuid.uuid4()),
+                            app_id,
+                            dbt,
+                            tn,
+                            col["name"],
+                            col["type"],
+                            1 if col.get("pk") else 0,
+                            1 if col.get("fk_table") else 0,
+                            col.get("fk_table"),
+                            col.get("fk_col"),
+                        ),
+                    )
                 except sqlite3.IntegrityError:
                     pass
         conn.commit()
@@ -502,18 +723,27 @@ def extract_database_schema(app_id: str, source_path: str) -> dict:
             if k not in seen:
                 seen.add(k)
                 ur.append(r)
-        return {"tables": out_t, "relationships": ur, "db_type": dbt, "total_tables": len(out_t),
-                "total_columns": sum(len(t["columns"]) for t in out_t), "total_relationships": len(ur)}
+        return {
+            "tables": out_t,
+            "relationships": ur,
+            "db_type": dbt,
+            "total_tables": len(out_t),
+            "total_columns": sum(len(t["columns"]) for t in out_t),
+            "total_relationships": len(ur),
+        }
     finally:
         conn.close()
+
 
 # -- 6. Architecture Summary ---------------------------------------------------
 def _detect_style(tc: collections.Counter, total: int) -> str:
     """Detect architecture style from component type distribution."""
     if total == 0:
         return "unknown"
+
     def has(t):
         return tc.get(t, 0) > 0
+
     if has("ejb") and has("servlet"):
         return "j2ee"
     if has("controller") and has("model") and has("view"):
@@ -528,19 +758,36 @@ def _detect_style(tc: collections.Counter, total: int) -> str:
         return "layered"
     return "monolith"
 
+
 def generate_architecture_summary(app_id: str) -> dict:
     """Aggregate all analysis into a comprehensive architecture summary.
     Returns summary dict with app info, counts, complexity distribution, coupling analysis, and style."""
     conn = _get_db()
     try:
-        ar = conn.execute("SELECT name,primary_language,framework,loc_total,complexity_score,maintainability_index FROM legacy_applications WHERE id=?", (app_id,)).fetchone()
+        ar = conn.execute(
+            "SELECT name,primary_language,framework,loc_total,complexity_score,maintainability_index FROM legacy_applications WHERE id=?",
+            (app_id,),
+        ).fetchone()
         if not ar:
             raise ValueError(f"Application {app_id} not found in database.")
-        comps = conn.execute("SELECT component_type,cyclomatic_complexity,coupling_score FROM legacy_components WHERE legacy_app_id=?", (app_id,)).fetchall()
-        dc = conn.execute("SELECT COUNT(*) as cnt FROM legacy_dependencies WHERE legacy_app_id=?", (app_id,)).fetchone()["cnt"]
+        comps = conn.execute(
+            "SELECT component_type,cyclomatic_complexity,coupling_score FROM legacy_components WHERE legacy_app_id=?",
+            (app_id,),
+        ).fetchall()
+        dc = conn.execute(
+            "SELECT COUNT(*) as cnt FROM legacy_dependencies WHERE legacy_app_id=?", (app_id,)
+        ).fetchone()["cnt"]
         ac = conn.execute("SELECT COUNT(*) as cnt FROM legacy_apis WHERE legacy_app_id=?", (app_id,)).fetchone()["cnt"]
-        tc2 = conn.execute("SELECT COUNT(DISTINCT table_name) as cnt FROM legacy_db_schemas WHERE legacy_app_id=?", (app_id,)).fetchone()["cnt"]
-        hs = [{"name": h["name"], "coupling_score": h["coupling_score"]} for h in conn.execute("SELECT name,coupling_score FROM legacy_components WHERE legacy_app_id=? ORDER BY coupling_score DESC LIMIT 5", (app_id,)).fetchall()]
+        tc2 = conn.execute(
+            "SELECT COUNT(DISTINCT table_name) as cnt FROM legacy_db_schemas WHERE legacy_app_id=?", (app_id,)
+        ).fetchone()["cnt"]
+        hs = [
+            {"name": h["name"], "coupling_score": h["coupling_score"]}
+            for h in conn.execute(
+                "SELECT name,coupling_score FROM legacy_components WHERE legacy_app_id=? ORDER BY coupling_score DESC LIMIT 5",
+                (app_id,),
+            ).fetchall()
+        ]
     finally:
         conn.close()
     cg = extract_call_graph(app_id)
@@ -554,25 +801,52 @@ def generate_architecture_summary(app_id: str) -> dict:
         cvs.append(c["coupling_score"] or 0.0)
         tc[c["component_type"]] += 1
     return {
-        "app_name": ar["name"], "language": ar["primary_language"], "framework": ar["framework"],
-        "total_loc": ar["loc_total"] or 0, "total_components": len(comps), "total_dependencies": dc,
-        "total_apis": ac, "total_tables": tc2, "packages": len(cd["packages"]),
-        "suggested_services": len(sb["communities"]), "modularity_score": sb["modularity_score"],
+        "app_name": ar["name"],
+        "language": ar["primary_language"],
+        "framework": ar["framework"],
+        "total_loc": ar["loc_total"] or 0,
+        "total_components": len(comps),
+        "total_dependencies": dc,
+        "total_apis": ac,
+        "total_tables": tc2,
+        "packages": len(cd["packages"]),
+        "suggested_services": len(sb["communities"]),
+        "modularity_score": sb["modularity_score"],
         "complexity_distribution": cxd,
-        "coupling_analysis": {"avg": round(sum(cvs)/len(cvs), 4) if cvs else 0.0,
-                              "max": round(max(cvs), 4) if cvs else 0.0, "hotspots": hs},
+        "coupling_analysis": {
+            "avg": round(sum(cvs) / len(cvs), 4) if cvs else 0.0,
+            "max": round(max(cvs), 4) if cvs else 0.0,
+            "hotspots": hs,
+        },
         "architecture_style": _detect_style(tc, len(comps)),
-        "call_graph_nodes": len(cg["nodes"]), "call_graph_edges": len(cg["edges"])}
+        "call_graph_nodes": len(cg["nodes"]),
+        "call_graph_edges": len(cg["edges"]),
+    }
+
 
 # -- Text Formatters (ASCII diagrams) -----------------------------------------
 def _fmt_cg(d):
-    ls = ["CUI // SP-CTI", "", "=" * 70, "  CALL GRAPH", "=" * 70, "",
-          f"  Nodes: {len(d['nodes'])}    Edges: {len(d['edges'])}", ""]
+    ls = [
+        "CUI // SP-CTI",
+        "",
+        "=" * 70,
+        "  CALL GRAPH",
+        "=" * 70,
+        "",
+        f"  Nodes: {len(d['nodes'])}    Edges: {len(d['edges'])}",
+        "",
+    ]
     if d["nodes"]:
-        ls += ["  COMPONENTS:", "  " + "-" * 66,
-               f"  {'ID':<12} {'Name':<25} {'Type':<15} {'LOC':>6} {'Cmplx':>6}", "  " + "-" * 66]
+        ls += [
+            "  COMPONENTS:",
+            "  " + "-" * 66,
+            f"  {'ID':<12} {'Name':<25} {'Type':<15} {'LOC':>6} {'Cmplx':>6}",
+            "  " + "-" * 66,
+        ]
         for n in sorted(d["nodes"], key=lambda x: x["name"]):
-            ls.append(f"  {n['id'][:10]:<12} {n['name'][:23]:<25} {n['type']:<15} {n['loc']:>6} {n['complexity']:>6.1f}")
+            ls.append(
+                f"  {n['id'][:10]:<12} {n['name'][:23]:<25} {n['type']:<15} {n['loc']:>6} {n['complexity']:>6.1f}"
+            )
         ls.append("")
     if d["edges"]:
         nm = {n["id"]: n["name"] for n in d["nodes"]}
@@ -583,21 +857,37 @@ def _fmt_cg(d):
         for sid, es in sorted(by_s.items(), key=lambda x: nm.get(x[0], "")):
             for e in es:
                 ar = "-->" if e["type"] == "method_call" else "..>"
-                ls.append(f"  [{nm.get(sid, sid[:10])[:20]}] {ar} [{nm.get(e['target'], e['target'][:10])[:20]}]  ({e['type']}, w={e['weight']:.1f})")
+                ls.append(
+                    f"  [{nm.get(sid, sid[:10])[:20]}] {ar} [{nm.get(e['target'], e['target'][:10])[:20]}]  ({e['type']}, w={e['weight']:.1f})"
+                )
         ls.append("")
     ls += ["=" * 70, "CUI // SP-CTI"]
     return "\n".join(ls)
 
+
 def _fmt_cd(d):
-    ls = ["CUI // SP-CTI", "", "=" * 70, "  COMPONENT DIAGRAM", "=" * 70, "",
-          f"  Packages: {len(d['packages'])}    Inter-package edges: {len(d['inter_package_edges'])}", ""]
+    ls = [
+        "CUI // SP-CTI",
+        "",
+        "=" * 70,
+        "  COMPONENT DIAGRAM",
+        "=" * 70,
+        "",
+        f"  Packages: {len(d['packages'])}    Inter-package edges: {len(d['inter_package_edges'])}",
+        "",
+    ]
     for p in d["packages"]:
         w = max(42, len(p["name"]) + 6)
-        ls += ["  +" + "-" * w + "+", f"  | {p['name']:<{w-2}} |", "  +" + "-" * w + "+"]
+        ls += ["  +" + "-" * w + "+", f"  | {p['name']:<{w - 2}} |", "  +" + "-" * w + "+"]
         for c in p["components"]:
-            ls.append(f"  |  [{c['type'][:12]}] {c['name'][:w-20]:<{w-18}}|")
-        ls += [f"  | int:{p['internal_deps']} ext:{p['external_deps']}" + " " * max(0, w - 18 - len(str(p['internal_deps'])) - len(str(p['external_deps']))) + "|",
-               "  +" + "-" * w + "+", ""]
+            ls.append(f"  |  [{c['type'][:12]}] {c['name'][: w - 20]:<{w - 18}}|")
+        ls += [
+            f"  | int:{p['internal_deps']} ext:{p['external_deps']}"
+            + " " * max(0, w - 18 - len(str(p["internal_deps"])) - len(str(p["external_deps"])))
+            + "|",
+            "  +" + "-" * w + "+",
+            "",
+        ]
     if d["inter_package_edges"]:
         ls += ["  INTER-PACKAGE DEPS:", "  " + "-" * 50]
         for e in d["inter_package_edges"]:
@@ -606,9 +896,18 @@ def _fmt_cd(d):
     ls += ["=" * 70, "CUI // SP-CTI"]
     return "\n".join(ls)
 
+
 def _fmt_df(d):
-    ls = ["CUI // SP-CTI", "", "=" * 70, "  DATA FLOW ANALYSIS", "=" * 70, "",
-          f"  API Endpoints Traced: {len(d['flows'])}", ""]
+    ls = [
+        "CUI // SP-CTI",
+        "",
+        "=" * 70,
+        "  DATA FLOW ANALYSIS",
+        "=" * 70,
+        "",
+        f"  API Endpoints Traced: {len(d['flows'])}",
+        "",
+    ]
     for f in d["flows"]:
         db = " [DB]" if f["reaches_database"] else ""
         ls.append(f"  {f['method'] or 'ANY'} {f['path']}{db}")
@@ -622,33 +921,57 @@ def _fmt_df(d):
     ls += ["=" * 70, "CUI // SP-CTI"]
     return "\n".join(ls)
 
+
 def _fmt_sb(d):
-    ls = ["CUI // SP-CTI", "", "=" * 70, "  SERVICE BOUNDARY DETECTION", "=" * 70, "",
-          f"  Modularity Score (Q): {d['modularity_score']:.4f}",
-          f"  Suggested Services:   {len(d['communities'])}", ""]
+    ls = [
+        "CUI // SP-CTI",
+        "",
+        "=" * 70,
+        "  SERVICE BOUNDARY DETECTION",
+        "=" * 70,
+        "",
+        f"  Modularity Score (Q): {d['modularity_score']:.4f}",
+        f"  Suggested Services:   {len(d['communities'])}",
+        "",
+    ]
     for i, c in enumerate(d["communities"], 1):
-        ls += [f"  Service {i}: {c['suggested_service_name']}",
-               f"    Cohesion: {c['cohesion']:.4f}  Coupling: {c['coupling']:.4f}",
-               f"    Components ({len(c['components'])}):" ]
+        ls += [
+            f"  Service {i}: {c['suggested_service_name']}",
+            f"    Cohesion: {c['cohesion']:.4f}  Coupling: {c['coupling']:.4f}",
+            f"    Components ({len(c['components'])}):",
+        ]
         for cid in c["components"][:10]:
             ls.append(f"      - {cid}")
         if len(c["components"]) > 10:
-            ls.append(f"      ... and {len(c['components'])-10} more")
+            ls.append(f"      ... and {len(c['components']) - 10} more")
         ls.append("")
     ls += ["=" * 70, "CUI // SP-CTI"]
     return "\n".join(ls)
 
+
 def _fmt_ds(d):
-    ls = ["CUI // SP-CTI", "", "=" * 70, "  DATABASE SCHEMA", "=" * 70, "",
-          f"  DB Type: {d.get('db_type','unknown')}",
-          f"  Tables: {d['total_tables']}  Columns: {d['total_columns']}  Relationships: {d['total_relationships']}", ""]
+    ls = [
+        "CUI // SP-CTI",
+        "",
+        "=" * 70,
+        "  DATABASE SCHEMA",
+        "=" * 70,
+        "",
+        f"  DB Type: {d.get('db_type', 'unknown')}",
+        f"  Tables: {d['total_tables']}  Columns: {d['total_columns']}  Relationships: {d['total_relationships']}",
+        "",
+    ]
     for t in d["tables"]:
         w = max(45, len(t["name"]) + 10)
-        ls += ["  +" + "=" * w + "+", f"  | {t['name'].upper():<{w-2}} |", "  +" + "-" * w + "+"]
+        ls += ["  +" + "=" * w + "+", f"  | {t['name'].upper():<{w - 2}} |", "  +" + "-" * w + "+"]
         for c in t["columns"]:
             pk = " [PK]" if c.get("pk") else ""
-            fk = f" -> {c['fk_table']}.{c.get('fk_col','?')}" if c.get("fk_table") else ""
-            ls.append(f"  | {c['name']} : {c['type']}{pk}{fk}" + " " * max(0, w - 4 - len(c['name']) - len(c['type']) - len(pk) - len(fk)) + " |")
+            fk = f" -> {c['fk_table']}.{c.get('fk_col', '?')}" if c.get("fk_table") else ""
+            ls.append(
+                f"  | {c['name']} : {c['type']}{pk}{fk}"
+                + " " * max(0, w - 4 - len(c["name"]) - len(c["type"]) - len(pk) - len(fk))
+                + " |"
+            )
         ls += ["  +" + "=" * w + "+", ""]
     if d["relationships"]:
         ls += ["  FOREIGN KEY RELATIONSHIPS:", "  " + "-" * 50]
@@ -658,16 +981,32 @@ def _fmt_ds(d):
     ls += ["=" * 70, "CUI // SP-CTI"]
     return "\n".join(ls)
 
+
 def _fmt_sm(d):
-    ls = ["CUI // SP-CTI", "", "=" * 70, "  ARCHITECTURE SUMMARY", "=" * 70, "",
-          f"  Application:   {d['app_name']}", f"  Language:       {d['language']}",
-          f"  Framework:      {d['framework']}", f"  Architecture:   {d['architecture_style']}", "",
-          "  METRICS:",
-          f"    Total LOC:          {d['total_loc']:>8,}", f"    Components:         {d['total_components']:>8,}",
-          f"    Dependencies:       {d['total_dependencies']:>8,}", f"    API Endpoints:      {d['total_apis']:>8,}",
-          f"    Database Tables:    {d['total_tables']:>8,}", f"    Packages:           {d['packages']:>8,}",
-          f"    Suggested Services: {d['suggested_services']:>8,}",
-          f"    Modularity (Q):     {d['modularity_score']:>8.4f}", "", "  COMPLEXITY DISTRIBUTION:"]
+    ls = [
+        "CUI // SP-CTI",
+        "",
+        "=" * 70,
+        "  ARCHITECTURE SUMMARY",
+        "=" * 70,
+        "",
+        f"  Application:   {d['app_name']}",
+        f"  Language:       {d['language']}",
+        f"  Framework:      {d['framework']}",
+        f"  Architecture:   {d['architecture_style']}",
+        "",
+        "  METRICS:",
+        f"    Total LOC:          {d['total_loc']:>8,}",
+        f"    Components:         {d['total_components']:>8,}",
+        f"    Dependencies:       {d['total_dependencies']:>8,}",
+        f"    API Endpoints:      {d['total_apis']:>8,}",
+        f"    Database Tables:    {d['total_tables']:>8,}",
+        f"    Packages:           {d['packages']:>8,}",
+        f"    Suggested Services: {d['suggested_services']:>8,}",
+        f"    Modularity (Q):     {d['modularity_score']:>8.4f}",
+        "",
+        "  COMPLEXITY DISTRIBUTION:",
+    ]
     cd = d["complexity_distribution"]
     tot = sum(cd.values()) or 1
     for b in ("low", "medium", "high", "very_high"):
@@ -680,24 +1019,41 @@ def _fmt_sm(d):
         ls.append("    Hotspots:")
         for h in ca["hotspots"]:
             ls.append(f"      - {h['name']}: {h['coupling_score']:.4f}")
-    ls += ["", "  CALL GRAPH:", f"    Nodes: {d['call_graph_nodes']}    Edges: {d['call_graph_edges']}",
-           "", "=" * 70, "CUI // SP-CTI"]
+    ls += [
+        "",
+        "  CALL GRAPH:",
+        f"    Nodes: {d['call_graph_nodes']}    Edges: {d['call_graph_edges']}",
+        "",
+        "=" * 70,
+        "CUI // SP-CTI",
+    ]
     return "\n".join(ls)
 
+
 # -- CLI -----------------------------------------------------------------------
-_FMTS = {"call-graph": _fmt_cg, "component-diagram": _fmt_cd, "data-flow": _fmt_df,
-         "service-boundaries": _fmt_sb, "db-schema": _fmt_ds, "summary": _fmt_sm}
-_EXT = {"call-graph": lambda a: extract_call_graph(a.app_id),
-        "component-diagram": lambda a: extract_component_diagram(a.app_id),
-        "data-flow": lambda a: extract_data_flow(a.app_id),
-        "service-boundaries": lambda a: detect_service_boundaries(a.app_id),
-        "db-schema": lambda a: extract_database_schema(a.app_id, a.source_path),
-        "summary": lambda a: generate_architecture_summary(a.app_id)}
+_FMTS = {
+    "call-graph": _fmt_cg,
+    "component-diagram": _fmt_cd,
+    "data-flow": _fmt_df,
+    "service-boundaries": _fmt_sb,
+    "db-schema": _fmt_ds,
+    "summary": _fmt_sm,
+}
+_EXT = {
+    "call-graph": lambda a: extract_call_graph(a.app_id),
+    "component-diagram": lambda a: extract_component_diagram(a.app_id),
+    "data-flow": lambda a: extract_data_flow(a.app_id),
+    "service-boundaries": lambda a: detect_service_boundaries(a.app_id),
+    "db-schema": lambda a: extract_database_schema(a.app_id, a.source_path),
+    "summary": lambda a: generate_architecture_summary(a.app_id),
+}
+
 
 def main():
-    """CLI entry point for the ICDEV Architecture Extractor."""
-    ap = argparse.ArgumentParser(description="CUI // SP-CTI -- ICDEV Architecture Extractor",
-                                 epilog="Classification: CUI // SP-CTI")
+    """CLI entry point for the ICDEV™ Architecture Extractor."""
+    ap = argparse.ArgumentParser(
+        description="CUI // SP-CTI -- ICDEV™ Architecture Extractor", epilog="Classification: CUI // SP-CTI"
+    )
     ap.add_argument("--app-id", required=True, help="Legacy application ID to analyze.")
     ap.add_argument("--extract", required=True, choices=list(_EXT.keys()), help="Extraction type.")
     ap.add_argument("--source-path", help="Source code path (required for db-schema).")
@@ -727,6 +1083,7 @@ def main():
         print(f"Output written to: {op}")
     else:
         print(output)
+
 
 if __name__ == "__main__":
     main()

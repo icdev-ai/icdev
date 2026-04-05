@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
+from __future__ import annotations
+
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """MOSA Modular Design Analyzer — Static analysis for MOSA modularity metrics.
 
 Analyzes source code to compute coupling, cohesion, interface coverage,
@@ -589,7 +591,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--project-id", default=None,
-        help="ICDEV project ID (required for --store)",
+        help="ICDEV™ project ID (required for --store)",
     )
     parser.add_argument(
         "--store", action="store_true",

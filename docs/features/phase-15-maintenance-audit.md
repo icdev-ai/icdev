@@ -9,7 +9,7 @@
 | Status | Implemented |
 | Priority | P1 |
 | Dependencies | Phase 10 (Security Scanning), Phase 11 (Compliance Workflow) |
-| Author | ICDEV Architect Agent |
+| Author | ICDEV™ Architect Agent |
 | Date | 2026-02-23 |
 
 ---
@@ -20,7 +20,7 @@ Outdated dependencies are the number one attack vector in modern software system
 
 Manual dependency auditing is error-prone and does not scale across multi-language projects. Teams often discover vulnerabilities only during periodic security reviews, by which time the exposure window has been dangerously long. CISA Secure by Design Commitment 4 mandates timely security patch application, yet many organizations lack automated enforcement of remediation SLAs.
 
-ICDEV needs an automated maintenance audit system that continuously inventories dependencies across all six supported languages, checks for known vulnerabilities against advisory databases, enforces remediation SLAs by severity, computes a maintenance health score, and auto-remediates low-risk issues while escalating critical findings for human review.
+ICDEV™ needs an automated maintenance audit system that continuously inventories dependencies across all six supported languages, checks for known vulnerabilities against advisory databases, enforces remediation SLAs by severity, computes a maintenance health score, and auto-remediates low-risk issues while escalating critical findings for human review.
 
 ---
 

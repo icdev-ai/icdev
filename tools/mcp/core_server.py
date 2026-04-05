@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Core MCP server exposing project management tools for the ICDEV system.
+"""Core MCP server exposing project management tools for the ICDEV™ system.
 
 Tools:
     project_create  - Create a new project (UUID, directory, DB record, audit)
@@ -21,6 +21,7 @@ import os
 import sqlite3
 import sys
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -46,10 +47,10 @@ except ImportError:
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_db() -> sqlite3.Connection:
-    """Open a connection to the ICDEV database."""
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
+    """Open a connection to the ICDEV™ database."""
+    conn = get_connection()
     return conn
 
 
@@ -71,7 +72,7 @@ def _audit(event_type: str, actor: str, action: str, project_id: str = None, det
 
     # Direct write fallback
     try:
-        conn = sqlite3.connect(str(DB_PATH))
+        conn = get_connection()
         conn.execute(
             """INSERT INTO audit_trail
                (project_id, event_type, actor, action, details, classification)
@@ -87,6 +88,7 @@ def _audit(event_type: str, actor: str, action: str, project_id: str = None, det
 # ---------------------------------------------------------------------------
 # Tool handlers
 # ---------------------------------------------------------------------------
+
 
 def handle_project_create(args: dict) -> dict:
     """Create a new project: generate UUID, create directory, insert DB record, log audit."""
@@ -179,29 +181,29 @@ def handle_project_list(args: dict) -> dict:
                 (status_filter,),
             ).fetchall()
         else:
-            rows = conn.execute(
-                "SELECT * FROM projects ORDER BY created_at DESC"
-            ).fetchall()
+            rows = conn.execute("SELECT * FROM projects ORDER BY created_at DESC").fetchall()
 
         projects = []
         for row in rows:
-            projects.append({
-                "id": row["id"],
-                "name": row["name"],
-                "description": row["description"],
-                "type": row["type"],
-                "classification": row["classification"],
-                "status": row["status"],
-                "tech_stack": {
-                    "backend": row["tech_stack_backend"],
-                    "frontend": row["tech_stack_frontend"],
-                    "database": row["tech_stack_database"],
-                },
-                "directory_path": row["directory_path"],
-                "created_by": row["created_by"],
-                "created_at": row["created_at"],
-                "updated_at": row["updated_at"],
-            })
+            projects.append(
+                {
+                    "id": row["id"],
+                    "name": row["name"],
+                    "description": row["description"],
+                    "type": row["type"],
+                    "classification": row["classification"],
+                    "status": row["status"],
+                    "tech_stack": {
+                        "backend": row["tech_stack_backend"],
+                        "frontend": row["tech_stack_frontend"],
+                        "database": row["tech_stack_database"],
+                    },
+                    "directory_path": row["directory_path"],
+                    "created_by": row["created_by"],
+                    "created_at": row["created_at"],
+                    "updated_at": row["updated_at"],
+                }
+            )
     finally:
         conn.close()
 
@@ -321,7 +323,9 @@ def handle_project_status(args: dict) -> dict:
                 "version": dep["version"],
                 "status": dep["status"],
                 "deployed_by": dep["deployed_by"],
-                "health_check_passed": bool(dep["health_check_passed"]) if dep["health_check_passed"] is not None else None,
+                "health_check_passed": bool(dep["health_check_passed"])
+                if dep["health_check_passed"] is not None
+                else None,
                 "deployed_at": dep["created_at"],
                 "completed_at": dep["completed_at"],
             }
@@ -466,9 +470,7 @@ def handle_agent_status(args: dict) -> dict:
     conn = _get_db()
     try:
         if agent_id:
-            rows = conn.execute(
-                "SELECT * FROM agents WHERE id = ?", (agent_id,)
-            ).fetchall()
+            rows = conn.execute("SELECT * FROM agents WHERE id = ?", (agent_id,)).fetchall()
         else:
             rows = conn.execute("SELECT * FROM agents ORDER BY name").fetchall()
 
@@ -487,17 +489,19 @@ def handle_agent_status(args: dict) -> dict:
                 (row["id"],),
             ).fetchone()
 
-            agents.append({
-                "id": row["id"],
-                "name": row["name"],
-                "description": row["description"],
-                "url": row["url"],
-                "status": row["status"],
-                "capabilities": capabilities,
-                "last_heartbeat": row["last_heartbeat"],
-                "active_tasks": task_count["cnt"] if task_count else 0,
-                "created_at": row["created_at"],
-            })
+            agents.append(
+                {
+                    "id": row["id"],
+                    "name": row["name"],
+                    "description": row["description"],
+                    "url": row["url"],
+                    "status": row["status"],
+                    "capabilities": capabilities,
+                    "last_heartbeat": row["last_heartbeat"],
+                    "active_tasks": task_count["cnt"] if task_count else 0,
+                    "created_at": row["created_at"],
+                }
+            )
     finally:
         conn.close()
 
@@ -507,6 +511,7 @@ def handle_agent_status(args: dict) -> dict:
 # ---------------------------------------------------------------------------
 # Resource handlers
 # ---------------------------------------------------------------------------
+
 
 def handle_resource_projects_list(uri: str) -> dict:
     """Resource handler for projects://list."""
@@ -525,6 +530,7 @@ def handle_resource_project_status(uri: str) -> dict:
 # Server setup & main
 # ---------------------------------------------------------------------------
 
+
 def create_server() -> MCPServer:
     """Create and configure the core MCP server with all tools and resources."""
     server = MCPServer(name="icdev-core", version="1.0.0")
@@ -533,7 +539,7 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="project_create",
-        description="Create a new ICDEV project with UUID, directory scaffolding, database record, and audit trail entry.",
+        description="Create a new ICDEV™ project with UUID, directory scaffolding, database record, and audit trail entry.",
         input_schema={
             "type": "object",
             "properties": {
@@ -574,7 +580,7 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="project_list",
-        description="List all ICDEV projects from the database, optionally filtered by status.",
+        description="List all ICDEV™ projects from the database, optionally filtered by status.",
         input_schema={
             "type": "object",
             "properties": {
@@ -659,7 +665,7 @@ def create_server() -> MCPServer:
     server.register_resource(
         uri="projects://list",
         name="Project List",
-        description="List of all ICDEV projects",
+        description="List of all ICDEV™ projects",
         handler=handle_resource_projects_list,
     )
 

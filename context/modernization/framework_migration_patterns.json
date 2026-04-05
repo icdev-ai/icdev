@@ -1,12 +1,12 @@
 {
   "metadata": {
     "classification": "CUI // SP-CTI",
-    "title": "Framework Migration Patterns for DoD ICDEV Systems",
+    "title": "Framework Migration Patterns for DoD ICDEV™ Systems",
     "version": "1.0.0",
     "last_updated": "2026-02-16",
     "description": "Comprehensive migration patterns covering Java, C#/.NET, and Python framework transitions for DoD IL4+ environments",
     "applicable_environments": ["AWS GovCloud", "IL4", "IL5", "Air-Gapped"],
-    "owner": "ICDEV Architect Agent"
+    "owner": "ICDEV™ Architect Agent"
   },
   "migration_patterns": [
     {

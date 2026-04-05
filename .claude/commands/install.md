@@ -1,6 +1,6 @@
-# Install — Full ICDEV Setup with All Compliance Frameworks
+# Install — Full ICDEV™ Setup with All Compliance Frameworks
 
-Complete first-time setup of the ICDEV platform with all compliance frameworks enabled for testing.
+Complete first-time setup of the ICDEV™ platform with all compliance frameworks enabled for testing.
 
 ## Read First
 

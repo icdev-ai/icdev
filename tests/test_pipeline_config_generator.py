@@ -7,24 +7,23 @@ import sys
 from pathlib import Path
 from unittest import mock
 
-import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from icdev.tools.ci.pipeline_config_generator import (
     CHECK_REGISTRY,
     generate_pipeline,
     _build_gate_evaluation_script,
-    _generate_github_workflow,
-    _generate_gitlab_ci,
 )
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────
 
+
 def _write_yaml(tmp_dir: str, content: dict) -> str:
     path = Path(tmp_dir) / "icdev.yaml"
     try:
         import yaml
+
         path.write_text(yaml.dump(content), encoding="utf-8")
     except ImportError:
         path.write_text(json.dumps(content), encoding="utf-8")
@@ -40,6 +39,7 @@ MINIMAL_MANIFEST = {
 
 # ── Test generate_pipeline ──────────────────────────────────────────────
 
+
 class TestGeneratePipeline:
     def test_github_minimal(self, tmp_path):
         _write_yaml(str(tmp_path), MINIMAL_MANIFEST)
@@ -48,7 +48,7 @@ class TestGeneratePipeline:
         assert result["platform"] == "github"
         assert result["errors"] == []
         assert "icdev.yml" in result["output_path"]
-        assert "ICDEV Compliance Pipeline" in result["content"]
+        assert "ICDEV™ Compliance Pipeline" in result["content"]
         assert "actions/checkout@v4" in result["content"]
 
     def test_gitlab_minimal(self, tmp_path):
@@ -151,6 +151,7 @@ class TestGeneratePipeline:
 
 # ── Test gate script ────────────────────────────────────────────────────
 
+
 class TestGateScript:
     def test_empty_gates(self):
         script = _build_gate_evaluation_script({}, "github")
@@ -169,6 +170,7 @@ class TestGateScript:
 
 
 # ── Test check registry ─────────────────────────────────────────────────
+
 
 class TestCheckRegistry:
     def test_all_checks_have_required_fields(self):

@@ -572,7 +572,7 @@ def main():
     )
     parser.add_argument(
         "--project-id", required=True,
-        help="Project ID in ICDEV database"
+        help="Project ID in ICDEV™ database"
     )
     parser.add_argument(
         "--db-path", type=Path, default=None,

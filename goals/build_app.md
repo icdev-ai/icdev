@@ -1,10 +1,10 @@
-# Build App — ATLAS Workflow
+# Build App — ANVIL Workflow
 
 ## Goal
 
-Build full-stack applications using AI assistance within the GOTCHA framework. This workflow ensures apps are production-ready, not just demos.
+Build full-stack applications using AI assistance within the FORGE framework. This workflow ensures apps are production-ready, not just demos.
 
-**ATLAS** is a 5-step process (6 steps with optional Critique phase):
+**ANVIL** is a 5-step process (6 steps with optional Critique phase):
 
 | Step | Phase | What You Do |
 |------|-------|-------------|
@@ -15,7 +15,7 @@ Build full-stack applications using AI assistance within the GOTCHA framework. T
 | **C** | Critique | *(Optional)* Adversarial multi-agent plan review |
 | **S** | Stress-test | Test functionality, error handling |
 
-When the Critique phase is enabled (`atlas_critique.enabled: true` in `args/atlas_critique_config.yaml`), the workflow becomes **ATLAS-CR**:
+When the Critique phase is enabled (`anvil_critique.enabled: true` in `args/anvil_critique_config.yaml`), the workflow becomes **ANVIL-CR**:
 
 ```
 A(rchitect) → T(race) → L(ink) → A(ssemble) → C(ritique) → S(tress-test)
@@ -42,7 +42,7 @@ flowchart LR
     style Stop fill:#3a1a1a,stroke:#e74c3c,color:#e0e0e0
 ```
 
-If the Critique phase is disabled, ATLAS operates as the original 5-step process (backward compatible).
+If the Critique phase is disabled, ANVIL operates as the original 5-step process (backward compatible).
 
 ## For prod builds when asked specifically add:
 + V - Validate (security/input sanitization, edge cases, unit tests)
@@ -201,7 +201,7 @@ All green checkmarks. If anything fails, fix it before proceeding.
 
 ### Architecture Layers
 
-Follow GOTCHA separation:
+Follow FORGE separation:
 
 1. **Frontend** (what user sees)
    - UI components
@@ -245,7 +245,7 @@ Working application with:
 
 **Purpose:** Adversarial multi-agent review of the Assemble output before stress-testing. Catches security, compliance, and architectural issues early through independent parallel review.
 
-This phase is **optional** and controlled by `atlas_critique.enabled` in `args/atlas_critique_config.yaml`. When disabled, ATLAS proceeds directly from Assemble to Stress-test (backward compatible).
+This phase is **optional** and controlled by `anvil_critique.enabled` in `args/anvil_critique_config.yaml`. When disabled, ANVIL proceeds directly from Assemble to Stress-test (backward compatible).
 
 ### How It Works
 
@@ -267,19 +267,19 @@ This phase is **optional** and controlled by `atlas_critique.enabled` in `args/a
 
 ```bash
 # Run critique on plan text
-python tools/agent/atlas_critique.py --project-id "proj-123" \
+python tools/agent/anvil_critique.py --project-id "proj-123" \
     --phase-output "plan text here" --json
 
 # Run critique on a file
-python tools/agent/atlas_critique.py --project-id "proj-123" \
+python tools/agent/anvil_critique.py --project-id "proj-123" \
     --phase-output /path/to/plan.md --json
 
 # Check session status
-python tools/agent/atlas_critique.py --project-id "proj-123" \
+python tools/agent/anvil_critique.py --project-id "proj-123" \
     --session-id "crit-abc123" --status --json
 
 # View critique history for a project
-python tools/agent/atlas_critique.py --project-id "proj-123" \
+python tools/agent/anvil_critique.py --project-id "proj-123" \
     --history --json
 ```
 
@@ -298,7 +298,7 @@ python tools/agent/atlas_critique.py --project-id "proj-123" \
 
 ### Configuration
 
-See `args/atlas_critique_config.yaml` for:
+See `args/anvil_critique_config.yaml` for:
 - Critic agent assignments and focus areas
 - Consensus rules (GO/NOGO/CONDITIONAL thresholds)
 - Revision prompt template
@@ -382,9 +382,9 @@ Test report with:
 
 ---
 
-## M-ATLAS Variant (MBSE-Enabled Projects)
+## M-ANVIL Variant (MBSE-Enabled Projects)
 
-If the project has `mbse_enabled=1`, use the **M-ATLAS** workflow which adds a **Model** pre-phase:
+If the project has `mbse_enabled=1`, use the **M-ANVIL** workflow which adds a **Model** pre-phase:
 
 | Step | Phase | What You Do |
 |------|-------|-------------|
@@ -431,7 +431,7 @@ flowchart LR
 4. Generate code scaffolding: `python tools/mbse/model_code_generator.py --project-id X --language python --output ./src`
 5. Map model to NIST controls: `python tools/mbse/model_control_mapper.py --project-id X --map-all`
 
-If no model exists, skip this phase — ATLAS starts at Architect (backward compatible).
+If no model exists, skip this phase — ANVIL starts at Architect (backward compatible).
 
 ---
 
@@ -461,6 +461,23 @@ If the implementation added or modified dashboard pages, routes, or templates:
 
 **Do NOT wait for the user to request this.** Playwright E2E is part of Stress-test, not a separate step.
 
+### 1b. Cross-Platform Compatibility (if new Python tools created)
+
+If the implementation added or modified Python tools:
+
+```
+[ ] All file paths use pathlib.Path (no string concatenation with / or \)
+[ ] All open() calls specify encoding='utf-8'
+[ ] No hardcoded /tmp or C:\ paths (use tempfile.gettempdir())
+[ ] No subprocess calls for Ollama (use HTTP /api/tags)
+[ ] datetime.now(timezone.utc) used, not datetime.utcnow()
+[ ] hashlib.sha256 used, not hashlib.md5 (bandit B324)
+[ ] .gitattributes exists with eol=lf rules
+[ ] Run: python tools/testing/platform_check.py --json (0 failures)
+```
+
+**Do NOT skip this.** Code developed on Windows must deploy to Linux without modification.
+
 ### 2. Feature Documentation
 
 Create `docs/features/phase-{N}-{descriptive-slug}.md` following the standard format:
@@ -482,7 +499,21 @@ Create `docs/features/phase-{N}-{descriptive-slug}.md` following the standard fo
 
 **Do NOT wait for the user to request this.** Documentation is a mandatory deliverable of every phase.
 
-### 3. CLAUDE.md Updates
+### 3. Companion Sync (LLM-Agnostic — Mandatory)
+
+ICDEV™ supports 10 AI coding platforms. After every phase:
+
+```
+[ ] Run: python tools/dx/companion.py --sync --write --json
+[ ] Verify instruction files updated (AGENTS.md, .clinerules, .cursor/, .windsurf/, etc.)
+[ ] Verify MCP configs updated for detected platforms
+[ ] Verify skills translated for all platforms
+```
+
+This ensures Codex, Cursor, Copilot, Windsurf, Gemini, Amazon Q, JetBrains, Cline, and Aider
+users all benefit from new capabilities. **Do NOT skip this.**
+
+### 4. CLAUDE.md Updates
 
 If the phase added new capabilities, update CLAUDE.md:
 - New DB tables → update table count
@@ -515,9 +546,9 @@ These are the mistakes "vibe coders" make:
 
 ---
 
-## GOTCHA Layer Mapping
+## FORGE Layer Mapping
 
-| ATLAS Step | GOTCHA Layer |
+| ANVIL Step | FORGE Layer |
 |------------|--------------|
 | Architect | Goals (define the process) |
 | Trace | Context (reference patterns) |
@@ -539,18 +570,18 @@ These are the mistakes "vibe coders" make:
 
 ## Mandatory: Child Application Generation Pipeline
 
-When building a **child application** (an application generated by ICDEV), the following rules are **mandatory**:
+When building a **child application** (an application generated by ICDEV™), the following rules are **mandatory**:
 
 ### 1. Use the Child App Generator Pipeline
 
-All child applications MUST be generated through the `child_app_generator.py` pipeline (`tools/builder/child_app_generator.py`). This pipeline executes 16 steps that ensure every GOTCHA layer is populated:
+All child applications MUST be generated through the `child_app_generator.py` pipeline (`tools/builder/child_app_generator.py`). This pipeline executes 16 steps that ensure every FORGE layer is populated:
 
-1. Directory tree creation (all 6 GOTCHA layer directories)
+1. Directory tree creation (all 6 FORGE layer directories)
 2. Tool generation (deterministic Python scripts)
 3. Agent infrastructure (agent cards, A2A protocol)
 4. Memory system (MEMORY.md, logs, SQLite)
 5. Database initialization (standalone init script)
-6. Goals and hard prompts (adapted from ICDEV)
+6. Goals and hard prompts (adapted from ICDEV™)
 7. Args and context (YAML configs, reference material)
 8. A2A callback client (parent-child communication)
 9. CI/CD setup (GitHub + GitLab)
@@ -558,15 +589,15 @@ All child applications MUST be generated through the `child_app_generator.py` pi
 11. Dynamic CLAUDE.md generation (Jinja2)
 12. Audit trail and child registry registration
 13. Production audit (38-check readiness scan)
-14. **GOTCHA compliance validation** (6-layer + 4 meta checks)
+14. **FORGE compliance validation** (6-layer + 4 meta checks)
 
-**Do NOT manually scaffold child applications.** Manual creation bypasses GOTCHA layer population, ATLAS workflow integration, and compliance validation.
+**Do NOT manually scaffold child applications.** Manual creation bypasses FORGE layer population, ANVIL workflow integration, and compliance validation.
 
-### 2. Post-Generation GOTCHA Validation
+### 2. Post-Generation FORGE Validation
 
-After generation, `gotcha_validator.py` (`tools/builder/gotcha_validator.py`) MUST pass with `--gate` mode. This validates:
+After generation, `forge_validator.py` (`tools/builder/forge_validator.py`) MUST pass with `--gate` mode. This validates:
 
-| Check | GOTCHA Layer | Requirement |
+| Check | FORGE Layer | Requirement |
 |-------|-------------|-------------|
 | Goals | G | `goals/manifest.md` exists + at least `build_app.md` + 1 other goal |
 | Orchestration | O | Agent cards in `tools/agent/cards/` OR `args/agent_config.yaml` |
@@ -574,14 +605,14 @@ After generation, `gotcha_validator.py` (`tools/builder/gotcha_validator.py`) MU
 | Args | A | `args/` has at least 1 YAML file |
 | Context | C | `context/` has at least 1 subdirectory with content |
 | Hard Prompts | H | `hardprompts/` has at least 1 `.md` file |
-| CLAUDE.md | meta | Exists and references "GOTCHA" |
+| CLAUDE.md | meta | Exists and references "FORGE" |
 | Memory | meta | `memory/MEMORY.md` exists |
 | Database | meta | `tools/db/` has an init script |
-| ATLAS | meta | `goals/build_app.md` exists |
+| ANVIL | meta | `goals/build_app.md` exists |
 
 ### 3. BMAD Quality Gates (Recommended)
 
-ICDEV includes BMAD Method tools that SHOULD be used during child app generation:
+ICDEV™ includes BMAD Method tools that SHOULD be used during child app generation:
 
 - **PRD Validator** (`tools/requirements/prd_validator.py`) — Validate requirements quality before building
 - **Complexity Scorer** (`tools/requirements/complexity_scorer.py`) — Assess project complexity to select appropriate pipeline
@@ -596,7 +627,7 @@ The `/icdev-agentic` command is the standard entry point for generating child ap
 3. User decision confirmation
 4. Blueprint generation
 5. Child app generation (16-step pipeline)
-6. GOTCHA validation gate
+6. FORGE validation gate
 7. Verification and reporting
 
 ---

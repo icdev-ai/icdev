@@ -3,7 +3,7 @@
     "classification": "CUI // SP-CTI",
     "title": "Monolith Decomposition Patterns",
     "version": "1.0.0",
-    "system": "ICDEV Modernization Framework",
+    "system": "ICDEV™ Modernization Framework",
     "created": "2026-02-16",
     "description": "Canonical decomposition patterns for migrating DoD monolithic applications to microservice architectures under NIST 800-53 RMF and ATO constraints."
   },

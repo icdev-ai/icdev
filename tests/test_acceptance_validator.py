@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-"""Tests for the ICDEV Acceptance Criteria Validator (V&V gate)."""
+"""Tests for the ICDEV™ Acceptance Criteria Validator (V&V gate)."""
 
 import json
 import sys
@@ -48,9 +48,7 @@ def plan_without_criteria(tmp_path):
     """Create a plan file missing ## Acceptance Criteria section."""
     plan = tmp_path / "plan_no_ac.md"
     plan.write_text(
-        "# Feature: Something\n\n"
-        "## Solution Statement\nDo something.\n\n"
-        "## Notes\nNo acceptance criteria here.\n",
+        "# Feature: Something\n\n## Solution Statement\nDo something.\n\n## Notes\nNo acceptance criteria here.\n",
         encoding="utf-8",
     )
     return str(plan)
@@ -92,17 +90,19 @@ def test_state_passing(tmp_path):
     """Create a test state file with passing results."""
     state = tmp_path / "state.json"
     state.write_text(
-        json.dumps({
-            "run_id": "abc12345",
-            "unit_passed": 14,
-            "unit_failed": 0,
-            "bdd_passed": 3,
-            "bdd_failed": 0,
-            "e2e_passed": 2,
-            "e2e_failed": 0,
-            "security_gate_passed": True,
-            "compliance_gate_passed": True,
-        }),
+        json.dumps(
+            {
+                "run_id": "abc12345",
+                "unit_passed": 14,
+                "unit_failed": 0,
+                "bdd_passed": 3,
+                "bdd_failed": 0,
+                "e2e_passed": 2,
+                "e2e_failed": 0,
+                "security_gate_passed": True,
+                "compliance_gate_passed": True,
+            }
+        ),
         encoding="utf-8",
     )
     return str(state)
@@ -113,17 +113,19 @@ def test_state_failing(tmp_path):
     """Create a test state file with some failures."""
     state = tmp_path / "state.json"
     state.write_text(
-        json.dumps({
-            "run_id": "def67890",
-            "unit_passed": 10,
-            "unit_failed": 4,
-            "bdd_passed": 0,
-            "bdd_failed": 0,
-            "e2e_passed": 0,
-            "e2e_failed": 0,
-            "security_gate_passed": False,
-            "compliance_gate_passed": None,
-        }),
+        json.dumps(
+            {
+                "run_id": "def67890",
+                "unit_passed": 10,
+                "unit_failed": 4,
+                "bdd_passed": 0,
+                "bdd_failed": 0,
+                "e2e_passed": 0,
+                "e2e_failed": 0,
+                "security_gate_passed": False,
+                "compliance_gate_passed": None,
+            }
+        ),
         encoding="utf-8",
     )
     return str(state)
@@ -164,9 +166,7 @@ class _ErrorHandler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "text/html")
             self.end_headers()
-            self.wfile.write(
-                b"<html><body><script>ReferenceError: ICDEV is not defined</script></body></html>"
-            )
+            self.wfile.write(b"<html><body><script>ReferenceError: ICDEV is not defined</script></body></html>")
         else:
             self.send_response(200)
             self.send_header("Content-Type", "text/html")

@@ -1,7 +1,7 @@
 # Cost Estimation Prompt
 
 ## Role
-You are an ICDEV Cost Analyst estimating T-shirt-sized costs for proposed changes.
+You are an ICDEV™ Cost Analyst estimating T-shirt-sized costs for proposed changes.
 
 ## T-Shirt Size Model
 | Size | Hours | Cost Range (at $150/hr) |

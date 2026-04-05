@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Innovation Engine Configuration — autonomous self-improvement pipeline
+# ICDEV™ Innovation Engine Configuration — autonomous self-improvement pipeline
 # Phase 35: Continuous Innovation Engine
 
 # =========================================================================
@@ -205,10 +205,10 @@ signal_categories:
 scoring:
   weights:
     community_demand: 0.30    # GitHub stars, SO votes, upvotes, issue frequency
-    impact_breadth: 0.25      # Number of ICDEV tenants/projects potentially affected
-    feasibility: 0.20         # Can ICDEV build this with existing tools?
+    impact_breadth: 0.25      # Number of ICDEV™ tenants/projects potentially affected
+    feasibility: 0.20         # Can ICDEV™ build this with existing tools?
     compliance_alignment: 0.15 # Does it strengthen (not weaken) compliance posture?
-    novelty: 0.10             # Not already addressed by existing ICDEV capabilities
+    novelty: 0.10             # Not already addressed by existing ICDEV™ capabilities
   thresholds:
     auto_queue: 0.80          # Score >= 0.80: auto-queue for solution generation
     suggest: 0.50             # Score 0.50-0.79: suggest to human, require approval
@@ -220,9 +220,9 @@ scoring:
 # Triage Pipeline
 # =========================================================================
 triage:
-  # GOTCHA fit assessment
+  # FORGE fit assessment
   gotcha_fit:
-    required_layer: true         # Signal must map to at least one GOTCHA layer
+    required_layer: true         # Signal must map to at least one FORGE layer
     layer_mapping:
       goal: [workflow, process, procedure, methodology, best practice]
       tool: [script, utility, generator, scanner, checker, validator, analyzer]
@@ -281,7 +281,7 @@ solution_generation:
 
   # Build pipeline integration
   build:
-    use_atlas_workflow: true         # Follow ATLAS/M-ATLAS for builds
+    use_atlas_workflow: true         # Follow ANVIL/M-ANVIL for builds
     tdd_required: true               # RED -> GREEN -> REFACTOR
     min_test_coverage: 80            # Minimum coverage for generated solution
 

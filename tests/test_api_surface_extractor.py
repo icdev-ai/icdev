@@ -4,13 +4,11 @@
 
 from __future__ import annotations
 
-import json
 import textwrap
 
 import pytest
 
 from tools.testing.api_surface_extractor import (
-    APISurfaceVisitor,
     _compute_mock_targets,
     _compute_module_path,
     extract_api_surface,
@@ -23,6 +21,7 @@ from tools.testing.api_surface_extractor import (
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _write_py(tmp_path, filename, code):
     """Write a .py file with dedented code and return its path."""
     p = tmp_path / filename
@@ -34,13 +33,18 @@ def _write_py(tmp_path, filename, code):
 # Function extraction
 # ---------------------------------------------------------------------------
 
+
 class TestFunctionExtraction:
     def test_basic_function(self, tmp_path):
-        path = _write_py(tmp_path, "mod.py", '''\
+        path = _write_py(
+            tmp_path,
+            "mod.py",
+            '''\
             def greet(name: str, count: int = 1) -> str:
                 """Say hello."""
                 return f"Hello {name}" * count
-        ''')
+        ''',
+        )
         surface = extract_api_surface(path)
         assert len(surface["functions"]) == 1
         fn = surface["functions"][0]
@@ -54,10 +58,14 @@ class TestFunctionExtraction:
         assert fn["docstring"] == "Say hello."
 
     def test_async_function(self, tmp_path):
-        path = _write_py(tmp_path, "mod.py", '''\
+        path = _write_py(
+            tmp_path,
+            "mod.py",
+            """\
             async def fetch(url: str) -> bytes:
                 pass
-        ''')
+        """,
+        )
         surface = extract_api_surface(path)
         fn = surface["functions"][0]
         assert fn["is_async"] is True
@@ -65,10 +73,14 @@ class TestFunctionExtraction:
         assert fn["return_type"] == "bytes"
 
     def test_no_annotation_no_default(self, tmp_path):
-        path = _write_py(tmp_path, "mod.py", '''\
+        path = _write_py(
+            tmp_path,
+            "mod.py",
+            """\
             def process(data):
                 pass
-        ''')
+        """,
+        )
         surface = extract_api_surface(path)
         fn = surface["functions"][0]
         assert fn["parameters"][0]["type"] is None
@@ -76,38 +88,50 @@ class TestFunctionExtraction:
         assert fn["return_type"] is None
 
     def test_private_function_filtered(self, tmp_path):
-        path = _write_py(tmp_path, "mod.py", '''\
+        path = _write_py(
+            tmp_path,
+            "mod.py",
+            """\
             def public_fn():
                 pass
 
             def _private_fn():
                 pass
-        ''')
+        """,
+        )
         surface = extract_api_surface(path, include_private=False)
         assert len(surface["functions"]) == 1
         assert surface["functions"][0]["name"] == "public_fn"
 
     def test_private_function_included(self, tmp_path):
-        path = _write_py(tmp_path, "mod.py", '''\
+        path = _write_py(
+            tmp_path,
+            "mod.py",
+            """\
             def public_fn():
                 pass
 
             def _private_fn():
                 pass
-        ''')
+        """,
+        )
         surface = extract_api_surface(path, include_private=True)
         assert len(surface["functions"]) == 2
         names = {f["name"] for f in surface["functions"]}
         assert names == {"public_fn", "_private_fn"}
 
     def test_decorated_function(self, tmp_path):
-        path = _write_py(tmp_path, "mod.py", '''\
+        path = _write_py(
+            tmp_path,
+            "mod.py",
+            """\
             import functools
 
             @functools.lru_cache(maxsize=128)
             def cached_fn() -> int:
                 return 42
-        ''')
+        """,
+        )
         surface = extract_api_surface(path)
         fn = surface["functions"][0]
         assert "functools.lru_cache" in fn["decorators"]
@@ -117,9 +141,13 @@ class TestFunctionExtraction:
 # Class extraction
 # ---------------------------------------------------------------------------
 
+
 class TestClassExtraction:
     def test_basic_class(self, tmp_path):
-        path = _write_py(tmp_path, "mod.py", '''\
+        path = _write_py(
+            tmp_path,
+            "mod.py",
+            '''\
             class MyService:
                 """Service that does things."""
 
@@ -132,7 +160,8 @@ class TestClassExtraction:
 
                 def _internal(self):
                     pass
-        ''')
+        ''',
+        )
         surface = extract_api_surface(path)
         assert len(surface["classes"]) == 1
         cls = surface["classes"][0]
@@ -148,19 +177,26 @@ class TestClassExtraction:
         assert cls["public_methods"][0]["return_type"] == "bool"
 
     def test_class_with_bases(self, tmp_path):
-        path = _write_py(tmp_path, "mod.py", '''\
+        path = _write_py(
+            tmp_path,
+            "mod.py",
+            """\
             class Base:
                 pass
 
             class Child(Base):
                 pass
-        ''')
+        """,
+        )
         surface = extract_api_surface(path)
         child = [c for c in surface["classes"] if c["name"] == "Child"][0]
         assert child["bases"] == ["Base"]
 
     def test_properties_and_classmethods(self, tmp_path):
-        path = _write_py(tmp_path, "mod.py", '''\
+        path = _write_py(
+            tmp_path,
+            "mod.py",
+            """\
             class Config:
                 @property
                 def value(self) -> int:
@@ -173,7 +209,8 @@ class TestClassExtraction:
                 @staticmethod
                 def default() -> "Config":
                     pass
-        ''')
+        """,
+        )
         surface = extract_api_surface(path)
         cls = surface["classes"][0]
         assert "value" in cls["properties"]
@@ -181,14 +218,18 @@ class TestClassExtraction:
         assert "default" in cls["static_methods"]
 
     def test_abstract_class(self, tmp_path):
-        path = _write_py(tmp_path, "mod.py", '''\
+        path = _write_py(
+            tmp_path,
+            "mod.py",
+            """\
             from abc import ABC, abstractmethod
 
             class BaseProvider(ABC):
                 @abstractmethod
                 def connect(self) -> bool:
                     pass
-        ''')
+        """,
+        )
         surface = extract_api_surface(path)
         cls = surface["classes"][0]
         assert cls["is_abc"] is True
@@ -199,9 +240,13 @@ class TestClassExtraction:
 # Dataclass extraction
 # ---------------------------------------------------------------------------
 
+
 class TestDataclassExtraction:
     def test_basic_dataclass(self, tmp_path):
-        path = _write_py(tmp_path, "mod.py", '''\
+        path = _write_py(
+            tmp_path,
+            "mod.py",
+            """\
             from dataclasses import dataclass
 
             @dataclass
@@ -209,7 +254,8 @@ class TestDataclassExtraction:
                 content: str
                 score: float = 0.0
                 metadata: dict = None
-        ''')
+        """,
+        )
         surface = extract_api_surface(path)
         cls = surface["classes"][0]
         assert cls["is_dataclass"] is True
@@ -223,7 +269,10 @@ class TestDataclassExtraction:
         assert fields[2]["name"] == "metadata"
 
     def test_dataclass_field_default_factory(self, tmp_path):
-        path = _write_py(tmp_path, "mod.py", '''\
+        path = _write_py(
+            tmp_path,
+            "mod.py",
+            """\
             from dataclasses import dataclass, field
 
             @dataclass
@@ -231,7 +280,8 @@ class TestDataclassExtraction:
                 tags: list = field(default_factory=list)
                 options: dict = field(default_factory=dict)
                 name: str = field(default="unnamed")
-        ''')
+        """,
+        )
         surface = extract_api_surface(path)
         cls = surface["classes"][0]
         fields = {f["name"]: f for f in cls["dataclass_fields"]}
@@ -241,7 +291,10 @@ class TestDataclassExtraction:
         assert "unnamed" in fields["name"]["default"]
 
     def test_dataclass_post_init(self, tmp_path):
-        path = _write_py(tmp_path, "mod.py", '''\
+        path = _write_py(
+            tmp_path,
+            "mod.py",
+            """\
             from dataclasses import dataclass
 
             @dataclass
@@ -254,7 +307,8 @@ class TestDataclassExtraction:
 
                 def validate(self) -> bool:
                     return len(self.raw) > 0
-        ''')
+        """,
+        )
         surface = extract_api_surface(path)
         cls = surface["classes"][0]
         assert cls["is_dataclass"] is True
@@ -264,7 +318,10 @@ class TestDataclassExtraction:
         assert "validate" in method_names
 
     def test_dataclass_with_complex_types(self, tmp_path):
-        path = _write_py(tmp_path, "mod.py", '''\
+        path = _write_py(
+            tmp_path,
+            "mod.py",
+            """\
             from __future__ import annotations
             from dataclasses import dataclass, field
             from typing import List, Optional
@@ -274,7 +331,8 @@ class TestDataclassExtraction:
                 chunk_id: str
                 embeddings: List[float] = field(default_factory=list)
                 parent: Optional[str] = None
-        ''')
+        """,
+        )
         surface = extract_api_surface(path)
         assert surface["future_annotations"] is True
         cls = surface["classes"][0]
@@ -287,14 +345,19 @@ class TestDataclassExtraction:
 # Dict constant extraction
 # ---------------------------------------------------------------------------
 
+
 class TestDictConstants:
     def test_upper_case_dict(self, tmp_path):
-        path = _write_py(tmp_path, "mod.py", '''\
+        path = _write_py(
+            tmp_path,
+            "mod.py",
+            """\
             SOURCE_REGISTRY = {
                 "innovation_signals": {"table": "signals", "pk": "id", "content_cols": ["title"]},
                 "compliance_artifacts": {"table": "artifacts", "pk": "artifact_id", "content_cols": ["body"]},
             }
-        ''')
+        """,
+        )
         surface = extract_api_surface(path)
         assert len(surface["dict_constants"]) == 1
         dc = surface["dict_constants"][0]
@@ -308,12 +371,16 @@ class TestDictConstants:
         assert "content_cols" in dc["value_schema"]
 
     def test_registry_suffix_dict(self, tmp_path):
-        path = _write_py(tmp_path, "mod.py", '''\
+        path = _write_py(
+            tmp_path,
+            "mod.py",
+            """\
             handler_registry = {
                 "create": handle_create,
                 "delete": handle_delete,
             }
-        ''')
+        """,
+        )
         # handler_registry ends with _registry but isn't UPPER_CASE
         # Check that it's NOT captured as UPPER_CASE but IS captured by _REGISTRY suffix
         # Actually _is_upper_name("handler_registry") is False, but the code checks
@@ -324,12 +391,16 @@ class TestDictConstants:
         assert len(surface["dict_constants"]) == 0
 
     def test_flat_dict_no_value_schema(self, tmp_path):
-        path = _write_py(tmp_path, "mod.py", '''\
+        path = _write_py(
+            tmp_path,
+            "mod.py",
+            """\
             ERROR_CODES = {
                 "E001": "Missing field",
                 "E002": "Invalid type",
             }
-        ''')
+        """,
+        )
         surface = extract_api_surface(path)
         dc = surface["dict_constants"][0]
         assert dc["name"] == "ERROR_CODES"
@@ -341,13 +412,18 @@ class TestDictConstants:
 # Constants
 # ---------------------------------------------------------------------------
 
+
 class TestConstants:
     def test_scalar_constant(self, tmp_path):
-        path = _write_py(tmp_path, "mod.py", '''\
+        path = _write_py(
+            tmp_path,
+            "mod.py",
+            """\
             MAX_RETRIES = 3
             BASE_URL = "https://example.com"
             CHARS_PER_TOKEN = 4
-        ''')
+        """,
+        )
         surface = extract_api_surface(path)
         names = {c["name"] for c in surface["constants"]}
         assert "MAX_RETRIES" in names
@@ -358,9 +434,13 @@ class TestConstants:
         assert retries["value"] == "3"
 
     def test_annotated_constant(self, tmp_path):
-        path = _write_py(tmp_path, "mod.py", '''\
+        path = _write_py(
+            tmp_path,
+            "mod.py",
+            """\
             TIMEOUT: int = 30
-        ''')
+        """,
+        )
         surface = extract_api_surface(path)
         assert len(surface["constants"]) == 1
         c = surface["constants"][0]
@@ -373,12 +453,17 @@ class TestConstants:
 # Imports and mock targets
 # ---------------------------------------------------------------------------
 
+
 class TestImportsAndMocks:
     def test_from_import(self, tmp_path):
-        path = _write_py(tmp_path, "mod.py", '''\
+        path = _write_py(
+            tmp_path,
+            "mod.py",
+            """\
             from tools.rag.vector_store_provider import SearchResult
             from tools.rag.vector_store_factory import VectorStoreFactory
-        ''')
+        """,
+        )
         surface = extract_api_surface(path)
         assert len(surface["imports"]) == 2
         assert surface["imports"][0]["module"] == "tools.rag.vector_store_provider"
@@ -388,20 +473,28 @@ class TestImportsAndMocks:
         assert "tools.rag.vector_store_factory.VectorStoreFactory" in surface["mock_targets"]
 
     def test_import_alias(self, tmp_path):
-        path = _write_py(tmp_path, "mod.py", '''\
+        path = _write_py(
+            tmp_path,
+            "mod.py",
+            """\
             import numpy as np
-        ''')
+        """,
+        )
         surface = extract_api_surface(path)
         imp = surface["imports"][0]
         assert imp["module"] == "numpy"
         assert imp["alias"] == "np"
 
     def test_future_annotations_detected(self, tmp_path):
-        path = _write_py(tmp_path, "mod.py", '''\
+        path = _write_py(
+            tmp_path,
+            "mod.py",
+            """\
             from __future__ import annotations
             def foo() -> int:
                 pass
-        ''')
+        """,
+        )
         surface = extract_api_surface(path)
         assert surface["future_annotations"] is True
         # __future__ import should NOT appear in imports list
@@ -422,9 +515,13 @@ class TestImportsAndMocks:
 # __all__ exports
 # ---------------------------------------------------------------------------
 
+
 class TestAllExports:
     def test_all_detected(self, tmp_path):
-        path = _write_py(tmp_path, "mod.py", '''\
+        path = _write_py(
+            tmp_path,
+            "mod.py",
+            """\
             __all__ = ["PublicClass", "public_fn"]
 
             class PublicClass:
@@ -435,15 +532,20 @@ class TestAllExports:
 
             def _private():
                 pass
-        ''')
+        """,
+        )
         surface = extract_api_surface(path)
         assert surface["all_exports"] == ["PublicClass", "public_fn"]
 
     def test_no_all(self, tmp_path):
-        path = _write_py(tmp_path, "mod.py", '''\
+        path = _write_py(
+            tmp_path,
+            "mod.py",
+            """\
             def foo():
                 pass
-        ''')
+        """,
+        )
         surface = extract_api_surface(path)
         assert surface["all_exports"] is None
 
@@ -451,6 +553,7 @@ class TestAllExports:
 # ---------------------------------------------------------------------------
 # Edge cases
 # ---------------------------------------------------------------------------
+
 
 class TestEdgeCases:
     def test_empty_file(self, tmp_path):
@@ -479,14 +582,18 @@ class TestEdgeCases:
         assert "error" in surface
 
     def test_enum_class(self, tmp_path):
-        path = _write_py(tmp_path, "mod.py", '''\
+        path = _write_py(
+            tmp_path,
+            "mod.py",
+            """\
             from enum import Enum
 
             class Color(Enum):
                 RED = "red"
                 GREEN = "green"
                 BLUE = "blue"
-        ''')
+        """,
+        )
         surface = extract_api_surface(path)
         cls = surface["classes"][0]
         assert cls["is_enum"] is True
@@ -498,16 +605,25 @@ class TestEdgeCases:
 # Directory extraction
 # ---------------------------------------------------------------------------
 
+
 class TestDirectoryExtraction:
     def test_multi_file_scan(self, tmp_path):
-        _write_py(tmp_path, "alpha.py", '''\
+        _write_py(
+            tmp_path,
+            "alpha.py",
+            """\
             def alpha_fn() -> int:
                 return 1
-        ''')
-        _write_py(tmp_path, "beta.py", '''\
+        """,
+        )
+        _write_py(
+            tmp_path,
+            "beta.py",
+            """\
             class BetaClass:
                 pass
-        ''')
+        """,
+        )
         # Non-python file should be ignored
         (tmp_path / "readme.md").write_text("# Hello")
 
@@ -536,9 +652,13 @@ class TestDirectoryExtraction:
 # Markdown formatter
 # ---------------------------------------------------------------------------
 
+
 class TestFormatMarkdown:
     def test_basic_formatting(self, tmp_path):
-        path = _write_py(tmp_path, "mod.py", '''\
+        path = _write_py(
+            tmp_path,
+            "mod.py",
+            '''\
             MAX_SIZE = 100
 
             def process(data: str) -> dict:
@@ -551,7 +671,8 @@ class TestFormatMarkdown:
 
                 def handle(self) -> bool:
                     pass
-        ''')
+        ''',
+        )
         surface = extract_api_surface(path)
         md = format_markdown(surface)
         assert "## " in md
@@ -569,6 +690,7 @@ class TestFormatMarkdown:
 # ---------------------------------------------------------------------------
 # Module path computation
 # ---------------------------------------------------------------------------
+
 
 class TestModulePath:
     def test_init_py(self, tmp_path):
@@ -592,12 +714,14 @@ class TestModulePath:
 # Real-world module verification
 # ---------------------------------------------------------------------------
 
+
 class TestRealModules:
-    """Verify the extractor produces correct output against actual ICDEV modules."""
+    """Verify the extractor produces correct output against actual ICDEV™ modules."""
 
     def test_rag_retriever(self):
         """Verify RAGRetriever class and standalone functions are correctly extracted."""
         import os
+
         base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         path = os.path.join(base, "tools", "rag", "retriever.py")
         if not os.path.exists(path):

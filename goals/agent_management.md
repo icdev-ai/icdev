@@ -21,7 +21,7 @@ Manage the 8-agent multi-tier architecture: registration, health monitoring, tas
 | Tier | Agent | Port | Responsibilities |
 |------|-------|------|-----------------|
 | Core | Orchestrator | 8443 | Task routing, workflow coordination |
-| Core | Architect | 8444 | ATLAS A/T phases, system design |
+| Core | Architect | 8444 | ANVIL A/T phases, system design |
 | Domain | Builder | 8445 | TDD code generation, testing, linting |
 | Domain | Compliance | 8446 | ATO artifacts, STIG, SBOM, CUI |
 | Domain | Security | 8447 | SAST, dependency audit, secret detection |

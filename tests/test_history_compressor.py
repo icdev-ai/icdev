@@ -10,6 +10,7 @@ empty messages, single topic.
 import sys
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -18,7 +19,6 @@ from icdev.tools.memory.history_compressor import (
     HistoryCompressor,
     TopicBoundary,
     DEFAULT_BUDGET,
-    _STOPWORDS,
 )
 
 
@@ -42,6 +42,7 @@ def _msg(turn, content, role="user", minutes_offset=0):
 # Token estimation
 # ---------------------------------------------------------------------------
 
+
 class TestTokenEstimation:
     def test_estimate_tokens(self):
         assert HistoryCompressor._estimate_tokens("") == 1  # min 1
@@ -55,6 +56,7 @@ class TestTokenEstimation:
 # ---------------------------------------------------------------------------
 # Keyword extraction
 # ---------------------------------------------------------------------------
+
 
 class TestKeywordExtraction:
     def test_basic_extraction(self):
@@ -85,6 +87,7 @@ class TestKeywordExtraction:
 # Time gap calculation
 # ---------------------------------------------------------------------------
 
+
 class TestTimeGap:
     def test_gap_calculation(self):
         m1 = _msg(1, "hello", minutes_offset=0)
@@ -108,6 +111,7 @@ class TestTimeGap:
 # ---------------------------------------------------------------------------
 # Topic boundary detection
 # ---------------------------------------------------------------------------
+
 
 class TestTopicBoundaryDetection:
     def test_no_messages(self, compressor):
@@ -142,6 +146,7 @@ class TestTopicBoundaryDetection:
 # Compression
 # ---------------------------------------------------------------------------
 
+
 class TestCompression:
     def test_empty_messages(self, compressor):
         result = compressor.compress([], budget_tokens=4000)
@@ -153,13 +158,16 @@ class TestCompression:
         assert result == messages
 
     def test_compress_reduces_messages(self, compressor):
-        # Create many long messages that exceed budget
+        # Create many long messages that exceed budget.
+        # Mock _summarize_topic to avoid live LLM calls.
         messages = [
-            _msg(i, f"Long content about topic {'A' if i < 10 else 'B'} " * 50,
-                 minutes_offset=i * (35 if i == 10 else 2))
+            _msg(
+                i, f"Long content about topic {'A' if i < 10 else 'B'} " * 50, minutes_offset=i * (35 if i == 10 else 2)
+            )
             for i in range(1, 21)
         ]
-        result = compressor.compress(messages, budget_tokens=200)
+        with patch.object(compressor, "_summarize_topic", return_value="[summary of topic segment]"):
+            result = compressor.compress(messages, budget_tokens=200)
         total_original = sum(len(m["content"]) for m in messages)
         total_compressed = sum(len(m.get("content", "")) for m in result)
         assert total_compressed < total_original
@@ -175,6 +183,7 @@ class TestCompression:
 # ---------------------------------------------------------------------------
 # TopicBoundary dataclass
 # ---------------------------------------------------------------------------
+
 
 class TestTopicBoundaryDataclass:
     def test_create(self):
@@ -194,14 +203,19 @@ class TestTopicBoundaryDataclass:
 # Summarization fallback
 # ---------------------------------------------------------------------------
 
+
 class TestSummarization:
     def test_summarize_empty(self, compressor):
         result = compressor._summarize_topic([], max_tokens=100)
         assert result == ""
 
     def test_summarize_short_content(self, compressor):
+        # Mock LLM router invoke to avoid live inference calls.
+        # The test imports from icdev.tools, so patch that namespace.
+        # _summarize_topic falls back to truncation when the LLM is unavailable.
         messages = [_msg(1, "Hello"), _msg(2, "World")]
-        result = compressor._summarize_topic(messages, max_tokens=100)
+        with patch("icdev.tools.llm.router.LLMRouter.invoke", side_effect=RuntimeError("LLM unavailable in test")):
+            result = compressor._summarize_topic(messages, max_tokens=100)
         assert len(result) > 0
 
     def test_merge_summaries(self, compressor):
@@ -219,6 +233,7 @@ class TestSummarization:
 # ---------------------------------------------------------------------------
 # Budget allocation
 # ---------------------------------------------------------------------------
+
 
 class TestBudgetAllocation:
     def test_default_budget_sums_to_one(self):

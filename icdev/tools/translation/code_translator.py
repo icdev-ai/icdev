@@ -9,7 +9,6 @@ Architecture Decision D254: pass@k from Google ICSE 2025.
 Architecture Decision D256: Mock-and-continue from Amazon Oxidizer."""
 
 import argparse
-import hashlib
 import json
 import sqlite3
 import uuid
@@ -31,13 +30,13 @@ CUI_HEADERS = {
 }
 
 PROVENANCE_TEMPLATES = {
-    "python": "# Translated from {source_lang} by ICDEV Phase 43",
-    "java": "// Translated from {source_lang} by ICDEV Phase 43",
-    "go": "// Translated from {source_lang} by ICDEV Phase 43",
-    "rust": "// Translated from {source_lang} by ICDEV Phase 43",
-    "csharp": "// Translated from {source_lang} by ICDEV Phase 43",
-    "typescript": "// Translated from {source_lang} by ICDEV Phase 43",
-    "javascript": "// Translated from {source_lang} by ICDEV Phase 43",
+    "python": "# Translated from {source_lang} by ICDEV™ Phase 43",
+    "java": "// Translated from {source_lang} by ICDEV™ Phase 43",
+    "go": "// Translated from {source_lang} by ICDEV™ Phase 43",
+    "rust": "// Translated from {source_lang} by ICDEV™ Phase 43",
+    "csharp": "// Translated from {source_lang} by ICDEV™ Phase 43",
+    "typescript": "// Translated from {source_lang} by ICDEV™ Phase 43",
+    "javascript": "// Translated from {source_lang} by ICDEV™ Phase 43",
 }
 
 NAMING_CONVENTIONS = {
@@ -90,7 +89,7 @@ def _build_prompt(unit, ir_data, source_language, target_language,
         template = "Translate the following {source_language} code to {target_language}:\n\n{source_code}"
 
     cui_header = CUI_HEADERS.get(target_language, "// CUI // SP-CTI")
-    provenance = PROVENANCE_TEMPLATES.get(target_language, "// Translated by ICDEV").format(
+    provenance = PROVENANCE_TEMPLATES.get(target_language, "// Translated by ICDEV™").format(
         source_lang=source_language
     )
 
@@ -148,15 +147,14 @@ def _invoke_llm(prompt, config, function_name="code_translation"):
     """Invoke LLM via the router. Returns translated code string."""
     try:
         from icdev.tools.llm.router import LLMRouter
+        from icdev.tools.llm.provider import LLMRequest
         router = LLMRouter()
-        response = router.invoke(
-            function=function_name,
-            prompt=prompt,
+        request = LLMRequest(
+            messages=[{"role": "user", "content": prompt}],
             temperature=config.get("translation", {}).get("temperature", 0.2),
         )
-        if isinstance(response, dict):
-            return response.get("content", response.get("text", str(response)))
-        return str(response)
+        response = router.invoke(function_name, request)
+        return response.content if response and response.content else None
     except ImportError:
         return None
     except Exception:
@@ -166,7 +164,7 @@ def _invoke_llm(prompt, config, function_name="code_translation"):
 def _generate_mock(unit, target_language):
     """Generate a type-compatible mock/stub for a unit that failed translation (D256)."""
     name = unit.get("name", "unknown")
-    kind = unit.get("kind", "function")
+    unit.get("kind", "function")
     params = unit.get("params", [])
     return_type = unit.get("return_type", "")
     cui_header = CUI_HEADERS.get(target_language, "// CUI // SP-CTI")
@@ -178,7 +176,7 @@ def _generate_mock(unit, target_language):
             f"# MOCK — Translation failed after max repair attempts\n"
             f"def {name}({param_str}):\n"
             f"    \"\"\"MOCK: Requires manual translation.\"\"\"\n"
-            f"    raise NotImplementedError(\"ICDEV translation mock — manual translation required\")\n"
+            f"    raise NotImplementedError(\"ICDEV™ translation mock — manual translation required\")\n"
         )
     elif target_language == "java":
         param_str = ", ".join(
@@ -190,7 +188,7 @@ def _generate_mock(unit, target_language):
             f"// MOCK — Translation failed after max repair attempts\n"
             f"public {ret} {name}({param_str}) {{\n"
             f"    // MOCK: Requires manual translation\n"
-            f"    throw new UnsupportedOperationException(\"ICDEV translation mock\");\n"
+            f"    throw new UnsupportedOperationException(\"ICDEV™ translation mock\");\n"
             f"}}\n"
         )
     elif target_language == "go":
@@ -202,7 +200,7 @@ def _generate_mock(unit, target_language):
             f"// MOCK — Translation failed after max repair attempts\n"
             f"func {name}({param_str}) interface{{}} {{\n"
             f"\t// MOCK: Requires manual translation\n"
-            f"\tpanic(\"ICDEV translation mock — manual translation required\")\n"
+            f"\tpanic(\"ICDEV™ translation mock — manual translation required\")\n"
             f"}}\n"
         )
     elif target_language == "rust":
@@ -214,7 +212,7 @@ def _generate_mock(unit, target_language):
             f"// MOCK — Translation failed after max repair attempts\n"
             f"pub fn {name}({param_str}) {{\n"
             f"    // MOCK: Requires manual translation\n"
-            f"    unimplemented!(\"ICDEV translation mock\");\n"
+            f"    unimplemented!(\"ICDEV™ translation mock\");\n"
             f"}}\n"
         )
     elif target_language == "csharp":
@@ -228,7 +226,7 @@ def _generate_mock(unit, target_language):
             f"public {ret} {name}({param_str})\n"
             f"{{\n"
             f"    // MOCK: Requires manual translation\n"
-            f"    throw new NotImplementedException(\"ICDEV translation mock\");\n"
+            f"    throw new NotImplementedException(\"ICDEV™ translation mock\");\n"
             f"}}\n"
         )
     elif target_language in ("typescript", "javascript"):
@@ -238,7 +236,7 @@ def _generate_mock(unit, target_language):
             f"// MOCK — Translation failed after max repair attempts\n"
             f"export function {name}({param_str}) {{\n"
             f"    // MOCK: Requires manual translation\n"
-            f"    throw new Error(\"ICDEV translation mock — manual translation required\");\n"
+            f"    throw new Error(\"ICDEV™ translation mock — manual translation required\");\n"
             f"}}\n"
         )
     else:
@@ -309,8 +307,6 @@ def translate_units(ir_data, source_language, target_language,
     failed = []
     translated_deps = []  # accumulate for context
 
-    total_input_tokens = 0
-    total_output_tokens = 0
 
     for idx, unit in enumerate(ordered_units):
         unit_name = unit.get("name", "unknown")
@@ -424,7 +420,7 @@ def _record_unit(db_path, job_id, unit, status, translated_code, candidate):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Phase 3 — LLM-assisted code translation",
+        description="ICDEV™ Phase 3 — LLM-assisted code translation",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--ir-file", required=True, help="Path to IR JSON file from source_extractor")
@@ -543,7 +539,7 @@ def main():
         print(f"  Failed:       {stats['failed_count']}")
         print(f"  Mock %:       {stats['mock_percentage']}%")
         if stats["mock_threshold_exceeded"]:
-            print(f"  WARNING: Mock percentage exceeds threshold!")
+            print("  WARNING: Mock percentage exceeds threshold!")
 
 
 if __name__ == "__main__":

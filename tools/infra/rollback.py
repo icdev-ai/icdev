@@ -8,6 +8,7 @@ import json
 import sqlite3
 import subprocess
 import sys
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -17,8 +18,7 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 def _get_db(db_path: Path = None) -> sqlite3.Connection:
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -137,9 +137,12 @@ def execute_rollback(
         deploy_name = deployment_name or project_id
 
         kubectl_cmd = [
-            "kubectl", "rollout", "undo",
+            "kubectl",
+            "rollout",
+            "undo",
             f"deployment/{deploy_name}",
-            "-n", namespace,
+            "-n",
+            namespace,
         ]
 
         try:
@@ -173,9 +176,12 @@ def execute_rollback(
 
         # 3. Wait for rollout to complete
         wait_cmd = [
-            "kubectl", "rollout", "status",
+            "kubectl",
+            "rollout",
+            "status",
             f"deployment/{deploy_name}",
-            "-n", namespace,
+            "-n",
+            namespace,
             "--timeout=300s",
         ]
 
@@ -201,8 +207,7 @@ def execute_rollback(
         # 4. Record in database
         _record_rollback(conn, project_id, environment, target_info, result["status"], result)
         result["message"] = (
-            f"Rolled back {project_id} in {environment} "
-            f"from {result['current_version']} to {result['target_version']}"
+            f"Rolled back {project_id} in {environment} from {result['current_version']} to {result['target_version']}"
         )
 
         return result
@@ -255,13 +260,15 @@ def _record_rollback(
                 "rollback_executed",
                 "icdev-rollback",
                 f"Rollback in {environment}: {target_info['current']['version']} -> {target_version}",
-                json.dumps({
-                    "environment": environment,
-                    "from_version": target_info["current"]["version"],
-                    "to_version": target_version,
-                    "status": status,
-                    "kubectl_output": result.get("kubectl_stdout", ""),
-                }),
+                json.dumps(
+                    {
+                        "environment": environment,
+                        "from_version": target_info["current"]["version"],
+                        "to_version": target_version,
+                        "status": status,
+                        "kubectl_output": result.get("kubectl_stdout", ""),
+                    }
+                ),
                 "CUI",
             ),
         )

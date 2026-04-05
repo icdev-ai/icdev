@@ -495,7 +495,7 @@ def run_pipeline(source_path, source_language, target_language, output_dir,
 
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Phase 43 — Cross-Language Translation Pipeline",
+        description="ICDEV™ Phase 43 — Cross-Language Translation Pipeline",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -563,7 +563,7 @@ Examples:
     if args.json:
         print(json.dumps(result, indent=2))
     else:
-        print(f"ICDEV Translation: {args.source_language} → {args.target_language}")
+        print(f"ICDEV™ Translation: {args.source_language} → {args.target_language}")
         print(f"  Job ID:   {result.get('job_id', 'N/A')}")
         print(f"  Status:   {result.get('status', 'unknown').upper()}")
         print(f"  Elapsed:  {result.get('elapsed_seconds', 0)}s")

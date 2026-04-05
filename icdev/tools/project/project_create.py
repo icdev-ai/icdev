@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Create a new ICDEV-managed project.
+"""Create a new ICDEV™-managed project.
 
 Generates a UUID, creates the project directory under projects/, scaffolds the
 directory structure based on project type, inserts a record into icdev.db,
@@ -243,7 +243,7 @@ def create_project(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Create a new ICDEV-managed project"
+        description="Create a new ICDEV™-managed project"
     )
     parser.add_argument(
         "--name", required=True,

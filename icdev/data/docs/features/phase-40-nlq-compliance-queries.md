@@ -9,14 +9,14 @@
 | Status | Implemented |
 | Priority | P2 |
 | Dependencies | Phase 39 (Observability & Operations), Phase 21 (SaaS Multi-Tenancy) |
-| Author | ICDEV Architect Agent |
+| Author | ICDEV™ Architect Agent |
 | Date | 2026-02-23 |
 
 ---
 
 ## 1. Problem Statement
 
-ICDEV's operational database contains 193 tables spanning compliance assessments, audit trails, security findings, project status, agent telemetry, and supply chain data. Compliance officers, ISSOs, and program managers need to query this data to answer questions like "Show all CAT1 STIG findings for project X" or "Which projects have expired cATO evidence?" — but they lack SQL expertise and should not be expected to learn the database schema.
+ICDEV™'s operational database contains 193 tables spanning compliance assessments, audit trails, security findings, project status, agent telemetry, and supply chain data. Compliance officers, ISSOs, and program managers need to query this data to answer questions like "Show all CAT1 STIG findings for project X" or "Which projects have expired cATO evidence?" — but they lack SQL expertise and should not be expected to learn the database schema.
 
 Prior to Phase 40, all compliance data access required either navigating dashboard pages (limited to pre-built views) or writing raw SQL queries against the database (requiring technical expertise and risking accidental data modification). Neither approach serves the needs of non-technical compliance stakeholders who need ad-hoc answers to specific compliance questions.
 
@@ -26,7 +26,7 @@ Furthermore, the append-only audit trail (NIST 800-53 AU controls) must be prote
 
 ## 2. Goals
 
-1. Enable natural language queries against the ICDEV compliance database through the web dashboard `/query` page
+1. Enable natural language queries against the ICDEV™ compliance database through the web dashboard `/query` page
 2. Generate SQL from natural language using Amazon Bedrock (Claude) with schema context and few-shot examples
 3. Enforce strict read-only SQL execution — block all DML/DDL operations (DROP, DELETE, UPDATE, INSERT, ALTER, CREATE, TRUNCATE, ATTACH, DETACH)
 4. Provide a pattern-based fallback SQL generator for air-gapped environments without Bedrock access

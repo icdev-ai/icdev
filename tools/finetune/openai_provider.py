@@ -18,7 +18,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -26,7 +25,7 @@ from tools.finetune.provider import FineTuneProvider, FineTuneRequest, FineTuneS
 
 logger = logging.getLogger("icdev.finetune.openai")
 
-# OpenAI status → ICDEV status mapping
+# OpenAI status → ICDEV™ status mapping
 _STATUS_MAP = {
     "validating_files": "preparing",
     "queued": "pending",
@@ -59,6 +58,7 @@ class OpenAIFineTuneProvider(FineTuneProvider):
             return self._client
         try:
             import openai
+
             kwargs: Dict[str, Any] = {"api_key": self._api_key}
             if self._organization:
                 kwargs["organization"] = self._organization
@@ -67,9 +67,7 @@ class OpenAIFineTuneProvider(FineTuneProvider):
             self._client = openai.OpenAI(**kwargs)
             return self._client
         except ImportError:
-            raise ImportError(
-                "openai package not installed. Install with: pip install openai"
-            )
+            raise ImportError("openai package not installed. Install with: pip install openai")
 
     @property
     def provider_name(self) -> str:
@@ -87,10 +85,7 @@ class OpenAIFineTuneProvider(FineTuneProvider):
             client = self._get_client()
             # Quick check — list models (lightweight)
             models = client.models.list()
-            ft_models = [
-                m.id for m in models.data
-                if "gpt" in m.id and "ft" not in m.id
-            ][:5]
+            ft_models = [m.id for m in models.data if "gpt" in m.id and "ft" not in m.id][:5]
             return {
                 "available": True,
                 "provider": "openai",
@@ -191,7 +186,8 @@ class OpenAIFineTuneProvider(FineTuneProvider):
             if job.status == "running":
                 try:
                     events = client.fine_tuning.jobs.list_events(
-                        fine_tuning_job_id=job.id, limit=10,
+                        fine_tuning_job_id=job.id,
+                        limit=10,
                     )
                     for event in events.data:
                         if hasattr(event, "data") and event.data:
@@ -243,8 +239,7 @@ class OpenAIFineTuneProvider(FineTuneProvider):
             return [
                 {"model_id": m.id, "provider": "openai"}
                 for m in models.data
-                if any(x in m.id for x in ("gpt-4o-mini", "gpt-3.5-turbo", "gpt-4o"))
-                and "ft:" not in m.id
+                if any(x in m.id for x in ("gpt-4o-mini", "gpt-3.5-turbo", "gpt-4o")) and "ft:" not in m.id
             ]
         except Exception:
             return []

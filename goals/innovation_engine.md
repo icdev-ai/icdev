@@ -4,11 +4,11 @@ CUI // SP-CTI
 
 ## Purpose
 
-The Innovation Engine enables ICDEV to continuously and autonomously improve itself by:
+The Innovation Engine enables ICDEV™ to continuously and autonomously improve itself by:
 1. Discovering developer pain points, CVEs, compliance changes, and competitive gaps
 2. Scoring and triaging discoveries through compliance-first gates
-3. Generating solution specifications using existing ATLAS/M-ATLAS workflow
-4. Publishing solutions to the ICDEV marketplace for ecosystem-wide benefit
+3. Generating solution specifications using existing ANVIL/M-ANVIL workflow
+4. Publishing solutions to the ICDEV™ marketplace for ecosystem-wide benefit
 5. Learning from feedback to improve future discovery quality
 
 ## Architecture Decision Records
@@ -31,7 +31,7 @@ DISCOVER (web + introspective + competitive + standards)
     → SCORE (5-dimension weighted average)
         → TRIAGE (5-stage compliance gate)
             → GENERATE (template-based spec)
-                → BUILD (ATLAS/M-ATLAS TDD)
+                → BUILD (ANVIL/M-ANVIL TDD)
                     → PUBLISH (marketplace 7-gate pipeline)
                         → MEASURE (adoption + impact)
                             → CALIBRATE (weight adjustment)
@@ -79,7 +79,7 @@ DISCOVER (web + introspective + competitive + standards)
 6. **Compliance Updates** — FedRAMP marketplace, CMMC AB, Federal Register
 
 ### Introspective Sources (Air-Gap Safe)
-1. **Failed Self-Heals** — ICDEV problems it can't solve yet (confidence < 0.3)
+1. **Failed Self-Heals** — ICDEV™ problems it can't solve yet (confidence < 0.3)
 2. **Gate Failure Frequency** — Which gates fail most? Build better tooling
 3. **Unused Tools** — Improve discoverability or deprecate
 4. **Slow Pipeline Stages** — Performance optimization targets
@@ -89,7 +89,7 @@ DISCOVER (web + introspective + competitive + standards)
 ### Competitive Intelligence
 - Monitor GitHub repos: backstage, snyk, trivy, checkov
 - Track releases and new features
-- Gap analysis: what competitors have that ICDEV doesn't
+- Gap analysis: what competitors have that ICDEV™ doesn't
 
 ### Standards Body Monitoring
 - NIST CSRC publications (SP 800, FIPS, IR series)
@@ -104,10 +104,10 @@ DISCOVER (web + introspective + competitive + standards)
 | Dimension | Weight | Metric |
 |-----------|--------|--------|
 | Community Demand | 0.30 | Stars, votes, upvotes, issue frequency |
-| Impact Breadth | 0.25 | ICDEV tenants/projects potentially affected |
-| Feasibility | 0.20 | Can ICDEV build with existing tools? |
+| Impact Breadth | 0.25 | ICDEV™ tenants/projects potentially affected |
+| Feasibility | 0.20 | Can ICDEV™ build with existing tools? |
 | Compliance Alignment | 0.15 | Strengthens (not weakens) compliance |
-| Novelty | 0.10 | Not already addressed by ICDEV |
+| Novelty | 0.10 | Not already addressed by ICDEV™ |
 
 ### Thresholds
 - **>= 0.80** — Auto-queue for solution generation
@@ -119,7 +119,7 @@ DISCOVER (web + introspective + competitive + standards)
 Every signal passes through ALL 5 stages:
 
 1. **Classify Signal** — Map to category via keyword matching
-2. **GOTCHA Fit Check** — Must map to Goal/Tool/Arg/Context/HardPrompt
+2. **FORGE Fit Check** — Must map to Goal/Tool/Arg/Context/HardPrompt
 3. **Boundary Impact** — GREEN/YELLOW/ORANGE/RED assessment
 4. **Compliance Pre-Check** — Block if would weaken compliance posture
 5. **Duplicate/License Check** — Dedup + license compatibility
@@ -129,13 +129,13 @@ Every signal passes through ALL 5 stages:
 - Compliance-weakening detected → BLOCKED
 - GPL/AGPL/SSPL license → BLOCKED
 - Duplicate signal (similarity > 0.85) → BLOCKED
-- No GOTCHA layer fit → BLOCKED
+- No FORGE layer fit → BLOCKED
 
 ## Stage 4: Solution Generation
 
 Template-based spec generation with sections:
 1. Problem Statement
-2. GOTCHA Layer mapping
+2. FORGE Layer mapping
 3. Proposed Solution (layer-specific template)
 4. Acceptance Criteria (BDD-style)
 5. Compliance Impact assessment
@@ -145,8 +145,8 @@ Template-based spec generation with sections:
 
 ## Stage 5-6: Build & Publish
 
-Reuse existing ICDEV pipelines:
-- **Build:** ATLAS/M-ATLAS workflow via `/icdev-build`
+Reuse existing ICDEV™ pipelines:
+- **Build:** ANVIL/M-ANVIL workflow via `/icdev-build`
 - **Test:** Full test suite via `/icdev-test`
 - **Security:** SAST + dependency audit via `/icdev-secure`
 - **Compliance:** CUI markings + STIG via `/icdev-comply`
@@ -193,7 +193,7 @@ Weight adjustment: max 0.02 step per calibration cycle, min 10 data points.
 ## Edge Cases
 
 1. **Same CVE from NVD + GitHub Advisories** — Dedup by content_hash (CVE ID)
-2. **Competitor releases a feature ICDEV already has** — Novelty score = 0, auto-logged
+2. **Competitor releases a feature ICDEV™ already has** — Novelty score = 0, auto-logged
 3. **Standards body publishes draft (not final)** — Flag as draft, lower priority
-4. **Innovation signal maps to multiple GOTCHA layers** — Pick primary, note others
+4. **Innovation signal maps to multiple FORGE layers** — Pick primary, note others
 5. **Solution spec fails quality check** — Block generation, log for manual review

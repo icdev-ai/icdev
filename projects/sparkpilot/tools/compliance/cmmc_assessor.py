@@ -3,8 +3,8 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""CMMC Level 2/3 assessment engine for ICDEV.
+# POC: ICDEV™ System Administrator
+"""CMMC Level 2/3 assessment engine for ICDEV™.
 
 Loads CMMC practices from cmmc_practices.json, performs automated domain checks,
 inherits NIST 800-53/800-171 implementations via the crosswalk engine, stores

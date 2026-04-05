@@ -309,7 +309,7 @@ def agents():
         # Agent definitions from SparkPilot spec
         agent_defs = [
             {"name": "Orchestrator", "port": 9443, "role": "Task routing, workflow management, NL command parsing", "tier": "Core", "status": "active"},
-            {"name": "Architect", "port": 9444, "role": "Firmware architecture design, ATLAS A/T phases", "tier": "Core", "status": "active"},
+            {"name": "Architect", "port": 9444, "role": "Firmware architecture design, ANVIL A/T phases", "tier": "Core", "status": "active"},
             {"name": "Embedded Builder", "port": 9445, "role": "TDD C/C++ code gen, CMake, FreeRTOSConfig.h", "tier": "Domain", "status": "active"},
             {"name": "Compliance", "port": 9446, "role": "SBOM, NIST, IEC 62443, DO-178C (Pro Mode)", "tier": "Domain", "status": "standby"},
             {"name": "Security", "port": 9447, "role": "SAST, CVE triage, secret detection", "tier": "Domain", "status": "active"},

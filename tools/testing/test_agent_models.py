@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Agent Model Test — Verify Claude Code models work
+# ICDEV™ Agent Model Test — Verify Claude Code models work
 # Adapted from ADW test_agents.py
 
 """
@@ -18,9 +18,9 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from tools.testing.data_types import AgentPromptRequest
-from tools.ci.modules.agent import prompt_claude_code
-from tools.testing.utils import make_run_id
+from tools.testing.data_types import AgentPromptRequest  # noqa: E402
+from tools.ci.modules.agent import prompt_claude_code  # noqa: E402
+from tools.testing.utils import make_run_id  # noqa: E402
 
 # Models to test
 MODELS = ["opus", "sonnet", "haiku"]
@@ -35,9 +35,9 @@ Keep your response brief."""
 
 def test_model(model: str, run_id: str) -> tuple:
     """Test a specific model and return (success, message)."""
-    print(f"\n{'='*50}")
+    print(f"\n{'=' * 50}")
     print(f"Testing model: {model}")
-    print(f"{'='*50}")
+    print(f"{'=' * 50}")
 
     output_file = str(PROJECT_ROOT / "agents" / run_id / f"agent_test_{model}.jsonl")
 
@@ -81,10 +81,7 @@ def main():
     all_success = True
 
     with ThreadPoolExecutor(max_workers=len(MODELS)) as executor:
-        future_to_model = {
-            executor.submit(test_model, model, run_id): model
-            for model in MODELS
-        }
+        future_to_model = {executor.submit(test_model, model, run_id): model for model in MODELS}
 
         for future in as_completed(future_to_model):
             model = future_to_model[future]
@@ -97,9 +94,9 @@ def main():
                 results[model] = (False, f"Exception: {str(e)}")
                 all_success = False
 
-    print(f"\n{'='*50}")
+    print(f"\n{'=' * 50}")
     print("Test Summary")
-    print(f"{'='*50}")
+    print(f"{'=' * 50}")
 
     for model in MODELS:
         if model in results:

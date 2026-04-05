@@ -9,14 +9,14 @@
 | Status | Implemented |
 | Priority | P1 |
 | Dependencies | Phase 46 (Observability & XAI), Phase 18 (MBSE Integration), Phase 23 (Universal Compliance Platform), Phase 4 (NIST Compliance) |
-| Author | ICDEV Architect Agent |
+| Author | ICDEV™ Architect Agent |
 | Date | 2026-02-26 |
 
 ---
 
 ## 1. Problem Statement
 
-ICDEV supports 14 compliance frameworks (NIST 800-53, FedRAMP, CMMC, HIPAA, CJIS, PCI DSS, ISO 27001, SOC 2, NIST 800-207, MITRE ATLAS, AI Transparency, SBOM, audit trail, and more), each generating evidence across different DB tables and file artifacts. Before Phase 56, there was no unified mechanism to:
+ICDEV™ supports 14 compliance frameworks (NIST 800-53, FedRAMP, CMMC, HIPAA, CJIS, PCI DSS, ISO 27001, SOC 2, NIST 800-207, MITRE ATLAS, AI Transparency, SBOM, audit trail, and more), each generating evidence across different DB tables and file artifacts. Before Phase 56, there was no unified mechanism to:
 
 - Collect evidence across all frameworks in a single operation
 - Check whether collected evidence is still fresh enough for an upcoming ATO assessment

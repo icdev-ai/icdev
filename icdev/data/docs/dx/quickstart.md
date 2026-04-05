@@ -1,6 +1,6 @@
-# Quickstart: ICDEV in 5 Minutes
+# Quickstart: ICDEV™ in 5 Minutes
 
-This guide gets you from zero to a fully compliant project with ICDEV running automatically.
+This guide gets you from zero to a fully compliant project with ICDEV™ running automatically.
 
 ---
 
@@ -9,7 +9,7 @@ This guide gets you from zero to a fully compliant project with ICDEV running au
 - Python 3.10+
 - Git
 - Claude Code CLI installed (`npm install -g @anthropic-ai/claude-code`)
-- Access to your organization's ICDEV instance (or local installation)
+- Access to your organization's ICDEV™ instance (or local installation)
 
 ---
 
@@ -18,7 +18,7 @@ This guide gets you from zero to a fully compliant project with ICDEV running au
 Drop an `icdev.yaml` file in your repository root:
 
 ```yaml
-# icdev.yaml — This single file configures ICDEV for your project
+# icdev.yaml — This single file configures ICDEV™ for your project
 version: 1
 project:
   name: my-app
@@ -50,7 +50,7 @@ pipeline:
     - deploy_staging
 ```
 
-That's it. One file. No other ICDEV configuration needed.
+That's it. One file. No other ICDEV™ configuration needed.
 
 ---
 
@@ -64,7 +64,7 @@ claude
 
 Then say:
 
-> Initialize this project with ICDEV
+> Initialize this project with ICDEV™
 
 Claude reads your `icdev.yaml`, creates the database, scaffolds compliance artifacts, and sets up your dev profile. You'll see output like:
 
@@ -136,12 +136,12 @@ python tools/dashboard/app.py
 
 You don't need to know this, but for the curious:
 
-| What You Do | What ICDEV Does Automatically |
+| What You Do | What ICDEV™ Does Automatically |
 |-------------|-------------------------------|
 | Push code | SAST, dependency audit, secret detection, container scan |
 | Create a PR | STIG check, CUI validation, test execution, compliance gate evaluation |
 | Merge to main | SSP/POAM regeneration, SBOM update, cATO evidence refresh |
-| Talk to Claude | GOTCHA orchestration: reads goals, calls tools, applies args, references context |
+| Talk to Claude | FORGE orchestration: reads goals, calls tools, applies args, references context |
 | Drop `icdev.yaml` | Auto-configures pipeline, loads dev profile, sets compliance posture |
 
 ---
@@ -165,7 +165,7 @@ Use any combination in your `icdev.yaml`:
 | ISO 27001:2022 | `iso27001` | IL2-IL5 |
 | DoD MOSA | `mosa` | IL4-IL6 |
 
-ICDEV auto-deduplicates controls across frameworks via the crosswalk engine — implementing AC-2 once satisfies FedRAMP, CMMC, CJIS, HIPAA, and more simultaneously.
+ICDEV™ auto-deduplicates controls across frameworks via the crosswalk engine — implementing AC-2 once satisfies FedRAMP, CMMC, CJIS, HIPAA, and more simultaneously.
 
 ---
 
@@ -186,7 +186,7 @@ Dev profile templates set your coding standards automatically:
 
 ## Next Steps
 
-- [Integration Tiers](integration-tiers.md) — Understand all three ways to use ICDEV
+- [Integration Tiers](integration-tiers.md) — Understand all three ways to use ICDEV™
 - [Claude Code Guide](claude-code-guide.md) — Master the conversational interface
 - [Dev Profiles](dev-profiles.md) — Customize coding standards per tenant/project
 - [CI/CD Integration](ci-cd-integration.md) — Set up automatic pipeline integration

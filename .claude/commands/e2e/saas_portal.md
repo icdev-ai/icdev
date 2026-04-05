@@ -1,6 +1,6 @@
 # E2E Test: SaaS Portal Authentication and Pages
 
-Verify the ICDEV SaaS tenant portal login flow, session management, logout, and that all portal pages load correctly with CUI banners and sidebar navigation.
+Verify the ICDEV™ SaaS tenant portal login flow, session management, logout, and that all portal pages load correctly with CUI banners and sidebar navigation.
 
 ## Prerequisites
 - SaaS API gateway running with portal blueprint registered
@@ -16,7 +16,7 @@ Verify the ICDEV SaaS tenant portal login flow, session management, logout, and 
 4. Assert the CUI banner "CUI // SP-CTI" is visible at top and bottom
 5. Assert the login form contains an API Key input field
 6. Assert a "Sign In" submit button is present
-7. Assert the page title contains "ICDEV" or "Portal"
+7. Assert the page title contains "ICDEV™" or "Portal"
 8. Assert classification text is present (IL4/IL5, NIST)
 
 ### Login with API Key

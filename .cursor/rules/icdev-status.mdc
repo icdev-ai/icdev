@@ -1,5 +1,5 @@
 ---
-description: "ICDEV workflow: Display comprehensive project status including compliance, security, deployment, and agent health"
+description: "ICDEV™ workflow: Display comprehensive project status including compliance, security, deployment, and agent health"
 globs:
   - "**/*.py"
   - "**/*.yaml"
@@ -22,7 +22,7 @@ When the user asks to display comprehensive project status including compliance,
    ╔══════════════════════════════════════╗
    ```
    ```bash
-   ║  ICDEV Project Status                ║
+   ║  ICDEV™ Project Status                ║
    ```
    ```bash
    ║  CUI // SP-CTI                       ║

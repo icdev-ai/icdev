@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Document upload and requirements extraction tool.
 
 Uploads DoD documents (SOW, CDD, CONOPS, SRD, SRS, etc.) and images
@@ -44,9 +44,9 @@ import json
 import logging
 import os
 import re
-import sqlite3
 import sys
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime
 from pathlib import Path
 
@@ -63,21 +63,21 @@ IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".tiff", ".bmp"}
 
 try:
     from tools.audit.audit_logger import log_event
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
-    def log_event(**kwargs): return -1
+
+    def log_event(**kwargs):
+        return -1
 
 
 def _get_connection(db_path=None):
     """Get database connection with dict-like row access."""
     path = db_path or DB_PATH
     if not path.exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py"
-        )
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -89,6 +89,7 @@ def _generate_id(prefix="doc"):
 # ---------------------------------------------------------------------------
 # File reading helpers
 # ---------------------------------------------------------------------------
+
 
 def _compute_file_hash(file_path):
     """Compute SHA-256 hash of file content."""
@@ -103,10 +104,12 @@ def _compute_file_hash(file_path):
 # Vision-based extraction helpers
 # ---------------------------------------------------------------------------
 
+
 def _check_vision_available():
     """Check if a vision-capable LLM is available for document extraction."""
     try:
         from tools.llm import get_router
+
         router = get_router()
         provider, model_id, model_cfg = router.get_provider_for_function("document_vision")
         if provider is None:
@@ -234,11 +237,16 @@ def _extract_pdf_pages_via_vision(file_path):
         try:
             # Try pdf2image (poppler-based)
             from pdf2image import convert_from_path
+
             images = convert_from_path(
-                str(p), first_page=page_num, last_page=page_num, dpi=200,
+                str(p),
+                first_page=page_num,
+                last_page=page_num,
+                dpi=200,
             )
             if images:
                 import io
+
                 buf = io.BytesIO()
                 images[0].save(buf, format="PNG")
                 page_image_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
@@ -253,8 +261,7 @@ def _extract_pdf_pages_via_vision(file_path):
                 all_pages.append(f"--- Page {page_num} ---\n{text.strip()}")
             else:
                 all_pages.append(
-                    f"--- Page {page_num} ---\n"
-                    f"[No text extractable; pdf2image required for vision fallback]"
+                    f"--- Page {page_num} ---\n[No text extractable; pdf2image required for vision fallback]"
                 )
             continue
 
@@ -283,8 +290,7 @@ def _extract_pdf_pages_via_vision(file_path):
             request = LLMRequest(
                 messages=[{"role": "user", "content": user_content}],
                 system_prompt=(
-                    "You are a document OCR assistant. Extract all text from "
-                    "the provided page image accurately."
+                    "You are a document OCR assistant. Extract all text from the provided page image accurately."
                 ),
                 max_tokens=4096,
                 temperature=0.1,
@@ -299,14 +305,14 @@ def _extract_pdf_pages_via_vision(file_path):
                 all_pages.append(f"--- Page {page_num} ---\n[Vision returned no text]")
         except Exception as exc:
             logger.warning("Vision extraction failed for page %d: %s", page_num, exc)
-            all_pages.append(
-                f"--- Page {page_num} ---\n[Vision extraction error: {exc}]"
-            )
+            all_pages.append(f"--- Page {page_num} ---\n[Vision extraction error: {exc}]")
 
     if vision_pages_used > 0:
         logger.info(
             "PDF %s: %d pages, %d required vision extraction",
-            p.name, len(reader.pages), vision_pages_used,
+            p.name,
+            len(reader.pages),
+            vision_pages_used,
         )
 
     if all_pages:
@@ -409,9 +415,7 @@ def classify_document(document_id, db_path=None):
         dict with classification result.
     """
     conn = _get_connection(db_path)
-    doc = conn.execute(
-        "SELECT * FROM intake_documents WHERE id = ?", (document_id,)
-    ).fetchone()
+    doc = conn.execute("SELECT * FROM intake_documents WHERE id = ?", (document_id,)).fetchone()
     if not doc:
         conn.close()
         raise ValueError(f"Document '{document_id}' not found.")
@@ -456,6 +460,7 @@ def classify_document(document_id, db_path=None):
 # File reading helpers
 # ---------------------------------------------------------------------------
 
+
 def _read_file_content(file_path):
     """Read text content from a file.
 
@@ -473,6 +478,7 @@ def _read_file_content(file_path):
         # Try pypdf (PyPDF2 successor)
         try:
             from pypdf import PdfReader
+
             reader = PdfReader(str(p))
             pages = []
             for page in reader.pages:
@@ -488,10 +494,7 @@ def _read_file_content(file_path):
                 return vision_result
             return f"[PDF file: {p.name} -- no extractable text found]"
         except ImportError:
-            return (
-                f"[PDF file: {p.name} -- requires pypdf library. "
-                f"Install with: pip install pypdf]"
-            )
+            return f"[PDF file: {p.name} -- requires pypdf library. Install with: pip install pypdf]"
         except Exception as exc:
             return f"[PDF file: {p.name} -- extraction error: {exc}]"
 
@@ -499,16 +502,14 @@ def _read_file_content(file_path):
         # Try python-docx
         try:
             from docx import Document
+
             doc = Document(str(p))
             paragraphs = [para.text for para in doc.paragraphs if para.text.strip()]
             if paragraphs:
                 return "\n\n".join(paragraphs)
             return f"[DOCX file: {p.name} -- no extractable text found]"
         except ImportError:
-            return (
-                f"[DOCX file: {p.name} -- requires python-docx library. "
-                f"Install with: pip install python-docx]"
-            )
+            return f"[DOCX file: {p.name} -- requires python-docx library. Install with: pip install python-docx]"
         except Exception as exc:
             return f"[DOCX file: {p.name} -- extraction error: {exc}]"
 
@@ -531,30 +532,86 @@ def _read_file_content(file_path):
 # Requirement type detection keywords
 _REQ_TYPE_KEYWORDS = {
     "security": [
-        "authenticate", "authorize", "encrypt", "cac", "piv", "mfa",
-        "fips", "stig", "access control", "audit log", "credential",
-        "certificate", "pki", "rbac", "permission", "classification",
-        "clearance", "password", "token", "session timeout",
+        "authenticate",
+        "authorize",
+        "encrypt",
+        "cac",
+        "piv",
+        "mfa",
+        "fips",
+        "stig",
+        "access control",
+        "audit log",
+        "credential",
+        "certificate",
+        "pki",
+        "rbac",
+        "permission",
+        "classification",
+        "clearance",
+        "password",
+        "token",
+        "session timeout",
     ],
     "performance": [
-        "response time", "latency", "throughput", "concurrent",
-        "availability", "uptime", "sla", "load", "capacity",
-        "transactions per second", "bandwidth", "millisecond",
+        "response time",
+        "latency",
+        "throughput",
+        "concurrent",
+        "availability",
+        "uptime",
+        "sla",
+        "load",
+        "capacity",
+        "transactions per second",
+        "bandwidth",
+        "millisecond",
     ],
     "interface": [
-        "integrate", "interface", "api", "rest", "soap", "feed",
-        "import", "export", "connect", "external system", "third-party",
-        "web service", "message queue", "protocol",
+        "integrate",
+        "interface",
+        "api",
+        "rest",
+        "soap",
+        "feed",
+        "import",
+        "export",
+        "connect",
+        "external system",
+        "third-party",
+        "web service",
+        "message queue",
+        "protocol",
     ],
     "data": [
-        "database", "data store", "retention", "backup", "archive",
-        "migrate data", "data format", "schema", "cui data",
-        "record", "table", "storage", "replication",
+        "database",
+        "data store",
+        "retention",
+        "backup",
+        "archive",
+        "migrate data",
+        "data format",
+        "schema",
+        "cui data",
+        "record",
+        "table",
+        "storage",
+        "replication",
     ],
     "operational": [
-        "deployment", "install", "configure", "maintain", "monitor",
-        "support", "train", "operate", "documentation", "helpdesk",
-        "disaster recovery", "failover", "continuity",
+        "deployment",
+        "install",
+        "configure",
+        "maintain",
+        "monitor",
+        "support",
+        "train",
+        "operate",
+        "documentation",
+        "helpdesk",
+        "disaster recovery",
+        "failover",
+        "continuity",
     ],
 }
 
@@ -595,14 +652,14 @@ def _extract_requirement_sentences(text):
     - "will" statements (intent)
     """
     # Split into sentences
-    sentences = re.split(r'(?<=[.!?])\s+', text.replace("\n", " "))
+    sentences = re.split(r"(?<=[.!?])\s+", text.replace("\n", " "))
     requirements = []
 
     requirement_patterns = [
-        re.compile(r'\bshall\b', re.IGNORECASE),
-        re.compile(r'\bmust\b', re.IGNORECASE),
-        re.compile(r'\bshould\b', re.IGNORECASE),
-        re.compile(r'\bwill\b', re.IGNORECASE),
+        re.compile(r"\bshall\b", re.IGNORECASE),
+        re.compile(r"\bmust\b", re.IGNORECASE),
+        re.compile(r"\bshould\b", re.IGNORECASE),
+        re.compile(r"\bwill\b", re.IGNORECASE),
     ]
 
     for sentence in sentences:
@@ -614,11 +671,13 @@ def _extract_requirement_sentences(text):
             if pattern.search(sentence):
                 req_type = _detect_requirement_type(sentence)
                 priority = _detect_priority(sentence)
-                requirements.append({
-                    "raw_text": sentence,
-                    "requirement_type": req_type,
-                    "priority": priority,
-                })
+                requirements.append(
+                    {
+                        "raw_text": sentence,
+                        "requirement_type": req_type,
+                        "priority": priority,
+                    }
+                )
                 break  # Only match once per sentence
 
     return requirements
@@ -627,6 +686,7 @@ def _extract_requirement_sentences(text):
 # ---------------------------------------------------------------------------
 # Core functions
 # ---------------------------------------------------------------------------
+
 
 def upload_document(session_id, file_path, document_type, db_path=None):
     """Upload a document for requirement extraction.
@@ -647,9 +707,7 @@ def upload_document(session_id, file_path, document_type, db_path=None):
     conn = _get_connection(db_path)
 
     # Verify session exists
-    session = conn.execute(
-        "SELECT * FROM intake_sessions WHERE id = ?", (session_id,)
-    ).fetchone()
+    session = conn.execute("SELECT * FROM intake_sessions WHERE id = ?", (session_id,)).fetchone()
     if not session:
         conn.close()
         raise ValueError(f"Session '{session_id}' not found.")
@@ -704,8 +762,15 @@ def upload_document(session_id, file_path, document_type, db_path=None):
             extracted_requirements_count, classification, uploaded_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, 0, 'CUI', ?)""",
         (
-            doc_id, session_id, db_doc_type, file_name, str(p.resolve()),
-            file_hash, file_size, mime_type, extracted_sections,
+            doc_id,
+            session_id,
+            db_doc_type,
+            file_name,
+            str(p.resolve()),
+            file_hash,
+            file_size,
+            mime_type,
+            extracted_sections,
             datetime.now().isoformat(),
         ),
     )
@@ -757,9 +822,7 @@ def extract_requirements(document_id, db_path=None):
     conn = _get_connection(db_path)
 
     # Load document
-    doc = conn.execute(
-        "SELECT * FROM intake_documents WHERE id = ?", (document_id,)
-    ).fetchone()
+    doc = conn.execute("SELECT * FROM intake_documents WHERE id = ?", (document_id,)).fetchone()
     if not doc:
         conn.close()
         raise ValueError(f"Document '{document_id}' not found.")
@@ -799,19 +862,27 @@ def extract_requirements(document_id, db_path=None):
                 gaps, acceptance_criteria, status, classification, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, 0.5, NULL, NULL, 'draft', 'CUI', ?)""",
             (
-                req_id, session_id, raw, raw, req_type,
-                priority, document_id, datetime.now().isoformat(),
+                req_id,
+                session_id,
+                raw,
+                raw,
+                req_type,
+                priority,
+                document_id,
+                datetime.now().isoformat(),
             ),
         )
 
-        inserted_reqs.append({
-            "id": req_id,
-            "raw_text": raw,
-            "requirement_type": req_type,
-            "priority": priority,
-            "source": "document",
-            "source_reference": document_id,
-        })
+        inserted_reqs.append(
+            {
+                "id": req_id,
+                "raw_text": raw,
+                "requirement_type": req_type,
+                "priority": priority,
+                "source": "document",
+                "source_reference": document_id,
+            }
+        )
 
         # Count by type
         by_type[req_type] = by_type.get(req_type, 0) + 1
@@ -874,9 +945,7 @@ def list_documents(session_id, db_path=None):
     """
     conn = _get_connection(db_path)
 
-    session = conn.execute(
-        "SELECT * FROM intake_sessions WHERE id = ?", (session_id,)
-    ).fetchone()
+    session = conn.execute("SELECT * FROM intake_sessions WHERE id = ?", (session_id,)).fetchone()
     if not session:
         conn.close()
         raise ValueError(f"Session '{session_id}' not found.")
@@ -900,14 +969,14 @@ def list_documents(session_id, db_path=None):
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
-    parser = argparse.ArgumentParser(
-        description="ICDEV Document Requirements Extractor"
-    )
+    parser = argparse.ArgumentParser(description="ICDEV™ Document Requirements Extractor")
     parser.add_argument("--session-id", help="Intake session ID")
     parser.add_argument("--document-id", help="Document ID (for extraction)")
     parser.add_argument(
-        "--upload", action="store_true",
+        "--upload",
+        action="store_true",
         help="Upload a document",
     )
     parser.add_argument("--file-path", help="Path to the document file")
@@ -918,15 +987,18 @@ def main():
         help="Type of the document",
     )
     parser.add_argument(
-        "--extract", action="store_true",
+        "--extract",
+        action="store_true",
         help="Extract requirements from an uploaded document",
     )
     parser.add_argument(
-        "--list", action="store_true",
+        "--list",
+        action="store_true",
         help="List all documents for a session",
     )
     parser.add_argument(
-        "--classify", action="store_true",
+        "--classify",
+        action="store_true",
         help="Classify an uploaded image document using vision LLM",
     )
     parser.add_argument("--json", action="store_true", help="JSON output")
@@ -938,7 +1010,9 @@ def main():
         if args.upload and args.session_id and args.file_path:
             # Upload document
             result = upload_document(
-                args.session_id, args.file_path, args.document_type,
+                args.session_id,
+                args.file_path,
+                args.document_type,
             )
 
         elif args.extract and args.document_id:
@@ -973,14 +1047,10 @@ def main():
                 )
                 by_type = result.get("by_type", {})
                 if by_type:
-                    print("  By type: " + ", ".join(
-                        f"{k}={v}" for k, v in sorted(by_type.items())
-                    ))
+                    print("  By type: " + ", ".join(f"{k}={v}" for k, v in sorted(by_type.items())))
                 by_priority = result.get("by_priority", {})
                 if by_priority:
-                    print("  By priority: " + ", ".join(
-                        f"{k}={v}" for k, v in sorted(by_priority.items())
-                    ))
+                    print("  By priority: " + ", ".join(f"{k}={v}" for k, v in sorted(by_priority.items())))
             elif args.classify:
                 cls = result.get("classification", {})
                 if cls:

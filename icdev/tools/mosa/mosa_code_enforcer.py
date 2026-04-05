@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """MOSA Code Enforcer -- static analysis for Modular Open Systems Approach violations.
 
 Scans code for MOSA violations: direct coupling bypassing interfaces, missing

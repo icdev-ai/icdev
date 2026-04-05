@@ -10,6 +10,7 @@ For each detected language:
 
 CLI: python tools/maintenance/dependency_scanner.py --project-id <id> [--language <lang>] [--offline] [--json]
 """
+from __future__ import annotations
 
 import argparse
 import json
@@ -31,7 +32,7 @@ HTTP_TIMEOUT = 10
 
 
 # ---------------------------------------------------------------------------
-# Standard ICDEV helpers
+# Standard ICDEV™ helpers
 # ---------------------------------------------------------------------------
 
 def _get_connection(db_path=None):

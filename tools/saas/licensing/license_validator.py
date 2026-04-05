@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""ICDEV SaaS — License Validator.
+"""ICDEV™ SaaS — License Validator.
 CUI // SP-CTI
 
 Validates offline license keys for on-premises deployments.
 License keys are JSON documents signed with RSA-SHA256.
 No network access required — fully air-gap safe.
 """
+
 import argparse
 import base64
 import json
@@ -24,9 +25,7 @@ logger = logging.getLogger("saas.licensing")
 
 # Default public key path for license verification
 DEFAULT_PUBLIC_KEY_PATH = BASE_DIR / "args" / "license_public_key.pem"
-LICENSE_FILE_PATH = Path(
-    os.environ.get("ICDEV_LICENSE_FILE", str(BASE_DIR / "data" / "license.json"))
-)
+LICENSE_FILE_PATH = Path(os.environ.get("ICDEV_LICENSE_FILE", str(BASE_DIR / "data" / "license.json")))
 
 # Tier hierarchy (higher index = more permissive)
 TIER_HIERARCHY = ["starter", "pro", "enterprise", "unlimited"]
@@ -38,6 +37,7 @@ _cached_license: Optional[Dict[str, Any]] = None
 try:
     from cryptography.hazmat.primitives import hashes, serialization
     from cryptography.hazmat.primitives.asymmetric import padding
+
     HAS_CRYPTO = True
 except ImportError:
     HAS_CRYPTO = False
@@ -50,6 +50,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
 
 def _load_license_json(license_path: Path) -> Dict[str, Any]:
     """Read and parse the license JSON file."""
@@ -69,8 +70,7 @@ def _canonical_payload(license_data: Dict[str, Any]) -> bytes:
     return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
 
-def _verify_signature(license_data: Dict[str, Any],
-                      public_key_path: Path) -> List[str]:
+def _verify_signature(license_data: Dict[str, Any], public_key_path: Path) -> List[str]:
     """Verify the RSA-SHA256 signature on the license.
 
     Returns a list of error strings (empty == valid).
@@ -132,9 +132,7 @@ def _check_expiry(license_data: Dict[str, Any]) -> List[str]:
 
     now = datetime.now(timezone.utc)
     if now > exp_dt:
-        errors.append(
-            f"License expired on {exp_dt.isoformat()} (current: {now.isoformat()})"
-        )
+        errors.append(f"License expired on {exp_dt.isoformat()} (current: {now.isoformat()})")
     return errors
 
 
@@ -142,9 +140,9 @@ def _check_expiry(license_data: Dict[str, Any]) -> List[str]:
 # Public API
 # ---------------------------------------------------------------------------
 
-def validate_license(license_path: Optional[str] = None,
-                     public_key_path: Optional[str] = None) -> Dict[str, Any]:
-    """Validate an ICDEV on-premises license.
+
+def validate_license(license_path: Optional[str] = None, public_key_path: Optional[str] = None) -> Dict[str, Any]:
+    """Validate an ICDEV™ on-premises license.
 
     Args:
         license_path:     Path to the license JSON file.
@@ -168,12 +166,15 @@ def validate_license(license_path: Optional[str] = None,
     except FileNotFoundError as exc:
         return {"valid": False, "license": None, "errors": [str(exc)]}
     except json.JSONDecodeError as exc:
-        return {"valid": False, "license": None,
-                "errors": [f"Invalid JSON in license file: {exc}"]}
+        return {"valid": False, "license": None, "errors": [f"Invalid JSON in license file: {exc}"]}
 
     # 2. Required fields
     required_fields = [
-        "license_id", "customer", "tier", "expires_at", "issued_at",
+        "license_id",
+        "customer",
+        "tier",
+        "expires_at",
+        "issued_at",
     ]
     for field in required_fields:
         if field not in license_data:
@@ -190,9 +191,7 @@ def validate_license(license_path: Optional[str] = None,
     # 5. Validate tier value
     tier = license_data.get("tier", "").lower()
     if tier and tier not in TIER_HIERARCHY:
-        errors.append(
-            f"Unknown tier '{tier}'. Valid tiers: {TIER_HIERARCHY}"
-        )
+        errors.append(f"Unknown tier '{tier}'. Valid tiers: {TIER_HIERARCHY}")
 
     valid = len(errors) == 0
     return {"valid": valid, "license": license_data, "errors": errors}
@@ -238,36 +237,42 @@ def get_license_info() -> Dict[str, Any]:
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description="ICDEV License Validator — CUI // SP-CTI"
-    )
+    parser = argparse.ArgumentParser(description="ICDEV™ License Validator — CUI // SP-CTI")
     parser.add_argument(
-        "--validate", action="store_true",
+        "--validate",
+        action="store_true",
         help="Validate the license file and print result",
     )
     parser.add_argument(
-        "--info", action="store_true",
+        "--info",
+        action="store_true",
         help="Print cached license info",
     )
     parser.add_argument(
-        "--check-feature", metavar="FEATURE",
+        "--check-feature",
+        metavar="FEATURE",
         help="Check if a feature is enabled in the license",
     )
     parser.add_argument(
-        "--check-tier", metavar="TIER",
+        "--check-tier",
+        metavar="TIER",
         help="Check if the license tier meets or exceeds the given tier",
     )
     parser.add_argument(
-        "--check-il-level", metavar="IL_LEVEL",
+        "--check-il-level",
+        metavar="IL_LEVEL",
         help="Check if the license authorises a given impact level",
     )
     parser.add_argument(
-        "--license-file", metavar="PATH",
+        "--license-file",
+        metavar="PATH",
         help="Path to license JSON file (overrides env/default)",
     )
     parser.add_argument(
-        "--public-key", metavar="PATH",
+        "--public-key",
+        metavar="PATH",
         help="Path to RSA public key PEM (overrides default)",
     )
     parser.add_argument("--json", action="store_true", help="Output as JSON")
@@ -279,8 +284,7 @@ def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
 
-    if args.validate or (not args.info and not args.check_feature
-                         and not args.check_tier and not args.check_il_level):
+    if args.validate or (not args.info and not args.check_feature and not args.check_tier and not args.check_il_level):
         result = validate_license(
             license_path=args.license_file,
             public_key_path=args.public_key,

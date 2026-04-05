@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-# CUI // SP-CTI
 """Generate STIG-hardened Dockerfiles for Python and Node.js applications.
-Multi-stage builds, non-root user, no shell, minimal base, health checks, CUI labels."""
+Multi-stage builds, non-root user, no shell, minimal base, health checks.
+Classification-aware: labels and headers controlled by ClassificationResolver."""
 
 import argparse
 from datetime import datetime, timezone
@@ -10,18 +10,43 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
-CUI_HEADER = (
-    "# //CUI\n"
-    "# CONTROLLED UNCLASSIFIED INFORMATION\n"
-    "# Authorized for: Internal project use only\n"
-    "# Generated: {timestamp}\n"
-    "# Generator: ICDev Dockerfile Generator\n"
-    "# //CUI\n"
-)
+try:
+    from tools.compliance.classification_resolver import ClassificationResolver
+except ImportError:
+    ClassificationResolver = None
 
 
-def _cui_header() -> str:
-    return CUI_HEADER.format(timestamp=datetime.now(timezone.utc).isoformat())
+def _classification_header(classification: str = "public") -> str:
+    """Generate file header based on classification level."""
+    if ClassificationResolver is not None:
+        resolver = ClassificationResolver(classification)
+        if resolver.file_header_enabled and resolver.file_header_text:
+            ts = datetime.now(timezone.utc).isoformat()
+            return f"{resolver.file_header_text}\n# Generated: {ts}\n# Generator: ICDev Dockerfile Generator\n"
+    return f"# Generated: {datetime.now(timezone.utc).isoformat()}\n"
+
+
+def _classification_labels(classification: str = "public", project_name: str = "icdev-app") -> str:
+    """Generate Docker LABEL block based on classification level."""
+    ts = datetime.now(timezone.utc).isoformat()
+    base_labels = (
+        f'LABEL maintainer="icdev-team" \\\n'
+        f'      org.opencontainers.image.title="{project_name}" \\\n'
+        f'      org.opencontainers.image.vendor="ICDev" \\\n'
+        f'      org.opencontainers.image.created="{ts}"'
+    )
+    if ClassificationResolver is not None:
+        resolver = ClassificationResolver(classification)
+        if resolver.docker_labels_enabled and resolver.banner_text:
+            return (
+                f'LABEL classification="{resolver.banner_text}" \\\n'
+                f'      maintainer="icdev-team" \\\n'
+                f'      org.opencontainers.image.title="{project_name}" \\\n'
+                f'      org.opencontainers.image.description="STIG-hardened application" \\\n'
+                f'      org.opencontainers.image.vendor="ICDev" \\\n'
+                f'      org.opencontainers.image.created="{ts}"'
+            )
+    return base_labels
 
 
 def _write(path: Path, content: str) -> Path:
@@ -40,10 +65,14 @@ def generate_python(project_path: str, config: dict = None) -> list:
     app_port = config.get("port", 8080)
     app_module = config.get("app_module", "app.main:app")
     project_name = config.get("project_name", "icdev-app")
+    classification = config.get("classification", "public")
 
     docker_dir = Path(project_path) / "docker"
 
-    dockerfile = f"""{_cui_header()}
+    header = _classification_header(classification)
+    labels = _classification_labels(classification, project_name)
+
+    dockerfile = f"""{header}
 # =============================================================================
 # Stage 1: Builder — install dependencies in a full image
 # =============================================================================
@@ -71,15 +100,8 @@ RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 # =============================================================================
 FROM python:{python_version}-slim AS production
 
-# --- CUI Classification Labels ---
-LABEL classification="CUI" \\
-      cui.category="CTI" \\
-      cui.dissemination="NOFORN" \\
-      maintainer="icdev-team" \\
-      org.opencontainers.image.title="{project_name}" \\
-      org.opencontainers.image.description="STIG-hardened Python application" \\
-      org.opencontainers.image.vendor="ICDev" \\
-      org.opencontainers.image.created="{datetime.now(timezone.utc).isoformat()}"
+# --- Classification Labels ---
+{labels}
 
 # Prevent Python from writing .pyc files and enable unbuffered output
 ENV PYTHONDONTWRITEBYTECODE=1 \\
@@ -177,10 +199,12 @@ def generate_node(project_path: str, config: dict = None) -> list:
     node_version = config.get("node_version", "20")
     app_port = config.get("port", 3000)
     project_name = config.get("project_name", "icdev-app")
+    classification = config.get("classification", "public")
 
     docker_dir = Path(project_path) / "docker"
 
-    dockerfile = f"""{_cui_header()}
+    header = _classification_header(classification)
+    dockerfile = f"""{header}
 # =============================================================================
 # Stage 1: Dependencies — install node_modules
 # =============================================================================
@@ -227,15 +251,8 @@ RUN if [ -f tsconfig.json ]; then \\
 # =============================================================================
 FROM node:{node_version}-alpine AS production
 
-# --- CUI Classification Labels ---
-LABEL classification="CUI" \\
-      cui.category="CTI" \\
-      cui.dissemination="NOFORN" \\
-      maintainer="icdev-team" \\
-      org.opencontainers.image.title="{project_name}" \\
-      org.opencontainers.image.description="STIG-hardened Node.js application" \\
-      org.opencontainers.image.vendor="ICDev" \\
-      org.opencontainers.image.created="{datetime.now(timezone.utc).isoformat()}"
+# --- Classification Labels ---
+{_classification_labels(classification, project_name)}
 
 ENV NODE_ENV=production \\
     APP_PORT={app_port} \\

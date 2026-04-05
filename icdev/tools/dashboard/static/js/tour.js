@@ -1,9 +1,9 @@
 // CUI // SP-CTI
 /**
- * ICDEV Dashboard - Interactive Onboarding Tour Module
+ * ICDEV™ Dashboard - Interactive Onboarding Tour Module
  * Guides first-time users through key dashboard UI elements with a step-by-step
  * spotlight walkthrough. Zero external dependencies. Air-gap safe.
- * Extends window.ICDEV (created by api.js, extended by ux.js).
+ * Extends window.ICDEV™ (created by api.js, extended by ux.js).
  *
  * Features:
  *   1. First-visit detection via localStorage (icdev_tour_completed)
@@ -15,16 +15,16 @@
  *   7. Resize-safe repositioning; animated transitions
  *
  * Public API:
- *   ICDEV.startTour()  - Manually start or restart the tour
- *   ICDEV.resetTour()  - Clear localStorage so tour shows again on next visit
+ *   ICDEV™.startTour()  - Manually start or restart the tour
+ *   ICDEV™.resetTour()  - Clear localStorage so tour shows again on next visit
  *
  * @module tour
  */
 (function () {
     "use strict";
 
-    var ICDEV = window.ICDEV || {};
-    window.ICDEV = ICDEV;
+    var ICDEV™ = window.ICDEV™ || {};
+    window.ICDEV™ = ICDEV™;
 
     // ── Constants ────────────────────────────────────────────────────────────
     var STORAGE_KEY = "icdev_tour_completed";
@@ -353,9 +353,9 @@
         card.className = P + "-wcard";
         card.setAttribute("role", "dialog");
         card.setAttribute("aria-modal", "true");
-        card.setAttribute("aria-label", "Welcome to the ICDEV Dashboard");
+        card.setAttribute("aria-label", "Welcome to the ICDEV™ Dashboard");
 
-        var h = document.createElement("h2"); h.textContent = "Welcome to ICDEV Dashboard";
+        var h = document.createElement("h2"); h.textContent = "Welcome to ICDEV™ Dashboard";
         var p = document.createElement("p");
         if (hasResume) {
             p.textContent = "You left off at step " + (savedStep + 1) + ". " +
@@ -455,10 +455,10 @@
      * Skips the welcome overlay when called manually (for "Restart Tour" UX).
      * @param {number} [fromStep=0] Optional step index to resume from.
      * @example
-     * ICDEV.startTour();    // Start from beginning
-     * ICDEV.startTour(3);   // Resume from step 4
+     * ICDEV™.startTour();    // Start from beginning
+     * ICDEV™.startTour(3);   // Resume from step 4
      */
-    ICDEV.startTour = function startTour(fromStep) {
+    ICDEV™.startTour = function startTour(fromStep) {
         if (_active) teardown();
         injectStyles();
 
@@ -490,10 +490,10 @@
     /**
      * Clear localStorage so the welcome overlay appears on the next page visit.
      * @example
-     * ICDEV.resetTour();
+     * ICDEV™.resetTour();
      * location.reload(); // Tour will show again
      */
-    ICDEV.resetTour = function resetTour() {
+    ICDEV™.resetTour = function resetTour() {
         try { localStorage.removeItem(STORAGE_KEY); } catch (e) { /* air-gapped fallback */ }
     };
 
@@ -508,9 +508,9 @@
             injectStyles();
             loadStepsFromConfig(function () {
                 showWelcome(
-                    function () { ICDEV.startTour(0); },
+                    function () { ICDEV™.startTour(0); },
                     function () { completeTour(); },
-                    function (savedStep) { ICDEV.startTour(savedStep); }
+                    function (savedStep) { ICDEV™.startTour(savedStep); }
                 );
             });
         }, 500);

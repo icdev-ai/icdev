@@ -3,14 +3,14 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""Goal Adapter - copies and adapts ICDEV goals for child applications.
+# POC: ICDEV™ System Administrator
+"""Goal Adapter - copies and adapts ICDEV™ goals for child applications.
 
-Adapts the ICDEV goal library for use by child apps generated via the blueprint
+Adapts the ICDEV™ goal library for use by child apps generated via the blueprint
 engine. This involves:
   1. Copying essential goal markdown files (filtered by blueprint capabilities)
   2. Stripping the "Step 0: Agentic Fitness Assessment" from build_app.md
-     (child apps don't assess fitness -- that was done by ICDEV at generation time)
+     (child apps don't assess fitness -- that was done by ICDEV™ at generation time)
   3. Generating a goals manifest.md for the child app
   4. Copying relevant hardprompt templates (excluding generation-only prompts)
 
@@ -69,8 +69,13 @@ GOAL_FILE_MAP: Dict[str, str] = {
     "ato_acceleration": "ato_acceleration.md",
     # Phase 64: RAG subsystem
     "rag_subsystem": "rag_subsystem.md",
-    # Phase 61: Multi-agent orchestration (prompt chains, dispatcher, ATLAS critique)
+    # Phase 61: Multi-agent orchestration (prompt chains, dispatcher, ANVIL critique)
     "multi_agent_orchestration": "multi_agent_orchestration.md",
+    # Genesis v2.0 Autonomous Research Lab
+    "genesis_daemon": "genesis_daemon.md",
+    "genesis_promoter": "genesis_promoter.md",
+    # Bayesian Autoresearch (Phase 67, D-AR-1 through D-AR-10)
+    "autoresearch": "autoresearch.md",
 }
 
 # ============================================================
@@ -78,7 +83,7 @@ GOAL_FILE_MAP: Dict[str, str] = {
 # ============================================================
 
 GOAL_PURPOSE_MAP: Dict[str, str] = {
-    "build_app": "5/6-step ATLAS build process",
+    "build_app": "5/6-step ANVIL build process",
     "tdd_workflow": "RED\u2192GREEN\u2192REFACTOR cycle with BDD",
     "compliance_workflow": "Generate ATO artifacts (SSP, POAM, STIG, SBOM)",
     "security_scan": "SAST, dependency audit, secret detection",
@@ -105,7 +110,10 @@ GOAL_PURPOSE_MAP: Dict[str, str] = {
     "code_intelligence": "AST metrics, smell detection, maintainability scoring",
     "ato_acceleration": "Multi-framework ATO: FedRAMP, CMMC, OSCAL, eMASS, cATO",
     "rag_subsystem": "Multi-source knowledge ingestion, semantic retrieval, cross-engine querying",
-    "multi_agent_orchestration": "Prompt chains, dispatcher mode, session purpose, ATLAS critique",
+    "multi_agent_orchestration": "Prompt chains, dispatcher mode, session purpose, ANVIL critique",
+    "genesis_daemon": "Autonomous research lab — 14 Reflexes, Trust Kernel, circuit breakers",
+    "genesis_promoter": "Knowledge Bridge — GKP export/import, dedup, auto-promote, human review",
+    "autoresearch": "Bayesian Autoresearch — Karpathy-loop autonomous experiments with info-gain selection",
 }
 
 # ============================================================
@@ -113,7 +121,7 @@ GOAL_PURPOSE_MAP: Dict[str, str] = {
 # ============================================================
 
 GOAL_DISPLAY_NAME_MAP: Dict[str, str] = {
-    "build_app": "ATLAS/M-ATLAS Workflow",
+    "build_app": "ANVIL/M-ANVIL Workflow",
     "tdd_workflow": "TDD Workflow",
     "compliance_workflow": "Compliance Workflow",
     "security_scan": "Security Scanning",
@@ -141,6 +149,9 @@ GOAL_DISPLAY_NAME_MAP: Dict[str, str] = {
     "ato_acceleration": "ATO Acceleration",
     "rag_subsystem": "RAG Subsystem",
     "multi_agent_orchestration": "Multi-Agent Orchestration",
+    "genesis_daemon": "Genesis Daemon",
+    "genesis_promoter": "Genesis Promoter",
+    "autoresearch": "Bayesian Autoresearch",
 }
 
 # ============================================================
@@ -165,13 +176,13 @@ def copy_essential_goals(
     dest_dir: Path,
     goals_config: List[str],
 ) -> List[str]:
-    """Copy goal markdown files from ICDEV goals/ to child app goals/.
+    """Copy goal markdown files from ICDEV™ goals/ to child app goals/.
 
     Only copies goals listed in the blueprint's goals_config. Each file is
     copied verbatim except build_app.md which gets the fitness step stripped.
 
     Args:
-        source_dir: Path to ICDEV goals/ directory.
+        source_dir: Path to ICDEV™ goals/ directory.
         dest_dir: Path to child app goals/ directory.
         goals_config: List of goal keys to copy (e.g. ["build_app", "tdd_workflow"]).
 
@@ -189,9 +200,7 @@ def copy_essential_goals(
 
         source_file = source_dir / filename
         if not source_file.exists():
-            logger.warning(
-                "Goal file not found: %s — skipping", source_file
-            )
+            logger.warning("Goal file not found: %s — skipping", source_file)
             continue
 
         dest_file = dest_dir / filename
@@ -231,7 +240,7 @@ def strip_fitness_step(build_app_content: str) -> str:
     # Using re.DOTALL so . matches newlines within the lazy quantifier.
     pattern = re.compile(
         r"###\s*Step\s*0\s*:\s*Agentic\s+Fitness.*?"  # heading line
-        r"(?=^##[#\s]|\Z)",                            # stop before next ## or ###
+        r"(?=^##[#\s]|\Z)",  # stop before next ## or ###
         re.MULTILINE | re.DOTALL,
     )
     content = pattern.sub("", build_app_content)
@@ -290,7 +299,7 @@ def copy_hardprompts(
     dest_dir: Path,
     capabilities: Dict[str, bool],
 ) -> List[str]:
-    """Copy hardprompt templates from ICDEV to child app.
+    """Copy hardprompt templates from ICDEV™ to child app.
 
     Always copies:
       - hardprompts/agent/*.md (minus excluded files like fitness_evaluation.md)
@@ -307,13 +316,13 @@ def copy_hardprompts(
 
     Never copies:
       - Files in EXCLUDED_FILES list
-      - hardprompts/modernization/  (ICDEV-only, not for child apps)
-      - hardprompts/requirements/   (ICDEV-only, RICOAS)
-      - hardprompts/simulation/     (ICDEV-only, RICOAS)
-      - hardprompts/integration/    (ICDEV-only, RICOAS)
+      - hardprompts/modernization/  (ICDEV™-only, not for child apps)
+      - hardprompts/requirements/   (ICDEV™-only, RICOAS)
+      - hardprompts/simulation/     (ICDEV™-only, RICOAS)
+      - hardprompts/integration/    (ICDEV™-only, RICOAS)
 
     Args:
-        source_dir: Path to ICDEV hardprompts/ directory.
+        source_dir: Path to ICDEV™ hardprompts/ directory.
         dest_dir: Path to child app hardprompts/ directory.
         capabilities: Resolved capability map from blueprint.
 
@@ -361,8 +370,7 @@ def copy_hardprompts(
             copied.append(rel_path)
             logger.debug("Copied hardprompt: %s", rel_path)
 
-    logger.info("Copied %d hardprompt files across %d directories",
-                len(copied), len(dirs_to_copy))
+    logger.info("Copied %d hardprompt files across %d directories", len(copied), len(dirs_to_copy))
     return copied
 
 
@@ -377,7 +385,7 @@ def adapt_goals(
     child_root: Path,
     dry_run: bool = False,
 ) -> Dict[str, Any]:
-    """Adapt and copy goals from ICDEV to child app.
+    """Adapt and copy goals from ICDEV™ to child app.
 
     Reads the blueprint's goals_config and capabilities to determine which
     goals and hardprompts to copy. Strips the fitness assessment step from
@@ -385,7 +393,7 @@ def adapt_goals(
 
     Args:
         blueprint: Complete blueprint dict from app_blueprint.py.
-        icdev_root: Path to ICDEV project root.
+        icdev_root: Path to ICDEV™ project root.
         child_root: Path to child app root.
         dry_run: If True, don't actually copy files — just report what would
                  be done.
@@ -431,8 +439,7 @@ def adapt_goals(
 
         # Report hardprompts that would be copied
         always_dirs = ["agent", "architect", "builder", "security", "knowledge", "infra"]
-        cond_dirs = [("compliance", "compliance"), ("mbse", "mbse"),
-                     ("maintenance", "compliance")]
+        cond_dirs = [("compliance", "compliance"), ("mbse", "mbse"), ("maintenance", "compliance")]
         dirs_to_check = list(always_dirs)
         for subdir, cap in cond_dirs:
             if capabilities.get(cap, False):
@@ -451,19 +458,15 @@ def adapt_goals(
         # Report manifest
         result["manifest_generated"] = True
         result["manifest_path"] = str(child_goals_dir / "manifest.md")
-        logger.info("[DRY RUN] Would generate manifest at %s",
-                    result["manifest_path"])
+        logger.info("[DRY RUN] Would generate manifest at %s", result["manifest_path"])
 
         return result
 
     # --- Actual execution ---
 
     # Step 1: Copy essential goals
-    logger.info("Adapting goals for '%s' (%d goals, %d capabilities)",
-                app_name, len(goals_config), len(capabilities))
-    copied_goals = copy_essential_goals(
-        icdev_goals_dir, child_goals_dir, goals_config
-    )
+    logger.info("Adapting goals for '%s' (%d goals, %d capabilities)", app_name, len(goals_config), len(capabilities))
+    copied_goals = copy_essential_goals(icdev_goals_dir, child_goals_dir, goals_config)
     result["goals_copied"] = copied_goals
 
     # Step 2: Generate and write manifest
@@ -476,9 +479,7 @@ def adapt_goals(
     logger.info("Generated goals manifest: %s", manifest_path)
 
     # Step 3: Copy hardprompts
-    copied_prompts = copy_hardprompts(
-        icdev_hardprompts_dir, child_hardprompts_dir, capabilities
-    )
+    copied_prompts = copy_hardprompts(icdev_hardprompts_dir, child_hardprompts_dir, capabilities)
     result["hardprompts_copied"] = copied_prompts
 
     logger.info(
@@ -499,7 +500,7 @@ def adapt_goals(
 def main() -> None:
     """CLI entry point for goal adaptation."""
     parser = argparse.ArgumentParser(
-        description="Adapt ICDEV goals for child applications",
+        description="Adapt ICDEV™ goals for child applications",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Examples:\n"
@@ -520,7 +521,7 @@ def main() -> None:
     parser.add_argument(
         "--icdev-root",
         default=None,
-        help="Path to ICDEV project root (defaults to auto-detect from script location)",
+        help="Path to ICDEV™ project root (defaults to auto-detect from script location)",
     )
     parser.add_argument(
         "--child-root",
@@ -560,10 +561,10 @@ def main() -> None:
         logger.error("Failed to read blueprint: %s", exc)
         sys.exit(1)
 
-    # Resolve ICDEV root
+    # Resolve ICDEV™ root
     icdev_root = Path(args.icdev_root) if args.icdev_root else BASE_DIR
     if not (icdev_root / "goals").is_dir():
-        logger.error("ICDEV root does not contain goals/ directory: %s", icdev_root)
+        logger.error("ICDEV™ root does not contain goals/ directory: %s", icdev_root)
         sys.exit(1)
 
     child_root = Path(args.child_root)

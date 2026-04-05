@@ -729,7 +729,7 @@ output "bedrock_invoke_policy_arn" {
 def generate_bedrock_iam(project_path: str, config: dict = None) -> list:
     """Generate Bedrock IAM policy for agent LLM access.
 
-    Creates IAM role and policy that allows ICDEV agents to invoke
+    Creates IAM role and policy that allows ICDEV™ agents to invoke
     Amazon Bedrock models (Claude, Titan) in GovCloud for LLM inference.
     Follows least-privilege principle with region-locked access.
 
@@ -868,7 +868,7 @@ resource "aws_acmpca_certificate_authority" "agent_ca" {
 
     subject {
       common_name  = "${{var.project_name}}-agent-ca"
-      organization = "ICDEV"
+      organization = "ICDEV™"
       country      = "US"
     }
   }

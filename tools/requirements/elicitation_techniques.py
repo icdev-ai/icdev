@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Elicitation techniques menu for requirements intake (BMAD pattern).
 
 Provides named reasoning methods that the analyst can invoke during
@@ -23,7 +23,7 @@ Usage:
 """
 
 import json
-import sqlite3
+from tools.db.storage import get_connection
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -296,6 +296,7 @@ TECHNIQUES = {
 # Public API
 # ---------------------------------------------------------------------------
 
+
 def list_techniques(category=None):
     """List all available elicitation techniques.
 
@@ -310,14 +311,16 @@ def list_techniques(category=None):
     for tech_id, tech in TECHNIQUES.items():
         if category and tech.get("category") != category:
             continue
-        result.append({
-            "id": tech_id,
-            "name": tech["name"],
-            "icon": tech["icon"],
-            "short": tech["short"],
-            "category": tech.get("category", "general"),
-            "targets": tech.get("targets", []),
-        })
+        result.append(
+            {
+                "id": tech_id,
+                "name": tech["name"],
+                "icon": tech["icon"],
+                "short": tech["short"],
+                "category": tech.get("category", "general"),
+                "targets": tech.get("targets", []),
+            }
+        )
     return result
 
 
@@ -344,8 +347,7 @@ def _get_connection(db_path=None):
     path = db_path or DB_PATH
     if not path.exists():
         raise FileNotFoundError(f"Database not found: {path}")
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -369,9 +371,7 @@ def activate_technique(session_id, technique_id, db_path=None):
 
     conn = _get_connection(db_path)
     try:
-        session = conn.execute(
-            "SELECT * FROM intake_sessions WHERE id = ?", (session_id,)
-        ).fetchone()
+        session = conn.execute("SELECT * FROM intake_sessions WHERE id = ?", (session_id,)).fetchone()
         if not session:
             return {"status": "error", "error": f"Session not found: {session_id}"}
 
@@ -405,10 +405,7 @@ def activate_technique(session_id, technique_id, db_path=None):
                 "targets": tech.get("targets", []),
             },
             "suggested_questions": tech.get("suggested_questions", []),
-            "message": (
-                f"Technique activated: {tech['name']}. "
-                f"{tech['short']} Try one of the suggested questions."
-            ),
+            "message": (f"Technique activated: {tech['name']}. {tech['short']} Try one of the suggested questions."),
         }
     except Exception as exc:
         return {"status": "error", "error": str(exc)}
@@ -428,9 +425,7 @@ def deactivate_technique(session_id, db_path=None):
     """
     conn = _get_connection(db_path)
     try:
-        session = conn.execute(
-            "SELECT * FROM intake_sessions WHERE id = ?", (session_id,)
-        ).fetchone()
+        session = conn.execute("SELECT * FROM intake_sessions WHERE id = ?", (session_id,)).fetchone()
         if not session:
             return {"status": "error", "error": f"Session not found: {session_id}"}
 
@@ -460,11 +455,12 @@ def deactivate_technique(session_id, db_path=None):
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
     """CLI entry point."""
     import argparse
 
-    parser = argparse.ArgumentParser(description="ICDEV Elicitation Techniques")
+    parser = argparse.ArgumentParser(description="ICDEV™ Elicitation Techniques")
     parser.add_argument("--list", action="store_true", help="List all techniques")
     parser.add_argument("--category", help="Filter by category")
     parser.add_argument("--get", help="Get full technique by ID")

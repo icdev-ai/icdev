@@ -6,18 +6,17 @@ Merges audit_trail + hook_events via UNION ALL for a unified activity feed.
 Read-only, preserves append-only contract (D6).
 """
 
-import sqlite3
+from tools.db.storage import get_connection
 
 from flask import Blueprint, jsonify, request
 
-from icdev.tools.dashboard.config import DB_PATH
+from tools.dashboard.config import DB_PATH
 
 activity_api = Blueprint("activity_api", __name__, url_prefix="/api/activity")
 
 
 def _get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(DB_PATH))
     return conn
 
 

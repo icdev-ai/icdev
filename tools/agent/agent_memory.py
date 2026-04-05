@@ -14,6 +14,7 @@ import logging
 import sqlite3
 import sys
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import List
@@ -28,14 +29,21 @@ logger = logging.getLogger("icdev.agent_memory")
 
 # Valid memory types matching the DB CHECK constraint
 VALID_MEMORY_TYPES = (
-    "fact", "preference", "collaboration", "dispute", "pattern",
-    "context", "lesson_learned", "decision",
+    "fact",
+    "preference",
+    "collaboration",
+    "dispute",
+    "pattern",
+    "context",
+    "lesson_learned",
+    "decision",
 )
 
 # Graceful audit import
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
 except ImportError:
+
     def audit_log_event(**kwargs):
         logger.debug("audit_logger unavailable — skipping audit: %s", kwargs.get("action", ""))
 
@@ -44,11 +52,11 @@ except ImportError:
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_db(db_path=None) -> sqlite3.Connection:
     """Open a DB connection with row factory."""
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -56,10 +64,18 @@ def _get_db(db_path=None) -> sqlite3.Connection:
 # Public API
 # ---------------------------------------------------------------------------
 
-def store(agent_id: str, project_id: str, memory_type: str, content: str,
-          importance: int = 5, task_id: str = None,
-          related_agent_ids: List[str] = None, expires_at: str = None,
-          db_path=None) -> str:
+
+def store(
+    agent_id: str,
+    project_id: str,
+    memory_type: str,
+    content: str,
+    importance: int = 5,
+    task_id: str = None,
+    related_agent_ids: List[str] = None,
+    expires_at: str = None,
+    db_path=None,
+) -> str:
     """Store a memory entry for an agent within a project scope.
 
     Args:
@@ -80,9 +96,7 @@ def store(agent_id: str, project_id: str, memory_type: str, content: str,
         ValueError: If memory_type is not valid or importance is out of range.
     """
     if memory_type not in VALID_MEMORY_TYPES:
-        raise ValueError(
-            f"Invalid memory_type '{memory_type}'. Valid: {VALID_MEMORY_TYPES}"
-        )
+        raise ValueError(f"Invalid memory_type '{memory_type}'. Valid: {VALID_MEMORY_TYPES}")
     if not 1 <= importance <= 10:
         raise ValueError(f"importance must be 1-10, got {importance}")
 
@@ -96,12 +110,17 @@ def store(agent_id: str, project_id: str, memory_type: str, content: str,
                (id, agent_id, project_id, memory_type, content, importance,
                 task_id, related_agent_ids, expires_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (memory_id, agent_id, project_id, memory_type, content,
-             importance, task_id, related_ids_json, expires_at),
+            (memory_id, agent_id, project_id, memory_type, content, importance, task_id, related_ids_json, expires_at),
         )
         conn.commit()
-        logger.info("Memory %s stored: agent=%s project=%s type=%s importance=%d",
-                     memory_id, agent_id, project_id, memory_type, importance)
+        logger.info(
+            "Memory %s stored: agent=%s project=%s type=%s importance=%d",
+            memory_id,
+            agent_id,
+            project_id,
+            memory_type,
+            importance,
+        )
     finally:
         conn.close()
 
@@ -123,9 +142,9 @@ def store(agent_id: str, project_id: str, memory_type: str, content: str,
     return memory_id
 
 
-def recall(agent_id: str, project_id: str, query: str = None,
-           memory_type: str = None, limit: int = 10,
-           db_path=None) -> list:
+def recall(
+    agent_id: str, project_id: str, query: str = None, memory_type: str = None, limit: int = 10, db_path=None
+) -> list:
     """Recall memories for a specific agent within a project.
 
     Supports keyword search on content and filtering by memory type.
@@ -191,9 +210,7 @@ def recall(agent_id: str, project_id: str, query: str = None,
         conn.close()
 
 
-def recall_team(project_id: str, query: str = None,
-                memory_type: str = None, limit: int = 10,
-                db_path=None) -> list:
+def recall_team(project_id: str, query: str = None, memory_type: str = None, limit: int = 10, db_path=None) -> list:
     """Recall team-shared memories (agent_id='_team') for a project.
 
     Team memories are accessible to all agents within a project and
@@ -219,8 +236,7 @@ def recall_team(project_id: str, query: str = None,
     )
 
 
-def inject_context(agent_id: str, project_id: str, max_memories: int = 5,
-                   db_path=None) -> str:
+def inject_context(agent_id: str, project_id: str, max_memories: int = 5, db_path=None) -> str:
     """Build a context string from recent/important memories for system prompt injection.
 
     Combines the agent's own memories with team-shared memories to create
@@ -274,11 +290,18 @@ def inject_context(agent_id: str, project_id: str, max_memories: int = 5,
     return "\n".join(lines)
 
 
-def record_collaboration(project_id: str, agent_a_id: str, agent_b_id: str,
-                         collaboration_type: str, task_id: str = None,
-                         workflow_id: str = None, outcome: str = None,
-                         lesson_learned: str = None, duration_ms: int = None,
-                         db_path=None) -> int:
+def record_collaboration(
+    project_id: str,
+    agent_a_id: str,
+    agent_b_id: str,
+    collaboration_type: str,
+    task_id: str = None,
+    workflow_id: str = None,
+    outcome: str = None,
+    lesson_learned: str = None,
+    duration_ms: int = None,
+    db_path=None,
+) -> int:
     """Record a collaboration event in agent_collaboration_history.
 
     Args:
@@ -303,13 +326,28 @@ def record_collaboration(project_id: str, agent_a_id: str, agent_b_id: str,
                (project_id, agent_a_id, agent_b_id, collaboration_type,
                 task_id, workflow_id, outcome, lesson_learned, duration_ms)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (project_id, agent_a_id, agent_b_id, collaboration_type,
-             task_id, workflow_id, outcome, lesson_learned, duration_ms),
+            (
+                project_id,
+                agent_a_id,
+                agent_b_id,
+                collaboration_type,
+                task_id,
+                workflow_id,
+                outcome,
+                lesson_learned,
+                duration_ms,
+            ),
         )
         conn.commit()
         record_id = cursor.lastrowid
-        logger.info("Collaboration #%d recorded: %s <-> %s [%s] outcome=%s",
-                     record_id, agent_a_id, agent_b_id, collaboration_type, outcome)
+        logger.info(
+            "Collaboration #%d recorded: %s <-> %s [%s] outcome=%s",
+            record_id,
+            agent_a_id,
+            agent_b_id,
+            collaboration_type,
+            outcome,
+        )
 
         # If there's a lesson learned, also store it as a team memory
         if lesson_learned:
@@ -329,8 +367,7 @@ def record_collaboration(project_id: str, agent_a_id: str, agent_b_id: str,
         conn.close()
 
 
-def prune(agent_id: str = None, project_id: str = None,
-          max_age_days: int = 90, db_path=None) -> int:
+def prune(agent_id: str = None, project_id: str = None, max_age_days: int = 90, db_path=None) -> int:
     """Remove expired or old low-importance memories.
 
     Deletes memories that:
@@ -375,20 +412,24 @@ def prune(agent_id: str = None, project_id: str = None,
         # Never prune high-importance memories by age
         where_clause += " AND NOT (importance >= 7 AND expires_at IS NULL)"
 
-        sql = f"DELETE FROM agent_memory WHERE {where_clause}"
+        sql = f"DELETE FROM agent_memory WHERE {where_clause}"  # nosec B608 -- table/column names are internal constants, not user input
 
         cursor = conn.execute(sql, params)
         conn.commit()
         deleted = cursor.rowcount
-        logger.info("Pruned %d memories (max_age=%d days, agent=%s, project=%s)",
-                     deleted, max_age_days, agent_id or "*", project_id or "*")
+        logger.info(
+            "Pruned %d memories (max_age=%d days, agent=%s, project=%s)",
+            deleted,
+            max_age_days,
+            agent_id or "*",
+            project_id or "*",
+        )
         return deleted
     finally:
         conn.close()
 
 
-def get_collaboration_history(project_id: str = None, agent_id: str = None,
-                              limit: int = 50, db_path=None) -> list:
+def get_collaboration_history(project_id: str = None, agent_id: str = None, limit: int = 50, db_path=None) -> list:
     """Get collaboration history records.
 
     Args:
@@ -425,19 +466,17 @@ def get_collaboration_history(project_id: str = None, agent_id: str = None,
 # CLI entry point
 # ---------------------------------------------------------------------------
 
+
 def main():
     """CLI for agent memory operations."""
-    parser = argparse.ArgumentParser(
-        description="ICDEV Agent Memory — scoped knowledge storage per agent and project"
-    )
+    parser = argparse.ArgumentParser(description="ICDEV™ Agent Memory — scoped knowledge storage per agent and project")
     sub = parser.add_subparsers(dest="command", help="Memory command")
 
     # Store
     p_store = sub.add_parser("store", help="Store a memory entry")
     p_store.add_argument("--agent-id", required=True, help="Agent ID (or '_team' for shared)")
     p_store.add_argument("--project-id", required=True, help="Project ID")
-    p_store.add_argument("--type", required=True, choices=VALID_MEMORY_TYPES,
-                         help="Memory type")
+    p_store.add_argument("--type", required=True, choices=VALID_MEMORY_TYPES, help="Memory type")
     p_store.add_argument("--content", required=True, help="Memory content")
     p_store.add_argument("--importance", type=int, default=5, help="Importance 1-10")
     p_store.add_argument("--task-id", help="Associated task ID")
@@ -449,16 +488,14 @@ def main():
     p_recall.add_argument("--agent-id", required=True, help="Agent ID")
     p_recall.add_argument("--project-id", required=True, help="Project ID")
     p_recall.add_argument("--query", help="Keyword search")
-    p_recall.add_argument("--type", dest="mem_type", choices=VALID_MEMORY_TYPES,
-                          help="Filter by type")
+    p_recall.add_argument("--type", dest="mem_type", choices=VALID_MEMORY_TYPES, help="Filter by type")
     p_recall.add_argument("--limit", type=int, default=10, help="Max results")
 
     # Recall team
     p_team = sub.add_parser("recall-team", help="Recall team-shared memories")
     p_team.add_argument("--project-id", required=True, help="Project ID")
     p_team.add_argument("--query", help="Keyword search")
-    p_team.add_argument("--type", dest="mem_type", choices=VALID_MEMORY_TYPES,
-                        help="Filter by type")
+    p_team.add_argument("--type", dest="mem_type", choices=VALID_MEMORY_TYPES, help="Filter by type")
     p_team.add_argument("--limit", type=int, default=10, help="Max results")
 
     # Inject context

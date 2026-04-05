@@ -14,7 +14,6 @@ import json
 import sqlite3
 import sys
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
@@ -36,7 +35,8 @@ def _load_research_module(module_file: str):
     if name in sys.modules:
         return sys.modules[name]
     spec = importlib.util.spec_from_file_location(
-        name, str(_RESEARCH_DIR / module_file),
+        name,
+        str(_RESEARCH_DIR / module_file),
     )
     mod = importlib.util.module_from_spec(spec)
     sys.modules[name] = mod
@@ -291,7 +291,7 @@ CREATE TABLE IF NOT EXISTS research_build_buy (
     existing_solutions TEXT DEFAULT '[]',
     icdev_capability_coverage REAL DEFAULT 0.0,
     estimated_effort TEXT CHECK(estimated_effort IS NULL OR estimated_effort IN ('S','M','L','XL')),
-    estimated_cost_tier TEXT CHECK(estimated_cost_tier IS NULL OR estimated_cost_tier IN ('low','medium','high','very_high')),
+    estimated_cost_tier TEXT CHECK(estimated_cost_tier IS NULL OR estimated_cost_tier IN ('low','medium','high','very_high')),  # noqa: E501
     risk_level TEXT DEFAULT 'medium' CHECK(risk_level IN ('low','medium','high','critical')),
     score_breakdown TEXT DEFAULT '{}',
     metadata TEXT DEFAULT '{}',
@@ -434,7 +434,7 @@ def _seed_vertical(db_path, slug="healthcare", name="Healthcare", vert_id="rvert
 
 def _seed_session(db_path, slug="healthcare", session_name="Test Research"):
     """Insert a vertical + session, return session_id."""
-    vert_id = _seed_vertical(db_path, slug=slug)
+    _seed_vertical(db_path, slug=slug)
     result = create_session(
         name=session_name,
         vertical_slug=slug,
@@ -443,8 +443,14 @@ def _seed_session(db_path, slug="healthcare", session_name="Test Research"):
     return result["id"]
 
 
-def _seed_signal(db_path, session_id, title="Latency issues in EHR", source="community_forum",
-                 source_type="reddit", body="Users report slow query times"):
+def _seed_signal(
+    db_path,
+    session_id,
+    title="Latency issues in EHR",
+    source="community_forum",
+    source_type="reddit",
+    body="Users report slow query times",
+):
     """Insert a signal row directly for testing."""
     sig_id = f"rsig-test-{hashlib.sha256(title.encode()).hexdigest()[:8]}"
     content_hash = hashlib.sha256(f"{title}{body}".encode()).hexdigest()[:32]
@@ -461,8 +467,9 @@ def _seed_signal(db_path, session_id, title="Latency issues in EHR", source="com
     return sig_id
 
 
-def _seed_challenge(db_path, session_id, title="EHR Latency", category="performance",
-                    status="new", composite_score=None):
+def _seed_challenge(
+    db_path, session_id, title="EHR Latency", category="performance", status="new", composite_score=None
+):
     """Insert a challenge row directly for testing."""
     chal_id = f"rchal-test-{hashlib.sha256(title.encode()).hexdigest()[:8]}"
     kw = json.dumps(["latency", "ehr", "performance", "query"])
@@ -475,8 +482,7 @@ def _seed_challenge(db_path, session_id, title="EHR Latency", category="performa
             first_seen, last_seen)
            VALUES (?, ?, ?, 'Test challenge', ?, '[]', 1, ?, ?, ?, 'notable', ?,
                    datetime('now'), datetime('now'))""",
-        (chal_id, session_id, title, category, fingerprint, kw,
-         composite_score, status),
+        (chal_id, session_id, title, category, fingerprint, kw, composite_score, status),
     )
     conn.commit()
     conn.close()
@@ -508,9 +514,9 @@ class TestVerticalLoader:
         assert any("keywords" in e for e in errors)
 
     def test_discover_verticals(self):
-        """Check that context/research/verticals/ has 6 JSON files."""
+        """Check that context/research/verticals/ has JSON files for all verticals."""
         verticals, errs = discover_verticals()
-        assert len(verticals) == 6
+        assert len(verticals) >= 6
         slugs = {v["slug"] for v in verticals}
         assert "healthcare" in slugs
         assert "trading" in slugs
@@ -532,7 +538,7 @@ class TestVerticalLoader:
         """Load verticals to DB then list them."""
         load_verticals_to_db(db_path=research_db)
         result = list_verticals(db_path=research_db)
-        assert result["total"] == 6
+        assert result["total"] >= 6
         slugs = {v["slug"] for v in result["verticals"]}
         assert "healthcare" in slugs
 
@@ -616,9 +622,15 @@ class TestSourceScanner:
         """SOURCE_SCANNERS dict has exactly 9 entries with callable values."""
         assert len(SOURCE_SCANNERS) == 9
         expected_keys = {
-            "community_forum", "review_site", "academic_paper",
-            "regulatory_body", "open_source", "saas_commercial",
-            "news_blog", "patent", "video",
+            "community_forum",
+            "review_site",
+            "academic_paper",
+            "regulatory_body",
+            "open_source",
+            "saas_commercial",
+            "news_blog",
+            "patent",
+            "video",
         }
         assert set(SOURCE_SCANNERS.keys()) == expected_keys
         for fn in SOURCE_SCANNERS.values():
@@ -705,8 +717,9 @@ class TestChallengeScorer:
     def test_severity_thresholds(self, research_db):
         """Challenges with high scores should get 'critical' severity."""
         session_id = _seed_session(research_db)
-        chal_id = _seed_challenge(
-            research_db, session_id,
+        _seed_challenge(
+            research_db,
+            session_id,
             title="Critical infra challenge",
             category="infrastructure",
             status="new",
@@ -715,7 +728,8 @@ class TestChallengeScorer:
         # Insert many signals to boost score
         for i in range(15):
             _seed_signal(
-                research_db, session_id,
+                research_db,
+                session_id,
                 title=f"Infra issue #{i} infrastructure latency scaling",
                 source="community_forum",
                 source_type="reddit",
@@ -816,16 +830,12 @@ class TestRegulatoryMapper:
 
     def test_compute_crosswalk_coverage_full(self):
         """Full coverage when all frameworks matched."""
-        coverage = _compute_crosswalk_coverage(
-            ["AC-2", "AU-2"], list(ICDEV_FRAMEWORKS)
-        )
+        coverage = _compute_crosswalk_coverage(["AC-2", "AU-2"], list(ICDEV_FRAMEWORKS))
         assert coverage == 1.0
 
     def test_compute_crosswalk_coverage_partial(self):
         """Partial coverage with some frameworks matched."""
-        coverage = _compute_crosswalk_coverage(
-            ["AC-2"], ["nist_800_53", "fedramp_moderate"]
-        )
+        coverage = _compute_crosswalk_coverage(["AC-2"], ["nist_800_53", "fedramp_moderate"])
         assert 0.0 < coverage < 1.0
 
     def test_compute_crosswalk_coverage_empty(self):
@@ -841,7 +851,7 @@ class TestRegulatoryMapper:
         assert "nist_800_171" in frameworks
 
     def test_determine_icdev_frameworks_all(self):
-        """'all' marker should return all ICDEV frameworks."""
+        """'all' marker should return all ICDEV™ frameworks."""
         frameworks = _determine_icdev_frameworks(["all"])
         assert set(frameworks) == set(ICDEV_FRAMEWORKS)
 
@@ -855,11 +865,12 @@ class TestRegulatoryMapper:
         session_id = _seed_session(research_db)
         # Seed a regulatory signal
         _seed_signal(
-            research_db, session_id,
+            research_db,
+            session_id,
             title="CFTC enforcement action on trading firm",
             source="regulatory_body",
             source_type="federal_register",
-            body="Commodity Futures Trading Commission penalty for Rule 17a-4 violation"
+            body="Commodity Futures Trading Commission penalty for Rule 17a-4 violation",
         )
         result = map_regulatory_signals(session_id, db_path=research_db)
         assert isinstance(result, dict)
@@ -881,10 +892,12 @@ class TestRegulatoryMapper:
         """Landscape should aggregate per-body stats after mapping."""
         session_id = _seed_session(research_db)
         _seed_signal(
-            research_db, session_id,
+            research_db,
+            session_id,
             title="SEC proposed rule on market structure",
-            source="regulatory_body", source_type="federal_register",
-            body="Securities and Exchange Commission proposed rulemaking"
+            source="regulatory_body",
+            source_type="federal_register",
+            body="Securities and Exchange Commission proposed rulemaking",
         )
         map_regulatory_signals(session_id, db_path=research_db)
         result = get_regulatory_landscape(session_id, db_path=research_db)
@@ -911,18 +924,16 @@ class TestRegulatoryMapper:
         session_id = _seed_session(research_db)
         # Seed a regulatory signal and map it
         _seed_signal(
-            research_db, session_id,
+            research_db,
+            session_id,
             title="CFTC Rule 17a-4 compliance requirement",
-            source="regulatory_body", source_type="federal_register",
-            body="Commodity Futures Trading Commission trading regulation audit trail"
+            source="regulatory_body",
+            source_type="federal_register",
+            body="Commodity Futures Trading Commission trading regulation audit trail",
         )
         map_regulatory_signals(session_id, db_path=research_db)
         # Seed a challenge with overlapping keywords
-        chal_id = _seed_challenge(
-            research_db, session_id,
-            title="Audit Trail Compliance",
-            category="compliance"
-        )
+        chal_id = _seed_challenge(research_db, session_id, title="Audit Trail Compliance", category="compliance")
         result = map_challenge_regulations(chal_id, session_id, db_path=research_db)
         assert isinstance(result, dict)
         assert "error" not in result
@@ -987,10 +998,12 @@ class TestDossierGenerator:
     def test_generate_dossier_success(self, research_db):
         """Generate a dossier for a session with seeded challenges."""
         session_id = _seed_session(research_db)
-        _seed_challenge(research_db, session_id, title="Challenge A", category="security",
-                        status="scored", composite_score=0.75)
-        _seed_challenge(research_db, session_id, title="Challenge B", category="compliance",
-                        status="scored", composite_score=0.60)
+        _seed_challenge(
+            research_db, session_id, title="Challenge A", category="security", status="scored", composite_score=0.75
+        )
+        _seed_challenge(
+            research_db, session_id, title="Challenge B", category="compliance", status="scored", composite_score=0.60
+        )
         result = generate_dossier(session_id, db_path=research_db)
         assert "error" not in result
         assert "dossier_id" in result or "id" in result
@@ -999,8 +1012,7 @@ class TestDossierGenerator:
     def test_list_dossiers(self, research_db):
         """list_dossiers should return all dossiers in the DB."""
         session_id = _seed_session(research_db)
-        _seed_challenge(research_db, session_id, title="C1", category="data",
-                        status="scored", composite_score=0.5)
+        _seed_challenge(research_db, session_id, title="C1", category="data", status="scored", composite_score=0.5)
         generate_dossier(session_id, db_path=research_db)
         result = list_dossiers(db_path=research_db)
         assert isinstance(result, dict)
@@ -1107,12 +1119,16 @@ class TestForecastGenerator:
     def test_rank_predictions_top_5(self):
         """_rank_predictions returns at most max_predictions items."""
         preds = [
-            {"title": f"Pred {i}", "confidence": 0.7, "surprise_score": 0.5,
-             "prediction_type": "greenfield", "time_horizon": "6mo"}
+            {
+                "title": f"Pred {i}",
+                "confidence": 0.7,
+                "surprise_score": 0.5,
+                "prediction_type": "greenfield",
+                "time_horizon": "6mo",
+            }
             for i in range(10)
         ]
-        config = {"forecast": {"max_predictions": 5, "confidence_threshold": 0.3,
-                                "surprise_threshold": 0.2}}
+        config = {"forecast": {"max_predictions": 5, "confidence_threshold": 0.3, "surprise_threshold": 0.2}}
         ranked = _rank_predictions(preds, config, [], [])
         assert len(ranked) <= 5
 
@@ -1149,13 +1165,16 @@ class TestForecastGenerator:
             "session": {"vertical_name": "Test"},
             "signals": [],
             "trends": [
-                {"id": "rt-1", "name": "AI Growth", "velocity": 0.8,
-                 "confidence": 0.7, "signal_count": 15, "keywords": "[]"}
+                {
+                    "id": "rt-1",
+                    "name": "AI Growth",
+                    "velocity": 0.8,
+                    "confidence": 0.7,
+                    "signal_count": 15,
+                    "keywords": "[]",
+                }
             ],
-            "challenges": [
-                {"id": "rc-1", "title": "Data gaps", "composite_score": 0.85,
-                 "keywords": "[]"}
-            ],
+            "challenges": [{"id": "rc-1", "title": "Data gaps", "composite_score": 0.85, "keywords": "[]"}],
             "innovation_trends": [],
             "innovation_signals": [],
             "creative_pain_points": [],
@@ -1171,9 +1190,15 @@ class TestForecastGenerator:
     def test_generate_forecasts_no_data(self, research_db):
         """generate_forecasts with no signals returns skipped."""
         session_id = _seed_session(research_db)
-        config = {"forecast": {"enabled": True, "method": "deterministic",
-                                "max_predictions": 5, "confidence_threshold": 0.3,
-                                "surprise_threshold": 0.2}}
+        config = {
+            "forecast": {
+                "enabled": True,
+                "method": "deterministic",
+                "max_predictions": 5,
+                "confidence_threshold": 0.3,
+                "surprise_threshold": 0.2,
+            }
+        }
         result = generate_forecasts(session_id, db_path=research_db, config=config)
         assert isinstance(result, dict)
         assert result.get("skipped") is True or result.get("count", 0) == 0

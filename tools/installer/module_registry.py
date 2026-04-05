@@ -3,10 +3,10 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""ICDEV Module Registry — tracks installed modules in data/installation.json.
+# POC: ICDEV™ System Administrator
+"""ICDEV™ Module Registry — tracks installed modules in data/installation.json.
 
-Manages the installation state of ICDEV modules, validates dependencies,
+Manages the installation state of ICDEV™ modules, validates dependencies,
 and provides upgrade path information.  Uses the installation manifest
 (args/installation_manifest.yaml) as the source of truth for available
 modules and their dependency graphs.
@@ -42,6 +42,7 @@ DEFAULT_REGISTRY_PATH = BASE_DIR / "data" / "installation.json"
 # Lightweight YAML loader (stdlib only — no PyYAML hard dependency)
 # ---------------------------------------------------------------------------
 
+
 def _load_yaml_simple(path: Path) -> Dict[str, Any]:
     """Minimal YAML-subset loader for installation manifests.
 
@@ -50,6 +51,7 @@ def _load_yaml_simple(path: Path) -> Dict[str, Any]:
     """
     try:
         import yaml  # type: ignore
+
         with open(path, "r", encoding="utf-8") as fh:
             return yaml.safe_load(fh) or {}
     except ImportError:
@@ -63,8 +65,6 @@ def _load_yaml_simple(path: Path) -> Dict[str, Any]:
         lines = fh.readlines()
 
     current_key: Optional[str] = None
-    current_dict: Optional[Dict] = None
-    indent_stack: list = []
 
     for line in lines:
         stripped = line.rstrip()
@@ -83,7 +83,7 @@ def _load_yaml_simple(path: Path) -> Dict[str, Any]:
             else:
                 result[key] = {}
                 current_key = key
-                current_dict = result[key]
+                result[key]
             continue
 
         # List item
@@ -111,9 +111,9 @@ def _load_yaml_simple(path: Path) -> Dict[str, Any]:
 
 DEFAULT_MODULES: Dict[str, Dict[str, Any]] = {
     "core": {
-        "name": "ICDEV Core",
+        "name": "ICDEV™ Core",
         "version": "1.0.0",
-        "description": "Core GOTCHA framework, project management, audit trail, memory system",
+        "description": "Core FORGE framework, project management, audit trail, memory system",
         "dependencies": [],
         "category": "foundation",
     },
@@ -321,7 +321,7 @@ DEFAULT_MODULES: Dict[str, Dict[str, Any]] = {
         "category": "platform",
     },
     "marketplace": {
-        "name": "GOTCHA Marketplace",
+        "name": "FORGE Marketplace",
         "version": "1.0.0",
         "description": "Federated asset marketplace with 7-gate security pipeline",
         "dependencies": ["core", "saas"],
@@ -341,8 +341,9 @@ DEFAULT_MODULES: Dict[str, Dict[str, Any]] = {
 # ModuleRegistry
 # ---------------------------------------------------------------------------
 
+
 class ModuleRegistry:
-    """Tracks installed ICDEV modules in a JSON registry file.
+    """Tracks installed ICDEV™ modules in a JSON registry file.
 
     Args:
         manifest_path: Path to the installation manifest YAML.
@@ -495,19 +496,18 @@ class ModuleRegistry:
             if mod_id in installed and installed[mod_id].get("installed"):
                 continue
             deps = mod_def.get("dependencies", [])
-            deps_met = all(
-                d in installed and installed[d].get("installed")
-                for d in deps
-            )
+            deps_met = all(d in installed and installed[d].get("installed") for d in deps)
             if deps_met:
-                available.append({
-                    "module_id": mod_id,
-                    "name": mod_def.get("name", mod_id),
-                    "version": mod_def.get("version", "1.0.0"),
-                    "description": mod_def.get("description", ""),
-                    "category": mod_def.get("category", ""),
-                    "dependencies": deps,
-                })
+                available.append(
+                    {
+                        "module_id": mod_id,
+                        "name": mod_def.get("name", mod_id),
+                        "version": mod_def.get("version", "1.0.0"),
+                        "description": mod_def.get("description", ""),
+                        "category": mod_def.get("category", ""),
+                        "dependencies": deps,
+                    }
+                )
 
         return available
 
@@ -517,23 +517,22 @@ class ModuleRegistry:
         Returns:
             List of dicts ordered by dependency depth (install order).
         """
-        installed = set(
-            k for k, v in self._registry.get("modules", {}).items()
-            if v.get("installed")
-        )
+        installed = set(k for k, v in self._registry.get("modules", {}).items() if v.get("installed"))
         not_installed: List[Dict[str, Any]] = []
 
         for mod_id, mod_def in self._modules.items():
             if mod_id not in installed:
-                not_installed.append({
-                    "module_id": mod_id,
-                    "name": mod_def.get("name", mod_id),
-                    "version": mod_def.get("version", "1.0.0"),
-                    "description": mod_def.get("description", ""),
-                    "category": mod_def.get("category", ""),
-                    "dependencies": mod_def.get("dependencies", []),
-                    "deps_met": all(d in installed for d in mod_def.get("dependencies", [])),
-                })
+                not_installed.append(
+                    {
+                        "module_id": mod_id,
+                        "name": mod_def.get("name", mod_id),
+                        "version": mod_def.get("version", "1.0.0"),
+                        "description": mod_def.get("description", ""),
+                        "category": mod_def.get("category", ""),
+                        "dependencies": mod_def.get("dependencies", []),
+                        "deps_met": all(d in installed for d in mod_def.get("dependencies", [])),
+                    }
+                )
 
         # Sort: deps-met first, then by number of dependencies (simpler first)
         not_installed.sort(key=lambda m: (not m["deps_met"], len(m["dependencies"])))
@@ -570,9 +569,7 @@ class ModuleRegistry:
                 continue
             for dep in mod_def.get("dependencies", []):
                 if dep not in installed or not installed[dep].get("installed"):
-                    issues.append(
-                        f"Module '{mod_id}' depends on '{dep}' which is not installed"
-                    )
+                    issues.append(f"Module '{mod_id}' depends on '{dep}' which is not installed")
 
         # Check for version mismatches
         for mod_id, mod_info in installed.items():
@@ -603,12 +600,13 @@ class ModuleRegistry:
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def _format_human_status(registry: ModuleRegistry) -> str:
     """Render installed modules as human-readable table."""
     installed = registry.get_installed()
     lines = [
         "=" * 65,
-        "  ICDEV Module Registry — Installed Modules",
+        "  ICDEV™ Module Registry — Installed Modules",
         "=" * 65,
         "",
     ]
@@ -638,7 +636,7 @@ def _format_human_available(registry: ModuleRegistry) -> str:
     available = registry.get_available()
     lines = [
         "=" * 65,
-        "  ICDEV Module Registry — Available Modules",
+        "  ICDEV™ Module Registry — Available Modules",
         "=" * 65,
         "",
     ]
@@ -658,7 +656,7 @@ def _format_human_validate(result: Dict) -> str:
     """Render validation result as human-readable text."""
     lines = [
         "=" * 65,
-        "  ICDEV Module Registry — Validation",
+        "  ICDEV™ Module Registry — Validation",
         "=" * 65,
         "",
         f"  Status:     {'VALID' if result['valid'] else 'ISSUES FOUND'}",
@@ -676,47 +674,57 @@ def _format_human_validate(result: Dict) -> str:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="ICDEV Module Registry — track and manage installed modules"
-    )
+    parser = argparse.ArgumentParser(description="ICDEV™ Module Registry — track and manage installed modules")
     parser.add_argument(
-        "--status", action="store_true",
+        "--status",
+        action="store_true",
         help="Show installed modules",
     )
     parser.add_argument(
-        "--available", action="store_true",
+        "--available",
+        action="store_true",
         help="Show modules available to install (deps satisfied)",
     )
     parser.add_argument(
-        "--validate", action="store_true",
+        "--validate",
+        action="store_true",
         help="Check installed modules against manifest for consistency",
     )
     parser.add_argument(
-        "--install", metavar="MODULE_ID",
+        "--install",
+        metavar="MODULE_ID",
         help="Install a module by ID",
     )
     parser.add_argument(
-        "--upgrade-path", action="store_true",
+        "--upgrade-path",
+        action="store_true",
         help="Show modules not yet installed (upgrade path)",
     )
     parser.add_argument(
-        "--export", action="store_true",
+        "--export",
+        action="store_true",
         help="Export full installation state",
     )
     parser.add_argument(
-        "--json", action="store_true",
+        "--json",
+        action="store_true",
         help="Output as JSON",
     )
     parser.add_argument(
-        "--human", action="store_true",
+        "--human",
+        action="store_true",
         help="Human-friendly colorized terminal output",
     )
     parser.add_argument(
-        "--manifest-path", type=Path, default=None,
+        "--manifest-path",
+        type=Path,
+        default=None,
         help="Path to installation manifest YAML",
     )
     parser.add_argument(
-        "--registry-path", type=Path, default=None,
+        "--registry-path",
+        type=Path,
+        default=None,
         help="Path to installation registry JSON",
     )
 
@@ -765,7 +773,7 @@ def main() -> None:
                 print(json.dumps(path, indent=2, default=str))
             else:
                 print("=" * 65)
-                print("  ICDEV Module Registry — Upgrade Path")
+                print("  ICDEV™ Module Registry — Upgrade Path")
                 print("=" * 65)
                 print()
                 for mod in path:
@@ -785,13 +793,19 @@ def main() -> None:
             # Default: --status
             installed = registry.get_installed()
             if use_json:
-                print(json.dumps({
-                    "installed": installed,
-                    "total": sum(1 for v in installed.values() if v.get("installed")),
-                    "profile": registry.export_config().get("profile", "default"),
-                    "compliance_posture": registry.export_config().get("compliance_posture", []),
-                    "cui_enabled": registry.export_config().get("cui_enabled", False),
-                }, indent=2, default=str))
+                print(
+                    json.dumps(
+                        {
+                            "installed": installed,
+                            "total": sum(1 for v in installed.values() if v.get("installed")),
+                            "profile": registry.export_config().get("profile", "default"),
+                            "compliance_posture": registry.export_config().get("compliance_posture", []),
+                            "cui_enabled": registry.export_config().get("cui_enabled", False),
+                        },
+                        indent=2,
+                        default=str,
+                    )
+                )
             else:
                 print(_format_human_status(registry))
 

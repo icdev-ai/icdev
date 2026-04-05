@@ -6,7 +6,7 @@ Runs the same test set through two models, computes metrics for both,
 and uses paired t-test (stdlib statistics) to determine statistical significance.
 
 Usage:
-    python tools/finetune/ab_evaluator.py --compare --model-a "mv-xxx" --model-b "mv-yyy" --test-set /path/test.jsonl --json
+    python tools/finetune/ab_evaluator.py --compare --model-a "mv-xxx" --model-b "mv-yyy" --test-set /path/test.jsonl --json  # noqa: E501
     python tools/finetune/ab_evaluator.py --list --json
 """
 
@@ -18,6 +18,7 @@ import math
 import sqlite3
 import statistics
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -34,8 +35,7 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 
 def _get_db(db_path: Optional[Path] = None) -> sqlite3.Connection:
-    conn = sqlite3.connect(str(db_path or DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(db_path))
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
@@ -91,7 +91,6 @@ def _t_cdf(t: float, df: int) -> float:
     if df < 1:
         return 0.5
     # Cornish-Fisher approximation
-    g1 = 0
     g2 = 1 / (4 * max(df, 1))
     z = t * (1 - g2)
     return _normal_cdf(z)
@@ -194,11 +193,21 @@ def compare_models(
                 statistical_significance, pass_threshold,
                 classification, tenant_id, project_id, evaluated_at)
                VALUES (?, ?, 'ab_comparison', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (eval_id, model_a_id, len(test_pairs),
-             avg_bleu_a, avg_rouge_a,
-             model_b_id, json.dumps(comparison_scores),
-             min(bleu_p, rouge_p), 1 if significant else 0,
-             classification, tenant_id, project_id, _now()),
+            (
+                eval_id,
+                model_a_id,
+                len(test_pairs),
+                avg_bleu_a,
+                avg_rouge_a,
+                model_b_id,
+                json.dumps(comparison_scores),
+                min(bleu_p, rouge_p),
+                1 if significant else 0,
+                classification,
+                tenant_id,
+                project_id,
+                _now(),
+            ),
         )
         conn.commit()
     except Exception as e:

@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """NIST SP 800-207 (Zero Trust Architecture) Assessment Engine.
 
 Assesses projects against NIST SP 800-207 ZTA requirements organized by

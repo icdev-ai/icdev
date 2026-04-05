@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Acceptance Criteria Validator (V&V)
+# ICDEV™ Acceptance Criteria Validator (V&V)
 # Deterministic validation: plan criteria → test evidence + DOM content checks
 
 """
@@ -302,7 +302,7 @@ def validate_acceptance(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Acceptance Criteria Validator (V&V)"
+        description="ICDEV™ Acceptance Criteria Validator (V&V)"
     )
     parser.add_argument(
         "--plan",

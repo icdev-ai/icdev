@@ -1,6 +1,7 @@
 # [TEMPLATE: CUI // SP-CTI]
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 """Tests for tools.project.project_create — project creation end-to-end."""
@@ -11,15 +12,16 @@ from unittest.mock import patch
 
 import pytest
 
-from tests.conftest import MINIMAL_ICDEV_SCHEMA, SEED_PROJECT_ID
+from tests.conftest import MINIMAL_ICDEV_SCHEMA
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_db(tmp_path):
-    """Create a minimal ICDEV database and return its path."""
+    """Create a minimal ICDEV™ database and return its path."""
     db_path = tmp_path / "data" / "icdev.db"
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(db_path))
@@ -32,9 +34,12 @@ def _create_project(tmp_path, db_path, **kwargs):
     """Call create_project with DB_PATH and PROJECTS_DIR patched to tmp_path."""
     projects_dir = tmp_path / "projects"
     projects_dir.mkdir(parents=True, exist_ok=True)
-    with patch("icdev.tools.project.project_create.DB_PATH", db_path), \
-         patch("icdev.tools.project.project_create.PROJECTS_DIR", projects_dir):
+    with (
+        patch("icdev.tools.project.project_create.DB_PATH", db_path),
+        patch("icdev.tools.project.project_create.PROJECTS_DIR", projects_dir),
+    ):
         from icdev.tools.project.project_create import create_project
+
         return create_project(**kwargs)
 
 
@@ -51,9 +56,7 @@ def _query_audit(db_path, project_id):
     """Fetch audit trail entries for a project."""
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
-    rows = conn.execute(
-        "SELECT * FROM audit_trail WHERE project_id = ?", (project_id,)
-    ).fetchall()
+    rows = conn.execute("SELECT * FROM audit_trail WHERE project_id = ?", (project_id,)).fetchall()
     conn.close()
     return [dict(r) for r in rows]
 
@@ -61,6 +64,7 @@ def _query_audit(db_path, project_id):
 # ---------------------------------------------------------------------------
 # TestProjectCreate
 # ---------------------------------------------------------------------------
+
 
 class TestProjectCreate:
     """create_project: successful project creation scenarios."""
@@ -91,7 +95,8 @@ class TestProjectCreate:
     def test_create_project_with_all_options(self, tmp_path):
         db_path = _make_db(tmp_path)
         result = _create_project(
-            tmp_path, db_path,
+            tmp_path,
+            db_path,
             name="Full Opts",
             project_type="microservice",
             classification="FOUO",
@@ -126,7 +131,10 @@ class TestProjectCreate:
     def test_create_project_name_slug(self, tmp_path):
         db_path = _make_db(tmp_path)
         result = _create_project(
-            tmp_path, db_path, name="My Cool App (v2)", skip_scaffold=True,
+            tmp_path,
+            db_path,
+            name="My Cool App (v2)",
+            skip_scaffold=True,
         )
         directory = Path(result["directory"])
         # Slug should be lowercased with special chars replaced by dashes
@@ -148,6 +156,7 @@ class TestProjectCreate:
 # ---------------------------------------------------------------------------
 # TestProjectValidation
 # ---------------------------------------------------------------------------
+
 
 class TestProjectValidation:
     """create_project: input validation errors."""
@@ -182,21 +191,30 @@ class TestProjectValidation:
 # TestProjectClassification
 # ---------------------------------------------------------------------------
 
+
 class TestProjectClassification:
     """create_project: classification and impact level interaction."""
 
     def test_il6_auto_sets_secret(self, tmp_path):
         db_path = _make_db(tmp_path)
         result = _create_project(
-            tmp_path, db_path, name="Secret App", impact_level="IL6", skip_scaffold=True,
+            tmp_path,
+            db_path,
+            name="Secret App",
+            impact_level="IL6",
+            skip_scaffold=True,
         )
         assert result["classification"] == "SECRET"
 
     def test_il6_explicit_secret_unchanged(self, tmp_path):
         db_path = _make_db(tmp_path)
         result = _create_project(
-            tmp_path, db_path, name="Explicit Secret", classification="SECRET",
-            impact_level="IL6", skip_scaffold=True,
+            tmp_path,
+            db_path,
+            name="Explicit Secret",
+            classification="SECRET",
+            impact_level="IL6",
+            skip_scaffold=True,
         )
         assert result["classification"] == "SECRET"
 
@@ -204,8 +222,12 @@ class TestProjectClassification:
         """IL6 auto-set only triggers when classification is CUI (default)."""
         db_path = _make_db(tmp_path)
         result = _create_project(
-            tmp_path, db_path, name="FOUO at IL6", classification="FOUO",
-            impact_level="IL6", skip_scaffold=True,
+            tmp_path,
+            db_path,
+            name="FOUO at IL6",
+            classification="FOUO",
+            impact_level="IL6",
+            skip_scaffold=True,
         )
         # The auto-set only fires if classification == "CUI"
         assert result["classification"] == "FOUO"
@@ -213,7 +235,11 @@ class TestProjectClassification:
     def test_il5_keeps_cui(self, tmp_path):
         db_path = _make_db(tmp_path)
         result = _create_project(
-            tmp_path, db_path, name="IL5 CUI", impact_level="IL5", skip_scaffold=True,
+            tmp_path,
+            db_path,
+            name="IL5 CUI",
+            impact_level="IL5",
+            skip_scaffold=True,
         )
         assert result["classification"] == "CUI"
 
@@ -221,6 +247,7 @@ class TestProjectClassification:
 # ---------------------------------------------------------------------------
 # TestProjectAudit
 # ---------------------------------------------------------------------------
+
 
 class TestProjectAudit:
     """create_project: audit trail entries."""
@@ -241,7 +268,11 @@ class TestProjectAudit:
     def test_audit_contains_project_details(self, tmp_path):
         db_path = _make_db(tmp_path)
         result = _create_project(
-            tmp_path, db_path, name="Audit Detail", project_type="cli", skip_scaffold=True,
+            tmp_path,
+            db_path,
+            name="Audit Detail",
+            project_type="cli",
+            skip_scaffold=True,
         )
         rows = _query_audit(db_path, result["project_id"])
         audit_row = [r for r in rows if r["event_type"] == "project_created"][0]
@@ -253,6 +284,7 @@ class TestProjectAudit:
 # ---------------------------------------------------------------------------
 # TestProjectFilesystem
 # ---------------------------------------------------------------------------
+
 
 class TestProjectFilesystem:
     """create_project: filesystem side effects."""

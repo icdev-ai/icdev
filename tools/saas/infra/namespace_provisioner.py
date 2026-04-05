@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ICDEV SaaS -- Namespace Provisioner.
+"""ICDEV™ SaaS -- Namespace Provisioner.
 
 CUI // SP-CTI
 
@@ -88,6 +88,7 @@ VALID_TIERS = {"starter", "professional", "enterprise"}
 # ============================================================================
 # YAML Generation
 # ============================================================================
+
 
 def _namespace_yaml(tenant_slug, impact_level, tier):
     """Generate Namespace resource YAML."""
@@ -301,30 +302,30 @@ def generate_namespace_yaml(tenant_slug, impact_level, tier):
 # Validation
 # ============================================================================
 
+
 def _validate_inputs(tenant_slug, impact_level, tier):
     """Validate provisioning inputs."""
     if not tenant_slug or not tenant_slug.strip():
         raise ValueError("tenant_slug must be a non-empty string.")
     if impact_level not in VALID_IMPACT_LEVELS:
         raise ValueError(
-            "Invalid impact_level: {}. Must be one of: {}".format(
-                impact_level, sorted(VALID_IMPACT_LEVELS)))
+            "Invalid impact_level: {}. Must be one of: {}".format(impact_level, sorted(VALID_IMPACT_LEVELS))
+        )
     if tier not in VALID_TIERS:
-        raise ValueError(
-            "Invalid tier: {}. Must be one of: {}".format(
-                tier, sorted(VALID_TIERS)))
+        raise ValueError("Invalid tier: {}. Must be one of: {}".format(tier, sorted(VALID_TIERS)))
 
 
 # ============================================================================
 # kubectl Helpers
 # ============================================================================
 
+
 def _kubectl_available():
     """Check if kubectl is available on the system PATH."""
     try:
         result = subprocess.run(
-            ["kubectl", "version", "--client", "--short"],
-            capture_output=True, text=True, timeout=10)
+            ["kubectl", "version", "--client", "--short"], capture_output=True, text=True, timeout=10
+        )
         return result.returncode == 0
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return False
@@ -338,8 +339,8 @@ def _kubectl_apply(yaml_str):
     """
     try:
         result = subprocess.run(
-            ["kubectl", "apply", "-f", "-"],
-            input=yaml_str, capture_output=True, text=True, timeout=60)
+            ["kubectl", "apply", "-f", "-"], input=yaml_str, capture_output=True, text=True, timeout=60
+        )
         output = (result.stdout + "\n" + result.stderr).strip()
         return result.returncode == 0, output
     except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
@@ -354,8 +355,8 @@ def _kubectl_delete_namespace(namespace):
     """
     try:
         result = subprocess.run(
-            ["kubectl", "delete", "namespace", namespace, "--wait=false"],
-            capture_output=True, text=True, timeout=30)
+            ["kubectl", "delete", "namespace", namespace, "--wait=false"], capture_output=True, text=True, timeout=30
+        )
         output = (result.stdout + "\n" + result.stderr).strip()
         return result.returncode == 0, output
     except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
@@ -370,9 +371,11 @@ def _kubectl_get_quota(namespace):
     """
     try:
         result = subprocess.run(
-            ["kubectl", "get", "resourcequota", "tenant-quota",
-             "-n", namespace, "-o", "json"],
-            capture_output=True, text=True, timeout=15)
+            ["kubectl", "get", "resourcequota", "tenant-quota", "-n", namespace, "-o", "json"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
         if result.returncode != 0:
             return None
         return json.loads(result.stdout)
@@ -383,9 +386,7 @@ def _kubectl_get_quota(namespace):
 def _kubectl_namespace_exists(namespace):
     """Check if a namespace exists."""
     try:
-        result = subprocess.run(
-            ["kubectl", "get", "namespace", namespace],
-            capture_output=True, text=True, timeout=10)
+        result = subprocess.run(["kubectl", "get", "namespace", namespace], capture_output=True, text=True, timeout=10)
         return result.returncode == 0
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return False
@@ -394,6 +395,7 @@ def _kubectl_namespace_exists(namespace):
 # ============================================================================
 # Public API
 # ============================================================================
+
 
 def provision_namespace(tenant_slug, impact_level, tier):
     """Create a K8s namespace with network policies, quotas, and service account.
@@ -446,9 +448,7 @@ def provision_namespace(tenant_slug, impact_level, tier):
         else:
             logger.error("Failed to apply namespace %s: %s", namespace, output)
     else:
-        logger.warning(
-            "kubectl not available. YAML generated but not applied. "
-            "Pipe output to kubectl apply -f -")
+        logger.warning("kubectl not available. YAML generated but not applied. Pipe output to kubectl apply -f -")
         result["yaml"] = yaml_str
 
     return result
@@ -469,9 +469,7 @@ def delete_namespace(tenant_slug):
     namespace = NAMESPACE_PREFIX + tenant_slug
 
     if not _kubectl_available():
-        logger.error(
-            "kubectl not available. To delete manually: "
-            "kubectl delete namespace %s", namespace)
+        logger.error("kubectl not available. To delete manually: kubectl delete namespace %s", namespace)
         return False
 
     if not _kubectl_namespace_exists(namespace):
@@ -530,6 +528,7 @@ def get_namespace_status(tenant_slug):
 # CLI
 # ============================================================================
 
+
 def _print_result(data, as_json=False):
     """Print result to stdout."""
     if as_json:
@@ -552,35 +551,25 @@ def _print_result(data, as_json=False):
 def main():
     """CLI entry point."""
     parser = argparse.ArgumentParser(
-        description="CUI // SP-CTI -- ICDEV SaaS Namespace Provisioner",
-        formatter_class=argparse.RawDescriptionHelpFormatter)
+        description="CUI // SP-CTI -- ICDEV™ SaaS Namespace Provisioner",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
 
     action = parser.add_mutually_exclusive_group(required=True)
-    action.add_argument(
-        "--create", action="store_true",
-        help="Create namespace with policies and quotas")
-    action.add_argument(
-        "--delete", action="store_true",
-        help="Delete a tenant namespace")
-    action.add_argument(
-        "--status", action="store_true",
-        help="Get namespace resource usage")
-    action.add_argument(
-        "--yaml", action="store_true",
-        help="Generate YAML only (do not apply)")
+    action.add_argument("--create", action="store_true", help="Create namespace with policies and quotas")
+    action.add_argument("--delete", action="store_true", help="Delete a tenant namespace")
+    action.add_argument("--status", action="store_true", help="Get namespace resource usage")
+    action.add_argument("--yaml", action="store_true", help="Generate YAML only (do not apply)")
 
+    parser.add_argument("--slug", type=str, required=True, help="Tenant slug (e.g., acme-defense)")
+    parser.add_argument("--il", type=str, default="IL4", help="Impact level: IL2, IL4, IL5, IL6 (default: IL4)")
     parser.add_argument(
-        "--slug", type=str, required=True,
-        help="Tenant slug (e.g., acme-defense)")
-    parser.add_argument(
-        "--il", type=str, default="IL4",
-        help="Impact level: IL2, IL4, IL5, IL6 (default: IL4)")
-    parser.add_argument(
-        "--tier", type=str, default="starter",
-        help="Subscription tier: starter, professional, enterprise (default: starter)")
-    parser.add_argument(
-        "--json", action="store_true", dest="as_json",
-        help="Output as JSON")
+        "--tier",
+        type=str,
+        default="starter",
+        help="Subscription tier: starter, professional, enterprise (default: starter)",
+    )
+    parser.add_argument("--json", action="store_true", dest="as_json", help="Output as JSON")
 
     args = parser.parse_args()
 
@@ -599,8 +588,7 @@ def main():
             _print_result(result, args.as_json)
 
         elif args.yaml:
-            yaml_str = generate_namespace_yaml(
-                args.slug, args.il.upper(), args.tier.lower())
+            yaml_str = generate_namespace_yaml(args.slug, args.il.upper(), args.tier.lower())
             if args.as_json:
                 print(json.dumps({"yaml": yaml_str}, indent=2))
             else:

@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Research Engine Session Manager — lifecycle management for research sessions.
 
 Manages the full session lifecycle from creation through archival:
@@ -36,9 +36,9 @@ Usage:
 import argparse
 import json
 import os
-import sqlite3
 import sys
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -57,12 +57,14 @@ CONFIG_PATH = BASE_DIR / "args" / "research_config.yaml"
 # =========================================================================
 try:
     import yaml
+
     _HAS_YAML = True
 except ImportError:
     _HAS_YAML = False
 
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
@@ -118,8 +120,7 @@ def _get_db(db_path=None):
     path = db_path or DB_PATH
     if not Path(str(path)).exists():
         raise FileNotFoundError(f"Database not found: {path}")
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -208,9 +209,7 @@ def create_session(name, vertical_slug, description=None, focus_areas=None, db_p
         conn.commit()
 
         # Fetch the created session
-        row = conn.execute(
-            "SELECT * FROM research_sessions WHERE id = ?", (sid,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM research_sessions WHERE id = ?", (sid,)).fetchone()
         result = dict(row)
 
         _audit(
@@ -235,9 +234,7 @@ def get_session(session_id, db_path=None):
     """
     conn = _get_db(db_path)
     try:
-        row = conn.execute(
-            "SELECT * FROM research_sessions WHERE id = ?", (session_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM research_sessions WHERE id = ?", (session_id,)).fetchone()
         if not row:
             return {"error": f"Session not found: {session_id}"}
         return dict(row)
@@ -305,9 +302,7 @@ def advance_stage(session_id, db_path=None):
     """
     conn = _get_db(db_path)
     try:
-        row = conn.execute(
-            "SELECT * FROM research_sessions WHERE id = ?", (session_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM research_sessions WHERE id = ?", (session_id,)).fetchone()
         if not row:
             return {"error": f"Session not found: {session_id}"}
 
@@ -336,9 +331,7 @@ def advance_stage(session_id, db_path=None):
         conn.commit()
 
         # Fetch updated session
-        updated = conn.execute(
-            "SELECT * FROM research_sessions WHERE id = ?", (session_id,)
-        ).fetchone()
+        updated = conn.execute("SELECT * FROM research_sessions WHERE id = ?", (session_id,)).fetchone()
         result = dict(updated)
 
         _audit(
@@ -375,9 +368,7 @@ def update_session_status(session_id, status, db_path=None):
 
     conn = _get_db(db_path)
     try:
-        row = conn.execute(
-            "SELECT * FROM research_sessions WHERE id = ?", (session_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM research_sessions WHERE id = ?", (session_id,)).fetchone()
         if not row:
             return {"error": f"Session not found: {session_id}"}
 
@@ -392,9 +383,7 @@ def update_session_status(session_id, status, db_path=None):
         )
         conn.commit()
 
-        updated = conn.execute(
-            "SELECT * FROM research_sessions WHERE id = ?", (session_id,)
-        ).fetchone()
+        updated = conn.execute("SELECT * FROM research_sessions WHERE id = ?", (session_id,)).fetchone()
         result = dict(updated)
 
         _audit(
@@ -426,9 +415,7 @@ def update_session_counts(session_id, db_path=None):
     """
     conn = _get_db(db_path)
     try:
-        row = conn.execute(
-            "SELECT * FROM research_sessions WHERE id = ?", (session_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM research_sessions WHERE id = ?", (session_id,)).fetchone()
         if not row:
             return {"error": f"Session not found: {session_id}"}
 
@@ -451,9 +438,7 @@ def update_session_counts(session_id, db_path=None):
         )
         conn.commit()
 
-        updated = conn.execute(
-            "SELECT * FROM research_sessions WHERE id = ?", (session_id,)
-        ).fetchone()
+        updated = conn.execute("SELECT * FROM research_sessions WHERE id = ?", (session_id,)).fetchone()
         result = dict(updated)
 
         _audit(
@@ -482,9 +467,7 @@ def get_session_status(session_id, db_path=None):
     """
     conn = _get_db(db_path)
     try:
-        row = conn.execute(
-            "SELECT * FROM research_sessions WHERE id = ?", (session_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM research_sessions WHERE id = ?", (session_id,)).fetchone()
         if not row:
             return {"error": f"Session not found: {session_id}"}
 
@@ -537,7 +520,7 @@ def get_session_status(session_id, db_path=None):
 def _print_human(args, result):
     """Format output for human-readable terminal display."""
     print("=" * 70)
-    print("  ICDEV Research Engine — Session Manager — CUI // SP-CTI")
+    print("  ICDEV™ Research Engine — Session Manager — CUI // SP-CTI")
     print("=" * 70)
 
     if isinstance(result, dict) and "error" in result:
@@ -546,7 +529,7 @@ def _print_human(args, result):
         return
 
     if args.create:
-        print(f"\n  Session Created")
+        print("\n  Session Created")
         print("-" * 70)
         print(f"  ID:       {result.get('id', '')}")
         print(f"  Name:     {result.get('name', '')}")
@@ -555,7 +538,7 @@ def _print_human(args, result):
         print(f"  Stage:    {result.get('pipeline_stage', '')}")
 
     elif args.get:
-        print(f"\n  Session Detail")
+        print("\n  Session Detail")
         print("-" * 70)
         print(f"  ID:         {result.get('id', '')}")
         print(f"  Name:       {result.get('name', '')}")
@@ -571,7 +554,7 @@ def _print_human(args, result):
         sessions = result.get("sessions", [])
         print(f"\n  Total Sessions: {result.get('total', 0)}\n")
         print(f"    {'ID':20s} {'Name':25s} {'Status':15s} {'Stage':12s} {'Signals':8s}")
-        print(f"    {'-'*20} {'-'*25} {'-'*15} {'-'*12} {'-'*8}")
+        print(f"    {'-' * 20} {'-' * 25} {'-' * 15} {'-' * 12} {'-' * 8}")
         for s in sessions:
             print(
                 f"    {s['id']:20s} {s['name'][:25]:25s} "
@@ -580,7 +563,7 @@ def _print_human(args, result):
             )
 
     elif args.advance:
-        print(f"\n  Stage Advanced")
+        print("\n  Stage Advanced")
         print("-" * 70)
         print(f"  ID:        {result.get('id', '')}")
         print(f"  Name:      {result.get('name', '')}")
@@ -588,7 +571,7 @@ def _print_human(args, result):
         print(f"  Stage:     {result.get('pipeline_stage', '')}")
 
     elif args.status:
-        print(f"\n  Session Status")
+        print("\n  Session Status")
         print("-" * 70)
         print(f"  ID:               {result.get('session_id', '')}")
         print(f"  Name:             {result.get('name', '')}")
@@ -618,48 +601,42 @@ def main():
         description="Research Engine Session Manager — CUI // SP-CTI",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="Examples:\n"
-               "  %(prog)s --create --name 'HealthIT Research' --vertical healthcare --json\n"
-               "  %(prog)s --get --session-id rsess-abc123 --json\n"
-               "  %(prog)s --list --status scanning --json\n"
-               "  %(prog)s --advance --session-id rsess-abc123 --json\n"
-               "  %(prog)s --status --session-id rsess-abc123 --json\n",
+        "  %(prog)s --create --name 'HealthIT Research' --vertical healthcare --json\n"
+        "  %(prog)s --get --session-id rsess-abc123 --json\n"
+        "  %(prog)s --list --status scanning --json\n"
+        "  %(prog)s --advance --session-id rsess-abc123 --json\n"
+        "  %(prog)s --status --session-id rsess-abc123 --json\n",
     )
 
     # Actions
     actions = parser.add_mutually_exclusive_group(required=True)
-    actions.add_argument("--create", action="store_true",
-                         help="Create a new research session")
-    actions.add_argument("--get", action="store_true",
-                         help="Get a session by ID")
-    actions.add_argument("--list", action="store_true",
-                         help="List sessions with optional filters")
-    actions.add_argument("--advance", action="store_true",
-                         help="Advance session to next pipeline stage")
-    actions.add_argument("--status", action="store_true",
-                         help="Get detailed session status")
+    actions.add_argument("--create", action="store_true", help="Create a new research session")
+    actions.add_argument("--get", action="store_true", help="Get a session by ID")
+    actions.add_argument("--list", action="store_true", help="List sessions with optional filters")
+    actions.add_argument("--advance", action="store_true", help="Advance session to next pipeline stage")
+    actions.add_argument("--status", action="store_true", help="Get detailed session status")
 
     # Parameters
-    parser.add_argument("--name", type=str, default=None,
-                        help="Session name (required for --create)")
-    parser.add_argument("--vertical", type=str, default=None,
-                        help="Vertical slug (required for --create, optional filter for --list)")
-    parser.add_argument("--session-id", type=str, default=None,
-                        help="Session ID (required for --get, --advance, --status)")
-    parser.add_argument("--description", type=str, default=None,
-                        help="Session description (optional for --create)")
-    parser.add_argument("--focus-areas", type=str, default=None,
-                        help="Comma-separated focus areas (optional for --create)")
+    parser.add_argument("--name", type=str, default=None, help="Session name (required for --create)")
+    parser.add_argument(
+        "--vertical", type=str, default=None, help="Vertical slug (required for --create, optional filter for --list)"
+    )
+    parser.add_argument(
+        "--session-id", type=str, default=None, help="Session ID (required for --get, --advance, --status)"
+    )
+    parser.add_argument("--description", type=str, default=None, help="Session description (optional for --create)")
+    parser.add_argument(
+        "--focus-areas", type=str, default=None, help="Comma-separated focus areas (optional for --create)"
+    )
 
     # Filter for --list
     list_status_help = f"Filter by status for --list. Valid: {', '.join(VALID_STATUSES)}"
-    parser.add_argument("--filter-status", type=str, default=None,
-                        help=list_status_help)
+    parser.add_argument("--filter-status", type=str, default=None, help=list_status_help)
 
     # Output
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--human", action="store_true", help="Human-readable output")
-    parser.add_argument("--db-path", type=str, default=None,
-                        help="Override database path")
+    parser.add_argument("--db-path", type=str, default=None, help="Override database path")
 
     args = parser.parse_args()
     db_path = Path(args.db_path) if args.db_path else None

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Code Quality Analyzer — AST-based self-analysis for ICDEV.
+"""Code Quality Analyzer — AST-based self-analysis for ICDEV™.
 
 Phase 52 (D331-D337). Read-only, advisory-only. Never modifies source files.
 Computes per-function metrics (cyclomatic/cognitive complexity, nesting depth,
@@ -21,11 +21,11 @@ import json
 import os
 import re
 import sqlite3
-import sys
 import uuid
-from datetime import datetime, timezone
+from tools.db.storage import get_connection
+from tools.common.helpers import now_iso
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
@@ -35,9 +35,22 @@ CONFIG_PATH = BASE_DIR / "args" / "code_quality_config.yaml"
 # Excluded dirs (consistent with modular_design_analyzer.py)
 # ---------------------------------------------------------------------------
 _EXCLUDE_DIRS = {
-    "venv", ".venv", "env", "node_modules", ".git", "__pycache__",
-    "build", "dist", ".tox", ".eggs", "vendor", "target", "bin", "obj",
-    ".tmp", "playwright",
+    "venv",
+    ".venv",
+    "env",
+    "node_modules",
+    ".git",
+    "__pycache__",
+    "build",
+    "dist",
+    ".tox",
+    ".eggs",
+    "vendor",
+    "target",
+    "bin",
+    "obj",
+    ".tmp",
+    "playwright",
 }
 
 _LANG_EXT: Dict[str, Tuple[str, ...]] = {
@@ -98,8 +111,7 @@ def _parse_config() -> Dict[str, Any]:
                 key, _, val = stripped.partition(":")
                 key = key.strip()
                 val = val.strip()
-                if section in ("smell_thresholds", "maintainability_weights",
-                               "audit_thresholds", "innovation_engine"):
+                if section in ("smell_thresholds", "maintainability_weights", "audit_thresholds", "innovation_engine"):
                     target = cfg.setdefault(section, {})
                     try:
                         target[key] = float(val) if "." in val else int(val)
@@ -114,19 +126,15 @@ def _parse_config() -> Dict[str, Any]:
 # DB helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_db(db_path: Optional[Path] = None) -> sqlite3.Connection:
     p = db_path or DB_PATH
     if not p.exists():
         raise FileNotFoundError(f"Database not found: {p}")
-    conn = sqlite3.connect(str(p))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(db_path))
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
-
-
-def _now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _uid() -> str:
@@ -136,6 +144,7 @@ def _uid() -> str:
 # ---------------------------------------------------------------------------
 # Python AST visitors (copied from legacy_analyzer.py — D333)
 # ---------------------------------------------------------------------------
+
 
 class _PythonComplexityVisitor(ast.NodeVisitor):
     """Count branching nodes for cyclomatic complexity estimation."""
@@ -239,6 +248,7 @@ def _compute_cognitive_complexity(node) -> int:
 # Line counting
 # ---------------------------------------------------------------------------
 
+
 def _count_lines(source: str) -> Dict[str, int]:
     """Count total, code, comment, and blank lines in source text."""
     total = code = comment = blank = 0
@@ -270,6 +280,7 @@ def _count_lines(source: str) -> Dict[str, int]:
 # File iteration (from modular_design_analyzer.py)
 # ---------------------------------------------------------------------------
 
+
 def _iter_source_files(root: Path, extensions: Tuple[str, ...]) -> List[Path]:
     results: List[Path] = []
     for dirpath, dirnames, filenames in os.walk(root):
@@ -290,18 +301,22 @@ def _iter_source_files(root: Path, extensions: Tuple[str, ...]) -> List[Path]:
 # ---------------------------------------------------------------------------
 
 _BRANCH_KEYWORDS = {
-    "java": [r"\bif\b", r"\belse\s+if\b", r"\bfor\b", r"\bwhile\b",
-             r"\bcase\b", r"\bcatch\b", r"&&", r"\|\|"],
-    "go": [r"\bif\b", r"\belse\s+if\b", r"\bfor\b", r"\bcase\b",
-            r"&&", r"\|\|"],
-    "typescript": [r"\bif\b", r"\belse\s+if\b", r"\bfor\b", r"\bwhile\b",
-                   r"\bcase\b", r"\bcatch\b", r"&&", r"\|\|"],
-    "javascript": [r"\bif\b", r"\belse\s+if\b", r"\bfor\b", r"\bwhile\b",
-                   r"\bcase\b", r"\bcatch\b", r"&&", r"\|\|"],
-    "rust": [r"\bif\b", r"\belse\s+if\b", r"\bfor\b", r"\bwhile\b",
-             r"\bmatch\b", r"&&", r"\|\|"],
-    "csharp": [r"\bif\b", r"\belse\s+if\b", r"\bfor\b", r"\bforeach\b",
-               r"\bwhile\b", r"\bcase\b", r"\bcatch\b", r"&&", r"\|\|"],
+    "java": [r"\bif\b", r"\belse\s+if\b", r"\bfor\b", r"\bwhile\b", r"\bcase\b", r"\bcatch\b", r"&&", r"\|\|"],
+    "go": [r"\bif\b", r"\belse\s+if\b", r"\bfor\b", r"\bcase\b", r"&&", r"\|\|"],
+    "typescript": [r"\bif\b", r"\belse\s+if\b", r"\bfor\b", r"\bwhile\b", r"\bcase\b", r"\bcatch\b", r"&&", r"\|\|"],
+    "javascript": [r"\bif\b", r"\belse\s+if\b", r"\bfor\b", r"\bwhile\b", r"\bcase\b", r"\bcatch\b", r"&&", r"\|\|"],
+    "rust": [r"\bif\b", r"\belse\s+if\b", r"\bfor\b", r"\bwhile\b", r"\bmatch\b", r"&&", r"\|\|"],
+    "csharp": [
+        r"\bif\b",
+        r"\belse\s+if\b",
+        r"\bfor\b",
+        r"\bforeach\b",
+        r"\bwhile\b",
+        r"\bcase\b",
+        r"\bcatch\b",
+        r"&&",
+        r"\|\|",
+    ],
 }
 
 
@@ -317,6 +332,7 @@ def _regex_branch_count(source: str, lang: str) -> int:
 # ---------------------------------------------------------------------------
 # Smell detection (D331)
 # ---------------------------------------------------------------------------
+
 
 def _detect_smells(metrics: Dict[str, Any], thresholds: Dict[str, int]) -> List[str]:
     """Return list of smell names detected in the given metrics dict."""
@@ -337,6 +353,7 @@ def _detect_smells(metrics: Dict[str, Any], thresholds: Dict[str, int]) -> List[
 # ---------------------------------------------------------------------------
 # Maintainability score (D337)
 # ---------------------------------------------------------------------------
+
 
 def compute_maintainability_score(
     metrics: Dict[str, Any],
@@ -372,6 +389,7 @@ def compute_maintainability_score(
 # CodeAnalyzer class
 # ---------------------------------------------------------------------------
 
+
 class CodeAnalyzer:
     """AST-based code quality analyzer. Read-only, advisory-only (D331)."""
 
@@ -385,12 +403,8 @@ class CodeAnalyzer:
         self.project_id = project_id
         self.db_path = db_path or DB_PATH
         self.config = _parse_config()
-        self.smell_thresholds = self.config.get(
-            "smell_thresholds", _DEFAULT_SMELL_THRESHOLDS
-        )
-        self.maint_weights = self.config.get(
-            "maintainability_weights", _DEFAULT_MAINTAINABILITY_WEIGHTS
-        )
+        self.smell_thresholds = self.config.get("smell_thresholds", _DEFAULT_SMELL_THRESHOLDS)
+        self.maint_weights = self.config.get("maintainability_weights", _DEFAULT_MAINTAINABILITY_WEIGHTS)
 
     # ---- Python file analysis (AST) ----
 
@@ -428,9 +442,7 @@ class CodeAnalyzer:
                 class_methods = []
                 for item in ast.iter_child_nodes(node):
                     if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                        m = self._analyze_python_function(
-                            item, rel_path, class_name=node.name
-                        )
+                        m = self._analyze_python_function(item, rel_path, class_name=node.name)
                         class_methods.append(m)
                         results.append(m)
                         file_cc_sum += m["cyclomatic_complexity"]
@@ -472,8 +484,8 @@ class CodeAnalyzer:
             "smells_json": "[]",
             "smell_count": total_smells,
             "maintainability_score": compute_maintainability_score(
-                {"cyclomatic_complexity": avg_cc, "smell_count": total_smells,
-                 "import_count": file_import_count}, self.maint_weights
+                {"cyclomatic_complexity": avg_cc, "smell_count": total_smells, "import_count": file_import_count},
+                self.maint_weights,
             ),
             "content_hash": content_hash,
         }
@@ -481,7 +493,10 @@ class CodeAnalyzer:
         return results
 
     def _analyze_python_function(
-        self, node, file_path: str, class_name: Optional[str] = None,
+        self,
+        node,
+        file_path: str,
+        class_name: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Analyze a single Python function/method AST node."""
         cc = _compute_python_complexity(node)
@@ -517,16 +532,16 @@ class CodeAnalyzer:
         smells = _detect_smells(metrics, self.smell_thresholds)
         metrics["smells_json"] = json.dumps(smells)
         metrics["smell_count"] = len(smells)
-        metrics["maintainability_score"] = compute_maintainability_score(
-            metrics, self.maint_weights
-        )
+        metrics["maintainability_score"] = compute_maintainability_score(metrics, self.maint_weights)
         metrics["content_hash"] = None
         return metrics
 
     # ---- Non-Python file analysis (regex, D333) ----
 
     def analyze_non_python_file(
-        self, file_path: Path, lang: str,
+        self,
+        file_path: Path,
+        lang: str,
     ) -> List[Dict[str, Any]]:
         """File-level metrics for non-Python languages via regex."""
         try:
@@ -602,8 +617,9 @@ class CodeAnalyzer:
 
         avg_cc = round(cc_sum / max(fn_with_cc, 1), 2)
         avg_maint = 0.0
-        maint_values = [m["maintainability_score"] for m in all_metrics
-                        if m.get("function_name") and m.get("maintainability_score")]
+        maint_values = [
+            m["maintainability_score"] for m in all_metrics if m.get("function_name") and m.get("maintainability_score")
+        ]
         if maint_values:
             avg_maint = round(sum(maint_values) / len(maint_values), 4)
 
@@ -611,7 +627,7 @@ class CodeAnalyzer:
             "scan_id": scan_id,
             "project_id": self.project_id,
             "project_dir": str(root),
-            "timestamp": _now(),
+            "timestamp": now_iso(),
             "files_analyzed": file_count,
             "total_functions": total_functions,
             "avg_cyclomatic_complexity": avg_cc,
@@ -623,7 +639,9 @@ class CodeAnalyzer:
     # ---- DB storage (append-only, D332) ----
 
     def store_metrics(
-        self, metrics: List[Dict[str, Any]], scan_id: str,
+        self,
+        metrics: List[Dict[str, Any]],
+        scan_id: str,
         db_path: Optional[Path] = None,
     ) -> int:
         """Bulk INSERT into code_quality_metrics. Returns row count."""
@@ -641,17 +659,27 @@ class CodeAnalyzer:
                      content_hash, scan_id)
                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (
-                        _uid(), m.get("project_id"), m["file_path"],
-                        m.get("function_name"), m.get("class_name"),
-                        m["language"], m.get("cyclomatic_complexity", 0),
+                        _uid(),
+                        m.get("project_id"),
+                        m["file_path"],
+                        m.get("function_name"),
+                        m.get("class_name"),
+                        m["language"],
+                        m.get("cyclomatic_complexity", 0),
                         m.get("cognitive_complexity", 0),
-                        m.get("loc", 0), m.get("loc_code", 0),
-                        m.get("loc_comment", 0), m.get("parameter_count", 0),
-                        m.get("nesting_depth", 0), m.get("import_count", 0),
-                        m.get("class_count", 0), m.get("function_count", 0),
-                        m.get("smells_json", "[]"), m.get("smell_count", 0),
+                        m.get("loc", 0),
+                        m.get("loc_code", 0),
+                        m.get("loc_comment", 0),
+                        m.get("parameter_count", 0),
+                        m.get("nesting_depth", 0),
+                        m.get("import_count", 0),
+                        m.get("class_count", 0),
+                        m.get("function_count", 0),
+                        m.get("smells_json", "[]"),
+                        m.get("smell_count", 0),
                         m.get("maintainability_score", 0.0),
-                        m.get("content_hash"), scan_id,
+                        m.get("content_hash"),
+                        scan_id,
                     ),
                 )
                 count += 1
@@ -663,7 +691,9 @@ class CodeAnalyzer:
     # ---- Trend query ----
 
     def get_trend(
-        self, project_id: Optional[str] = None, last_n: int = 10,
+        self,
+        project_id: Optional[str] = None,
+        last_n: int = 10,
         db_path: Optional[Path] = None,
     ) -> List[Dict[str, Any]]:
         """Return maintainability score trend over last N scans."""
@@ -705,18 +735,16 @@ class CodeAnalyzer:
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
-    parser = argparse.ArgumentParser(
-        description="Code Quality Analyzer — AST self-analysis (Phase 52)"
-    )
+    parser = argparse.ArgumentParser(description="Code Quality Analyzer — AST self-analysis (Phase 52)")
     parser.add_argument("--project-dir", help="Project root to scan")
     parser.add_argument("--file", help="Analyze a single file")
-    parser.add_argument("--project-id", help="ICDEV project ID")
+    parser.add_argument("--project-id", help="ICDEV™ project ID")
     parser.add_argument("--db-path", help="Override DB path")
     parser.add_argument("--store", action="store_true", help="Write results to DB")
     parser.add_argument("--trend", action="store_true", help="Show trend data")
-    parser.add_argument("--json", action="store_true", dest="json_output",
-                        help="JSON output")
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     parser.add_argument("--human", action="store_true", help="Colored terminal output")
     args = parser.parse_args()
 
@@ -734,8 +762,10 @@ def main():
             print(json.dumps(result, indent=2))
         else:
             for t in trend:
-                print(f"  {t['date']}  score={t['avg_maintainability']:.4f}  "
-                      f"cc={t['avg_complexity']:.1f}  smells={t['total_smells']}")
+                print(
+                    f"  {t['date']}  score={t['avg_maintainability']:.4f}  "
+                    f"cc={t['avg_complexity']:.1f}  smells={t['total_smells']}"
+                )
         return
 
     if args.file:

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""ICDEV Tracer ABCs — Pluggable tracing abstraction (D280).
+"""ICDEV™ Tracer ABCs — Pluggable tracing abstraction (D280).
 
 Follows the Haystack ProxyTracer pattern:
   - Span ABC: represents a single operation with attributes, events, status
@@ -21,16 +21,16 @@ import hashlib
 import os
 import uuid
 from abc import ABC, abstractmethod
-from contextlib import contextmanager
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, Optional
 
 
 # Content tracing gate (D282)
 def _content_tracing_enabled() -> bool:
     """Check if plaintext content tracing is enabled."""
     return os.environ.get("ICDEV_CONTENT_TRACING_ENABLED", "").lower() in (
-        "true", "1", "yes",
+        "true",
+        "1",
+        "yes",
     )
 
 

@@ -20,7 +20,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -28,7 +27,7 @@ from tools.finetune.provider import FineTuneProvider, FineTuneRequest, FineTuneS
 
 logger = logging.getLogger("icdev.finetune.bedrock")
 
-# Bedrock status → ICDEV status mapping
+# Bedrock status → ICDEV™ status mapping
 _STATUS_MAP = {
     "InProgress": "training",
     "Completed": "completed",
@@ -59,14 +58,10 @@ class BedrockFineTuneProvider(FineTuneProvider):
         config: Optional[Dict[str, Any]] = None,
     ):
         cloud_cfg = (config or {}).get("cloud", {}).get("bedrock", {})
-        self._region = region or cloud_cfg.get("region", "") or os.environ.get(
-            "AWS_DEFAULT_REGION", "us-gov-west-1"
-        )
-        self._role_arn = role_arn or cloud_cfg.get("role_arn", "") or os.environ.get(
-            "ICDEV_BEDROCK_FT_ROLE_ARN", ""
-        )
-        self._s3_bucket = s3_bucket or cloud_cfg.get("s3_bucket", "") or os.environ.get(
-            "ICDEV_BEDROCK_FT_S3_BUCKET", ""
+        self._region = region or cloud_cfg.get("region", "") or os.environ.get("AWS_DEFAULT_REGION", "us-gov-west-1")
+        self._role_arn = role_arn or cloud_cfg.get("role_arn", "") or os.environ.get("ICDEV_BEDROCK_FT_ROLE_ARN", "")
+        self._s3_bucket = (
+            s3_bucket or cloud_cfg.get("s3_bucket", "") or os.environ.get("ICDEV_BEDROCK_FT_S3_BUCKET", "")
         )
         self._client = None
 
@@ -76,19 +71,20 @@ class BedrockFineTuneProvider(FineTuneProvider):
             return self._client
         try:
             import boto3
+
             self._client = boto3.client(
-                "bedrock", region_name=self._region,
+                "bedrock",
+                region_name=self._region,
             )
             return self._client
         except ImportError:
-            raise ImportError(
-                "boto3 package not installed. Install with: pip install boto3"
-            )
+            raise ImportError("boto3 package not installed. Install with: pip install boto3")
 
     def _get_s3_client(self):
         """Get S3 client for dataset upload."""
         try:
             import boto3
+
             return boto3.client("s3", region_name=self._region)
         except ImportError:
             raise ImportError("boto3 not installed")
@@ -117,10 +113,7 @@ class BedrockFineTuneProvider(FineTuneProvider):
             response = client.list_foundation_models(
                 byCustomizationType="FINE_TUNING",
             )
-            models = [
-                m["modelId"]
-                for m in response.get("modelSummaries", [])
-            ][:10]
+            models = [m["modelId"] for m in response.get("modelSummaries", [])][:10]
             return {
                 "available": True,
                 "provider": "bedrock",
@@ -241,15 +234,11 @@ class BedrockFineTuneProvider(FineTuneProvider):
 
             # Output model
             if bedrock_status == "Completed":
-                status.ollama_model_name = response.get(
-                    "outputModelName", ""
-                )
+                status.ollama_model_name = response.get("outputModelName", "")
 
             # Error
             if bedrock_status == "Failed":
-                status.error = response.get(
-                    "failureMessage", "Unknown failure"
-                )
+                status.error = response.get("failureMessage", "Unknown failure")
 
             return status
         except Exception as e:
@@ -310,9 +299,7 @@ class BedrockFineTuneProvider(FineTuneProvider):
                         has_prompt = "prompt" in obj and "completion" in obj
                         has_messages = "messages" in obj
                         if not has_prompt and not has_messages:
-                            errors.append(
-                                f"Line {i}: needs 'prompt'+'completion' or 'messages'"
-                            )
+                            errors.append(f"Line {i}: needs 'prompt'+'completion' or 'messages'")
                     except json.JSONDecodeError:
                         errors.append(f"Line {i}: invalid JSON")
 

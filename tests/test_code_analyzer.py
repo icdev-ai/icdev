@@ -12,7 +12,6 @@ import sqlite3
 import sys
 import textwrap
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
@@ -20,7 +19,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from icdev.tools.analysis.code_analyzer import (
     CodeAnalyzer,
-    _CognitiveComplexityVisitor,
     _NestingDepthVisitor,
     _PythonComplexityVisitor,
     _count_lines,
@@ -34,6 +32,7 @@ from icdev.tools.analysis.code_analyzer import (
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def tmp_db(tmp_path):
@@ -90,13 +89,15 @@ def tmp_db(tmp_path):
 def simple_py(tmp_path):
     """Create a simple Python file for testing."""
     f = tmp_path / "simple.py"
-    f.write_text(textwrap.dedent("""\
+    f.write_text(
+        textwrap.dedent("""\
         def greet(name):
             return f"Hello, {name}"
 
         def add(a, b):
             return a + b
-    """))
+    """)
+    )
     return f
 
 
@@ -104,7 +105,8 @@ def simple_py(tmp_path):
 def complex_py(tmp_path):
     """Create a complex Python file with deep nesting and many branches."""
     f = tmp_path / "complex.py"
-    f.write_text(textwrap.dedent("""\
+    f.write_text(
+        textwrap.dedent("""\
         def process(data, mode, flag, extra, verbose, config):
             result = []
             if mode == "a":
@@ -125,7 +127,8 @@ def complex_py(tmp_path):
                 if flag or verbose:
                     result = list(data)
             return result
-    """))
+    """)
+    )
     return f
 
 
@@ -133,8 +136,8 @@ def complex_py(tmp_path):
 # TestPythonComplexityVisitor
 # ---------------------------------------------------------------------------
 
-class TestPythonComplexityVisitor:
 
+class TestPythonComplexityVisitor:
     def test_simple_function_complexity_one(self):
         code = "def f(): return 1"
         tree = ast.parse(code)
@@ -189,8 +192,8 @@ class TestPythonComplexityVisitor:
 # TestNestingDepthVisitor
 # ---------------------------------------------------------------------------
 
-class TestNestingDepthVisitor:
 
+class TestNestingDepthVisitor:
     def test_flat_function_depth_zero(self):
         code = "def f(): return 1"
         tree = ast.parse(code)
@@ -220,46 +223,82 @@ class TestNestingDepthVisitor:
 # TestSmellDetection
 # ---------------------------------------------------------------------------
 
-class TestSmellDetection:
 
+class TestSmellDetection:
     def test_long_function_detected(self):
-        metrics = {"loc": 60, "nesting_depth": 1, "cyclomatic_complexity": 3,
-                   "parameter_count": 2, "function_count": 1}
-        smells = _detect_smells(metrics, {"max_function_loc": 50,
-                                           "max_nesting": 4, "max_complexity": 10,
-                                           "max_params": 5, "max_methods_per_class": 10})
+        metrics = {"loc": 60, "nesting_depth": 1, "cyclomatic_complexity": 3, "parameter_count": 2, "function_count": 1}
+        smells = _detect_smells(
+            metrics,
+            {
+                "max_function_loc": 50,
+                "max_nesting": 4,
+                "max_complexity": 10,
+                "max_params": 5,
+                "max_methods_per_class": 10,
+            },
+        )
         assert "long_function" in smells
 
     def test_deep_nesting_detected(self):
-        metrics = {"loc": 20, "nesting_depth": 5, "cyclomatic_complexity": 3,
-                   "parameter_count": 1, "function_count": 1}
-        smells = _detect_smells(metrics, {"max_function_loc": 50,
-                                           "max_nesting": 4, "max_complexity": 10,
-                                           "max_params": 5, "max_methods_per_class": 10})
+        metrics = {"loc": 20, "nesting_depth": 5, "cyclomatic_complexity": 3, "parameter_count": 1, "function_count": 1}
+        smells = _detect_smells(
+            metrics,
+            {
+                "max_function_loc": 50,
+                "max_nesting": 4,
+                "max_complexity": 10,
+                "max_params": 5,
+                "max_methods_per_class": 10,
+            },
+        )
         assert "deep_nesting" in smells
 
     def test_high_complexity_detected(self):
-        metrics = {"loc": 20, "nesting_depth": 1, "cyclomatic_complexity": 15,
-                   "parameter_count": 1, "function_count": 1}
-        smells = _detect_smells(metrics, {"max_function_loc": 50,
-                                           "max_nesting": 4, "max_complexity": 10,
-                                           "max_params": 5, "max_methods_per_class": 10})
+        metrics = {
+            "loc": 20,
+            "nesting_depth": 1,
+            "cyclomatic_complexity": 15,
+            "parameter_count": 1,
+            "function_count": 1,
+        }
+        smells = _detect_smells(
+            metrics,
+            {
+                "max_function_loc": 50,
+                "max_nesting": 4,
+                "max_complexity": 10,
+                "max_params": 5,
+                "max_methods_per_class": 10,
+            },
+        )
         assert "high_complexity" in smells
 
     def test_no_smells_clean_function(self):
-        metrics = {"loc": 10, "nesting_depth": 1, "cyclomatic_complexity": 3,
-                   "parameter_count": 2, "function_count": 1}
-        smells = _detect_smells(metrics, {"max_function_loc": 50,
-                                           "max_nesting": 4, "max_complexity": 10,
-                                           "max_params": 5, "max_methods_per_class": 10})
+        metrics = {"loc": 10, "nesting_depth": 1, "cyclomatic_complexity": 3, "parameter_count": 2, "function_count": 1}
+        smells = _detect_smells(
+            metrics,
+            {
+                "max_function_loc": 50,
+                "max_nesting": 4,
+                "max_complexity": 10,
+                "max_params": 5,
+                "max_methods_per_class": 10,
+            },
+        )
         assert len(smells) == 0
 
     def test_too_many_params_detected(self):
-        metrics = {"loc": 10, "nesting_depth": 1, "cyclomatic_complexity": 1,
-                   "parameter_count": 8, "function_count": 1}
-        smells = _detect_smells(metrics, {"max_function_loc": 50,
-                                           "max_nesting": 4, "max_complexity": 10,
-                                           "max_params": 5, "max_methods_per_class": 10})
+        metrics = {"loc": 10, "nesting_depth": 1, "cyclomatic_complexity": 1, "parameter_count": 8, "function_count": 1}
+        smells = _detect_smells(
+            metrics,
+            {
+                "max_function_loc": 50,
+                "max_nesting": 4,
+                "max_complexity": 10,
+                "max_params": 5,
+                "max_methods_per_class": 10,
+            },
+        )
         assert "too_many_params" in smells
 
 
@@ -267,8 +306,8 @@ class TestSmellDetection:
 # TestMaintainabilityScore
 # ---------------------------------------------------------------------------
 
-class TestMaintainabilityScore:
 
+class TestMaintainabilityScore:
     def test_perfect_score_simple_function(self):
         metrics = {"cyclomatic_complexity": 1, "smell_count": 0, "import_count": 0}
         score = compute_maintainability_score(metrics)
@@ -296,8 +335,8 @@ class TestMaintainabilityScore:
 # TestCodeAnalyzer
 # ---------------------------------------------------------------------------
 
-class TestCodeAnalyzer:
 
+class TestCodeAnalyzer:
     def test_analyze_simple_python_file(self, simple_py, tmp_path):
         analyzer = CodeAnalyzer(project_dir=str(tmp_path))
         results = analyzer.analyze_python_file(simple_py)
@@ -330,8 +369,8 @@ class TestCodeAnalyzer:
 # TestMultiLanguageDispatch
 # ---------------------------------------------------------------------------
 
-class TestMultiLanguageDispatch:
 
+class TestMultiLanguageDispatch:
     def test_regex_branch_count_java(self):
         java_code = "if (x) { for (int i=0; i<n; i++) { if (flag && ready) {} } }"
         cc = _regex_branch_count(java_code, "java")
@@ -356,8 +395,8 @@ class TestMultiLanguageDispatch:
 # TestDBStorage
 # ---------------------------------------------------------------------------
 
-class TestDBStorage:
 
+class TestDBStorage:
     def test_store_metrics_inserts_rows(self, tmp_db, simple_py, tmp_path):
         analyzer = CodeAnalyzer(project_dir=str(tmp_path), db_path=tmp_db)
         metrics = analyzer.analyze_python_file(simple_py)
@@ -380,16 +419,13 @@ class TestDBStorage:
         analyzer.store_metrics(metrics, "scan-002", db_path=tmp_db)
 
         conn = sqlite3.connect(str(tmp_db))
-        scan_ids = [r[0] for r in conn.execute(
-            "SELECT DISTINCT scan_id FROM code_quality_metrics"
-        ).fetchall()]
+        scan_ids = [r[0] for r in conn.execute("SELECT DISTINCT scan_id FROM code_quality_metrics").fetchall()]
         conn.close()
         assert "scan-001" in scan_ids
         assert "scan-002" in scan_ids
 
     def test_trend_query_returns_sorted(self, tmp_db, simple_py, tmp_path):
-        analyzer = CodeAnalyzer(project_dir=str(tmp_path), db_path=tmp_db,
-                                project_id="test")
+        analyzer = CodeAnalyzer(project_dir=str(tmp_path), db_path=tmp_db, project_id="test")
         metrics = analyzer.analyze_python_file(simple_py)
         for m in metrics:
             m["project_id"] = "test"
@@ -406,8 +442,8 @@ class TestDBStorage:
 # TestLineCount
 # ---------------------------------------------------------------------------
 
-class TestLineCount:
 
+class TestLineCount:
     def test_count_lines_basic(self):
         source = "# comment\ndef f():\n    return 1\n\n"
         counts = _count_lines(source)

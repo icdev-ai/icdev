@@ -20,7 +20,7 @@ Close 8 security gaps identified from OWASP agentic AI security analysis that ar
 ## When to Use
 
 - After Phase 37 (MITRE ATLAS Integration) is complete and operational
-- When adding new agents or MCP servers to the ICDEV multi-agent system
+- When adding new agents or MCP servers to the ICDEV™ multi-agent system
 - Before ATO submission for systems that include agentic AI components
 - After security incidents involving unexpected agent behavior or output
 - When child applications (Phase 36) report anomalous behavioral patterns
@@ -31,8 +31,8 @@ Close 8 security gaps identified from OWASP agentic AI security analysis that ar
 
 ## Prerequisites
 
-- [ ] Phase 37 complete (prompt injection detection, AI telemetry, ATLAS assessment operational)
-- [ ] ICDEV database initialized (`python tools/db/init_icdev_db.py`)
+- [ ] Phase 37 complete (prompt injection detection, AI telemetry, ANVIL assessment operational)
+- [ ] ICDEV™ database initialized (`python tools/db/init_icdev_db.py`)
 - [ ] Configuration: `args/owasp_agentic_config.yaml` (behavioral drift, tool chain, output validation, trust scoring, MCP authorization settings)
 - [ ] Threat catalog: `context/compliance/owasp_agentic_threats.json` (OWASP T1-T17 threat definitions)
 - [ ] Security gates configured: `args/security_gates.yaml` (owasp_agentic section)
@@ -134,13 +134,13 @@ python tools/security/agent_output_validator.py --scan --project-id "proj-123" -
 
 ### Step 4: Formal Threat Model (Gap 4)
 
-Maintain a living STRIDE + OWASP agentic threat model for the ICDEV multi-agent system.
+Maintain a living STRIDE + OWASP agentic threat model for the ICDEV™ multi-agent system.
 
 **Goal:** `goals/agentic_threat_model.md`
 
 **What it covers:**
 - STRIDE analysis (Spoofing, Tampering, Repudiation, Information Disclosure, Denial of Service, Elevation of Privilege) applied to all 15 agents
-- OWASP Agentic AI Threats T1-T17 mapped to ICDEV agent architecture
+- OWASP Agentic AI Threats T1-T17 mapped to ICDEV™ agent architecture
 - Attack surface inventory: MCP servers, A2A protocol, dashboard endpoints, remote gateway channels
 - Review cadence: quarterly, or after adding new agents/MCP servers
 
@@ -305,7 +305,7 @@ python tools/compliance/owasp_agentic_assessor.py --project-id "proj-123" --chec
 
 | Phase | Integration | How |
 |-------|------------|-----|
-| Phase 37 (ATLAS) | Extends prompt injection, telemetry, red teaming | Steps 1, 3, 7 build on Phase 37 tools; OWASP agentic crosswalks through same NIST US hub |
+| Phase 37 (ANVIL) | Extends prompt injection, telemetry, red teaming | Steps 1, 3, 7 build on Phase 37 tools; OWASP agentic crosswalks through same NIST US hub |
 | Phase 36 (Evolutionary Intelligence) | Trust scoring for child apps | Child-reported behaviors factor into parent trust scoring; genome propagation requires trust >= 0.70 |
 | Phase 24 (DevSecOps) | Pipeline security | Tool chain validation integrated into DevSecOps pipeline stages; output validation as post-generation gate |
 | Phase 25 (ZTA) | Zero Trust per-tool auth | MCP per-tool authorization extends ZTA 7-pillar model (User Identity + Device Security pillars) |
@@ -362,9 +362,9 @@ python tools/compliance/owasp_agentic_assessor.py --project-id "proj-123" --json
 
 ---
 
-## GOTCHA Layer Mapping
+## FORGE Layer Mapping
 
-| Step | GOTCHA Layer | Component |
+| Step | FORGE Layer | Component |
 |------|-------------|-----------|
 | Behavioral Drift Detection | Tools | `ai_telemetry_logger.py --drift` |
 | Tool Chain Validation | Tools | `tool_chain_validator.py` |

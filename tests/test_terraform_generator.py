@@ -306,7 +306,7 @@ class TestEdgeCases:
         assert len(files) == 4
 
     def test_special_chars_in_project_name(self, tmp_path):
-        files = generate_base(str(tmp_path), {"project_name": "my-app_v2.0"})
+        generate_base(str(tmp_path), {"project_name": "my-app_v2.0"})
         content = (tmp_path / "terraform" / "provider.tf").read_text(encoding="utf-8")
         assert "my-app_v2.0" in content
 

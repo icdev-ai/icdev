@@ -1,5 +1,5 @@
 ---
-description: "ICDEV workflow: Generate ATO compliance artifacts (SSP, POAM, STIG checklist, SBOM) with CUI markings"
+description: "ICDEV™ workflow: Generate ATO compliance artifacts (SSP, POAM, STIG checklist, SBOM) with CUI markings"
 globs:
   - "**/*.py"
   - "**/*.yaml"

@@ -5,12 +5,14 @@ Session stop hook — captures session completion event and saves chat transcrip
 Features:
     - Stores stop event in DB via send_event
     - Captures full session transcript from .jsonl to .tmp/sessions/{session_id}/chat.json
+    - Auto-commit & push when ICDEV_AUTO_COMMIT=true in .env
 
 Always exits 0.
 """
 
 import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -78,7 +80,68 @@ def main():
     except Exception:
         pass
 
+    # Auto-commit & push if ICDEV_AUTO_COMMIT=true
+    try:
+        auto_commit_enabled = False
+        env_file = PROJECT_ROOT / ".env"
+        if env_file.exists():
+            with open(env_file, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith("ICDEV_AUTO_COMMIT="):
+                        val = line.split("=", 1)[1].strip().strip('"').strip("'").lower()
+                        auto_commit_enabled = val == "true"
+                        break
+
+        # Also check environment variable directly
+        if os.environ.get("ICDEV_AUTO_COMMIT", "").lower() == "true":
+            auto_commit_enabled = True
+
+        if auto_commit_enabled:
+            _auto_commit_and_push()
+    except Exception:
+        pass  # Never fail the stop hook
+
     sys.exit(0)
+
+
+def _auto_commit_and_push():
+    """Stage modified/new files, commit, and push to current branch."""
+    cwd = str(PROJECT_ROOT)
+    run = lambda cmd: subprocess.run(
+        cmd, cwd=cwd, capture_output=True, text=True, timeout=60
+    )
+
+    # Check if there are changes to commit
+    status = run(["git", "status", "--porcelain"])
+    if not status.stdout.strip():
+        return  # Nothing to commit
+
+    # Stage tracked (modified) files only — skip untracked to avoid committing junk
+    run(["git", "add", "-u"])
+
+    # Check if anything is staged
+    staged = run(["git", "diff", "--cached", "--quiet"])
+    if staged.returncode == 0:
+        return  # Nothing staged
+
+    # Commit
+    result = run([
+        "git", "commit", "-m",
+        "chore: auto-commit from Claude Code session\n\n"
+        "Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>",
+    ])
+    if result.returncode != 0:
+        return
+
+    # Get current branch
+    branch = run(["git", "rev-parse", "--abbrev-ref", "HEAD"])
+    branch_name = branch.stdout.strip()
+    if not branch_name or branch_name == "HEAD":
+        return  # Detached HEAD — don't push
+
+    # Push
+    run(["git", "push", "origin", branch_name])
 
 
 if __name__ == "__main__":

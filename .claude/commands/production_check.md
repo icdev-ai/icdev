@@ -141,7 +141,7 @@ If E2E specs are found, use Playwright MCP to verify:
 After all 8 layers complete, compile a consolidated report:
 
 ```
-=== ICDEV PRODUCTION READINESS REPORT ===
+=== ICDEV™ PRODUCTION READINESS REPORT ===
 
 Layer 1: Health Check          [PASS/FAIL] (X/Y checks passed)
 Layer 2: Governance            [PASS/FAIL] (X/Y checks passed)

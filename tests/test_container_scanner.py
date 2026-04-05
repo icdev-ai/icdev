@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-"""Tests for the ICDEV Container Scanner (tools/security/container_scanner.py).
+"""Tests for the ICDEV™ Container Scanner (tools/security/container_scanner.py).
 
 Validates Dockerfile static analysis (DS001-DS010 rules), Trivy output
 parsing, and security gate evaluation logic.
@@ -17,7 +17,7 @@ if str(BASE_DIR) not in sys.path:
 
 try:
     from icdev.tools.security.container_scanner import (
-        DOCKERFILE_CHECKS,
+        DOCKERFILE_CHECKS,  # noqa: F401
         _extract_cvss,
         _parse_trivy_output,
         evaluate_gate,
@@ -30,6 +30,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 # Dockerfile Analysis — Individual Check Rules
 # ---------------------------------------------------------------------------
+
 
 class TestDockerfileNoUserDirective:
     """DS001: Container should not run as root."""
@@ -141,9 +142,7 @@ class TestDockerfileSecretsInEnv:
 
     def test_env_password_flagged(self, tmp_path):
         df = tmp_path / "Dockerfile"
-        df.write_text(
-            "FROM python:3.11\nENV DB_PASSWORD=secret123\nUSER app\nHEALTHCHECK CMD true\n"
-        )
+        df.write_text("FROM python:3.11\nENV DB_PASSWORD=secret123\nUSER app\nHEALTHCHECK CMD true\n")
         result = scan_dockerfile(str(df))
         ids = [f["check_id"] for f in result["findings"]]
         assert "DS007" in ids
@@ -155,8 +154,7 @@ class TestDockerfileCurlPipe:
     def test_curl_pipe_sh_flagged(self, tmp_path):
         df = tmp_path / "Dockerfile"
         df.write_text(
-            "FROM python:3.11\nRUN curl https://example.com/install.sh | sh\n"
-            "USER app\nHEALTHCHECK CMD true\n"
+            "FROM python:3.11\nRUN curl https://example.com/install.sh | sh\nUSER app\nHEALTHCHECK CMD true\n"
         )
         result = scan_dockerfile(str(df))
         ids = [f["check_id"] for f in result["findings"]]
@@ -166,6 +164,7 @@ class TestDockerfileCurlPipe:
 # ---------------------------------------------------------------------------
 # Dockerfile scanning — general behavior
 # ---------------------------------------------------------------------------
+
 
 class TestDockerfileScanGeneral:
     """General scan_dockerfile behavior."""
@@ -177,10 +176,7 @@ class TestDockerfileScanGeneral:
     def test_clean_dockerfile_minimal_findings(self, tmp_path):
         df = tmp_path / "Dockerfile"
         df.write_text(
-            "FROM python:3.11-slim\n"
-            "COPY . /app\n"
-            "USER appuser\n"
-            "HEALTHCHECK --interval=30s CMD python -c 'print(1)'\n"
+            "FROM python:3.11-slim\nCOPY . /app\nUSER appuser\nHEALTHCHECK --interval=30s CMD python -c 'print(1)'\n"
         )
         result = scan_dockerfile(str(df))
         assert result["success"] is True
@@ -201,6 +197,7 @@ class TestDockerfileScanGeneral:
 # Trivy Output Parsing
 # ---------------------------------------------------------------------------
 
+
 class TestTrivyParsing:
     """Verify _parse_trivy_output extracts vulnerability findings."""
 
@@ -213,26 +210,28 @@ class TestTrivyParsing:
         assert findings == []
 
     def test_parse_valid_trivy_output(self):
-        trivy_json = json.dumps({
-            "Results": [
-                {
-                    "Target": "python:3.11",
-                    "Type": "os",
-                    "Vulnerabilities": [
-                        {
-                            "VulnerabilityID": "CVE-2024-1234",
-                            "PkgName": "openssl",
-                            "InstalledVersion": "1.1.1",
-                            "FixedVersion": "1.1.2",
-                            "Severity": "CRITICAL",
-                            "Title": "Buffer overflow in openssl",
-                            "Description": "A buffer overflow was found...",
-                            "PrimaryURL": "https://nvd.nist.gov/vuln/detail/CVE-2024-1234",
-                        }
-                    ],
-                }
-            ]
-        })
+        trivy_json = json.dumps(
+            {
+                "Results": [
+                    {
+                        "Target": "python:3.11",
+                        "Type": "os",
+                        "Vulnerabilities": [
+                            {
+                                "VulnerabilityID": "CVE-2024-1234",
+                                "PkgName": "openssl",
+                                "InstalledVersion": "1.1.1",
+                                "FixedVersion": "1.1.2",
+                                "Severity": "CRITICAL",
+                                "Title": "Buffer overflow in openssl",
+                                "Description": "A buffer overflow was found...",
+                                "PrimaryURL": "https://nvd.nist.gov/vuln/detail/CVE-2024-1234",
+                            }
+                        ],
+                    }
+                ]
+            }
+        )
         findings = _parse_trivy_output(trivy_json)
         assert len(findings) == 1
         assert findings[0]["vulnerability_id"] == "CVE-2024-1234"
@@ -240,33 +239,43 @@ class TestTrivyParsing:
         assert findings[0]["package"] == "openssl"
 
     def test_parse_multiple_targets(self):
-        trivy_json = json.dumps({
-            "Results": [
-                {
-                    "Target": "layer1",
-                    "Type": "os",
-                    "Vulnerabilities": [
-                        {"VulnerabilityID": "CVE-1", "Severity": "HIGH",
-                         "PkgName": "a", "Title": "", "Description": ""},
-                    ],
-                },
-                {
-                    "Target": "layer2",
-                    "Type": "library",
-                    "Vulnerabilities": [
-                        {"VulnerabilityID": "CVE-2", "Severity": "LOW",
-                         "PkgName": "b", "Title": "", "Description": ""},
-                    ],
-                },
-            ]
-        })
+        trivy_json = json.dumps(
+            {
+                "Results": [
+                    {
+                        "Target": "layer1",
+                        "Type": "os",
+                        "Vulnerabilities": [
+                            {
+                                "VulnerabilityID": "CVE-1",
+                                "Severity": "HIGH",
+                                "PkgName": "a",
+                                "Title": "",
+                                "Description": "",
+                            },
+                        ],
+                    },
+                    {
+                        "Target": "layer2",
+                        "Type": "library",
+                        "Vulnerabilities": [
+                            {
+                                "VulnerabilityID": "CVE-2",
+                                "Severity": "LOW",
+                                "PkgName": "b",
+                                "Title": "",
+                                "Description": "",
+                            },
+                        ],
+                    },
+                ]
+            }
+        )
         findings = _parse_trivy_output(trivy_json)
         assert len(findings) == 2
 
     def test_parse_null_vulnerabilities(self):
-        trivy_json = json.dumps({
-            "Results": [{"Target": "x", "Type": "os", "Vulnerabilities": None}]
-        })
+        trivy_json = json.dumps({"Results": [{"Target": "x", "Type": "os", "Vulnerabilities": None}]})
         findings = _parse_trivy_output(trivy_json)
         assert findings == []
 
@@ -274,6 +283,7 @@ class TestTrivyParsing:
 # ---------------------------------------------------------------------------
 # CVSS Score Extraction
 # ---------------------------------------------------------------------------
+
 
 class TestCVSSExtraction:
     """Verify _extract_cvss pulls the highest score."""
@@ -296,6 +306,7 @@ class TestCVSSExtraction:
 # ---------------------------------------------------------------------------
 # Gate Evaluation
 # ---------------------------------------------------------------------------
+
 
 class TestGateEvaluation:
     """Verify evaluate_gate checks findings against thresholds."""

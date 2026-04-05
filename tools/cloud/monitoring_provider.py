@@ -10,7 +10,7 @@ Each implementation ~40-60 lines with try/except ImportError.
 import json
 import logging
 import os
-import sqlite3
+from tools.db.storage import get_connection
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from pathlib import Path
@@ -28,8 +28,7 @@ class MonitoringProvider(ABC):
         """Return provider identifier."""
 
     @abstractmethod
-    def send_metric(self, namespace: str, metric_name: str, value: float,
-                    dimensions: Optional[Dict] = None) -> bool:
+    def send_metric(self, namespace: str, metric_name: str, value: float, dimensions: Optional[Dict] = None) -> bool:
         """Send a metric data point."""
 
     @abstractmethod
@@ -37,14 +36,15 @@ class MonitoringProvider(ABC):
         """Send a log entry."""
 
     @abstractmethod
-    def query_metrics(self, namespace: str, metric_name: str,
-                      start_time: Optional[str] = None,
-                      end_time: Optional[str] = None) -> List[Dict]:
+    def query_metrics(
+        self, namespace: str, metric_name: str, start_time: Optional[str] = None, end_time: Optional[str] = None
+    ) -> List[Dict]:
         """Query metric data points within a time range."""
 
     @abstractmethod
-    def create_alarm(self, name: str, namespace: str, metric_name: str,
-                     threshold: float, comparison: str = "GreaterThanThreshold") -> bool:
+    def create_alarm(
+        self, name: str, namespace: str, metric_name: str, threshold: float, comparison: str = "GreaterThanThreshold"
+    ) -> bool:
         """Create a metric alarm/alert."""
 
     @abstractmethod
@@ -57,6 +57,7 @@ class MonitoringProvider(ABC):
 # ============================================================
 try:
     import boto3 as _boto3_cw
+
     _HAS_BOTO3_CW = True
 except ImportError:
     _HAS_BOTO3_CW = False
@@ -84,8 +85,7 @@ class AWSCloudWatchProvider(MonitoringProvider):
             self._logs_client = _boto3_cw.client("logs", region_name=self._region)
         return self._logs_client
 
-    def send_metric(self, namespace: str, metric_name: str, value: float,
-                    dimensions: Optional[Dict] = None) -> bool:
+    def send_metric(self, namespace: str, metric_name: str, value: float, dimensions: Optional[Dict] = None) -> bool:
         client = self._get_cw_client()
         if not client:
             return False
@@ -93,12 +93,14 @@ class AWSCloudWatchProvider(MonitoringProvider):
             dim_list = [{"Name": k, "Value": str(v)} for k, v in (dimensions or {}).items()]
             client.put_metric_data(
                 Namespace=namespace,
-                MetricData=[{
-                    "MetricName": metric_name,
-                    "Value": value,
-                    "Unit": "None",
-                    "Dimensions": dim_list,
-                }],
+                MetricData=[
+                    {
+                        "MetricName": metric_name,
+                        "Value": value,
+                        "Unit": "None",
+                        "Dimensions": dim_list,
+                    }
+                ],
             )
             return True
         except Exception:
@@ -121,47 +123,65 @@ class AWSCloudWatchProvider(MonitoringProvider):
             client.put_log_events(
                 logGroupName=log_group,
                 logStreamName=stream,
-                logEvents=[{
-                    "timestamp": int(datetime.now(timezone.utc).timestamp() * 1000),
-                    "message": f"[{level}] {message}",
-                }],
+                logEvents=[
+                    {
+                        "timestamp": int(datetime.now(timezone.utc).timestamp() * 1000),
+                        "message": f"[{level}] {message}",
+                    }
+                ],
             )
             return True
         except Exception:
             return False
 
-    def query_metrics(self, namespace: str, metric_name: str,
-                      start_time: Optional[str] = None,
-                      end_time: Optional[str] = None) -> List[Dict]:
+    def query_metrics(
+        self, namespace: str, metric_name: str, start_time: Optional[str] = None, end_time: Optional[str] = None
+    ) -> List[Dict]:
         client = self._get_cw_client()
         if not client:
             return []
         try:
             from datetime import timedelta
+
             now = datetime.now(timezone.utc)
             start = datetime.fromisoformat(start_time) if start_time else now - timedelta(hours=1)
             end = datetime.fromisoformat(end_time) if end_time else now
             resp = client.get_metric_statistics(
-                Namespace=namespace, MetricName=metric_name,
-                StartTime=start, EndTime=end,
-                Period=60, Statistics=["Average", "Maximum", "Minimum"],
+                Namespace=namespace,
+                MetricName=metric_name,
+                StartTime=start,
+                EndTime=end,
+                Period=60,
+                Statistics=["Average", "Maximum", "Minimum"],
             )
-            return [{"timestamp": str(d["Timestamp"]), "average": d.get("Average"),
-                      "maximum": d.get("Maximum"), "minimum": d.get("Minimum")}
-                     for d in resp.get("Datapoints", [])]
+            return [
+                {
+                    "timestamp": str(d["Timestamp"]),
+                    "average": d.get("Average"),
+                    "maximum": d.get("Maximum"),
+                    "minimum": d.get("Minimum"),
+                }
+                for d in resp.get("Datapoints", [])
+            ]
         except Exception:
             return []
 
-    def create_alarm(self, name: str, namespace: str, metric_name: str,
-                     threshold: float, comparison: str = "GreaterThanThreshold") -> bool:
+    def create_alarm(
+        self, name: str, namespace: str, metric_name: str, threshold: float, comparison: str = "GreaterThanThreshold"
+    ) -> bool:
         client = self._get_cw_client()
         if not client:
             return False
         try:
             client.put_metric_alarm(
-                AlarmName=name, Namespace=namespace, MetricName=metric_name,
-                ComparisonOperator=comparison, Threshold=threshold,
-                EvaluationPeriods=1, Period=300, Statistic="Average",
+                AlarmName=name,
+                Namespace=namespace,
+                MetricName=metric_name,
+                ComparisonOperator=comparison,
+                Threshold=threshold,
+                EvaluationPeriods=1,
+                Period=300,
+                Statistic="Average",
             )
             return True
         except Exception:
@@ -184,6 +204,7 @@ class AWSCloudWatchProvider(MonitoringProvider):
 try:
     from azure.monitor.ingestion import LogsIngestionClient
     from azure.identity import DefaultAzureCredential as _AzureCredMon
+
     _HAS_AZURE_MON = True
 except ImportError:
     _HAS_AZURE_MON = False
@@ -208,19 +229,20 @@ class AzureMonitorProvider(MonitoringProvider):
             self._client = LogsIngestionClient(endpoint=self._endpoint, credential=credential)
         return self._client
 
-    def send_metric(self, namespace: str, metric_name: str, value: float,
-                    dimensions: Optional[Dict] = None) -> bool:
+    def send_metric(self, namespace: str, metric_name: str, value: float, dimensions: Optional[Dict] = None) -> bool:
         client = self._get_client()
         if not client:
             return False
         try:
-            body = [{
-                "TimeGenerated": datetime.now(timezone.utc).isoformat(),
-                "Namespace": namespace,
-                "MetricName": metric_name,
-                "Value": value,
-                "Dimensions": json.dumps(dimensions or {}),
-            }]
+            body = [
+                {
+                    "TimeGenerated": datetime.now(timezone.utc).isoformat(),
+                    "Namespace": namespace,
+                    "MetricName": metric_name,
+                    "Value": value,
+                    "Dimensions": json.dumps(dimensions or {}),
+                }
+            ]
             client.upload(rule_id=self._rule_id, stream_name=self._stream_name, logs=body)
             return True
         except Exception:
@@ -231,25 +253,28 @@ class AzureMonitorProvider(MonitoringProvider):
         if not client:
             return False
         try:
-            body = [{
-                "TimeGenerated": datetime.now(timezone.utc).isoformat(),
-                "LogGroup": log_group,
-                "Level": level,
-                "Message": message,
-            }]
+            body = [
+                {
+                    "TimeGenerated": datetime.now(timezone.utc).isoformat(),
+                    "LogGroup": log_group,
+                    "Level": level,
+                    "Message": message,
+                }
+            ]
             client.upload(rule_id=self._rule_id, stream_name=self._stream_name, logs=body)
             return True
         except Exception:
             return False
 
-    def query_metrics(self, namespace: str, metric_name: str,
-                      start_time: Optional[str] = None,
-                      end_time: Optional[str] = None) -> List[Dict]:
+    def query_metrics(
+        self, namespace: str, metric_name: str, start_time: Optional[str] = None, end_time: Optional[str] = None
+    ) -> List[Dict]:
         # Azure Monitor queries require Log Analytics — simplified stub
         return []
 
-    def create_alarm(self, name: str, namespace: str, metric_name: str,
-                     threshold: float, comparison: str = "GreaterThanThreshold") -> bool:
+    def create_alarm(
+        self, name: str, namespace: str, metric_name: str, threshold: float, comparison: str = "GreaterThanThreshold"
+    ) -> bool:
         # Azure Alerts require ARM API — simplified stub
         return False
 
@@ -262,6 +287,7 @@ class AzureMonitorProvider(MonitoringProvider):
 # ============================================================
 try:
     from google.cloud import monitoring_v3 as _gcp_mon
+
     _HAS_GCP_MON = True
 except ImportError:
     _HAS_GCP_MON = False
@@ -283,14 +309,11 @@ class GCPMonitoringProvider(MonitoringProvider):
             self._client = _gcp_mon.MetricServiceClient()
         return self._client
 
-    def send_metric(self, namespace: str, metric_name: str, value: float,
-                    dimensions: Optional[Dict] = None) -> bool:
+    def send_metric(self, namespace: str, metric_name: str, value: float, dimensions: Optional[Dict] = None) -> bool:
         client = self._get_client()
         if not client or not self._project_id:
             return False
         try:
-            from google.protobuf import timestamp_pb2
-            from google.api import metric_pb2, monitored_resource_pb2
             project_name = f"projects/{self._project_id}"
             series = _gcp_mon.TimeSeries()
             series.metric.type = f"custom.googleapis.com/{namespace}/{metric_name}"
@@ -312,6 +335,7 @@ class GCPMonitoringProvider(MonitoringProvider):
         # GCP logging uses a separate client (google.cloud.logging)
         try:
             from google.cloud import logging as _gcp_logging
+
             client = _gcp_logging.Client(project=self._project_id)
             gcp_logger = client.logger(log_group)
             gcp_logger.log_text(f"[{level}] {message}", severity=level)
@@ -319,14 +343,15 @@ class GCPMonitoringProvider(MonitoringProvider):
         except Exception:
             return False
 
-    def query_metrics(self, namespace: str, metric_name: str,
-                      start_time: Optional[str] = None,
-                      end_time: Optional[str] = None) -> List[Dict]:
+    def query_metrics(
+        self, namespace: str, metric_name: str, start_time: Optional[str] = None, end_time: Optional[str] = None
+    ) -> List[Dict]:
         client = self._get_client()
         if not client or not self._project_id:
             return []
         try:
             from datetime import timedelta
+
             now = datetime.now(timezone.utc)
             start = datetime.fromisoformat(start_time) if start_time else now - timedelta(hours=1)
             end_t = datetime.fromisoformat(end_time) if end_time else now
@@ -346,16 +371,19 @@ class GCPMonitoringProvider(MonitoringProvider):
             points = []
             for ts in results:
                 for p in ts.points:
-                    points.append({
-                        "timestamp": str(p.interval.end_time),
-                        "value": p.value.double_value,
-                    })
+                    points.append(
+                        {
+                            "timestamp": str(p.interval.end_time),
+                            "value": p.value.double_value,
+                        }
+                    )
             return points
         except Exception:
             return []
 
-    def create_alarm(self, name: str, namespace: str, metric_name: str,
-                     threshold: float, comparison: str = "GreaterThanThreshold") -> bool:
+    def create_alarm(
+        self, name: str, namespace: str, metric_name: str, threshold: float, comparison: str = "GreaterThanThreshold"
+    ) -> bool:
         # GCP Alert Policies require the AlertPolicyServiceClient — simplified stub
         return False
 
@@ -368,6 +396,7 @@ class GCPMonitoringProvider(MonitoringProvider):
 # ============================================================
 try:
     import oci as _oci_mon
+
     _HAS_OCI_MON = True
 except ImportError:
     _HAS_OCI_MON = False
@@ -393,18 +422,19 @@ class OCIMonitoringProvider(MonitoringProvider):
                 pass
         return self._client
 
-    def send_metric(self, namespace: str, metric_name: str, value: float,
-                    dimensions: Optional[Dict] = None) -> bool:
+    def send_metric(self, namespace: str, metric_name: str, value: float, dimensions: Optional[Dict] = None) -> bool:
         client = self._get_client()
         if not client or not self._compartment_id:
             return False
         try:
             now = datetime.now(timezone.utc)
             data_point = _oci_mon.monitoring.models.Datapoint(
-                timestamp=now, value=value,
+                timestamp=now,
+                value=value,
             )
             metric_data = _oci_mon.monitoring.models.MetricDataDetails(
-                namespace=namespace, name=metric_name,
+                namespace=namespace,
+                name=metric_name,
                 compartment_id=self._compartment_id,
                 dimensions=dimensions or {},
                 datapoints=[data_point],
@@ -422,14 +452,15 @@ class OCIMonitoringProvider(MonitoringProvider):
         # OCI Logging requires a separate LoggingManagementClient — simplified stub
         return False
 
-    def query_metrics(self, namespace: str, metric_name: str,
-                      start_time: Optional[str] = None,
-                      end_time: Optional[str] = None) -> List[Dict]:
+    def query_metrics(
+        self, namespace: str, metric_name: str, start_time: Optional[str] = None, end_time: Optional[str] = None
+    ) -> List[Dict]:
         # OCI metric queries require SummarizeMetricsDataDetails — simplified stub
         return []
 
-    def create_alarm(self, name: str, namespace: str, metric_name: str,
-                     threshold: float, comparison: str = "GreaterThanThreshold") -> bool:
+    def create_alarm(
+        self, name: str, namespace: str, metric_name: str, threshold: float, comparison: str = "GreaterThanThreshold"
+    ) -> bool:
         return False
 
     def check_availability(self) -> bool:
@@ -445,8 +476,7 @@ class IBMMonitoringProvider(MonitoringProvider):
     Uses urllib.request (stdlib) for REST API — no additional SDK required.
     """
 
-    def __init__(self, api_key: str = "", sysdig_api_key: str = "",
-                 region: str = "us-south"):
+    def __init__(self, api_key: str = "", sysdig_api_key: str = "", region: str = "us-south"):
         self._api_key = api_key or os.environ.get("IBM_CLOUD_API_KEY", "")
         self._sysdig_key = sysdig_api_key or os.environ.get("IBM_SYSDIG_API_KEY", "")
         self._region = region
@@ -455,21 +485,24 @@ class IBMMonitoringProvider(MonitoringProvider):
     def provider_name(self) -> str:
         return "ibm_cloud_monitoring"
 
-    def send_metric(self, namespace: str, metric_name: str, value: float,
-                    dimensions: Optional[Dict] = None) -> bool:
+    def send_metric(self, namespace: str, metric_name: str, value: float, dimensions: Optional[Dict] = None) -> bool:
         if not self._sysdig_key:
             return False
         try:
             import json as _json
             import urllib.request
+
             url = f"https://{self._region}.monitoring.cloud.ibm.com/api/data"
-            data = _json.dumps({"metric": metric_name, "value": value,
-                                "dimensions": dimensions or {},
-                                "timestamp": ""}).encode()
-            req = urllib.request.Request(url, data=data, method="POST",
-                                        headers={"Authorization": f"Bearer {self._sysdig_key}",
-                                                 "Content-Type": "application/json"})
-            urllib.request.urlopen(req, timeout=10)
+            data = _json.dumps(
+                {"metric": metric_name, "value": value, "dimensions": dimensions or {}, "timestamp": ""}
+            ).encode()
+            req = urllib.request.Request(
+                url,
+                data=data,
+                method="POST",
+                headers={"Authorization": f"Bearer {self._sysdig_key}", "Content-Type": "application/json"},
+            )
+            urllib.request.urlopen(req, timeout=10)  # nosec B310 -- URL scheme validated; internal/configured endpoints only
             return True
         except Exception:
             return False
@@ -480,25 +513,26 @@ class IBMMonitoringProvider(MonitoringProvider):
         try:
             import json as _json
             import urllib.request
+
             url = f"https://api.{self._region}.logging.cloud.ibm.com/logs/ingest"
-            payload = {"lines": [{"line": message, "level": level,
-                                  "app": log_group, "meta": {}}]}
+            payload = {"lines": [{"line": message, "level": level, "app": log_group, "meta": {}}]}
             data = _json.dumps(payload).encode()
-            req = urllib.request.Request(url, data=data, method="POST",
-                                        headers={"apikey": self._api_key,
-                                                 "Content-Type": "application/json"})
-            urllib.request.urlopen(req, timeout=10)
+            req = urllib.request.Request(
+                url, data=data, method="POST", headers={"apikey": self._api_key, "Content-Type": "application/json"}
+            )
+            urllib.request.urlopen(req, timeout=10)  # nosec B310 -- URL scheme validated; internal/configured endpoints only
             return True
         except Exception:
             return False
 
-    def query_metrics(self, namespace: str, metric_name: str,
-                      start_time: Optional[str] = None,
-                      end_time: Optional[str] = None) -> List[Dict]:
+    def query_metrics(
+        self, namespace: str, metric_name: str, start_time: Optional[str] = None, end_time: Optional[str] = None
+    ) -> List[Dict]:
         return []  # Sysdig query API requires complex PromQL — simplified stub
 
-    def create_alarm(self, name: str, namespace: str, metric_name: str,
-                     threshold: float, comparison: str = "GreaterThanThreshold") -> bool:
+    def create_alarm(
+        self, name: str, namespace: str, metric_name: str, threshold: float, comparison: str = "GreaterThanThreshold"
+    ) -> bool:
         return False  # Sysdig alerts require complex API — simplified stub
 
     def check_availability(self) -> bool:
@@ -522,7 +556,7 @@ class LocalMonitoringProvider(MonitoringProvider):
     def _init_db(self):
         """Create metrics table if not exists."""
         try:
-            conn = sqlite3.connect(str(self._db_path))
+            conn = get_connection(db_path=str(self._db_path))
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS local_metrics (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -557,16 +591,19 @@ class LocalMonitoringProvider(MonitoringProvider):
     def provider_name(self) -> str:
         return "local"
 
-    def send_metric(self, namespace: str, metric_name: str, value: float,
-                    dimensions: Optional[Dict] = None) -> bool:
+    def send_metric(self, namespace: str, metric_name: str, value: float, dimensions: Optional[Dict] = None) -> bool:
         try:
-            conn = sqlite3.connect(str(self._db_path))
+            conn = get_connection(db_path=str(self._db_path))
             conn.execute(
                 "INSERT INTO local_metrics (namespace, metric_name, value, dimensions, recorded_at) "
                 "VALUES (?, ?, ?, ?, ?)",
-                (namespace, metric_name, value,
-                 json.dumps(dimensions) if dimensions else None,
-                 datetime.now(timezone.utc).isoformat()),
+                (
+                    namespace,
+                    metric_name,
+                    value,
+                    json.dumps(dimensions) if dimensions else None,
+                    datetime.now(timezone.utc).isoformat(),
+                ),
             )
             conn.commit()
             conn.close()
@@ -585,12 +622,11 @@ class LocalMonitoringProvider(MonitoringProvider):
         except Exception:
             return False
 
-    def query_metrics(self, namespace: str, metric_name: str,
-                      start_time: Optional[str] = None,
-                      end_time: Optional[str] = None) -> List[Dict]:
+    def query_metrics(
+        self, namespace: str, metric_name: str, start_time: Optional[str] = None, end_time: Optional[str] = None
+    ) -> List[Dict]:
         try:
-            conn = sqlite3.connect(str(self._db_path))
-            conn.row_factory = sqlite3.Row
+            conn = get_connection(db_path=str(self._db_path))
             query = "SELECT * FROM local_metrics WHERE namespace = ? AND metric_name = ?"
             params: list = [namespace, metric_name]
             if start_time:
@@ -602,21 +638,20 @@ class LocalMonitoringProvider(MonitoringProvider):
             query += " ORDER BY recorded_at DESC LIMIT 1000"
             rows = conn.execute(query, params).fetchall()
             conn.close()
-            return [{"timestamp": r["recorded_at"], "value": r["value"],
-                      "dimensions": r["dimensions"]} for r in rows]
+            return [{"timestamp": r["recorded_at"], "value": r["value"], "dimensions": r["dimensions"]} for r in rows]
         except Exception:
             return []
 
-    def create_alarm(self, name: str, namespace: str, metric_name: str,
-                     threshold: float, comparison: str = "GreaterThanThreshold") -> bool:
+    def create_alarm(
+        self, name: str, namespace: str, metric_name: str, threshold: float, comparison: str = "GreaterThanThreshold"
+    ) -> bool:
         try:
-            conn = sqlite3.connect(str(self._db_path))
+            conn = get_connection(db_path=str(self._db_path))
             conn.execute(
                 "INSERT OR REPLACE INTO local_alarms "
                 "(name, namespace, metric_name, threshold, comparison, created_at) "
                 "VALUES (?, ?, ?, ?, ?, ?)",
-                (name, namespace, metric_name, threshold, comparison,
-                 datetime.now(timezone.utc).isoformat()),
+                (name, namespace, metric_name, threshold, comparison, datetime.now(timezone.utc).isoformat()),
             )
             conn.commit()
             conn.close()

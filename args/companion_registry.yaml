@@ -172,6 +172,30 @@ companions:
       mcp_tools: true
       inline_completion: false
 
+  goose:
+    display_name: "Goose (Block)"
+    vendor: "Block / Linux Foundation AAIF"
+    instruction_file: ".goosehints"
+    mcp_support: true
+    mcp_config_file: null
+    mcp_config_format: "goose_yaml"
+    skill_format: "goose_recipe"
+    skill_directory: ".goose/recipes"
+    env_detection:
+      env_vars: ["GOOSE_PROVIDER", "GOOSE_MODEL"]
+      config_dirs: [".goose"]
+      config_files: [".goosehints"]
+      process_names: ["goose"]
+    capabilities:
+      custom_commands: true
+      hooks: false
+      mcp_tools: true
+      inline_completion: false
+      autonomous_mode: true
+      multi_agent: true
+      custom_distributions: true
+    notes: "Rust-native MCP agent by Block. Apache 2.0. Supports headless autonomous mode, ACP multi-agent, and custom distributions."
+
   aider:
     display_name: "Aider"
     vendor: "Aider-AI"
