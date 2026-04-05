@@ -315,6 +315,25 @@ reflexes:
       threshold: 0
       operator: gte
 
+  remediation_lens:
+    enabled: true
+    risk_tier: yellow
+    schedule: "every 60m"
+    interval_seconds: 3600
+    description: "Canvas remediation full loop: scan → propose → verify → escalate → archive"
+    success_metric:
+      name: proposals_created
+      threshold: 0
+      operator: gte         # 0 = no low-score canvases (healthy), >0 = proposals generated
+    # Score below which a canvas is flagged for remediation
+    score_threshold: 85.0
+    # Maximum new proposals this reflex may create per hour (self-healing guardrail)
+    max_proposals_per_hour: 5
+    # Maximum auto-executions per hour (applies to Genesis-initiated executions)
+    max_auto_executions_per_hour: 3
+    # Re-notify about pending proposals that have been waiting this long
+    notify_after_minutes: 30
+
   # ── ORANGE tier (code mutation, human review required) ───────────────────
 
   evolve:
