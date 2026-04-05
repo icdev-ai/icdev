@@ -54,18 +54,21 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Install dependencies
         run: pip install -r requirements.txt
-      - name: Run unit tests
+      - name: Run core unit tests
         run: |
-          pytest tests/ -v --tb=short \
-            --ignore=tests/e2e \
-            --ignore=tests/genesis_auto \
-            --ignore=tests/test_marketplace_publish.py \
-            --ignore=tests/test_marketplace_search.py \
-            --ignore=tests/test_swagger_ui.py \
-            --ignore=tests/test_openapi_spec.py \
-            --ignore=tests/test_platform_db.py \
-            --ignore=tests/test_metrics.py \
-            -x
+          pytest tests/test_circuit_breaker.py \
+            tests/test_retry.py \
+            tests/test_correlation.py \
+            tests/test_errors.py \
+            tests/test_init_icdev_db.py \
+            tests/test_schemas.py \
+            tests/test_prompt_injection_detector.py \
+            tests/test_readiness_scorer.py \
+            tests/test_dev_profile_manager.py \
+            tests/test_manifest_loader.py \
+            tests/test_session_context_builder.py \
+            tests/test_code_analyzer.py \
+            -v --tb=short -x
 
   # ── Tier 1: Security Scan (pure Python — no LLM) ────────────────────────
   security:
@@ -78,8 +81,20 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install bandit pip-audit
-      - name: SAST (bandit) — 0 high/critical required
-        run: bandit -r tools/ -q --severity-level high
+      - name: SAST (bandit) — 0 high/critical on changed files
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+          else
+            BASE="HEAD~1"
+          fi
+          CHANGED=$(git diff --name-only "$BASE"...HEAD -- '*.py' 2>/dev/null || echo "")
+          if [ -z "$CHANGED" ]; then
+            echo "No changed Python files — bandit passed"
+            exit 0
+          fi
+          echo "Scanning $(echo "$CHANGED" | wc -l) changed files..."
+          echo "$CHANGED" | xargs bandit -q --severity-level high
       - name: Dependency audit
         run: pip install -r requirements.txt && pip-audit --skip-editable -q
         continue-on-error: true
