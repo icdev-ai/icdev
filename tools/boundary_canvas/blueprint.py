@@ -1443,4 +1443,113 @@ def create_boundary_blueprint():
             runbooks.append(rb)
         return jsonify({"design_id": design_id, "runbooks": runbooks, "count": len(runbooks)})
 
+    # ── SOPs ──────────────────────────────────────────────────────────────────
+
+    @bp.route("/sops")
+    @bdc_login_required
+    def bdc_sops_page():
+        """SOP library — boundary-specific standard operating procedures."""
+        from tools.boundary_canvas.sops import get_all_sops
+        sops = get_all_sops()
+        return render_template("boundary_canvas/sops.html", sops=sops)
+
+    @bp.route("/api/sops", methods=["GET"])
+    @bdc_login_required
+    def bdc_api_list_sops():
+        """List all SOPs, optionally filtered by sop_type and approval_status."""
+        from tools.boundary_canvas.sops import get_all_sops
+        sop_type = request.args.get("type", "")
+        status = request.args.get("status", "")
+        sops = get_all_sops(
+            sop_type=sop_type or None,
+            approval_status=status or None,
+        )
+        return jsonify({"sops": sops, "count": len(sops)})
+
+    @bp.route("/api/sops/<sop_id>", methods=["GET"])
+    @bdc_login_required
+    def bdc_api_get_sop(sop_id):
+        """Get a single SOP by ID."""
+        from tools.boundary_canvas.sops import get_sop_by_id
+        sop = get_sop_by_id(sop_id)
+        if not sop:
+            return jsonify({"error": "SOP not found"}), 404
+        return jsonify(sop)
+
+    @bp.route("/api/sops", methods=["POST"])
+    @bdc_login_required
+    def bdc_api_create_sop():
+        """Create a new SOP."""
+        from tools.boundary_canvas.sops import create_sop
+        data = request.get_json(silent=True) or {}
+        title = (data.get("title") or "").strip()
+        if not title:
+            return jsonify({"error": "title is required"}), 400
+        sop = create_sop(data)
+        _audit("global", "sop_created", f"id={sop['id']} title={title}")
+        return jsonify(sop), 201
+
+    @bp.route("/api/sops/<sop_id>", methods=["PUT"])
+    @bdc_login_required
+    def bdc_api_update_sop(sop_id):
+        """Update an existing SOP."""
+        from tools.boundary_canvas.sops import update_sop
+        data = request.get_json(silent=True) or {}
+        sop = update_sop(sop_id, data)
+        if not sop:
+            return jsonify({"error": "SOP not found"}), 404
+        _audit("global", "sop_updated", f"id={sop_id}")
+        return jsonify(sop)
+
+    @bp.route("/api/sops/<sop_id>", methods=["DELETE"])
+    @bdc_login_required
+    def bdc_api_delete_sop(sop_id):
+        """Delete a SOP."""
+        from tools.boundary_canvas.sops import delete_sop
+        deleted = delete_sop(sop_id)
+        if not deleted:
+            return jsonify({"error": "SOP not found"}), 404
+        _audit("global", "sop_deleted", f"id={sop_id}")
+        return jsonify({"status": "deleted"})
+
+    @bp.route("/api/sops/<sop_id>/submit", methods=["POST"])
+    @bdc_login_required
+    def bdc_api_submit_sop(sop_id):
+        """Submit a SOP for review (draft → pending_review)."""
+        from tools.boundary_canvas.sops import submit_for_review
+        sop, err = submit_for_review(sop_id)
+        if err:
+            return jsonify({"error": err}), 400
+        _audit("global", "sop_submitted", f"id={sop_id}")
+        return jsonify(sop)
+
+    @bp.route("/api/sops/<sop_id>/approve", methods=["POST"])
+    @bdc_login_required
+    def bdc_api_approve_sop(sop_id):
+        """Approve a pending SOP."""
+        from tools.boundary_canvas.sops import approve_sop
+        data = request.get_json(silent=True) or {}
+        approved_by = (data.get("approved_by") or "").strip()
+        sop, err = approve_sop(sop_id, approved_by=approved_by)
+        if err:
+            return jsonify({"error": err}), 400
+        _audit("global", "sop_approved", f"id={sop_id} by={approved_by}")
+        return jsonify(sop)
+
+    @bp.route("/api/sops/<sop_id>/reject", methods=["POST"])
+    @bdc_login_required
+    def bdc_api_reject_sop(sop_id):
+        """Reject a pending SOP with reason."""
+        from tools.boundary_canvas.sops import reject_sop
+        data = request.get_json(silent=True) or {}
+        reason = (data.get("reason") or "").strip()
+        rejected_by = (data.get("rejected_by") or "").strip()
+        if not reason:
+            return jsonify({"error": "reason is required"}), 400
+        sop, err = reject_sop(sop_id, reason=reason, rejected_by=rejected_by)
+        if err:
+            return jsonify({"error": err}), 400
+        _audit("global", "sop_rejected", f"id={sop_id} reason={reason[:60]}")
+        return jsonify(sop)
+
     return bp
