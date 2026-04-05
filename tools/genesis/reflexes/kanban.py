@@ -997,25 +997,28 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             f"{TOKEN_MAX_RETRY_COUNT})"
         )
         try:
-            _move_task(task["id"], "in_progress")
             prompt_path = PROMPT_DIR / f"{task['id']}.md"
             if not prompt_path.exists():
                 prompt_path = _write_prompt_file(task)
             else:
                 prompt_path = str(prompt_path)
             _dispatch_to_claude(task, prompt_path)
-            _send_notification(task, event="in_progress")
-            return {
-                "success": True,
-                "metric_value": 1,
-                "details": {
-                    "status": "token_retry",
-                    "task_id": task["id"],
-                    "retry_count": retry_count,
-                    "completed_this_cycle": completed,
-                    "telegram_commands": len(tg_results),
-                },
-            }
+            if task["id"] in _running:
+                _move_task(task["id"], "in_progress")
+                _send_notification(task, event="in_progress")
+                return {
+                    "success": True,
+                    "metric_value": 1,
+                    "details": {
+                        "status": "token_retry",
+                        "task_id": task["id"],
+                        "retry_count": retry_count,
+                        "completed_this_cycle": completed,
+                        "telegram_commands": len(tg_results),
+                    },
+                }
+            else:
+                print(f"  Kanban: token retry dispatch failed for {task['id']}")
         except Exception as e:
             print(f"  Kanban: token retry error for {task['id']}: {e}")
 
@@ -1038,26 +1041,33 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     # Only dispatch ONE task at a time to claude
     task = due_tasks[0]
     try:
-        # Move to in_progress
-        _move_task(task["id"], "in_progress")
-
-        # Write prompt file
+        # Write prompt file first (low risk)
         prompt_path = _write_prompt_file(task)
 
-        # Send notification
-        _send_notification(task)
-
-        # Dispatch to claude CLI
+        # Dispatch to claude CLI — only move to in_progress AFTER
+        # subprocess is confirmed running, so tasks don't get stuck
+        # in in_progress when dispatch fails.
         _dispatch_to_claude(task, prompt_path)
 
-        processed.append(
-            {
-                "id": task["id"],
-                "title": task["title"],
-                "prompt_file": prompt_path,
-            }
-        )
-        print(f"  Kanban: {task['id']} '{task['title']}' -> in_progress -> dispatched")
+        if task["id"] in _running:
+            # Subprocess launched successfully — now move to in_progress
+            _move_task(task["id"], "in_progress")
+            _send_notification(task)
+            processed.append(
+                {
+                    "id": task["id"],
+                    "title": task["title"],
+                    "prompt_file": prompt_path,
+                }
+            )
+            print(f"  Kanban: {task['id']} '{task['title']}' -> in_progress -> dispatched")
+        else:
+            # Dispatch failed — leave task in backlog, clean up prompt
+            errors += 1
+            prompt_file = Path(prompt_path)
+            if prompt_file.exists():
+                prompt_file.unlink()
+            print(f"  Kanban: {task['id']} dispatch failed — staying in backlog")
     except Exception as e:
         errors += 1
         print(f"  Kanban error: {task['id']}: {e}")
