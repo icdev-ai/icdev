@@ -16,13 +16,25 @@ def _row_to_dict(row):
     return dict(row) if hasattr(row, "keys") else {}
 
 
-def _audit(conn, design_id, user, action, detail="", classification="CUI"):
-    conn.execute(
-        "INSERT INTO ndc_audit (id, design_id, user, action, detail, classification, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (f"na-{uuid.uuid4().hex[:10]}", design_id, user, action, detail, classification, _now()),
-    )
-    conn.commit()
+def _audit(action, entity_type="", entity_id="", detail="", classification="CUI"):
+    """Append-only audit log entry for NDC operations.
+
+    Called as: _audit("CREATE", "topology", topo_id, "optional detail")
+    Opens its own connection so callers don't need to pass one.
+    """
+    from tools.network.db.init_db import get_connection as _get_conn
+
+    try:
+        conn = _get_conn()
+        conn.execute(
+            "INSERT INTO ndc_audit (id, design_id, user, action, detail, classification, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (f"na-{uuid.uuid4().hex[:10]}", entity_id, entity_type, action, detail, classification, _now()),
+        )
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass  # Audit is best-effort — never block the operation
 
 
 def _notify(event_type, data=None):
