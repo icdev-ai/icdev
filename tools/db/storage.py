@@ -109,8 +109,23 @@ def translate_sql(sql: str, backend: str = "postgresql") -> str:
     original = sql
 
     # 1. PRAGMA → skip entirely (return empty for PG)
+    #    Exception: PRAGMA table_info(X) → information_schema query
     if _RE_PRAGMA.match(sql.strip()):
-        return "SELECT 1"  # No-op query
+        pragma_ti = re.match(
+            r"\s*PRAGMA\s+table_info\(\s*(\w+)\s*\)", sql, re.IGNORECASE,
+        )
+        if pragma_ti:
+            table = pragma_ti.group(1)
+            return (
+                "SELECT ordinal_position AS cid, column_name AS name, "
+                "data_type AS type, "
+                "CASE WHEN is_nullable = 'NO' THEN 1 ELSE 0 END AS notnull, "
+                "column_default AS dflt_value, 0 AS pk "
+                "FROM information_schema.columns "
+                f"WHERE table_schema = 'public' AND table_name = '{table}' "
+                "ORDER BY ordinal_position"
+            )
+        return "SELECT 1"  # No-op for all other PRAGMAs
 
     # 2. datetime('now', '-N days/hours') → NOW() - INTERVAL 'N days'
     def _replace_datetime_offset(m):
@@ -203,6 +218,62 @@ def translate_sql(sql: str, backend: str = "postgresql") -> str:
 
     # 13. last_insert_rowid() → lastval() (PG equivalent for last auto-generated ID)
     sql = re.sub(r'\blast_insert_rowid\(\)', 'lastval()', sql, flags=re.IGNORECASE)
+
+    # 14. sqlite_master → information_schema.tables / pg_tables
+    #     SELECT ... FROM sqlite_master WHERE type='table' AND name=?
+    #     → SELECT ... FROM information_schema.tables WHERE table_schema='public' AND table_name=%s
+    if "sqlite_master" in sql.lower():
+        # Pattern: SELECT 1/name/count(*) FROM sqlite_master WHERE type='table' AND name=?
+        sql = re.sub(
+            r"SELECT\s+(?:1|name|count\(\*\))\s+FROM\s+sqlite_master\s+"
+            r"WHERE\s+type\s*=\s*'table'\s+AND\s+name\s*=\s*%s",
+            "SELECT table_name FROM information_schema.tables "
+            "WHERE table_schema = 'public' AND table_name = %s",
+            sql, flags=re.IGNORECASE,
+        )
+        # Pattern: SELECT name FROM sqlite_master WHERE type='table'  (list all tables)
+        sql = re.sub(
+            r"SELECT\s+name\s+FROM\s+sqlite_master\s+WHERE\s+type\s*=\s*'table'",
+            "SELECT table_name AS name FROM information_schema.tables "
+            "WHERE table_schema = 'public'",
+            sql, flags=re.IGNORECASE,
+        )
+        # Pattern: SELECT count(*) FROM sqlite_master WHERE type='table'
+        sql = re.sub(
+            r"SELECT\s+count\(\*\)\s+FROM\s+sqlite_master\s+WHERE\s+type\s*=\s*'table'",
+            "SELECT count(*) FROM information_schema.tables "
+            "WHERE table_schema = 'public'",
+            sql, flags=re.IGNORECASE,
+        )
+
+    # 15. json_extract(col, '$.key') → col::jsonb->>'key'
+    #     Handles: json_extract(col, '$.key'), json_extract(col, '$.nested.key')
+    def _replace_json_extract(m):
+        col = m.group(1).strip()
+        path = m.group(2).strip().strip("'\"")
+        # Remove leading '$.' from JSON path
+        path = re.sub(r'^\$\.?', '', path)
+        if '.' in path:
+            # Nested path: $.a.b → col::jsonb->'a'->>'b'
+            parts = path.split('.')
+            chain = "::jsonb"
+            for part in parts[:-1]:
+                chain += f"->'{part}'"
+            chain += f"->>'{parts[-1]}'"
+            return f"{col}{chain}"
+        return f"{col}::jsonb->>'{path}'"
+
+    sql = re.sub(
+        r"\bjson_extract\(\s*([^,]+?)\s*,\s*(['\"][^'\"]+['\"])\s*\)",
+        _replace_json_extract, sql, flags=re.IGNORECASE,
+    )
+
+    # 16. json_array_length(col) → jsonb_array_length(col::jsonb)
+    sql = re.sub(
+        r"\bjson_array_length\(\s*([^)]+)\s*\)",
+        r"jsonb_array_length(\1::jsonb)",
+        sql, flags=re.IGNORECASE,
+    )
 
     return sql
 
