@@ -8577,6 +8577,169 @@ Output ONLY the JSON object. No other text."""
         """Return current participants in an NDC collaborative session."""
         return jsonify({"participants": _ndc_collab.get_participants(design_id)})
 
+    # ── Runbooks ──────────────────────────────────────────────────────────────
+
+    _NDC_RUNBOOK_TRIGGERS = [
+        "link_failure",
+        "routing_loop",
+        "stig_remediation",
+        "bgp_session_recovery",
+        "circuit_outage_triage",
+        "device_unreachable",
+        "ipam_conflict",
+        "ddos_mitigation",
+    ]
+    _NDC_RUNBOOK_SEVERITIES = ["critical", "high", "medium", "low"]
+
+    @bp.route("/runbooks")
+    @nc_login_required
+    def nc_runbooks():
+        """NDC Runbooks — network incident response playbooks."""
+        conn = get_connection()
+        runbooks = [
+            _row_to_dict(r)
+            for r in conn.execute(
+                "SELECT * FROM ndc_runbooks ORDER BY updated_at DESC"
+            ).fetchall()
+        ]
+        topologies = [
+            _row_to_dict(r)
+            for r in conn.execute(
+                "SELECT id, name FROM topologies ORDER BY name"
+            ).fetchall()
+        ]
+        conn.close()
+        for rb in runbooks:
+            try:
+                rb["steps"] = json.loads(rb.get("steps_json") or "[]")
+            except Exception:
+                rb["steps"] = []
+        return render_template(
+            "network/runbooks.html",
+            runbooks=runbooks,
+            topologies=topologies,
+            valid_triggers=_NDC_RUNBOOK_TRIGGERS,
+            valid_severities=_NDC_RUNBOOK_SEVERITIES,
+        )
+
+    @bp.route("/api/runbooks", methods=["GET"])
+    @nc_login_required
+    def nc_api_runbooks_list():
+        """List all NDC runbooks."""
+        conn = get_connection()
+        rows = [
+            _row_to_dict(r)
+            for r in conn.execute(
+                "SELECT * FROM ndc_runbooks ORDER BY updated_at DESC"
+            ).fetchall()
+        ]
+        conn.close()
+        for r in rows:
+            try:
+                r["steps"] = json.loads(r.get("steps_json") or "[]")
+            except Exception:
+                r["steps"] = []
+        return jsonify(rows)
+
+    @bp.route("/api/runbooks", methods=["POST"])
+    @nc_login_required
+    def nc_api_runbooks_create():
+        """Create a new NDC runbook."""
+        body = request.json or {}
+        title = (body.get("title") or "").strip()
+        if not title:
+            return jsonify({"error": "title is required"}), 400
+        trigger = body.get("trigger_event", "link_failure")
+        if trigger not in _NDC_RUNBOOK_TRIGGERS:
+            trigger = "link_failure"
+        severity = body.get("severity", "high")
+        if severity not in _NDC_RUNBOOK_SEVERITIES:
+            severity = "high"
+        rid = str(_uuid.uuid4())
+        now = _now()
+        steps_json = json.dumps(body.get("steps") or [])
+        conn = get_connection()
+        conn.execute(
+            "INSERT INTO ndc_runbooks (id, title, trigger_event, severity, owner, "
+            "topology_id, description, steps_json, classification, created_at, updated_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                rid, title, trigger, severity,
+                body.get("owner", ""), body.get("topology_id") or None,
+                body.get("description", ""), steps_json,
+                body.get("classification", "CUI"), now, now,
+            ),
+        )
+        conn.commit()
+        _audit(conn, "runbook_created", "ndc_runbook", rid, title)
+        conn.close()
+        return jsonify({"id": rid, "status": "created"})
+
+    @bp.route("/api/runbooks/<rb_id>", methods=["GET"])
+    @nc_login_required
+    def nc_api_runbook_get(rb_id):
+        """Get a single NDC runbook by ID."""
+        conn = get_connection()
+        row = conn.execute("SELECT * FROM ndc_runbooks WHERE id=?", (rb_id,)).fetchone()
+        conn.close()
+        if not row:
+            return jsonify({"error": "not found"}), 404
+        rb = _row_to_dict(row)
+        try:
+            rb["steps"] = json.loads(rb.get("steps_json") or "[]")
+        except Exception:
+            rb["steps"] = []
+        return jsonify(rb)
+
+    @bp.route("/api/runbooks/<rb_id>", methods=["PUT"])
+    @nc_login_required
+    def nc_api_runbook_update(rb_id):
+        """Update an existing NDC runbook."""
+        conn = get_connection()
+        row = conn.execute("SELECT id FROM ndc_runbooks WHERE id=?", (rb_id,)).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"error": "not found"}), 404
+        body = request.json or {}
+        now = _now()
+        trigger = body.get("trigger_event", "link_failure")
+        if trigger not in _NDC_RUNBOOK_TRIGGERS:
+            trigger = "link_failure"
+        severity = body.get("severity", "high")
+        if severity not in _NDC_RUNBOOK_SEVERITIES:
+            severity = "high"
+        steps_json = json.dumps(body.get("steps") or [])
+        conn.execute(
+            "UPDATE ndc_runbooks SET title=?, trigger_event=?, severity=?, owner=?, "
+            "topology_id=?, description=?, steps_json=?, classification=?, updated_at=? WHERE id=?",
+            (
+                (body.get("title") or "").strip() or "Untitled",
+                trigger, severity,
+                body.get("owner", ""), body.get("topology_id") or None,
+                body.get("description", ""), steps_json,
+                body.get("classification", "CUI"), now, rb_id,
+            ),
+        )
+        conn.commit()
+        _audit(conn, "runbook_updated", "ndc_runbook", rb_id, body.get("title", ""))
+        conn.close()
+        return jsonify({"status": "updated"})
+
+    @bp.route("/api/runbooks/<rb_id>", methods=["DELETE"])
+    @nc_login_required
+    def nc_api_runbook_delete(rb_id):
+        """Delete an NDC runbook."""
+        conn = get_connection()
+        row = conn.execute("SELECT id FROM ndc_runbooks WHERE id=?", (rb_id,)).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"error": "not found"}), 404
+        conn.execute("DELETE FROM ndc_runbooks WHERE id=?", (rb_id,))
+        conn.commit()
+        _audit(conn, "runbook_deleted", "ndc_runbook", rb_id, rb_id)
+        conn.close()
+        return jsonify({"status": "deleted"})
+
     # ── Done ───────────────────────────────────────────────────────────────
     logger.info("Network Design Canvas Blueprint created (%d routes)", len(bp.deferred_functions))
     return bp

@@ -1311,6 +1311,21 @@ CREATE TABLE IF NOT EXISTS nc_enclave_snippets (
     tags                TEXT DEFAULT '[]',
     created_at          TEXT DEFAULT CURRENT_TIMESTAMP
 );
+
+-- NDC Runbooks: network incident response playbooks
+CREATE TABLE IF NOT EXISTS ndc_runbooks (
+    id              TEXT PRIMARY KEY,
+    title           TEXT NOT NULL,
+    trigger_event   TEXT NOT NULL DEFAULT 'link_failure',
+    severity        TEXT NOT NULL DEFAULT 'high',
+    owner           TEXT,
+    topology_id     TEXT REFERENCES topologies(id),
+    description     TEXT,
+    steps_json      TEXT NOT NULL DEFAULT '[]',
+    classification  TEXT DEFAULT 'CUI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 # ── Template seeds ────────────────────────────────────────────────────────────
