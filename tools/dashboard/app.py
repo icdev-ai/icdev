@@ -248,6 +248,7 @@ _CANVAS_DEFS = [
     ("odc", "ICDEV_ODC_ENABLED", "tools.observability_canvas.blueprint", "create_observability_blueprint"),
     ("ddc", "ICDEV_DDC_ENABLED", "tools.data_canvas.blueprint", "create_data_canvas_blueprint"),
     ("qdc", "ICDEV_QDC_ENABLED", "tools.qdc_canvas.blueprint", "qdc_bp"),
+    ("mdc", "ICDEV_MIGRATION_CANVAS_ENABLED", "tools.migration_canvas.blueprint", "create_migration_blueprint"),
 ]
 
 for _key, _env, _mod, _attr in _CANVAS_DEFS:
@@ -1098,6 +1099,7 @@ def create_app() -> Flask:
             "observability_canvas_enabled": _HAS_OBSERVABILITY_CANVAS,
             "canvas_kg_enabled": _HAS_CANVAS_KG,
             "qdc_enabled": _CANVAS_FLAGS.get("qdc", False),
+            "migration_canvas_enabled": _CANVAS_FLAGS.get("mdc", False),
             "canvas_flags": _CANVAS_FLAGS,
             "airgap_mode": _AIRGAP_MODE,
             "route_module_map": _route_map,
@@ -1300,6 +1302,7 @@ def create_app() -> Flask:
         "odc": "/observability",
         "ddc": "/data",
         "qdc": "/quality",
+        "mdc": "/migration-canvas",
     }
     for _ck, _cbp in _CANVAS_BLUEPRINTS.items():
         try:

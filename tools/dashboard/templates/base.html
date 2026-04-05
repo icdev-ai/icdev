@@ -179,6 +179,20 @@
             </li>
             {% endif %}
 
+            {% if migration_canvas_enabled %}
+            <!-- Migration Design Canvas -->
+            <li class="nav-dropdown">
+                <a href="#" class="{% if '/migration-canvas' in request.path %}active{% endif %}" style="color:#27ae60;font-weight:600;">Migration</a>
+                <ul class="nav-dropdown-menu">
+                    <li><a href="/migration-canvas/">Dashboard</a></li>
+                    <li><a href="/migration-canvas/canvas/new">New Design</a></li>
+                    <li><a href="/migration-canvas/templates">Templates</a></li>
+                    <li><a href="/migration-canvas/assessments">Assessments</a></li>
+                    <li><a href="/migration-canvas/sops">SOPs</a></li>
+                </ul>
+            </li>
+            {% endif %}
+
             {% if boundary_canvas_enabled %}
             <!-- Boundary Design Canvas -->
             <li class="nav-dropdown">

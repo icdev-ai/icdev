@@ -1733,3 +1733,22 @@ All canvases share: separate SQLite DB, Flask Blueprint, YAML config in `args/`,
 | Canvas Health Scanner | tools\canvas\canvas_health_scanner.py | Auto-registered: canvas/canvas_health_scanner.py | --json | JSON |
 | Proposal Generator | tools\oracle\proposal_generator.py | Auto-registered: oracle/proposal_generator.py | --json | JSON |
 | Remediation Lens | tools\oracle\lenses\remediation_lens.py | Auto-registered: lenses/remediation_lens.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Sops | tools\boundary_canvas\sops.py | Auto-registered: boundary_canvas/sops.py | --json | JSON |
+| Sops | tools\observability_canvas\sops.py | Auto-registered: observability_canvas/sops.py | --json | JSON |
+| Sops | tools\pipeline\sops.py | Auto-registered: pipeline/sops.py | --json | JSON |
+| Gate Executor | tools\qdc_canvas\gate_executor.py | Auto-registered: qdc_canvas/gate_executor.py | --json | JSON |
+| Qdc Engine | tools\qdc_canvas\qdc_engine.py | Auto-registered: qdc_canvas/qdc_engine.py | --json | JSON |
+| Sops | tools\security_canvas\sops.py | Auto-registered: security_canvas/sops.py | --json | JSON |
+| E2E Qdc Canvas | tools\testing\e2e_qdc_canvas.py | Auto-registered: testing/e2e_qdc_canvas.py | --json | JSON |
+| Lens Quality | tools\oracle\lenses\lens_quality.py | Auto-registered: lenses/lens_quality.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Migration Engine | tools\migration_canvas\migration_engine.py | Auto-registered: migration_canvas/migration_engine.py | --json | JSON |
