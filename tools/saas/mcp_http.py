@@ -3,8 +3,8 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""ICDEV SaaS -- MCP Streamable HTTP Transport.
+# POC: ICDEV™ System Administrator
+"""ICDEV™ SaaS -- MCP Streamable HTTP Transport.
 
 Implements the MCP Streamable HTTP transport (spec revision 2025-03-26),
 replacing the deprecated HTTP+SSE transport.  All MCP communication flows
@@ -50,14 +50,14 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from flask import Blueprint, Response, g, jsonify, request
+from flask import Blueprint, Response, g, jsonify, request  # noqa: E402
 
 logger = logging.getLogger("saas.mcp_http")
 
 # ---------------------------------------------------------------------------
 # OAuth 2.1 / Elicitation / Tasks — Phase 55, D345-D346
 # ---------------------------------------------------------------------------
-from tools.saas.mcp_oauth import MCPElicitationHandler, MCPOAuthVerifier, MCPTaskManager
+from tools.saas.mcp_oauth import MCPElicitationHandler, MCPOAuthVerifier, MCPTaskManager  # noqa: E402
 
 _oauth_verifier: Optional[MCPOAuthVerifier] = None
 _elicitation_handler = MCPElicitationHandler()
@@ -230,7 +230,7 @@ def _broadcast_to_tenant(tenant_id: str, event_type: str, data: dict) -> None:
 TOOL_REGISTRY = [
     {
         "name": "project_create",
-        "description": "Create a new ICDEV-managed project",
+        "description": "Create a new ICDEV™-managed project",
         "module": "tools.project.project_create",
         "function": "create_project",
         "inputSchema": {

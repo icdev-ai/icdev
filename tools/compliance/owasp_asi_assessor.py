@@ -3,11 +3,11 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """OWASP Top 10 Agentic AI Systems (ASI01-ASI10) Assessor.
 
 Assesses compliance with the OWASP Top 10 Risks for Agentic AI
-Applications. Maps 10 ASI risks to existing ICDEV controls via
+Applications. Maps 10 ASI risks to existing ICDEV™ controls via
 automated checks against DB tables and configuration files.
 
 Pattern: tools/compliance/base_assessor.py (BaseAssessor ABC).
@@ -19,7 +19,6 @@ Usage:
     python tools/compliance/owasp_asi_assessor.py --project-id proj-123 --json
 """
 
-import sqlite3
 import sys
 from pathlib import Path
 from typing import Dict, Optional
@@ -38,13 +37,11 @@ class OWASPASIAssessor(BaseAssessor):
     CATALOG_FILENAME = "owasp_agentic_asi.json"
 
     def get_automated_checks(
-        self,
-        project: Dict,
-        project_dir: Optional[str] = None,
+        self, project: Dict, project_dir: Optional[str] = None,
     ) -> Dict[str, str]:
         """OWASP ASI01-ASI10 automated checks.
 
-        Maps each ASI risk to existing ICDEV controls:
+        Maps each ASI risk to existing ICDEV™ controls:
         - ASI-01 (Goal Hijacking) <- prompt_injection_detector
         - ASI-02 (Tool Abuse) <- mcp_tool_authorizer + tool_chain_validator
         - ASI-03 (Identity Abuse) <- RBAC + agent_trust_scorer
@@ -61,8 +58,7 @@ class OWASPASIAssessor(BaseAssessor):
 
         try:
             if self.db_path.exists():
-                conn = sqlite3.connect(str(self.db_path))
-                conn.row_factory = sqlite3.Row
+                conn = self._get_connection()
                 project_id = project.get("id", "")
 
                 # ASI-01: Goal Hijacking — prompt injection detection active
@@ -117,7 +113,7 @@ class OWASPASIAssessor(BaseAssessor):
                 try:
                     for table in ["ai_telemetry", "memory_consolidation_log"]:
                         rows = conn.execute(
-                            f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = ?",
+                            f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = ?",  # nosec B608 -- table/column names are internal constants, not user input
                             (project_id,),
                         ).fetchone()
                         if rows and rows["cnt"] > 0:
@@ -142,7 +138,7 @@ class OWASPASIAssessor(BaseAssessor):
                 try:
                     for table in ["agent_trust_scores", "atlas_red_team_results"]:
                         rows = conn.execute(
-                            f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = ?",
+                            f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = ?",  # nosec B608 -- table/column names are internal constants, not user input
                             (project_id,),
                         ).fetchone()
                         if rows and rows["cnt"] > 0:
@@ -157,7 +153,7 @@ class OWASPASIAssessor(BaseAssessor):
             if conn:
                 conn.close()
 
-        # File-based checks (config files in project dir or ICDEV base)
+        # File-based checks (config files in project dir or ICDEV™ base)
         check_dirs = [Path(project_dir)] if project_dir else []
         check_dirs.append(BASE_DIR)
 
@@ -177,7 +173,7 @@ class OWASPASIAssessor(BaseAssessor):
                 if agent_config.exists():
                     try:
                         content = agent_config.read_text(encoding="utf-8", errors="ignore").lower()
-                        if "tls" in content or "mtls" in content or "hmac" in content:
+                        if ("tls" in content or "mtls" in content or "hmac" in content):
                             results["ASI-07"] = "satisfied"
                     except Exception:
                         pass

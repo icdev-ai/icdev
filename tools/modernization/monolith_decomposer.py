@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Monolith Decomposition Planning Tool for ICDEV DoD Modernization System.
+"""Monolith Decomposition Planning Tool for ICDEV™ DoD Modernization System.
 
 Analyzes legacy monolithic applications, detects bounded contexts via greedy
 modularity optimization, suggests microservice boundaries, generates ordered
 extraction plans, anti-corruption layers, API facades, effort estimates, and
-persists migration plans/tasks to the ICDEV database.
+persists migration plans/tasks to the ICDEV™ database.
 
 Classification: CUI // SP-CTI
-System: ICDEV Intelligent Certified Development Framework
+System: ICDEV™ Intelligent Certified Development Framework
 NIST: SC-7 (Boundary Protection), SA-8 (Security Engineering Principles)
 """
 
@@ -17,6 +17,7 @@ import json
 import sqlite3
 import sys
 import uuid
+from tools.db.storage import get_connection
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -32,30 +33,16 @@ PATTERNS_PATH = BASE_DIR / "context" / "modernization" / "decomposition_patterns
 # Valid strategy / approach / architecture enums (mirror DB CHECK constraints)
 # ---------------------------------------------------------------------------
 VALID_STRATEGIES = (
-    "rehost",
-    "replatform",
-    "refactor",
-    "rearchitect",
-    "repurchase",
-    "retire",
-    "retain",
-    "hybrid",
+    "rehost", "replatform", "refactor", "rearchitect",
+    "repurchase", "retire", "retain", "hybrid",
 )
 VALID_APPROACHES = (
-    "big_bang",
-    "strangler_fig",
-    "parallel_run",
-    "blue_green",
-    "canary",
-    "phased",
+    "big_bang", "strangler_fig", "parallel_run",
+    "blue_green", "canary", "phased",
 )
 VALID_ARCHITECTURES = (
-    "microservices",
-    "modular_monolith",
-    "serverless",
-    "event_driven",
-    "layered",
-    "hexagonal",
+    "microservices", "modular_monolith", "serverless",
+    "event_driven", "layered", "hexagonal",
 )
 
 # ---------------------------------------------------------------------------
@@ -97,7 +84,6 @@ STRATEGY_TASK_TEMPLATES = {
 # Database helpers
 # ===================================================================
 
-
 def _get_db(db_path=None):
     """Return an sqlite3 connection with Row factory enabled.
 
@@ -105,9 +91,11 @@ def _get_db(db_path=None):
     """
     path = db_path or DB_PATH
     if not Path(path).exists():
-        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+        raise FileNotFoundError(
+            f"Database not found: {path}\n"
+            "Run: python tools/db/init_icdev_db.py"
+        )
+    conn = get_connection(db_path=str(path))
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
@@ -121,7 +109,6 @@ def _gen_id(prefix):
 # ===================================================================
 # Pattern loading
 # ===================================================================
-
 
 def load_decomposition_patterns(patterns_path=None):
     """Load decomposition patterns from the context JSON file.
@@ -144,7 +131,6 @@ def load_decomposition_patterns(patterns_path=None):
 # ===================================================================
 # Bounded-context detection (greedy modularity / simplified Louvain)
 # ===================================================================
-
 
 def _build_adjacency(components, dependencies):
     """Build adjacency list and edge-weight lookup from DB rows.
@@ -233,11 +219,13 @@ def detect_bounded_contexts(app_id, db_path=None):
     conn = _get_db(db_path)
     try:
         components = conn.execute(
-            "SELECT id, name, component_type, qualified_name FROM legacy_components WHERE legacy_app_id = ?",
+            "SELECT id, name, component_type, qualified_name "
+            "FROM legacy_components WHERE legacy_app_id = ?",
             (app_id,),
         ).fetchall()
         dependencies = conn.execute(
-            "SELECT source_component_id, target_component_id, weight FROM legacy_dependencies WHERE legacy_app_id = ?",
+            "SELECT source_component_id, target_component_id, weight "
+            "FROM legacy_dependencies WHERE legacy_app_id = ?",
             (app_id,),
         ).fetchall()
     finally:
@@ -256,17 +244,15 @@ def detect_bounded_contexts(app_id, db_path=None):
         results = []
         for idx, cid in enumerate(comp_ids):
             c = comp_map[cid]
-            results.append(
-                {
-                    "id": f"ctx-{idx}",
-                    "name": f"{c['component_type']}_{c['name']}",
-                    "components": [cid],
-                    "internal_edges": 0,
-                    "external_edges": 0,
-                    "cohesion": 0.0,
-                    "coupling": 0.0,
-                }
-            )
+            results.append({
+                "id": f"ctx-{idx}",
+                "name": f"{c['component_type']}_{c['name']}",
+                "components": [cid],
+                "internal_edges": 0,
+                "external_edges": 0,
+                "cohesion": 0.0,
+                "coupling": 0.0,
+            })
         return results
 
     # Initial clustering: each node in its own cluster
@@ -361,17 +347,15 @@ def detect_bounded_contexts(app_id, db_path=None):
 
         context_name = f"{common_prefix}_{dominant_type}_context"
 
-        results.append(
-            {
-                "id": f"ctx-{idx}",
-                "name": context_name,
-                "components": sorted(members),
-                "internal_edges": internal,
-                "external_edges": external,
-                "cohesion": round(cohesion, 4),
-                "coupling": round(coupling, 4),
-            }
-        )
+        results.append({
+            "id": f"ctx-{idx}",
+            "name": context_name,
+            "components": sorted(members),
+            "internal_edges": internal,
+            "external_edges": external,
+            "cohesion": round(cohesion, 4),
+            "coupling": round(coupling, 4),
+        })
 
     # Sort by size descending
     results.sort(key=lambda x: len(x["components"]), reverse=True)
@@ -381,7 +365,6 @@ def detect_bounded_contexts(app_id, db_path=None):
 # ===================================================================
 # Service boundary suggestion
 # ===================================================================
-
 
 def suggest_service_boundaries(app_id, db_path=None):
     """Suggest microservice boundaries based on bounded contexts.
@@ -404,19 +387,22 @@ def suggest_service_boundaries(app_id, db_path=None):
     try:
         # Load APIs
         apis = conn.execute(
-            "SELECT id, component_id, method, path FROM legacy_apis WHERE legacy_app_id = ?",
+            "SELECT id, component_id, method, path FROM legacy_apis "
+            "WHERE legacy_app_id = ?",
             (app_id,),
         ).fetchall()
 
         # Load DB schemas (distinct tables per component via qualified_name match)
         db_schemas = conn.execute(
-            "SELECT id, table_name, column_name FROM legacy_db_schemas WHERE legacy_app_id = ?",
+            "SELECT id, table_name, column_name FROM legacy_db_schemas "
+            "WHERE legacy_app_id = ?",
             (app_id,),
         ).fetchall()
 
         # Load components for table ownership heuristic
         components = conn.execute(
-            "SELECT id, name, qualified_name FROM legacy_components WHERE legacy_app_id = ?",
+            "SELECT id, name, qualified_name FROM legacy_components "
+            "WHERE legacy_app_id = ?",
             (app_id,),
         ).fetchall()
     finally:
@@ -425,13 +411,11 @@ def suggest_service_boundaries(app_id, db_path=None):
     # Build lookup: component_id -> set of API paths
     comp_apis = defaultdict(list)
     for api in apis:
-        comp_apis[api["component_id"]].append(
-            {
-                "id": api["id"],
-                "method": api["method"],
-                "path": api["path"],
-            }
-        )
+        comp_apis[api["component_id"]].append({
+            "id": api["id"],
+            "method": api["method"],
+            "path": api["path"],
+        })
 
     # Build lookup: component name (lower) -> set of table names
     # Heuristic: a component "owns" tables whose name includes the component name
@@ -476,27 +460,30 @@ def suggest_service_boundaries(app_id, db_path=None):
         # Sufficient size
         sufficient_size = 1.0 if len(members) >= 2 else 0.0
 
-        readiness = has_apis * 0.3 + owns_data * 0.3 + low_coupling * 0.2 + sufficient_size * 0.2
+        readiness = (
+            has_apis * 0.3
+            + owns_data * 0.3
+            + low_coupling * 0.2
+            + sufficient_size * 0.2
+        )
 
         # Generate service name from context name
         service_name = ctx["name"].replace("_context", "_service")
 
-        boundaries.append(
-            {
-                "service_name": service_name,
-                "context_id": ctx["id"],
-                "components": ctx["components"],
-                "apis": context_apis,
-                "tables": sorted(context_tables),
-                "readiness_score": round(readiness, 4),
-                "coupling_ratio": round(coupling_ratio, 4),
-                "has_apis": bool(has_apis),
-                "owns_data": bool(owns_data),
-                "low_coupling": bool(low_coupling),
-                "sufficient_size": bool(sufficient_size),
-                "extraction_order": 0,  # filled below
-            }
-        )
+        boundaries.append({
+            "service_name": service_name,
+            "context_id": ctx["id"],
+            "components": ctx["components"],
+            "apis": context_apis,
+            "tables": sorted(context_tables),
+            "readiness_score": round(readiness, 4),
+            "coupling_ratio": round(coupling_ratio, 4),
+            "has_apis": bool(has_apis),
+            "owns_data": bool(owns_data),
+            "low_coupling": bool(low_coupling),
+            "sufficient_size": bool(sufficient_size),
+            "extraction_order": 0,  # filled below
+        })
 
     # Sort by coupling_ratio ascending (least coupled first)
     boundaries.sort(key=lambda b: b["coupling_ratio"])
@@ -509,7 +496,6 @@ def suggest_service_boundaries(app_id, db_path=None):
 # ===================================================================
 # Decomposition plan generation
 # ===================================================================
-
 
 def generate_decomposition_plan(app_id, target_architecture="microservices", db_path=None):
     """Generate an ordered decomposition extraction plan.
@@ -538,17 +524,15 @@ def generate_decomposition_plan(app_id, target_architecture="microservices", db_
 
     # --- Phase 0: Analysis & shared kernel ---
     phase0_tasks = []
-    phase0_tasks.append(
-        {
-            "task_id": f"decomp-task-{task_counter}",
-            "task_type": "analyze",
-            "title": "Analyze monolith structure and dependency graph",
-            "description": "Map all components, dependencies, APIs, and DB schemas. "
-            "Identify shared utilities used across multiple bounded contexts.",
-            "priority": "critical",
-            "estimated_hours": 8,
-        }
-    )
+    phase0_tasks.append({
+        "task_id": f"decomp-task-{task_counter}",
+        "task_type": "analyze",
+        "title": "Analyze monolith structure and dependency graph",
+        "description": "Map all components, dependencies, APIs, and DB schemas. "
+                       "Identify shared utilities used across multiple bounded contexts.",
+        "priority": "critical",
+        "estimated_hours": 8,
+    })
     task_counter += 1
 
     # Identify shared-kernel candidates: components referenced by multiple contexts
@@ -556,34 +540,31 @@ def generate_decomposition_plan(app_id, target_architecture="microservices", db_
     for b in boundaries:
         for cid in b["components"]:
             comp_to_contexts[cid].append(b["service_name"])
-    shared_kernel_comps = [cid for cid, ctxs in comp_to_contexts.items() if len(ctxs) > 1]
+    shared_kernel_comps = [
+        cid for cid, ctxs in comp_to_contexts.items() if len(ctxs) > 1
+    ]
 
     if shared_kernel_comps:
-        phase0_tasks.append(
-            {
-                "task_id": f"decomp-task-{task_counter}",
-                "task_type": "decompose",
-                "title": "Extract shared kernel library",
-                "description": (
-                    f"Extract {len(shared_kernel_comps)} shared components into a "
-                    "versioned shared kernel library with semantic versioning. "
-                    "Components: "
-                    + ", ".join(shared_kernel_comps[:10])
-                    + ("..." if len(shared_kernel_comps) > 10 else "")
-                ),
-                "priority": "high",
-                "estimated_hours": max(4, len(shared_kernel_comps) * 2),
-            }
-        )
+        phase0_tasks.append({
+            "task_id": f"decomp-task-{task_counter}",
+            "task_type": "decompose",
+            "title": "Extract shared kernel library",
+            "description": (
+                f"Extract {len(shared_kernel_comps)} shared components into a "
+                "versioned shared kernel library with semantic versioning. "
+                "Components: " + ", ".join(shared_kernel_comps[:10])
+                + ("..." if len(shared_kernel_comps) > 10 else "")
+            ),
+            "priority": "high",
+            "estimated_hours": max(4, len(shared_kernel_comps) * 2),
+        })
         task_counter += 1
 
-    plan["phases"].append(
-        {
-            "phase": 0,
-            "name": "Analysis & Shared Kernel Extraction",
-            "tasks": phase0_tasks,
-        }
-    )
+    plan["phases"].append({
+        "phase": 0,
+        "name": "Analysis & Shared Kernel Extraction",
+        "tasks": phase0_tasks,
+    })
 
     # --- Phases 1..N: Service extraction (ordered) ---
     for boundary in boundaries:
@@ -592,191 +573,165 @@ def generate_decomposition_plan(app_id, target_architecture="microservices", db_
         order = boundary["extraction_order"]
 
         # Analyze
-        phase_tasks.append(
-            {
-                "task_id": f"decomp-task-{task_counter}",
-                "task_type": "analyze",
-                "title": f"Analyze {svc} boundary components",
-                "description": f"Deep analysis of {len(boundary['components'])} components "
-                f"in {svc}. Readiness score: {boundary['readiness_score']}.",
-                "priority": "high",
-                "estimated_hours": 4,
-            }
-        )
+        phase_tasks.append({
+            "task_id": f"decomp-task-{task_counter}",
+            "task_type": "analyze",
+            "title": f"Analyze {svc} boundary components",
+            "description": f"Deep analysis of {len(boundary['components'])} components "
+                           f"in {svc}. Readiness score: {boundary['readiness_score']}.",
+            "priority": "high",
+            "estimated_hours": 4,
+        })
         task_counter += 1
 
         # Create API
         if boundary["apis"]:
-            phase_tasks.append(
-                {
-                    "task_id": f"decomp-task-{task_counter}",
-                    "task_type": "create_api",
-                    "title": f"Define API contracts for {svc}",
-                    "description": f"Define OpenAPI spec for {len(boundary['apis'])} endpoints migrating to {svc}.",
-                    "priority": "high",
-                    "estimated_hours": 6,
-                }
-            )
+            phase_tasks.append({
+                "task_id": f"decomp-task-{task_counter}",
+                "task_type": "create_api",
+                "title": f"Define API contracts for {svc}",
+                "description": f"Define OpenAPI spec for {len(boundary['apis'])} endpoints "
+                               f"migrating to {svc}.",
+                "priority": "high",
+                "estimated_hours": 6,
+            })
             task_counter += 1
 
         # Create ACL
         if boundary["coupling_ratio"] > 0.0:
-            phase_tasks.append(
-                {
-                    "task_id": f"decomp-task-{task_counter}",
-                    "task_type": "create_acl",
-                    "title": f"Create anti-corruption layer for {svc}",
-                    "description": f"Build adapter layer to translate between legacy and "
-                    f"{svc} domain models. Coupling ratio: "
-                    f"{boundary['coupling_ratio']}.",
-                    "priority": "high",
-                    "estimated_hours": 8,
-                }
-            )
+            phase_tasks.append({
+                "task_id": f"decomp-task-{task_counter}",
+                "task_type": "create_acl",
+                "title": f"Create anti-corruption layer for {svc}",
+                "description": f"Build adapter layer to translate between legacy and "
+                               f"{svc} domain models. Coupling ratio: "
+                               f"{boundary['coupling_ratio']}.",
+                "priority": "high",
+                "estimated_hours": 8,
+            })
             task_counter += 1
 
         # Extract service
-        phase_tasks.append(
-            {
-                "task_id": f"decomp-task-{task_counter}",
-                "task_type": "extract_service",
-                "title": f"Extract {svc} from monolith",
-                "description": f"Move {len(boundary['components'])} components into "
-                f"standalone {target_architecture} service with its own "
-                f"build and deploy pipeline.",
-                "priority": "critical",
-                "estimated_hours": max(8, len(boundary["components"]) * 3),
-            }
-        )
+        phase_tasks.append({
+            "task_id": f"decomp-task-{task_counter}",
+            "task_type": "extract_service",
+            "title": f"Extract {svc} from monolith",
+            "description": f"Move {len(boundary['components'])} components into "
+                           f"standalone {target_architecture} service with its own "
+                           f"build and deploy pipeline.",
+            "priority": "critical",
+            "estimated_hours": max(8, len(boundary["components"]) * 3),
+        })
         task_counter += 1
 
         # Database migration if service owns tables
         if boundary["tables"]:
-            phase_tasks.append(
-                {
-                    "task_id": f"decomp-task-{task_counter}",
-                    "task_type": "migrate_schema",
-                    "title": f"Migrate database schema for {svc}",
-                    "description": f"Isolate {len(boundary['tables'])} tables into "
-                    f"dedicated database for {svc}: "
-                    + ", ".join(boundary["tables"][:5])
-                    + ("..." if len(boundary["tables"]) > 5 else ""),
-                    "priority": "high",
-                    "estimated_hours": max(4, len(boundary["tables"]) * 2),
-                }
-            )
+            phase_tasks.append({
+                "task_id": f"decomp-task-{task_counter}",
+                "task_type": "migrate_schema",
+                "title": f"Migrate database schema for {svc}",
+                "description": f"Isolate {len(boundary['tables'])} tables into "
+                               f"dedicated database for {svc}: "
+                               + ", ".join(boundary["tables"][:5])
+                               + ("..." if len(boundary["tables"]) > 5 else ""),
+                "priority": "high",
+                "estimated_hours": max(4, len(boundary["tables"]) * 2),
+            })
             task_counter += 1
 
         # Generate tests
-        phase_tasks.append(
-            {
-                "task_id": f"decomp-task-{task_counter}",
-                "task_type": "generate_test",
-                "title": f"Generate integration tests for {svc}",
-                "description": f"Create BDD/TDD test suites verifying {svc} correctness "
-                f"against legacy behavior (contract tests + regression).",
-                "priority": "high",
-                "estimated_hours": 6,
-            }
-        )
+        phase_tasks.append({
+            "task_id": f"decomp-task-{task_counter}",
+            "task_type": "generate_test",
+            "title": f"Generate integration tests for {svc}",
+            "description": f"Create BDD/TDD test suites verifying {svc} correctness "
+                           f"against legacy behavior (contract tests + regression).",
+            "priority": "high",
+            "estimated_hours": 6,
+        })
         task_counter += 1
 
         # Validate
-        phase_tasks.append(
-            {
-                "task_id": f"decomp-task-{task_counter}",
-                "task_type": "validate",
-                "title": f"Validate {svc} extraction",
-                "description": f"Run parallel validation comparing legacy and extracted "
-                f"{svc} responses. Verify data consistency and performance.",
-                "priority": "critical",
-                "estimated_hours": 4,
-            }
-        )
+        phase_tasks.append({
+            "task_id": f"decomp-task-{task_counter}",
+            "task_type": "validate",
+            "title": f"Validate {svc} extraction",
+            "description": f"Run parallel validation comparing legacy and extracted "
+                           f"{svc} responses. Verify data consistency and performance.",
+            "priority": "critical",
+            "estimated_hours": 4,
+        })
         task_counter += 1
 
-        plan["phases"].append(
-            {
-                "phase": order,
-                "name": f"Extract {svc}",
-                "service": svc,
-                "readiness_score": boundary["readiness_score"],
-                "tasks": phase_tasks,
-            }
-        )
+        plan["phases"].append({
+            "phase": order,
+            "name": f"Extract {svc}",
+            "service": svc,
+            "readiness_score": boundary["readiness_score"],
+            "tasks": phase_tasks,
+        })
 
     # --- Final phase: Cross-service ACL + cutover ---
     final_tasks = []
     # ACL tasks between every pair of services that share edges
     for i, b1 in enumerate(boundaries):
-        for b2 in boundaries[i + 1 :]:
+        for b2 in boundaries[i + 1:]:
             # Check if they share external edges (simplified: both have coupling)
             if b1["coupling_ratio"] > 0 and b2["coupling_ratio"] > 0:
-                final_tasks.append(
-                    {
-                        "task_id": f"decomp-task-{task_counter}",
-                        "task_type": "create_acl",
-                        "title": f"ACL: {b1['service_name']} <-> {b2['service_name']}",
-                        "description": "Create cross-service anti-corruption layer adapters "
-                        "for communication between extracted services.",
-                        "priority": "medium",
-                        "estimated_hours": 6,
-                    }
-                )
+                final_tasks.append({
+                    "task_id": f"decomp-task-{task_counter}",
+                    "task_type": "create_acl",
+                    "title": f"ACL: {b1['service_name']} <-> {b2['service_name']}",
+                    "description": "Create cross-service anti-corruption layer adapters "
+                                   "for communication between extracted services.",
+                    "priority": "medium",
+                    "estimated_hours": 6,
+                })
                 task_counter += 1
 
-    final_tasks.append(
-        {
-            "task_id": f"decomp-task-{task_counter}",
-            "task_type": "validate",
-            "title": "End-to-end system validation",
-            "description": "Full integration test of all extracted services with ACLs, "
-            "API gateway routing, and database isolation verified.",
-            "priority": "critical",
-            "estimated_hours": 12,
-        }
-    )
+    final_tasks.append({
+        "task_id": f"decomp-task-{task_counter}",
+        "task_type": "validate",
+        "title": "End-to-end system validation",
+        "description": "Full integration test of all extracted services with ACLs, "
+                       "API gateway routing, and database isolation verified.",
+        "priority": "critical",
+        "estimated_hours": 12,
+    })
     task_counter += 1
 
-    final_tasks.append(
-        {
-            "task_id": f"decomp-task-{task_counter}",
-            "task_type": "cutover",
-            "title": "Production cutover and legacy decommission",
-            "description": "Switch production traffic to modern services via strangler fig "
-            "facade. Decommission legacy monolith after validation period.",
-            "priority": "critical",
-            "estimated_hours": 8,
-        }
-    )
+    final_tasks.append({
+        "task_id": f"decomp-task-{task_counter}",
+        "task_type": "cutover",
+        "title": "Production cutover and legacy decommission",
+        "description": "Switch production traffic to modern services via strangler fig "
+                       "facade. Decommission legacy monolith after validation period.",
+        "priority": "critical",
+        "estimated_hours": 8,
+    })
     task_counter += 1
 
-    plan["phases"].append(
-        {
-            "phase": len(boundaries) + 1,
-            "name": "Cross-Service Integration & Cutover",
-            "tasks": final_tasks,
-        }
-    )
+    plan["phases"].append({
+        "phase": len(boundaries) + 1,
+        "name": "Cross-Service Integration & Cutover",
+        "tasks": final_tasks,
+    })
 
     # Summary
-    total_hours = sum(t["estimated_hours"] for phase in plan["phases"] for t in phase["tasks"])
+    total_hours = sum(
+        t["estimated_hours"]
+        for phase in plan["phases"]
+        for t in phase["tasks"]
+    )
     plan["summary"] = {
         "total_phases": len(plan["phases"]),
         "total_tasks": task_counter,
         "total_estimated_hours": total_hours,
         "shared_kernel_components": len(shared_kernel_comps),
         "applicable_patterns": [
-            pid
-            for pid in patterns
-            if pid
-            in (
-                "ddd_bounded_contexts",
-                "strangler_fig",
-                "anti_corruption_layer",
-                "database_per_service",
-                "shared_kernel",
-            )
+            pid for pid in patterns
+            if pid in ("ddd_bounded_contexts", "strangler_fig", "anti_corruption_layer",
+                       "database_per_service", "shared_kernel")
         ],
     }
     return plan
@@ -785,7 +740,6 @@ def generate_decomposition_plan(app_id, target_architecture="microservices", db_
 # ===================================================================
 # Anti-corruption layer generation
 # ===================================================================
-
 
 def generate_anti_corruption_layer(app_id, service_boundary, db_path=None):
     """Generate ACL interface skeletons for a service boundary.
@@ -809,7 +763,7 @@ def generate_anti_corruption_layer(app_id, service_boundary, db_path=None):
 
         # Cross-boundary outgoing deps
         outgoing = conn.execute(
-            f"SELECT d.source_component_id, d.target_component_id, "
+            f"SELECT d.source_component_id, d.target_component_id, "  # nosec B608 -- table/column names are internal constants, not user input
             f"d.dependency_type, d.weight, "
             f"cs.name AS source_name, ct.name AS target_name, "
             f"ct.qualified_name AS target_qualified "
@@ -824,7 +778,7 @@ def generate_anti_corruption_layer(app_id, service_boundary, db_path=None):
 
         # Cross-boundary incoming deps
         incoming = conn.execute(
-            f"SELECT d.source_component_id, d.target_component_id, "
+            f"SELECT d.source_component_id, d.target_component_id, "  # nosec B608 -- table/column names are internal constants, not user input
             f"d.dependency_type, d.weight, "
             f"cs.name AS source_name, ct.name AS target_name, "
             f"cs.qualified_name AS source_qualified "
@@ -877,16 +831,14 @@ def generate_anti_corruption_layer(app_id, service_boundary, db_path=None):
         methods = sorted(set(methods))
 
         adapter_name = f"{svc_name}To{_to_pascal(target_name)}Adapter"
-        interfaces.append(
-            {
-                "name": adapter_name,
-                "methods": methods,
-                "legacy_side": target_qual,
-                "modern_side": f"{svc_name}.adapters.{adapter_name}",
-                "dependency_types": sorted(set(dep_types)),
-                "direction": "outgoing",
-            }
-        )
+        interfaces.append({
+            "name": adapter_name,
+            "methods": methods,
+            "legacy_side": target_qual,
+            "modern_side": f"{svc_name}.adapters.{adapter_name}",
+            "dependency_types": sorted(set(dep_types)),
+            "direction": "outgoing",
+        })
 
     # Group incoming by source component
     incoming_grouped = defaultdict(list)
@@ -912,16 +864,14 @@ def generate_anti_corruption_layer(app_id, service_boundary, db_path=None):
         methods = sorted(set(methods))
 
         adapter_name = f"{_to_pascal(source_name)}To{svc_name}Adapter"
-        interfaces.append(
-            {
-                "name": adapter_name,
-                "methods": methods,
-                "legacy_side": source_qual,
-                "modern_side": f"{svc_name}.adapters.{adapter_name}",
-                "dependency_types": sorted(set(dep_types)),
-                "direction": "incoming",
-            }
-        )
+        interfaces.append({
+            "name": adapter_name,
+            "methods": methods,
+            "legacy_side": source_qual,
+            "modern_side": f"{svc_name}.adapters.{adapter_name}",
+            "dependency_types": sorted(set(dep_types)),
+            "direction": "incoming",
+        })
 
     return {
         "service": svc_name,
@@ -933,13 +883,15 @@ def generate_anti_corruption_layer(app_id, service_boundary, db_path=None):
 
 def _to_pascal(name):
     """Convert a snake_case or kebab-case name to PascalCase."""
-    return "".join(part.capitalize() for part in name.replace("-", "_").split("_"))
+    return "".join(
+        part.capitalize()
+        for part in name.replace("-", "_").split("_")
+    )
 
 
 # ===================================================================
 # API facade / gateway routing generation
 # ===================================================================
-
 
 def generate_api_facade(app_id, service_boundary=None, db_path=None):
     """Generate API facade routing configuration.
@@ -952,12 +904,16 @@ def generate_api_facade(app_id, service_boundary=None, db_path=None):
     Returns:
         {routes: [{path, method, service, legacy_path}], config: {...}}
     """
-    boundaries = [service_boundary] if service_boundary else suggest_service_boundaries(app_id, db_path)
+    boundaries = (
+        [service_boundary] if service_boundary
+        else suggest_service_boundaries(app_id, db_path)
+    )
 
     conn = _get_db(db_path)
     try:
         all_apis = conn.execute(
-            "SELECT id, component_id, method, path FROM legacy_apis WHERE legacy_app_id = ?",
+            "SELECT id, component_id, method, path FROM legacy_apis "
+            "WHERE legacy_app_id = ?",
             (app_id,),
         ).fetchall()
     finally:
@@ -979,27 +935,23 @@ def generate_api_facade(app_id, service_boundary=None, db_path=None):
         method = api["method"]
 
         if service:
-            routes.append(
-                {
-                    "path": path,
-                    "method": method,
-                    "service": service,
-                    "legacy_path": path,
-                }
-            )
+            routes.append({
+                "path": path,
+                "method": method,
+                "service": service,
+                "legacy_path": path,
+            })
             # Extract first path segment as prefix
             parts = [p for p in path.split("/") if p]
             if parts:
                 service_prefixes[service].add(f"/{parts[0]}")
         else:
-            unrouted.append(
-                {
-                    "path": path,
-                    "method": method,
-                    "service": "legacy_monolith",
-                    "legacy_path": path,
-                }
-            )
+            unrouted.append({
+                "path": path,
+                "method": method,
+                "service": "legacy_monolith",
+                "legacy_path": path,
+            })
 
     # Build prefix routing config
     prefix_routing = {}
@@ -1027,7 +979,6 @@ def generate_api_facade(app_id, service_boundary=None, db_path=None):
 # Effort estimation
 # ===================================================================
 
-
 def estimate_decomposition_effort(app_id, db_path=None):
     """Estimate decomposition effort in hours per service.
 
@@ -1048,7 +999,8 @@ def estimate_decomposition_effort(app_id, db_path=None):
     conn = _get_db(db_path)
     try:
         components = conn.execute(
-            "SELECT id, loc, cyclomatic_complexity FROM legacy_components WHERE legacy_app_id = ?",
+            "SELECT id, loc, cyclomatic_complexity FROM legacy_components "
+            "WHERE legacy_app_id = ?",
             (app_id,),
         ).fetchall()
     finally:
@@ -1062,8 +1014,13 @@ def estimate_decomposition_effort(app_id, db_path=None):
     for boundary in boundaries:
         members = boundary["components"]
         total_loc = sum(comp_data.get(m, {}).get("loc", 0) or 0 for m in members)
-        complexities = [comp_data.get(m, {}).get("cyclomatic_complexity", 0) or 0 for m in members]
-        avg_complexity = sum(complexities) / len(complexities) if complexities else 1.0
+        complexities = [
+            comp_data.get(m, {}).get("cyclomatic_complexity", 0) or 0
+            for m in members
+        ]
+        avg_complexity = (
+            sum(complexities) / len(complexities) if complexities else 1.0
+        )
 
         base_hours = total_loc / 15.0
         complexity_factor = max(1.0, avg_complexity / 5.0)
@@ -1079,22 +1036,20 @@ def estimate_decomposition_effort(app_id, db_path=None):
 
         total = adjusted_hours + acl_overhead + testing_hours
 
-        service_estimates.append(
-            {
-                "service_name": boundary["service_name"],
-                "extraction_order": boundary["extraction_order"],
-                "component_count": len(members),
-                "total_loc": total_loc,
-                "avg_complexity": round(avg_complexity, 2),
-                "base_hours": round(base_hours, 1),
-                "complexity_factor": round(complexity_factor, 2),
-                "adjusted_hours": round(adjusted_hours, 1),
-                "acl_interfaces": acl_interface_count,
-                "acl_overhead_hours": round(acl_overhead, 1),
-                "testing_hours": round(testing_hours, 1),
-                "total_hours": round(total, 1),
-            }
-        )
+        service_estimates.append({
+            "service_name": boundary["service_name"],
+            "extraction_order": boundary["extraction_order"],
+            "component_count": len(members),
+            "total_loc": total_loc,
+            "avg_complexity": round(avg_complexity, 2),
+            "base_hours": round(base_hours, 1),
+            "complexity_factor": round(complexity_factor, 2),
+            "adjusted_hours": round(adjusted_hours, 1),
+            "acl_interfaces": acl_interface_count,
+            "acl_overhead_hours": round(acl_overhead, 1),
+            "testing_hours": round(testing_hours, 1),
+            "total_hours": round(total, 1),
+        })
         grand_total += total
 
     # FTE-months (assuming 160 hours/month)
@@ -1119,7 +1074,6 @@ def estimate_decomposition_effort(app_id, db_path=None):
 # Migration plan persistence
 # ===================================================================
 
-
 def create_migration_plan(
     project_id,
     app_id,
@@ -1131,7 +1085,7 @@ def create_migration_plan(
     approach="strangler_fig",
     db_path=None,
 ):
-    """Create a migration plan with tasks in the ICDEV database.
+    """Create a migration plan with tasks in the ICDEV™ database.
 
     Generates appropriate tasks based on strategy:
         rehost      — containerize, deploy
@@ -1144,11 +1098,17 @@ def create_migration_plan(
     Returns the plan dict with all tasks.
     """
     if strategy not in VALID_STRATEGIES:
-        raise ValueError(f"Invalid strategy '{strategy}'. Must be one of: {VALID_STRATEGIES}")
+        raise ValueError(
+            f"Invalid strategy '{strategy}'. Must be one of: {VALID_STRATEGIES}"
+        )
     if approach not in VALID_APPROACHES:
-        raise ValueError(f"Invalid approach '{approach}'. Must be one of: {VALID_APPROACHES}")
+        raise ValueError(
+            f"Invalid approach '{approach}'. Must be one of: {VALID_APPROACHES}"
+        )
     if target_arch and target_arch not in VALID_ARCHITECTURES:
-        raise ValueError(f"Invalid architecture '{target_arch}'. Must be one of: {VALID_ARCHITECTURES}")
+        raise ValueError(
+            f"Invalid architecture '{target_arch}'. Must be one of: {VALID_ARCHITECTURES}"
+        )
 
     conn = _get_db(db_path)
     try:
@@ -1177,21 +1137,19 @@ def create_migration_plan(
                 for dtask in phase.get("tasks", []):
                     task_id = _gen_id("mtask-")
                     deps = json.dumps([prev_task_id] if prev_task_id else [])
-                    tasks.append(
-                        {
-                            "id": task_id,
-                            "plan_id": plan_id,
-                            "legacy_component_id": None,
-                            "task_type": dtask["task_type"],
-                            "title": dtask["title"],
-                            "description": dtask.get("description", ""),
-                            "priority": dtask.get("priority", "medium"),
-                            "status": "pending",
-                            "estimated_hours": dtask.get("estimated_hours", 4),
-                            "dependencies": deps,
-                            "created_at": now,
-                        }
-                    )
+                    tasks.append({
+                        "id": task_id,
+                        "plan_id": plan_id,
+                        "legacy_component_id": None,
+                        "task_type": dtask["task_type"],
+                        "title": dtask["title"],
+                        "description": dtask.get("description", ""),
+                        "priority": dtask.get("priority", "medium"),
+                        "status": "pending",
+                        "estimated_hours": dtask.get("estimated_hours", 4),
+                        "dependencies": deps,
+                        "created_at": now,
+                    })
                     prev_task_id = task_id
                     task_order += 1
         else:
@@ -1218,21 +1176,19 @@ def create_migration_plan(
                             strategy=strategy,
                         )
                         deps = json.dumps([prev_task_id] if prev_task_id else [])
-                        tasks.append(
-                            {
-                                "id": task_id,
-                                "plan_id": plan_id,
-                                "legacy_component_id": comp["id"],
-                                "task_type": ttype,
-                                "title": title,
-                                "description": f"{strategy} task for component {comp['name']}",
-                                "priority": priority,
-                                "status": "pending",
-                                "estimated_hours": est_hours,
-                                "dependencies": deps,
-                                "created_at": now,
-                            }
-                        )
+                        tasks.append({
+                            "id": task_id,
+                            "plan_id": plan_id,
+                            "legacy_component_id": comp["id"],
+                            "task_type": ttype,
+                            "title": title,
+                            "description": f"{strategy} task for component {comp['name']}",
+                            "priority": priority,
+                            "status": "pending",
+                            "estimated_hours": est_hours,
+                            "dependencies": deps,
+                            "created_at": now,
+                        })
                         prev_task_id = task_id
             else:
                 # No components found — create plan-level tasks
@@ -1240,21 +1196,19 @@ def create_migration_plan(
                     task_id = _gen_id("mtask-")
                     title = title_tpl.format(name=app_name, strategy=strategy)
                     deps = json.dumps([prev_task_id] if prev_task_id else [])
-                    tasks.append(
-                        {
-                            "id": task_id,
-                            "plan_id": plan_id,
-                            "legacy_component_id": None,
-                            "task_type": ttype,
-                            "title": title,
-                            "description": f"{strategy} task for application {app_name}",
-                            "priority": priority,
-                            "status": "pending",
-                            "estimated_hours": est_hours,
-                            "dependencies": deps,
-                            "created_at": now,
-                        }
-                    )
+                    tasks.append({
+                        "id": task_id,
+                        "plan_id": plan_id,
+                        "legacy_component_id": None,
+                        "task_type": ttype,
+                        "title": title,
+                        "description": f"{strategy} task for application {app_name}",
+                        "priority": priority,
+                        "status": "pending",
+                        "estimated_hours": est_hours,
+                        "dependencies": deps,
+                        "created_at": now,
+                    })
                     prev_task_id = task_id
 
         total_estimated = sum(t["estimated_hours"] for t in tasks)
@@ -1268,19 +1222,10 @@ def create_migration_plan(
             "created_at, updated_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?)",
             (
-                plan_id,
-                app_id,
-                plan_name,
-                strategy,
-                target_lang,
-                target_framework,
-                target_db,
-                target_arch,
-                approach,
-                len(tasks),
-                total_estimated,
-                now,
-                now,
+                plan_id, app_id, plan_name, strategy,
+                target_lang, target_framework, target_db,
+                target_arch, approach,
+                len(tasks), total_estimated, now, now,
             ),
         )
 
@@ -1293,17 +1238,10 @@ def create_migration_plan(
                 "dependencies, created_at) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
-                    t["id"],
-                    t["plan_id"],
-                    t["legacy_component_id"],
-                    t["task_type"],
-                    t["title"],
-                    t["description"],
-                    t["priority"],
-                    t["status"],
-                    t["estimated_hours"],
-                    t["dependencies"],
-                    t["created_at"],
+                    t["id"], t["plan_id"], t["legacy_component_id"],
+                    t["task_type"], t["title"], t["description"],
+                    t["priority"], t["status"], t["estimated_hours"],
+                    t["dependencies"], t["created_at"],
                 ),
             )
 
@@ -1334,7 +1272,6 @@ def create_migration_plan(
 # ===================================================================
 # CLI
 # ===================================================================
-
 
 def _format_output(data, as_json=False):
     """Format output for terminal or JSON."""
@@ -1371,7 +1308,7 @@ def _pretty_print(data, indent=0):
 def main():
     """CLI entry point for monolith decomposition planning."""
     parser = argparse.ArgumentParser(
-        description="CUI // SP-CTI — ICDEV Monolith Decomposition Planner",
+        description="CUI // SP-CTI — ICDEV™ Monolith Decomposition Planner",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Examples:\n"
@@ -1394,43 +1331,35 @@ def main():
     )
 
     parser.add_argument(
-        "--app-id",
-        required=True,
+        "--app-id", required=True,
         help="Legacy application ID (from legacy_applications table)",
     )
     parser.add_argument(
-        "--detect-contexts",
-        action="store_true",
+        "--detect-contexts", action="store_true",
         help="Detect bounded contexts using greedy modularity optimization",
     )
     parser.add_argument(
-        "--suggest-boundaries",
-        action="store_true",
+        "--suggest-boundaries", action="store_true",
         help="Suggest microservice service boundaries",
     )
     parser.add_argument(
-        "--generate-plan",
-        action="store_true",
+        "--generate-plan", action="store_true",
         help="Generate a decomposition plan (does NOT persist to DB)",
     )
     parser.add_argument(
-        "--generate-acl",
-        action="store_true",
+        "--generate-acl", action="store_true",
         help="Generate anti-corruption layer interface skeletons",
     )
     parser.add_argument(
-        "--generate-facade",
-        action="store_true",
+        "--generate-facade", action="store_true",
         help="Generate API facade/gateway routing configuration",
     )
     parser.add_argument(
-        "--estimate-effort",
-        action="store_true",
+        "--estimate-effort", action="store_true",
         help="Estimate decomposition effort in hours per service",
     )
     parser.add_argument(
-        "--create-plan",
-        action="store_true",
+        "--create-plan", action="store_true",
         help="Create and persist a migration plan to the database",
     )
     parser.add_argument(
@@ -1468,15 +1397,11 @@ def main():
         help="Migration approach (default: strangler_fig)",
     )
     parser.add_argument(
-        "--service-index",
-        type=int,
-        default=0,
+        "--service-index", type=int, default=0,
         help="Service boundary index for --generate-acl / --generate-facade (default: 0)",
     )
     parser.add_argument(
-        "--json",
-        action="store_true",
-        dest="output_json",
+        "--json", action="store_true", dest="output_json",
         help="Output as JSON",
     )
     parser.add_argument(
@@ -1489,12 +1414,9 @@ def main():
 
     # Ensure at least one action is requested
     actions = [
-        args.detect_contexts,
-        args.suggest_boundaries,
-        args.generate_plan,
-        args.generate_acl,
-        args.generate_facade,
-        args.estimate_effort,
+        args.detect_contexts, args.suggest_boundaries,
+        args.generate_plan, args.generate_acl,
+        args.generate_facade, args.estimate_effort,
         args.create_plan,
     ]
     if not any(actions):
@@ -1507,27 +1429,21 @@ def main():
     try:
         if args.detect_contexts:
             result = detect_bounded_contexts(args.app_id, db_path)
-            print(
-                _format_output(
-                    {"bounded_contexts": result, "count": len(result)},
-                    args.output_json,
-                )
-            )
+            print(_format_output(
+                {"bounded_contexts": result, "count": len(result)},
+                args.output_json,
+            ))
 
         elif args.suggest_boundaries:
             result = suggest_service_boundaries(args.app_id, db_path)
-            print(
-                _format_output(
-                    {"service_boundaries": result, "count": len(result)},
-                    args.output_json,
-                )
-            )
+            print(_format_output(
+                {"service_boundaries": result, "count": len(result)},
+                args.output_json,
+            ))
 
         elif args.generate_plan:
             result = generate_decomposition_plan(
-                args.app_id,
-                args.target_arch,
-                db_path,
+                args.app_id, args.target_arch, db_path,
             )
             print(_format_output(result, args.output_json))
 
@@ -1538,9 +1454,7 @@ def main():
                 sys.exit(1)
             idx = min(args.service_index, len(boundaries) - 1)
             result = generate_anti_corruption_layer(
-                args.app_id,
-                boundaries[idx],
-                db_path,
+                args.app_id, boundaries[idx], db_path,
             )
             print(_format_output(result, args.output_json))
 
@@ -1551,9 +1465,7 @@ def main():
                 result = generate_api_facade(args.app_id, db_path=db_path)
             elif args.service_index >= 0 and args.service_index < len(boundaries):
                 result = generate_api_facade(
-                    args.app_id,
-                    boundaries[args.service_index],
-                    db_path,
+                    args.app_id, boundaries[args.service_index], db_path,
                 )
             else:
                 result = generate_api_facade(args.app_id, db_path=db_path)

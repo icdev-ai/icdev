@@ -42,7 +42,7 @@ class TestCollectProjectData:
 
     def test_default_values_without_manifest(self, tmp_path):
         data = collect_project_data(str(tmp_path))
-        assert data["project_name"] == "ICDEV Project"
+        assert data["project_name"] == "ICDEV™ Project"
         assert data["has_icdev_yaml"] is False
 
     def test_counts_mcp_servers(self, tmp_path):

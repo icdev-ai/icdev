@@ -30,6 +30,7 @@ Usage:
   # JSON output for pipeline integration
   python tools/pulse/engine/hostinger_publisher.py --publish --post-id "post-abc" --json
 """
+from __future__ import annotations
 
 import argparse
 import json
@@ -43,7 +44,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from tools.pulse.db import get_row, query_rows, update_row
+from tools.pulse.db import get_row, query_rows, update_row  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Configuration

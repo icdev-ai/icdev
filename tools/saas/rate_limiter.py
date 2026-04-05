@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ICDEV SaaS -- Rate Limiter.
+"""ICDEV™ SaaS -- Rate Limiter.
 
 CUI // SP-CTI
 
@@ -15,6 +15,7 @@ Usage:
     from tools.saas.rate_limiter import register_rate_limiter
     register_rate_limiter(app)
 """
+from __future__ import annotations
 
 import abc
 import logging

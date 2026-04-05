@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Tests for NIST AI 600-1 GenAI assessor (Phase 48).
 
 Coverage: framework metadata, base class inheritance, catalog loading,

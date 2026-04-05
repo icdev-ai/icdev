@@ -3,17 +3,17 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Innovation Scoring Engine — score and rank innovation signals using weighted multi-dimension analysis.
 
 Scores innovation signals discovered by web_scanner.py using a 5-dimension weighted
 average (D21 deterministic scoring pattern):
 
   1. community_demand  (0.30) — GitHub stars, SO votes, upvotes, issue frequency
-  2. impact_breadth    (0.25) — Potential number of ICDEV projects/tenants affected
-  3. feasibility       (0.20) — Can ICDEV build this with existing tools/layers?
+  2. impact_breadth    (0.25) — Potential number of ICDEV™ projects/tenants affected
+  3. feasibility       (0.20) — Can ICDEV™ build this with existing tools/layers?
   4. compliance_alignment (0.15) — Does it strengthen compliance posture?
-  5. novelty           (0.10) — Not already addressed by existing ICDEV capabilities
+  5. novelty           (0.10) — Not already addressed by existing ICDEV™ capabilities
 
 Architecture:
     - Weights loaded from args/innovation_config.yaml under scoring.weights (D26 pattern)
@@ -101,9 +101,9 @@ COMPLIANCE_NEUTRAL_CATEGORIES = {
     "testing", "ai_tooling", "modernization",
 }
 
-# GOTCHA layer keyword mapping — used for feasibility scoring
+# FORGE layer keyword mapping — used for feasibility scoring
 # Mirrors triage.gotcha_fit.layer_mapping from innovation_config.yaml
-DEFAULT_GOTCHA_LAYERS = {
+DEFAULT_FORGE_LAYERS = {
     "goal": ["workflow", "process", "procedure", "methodology", "best practice"],
     "tool": ["script", "utility", "generator", "scanner", "checker", "validator", "analyzer"],
     "arg": ["configuration", "setting", "threshold", "parameter", "tuning"],
@@ -190,7 +190,7 @@ def _get_thresholds(config=None):
 
 
 def _get_gotcha_layers(config=None):
-    """Extract GOTCHA layer mapping from config, falling back to defaults."""
+    """Extract FORGE layer mapping from config, falling back to defaults."""
     if config is None:
         config = _load_config()
     triage = config.get("triage", {})
@@ -198,7 +198,7 @@ def _get_gotcha_layers(config=None):
     layer_mapping = gotcha_fit.get("layer_mapping", {})
     if layer_mapping:
         return {k: [kw.lower() for kw in v] for k, v in layer_mapping.items()}
-    return {k: [kw.lower() for kw in v] for k, v in DEFAULT_GOTCHA_LAYERS.items()}
+    return {k: [kw.lower() for kw in v] for k, v in DEFAULT_FORGE_LAYERS.items()}
 
 
 def _get_signal_categories(config=None):
@@ -233,7 +233,7 @@ def _score_community_demand(signal):
 def _score_impact_breadth(signal, conn):
     """Score impact breadth dimension.
 
-    Estimates how many ICDEV projects/tenants could benefit from addressing
+    Estimates how many ICDEV™ projects/tenants could benefit from addressing
     this signal. Uses signal category to match against project types in DB.
 
     Args:
@@ -313,8 +313,8 @@ def _score_impact_breadth(signal, conn):
 def _score_feasibility(signal, config=None):
     """Score feasibility dimension.
 
-    Checks if the signal category maps to an existing GOTCHA layer,
-    indicating ICDEV has the architecture to address it.
+    Checks if the signal category maps to an existing FORGE layer,
+    indicating ICDEV™ has the architecture to address it.
 
     Args:
         signal: Dict of signal row from DB.
@@ -334,7 +334,7 @@ def _score_feasibility(signal, config=None):
 
     text_corpus = f"{title} {description} {json.dumps(metadata).lower()}"
 
-    # Count how many GOTCHA layers this signal maps to
+    # Count how many FORGE layers this signal maps to
     layers_matched = 0
     total_layers = len(gotcha_layers)
     matched_layer_names = []
@@ -421,7 +421,7 @@ def _score_novelty(signal, conn):
     """Score novelty dimension.
 
     Checks whether the signal addresses something not already covered by
-    existing ICDEV capabilities. Searches knowledge_patterns and tool manifest
+    existing ICDEV™ capabilities. Searches knowledge_patterns and tool manifest
     for similar patterns via keyword matching.
 
     Args:
@@ -891,7 +891,7 @@ def calibrate_weights(db_path=None):
 # =========================================================================
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Innovation Scoring Engine — score and rank innovation signals"
+        description="ICDEV™ Innovation Scoring Engine — score and rank innovation signals"
     )
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument(

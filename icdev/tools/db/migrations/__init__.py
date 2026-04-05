@@ -1,2 +1,2 @@
 # [TEMPLATE: CUI // SP-CTI]
-"""ICDEV Database Migrations Package."""
+"""ICDEV™ Database Migrations Package."""

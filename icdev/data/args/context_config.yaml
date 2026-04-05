@@ -37,7 +37,7 @@ agent_sections:
     - "Prompt Injection"
   architect-agent:
     - "Architecture"
-    - "GOTCHA"
+    - "FORGE"
     - "ATLAS"
     - "MCP"
     - "Agent"
@@ -55,7 +55,7 @@ agent_sections:
     - "Agent"
     - "Workflow"
     - "MCP"
-    - "GOTCHA"
+    - "FORGE"
     - "Multi-Agent"
   modernization-agent:
     - "Modernization"

@@ -36,6 +36,7 @@ import sqlite3
 import sys
 import uuid
 import xml.etree.ElementTree as ET
+from tools.db.storage import get_connection
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -51,14 +52,12 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 # ---------------------------------------------------------------------------
 try:
     from tools.audit.audit_logger import log_event  # type: ignore
-
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
 
     def log_event(**kwargs) -> int:  # noqa: D103 – stub
         return -1
-
 
 # ---------------------------------------------------------------------------
 # XMI namespace constants (match xmi_parser.py)
@@ -71,7 +70,6 @@ SYSML_NS = "http://www.omg.org/spec/SysML/20181001"
 # Helpers
 # ---------------------------------------------------------------------------
 
-
 def _ts() -> str:
     """Current ISO-8601 timestamp."""
     return datetime.now().isoformat()
@@ -83,12 +81,14 @@ def _new_id(prefix: str = "sysml") -> str:
 
 
 def _get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
-    """Open a connection to the ICDEV database."""
+    """Open a connection to the ICDEV™ database."""
     path = Path(db_path) if db_path else DB_PATH
     if not path.exists():
-        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+        raise FileNotFoundError(
+            f"Database not found: {path}\n"
+            "Run: python tools/db/init_icdev_db.py"
+        )
+    conn = get_connection(db_path=str(db_path))
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
@@ -118,7 +118,6 @@ def _content_hash(text: str) -> str:
 # ---------------------------------------------------------------------------
 # Python AST parsing (code -> model direction)
 # ---------------------------------------------------------------------------
-
 
 def _parse_python_ast(file_path: str) -> dict:
     """Parse a Python file using the ast module.
@@ -178,13 +177,11 @@ def _parse_python_ast(file_path: str) -> dict:
                         if arg.arg != "self":
                             method_args.append(arg.arg)
                     method_doc = ast.get_docstring(item) or ""
-                    methods.append(
-                        {
-                            "name": item.name,
-                            "args": method_args,
-                            "docstring": method_doc,
-                        }
-                    )
+                    methods.append({
+                        "name": item.name,
+                        "args": method_args,
+                        "docstring": method_doc,
+                    })
                 elif isinstance(item, ast.Assign):
                     for target in item.targets:
                         if isinstance(target, ast.Name):
@@ -193,25 +190,21 @@ def _parse_python_ast(file_path: str) -> dict:
                     if isinstance(item.target, ast.Name):
                         attributes.append(item.target.id)
 
-            classes.append(
-                {
-                    "name": node.name,
-                    "bases": bases,
-                    "methods": methods,
-                    "attributes": attributes,
-                }
-            )
+            classes.append({
+                "name": node.name,
+                "bases": bases,
+                "methods": methods,
+                "attributes": attributes,
+            })
 
         elif isinstance(node, ast.FunctionDef) or isinstance(node, ast.AsyncFunctionDef):
             func_args = [arg.arg for arg in node.args.args]
             func_doc = ast.get_docstring(node) or ""
-            functions.append(
-                {
-                    "name": node.name,
-                    "args": func_args,
-                    "docstring": func_doc,
-                }
-            )
+            functions.append({
+                "name": node.name,
+                "args": func_args,
+                "docstring": func_doc,
+            })
 
     return {"classes": classes, "functions": functions}
 
@@ -219,7 +212,6 @@ def _parse_python_ast(file_path: str) -> dict:
 # ---------------------------------------------------------------------------
 # XMI fragment generation (code -> model direction)
 # ---------------------------------------------------------------------------
-
 
 def _generate_xmi_fragment(elements: list) -> str:
     """Generate an XMI 2.5 fragment for import into Cameo Systems Modeler.
@@ -342,7 +334,6 @@ def _generate_xmi_fragment(elements: list) -> str:
 # Drift detection
 # ---------------------------------------------------------------------------
 
-
 def detect_drift(project_id: str, db_path: Optional[Path] = None) -> dict:
     """Compare current model_code_mappings hashes with actual file hashes.
 
@@ -433,19 +424,17 @@ def detect_drift(project_id: str, db_path: Optional[Path] = None) -> dict:
             (new_status, _ts(), mapping_id),
         )
 
-        details.append(
-            {
-                "mapping_id": mapping_id,
-                "element_name": element_name,
-                "code_path": code_path,
-                "code_type": row["code_type"],
-                "previous_status": row["sync_status"],
-                "new_status": new_status,
-                "file_exists": file_exists,
-                "code_changed": current_code_hash != stored_code_hash if file_exists else None,
-                "model_changed": current_model_hash != stored_model_hash,
-            }
-        )
+        details.append({
+            "mapping_id": mapping_id,
+            "element_name": element_name,
+            "code_path": code_path,
+            "code_type": row["code_type"],
+            "previous_status": row["sync_status"],
+            "new_status": new_status,
+            "file_exists": file_exists,
+            "code_changed": current_code_hash != stored_code_hash if file_exists else None,
+            "model_changed": current_model_hash != stored_model_hash,
+        })
 
     conn.commit()
     conn.close()
@@ -458,8 +447,8 @@ def detect_drift(project_id: str, db_path: Optional[Path] = None) -> dict:
 # Sync model -> code
 # ---------------------------------------------------------------------------
 
-
-def sync_model_to_code(project_id: str, language: str = "python", db_path: Optional[Path] = None) -> dict:
+def sync_model_to_code(project_id: str, language: str = "python",
+                       db_path: Optional[Path] = None) -> dict:
     """Sync model changes to code.
 
     Steps:
@@ -643,9 +632,9 @@ def sync_model_to_code(project_id: str, language: str = "python", db_path: Optio
     }
 
 
-def _generate_code_from_element(
-    name: str, element_type: str, properties: str, description: str, stereotype: str, language: str
-) -> str:
+def _generate_code_from_element(name: str, element_type: str, properties: str,
+                                description: str, stereotype: str,
+                                language: str) -> str:
     """Generate source code from a SysML element definition.
 
     Currently supports Python only.  Produces a module with CUI markings,
@@ -679,7 +668,7 @@ def _generate_code_from_element(
     if description:
         lines.append(f"{description}")
         lines.append("")
-    lines.append(f"Stereotype: {stereotype or 'N/A'}")
+    lines.append(f'Stereotype: {stereotype or "N/A"}')
     lines.append('"""')
     lines.append("")
 
@@ -699,7 +688,10 @@ def _generate_code_from_element(
         # __init__ with attributes
         init_attrs = attributes + flow_props
         if init_attrs:
-            init_args = ", ".join(a.get("name", "unnamed") for a in init_attrs if a.get("name"))
+            init_args = ", ".join(
+                a.get("name", "unnamed") for a in init_attrs
+                if a.get("name")
+            )
             lines.append(f"    def __init__(self, {init_args}):")
             for attr in init_attrs:
                 attr_name = attr.get("name", "")
@@ -754,8 +746,8 @@ def _generate_code_from_element(
 # Sync code -> model
 # ---------------------------------------------------------------------------
 
-
-def sync_code_to_model(project_id: str, output_path: str, db_path: Optional[Path] = None) -> dict:
+def sync_code_to_model(project_id: str, output_path: str,
+                       db_path: Optional[Path] = None) -> dict:
     """Reverse sync: analyze code and generate XMI fragment for Cameo import.
 
     Steps:
@@ -799,32 +791,28 @@ def sync_code_to_model(project_id: str, output_path: str, db_path: Optional[Path
             parsed = _parse_python_ast(code_path)
 
             for cls in parsed["classes"]:
-                elements_for_xmi.append(
-                    {
-                        "name": cls["name"],
-                        "element_type": "class",
-                        "xmi_id": row.get("xmi_id") or f"elem-{uuid.uuid4()}",
-                        "properties": {
-                            "methods": cls["methods"],
-                            "attributes": cls["attributes"],
-                            "bases": cls["bases"],
-                        },
-                    }
-                )
+                elements_for_xmi.append({
+                    "name": cls["name"],
+                    "element_type": "class",
+                    "xmi_id": row.get("xmi_id") or f"elem-{uuid.uuid4()}",
+                    "properties": {
+                        "methods": cls["methods"],
+                        "attributes": cls["attributes"],
+                        "bases": cls["bases"],
+                    },
+                })
                 modified_count += 1
 
             for func in parsed["functions"]:
-                elements_for_xmi.append(
-                    {
-                        "name": func["name"],
-                        "element_type": "function",
-                        "xmi_id": f"func-{uuid.uuid4()}",
-                        "properties": {
-                            "args": func["args"],
-                            "docstring": func["docstring"],
-                        },
-                    }
-                )
+                elements_for_xmi.append({
+                    "name": func["name"],
+                    "element_type": "function",
+                    "xmi_id": f"func-{uuid.uuid4()}",
+                    "properties": {
+                        "args": func["args"],
+                        "docstring": func["docstring"],
+                    },
+                })
                 modified_count += 1
 
             # Update mapping: store the current code hash
@@ -853,32 +841,28 @@ def sync_code_to_model(project_id: str, output_path: str, db_path: Optional[Path
             try:
                 parsed = _parse_python_ast(str(py_file))
                 for cls in parsed["classes"]:
-                    elements_for_xmi.append(
-                        {
-                            "name": cls["name"],
-                            "element_type": "class",
-                            "xmi_id": f"new-{uuid.uuid4()}",
-                            "properties": {
-                                "methods": cls["methods"],
-                                "attributes": cls["attributes"],
-                                "bases": cls["bases"],
-                            },
-                        }
-                    )
+                    elements_for_xmi.append({
+                        "name": cls["name"],
+                        "element_type": "class",
+                        "xmi_id": f"new-{uuid.uuid4()}",
+                        "properties": {
+                            "methods": cls["methods"],
+                            "attributes": cls["attributes"],
+                            "bases": cls["bases"],
+                        },
+                    })
                     new_count += 1
 
                 for func in parsed["functions"]:
-                    elements_for_xmi.append(
-                        {
-                            "name": func["name"],
-                            "element_type": "function",
-                            "xmi_id": f"new-{uuid.uuid4()}",
-                            "properties": {
-                                "args": func["args"],
-                                "docstring": func["docstring"],
-                            },
-                        }
-                    )
+                    elements_for_xmi.append({
+                        "name": func["name"],
+                        "element_type": "function",
+                        "xmi_id": f"new-{uuid.uuid4()}",
+                        "properties": {
+                            "args": func["args"],
+                            "docstring": func["docstring"],
+                        },
+                    })
                     new_count += 1
             except Exception as exc:
                 errors.append(f"Failed to scan {py_file}: {exc}")
@@ -930,8 +914,8 @@ def sync_code_to_model(project_id: str, output_path: str, db_path: Optional[Path
 # Conflict resolution
 # ---------------------------------------------------------------------------
 
-
-def resolve_conflict(project_id: str, mapping_id: int, resolution: str, db_path: Optional[Path] = None) -> dict:
+def resolve_conflict(project_id: str, mapping_id: int, resolution: str,
+                     db_path: Optional[Path] = None) -> dict:
     """Resolve a model/code conflict for a specific mapping.
 
     Args:
@@ -1040,7 +1024,10 @@ def resolve_conflict(project_id: str, mapping_id: int, resolution: str, db_path:
             log_event(
                 event_type="decision_made",
                 actor="icdev-sync-engine",
-                action=(f"Conflict resolved for mapping #{mapping_id} in {project_id}: {resolution}"),
+                action=(
+                    f"Conflict resolved for mapping #{mapping_id} in {project_id}: "
+                    f"{resolution}"
+                ),
                 project_id=project_id,
                 details={
                     "mapping_id": mapping_id,
@@ -1065,8 +1052,8 @@ def resolve_conflict(project_id: str, mapping_id: int, resolution: str, db_path:
 # Re-import XMI
 # ---------------------------------------------------------------------------
 
-
-def reimport_xmi(project_id: str, file_path: str, db_path: Optional[Path] = None) -> dict:
+def reimport_xmi(project_id: str, file_path: str,
+                 db_path: Optional[Path] = None) -> dict:
     """Re-import XMI after Cameo updates, merging with existing elements.
 
     Steps:
@@ -1090,10 +1077,7 @@ def reimport_xmi(project_id: str, file_path: str, db_path: Optional[Path] = None
 
     if parse_xmi is None:
         return {
-            "updated": 0,
-            "added": 0,
-            "deleted": 0,
-            "unchanged": 0,
+            "updated": 0, "added": 0, "deleted": 0, "unchanged": 0,
             "error": "xmi_parser not available. Ensure tools/mbse/xmi_parser.py exists.",
         }
 
@@ -1102,10 +1086,7 @@ def reimport_xmi(project_id: str, file_path: str, db_path: Optional[Path] = None
         parsed = parse_xmi(file_path)
     except Exception as exc:
         return {
-            "updated": 0,
-            "added": 0,
-            "deleted": 0,
-            "unchanged": 0,
+            "updated": 0, "added": 0, "deleted": 0, "unchanged": 0,
             "error": f"XMI parse error: {exc}",
         }
 
@@ -1286,8 +1267,8 @@ def reimport_xmi(project_id: str, file_path: str, db_path: Optional[Path] = None
 # Re-import ReqIF
 # ---------------------------------------------------------------------------
 
-
-def reimport_reqif(project_id: str, file_path: str, db_path: Optional[Path] = None) -> dict:
+def reimport_reqif(project_id: str, file_path: str,
+                   db_path: Optional[Path] = None) -> dict:
     """Re-import ReqIF after DOORS updates, merging with existing requirements.
 
     Similar to reimport_xmi but operates on the doors_requirements table.
@@ -1309,10 +1290,7 @@ def reimport_reqif(project_id: str, file_path: str, db_path: Optional[Path] = No
 
     if parse_reqif is None:
         return {
-            "updated": 0,
-            "added": 0,
-            "deleted": 0,
-            "unchanged": 0,
+            "updated": 0, "added": 0, "deleted": 0, "unchanged": 0,
             "error": "reqif_parser not available. Ensure tools/mbse/reqif_parser.py exists.",
         }
 
@@ -1321,10 +1299,7 @@ def reimport_reqif(project_id: str, file_path: str, db_path: Optional[Path] = No
         parsed = parse_reqif(file_path)
     except Exception as exc:
         return {
-            "updated": 0,
-            "added": 0,
-            "deleted": 0,
-            "unchanged": 0,
+            "updated": 0, "added": 0, "deleted": 0, "unchanged": 0,
             "error": f"ReqIF parse error: {exc}",
         }
 
@@ -1492,8 +1467,8 @@ def reimport_reqif(project_id: str, file_path: str, db_path: Optional[Path] = No
 # Sync report
 # ---------------------------------------------------------------------------
 
-
-def generate_sync_report(project_id: str, db_path: Optional[Path] = None) -> str:
+def generate_sync_report(project_id: str,
+                         db_path: Optional[Path] = None) -> str:
     """Generate a CUI-marked drift/sync report as markdown.
 
     Includes:
@@ -1533,11 +1508,8 @@ def generate_sync_report(project_id: str, db_path: Optional[Path] = None) -> str
 
     # Count statuses
     status_counts: Dict[str, int] = {
-        "synced": 0,
-        "model_ahead": 0,
-        "code_ahead": 0,
-        "conflict": 0,
-        "unknown": 0,
+        "synced": 0, "model_ahead": 0, "code_ahead": 0,
+        "conflict": 0, "unknown": 0,
     }
     for row in rows:
         s = row.get("sync_status", "unknown")
@@ -1564,14 +1536,12 @@ def generate_sync_report(project_id: str, db_path: Optional[Path] = None) -> str
     ]
 
     if status_counts["conflict"] > 0:
-        lines.extend(
-            [
-                "## Conflicts Requiring Resolution",
-                "",
-                "| ID | Element | Code Path | Direction |",
-                "|----|---------|-----------|-----------|",
-            ]
-        )
+        lines.extend([
+            "## Conflicts Requiring Resolution",
+            "",
+            "| ID | Element | Code Path | Direction |",
+            "|----|---------|-----------|-----------|",
+        ])
         for row in rows:
             if row["sync_status"] == "conflict":
                 lines.append(
@@ -1579,25 +1549,21 @@ def generate_sync_report(project_id: str, db_path: Optional[Path] = None) -> str
                     f"| `{row['code_path']}` | {row['mapping_direction']} |"
                 )
         lines.append("")
-        lines.extend(
-            [
-                "**Resolution options:**",
-                "- `--resolution keep_model` — Overwrite code with model version",
-                "- `--resolution keep_code` — Accept code changes (model stale until reimport)",
-                "- `--resolution merge` — Mark bidirectional for manual merge",
-                "",
-            ]
-        )
+        lines.extend([
+            "**Resolution options:**",
+            "- `--resolution keep_model` — Overwrite code with model version",
+            "- `--resolution keep_code` — Accept code changes (model stale until reimport)",
+            "- `--resolution merge` — Mark bidirectional for manual merge",
+            "",
+        ])
 
     if rows:
-        lines.extend(
-            [
-                "## All Mappings",
-                "",
-                "| ID | Element | Type | Code Path | Status | Last Synced |",
-                "|----|---------|------|-----------|--------|-------------|",
-            ]
-        )
+        lines.extend([
+            "## All Mappings",
+            "",
+            "| ID | Element | Type | Code Path | Status | Last Synced |",
+            "|----|---------|------|-----------|--------|-------------|",
+        ])
         for row in rows:
             lines.append(
                 f"| {row['id']} | {row.get('element_name', 'N/A')} "
@@ -1607,24 +1573,23 @@ def generate_sync_report(project_id: str, db_path: Optional[Path] = None) -> str
         lines.append("")
 
     if recent_imports:
-        lines.extend(
-            [
-                "## Recent Imports",
-                "",
-                "| Type | File | Status | Date |",
-                "|------|------|--------|------|",
-            ]
-        )
+        lines.extend([
+            "## Recent Imports",
+            "",
+            "| Type | File | Status | Date |",
+            "|------|------|--------|------|",
+        ])
         for imp in recent_imports:
-            lines.append(f"| {imp['import_type']} | {imp['source_file']} | {imp['status']} | {imp['imported_at']} |")
+            lines.append(
+                f"| {imp['import_type']} | {imp['source_file']} "
+                f"| {imp['status']} | {imp['imported_at']} |"
+            )
         lines.append("")
 
-    lines.extend(
-        [
-            "---",
-            "CUI // SP-CTI",
-        ]
-    )
+    lines.extend([
+        "---",
+        "CUI // SP-CTI",
+    ])
 
     return "\n".join(lines)
 
@@ -1633,14 +1598,14 @@ def generate_sync_report(project_id: str, db_path: Optional[Path] = None) -> str
 # CLI entry point
 # ---------------------------------------------------------------------------
 
-
 def main() -> None:
     """Command-line interface for MBSE bidirectional sync engine."""
-    parser = argparse.ArgumentParser(description="ICDEV MBSE Bidirectional Sync Engine")
+    parser = argparse.ArgumentParser(
+        description="ICDEV™ MBSE Bidirectional Sync Engine"
+    )
     parser.add_argument(
-        "--project-id",
-        required=True,
-        help="ICDEV project identifier (e.g. proj-123)",
+        "--project-id", required=True,
+        help="ICDEV™ project identifier (e.g. proj-123)",
     )
 
     sub = parser.add_subparsers(dest="command")
@@ -1649,33 +1614,45 @@ def main() -> None:
     sub.add_parser("detect-drift", help="Detect model/code drift")
 
     # sync model-to-code
-    m2c = sub.add_parser("sync-model-to-code", help="Sync model changes to code files")
-    m2c.add_argument("--language", default="python", help="Target language (default: python)")
+    m2c = sub.add_parser("sync-model-to-code",
+                         help="Sync model changes to code files")
+    m2c.add_argument("--language", default="python",
+                     help="Target language (default: python)")
 
     # sync code-to-model
-    c2m = sub.add_parser("sync-code-to-model", help="Sync code changes to XMI fragment for Cameo import")
-    c2m.add_argument("--output", required=True, help="Output XMI file path")
+    c2m = sub.add_parser("sync-code-to-model",
+                         help="Sync code changes to XMI fragment for Cameo import")
+    c2m.add_argument("--output", required=True,
+                     help="Output XMI file path")
 
     # resolve-conflict
-    rc = sub.add_parser("resolve-conflict", help="Resolve a model/code sync conflict")
-    rc.add_argument("--mapping-id", type=int, required=True, help="ID from model_code_mappings table")
-    rc.add_argument(
-        "--resolution", required=True, choices=["keep_model", "keep_code", "merge"], help="Conflict resolution strategy"
-    )
+    rc = sub.add_parser("resolve-conflict",
+                        help="Resolve a model/code sync conflict")
+    rc.add_argument("--mapping-id", type=int, required=True,
+                    help="ID from model_code_mappings table")
+    rc.add_argument("--resolution", required=True,
+                    choices=["keep_model", "keep_code", "merge"],
+                    help="Conflict resolution strategy")
 
     # reimport-xmi
-    ri = sub.add_parser("reimport-xmi", help="Re-import XMI after Cameo updates")
-    ri.add_argument("--file", required=True, help="Path to updated XMI file")
+    ri = sub.add_parser("reimport-xmi",
+                        help="Re-import XMI after Cameo updates")
+    ri.add_argument("--file", required=True,
+                    help="Path to updated XMI file")
 
     # reimport-reqif
-    rr = sub.add_parser("reimport-reqif", help="Re-import ReqIF after DOORS updates")
-    rr.add_argument("--file", required=True, help="Path to updated ReqIF file")
+    rr = sub.add_parser("reimport-reqif",
+                        help="Re-import ReqIF after DOORS updates")
+    rr.add_argument("--file", required=True,
+                    help="Path to updated ReqIF file")
 
     # report
     sub.add_parser("report", help="Generate drift/sync report")
 
-    parser.add_argument("--json", action="store_true", dest="json_output", help="Output results as JSON")
-    parser.add_argument("--db-path", type=Path, default=None, help="Override database path (default: data/icdev.db)")
+    parser.add_argument("--json", action="store_true", dest="json_output",
+                        help="Output results as JSON")
+    parser.add_argument("--db-path", type=Path, default=None,
+                        help="Override database path (default: data/icdev.db)")
 
     args = parser.parse_args()
     db = args.db_path
@@ -1704,19 +1681,16 @@ def main() -> None:
             if result.get("details"):
                 print("\n  Details:")
                 for d in result["details"]:
-                    marker = {
-                        "synced": "=",
-                        "model_ahead": "M>",
-                        "code_ahead": "C>",
-                        "conflict": "!",
-                        "unknown": "?",
-                    }.get(d["new_status"], "?")
+                    marker = {"synced": "=", "model_ahead": "M>",
+                              "code_ahead": "C>", "conflict": "!",
+                              "unknown": "?"}.get(d["new_status"], "?")
                     print(f"    [{marker}] {d['element_name']}: {d['code_path']}")
             print("CUI // SP-CTI")
 
     # ---- sync-model-to-code ----
     elif args.command == "sync-model-to-code":
-        result = sync_model_to_code(args.project_id, language=args.language, db_path=db)
+        result = sync_model_to_code(args.project_id, language=args.language,
+                                    db_path=db)
         if args.json_output:
             print("CUI // SP-CTI")
             print(json.dumps(result, indent=2, default=str))
@@ -1735,7 +1709,8 @@ def main() -> None:
 
     # ---- sync-code-to-model ----
     elif args.command == "sync-code-to-model":
-        result = sync_code_to_model(args.project_id, output_path=args.output, db_path=db)
+        result = sync_code_to_model(args.project_id, output_path=args.output,
+                                    db_path=db)
         if args.json_output:
             print("CUI // SP-CTI")
             print(json.dumps(result, indent=2, default=str))
@@ -1755,7 +1730,8 @@ def main() -> None:
 
     # ---- resolve-conflict ----
     elif args.command == "resolve-conflict":
-        result = resolve_conflict(args.project_id, mapping_id=args.mapping_id, resolution=args.resolution, db_path=db)
+        result = resolve_conflict(args.project_id, mapping_id=args.mapping_id,
+                                  resolution=args.resolution, db_path=db)
         if args.json_output:
             print("CUI // SP-CTI")
             print(json.dumps(result, indent=2, default=str))
@@ -1791,7 +1767,8 @@ def main() -> None:
     # ---- reimport-reqif ----
     elif args.command == "reimport-reqif":
         file_path = str(Path(args.file).resolve())
-        result = reimport_reqif(args.project_id, file_path=file_path, db_path=db)
+        result = reimport_reqif(args.project_id, file_path=file_path,
+                                db_path=db)
         if args.json_output:
             print("CUI // SP-CTI")
             print(json.dumps(result, indent=2, default=str))

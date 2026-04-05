@@ -8,12 +8,10 @@ Runs syntax, lint, round-trip IR, API surface, type coverage, complexity,
 compliance, and feature mapping checks. On failure, feeds errors back to LLM."""
 
 import argparse
-import hashlib
 import json
 import os
 import sqlite3
 import subprocess
-import sys
 import uuid
 from pathlib import Path
 from icdev._paths import get_project_root
@@ -264,7 +262,7 @@ def check_complexity(source_ir, translated_units):
         src_complexity = src.get("complexity", 1)
         # Estimate translated complexity from line count
         code = tu.get("translated_code", "")
-        tgt_lines = len([l for l in code.split("\n") if l.strip()])
+        tgt_lines = len([ln for ln in code.split("\n") if ln.strip()])
         src_lines = src.get("line_count", max(1, src_complexity))
 
         if src_lines > 0:
@@ -389,7 +387,6 @@ def validate_translation(source_ir, translated_data, source_language, target_lan
         overall_pass = False
 
     # 2. Lint check
-    lint_passed = True
     lint_findings = []
     if output_dir:
         out = Path(output_dir)
@@ -585,22 +582,21 @@ def repair_translation(unit, source_code, translated_code, errors,
 
     try:
         from icdev.tools.llm.router import LLMRouter
+        from icdev.tools.llm.provider import LLMRequest
         router = LLMRouter()
-        response = router.invoke(
-            function="code_translation_repair",
-            prompt=prompt,
+        request = LLMRequest(
+            messages=[{"role": "user", "content": prompt}],
             temperature=0.2,
         )
-        if isinstance(response, dict):
-            return response.get("content", response.get("text"))
-        return str(response) if response else None
+        response = router.invoke("code_translation_repair", request)
+        return response.content if response and response.content else None
     except Exception:
         return None
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Phase 5 — Translation validation + repair loop",
+        description="ICDEV™ Phase 5 — Translation validation + repair loop",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--ir-file", required=True, help="Source IR JSON file")

@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-"""Tests for the ICDEV Acceptance Criteria Validator (V&V gate)."""
+"""Tests for the ICDEV™ Acceptance Criteria Validator (V&V gate)."""
 
 import json
 import sys

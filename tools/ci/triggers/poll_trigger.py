@@ -1,9 +1,9 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Poll Trigger — Cron-based issue polling for GitHub + GitLab
+# ICDEV™ Poll Trigger — Cron-based issue polling for GitHub + GitLab
 # Refactored to use EventEnvelope + EventRouter (D132, D133)
 
 """
-Cron-based ICDEV trigger that polls GitHub/GitLab issues.
+Cron-based ICDEV™ trigger that polls GitHub/GitLab issues.
 
 Polls every 20 seconds to detect:
 1. New issues without comments
@@ -32,9 +32,9 @@ from typing import Dict, Set, Optional
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from tools.ci.core.event_envelope import EventEnvelope
-from tools.ci.core.event_router import EventRouter
-from tools.ci.modules.vcs import VCS
+from tools.ci.core.event_envelope import EventEnvelope  # noqa: E402
+from tools.ci.core.event_router import EventRouter  # noqa: E402
+from tools.ci.modules.vcs import VCS  # noqa: E402
 
 # Configuration
 POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "20"))
@@ -193,7 +193,7 @@ def check_and_process_issues(vcs: VCS):
 def main():
     """Main entry point for the poll trigger."""
     print("CUI // SP-CTI")
-    print("INFO: Starting ICDEV Poll Trigger (EventRouter-based)")
+    print("INFO: Starting ICDEV™ Poll Trigger (EventRouter-based)")
     print(f"INFO: Poll interval: {POLL_INTERVAL} seconds")
 
     # Auto-detect platform

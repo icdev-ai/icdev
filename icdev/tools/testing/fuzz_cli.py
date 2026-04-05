@@ -1,9 +1,9 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV CLI Argument Fuzzer — feed malformed inputs to CLI tools
+# ICDEV™ CLI Argument Fuzzer — feed malformed inputs to CLI tools
 # Ensures tools fail gracefully (clean argparse errors, no crashes/tracebacks)
 
 """
-ICDEV CLI Argument Fuzzer — lightweight fuzzer for CLI tool robustness.
+ICDEV™ CLI Argument Fuzzer — lightweight fuzzer for CLI tool robustness.
 
 Usage:
     python tools/testing/fuzz_cli.py --discover            # Fuzz all discovered CLI tools
@@ -246,7 +246,7 @@ def run_fuzz(tools: list, verbose: bool = False) -> dict:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV CLI Argument Fuzzer — test tools handle bad input gracefully"
+        description="ICDEV™ CLI Argument Fuzzer — test tools handle bad input gracefully"
     )
     parser.add_argument("--discover", action="store_true",
                         help="Auto-discover all CLI tools in tools/")
@@ -272,7 +272,7 @@ def main():
             parser.error(f"Tool files not found: {', '.join(str(m) for m in missing)}")
 
     if not args.json:
-        print(f"ICDEV CLI Fuzzer — {len(tools)} tools x {len(FUZZ_STRATEGIES)} strategies")
+        print(f"ICDEV™ CLI Fuzzer — {len(tools)} tools x {len(FUZZ_STRATEGIES)} strategies")
         print("=" * 60)
 
     summary = run_fuzz(tools, verbose=args.verbose)

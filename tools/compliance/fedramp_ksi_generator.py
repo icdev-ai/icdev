@@ -3,11 +3,11 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """FedRAMP 20x Key Security Indicator (KSI) Generator.
 
 Generates machine-readable KSI evidence artifacts for FedRAMP 20x
-continuous authorization. Maps ICDEV evidence (DB records, configs,
+continuous authorization. Maps ICDEV™ evidence (DB records, configs,
 scan results) to 61 KSI definitions organized by NIST 800-53 families.
 
 Not a BaseAssessor — KSIs are evidence artifacts, not assessment checks.
@@ -23,6 +23,7 @@ Usage:
 import argparse
 import json
 import sqlite3
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
@@ -33,8 +34,7 @@ KSI_SCHEMA_PATH = BASE_DIR / "context" / "compliance" / "fedramp_20x_ksi_schemas
 
 
 def _get_connection(db_path: Path = DB_PATH) -> sqlite3.Connection:
-    conn = sqlite3.connect(str(db_path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(db_path))
     return conn
 
 
@@ -51,7 +51,7 @@ def _count_rows(conn: sqlite3.Connection, table: str, project_id: str) -> int:
         return 0
     try:
         row = conn.execute(
-            f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = ?",
+            f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = ?",  # nosec B608 -- table/column names are internal constants, not user input
             (project_id,),
         ).fetchone()
         return row["cnt"] if row else 0
@@ -63,7 +63,7 @@ def _count_rows_no_project(conn: sqlite3.Connection, table: str) -> int:
     if not _table_exists(conn, table):
         return 0
     try:
-        row = conn.execute(f"SELECT COUNT(*) as cnt FROM {table}").fetchone()
+        row = conn.execute(f"SELECT COUNT(*) as cnt FROM {table}").fetchone()  # nosec B608 -- table/column names are internal constants, not user input
         return row["cnt"] if row else 0
     except Exception:
         return 0
@@ -94,11 +94,7 @@ EVIDENCE_COLLECTORS = {
     "tool_chain_events": lambda conn, pid: _count_rows(conn, "tool_chain_events", pid),
     "agent_output_violations": lambda conn, pid: _count_rows(conn, "agent_output_violations", pid),
     "ai_bom": lambda conn, pid: _count_rows(conn, "ai_bom", pid),
-    "sbom_records": lambda conn, pid: (
-        _count_rows(conn, "sbom_records", pid)
-        if _table_exists(conn, "sbom_records")
-        else (1 if _file_exists("tools/compliance/sbom_generator.py") else 0)
-    ),
+    "sbom_records": lambda conn, pid: _count_rows(conn, "sbom_records", pid) if _table_exists(conn, "sbom_records") else (1 if _file_exists("tools/compliance/sbom_generator.py") else 0),
     "production_audits": lambda conn, pid: _count_rows(conn, "production_audits", pid),
     "xai_assessments": lambda conn, pid: _count_rows(conn, "xai_assessments", pid),
     "shap_attributions": lambda conn, pid: _count_rows(conn, "shap_attributions", pid),
@@ -112,42 +108,20 @@ EVIDENCE_COLLECTORS = {
     "gao_ai_assessments": lambda conn, pid: _count_rows(conn, "gao_ai_assessments", pid),
     "confabulation_checks": lambda conn, pid: _count_rows(conn, "confabulation_checks", pid),
     "ai_oversight_plans": lambda conn, pid: _count_rows(conn, "ai_oversight_plans", pid),
-    "ai_caio_registry": lambda conn, pid: (
-        _count_rows_no_project(conn, "ai_caio_registry") if _table_exists(conn, "ai_caio_registry") else 0
-    ),
+    "ai_caio_registry": lambda conn, pid: _count_rows_no_project(conn, "ai_caio_registry") if _table_exists(conn, "ai_caio_registry") else 0,
     "ai_ethics_reviews": lambda conn, pid: _count_rows(conn, "ai_ethics_reviews", pid),
     "ai_incident_log": lambda conn, pid: _count_rows(conn, "ai_incident_log", pid),
     "remediation_audit_log": lambda conn, pid: _count_rows(conn, "remediation_audit_log", pid),
-    "heartbeat_checks": lambda conn, pid: (
-        _count_rows_no_project(conn, "heartbeat_checks") if _table_exists(conn, "heartbeat_checks") else 0
-    ),
-    "auto_resolution_log": lambda conn, pid: (
-        _count_rows_no_project(conn, "auto_resolution_log") if _table_exists(conn, "auto_resolution_log") else 0
-    ),
-    "dashboard_users": lambda conn, pid: (
-        _count_rows_no_project(conn, "dashboard_users") if _table_exists(conn, "dashboard_users") else 0
-    ),
-    "dashboard_api_keys": lambda conn, pid: (
-        _count_rows_no_project(conn, "dashboard_api_keys") if _table_exists(conn, "dashboard_api_keys") else 0
-    ),
-    "dashboard_auth_log": lambda conn, pid: (
-        _count_rows_no_project(conn, "dashboard_auth_log") if _table_exists(conn, "dashboard_auth_log") else 0
-    ),
-    "remote_user_bindings": lambda conn, pid: (
-        _count_rows_no_project(conn, "remote_user_bindings") if _table_exists(conn, "remote_user_bindings") else 0
-    ),
-    "remote_command_log": lambda conn, pid: (
-        _count_rows_no_project(conn, "remote_command_log") if _table_exists(conn, "remote_command_log") else 0
-    ),
+    "heartbeat_checks": lambda conn, pid: _count_rows_no_project(conn, "heartbeat_checks") if _table_exists(conn, "heartbeat_checks") else 0,
+    "auto_resolution_log": lambda conn, pid: _count_rows_no_project(conn, "auto_resolution_log") if _table_exists(conn, "auto_resolution_log") else 0,
+    "dashboard_users": lambda conn, pid: _count_rows_no_project(conn, "dashboard_users") if _table_exists(conn, "dashboard_users") else 0,
+    "dashboard_api_keys": lambda conn, pid: _count_rows_no_project(conn, "dashboard_api_keys") if _table_exists(conn, "dashboard_api_keys") else 0,
+    "dashboard_auth_log": lambda conn, pid: _count_rows_no_project(conn, "dashboard_auth_log") if _table_exists(conn, "dashboard_auth_log") else 0,
+    "remote_user_bindings": lambda conn, pid: _count_rows_no_project(conn, "remote_user_bindings") if _table_exists(conn, "remote_user_bindings") else 0,
+    "remote_command_log": lambda conn, pid: _count_rows_no_project(conn, "remote_command_log") if _table_exists(conn, "remote_command_log") else 0,
     "devsecops_profiles": lambda conn, pid: _count_rows(conn, "devsecops_profiles", pid),
-    "marketplace_scan_results": lambda conn, pid: (
-        _count_rows_no_project(conn, "marketplace_scan_results")
-        if _table_exists(conn, "marketplace_scan_results")
-        else 0
-    ),
-    "scrm_assessments": lambda conn, pid: (
-        _count_rows(conn, "scrm_assessments", pid) if _table_exists(conn, "scrm_assessments") else 0
-    ),
+    "marketplace_scan_results": lambda conn, pid: _count_rows_no_project(conn, "marketplace_scan_results") if _table_exists(conn, "marketplace_scan_results") else 0,
+    "scrm_assessments": lambda conn, pid: _count_rows(conn, "scrm_assessments", pid) if _table_exists(conn, "scrm_assessments") else 0,
     # Config-based evidence
     "rbac_config": lambda conn, pid: 1 if _file_exists("args/owasp_agentic_config.yaml") else 0,
     "mcp_tool_authorizer": lambda conn, pid: 1 if _file_exists("tools/security/mcp_tool_authorizer.py") else 0,
@@ -164,9 +138,7 @@ EVIDENCE_COLLECTORS = {
     "classification_config": lambda conn, pid: 1 if _file_exists("args/classification_config.yaml") else 0,
     "security_gates": lambda conn, pid: 1 if _file_exists("args/security_gates.yaml") else 0,
     "code_pattern_config": lambda conn, pid: 1 if _file_exists("args/code_pattern_config.yaml") else 0,
-    "icdev_yaml": lambda conn, pid: (
-        1 if _file_exists("icdev.yaml") or _file_exists("args/project_defaults.yaml") else 0
-    ),
+    "icdev_yaml": lambda conn, pid: 1 if _file_exists("icdev.yaml") or _file_exists("args/project_defaults.yaml") else 0,
     "cloud_config": lambda conn, pid: 1 if _file_exists("args/cloud_config.yaml") else 0,
     "resilience_config": lambda conn, pid: 1 if _file_exists("args/resilience_config.yaml") else 0,
     "hpa_config": lambda conn, pid: 1 if _file_exists("k8s/hpa.yaml") else 0,
@@ -175,12 +147,8 @@ EVIDENCE_COLLECTORS = {
     "k8s_manifests": lambda conn, pid: 1 if _file_exists("k8s") else 0,
     "attestation_config": lambda conn, pid: 1 if _file_exists("tools/devsecops/attestation_manager.py") else 0,
     "ir_plan": lambda conn, pid: 1 if _file_exists("tools/compliance/incident_response_plan.py") else 0,
-    "sbd_assessments": lambda conn, pid: (
-        _count_rows(conn, "sbd_assessments", pid) if _table_exists(conn, "sbd_assessments") else 0
-    ),
-    "mosa_assessments": lambda conn, pid: (
-        _count_rows(conn, "mosa_assessments", pid) if _table_exists(conn, "mosa_assessments") else 0
-    ),
+    "sbd_assessments": lambda conn, pid: _count_rows(conn, "sbd_assessments", pid) if _table_exists(conn, "sbd_assessments") else 0,
+    "mosa_assessments": lambda conn, pid: _count_rows(conn, "mosa_assessments", pid) if _table_exists(conn, "mosa_assessments") else 0,
     "pipeline_config": lambda conn, pid: 1 if _file_exists("tools/ci/pipeline_config_generator.py") else 0,
     "test_results": lambda conn, pid: 1 if _file_exists("tests") else 0,
     "bdd_results": lambda conn, pid: 1 if _file_exists("features") else 0,
@@ -192,12 +160,8 @@ EVIDENCE_COLLECTORS = {
     "claude_dir_validator": lambda conn, pid: 1 if _file_exists("tools/testing/claude_dir_validator.py") else 0,
     "schema_migrations": lambda conn, pid: 1 if _table_exists(conn, "schema_migrations") else 0,
     "poam_records": lambda conn, pid: _count_rows(conn, "poam_items", pid) if _table_exists(conn, "poam_items") else 0,
-    "vendor_records": lambda conn, pid: (
-        _count_rows(conn, "supply_chain_vendors", pid) if _table_exists(conn, "supply_chain_vendors") else 0
-    ),
-    "vulnerability_records": lambda conn, pid: (
-        _count_rows(conn, "vulnerability_records", pid) if _table_exists(conn, "vulnerability_records") else 0
-    ),
+    "vendor_records": lambda conn, pid: _count_rows(conn, "supply_chain_vendors", pid) if _table_exists(conn, "supply_chain_vendors") else 0,
+    "vulnerability_records": lambda conn, pid: _count_rows(conn, "vulnerability_records", pid) if _table_exists(conn, "vulnerability_records") else 0,
     "cato_monitor": lambda conn, pid: 1 if _file_exists("tools/compliance/cato_monitor.py") else 0,
 }
 
@@ -291,18 +255,16 @@ def generate_all_ksis(project_id: str, db_path: Path = DB_PATH) -> Dict[str, Any
                 maturity_counts[maturity] += 1
                 maturity_desc = ksi.get("maturity_levels", {}).get(maturity, "No evidence")
 
-                results.append(
-                    {
-                        "ksi_id": ksi["ksi_id"],
-                        "title": ksi["title"],
-                        "family": family["family_id"],
-                        "nist_controls": ksi["nist_controls"],
-                        "maturity_level": maturity,
-                        "maturity_description": maturity_desc,
-                        "evidence_available": sum(1 for v in evidence.values() if v > 0),
-                        "evidence_total": len(evidence),
-                    }
-                )
+                results.append({
+                    "ksi_id": ksi["ksi_id"],
+                    "title": ksi["title"],
+                    "family": family["family_id"],
+                    "nist_controls": ksi["nist_controls"],
+                    "maturity_level": maturity,
+                    "maturity_description": maturity_desc,
+                    "evidence_available": sum(1 for v in evidence.values() if v > 0),
+                    "evidence_total": len(evidence),
+                })
 
         total_ksis = len(results)
         covered = total_ksis - maturity_counts["none"]
@@ -369,9 +331,7 @@ def main():
             print(f"\nFedRAMP 20x KSI Report — {result['project_id']}")
             print(f"Coverage: {result['coverage_pct']}% ({result['total_ksis']} KSIs)")
             ms = result.get("maturity_summary", {})
-            print(
-                f"Maturity: Advanced={ms.get('advanced', 0)} | Intermediate={ms.get('intermediate', 0)} | Basic={ms.get('basic', 0)} | None={ms.get('none', 0)}"  # noqa: E501
-            )
+            print(f"Maturity: Advanced={ms.get('advanced',0)} | Intermediate={ms.get('intermediate',0)} | Basic={ms.get('basic',0)} | None={ms.get('none',0)}")
             print("-" * 70)
             for ksi in result["ksis"]:
                 icon = {"advanced": "+", "intermediate": "~", "basic": ".", "none": "-"}.get(ksi["maturity_level"], "?")

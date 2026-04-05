@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Elicitation techniques menu for requirements intake (BMAD pattern).
 
 Provides named reasoning methods that the analyst can invoke during
@@ -23,7 +23,7 @@ Usage:
 """
 
 import json
-import sqlite3
+from tools.db.storage import get_connection
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -347,8 +347,7 @@ def _get_connection(db_path=None):
     path = db_path or DB_PATH
     if not path.exists():
         raise FileNotFoundError(f"Database not found: {path}")
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -461,7 +460,7 @@ def main():
     """CLI entry point."""
     import argparse
 
-    parser = argparse.ArgumentParser(description="ICDEV Elicitation Techniques")
+    parser = argparse.ArgumentParser(description="ICDEV™ Elicitation Techniques")
     parser.add_argument("--list", action="store_true", help="List all techniques")
     parser.add_argument("--category", help="Filter by category")
     parser.add_argument("--get", help="Get full technique by ID")

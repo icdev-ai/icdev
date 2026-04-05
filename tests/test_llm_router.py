@@ -4,7 +4,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-"""Tests for the ICDEV LLM Router (tools/llm/router.py).
+"""Tests for the ICDEV™ LLM Router (tools/llm/router.py).
 
 Validates config loading, provider resolution, fallback chains,
 availability cache TTL, invoke with mock providers, and effort

@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Marketplace Provenance Tracker — Supply chain provenance for published assets.
 
 Tracks the full provenance chain of marketplace assets: who published what,
@@ -38,10 +38,10 @@ import argparse
 import hashlib
 import json
 import os
-import sqlite3
 import sys
 import uuid
-from datetime import datetime, timezone
+from tools.common.helpers import now_iso
+from tools.db.storage import get_connection
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -74,17 +74,13 @@ except ImportError:
 
 def _get_db(db_path=None):
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(path))
     return conn
 
 
 def _gen_id(prefix="prov"):
     return f"{prefix}-{uuid.uuid4().hex[:12]}"
 
-
-def _now():
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _sha256_dir(dir_path):
@@ -164,7 +160,7 @@ def record_provenance(
             ],
             "classification": asset["classification"],
             "impact_level": asset["impact_level"],
-            "recorded_at": _now(),
+            "recorded_at": now_iso(),
         }
 
         # Store provenance in version metadata
@@ -329,7 +325,7 @@ def generate_report(asset_id, db_path=None):
             "version_chain": version_chain,
             "dependencies": [dict(d) for d in deps],
             "installations": [dict(i) for i in installations],
-            "generated_at": _now(),
+            "generated_at": now_iso(),
         }
     finally:
         conn.close()
@@ -339,7 +335,7 @@ def generate_report(asset_id, db_path=None):
 # CLI
 # ---------------------------------------------------------------------------
 def main():
-    parser = argparse.ArgumentParser(description="ICDEV Marketplace Provenance Tracker")
+    parser = argparse.ArgumentParser(description="ICDEV™ Marketplace Provenance Tracker")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--db-path", type=Path, default=None)
 

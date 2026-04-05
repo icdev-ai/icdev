@@ -2,8 +2,8 @@
 # CUI // SP-CTI
 """Red Team Plugin Registry — declarative YAML-driven adversarial testing.
 
-Extends beyond ATLAS's 6 techniques with a pluggable architecture.
-Each plugin wraps existing ICDEV tools or implements new checks.
+Extends beyond ANVIL's 6 techniques with a pluggable architecture.
+Each plugin wraps existing ICDEV™ tools or implements new checks.
 
 Pattern: tools/security/atlas_red_team.py (technique registry, boolean checks)
 Pattern: tools/testing/production_audit.py (CHECK_REGISTRY, streaming, gate)

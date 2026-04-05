@@ -15,8 +15,8 @@ from __future__ import annotations
 
 import argparse
 import json
-import sqlite3
-from datetime import datetime, timedelta
+from tools.db.storage import get_connection
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -33,7 +33,6 @@ def _load_retention_config() -> dict:
         return {}
     try:
         import yaml
-
         with open(config_path, "r") as f:
             cfg = yaml.safe_load(f) or {}
         return cfg.get("rag", {}).get("retention", {})
@@ -68,18 +67,16 @@ def get_migration_candidates(
             "warm_to_cold": [],
         }
 
-    # Access internal DB path for direct queries
-    db_path = store._db_path
-    conn = sqlite3.connect(str(db_path))
+    # Access DB via centralized connection
+    conn = get_connection()
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     hot_cutoff = (now - timedelta(days=hot_days)).isoformat()
     warm_cutoff = (now - timedelta(days=warm_days)).isoformat()
 
     # Find hot chunks older than hot_days
     hot_to_warm = [
-        row[0]
-        for row in conn.execute(
+        row[0] for row in conn.execute(
             "SELECT id FROM rag_chunks WHERE tier = 'hot' AND created_at < ?",
             (hot_cutoff,),
         ).fetchall()
@@ -87,8 +84,7 @@ def get_migration_candidates(
 
     # Find warm chunks older than warm_days
     warm_to_cold = [
-        row[0]
-        for row in conn.execute(
+        row[0] for row in conn.execute(
             "SELECT id FROM rag_chunks WHERE tier = 'warm' AND created_at < ?",
             (warm_cutoff,),
         ).fetchall()
@@ -157,7 +153,7 @@ def migrate_chunks(
     # Log migration to ingestion log
     if (migrated_warm > 0 or migrated_cold > 0) and ICDEV_DB.exists():
         try:
-            conn = sqlite3.connect(str(ICDEV_DB))
+            conn = get_connection()
             conn.execute(
                 """INSERT INTO rag_ingestion_log
                    (source_type, source_id, source_table, chunks_created, chunks_skipped,
@@ -212,19 +208,19 @@ def rehydrate_chunks(
     # Get embedding provider
     try:
         from tools.llm import get_embedding_provider
-
         provider = get_embedding_provider()
     except Exception:
         return {"error": "No embedding provider available", "rehydrated": 0}
 
-    db_path = store._db_path
-    conn = sqlite3.connect(str(db_path))
+    conn = get_connection()
     rehydrated = 0
 
     import struct
 
     for cid in chunk_ids:
-        row = conn.execute("SELECT content, tier FROM rag_chunks WHERE id = ?", (cid,)).fetchone()
+        row = conn.execute(
+            "SELECT content, tier FROM rag_chunks WHERE id = ?", (cid,)
+        ).fetchone()
         if not row:
             continue
         content, tier = row
@@ -235,7 +231,9 @@ def rehydrate_chunks(
             if hasattr(provider, "embed"):
                 embedding = provider.embed(content)
             else:
-                resp = provider.embeddings.create(input=content, model="nomic-embed-text")
+                resp = provider.embeddings.create(
+                    input=content, model="nomic-embed-text"
+                )
                 embedding = resp.data[0].embedding
 
             blob = struct.pack(f"{len(embedding)}f", *embedding)

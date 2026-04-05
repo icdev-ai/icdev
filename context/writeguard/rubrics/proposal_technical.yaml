@@ -62,5 +62,5 @@ few_shot_examples:
     excerpt: "Our team has extensive experience in cybersecurity and will ensure all systems are secure."
     reasoning: "Generic claim, no specifics, no named tools/frameworks, no evidence, any vendor could write this."
   - score: 5
-    excerpt: "We implement AC-2 via ICDEV's automated provisioning pipeline, which enforces RBAC with Kyverno policies (D-SEC-117). During our FedRAMP Moderate authorization for [Agency X], this approach reduced account management audit findings from 12 to 0 in 90 days."
+    excerpt: "We implement AC-2 via ICDEV™'s automated provisioning pipeline, which enforces RBAC with Kyverno policies (D-SEC-117). During our FedRAMP Moderate authorization for [Agency X], this approach reduced account management audit findings from 12 to 0 in 90 days."
     reasoning: "Specific control (AC-2), named tool (Kyverno), references architecture decision, past performance with metric, compliance traceability."

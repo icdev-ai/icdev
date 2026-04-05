@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-# Tests for ICDEV Event Envelope — edge cases for all factory methods
+# Tests for ICDEV™ Event Envelope — edge cases for all factory methods
 
 """
 Automated tests for EventEnvelope and EventRouter (Phase 1).
@@ -116,13 +116,25 @@ class TestBotDetection:
         assert EventEnvelope._check_bot("Hello", author="icdev-bot")
 
     def test_bot_author_case_insensitive(self):
+        assert EventEnvelope._check_bot("Hello", author="ICDEV™-BOT")
+
+    def test_bot_author_unicode_corrupted(self):
+        """Trademark symbol may get mangled to replacement char on Windows."""
+        assert EventEnvelope._check_bot("Hello", author="ICDEV\ufffd-BOT")
+
+    def test_bot_author_trademark_stripped(self):
+        """Trademark symbol may be stripped entirely by encoding roundtrip."""
         assert EventEnvelope._check_bot("Hello", author="ICDEV-BOT")
+
+    def test_bot_text_trademark_stripped(self):
+        """Bot identifier in text with trademark stripped."""
+        assert EventEnvelope._check_bot("[ICDEV-BOT] Pipeline started")
 
     def test_not_bot_normal_text(self):
         assert not EventEnvelope._check_bot("Normal user comment")
 
     def test_not_bot_similar_text(self):
-        assert not EventEnvelope._check_bot("This is an ICDEV related comment")
+        assert not EventEnvelope._check_bot("This is an ICDEV™ related comment")
 
     def test_empty_text(self):
         assert not EventEnvelope._check_bot("")

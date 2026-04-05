@@ -18,7 +18,6 @@ import json
 import re
 import sys
 import uuid
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
@@ -26,83 +25,24 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
+from tools.common.helpers import now_isoformat  # noqa: E402
 
-_STOPWORDS = frozenset(
-    [
-        "the",
-        "a",
-        "an",
-        "is",
-        "are",
-        "was",
-        "were",
-        "be",
-        "been",
-        "have",
-        "has",
-        "had",
-        "do",
-        "does",
-        "did",
-        "will",
-        "would",
-        "shall",
-        "should",
-        "may",
-        "might",
-        "can",
-        "could",
-        "of",
-        "in",
-        "to",
-        "for",
-        "with",
-        "on",
-        "at",
-        "from",
-        "by",
-        "as",
-        "and",
-        "or",
-        "not",
-        "this",
-        "that",
-        "it",
-    ]
-)
 
-_FEASIBILITY_KEYWORDS = frozenset(
-    [
-        "existing",
-        "reuse",
-        "simple",
-        "stdlib",
-        "deterministic",
-        "incremental",
-        "lightweight",
-        "minimal",
-        "backward",
-        "compatible",
-        "safe",
-        "proven",
-    ]
-)
-_NOVELTY_KEYWORDS = frozenset(
-    [
-        "new",
-        "novel",
-        "different",
-        "alternative",
-        "creative",
-        "unconventional",
-        "innovative",
-        "fresh",
-        "unique",
-        "original",
-        "rethink",
-        "restructure",
-    ]
-)
+_STOPWORDS = frozenset([
+    "the", "a", "an", "is", "are", "was", "were", "be", "been", "have",
+    "has", "had", "do", "does", "did", "will", "would", "shall", "should",
+    "may", "might", "can", "could", "of", "in", "to", "for", "with", "on",
+    "at", "from", "by", "as", "and", "or", "not", "this", "that", "it",
+])
+
+_FEASIBILITY_KEYWORDS = frozenset([
+    "existing", "reuse", "simple", "stdlib", "deterministic", "incremental",
+    "lightweight", "minimal", "backward", "compatible", "safe", "proven",
+])
+_NOVELTY_KEYWORDS = frozenset([
+    "new", "novel", "different", "alternative", "creative", "unconventional",
+    "innovative", "fresh", "unique", "original", "rethink", "restructure",
+])
 
 
 def _tokenize(text: str) -> Set[str]:
@@ -116,9 +56,6 @@ def _jaccard(a: set, b: set) -> float:
     union = a | b
     return len(a & b) / len(union) if union else 1.0
 
-
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 class StagnationDetector:
@@ -175,10 +112,14 @@ class StagnationDetector:
             "details": details,
         }
 
-    def break_plateau(self, reflex_name: str, pattern_type: str, context: str) -> Dict[str, Any]:
+    def break_plateau(
+        self, reflex_name: str, pattern_type: str, context: str
+    ) -> Dict[str, Any]:
         """Select persona, generate alternatives, score, store."""
         persona_name, prompt = self._select_persona(pattern_type)
-        alternatives = self._generate_alternatives(persona_name, prompt, context)
+        alternatives = self._generate_alternatives(
+            persona_name, prompt, context
+        )
 
         # Score and sort
         for alt in alternatives:
@@ -209,7 +150,9 @@ class StagnationDetector:
         recent = metrics[-window:]
         tol = 0.01
         # Check A≈C and B≈D (period-2)
-        if abs(recent[0] - recent[2]) < tol and abs(recent[1] - recent[3]) < tol and abs(recent[0] - recent[1]) > tol:
+        if (abs(recent[0] - recent[2]) < tol and
+                abs(recent[1] - recent[3]) < tol and
+                abs(recent[0] - recent[1]) > tol):
             return {
                 "pattern": "period_2_cycle",
                 "values": recent,
@@ -270,7 +213,6 @@ class StagnationDetector:
         window = self.detection.get("repetitive_output_window", 3)
 
         from tools.db.storage import get_connection
-
         conn = get_connection()
         try:
             rows = conn.execute(
@@ -319,24 +261,27 @@ class StagnationDetector:
                 return name, cfg.get("description", "Suggest alternatives.")
         # Fallback to contrarian
         fallback = self.personas.get("contrarian", {})
-        return "contrarian", fallback.get("description", "What assumption should we challenge?")
+        return "contrarian", fallback.get(
+            "description", "What assumption should we challenge?"
+        )
 
-    def _generate_alternatives(self, persona: str, prompt: str, context: str) -> List[Dict]:
+    def _generate_alternatives(
+        self, persona: str, prompt: str, context: str
+    ) -> List[Dict]:
         """Generate alternatives via LLM (scanner tier) or deterministic fallback."""
         alternatives = []
         try:
             from tools.llm.router import LLMRouter
-
+            from tools.llm.provider import LLMRequest
             router = LLMRouter()
             system = (
                 f"You are the '{persona}' lateral thinking persona. "
                 f"Your role: {prompt}\n"
                 f"Given the following reflex execution context, propose "
                 f"1-{self.max_alts} concrete, actionable alternative approaches. "
-                f'Return JSON array: [{{"description": "..."}}, ...]'
+                f"Return JSON array: [{{\"description\": \"...\"}}, ...]"
             )
-            result = router.invoke(
-                function="code_analysis",  # scanner tier
+            request = LLMRequest(
                 messages=[
                     {"role": "system", "content": system},
                     {"role": "user", "content": context[:4000]},
@@ -344,10 +289,10 @@ class StagnationDetector:
                 max_tokens=2048,
                 temperature=0.7,
             )
-            text = result.get("content", "") if isinstance(result, dict) else str(result)
+            result = router.invoke("code_analysis", request)
+            text = result.content if result and result.content else ""
             # Parse JSON array from response
             import re as _re
-
             match = _re.search(r"\[.*\]", text, _re.DOTALL)
             if match:
                 parsed = json.loads(match.group())
@@ -387,7 +332,6 @@ class StagnationDetector:
     def _get_recent_metrics(self, reflex_name: str, limit: int = 10) -> List[float]:
         """Fetch last N metric_values from genesis_audit."""
         from tools.db.storage import get_connection
-
         conn = get_connection()
         try:
             rows = conn.execute(
@@ -404,7 +348,6 @@ class StagnationDetector:
     def _store(self, result: Dict) -> str:
         """Append-only INSERT into genesis_stagnation_log."""
         from tools.db.storage import get_connection
-
         entry_id = str(uuid.uuid4())
         conn = get_connection()
         try:
@@ -423,7 +366,7 @@ class StagnationDetector:
                     result.get("selected_alternative"),
                     result.get("selected_score", 0.0),
                     json.dumps(result.get("details", {})),
-                    _now(),
+                    now_isoformat(),
                 ),
             )
             conn.commit()

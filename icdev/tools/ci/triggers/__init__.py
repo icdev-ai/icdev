@@ -1,2 +1,2 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV CI Triggers
+# ICDEV™ CI Triggers

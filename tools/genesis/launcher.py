@@ -1,8 +1,8 @@
-"""ICDEV Services Launcher — starts Dashboard + Genesis Daemon.
+"""ICDEV™ Services Launcher — starts Dashboard + Genesis Daemon + Kanban Scheduler.
 
 Spawned by Task Scheduler via start_daemon.bat.
-Dashboard runs as a subprocess; daemon runs in the main process.
-Both auto-restart on crash. Ollama health is checked before daemon start.
+All services run as subprocesses with auto-restart on crash.
+Ollama health is checked before daemon start.
 """
 
 import subprocess
@@ -13,6 +13,18 @@ import urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.chdir(ROOT)
+
+# Load .env so dashboard/daemon get API keys, LLM config, etc.
+_env_file = os.path.join(ROOT, ".env")
+if os.path.isfile(_env_file):
+    with open(_env_file, encoding="utf-8") as _f:
+        for _line in _f:
+            _line = _line.strip()
+            if _line and not _line.startswith("#") and "=" in _line:
+                _k, _, _v = _line.partition("=")
+                _k, _v = _k.strip(), _v.strip().strip('"').strip("'")
+                if _k:
+                    os.environ.setdefault(_k, _v)
 
 # Ensure .tmp dirs exist
 os.makedirs(".tmp/genesis", exist_ok=True)
@@ -42,7 +54,7 @@ def _check_ollama(timeout: float = 3.0) -> bool:
     """Check if Ollama is reachable."""
     try:
         req = urllib.request.Request("http://localhost:11434/api/tags", method="GET")
-        with urllib.request.urlopen(req, timeout=timeout):
+        with urllib.request.urlopen(req, timeout=timeout):  # nosec B310 -- URL scheme validated; internal/configured endpoints only
             return True
     except Exception:
         return False
@@ -98,9 +110,40 @@ def _start_daemon():
     return proc, daemon_log
 
 
+def _start_proposal_genesis():
+    """Start Proposal Genesis Daemon subprocess."""
+    os.makedirs(".tmp/proposal_genesis", exist_ok=True)
+    pg_log = open(".tmp/proposal_genesis/daemon.log", "a", encoding="utf-8")
+    env = _child_env()
+    env["ICDEV_PROPOSAL_GENESIS_ENABLED"] = "true"
+    proc = subprocess.Popen(
+        [sys.executable, "tools/proposal_genesis/daemon.py"],
+        stdout=pg_log,
+        stderr=pg_log,
+        cwd=ROOT,
+        env=env,
+    )
+    _log(f"Proposal Genesis Daemon started (PID {proc.pid})")
+    return proc, pg_log
+
+
+def _start_kanban_scheduler():
+    """Start Kanban Scheduler subprocess."""
+    kb_log = open(".tmp/kanban_scheduler.log", "a", encoding="utf-8")
+    proc = subprocess.Popen(
+        [sys.executable, "tools/genesis/kanban_scheduler.py", "--interval", "60"],
+        stdout=kb_log,
+        stderr=kb_log,
+        cwd=ROOT,
+        env=_child_env(),
+    )
+    _log(f"Kanban Scheduler started (PID {proc.pid})")
+    return proc, kb_log
+
+
 def main():
     _log("=" * 60)
-    _log("ICDEV Services Launcher starting")
+    _log("ICDEV™ Services Launcher starting")
     _log(f"  Root: {ROOT}")
     _log(f"  Python: {sys.executable}")
 
@@ -114,6 +157,12 @@ def main():
     # Start Genesis Daemon
     daemon_proc, daemon_log_f = _start_daemon()
 
+    # Start Proposal Genesis Daemon (SAM.gov scanning, proposal intelligence)
+    pg_proc, pg_log_f = _start_proposal_genesis()
+
+    # Start Kanban Scheduler (autonomous task execution)
+    kb_proc, kb_log_f = _start_kanban_scheduler()
+
     # Monitor loop — restart crashed processes
     try:
         while True:
@@ -126,30 +175,43 @@ def main():
                 time.sleep(2)
                 dash_proc, dash_log_f = _start_dashboard()
 
-            # Check daemon
+            # Check Genesis daemon
             if daemon_proc.poll() is not None:
                 _log(f"Genesis Daemon exited (code {daemon_proc.returncode}), restarting...")
                 daemon_log_f.close()
                 time.sleep(5)
                 daemon_proc, daemon_log_f = _start_daemon()
 
+            # Check Proposal Genesis daemon
+            if pg_proc.poll() is not None:
+                _log(f"Proposal Genesis exited (code {pg_proc.returncode}), restarting...")
+                pg_log_f.close()
+                time.sleep(5)
+                pg_proc, pg_log_f = _start_proposal_genesis()
+
+            # Check Kanban Scheduler
+            if kb_proc.poll() is not None:
+                _log(f"Kanban Scheduler exited (code {kb_proc.returncode}), restarting...")
+                kb_log_f.close()
+                time.sleep(2)
+                kb_proc, kb_log_f = _start_kanban_scheduler()
+
     except KeyboardInterrupt:
         _log("Shutdown requested")
     finally:
         _log("Stopping services...")
-        daemon_proc.terminate()
-        dash_proc.terminate()
-        try:
-            daemon_proc.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            daemon_proc.kill()
-        try:
-            dash_proc.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            dash_proc.kill()
+        for proc in [daemon_proc, pg_proc, kb_proc, dash_proc]:
+            proc.terminate()
+        for proc in [daemon_proc, pg_proc, kb_proc, dash_proc]:
+            try:
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                proc.kill()
         dash_log_f.close()
         daemon_log_f.close()
-        _log("ICDEV Services stopped")
+        pg_log_f.close()
+        kb_log_f.close()
+        _log("ICDEV™ Services stopped")
 
 
 if __name__ == "__main__":

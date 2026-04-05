@@ -1,5 +1,5 @@
 ---
-description: "ICDEV workflow: Generate IaC (Terraform, Ansible, K8s) and GitLab CI/CD pipeline for AWS GovCloud deployment"
+description: "ICDEV™ workflow: Generate IaC (Terraform, Ansible, K8s) and GitLab CI/CD pipeline for AWS GovCloud deployment"
 globs:
   - "**/*.py"
   - "**/*.yaml"

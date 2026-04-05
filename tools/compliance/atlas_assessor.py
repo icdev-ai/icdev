@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """MITRE ATLAS v5.4.0 Assessment Engine.
 
 Assesses projects against MITRE ATLAS (Adversarial Threat Landscape for
@@ -111,7 +111,7 @@ class ATLASAssessor(BaseAssessor):
                 row = conn.execute(
                     """SELECT COUNT(*) as cnt FROM agent_token_usage
                        WHERE project_id = ?
-                       AND timestamp >= datetime('now', '-30 days')""",
+                       AND created_at >= datetime('now', '-30 days')""",
                     (project.get("id", ""),),
                 ).fetchone()
                 if row and row["cnt"] > 0:

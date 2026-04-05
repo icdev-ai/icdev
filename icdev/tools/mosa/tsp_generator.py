@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """TSP Generator -- Technical Standard Profile for DoD MOSA compliance.
 
 Auto-detects standards from project tech stack, generates a CUI-marked

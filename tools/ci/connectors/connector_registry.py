@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Connector Registry — plugin registry + route registration (D66, D136)
+# ICDEV™ Connector Registry — plugin registry + route registration (D66, D136)
 
 """
 Central registry for all chat platform connectors.

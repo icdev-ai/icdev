@@ -29,12 +29,10 @@ from tools.mcp.base_server import MCPServer  # noqa: E402
 # Lazy tool imports — tools may still be under construction
 # ---------------------------------------------------------------------------
 
-
 def _import_tool(module_path, func_name):
     """Dynamically import a function from a module. Returns None if unavailable."""
     try:
         import importlib
-
         mod = importlib.import_module(module_path)
         return getattr(mod, func_name, None)
     except (ImportError, ModuleNotFoundError, AttributeError):
@@ -44,7 +42,6 @@ def _import_tool(module_path, func_name):
 # ---------------------------------------------------------------------------
 # Tool handlers
 # ---------------------------------------------------------------------------
-
 
 def handle_nist_lookup(args: dict) -> dict:
     """Look up a NIST 800-53 control by ID or list controls by family."""
@@ -169,7 +166,6 @@ def handle_control_map(args: dict) -> dict:
 # CSSP tool handlers
 # ---------------------------------------------------------------------------
 
-
 def handle_cssp_assess(args: dict) -> dict:
     """Run CSSP assessment per DI 8530.01."""
     assess = _import_tool("tools.compliance.cssp_assessor", "assess_project")
@@ -230,7 +226,6 @@ def handle_cssp_evidence(args: dict) -> dict:
 # Xacta integration handlers
 # ---------------------------------------------------------------------------
 
-
 def handle_xacta_sync(args: dict) -> dict:
     """Sync project compliance data to Xacta 360."""
     sync = _import_tool("tools.compliance.xacta.xacta_sync", "sync_to_xacta")
@@ -262,7 +257,6 @@ def handle_xacta_export(args: dict) -> dict:
 # ---------------------------------------------------------------------------
 # SbD (Secure by Design) handlers
 # ---------------------------------------------------------------------------
-
 
 def handle_sbd_assess(args: dict) -> dict:
     """Run Secure by Design assessment per CISA commitments and DoDI 5000.87."""
@@ -296,7 +290,6 @@ def handle_sbd_report(args: dict) -> dict:
 # ---------------------------------------------------------------------------
 # IV&V (Independent Verification & Validation) handlers
 # ---------------------------------------------------------------------------
-
 
 def handle_ivv_assess(args: dict) -> dict:
     """Run IV&V assessment per IEEE 1012."""
@@ -344,7 +337,6 @@ def handle_rtm_generate(args: dict) -> dict:
 # ---------------------------------------------------------------------------
 # Multi-Framework Compliance handlers (Phase 17)
 # ---------------------------------------------------------------------------
-
 
 def handle_crosswalk_query(args: dict) -> dict:
     """Query the control crosswalk engine for multi-framework mappings."""
@@ -621,7 +613,6 @@ def handle_classification_check(args: dict) -> dict:
 # FIPS 199/200 Security Categorization handlers (Phase 20)
 # ---------------------------------------------------------------------------
 
-
 def handle_fips199_categorize(args: dict) -> dict:
     """Run FIPS 199 security categorization."""
     action = args.get("action", "categorize")
@@ -639,15 +630,11 @@ def handle_fips199_categorize(args: dict) -> dict:
         fn = _import_tool("tools.compliance.fips199_categorizer", "add_information_type")
         if not fn:
             return {"error": "fips199_categorizer not available"}
-        return fn(
-            project_id,
-            args.get("type_id"),
-            adjust_c=args.get("adjust_c"),
-            adjust_i=args.get("adjust_i"),
-            adjust_a=args.get("adjust_a"),
-            adjustment_justification=args.get("justification"),
-            db_path=str(DB_PATH),
-        )
+        return fn(project_id, args.get("type_id"),
+                  adjust_c=args.get("adjust_c"), adjust_i=args.get("adjust_i"),
+                  adjust_a=args.get("adjust_a"),
+                  adjustment_justification=args.get("justification"),
+                  db_path=str(DB_PATH))
 
     if action == "remove_type":
         fn = _import_tool("tools.compliance.fips199_categorizer", "remove_information_type")
@@ -678,15 +665,10 @@ def handle_fips199_categorize(args: dict) -> dict:
     fn = _import_tool("tools.compliance.fips199_categorizer", "categorize_project")
     if not fn:
         return {"error": "fips199_categorizer not available"}
-    return fn(
-        project_id,
-        method=args.get("method", "information_type"),
-        manual_c=args.get("manual_c"),
-        manual_i=args.get("manual_i"),
-        manual_a=args.get("manual_a"),
-        justification=args.get("justification"),
-        db_path=str(DB_PATH),
-    )
+    return fn(project_id, method=args.get("method", "information_type"),
+              manual_c=args.get("manual_c"), manual_i=args.get("manual_i"),
+              manual_a=args.get("manual_a"), justification=args.get("justification"),
+              db_path=str(DB_PATH))
 
 
 def handle_fips200_validate(args: dict) -> dict:
@@ -697,7 +679,8 @@ def handle_fips200_validate(args: dict) -> dict:
     project_id = args.get("project_id")
     if not project_id:
         raise ValueError("'project_id' is required")
-    return fn(project_id, project_dir=args.get("project_dir"), gate=args.get("gate", False), db_path=str(DB_PATH))
+    return fn(project_id, project_dir=args.get("project_dir"),
+              gate=args.get("gate", False), db_path=str(DB_PATH))
 
 
 def handle_security_categorize(args: dict) -> dict:
@@ -720,7 +703,6 @@ def handle_security_categorize(args: dict) -> dict:
 # OSCAL Ecosystem handlers (D302-D306)
 # ---------------------------------------------------------------------------
 
-
 def handle_oscal_validate_deep(args: dict) -> dict:
     """Run 3-layer deep OSCAL validation (structural → pydantic → Metaschema)."""
     fn = _import_tool("tools.compliance.oscal_tools", "validate_oscal_deep")
@@ -729,7 +711,8 @@ def handle_oscal_validate_deep(args: dict) -> dict:
     file_path = args.get("file_path")
     if not file_path:
         raise ValueError("'file_path' is required")
-    return fn(file_path, project_id=args.get("project_id"), db_path=str(DB_PATH))
+    return fn(file_path, project_id=args.get("project_id"),
+              db_path=str(DB_PATH))
 
 
 def handle_oscal_convert(args: dict) -> dict:
@@ -756,7 +739,7 @@ def handle_oscal_resolve_profile(args: dict) -> dict:
 
 
 def handle_oscal_catalog_lookup(args: dict) -> dict:
-    """Look up controls in the OSCAL catalog (official NIST or ICDEV fallback)."""
+    """Look up controls in the OSCAL catalog (official NIST or ICDEV™ fallback)."""
     control_id = args.get("control_id")
     family = args.get("family")
 
@@ -794,21 +777,17 @@ def handle_oscal_detect_tools(args: dict) -> dict:
 # Server setup
 # ---------------------------------------------------------------------------
 
-
 def create_server() -> MCPServer:
     server = MCPServer(name="icdev-compliance", version="1.0.0")
 
     server.register_tool(
         name="nist_lookup",
-        description="Look up NIST 800-53 Rev 5 security controls by control ID (e.g., AC-2) or list all controls in a family (e.g., AC, AU, SA).",  # noqa: E501
+        description="Look up NIST 800-53 Rev 5 security controls by control ID (e.g., AC-2) or list all controls in a family (e.g., AC, AU, SA).",
         input_schema={
             "type": "object",
             "properties": {
                 "control_id": {"type": "string", "description": "Control ID to look up (e.g., AC-2, SA-11)"},
-                "family": {
-                    "type": "string",
-                    "description": "Family code to list all controls (e.g., AC, AU, CM, IA, SA, SC)",
-                },
+                "family": {"type": "string", "description": "Family code to list all controls (e.g., AC, AU, CM, IA, SA, SC)"},
             },
         },
         handler=handle_nist_lookup,
@@ -816,7 +795,7 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="ssp_generate",
-        description="Generate a System Security Plan (SSP) document for a project with all 17 sections per NIST 800-53. Includes CUI markings.",  # noqa: E501
+        description="Generate a System Security Plan (SSP) document for a project with all 17 sections per NIST 800-53. Includes CUI markings.",
         input_schema={
             "type": "object",
             "properties": {
@@ -830,7 +809,7 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="poam_generate",
-        description="Generate a Plan of Action & Milestones (POA&M) document from security scan findings with corrective actions and milestones.",  # noqa: E501
+        description="Generate a Plan of Action & Milestones (POA&M) document from security scan findings with corrective actions and milestones.",
         input_schema={
             "type": "object",
             "properties": {
@@ -844,7 +823,7 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="stig_check",
-        description="Run STIG compliance checks against a project. Returns findings categorized as CAT1 (critical), CAT2 (high), CAT3 (medium).",  # noqa: E501
+        description="Run STIG compliance checks against a project. Returns findings categorized as CAT1 (critical), CAT2 (high), CAT3 (medium).",
         input_schema={
             "type": "object",
             "properties": {
@@ -863,7 +842,7 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="sbom_generate",
-        description="Generate a Software Bill of Materials (SBOM) in CycloneDX format. Lists all dependencies with versions and known vulnerabilities.",  # noqa: E501
+        description="Generate a Software Bill of Materials (SBOM) in CycloneDX format. Lists all dependencies with versions and known vulnerabilities.",
         input_schema={
             "type": "object",
             "properties": {
@@ -877,7 +856,7 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="cui_mark",
-        description="Apply CUI (Controlled Unclassified Information) markings to a file or content string. Adds CUI // SP-CTI banners and designation indicators.",  # noqa: E501
+        description="Apply CUI (Controlled Unclassified Information) markings to a file or content string. Adds CUI // SP-CTI banners and designation indicators.",
         input_schema={
             "type": "object",
             "properties": {
@@ -891,14 +870,11 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="control_map",
-        description="Map a project activity (e.g., code.commit, test.execute, deploy) to relevant NIST 800-53 controls. Records the mapping in the database.",  # noqa: E501
+        description="Map a project activity (e.g., code.commit, test.execute, deploy) to relevant NIST 800-53 controls. Records the mapping in the database.",
         input_schema={
             "type": "object",
             "properties": {
-                "activity": {
-                    "type": "string",
-                    "description": "Activity type (e.g., code.commit, test.execute, security.scan, deploy.staging)",
-                },
+                "activity": {"type": "string", "description": "Activity type (e.g., code.commit, test.execute, security.scan, deploy.staging)"},
                 "project_id": {"type": "string", "description": "UUID of the project (optional)"},
             },
             "required": ["activity"],
@@ -910,7 +886,7 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="cssp_assess",
-        description="Run CSSP assessment per DoD Instruction 8530.01 against a project. Evaluates 5 functional areas: Identify, Protect, Detect, Respond, Sustain.",  # noqa: E501
+        description="Run CSSP assessment per DoD Instruction 8530.01 against a project. Evaluates 5 functional areas: Identify, Protect, Detect, Respond, Sustain.",
         input_schema={
             "type": "object",
             "properties": {
@@ -929,7 +905,7 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="cssp_report",
-        description="Generate a CSSP certification report with functional area scores, evidence summary, and certification recommendation.",  # noqa: E501
+        description="Generate a CSSP certification report with functional area scores, evidence summary, and certification recommendation.",
         input_schema={
             "type": "object",
             "properties": {
@@ -943,7 +919,7 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="cssp_ir_plan",
-        description="Generate an Incident Response Plan per CSSP SOC requirements with escalation timelines and SOC coordination procedures.",  # noqa: E501
+        description="Generate an Incident Response Plan per CSSP SOC requirements with escalation timelines and SOC coordination procedures.",
         input_schema={
             "type": "object",
             "properties": {
@@ -957,7 +933,7 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="cssp_evidence",
-        description="Collect and index evidence artifacts for CSSP assessment. Scans project for compliance artifacts and maps them to CSSP requirements.",  # noqa: E501
+        description="Collect and index evidence artifacts for CSSP assessment. Scans project for compliance artifacts and maps them to CSSP requirements.",
         input_schema={
             "type": "object",
             "properties": {
@@ -973,7 +949,7 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="xacta_sync",
-        description="Sync project compliance data to Xacta 360 (system of record for CSSP/ATO). Supports API, export, and hybrid modes.",  # noqa: E501
+        description="Sync project compliance data to Xacta 360 (system of record for CSSP/ATO). Supports API, export, and hybrid modes.",
         input_schema={
             "type": "object",
             "properties": {
@@ -1020,23 +996,11 @@ def create_server() -> MCPServer:
                 "project_id": {"type": "string", "description": "UUID of the project to assess"},
                 "domain": {
                     "type": "string",
-                    "enum": [
-                        "all",
-                        "Authentication",
-                        "Memory Safety",
-                        "Vulnerability Mgmt",
-                        "Intrusion Evidence",
-                        "Cryptography",
-                        "Access Control",
-                        "Input Handling",
-                        "Error Handling",
-                        "Supply Chain",
-                        "Threat Modeling",
-                        "Defense in Depth",
-                        "Secure Defaults",
-                        "CUI Compliance",
-                        "DoD Software Assurance",
-                    ],
+                    "enum": ["all", "Authentication", "Memory Safety", "Vulnerability Mgmt",
+                             "Intrusion Evidence", "Cryptography", "Access Control",
+                             "Input Handling", "Error Handling", "Supply Chain",
+                             "Threat Modeling", "Defense in Depth", "Secure Defaults",
+                             "CUI Compliance", "DoD Software Assurance"],
                     "default": "all",
                     "description": "Domain to assess (default: all)",
                 },
@@ -1072,18 +1036,11 @@ def create_server() -> MCPServer:
                 "project_id": {"type": "string", "description": "UUID of the project to assess"},
                 "process_area": {
                     "type": "string",
-                    "enum": [
-                        "all",
-                        "Requirements Verification",
-                        "Design Verification",
-                        "Code Verification",
-                        "Test Verification",
-                        "Integration Verification",
-                        "Traceability Analysis",
-                        "Security Verification",
-                        "Build/Deploy Verification",
-                        "Process Compliance",
-                    ],
+                    "enum": ["all", "Requirements Verification", "Design Verification",
+                             "Code Verification", "Test Verification",
+                             "Integration Verification", "Traceability Analysis",
+                             "Security Verification", "Build/Deploy Verification",
+                             "Process Compliance"],
                     "default": "all",
                     "description": "Process area to assess (default: all)",
                 },
@@ -1096,7 +1053,7 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="ivv_report",
-        description="Generate an IV&V certification report with verification/validation scores and certification recommendation.",  # noqa: E501
+        description="Generate an IV&V certification report with verification/validation scores and certification recommendation.",
         input_schema={
             "type": "object",
             "properties": {
@@ -1110,7 +1067,7 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="rtm_generate",
-        description="Generate a Requirements Traceability Matrix (RTM) linking requirements to design, code, and tests.",  # noqa: E501
+        description="Generate a Requirements Traceability Matrix (RTM) linking requirements to design, code, and tests.",
         input_schema={
             "type": "object",
             "properties": {
@@ -1126,19 +1083,13 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="crosswalk_query",
-        description="Query control crosswalk engine for multi-framework mappings (NIST 800-53 ↔ FedRAMP ↔ 800-171 ↔ CMMC). Actions: frameworks_for_control, controls_for_framework, controls_for_impact_level, coverage, gap_analysis.",  # noqa: E501
+        description="Query control crosswalk engine for multi-framework mappings (NIST 800-53 ↔ FedRAMP ↔ 800-171 ↔ CMMC). Actions: frameworks_for_control, controls_for_framework, controls_for_impact_level, coverage, gap_analysis.",
         input_schema={
             "type": "object",
             "properties": {
                 "action": {
                     "type": "string",
-                    "enum": [
-                        "frameworks_for_control",
-                        "controls_for_framework",
-                        "controls_for_impact_level",
-                        "coverage",
-                        "gap_analysis",
-                    ],
+                    "enum": ["frameworks_for_control", "controls_for_framework", "controls_for_impact_level", "coverage", "gap_analysis"],
                     "default": "frameworks_for_control",
                     "description": "Query action to perform",
                 },
@@ -1154,7 +1105,7 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="fedramp_assess",
-        description="Run FedRAMP Moderate or High baseline security assessment against a project. Inherits NIST 800-53 implementations via crosswalk.",  # noqa: E501
+        description="Run FedRAMP Moderate or High baseline security assessment against a project. Inherits NIST 800-53 implementations via crosswalk.",
         input_schema={
             "type": "object",
             "properties": {
@@ -1174,7 +1125,7 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="fedramp_report",
-        description="Generate a FedRAMP assessment report with control family scores, gap analysis, and readiness score.",  # noqa: E501
+        description="Generate a FedRAMP assessment report with control family scores, gap analysis, and readiness score.",
         input_schema={
             "type": "object",
             "properties": {
@@ -1209,7 +1160,7 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="cmmc_report",
-        description="Generate a CMMC assessment report with domain scores, practice status, and NIST 800-171 cross-reference.",  # noqa: E501
+        description="Generate a CMMC assessment report with domain scores, practice status, and NIST 800-171 cross-reference.",
         input_schema={
             "type": "object",
             "properties": {
@@ -1224,7 +1175,7 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="oscal_generate",
-        description="Generate NIST OSCAL 1.1.2 artifacts (SSP, POA&M, Assessment Results, Component Definition) in machine-readable format.",  # noqa: E501
+        description="Generate NIST OSCAL 1.1.2 artifacts (SSP, POA&M, Assessment Results, Component Definition) in machine-readable format.",
         input_schema={
             "type": "object",
             "properties": {
@@ -1249,7 +1200,7 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="emass_sync",
-        description="Sync project compliance data to eMASS (DoD system of record). Supports API, export, and hybrid modes.",  # noqa: E501
+        description="Sync project compliance data to eMASS (DoD system of record). Supports API, export, and hybrid modes.",
         input_schema={
             "type": "object",
             "properties": {
@@ -1268,7 +1219,7 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="cato_monitor",
-        description="Monitor continuous ATO (cATO) evidence freshness and readiness. Actions: readiness, check_freshness, auto_reassess, dashboard, expire.",  # noqa: E501
+        description="Monitor continuous ATO (cATO) evidence freshness and readiness. Actions: readiness, check_freshness, auto_reassess, dashboard, expire.",
         input_schema={
             "type": "object",
             "properties": {
@@ -1287,7 +1238,7 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="pi_compliance",
-        description="Track compliance across SAFe Program Increments (PIs). Actions: start, record, close, velocity, burndown, report.",  # noqa: E501
+        description="Track compliance across SAFe Program Increments (PIs). Actions: start, record, close, velocity, burndown, report.",
         input_schema={
             "type": "object",
             "properties": {
@@ -1320,11 +1271,7 @@ def create_server() -> MCPServer:
                     "description": "Classification action",
                 },
                 "project_id": {"type": "string", "description": "UUID of the project (for validate)"},
-                "impact_level": {
-                    "type": "string",
-                    "enum": ["IL4", "IL5", "IL6"],
-                    "description": "Impact level (for baseline/profile)",
-                },
+                "impact_level": {"type": "string", "enum": ["IL4", "IL5", "IL6"], "description": "Impact level (for baseline/profile)"},
                 "classification": {"type": "string", "description": "Classification level (for banner)"},
             },
         },
@@ -1335,22 +1282,14 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="fips199_categorize",
-        description="FIPS 199 security categorization using NIST SP 800-60 information types. Actions: categorize, add_type, remove_type, list_types, list_catalog, get, gate.",  # noqa: E501
+        description="FIPS 199 security categorization using NIST SP 800-60 information types. Actions: categorize, add_type, remove_type, list_types, list_catalog, get, gate.",
         input_schema={
             "type": "object",
             "properties": {
                 "project_id": {"type": "string", "description": "Project UUID"},
-                "action": {
-                    "type": "string",
-                    "enum": ["categorize", "add_type", "remove_type", "list_types", "list_catalog", "get", "gate"],
-                    "default": "categorize",
-                },
+                "action": {"type": "string", "enum": ["categorize", "add_type", "remove_type", "list_types", "list_catalog", "get", "gate"], "default": "categorize"},
                 "type_id": {"type": "string", "description": "SP 800-60 info type ID (e.g., D.1.1.1)"},
-                "method": {
-                    "type": "string",
-                    "enum": ["information_type", "manual", "cnssi_1253"],
-                    "default": "information_type",
-                },
+                "method": {"type": "string", "enum": ["information_type", "manual", "cnssi_1253"], "default": "information_type"},
                 "manual_c": {"type": "string", "enum": ["Low", "Moderate", "High"]},
                 "manual_i": {"type": "string", "enum": ["Low", "Moderate", "High"]},
                 "manual_a": {"type": "string", "enum": ["Low", "Moderate", "High"]},
@@ -1395,7 +1334,7 @@ def create_server() -> MCPServer:
     # OSCAL Ecosystem tools (D302-D306)
     server.register_tool(
         name="oscal_validate_deep",
-        description="Run 3-layer deep OSCAL validation: structural (built-in) → pydantic (if installed) → Metaschema (if oscal-cli + Java available). Each layer independently optional.",  # noqa: E501
+        description="Run 3-layer deep OSCAL validation: structural (built-in) → pydantic (if installed) → Metaschema (if oscal-cli + Java available). Each layer independently optional.",
         input_schema={
             "type": "object",
             "properties": {
@@ -1409,21 +1348,13 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="oscal_convert",
-        description="Convert OSCAL artifact between JSON, XML, and YAML formats using oscal-cli. Requires Java 11+ and oscal-cli JAR.",  # noqa: E501
+        description="Convert OSCAL artifact between JSON, XML, and YAML formats using oscal-cli. Requires Java 11+ and oscal-cli JAR.",
         input_schema={
             "type": "object",
             "properties": {
                 "input_path": {"type": "string", "description": "Path to input OSCAL file"},
-                "output_format": {
-                    "type": "string",
-                    "enum": ["json", "xml", "yaml"],
-                    "default": "xml",
-                    "description": "Target output format",
-                },
-                "output_path": {
-                    "type": "string",
-                    "description": "Output file path (optional, auto-generated if omitted)",
-                },
+                "output_format": {"type": "string", "enum": ["json", "xml", "yaml"], "default": "xml", "description": "Target output format"},
+                "output_path": {"type": "string", "description": "Output file path (optional, auto-generated if omitted)"},
             },
             "required": ["input_path"],
         },
@@ -1432,7 +1363,7 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="oscal_resolve_profile",
-        description="Flatten an OSCAL Profile into a resolved Catalog using oscal-cli profile resolution. Produces a full catalog of selected controls.",  # noqa: E501
+        description="Flatten an OSCAL Profile into a resolved Catalog using oscal-cli profile resolution. Produces a full catalog of selected controls.",
         input_schema={
             "type": "object",
             "properties": {
@@ -1446,7 +1377,7 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="oscal_catalog_lookup",
-        description="Look up NIST 800-53 controls from the OSCAL catalog. Uses official NIST OSCAL catalog (1000+ controls) with ICDEV fallback (39 controls).",  # noqa: E501
+        description="Look up NIST 800-53 controls from the OSCAL catalog. Uses official NIST OSCAL catalog (1000+ controls) with ICDEV™ fallback (39 controls).",
         input_schema={
             "type": "object",
             "properties": {
@@ -1459,7 +1390,7 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="oscal_detect_tools",
-        description="Detect available OSCAL ecosystem tools: oscal-cli (Java, Metaschema validation), oscal-pydantic (Python, type-safe models), NIST OSCAL catalog (1000+ controls).",  # noqa: E501
+        description="Detect available OSCAL ecosystem tools: oscal-cli (Java, Metaschema validation), oscal-pydantic (Python, type-safe models), NIST OSCAL catalog (1000+ controls).",
         input_schema={
             "type": "object",
             "properties": {},

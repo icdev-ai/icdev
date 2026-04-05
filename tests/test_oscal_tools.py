@@ -95,7 +95,7 @@ SAMPLE_OSCAL_CATALOG = {
     }
 }
 
-# Sample ICDEV catalog snippet
+# Sample ICDEV™ catalog snippet
 SAMPLE_ICDEV_CATALOG = {
     "metadata": {"version": "1.0", "framework": "NIST 800-53 Rev 5"},
     "controls": [
@@ -201,7 +201,7 @@ class TestOscalCatalogAdapterOscalFormat:
 
 
 class TestOscalCatalogAdapterIcdevFormat:
-    """Test adapter with ICDEV custom catalog format."""
+    """Test adapter with ICDEV™ custom catalog format."""
 
     @pytest.fixture
     def icdev_catalog_file(self, tmp_path):

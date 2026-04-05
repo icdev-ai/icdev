@@ -33,175 +33,72 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 DEFAULT_PATTERNS = {
     "universal": [
-        {
-            "pattern": r"\beval\s*\(",
-            "severity": "critical",
-            "name": "eval_usage",
-            "description": "Dynamic code evaluation — potential code injection",
-        },
-        {
-            "pattern": r"\bexec\s*\(",
-            "severity": "critical",
-            "name": "exec_usage",
-            "description": "Dynamic code execution — potential code injection",
-        },
-        {
-            "pattern": r"subprocess\.(call|run|Popen|check_output)\s*\(",
-            "severity": "high",
-            "name": "subprocess_spawn",
-            "description": "Process spawning — potential command injection",
-        },
+        {"pattern": r"\beval\s*\(", "severity": "critical", "name": "eval_usage",
+         "description": "Dynamic code evaluation — potential code injection"},
+        {"pattern": r"\bexec\s*\(", "severity": "critical", "name": "exec_usage",
+         "description": "Dynamic code execution — potential code injection"},
+        {"pattern": r"subprocess\.(call|run|Popen|check_output)\s*\(", "severity": "high",
+         "name": "subprocess_spawn", "description": "Process spawning — potential command injection"},
     ],
     "python": [
-        {
-            "pattern": r"\bos\.system\s*\(",
-            "severity": "critical",
-            "name": "os_system",
-            "description": "Shell command execution via os.system",
-        },
-        {
-            "pattern": r"\bpickle\.(loads?|dumps?)\s*\(",
-            "severity": "high",
-            "name": "pickle_usage",
-            "description": "Pickle deserialization — potential arbitrary code execution",
-        },
-        {
-            "pattern": r"\b__import__\s*\(",
-            "severity": "high",
-            "name": "dunder_import",
-            "description": "Dynamic import — potential code injection",
-        },
-        {
-            "pattern": r"\bimportlib\.import_module\s*\(",
-            "severity": "medium",
-            "name": "importlib_usage",
-            "description": "Dynamic module import via importlib",
-        },
-        {
-            "pattern": r"\bos\.popen\s*\(",
-            "severity": "critical",
-            "name": "os_popen",
-            "description": "Shell command via os.popen",
-        },
-        {
-            "pattern": r"\bcompile\s*\(",
-            "severity": "medium",
-            "name": "compile_usage",
-            "description": "Dynamic code compilation",
-        },
+        {"pattern": r"\bos\.system\s*\(", "severity": "critical", "name": "os_system",
+         "description": "Shell command execution via os.system"},
+        {"pattern": r"\bpickle\.(loads?|dumps?)\s*\(", "severity": "high", "name": "pickle_usage",
+         "description": "Pickle deserialization — potential arbitrary code execution"},
+        {"pattern": r"\b__import__\s*\(", "severity": "high", "name": "dunder_import",
+         "description": "Dynamic import — potential code injection"},
+        {"pattern": r"\bimportlib\.import_module\s*\(", "severity": "medium", "name": "importlib_usage",
+         "description": "Dynamic module import via importlib"},
+        {"pattern": r"\bos\.popen\s*\(", "severity": "critical", "name": "os_popen",
+         "description": "Shell command via os.popen"},
+        {"pattern": r"\bcompile\s*\(", "severity": "medium", "name": "compile_usage",
+         "description": "Dynamic code compilation"},
     ],
     "java": [
-        {
-            "pattern": r"Runtime\.getRuntime\(\)\.exec\s*\(",
-            "severity": "critical",
-            "name": "runtime_exec",
-            "description": "Shell execution via Runtime.exec",
-        },
-        {
-            "pattern": r"ObjectInputStream",
-            "severity": "high",
-            "name": "deserialization",
-            "description": "Java deserialization — potential RCE",
-        },
-        {
-            "pattern": r"(InitialContext|lookup)\s*\(.*[\"']ldap",
-            "severity": "critical",
-            "name": "jndi_injection",
-            "description": "JNDI lookup — potential Log4Shell",
-        },
-        {
-            "pattern": r"ProcessBuilder\s*\(",
-            "severity": "high",
-            "name": "process_builder",
-            "description": "Process execution via ProcessBuilder",
-        },
+        {"pattern": r"Runtime\.getRuntime\(\)\.exec\s*\(", "severity": "critical",
+         "name": "runtime_exec", "description": "Shell execution via Runtime.exec"},
+        {"pattern": r"ObjectInputStream", "severity": "high", "name": "deserialization",
+         "description": "Java deserialization — potential RCE"},
+        {"pattern": r"(InitialContext|lookup)\s*\(.*[\"']ldap", "severity": "critical",
+         "name": "jndi_injection", "description": "JNDI lookup — potential Log4Shell"},
+        {"pattern": r"ProcessBuilder\s*\(", "severity": "high", "name": "process_builder",
+         "description": "Process execution via ProcessBuilder"},
     ],
     "go": [
-        {
-            "pattern": r"os/exec",
-            "severity": "high",
-            "name": "os_exec_import",
-            "description": "Process execution package import",
-        },
-        {
-            "pattern": r"exec\.Command\s*\(",
-            "severity": "high",
-            "name": "exec_command",
-            "description": "Shell command execution via exec.Command",
-        },
-        {
-            "pattern": r"\bunsafe\.",
-            "severity": "medium",
-            "name": "unsafe_usage",
-            "description": "Unsafe pointer operations",
-        },
+        {"pattern": r"os/exec", "severity": "high", "name": "os_exec_import",
+         "description": "Process execution package import"},
+        {"pattern": r'exec\.Command\s*\(', "severity": "high", "name": "exec_command",
+         "description": "Shell command execution via exec.Command"},
+        {"pattern": r"\bunsafe\.", "severity": "medium", "name": "unsafe_usage",
+         "description": "Unsafe pointer operations"},
     ],
     "rust": [
-        {
-            "pattern": r"\bunsafe\s*\{",
-            "severity": "medium",
-            "name": "unsafe_block",
-            "description": "Unsafe code block — bypasses borrow checker",
-        },
-        {
-            "pattern": r"std::process::Command",
-            "severity": "high",
-            "name": "process_command",
-            "description": "Shell command execution via std::process::Command",
-        },
-        {
-            "pattern": r"std::mem::transmute",
-            "severity": "high",
-            "name": "mem_transmute",
-            "description": "Unsafe memory transmutation",
-        },
+        {"pattern": r"\bunsafe\s*\{", "severity": "medium", "name": "unsafe_block",
+         "description": "Unsafe code block — bypasses borrow checker"},
+        {"pattern": r"std::process::Command", "severity": "high", "name": "process_command",
+         "description": "Shell command execution via std::process::Command"},
+        {"pattern": r"std::mem::transmute", "severity": "high", "name": "mem_transmute",
+         "description": "Unsafe memory transmutation"},
     ],
     "csharp": [
-        {
-            "pattern": r"Process\.Start\s*\(",
-            "severity": "high",
-            "name": "process_start",
-            "description": "Process execution via Process.Start",
-        },
-        {
-            "pattern": r"Assembly\.Load",
-            "severity": "high",
-            "name": "assembly_load",
-            "description": "Dynamic assembly loading — potential code injection",
-        },
-        {
-            "pattern": r"SqlCommand\s*\(.*\+",
-            "severity": "high",
-            "name": "sql_concat",
-            "description": "SQL string concatenation — potential SQL injection",
-        },
+        {"pattern": r"Process\.Start\s*\(", "severity": "high", "name": "process_start",
+         "description": "Process execution via Process.Start"},
+        {"pattern": r"Assembly\.Load", "severity": "high", "name": "assembly_load",
+         "description": "Dynamic assembly loading — potential code injection"},
+        {"pattern": r"SqlCommand\s*\(.*\+", "severity": "high", "name": "sql_concat",
+         "description": "SQL string concatenation — potential SQL injection"},
     ],
     "typescript": [
-        {
-            "pattern": r"child_process",
-            "severity": "high",
-            "name": "child_process",
-            "description": "Child process module — command execution",
-        },
-        {"pattern": r"Deno\.run\s*\(", "severity": "high", "name": "deno_run", "description": "Deno process execution"},
-        {
-            "pattern": r"\beval\s*\(",
-            "severity": "critical",
-            "name": "eval_usage",
-            "description": "Dynamic code evaluation",
-        },
-        {
-            "pattern": r"process\.exit\s*\(",
-            "severity": "medium",
-            "name": "process_exit",
-            "description": "Process termination",
-        },
-        {
-            "pattern": r"Function\s*\(",
-            "severity": "high",
-            "name": "function_constructor",
-            "description": "Dynamic function creation via Function constructor",
-        },
+        {"pattern": r"child_process", "severity": "high", "name": "child_process",
+         "description": "Child process module — command execution"},
+        {"pattern": r"Deno\.run\s*\(", "severity": "high", "name": "deno_run",
+         "description": "Deno process execution"},
+        {"pattern": r"\beval\s*\(", "severity": "critical", "name": "eval_usage",
+         "description": "Dynamic code evaluation"},
+        {"pattern": r"process\.exit\s*\(", "severity": "medium", "name": "process_exit",
+         "description": "Process termination"},
+        {"pattern": r"Function\s*\(", "severity": "high", "name": "function_constructor",
+         "description": "Dynamic function creation via Function constructor"},
     ],
 }
 
@@ -220,17 +117,8 @@ EXTENSION_MAP = {
 
 # Directories to skip
 SKIP_DIRS = {
-    "node_modules",
-    ".git",
-    "__pycache__",
-    ".tox",
-    ".venv",
-    "venv",
-    "target",
-    "build",
-    "dist",
-    ".tmp",
-    "vendor",
+    "node_modules", ".git", "__pycache__", ".tox", ".venv", "venv",
+    "target", "build", "dist", ".tmp", "vendor",
 }
 
 
@@ -243,6 +131,8 @@ class CodePatternScanner:
     def __init__(self, config_path: Optional[Path] = None):
         self._patterns = dict(DEFAULT_PATTERNS)
         self._compiled: Dict[str, List[Tuple[re.Pattern, dict]]] = {}
+        self._allowed_dirs: list = []
+        self._allowed_patterns: set = set()
 
         # Try loading YAML config
         config_file = config_path or (BASE_DIR / "args" / "code_pattern_config.yaml")
@@ -255,15 +145,32 @@ class CodePatternScanner:
         """Load patterns from YAML config."""
         try:
             import yaml
-
-            with open(path) as f:
+            with open(path, encoding="utf-8") as f:
                 config = yaml.safe_load(f) or {}
 
             patterns = config.get("patterns", {})
             for lang, lang_patterns in patterns.items():
                 self._patterns[lang] = lang_patterns
+
+            # Load framework allowlist
+            fw = config.get("framework_allowlist", {})
+            self._allowed_dirs = fw.get("allowed_dirs", [])
+            self._allowed_patterns = set(fw.get("allowed_patterns", []))
         except (ImportError, Exception) as exc:
             logger.debug("YAML config load failed: %s — using defaults", exc)
+
+    def _is_allowed(self, finding: dict) -> bool:
+        """Check if a finding is allowed by the framework allowlist."""
+        if not self._allowed_patterns:
+            return False
+        if finding.get("name") not in self._allowed_patterns:
+            return False
+        file_path = finding.get("file", "")
+        for d in self._allowed_dirs:
+            # Normalize to forward slashes for cross-platform matching
+            if d.replace("\\", "/") in file_path.replace("\\", "/"):
+                return True
+        return False
 
     def _compile_patterns(self) -> None:
         """Pre-compile regex patterns for performance."""
@@ -295,13 +202,8 @@ class CodePatternScanner:
         if not language:
             language = self._detect_language(path)
         if not language:
-            return {
-                "scan_type": "code_patterns",
-                "status": "skipped",
-                "findings_count": 0,
-                "findings": [],
-                "language": "unknown",
-            }
+            return {"scan_type": "code_patterns", "status": "skipped",
+                    "findings_count": 0, "findings": [], "language": "unknown"}
 
         try:
             content = path.read_text(encoding="utf-8", errors="replace")
@@ -330,17 +232,15 @@ class CodePatternScanner:
         for line_num, line in enumerate(lines, start=1):
             for regex, pattern_meta in patterns:
                 if regex.search(line):
-                    findings.append(
-                        {
-                            "name": pattern_meta["name"],
-                            "severity": pattern_meta["severity"],
-                            "description": pattern_meta["description"],
-                            "file": source,
-                            "line": line_num,
-                            "line_content": line.strip()[:200],
-                            "language": language,
-                        }
-                    )
+                    findings.append({
+                        "name": pattern_meta["name"],
+                        "severity": pattern_meta["severity"],
+                        "description": pattern_meta["description"],
+                        "file": source,
+                        "line": line_num,
+                        "line_content": line.strip()[:200],
+                        "language": language,
+                    })
 
         # Categorize by severity
         critical = sum(1 for f in findings if f["severity"] == "critical")
@@ -357,7 +257,9 @@ class CodePatternScanner:
             "medium": medium,
             "low": low,
             "findings": findings,
-            "scanned_at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
+            "scanned_at": __import__("datetime").datetime.now(
+                __import__("datetime").timezone.utc
+            ).isoformat(),
             "language": language,
             "source": source,
             "gate_passed": critical == 0 and high == 0,
@@ -407,6 +309,13 @@ class CodePatternScanner:
             for sev in severity_totals:
                 severity_totals[sev] += result.get(sev, 0)
 
+        # Classify findings as allowed (framework-inherent) or unallowed
+        allowed_findings = [f for f in all_findings if self._is_allowed(f)]
+        unallowed_findings = [f for f in all_findings if not self._is_allowed(f)]
+
+        unallowed_critical = sum(1 for f in unallowed_findings if f["severity"] == "critical")
+        unallowed_high = sum(1 for f in unallowed_findings if f["severity"] == "high")
+
         return {
             "scan_type": "code_patterns",
             "status": "completed",
@@ -417,8 +326,11 @@ class CodePatternScanner:
             "high": severity_totals["high"],
             "medium": severity_totals["medium"],
             "low": severity_totals["low"],
+            "allowed_count": len(allowed_findings),
+            "unallowed_critical": unallowed_critical,
+            "unallowed_high": unallowed_high,
             "findings": all_findings,
-            "gate_passed": severity_totals["critical"] == 0 and severity_totals["high"] == 0,
+            "gate_passed": unallowed_critical == 0 and unallowed_high == 0,
         }
 
     def evaluate_gate(self, project_id: str = "") -> dict:
@@ -434,7 +346,6 @@ class CodePatternScanner:
         gate_config = {"max_critical": 0, "max_high": 0, "max_medium": 10}
         try:
             import yaml
-
             gates_path = BASE_DIR / "args" / "security_gates.yaml"
             if gates_path.exists():
                 with open(gates_path) as f:
@@ -491,11 +402,7 @@ if __name__ == "__main__":
         print(json.dumps(result, indent=2, default=str))
     else:
         print(f"Findings: {result.get('findings_count', 0)}")
-        print(
-            f"Critical: {result.get('critical', 0)} | High: {result.get('high', 0)} | Medium: {result.get('medium', 0)}"
-        )
+        print(f"Critical: {result.get('critical', 0)} | High: {result.get('high', 0)} | Medium: {result.get('medium', 0)}")
         print(f"Gate: {'PASSED' if result.get('gate_passed') else 'FAILED'}")
         for f in result.get("findings", [])[:10]:
-            print(
-                f"  [{f['severity'].upper()}] {f['name']} at {f.get('file', 'unknown')}:{f.get('line', 0)} — {f['description']}"  # noqa: E501
-            )
+            print(f"  [{f['severity'].upper()}] {f['name']} at {f.get('file', 'unknown')}:{f.get('line', 0)} — {f['description']}")

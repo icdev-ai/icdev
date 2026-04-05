@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-"""SSE (Server-Sent Events) connection manager for ICDEV dashboard.
+"""SSE (Server-Sent Events) connection manager for ICDEV™ dashboard.
 
 Manages client connections, event broadcasting, and heartbeat.
 Decision D29: SSE over WebSocket — Flask-native, simpler, unidirectional sufficient.
@@ -82,6 +82,55 @@ class SSEManager:
         event_data["context_id"] = context_id
         self.broadcast(event_data, event_type)
 
+    # --- Progress streaming (adapted from Agent Harness SSE pattern) ---
+    def broadcast_progress(self, operation_id: str, operation_type: str,
+                           phase: str, completed: int, total: int,
+                           status: str = "running",
+                           detail: str = None):
+        """Broadcast a structured progress event for long-running operations.
+
+        Provides real-time workflow status updates to the dashboard, similar
+        to the Agent Harness ``harness_phase_start`` / ``harness_batch_complete``
+        SSE events.
+
+        Args:
+            operation_id: Unique ID for this operation run.
+            operation_type: Category (e.g. "genesis_reflex", "compliance_scan",
+                            "batch_workflow", "marketplace_install",
+                            "pulse_pipeline", "filesync").
+            phase: Current phase/step label.
+            completed: Number of completed steps/items.
+            total: Total steps/items.
+            status: One of "running", "completed", "failed", "paused".
+            detail: Optional human-readable detail string.
+        """
+        event_data = {
+            "operation_id": operation_id,
+            "operation_type": operation_type,
+            "phase": phase,
+            "completed": completed,
+            "total": total,
+            "status": status,
+            "percent": round((completed / total) * 100, 1) if total > 0 else 0,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        if detail:
+            event_data["detail"] = detail
+        self.broadcast(event_data, "progress")
+
 
 # Singleton instance
 sse_manager = SSEManager()
+
+
+def emit_progress(operation_id: str, operation_type: str, phase: str,
+                  completed: int, total: int, status: str = "running",
+                  detail: str = None):
+    """Module-level convenience for broadcasting progress events.
+
+    Safe to call from any tool/module — no-op if no SSE clients connected.
+    Import: ``from tools.dashboard.sse_manager import emit_progress``
+    """
+    sse_manager.broadcast_progress(
+        operation_id, operation_type, phase, completed, total, status, detail,
+    )

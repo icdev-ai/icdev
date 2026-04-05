@@ -3,14 +3,14 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """System Card Generator — AI system-level documentation.
 
 Generates system cards per OMB M-26-04. System cards are broader than
 model cards — they cover the entire AI system including all models,
 tools, agents, data flows, human oversight, and compliance status.
 
-ADR D309: System cards are ICDEV-specific (covers full agentic system).
+ADR D309: System cards are ICDEV™-specific (covers full agentic system).
 
 Usage:
     python tools/compliance/system_card_generator.py --project-id proj-123 --json
@@ -22,6 +22,7 @@ import hashlib
 import json
 import sqlite3
 import sys
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List
@@ -31,8 +32,7 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 
 def _get_connection(db_path: Path = DB_PATH) -> sqlite3.Connection:
-    conn = sqlite3.connect(str(db_path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(db_path))
     return conn
 
 
@@ -74,7 +74,9 @@ def _get_model_cards(conn: sqlite3.Connection, project_id: str) -> List[Dict]:
 
 def _get_agent_info(conn: sqlite3.Connection) -> List[Dict]:
     try:
-        rows = conn.execute("SELECT agent_id, agent_type, status FROM agents LIMIT 20").fetchall()
+        rows = conn.execute(
+            "SELECT agent_id, agent_type, status FROM agents LIMIT 20"
+        ).fetchall()
         return [dict(r) for r in rows]
     except Exception:
         return []
@@ -115,8 +117,7 @@ def generate_system_card(
             "system_overview": {
                 "name": project.get("name", project_id),
                 "project_id": project_id,
-                "purpose": system_purpose
-                or "ICDEV-generated application with AI-assisted development, compliance automation, and continuous monitoring.",  # noqa: E501
+                "purpose": system_purpose or "ICDEV™-generated application with AI-assisted development, compliance automation, and continuous monitoring.",
                 "system_type": "Agentic AI Development Platform",
                 "deployment_status": project.get("status", "active"),
             },
@@ -150,7 +151,7 @@ def generate_system_card(
                 ],
                 "processing": [
                     "LLM inference via cloud providers (Bedrock, Azure, GCP, OCI, IBM)",
-                    "Deterministic tool execution (GOTCHA framework)",
+                    "Deterministic tool execution (FORGE framework)",
                     "Compliance assessment via crosswalk engine",
                 ],
                 "outputs": [
@@ -170,7 +171,7 @@ def generate_system_card(
                     "Supply chain risk from third-party AI providers",
                 ],
                 "mitigations": [
-                    "Multi-layer security: prompt injection detection, behavioral drift monitoring, agent trust scoring",  # noqa: E501
+                    "Multi-layer security: prompt injection detection, behavioral drift monitoring, agent trust scoring",
                     "Compliance framework: 28+ frameworks, dual-hub crosswalk, continuous assessment",
                     "Human oversight: agent authority matrix, veto system, appeal process",
                     "Audit: append-only trail, W3C PROV provenance, AgentSHAP attribution",
@@ -233,8 +234,7 @@ def generate_system_card(
                    (project_id, event_type, actor, action, details, classification)
                    VALUES (?, ?, ?, ?, ?, ?)""",
                 (
-                    project_id,
-                    "system_card_generated",
+                    project_id, "system_card_generated",
                     "icdev-compliance-engine",
                     "Generated system card",
                     json.dumps({"version": version, "hash": card_hash}),

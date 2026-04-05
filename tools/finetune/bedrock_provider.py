@@ -27,7 +27,7 @@ from tools.finetune.provider import FineTuneProvider, FineTuneRequest, FineTuneS
 
 logger = logging.getLogger("icdev.finetune.bedrock")
 
-# Bedrock status → ICDEV status mapping
+# Bedrock status → ICDEV™ status mapping
 _STATUS_MAP = {
     "InProgress": "training",
     "Completed": "completed",

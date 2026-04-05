@@ -9,7 +9,7 @@
 | Status | Implemented |
 | Priority | P2 |
 | Dependencies | Phase 10 (Web Dashboard), Phase 30 (Dashboard Authentication & RBAC), Phase 31 (Dashboard UX Low Impact) |
-| Author | ICDEV Architect Agent |
+| Author | ICDEV™ Architect Agent |
 | Date | 2026-02-23 |
 
 ---

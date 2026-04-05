@@ -2,7 +2,7 @@
 # CUI // SP-CTI
 """DevSecOps Profile Manager — per-project DevSecOps maturity profiling.
 
-Creates, reads, updates, and assesses DevSecOps profiles for ICDEV projects.
+Creates, reads, updates, and assesses DevSecOps profiles for ICDEV™ projects.
 Profiles control which pipeline security stages are active and track maturity level.
 
 ADR D119: DevSecOps profile is a per-project config declaring active pipeline
@@ -19,8 +19,8 @@ Usage:
 import argparse
 import json
 import os
-import sqlite3
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -95,8 +95,7 @@ def _load_config() -> dict:
 
 def _get_db():
     """Get database connection."""
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 

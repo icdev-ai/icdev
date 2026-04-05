@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Xacta 360 sync orchestrator — coordinates data flow between ICDEV and Xacta.
+"""Xacta 360 sync orchestrator — coordinates data flow between ICDEV™ and Xacta.
 
 Supports three modes:
     - api: Push data directly via Xacta 360 REST API
@@ -14,8 +14,8 @@ Usage:
 
 import argparse
 import json
-import sqlite3
 import sys
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -30,8 +30,7 @@ def _get_connection(db_path=None):
     path = db_path or DB_PATH
     if not path.exists():
         raise FileNotFoundError(f"Database not found: {path}")
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -206,10 +205,10 @@ def _sync_via_export(project_id, output_dir=None, db_path=None):
 
 
 def sync_to_xacta(project_id, mode="hybrid", output_dir=None, db_path=None):
-    """Orchestrate full sync between ICDEV and Xacta 360.
+    """Orchestrate full sync between ICDEV™ and Xacta 360.
 
     Args:
-        project_id: ICDEV project ID
+        project_id: ICDEV™ project ID
         mode: Sync mode — "api", "export", or "hybrid"
         output_dir: Output directory for export mode
         db_path: Database path
@@ -278,16 +277,11 @@ def sync_to_xacta(project_id, mode="hybrid", output_dir=None, db_path=None):
         conn.commit()
 
         # Log sync completion
-        _log_audit(
-            conn,
-            project_id,
-            f"sync_completed_{mode}",
-            {
-                "mode": mode,
-                "data_counts": summary["data_counts"],
-                "status": summary["status"],
-            },
-        )
+        _log_audit(conn, project_id, f"sync_completed_{mode}", {
+            "mode": mode,
+            "data_counts": summary["data_counts"],
+            "status": summary["status"],
+        })
 
         return summary
 
@@ -311,13 +305,13 @@ def sync_to_xacta(project_id, mode="hybrid", output_dir=None, db_path=None):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Sync ICDEV compliance data to Xacta 360")
-    parser.add_argument("--project-id", required=True, help="ICDEV project ID")
+    parser = argparse.ArgumentParser(
+        description="Sync ICDEV™ compliance data to Xacta 360"
+    )
+    parser.add_argument("--project-id", required=True, help="ICDEV™ project ID")
     parser.add_argument(
-        "--mode",
-        default="hybrid",
-        choices=["api", "export", "hybrid"],
-        help="Sync mode (default: hybrid — try API, fall back to export)",
+        "--mode", default="hybrid", choices=["api", "export", "hybrid"],
+        help="Sync mode (default: hybrid — try API, fall back to export)"
     )
     parser.add_argument("--output-dir", type=Path, help="Output directory for exports")
     parser.add_argument("--db-path", type=Path, default=DB_PATH, help="Database path")

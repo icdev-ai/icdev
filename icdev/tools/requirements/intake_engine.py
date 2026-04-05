@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Conversational requirements intake engine.
 
 Creates and manages intake sessions, processes customer turns, extracts
@@ -549,7 +549,7 @@ def create_session(
     # Generate persona-appropriate welcome message
     default_welcome = (
         f"Session created. Welcome, {customer_name}. "
-        f"I'm the ICDEV Requirements Analyst. I'll help capture and "
+        f"I'm the ICDEV™ Requirements Analyst. I'll help capture and "
         f"structure your requirements for a {impact_level} system. "
         f"Let's start with the mission context — what problem does "
         f"this system need to solve?"
@@ -984,7 +984,7 @@ def process_turn(
         elif devsecops_signals.get("greenfield"):
             response_parts.append(
                 "\nNo existing DevSecOps tooling detected — "
-                "ICDEV will configure pipeline security stages based on impact level."
+                "ICDEV™ will configure pipeline security stages based on impact level."
             )
 
         if zta_signals.get("zta_detected"):
@@ -1000,7 +1000,7 @@ def process_turn(
             if mosa_signals.get("dod_ic_detected"):
                 response_parts.append(
                     "\nDoD/IC customer detected — MOSA (Modular Open Systems Approach) "
-                    "is required per 10 U.S.C. §4401. ICDEV will enforce modular architecture, "
+                    "is required per 10 U.S.C. §4401. ICDEV™ will enforce modular architecture, "
                     "open standards, and interface control documentation."
                 )
             else:
@@ -1036,7 +1036,7 @@ def process_turn(
             if ai_governance_signals.get("federal_agency_detected"):
                 response_parts.append(
                     "\nFederal agency detected — AI governance requirements apply per OMB M-25-21. "
-                    "ICDEV will track AI inventory, model documentation, human oversight, "
+                    "ICDEV™ will track AI inventory, model documentation, human oversight, "
                     "impact assessments, transparency, and accountability."
                 )
             else:
@@ -2098,9 +2098,9 @@ def export_requirements(session_id: str, db_path=None) -> dict:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Requirements Intake Engine"
+        description="ICDEV™ Requirements Intake Engine"
     )
-    parser.add_argument("--project-id", help="ICDEV project ID")
+    parser.add_argument("--project-id", help="ICDEV™ project ID")
     parser.add_argument("--session-id", help="Existing session ID")
     parser.add_argument("--customer-name", help="Customer name (for new session)")
     parser.add_argument("--customer-org", help="Customer organization")

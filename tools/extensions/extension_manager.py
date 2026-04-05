@@ -22,6 +22,7 @@ Usage:
     context = {"tool_name": "ssp_generator", "args": {...}}
     modified_ctx = extension_manager.dispatch(ExtensionPoint.TOOL_EXECUTE_BEFORE, context)
 """
+from __future__ import annotations
 
 import importlib.util
 import logging
@@ -43,7 +44,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 
 class ExtensionPoint(str, Enum):
-    """Available hook points in the ICDEV lifecycle."""
+    """Available hook points in the ICDEV™ lifecycle."""
 
     TOOL_EXECUTE_BEFORE = "tool_execute_before"
     TOOL_EXECUTE_AFTER = "tool_execute_after"

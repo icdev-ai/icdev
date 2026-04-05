@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Tests for ICDEV Observability — Tracer ABCs, SQLiteTracer, ProxyTracer (D280).
+"""Tests for ICDEV™ Observability — Tracer ABCs, SQLiteTracer, ProxyTracer (D280).
 
 Covers:
   - NullTracer/NullSpan (zero overhead)
@@ -24,7 +24,6 @@ import pytest
 
 # Ensure we can import from project root
 import sys
-
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from icdev.tools.observability.tracer import (
@@ -39,7 +38,6 @@ from icdev.tools.observability.sqlite_tracer import SQLiteSpan, SQLiteTracer
 # ============================================================
 # Fixtures
 # ============================================================
-
 
 @pytest.fixture
 def tmp_db(tmp_path):
@@ -86,7 +84,6 @@ def sqlite_tracer(tmp_db):
 # ============================================================
 # NullTracer / NullSpan Tests
 # ============================================================
-
 
 class TestNullSpan:
     def test_null_span_properties(self):
@@ -147,7 +144,6 @@ class TestNullTracer:
 # ProxyTracer Tests
 # ============================================================
 
-
 class TestProxyTracer:
     def test_default_is_null_tracer(self):
         proxy = ProxyTracer()
@@ -182,7 +178,6 @@ class TestProxyTracer:
 # SQLiteTracer Tests
 # ============================================================
 
-
 class TestSQLiteTracer:
     def test_start_span_returns_sqlite_span(self, sqlite_tracer):
         span = sqlite_tracer.start_span("test_op")
@@ -193,7 +188,7 @@ class TestSQLiteTracer:
     def test_span_has_trace_id(self, sqlite_tracer):
         span = sqlite_tracer.start_span("test_op")
         assert len(span.trace_id) == 32  # UUID hex
-        assert len(span.span_id) == 16  # 16-char hex
+        assert len(span.span_id) == 16   # 16-char hex
         span.end()
 
     def test_span_inherits_parent(self, sqlite_tracer):
@@ -254,7 +249,7 @@ class TestSQLiteTracer:
         assert attrs["test_key"] == "test_val"
 
     def test_span_default_attributes(self, sqlite_tracer, tmp_db):
-        with sqlite_tracer.start_span("default_attr_test"):
+        with sqlite_tracer.start_span("default_attr_test") as span:
             pass
         sqlite_tracer.flush()
 
@@ -268,8 +263,8 @@ class TestSQLiteTracer:
         assert attrs["icdev.project_id"] == "test-project"
 
     def test_nested_spans_hierarchy(self, sqlite_tracer, tmp_db):
-        with sqlite_tracer.start_span("root"):
-            with sqlite_tracer.start_span("child"):
+        with sqlite_tracer.start_span("root") as root:
+            with sqlite_tracer.start_span("child") as child:
                 pass
         sqlite_tracer.flush()
 
@@ -292,7 +287,7 @@ class TestSQLiteTracer:
         assert results[0]["trace_id"] == trace_id
 
     def test_query_spans_by_project_id(self, sqlite_tracer, tmp_db):
-        with sqlite_tracer.start_span("proj_query"):
+        with sqlite_tracer.start_span("proj_query") as span:
             pass
         sqlite_tracer.flush()
 
@@ -334,7 +329,6 @@ class TestSQLiteTracer:
 # Content Tag Gating Tests (D282)
 # ============================================================
 
-
 class TestContentTagGating:
     def test_set_content_tag_hash_only_by_default(self):
         span = NullSpan()
@@ -364,7 +358,6 @@ class TestContentTagGating:
 
     def test_content_hash_is_sha256(self, sqlite_tracer):
         import hashlib
-
         span = sqlite_tracer.start_span("hash_test")
         text = "test content for hashing"
         expected_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
@@ -379,7 +372,6 @@ class TestContentTagGating:
 # ============================================================
 # @traced() Decorator Tests
 # ============================================================
-
 
 class TestTracedDecorator:
     def test_traced_wraps_function(self, sqlite_tracer, tmp_db):
@@ -467,35 +459,30 @@ class TestTracedDecorator:
 # Module-Level get_tracer / enable_tracing Tests
 # ============================================================
 
-
 class TestModuleLevelAPI:
     def test_get_tracer_returns_proxy(self):
         from icdev.tools.observability import get_tracer
-
         tracer = get_tracer()
         assert isinstance(tracer, ProxyTracer)
 
     def test_enable_tracing_null(self):
         from icdev.tools.observability import enable_tracing
-
         tracer = enable_tracing("null")
         assert isinstance(tracer, NullTracer)
 
     def test_enable_tracing_sqlite(self, tmp_db):
         from icdev.tools.observability import enable_tracing
-
         with patch.object(
-            SQLiteTracer,
-            "__init__",
+            SQLiteTracer, '__init__',
             lambda self, **kw: (
-                setattr(self, "_db_path", tmp_db)
-                or setattr(self, "_agent_id", None)
-                or setattr(self, "_project_id", None)
-                or setattr(self, "_classification", "CUI")
-                or setattr(self, "_write_lock", __import__("threading").Lock())
-                or setattr(self, "_buffer", [])
-                or setattr(self, "_buffer_size", 10)
-            ),
+                setattr(self, '_db_path', tmp_db) or
+                setattr(self, '_agent_id', None) or
+                setattr(self, '_project_id', None) or
+                setattr(self, '_classification', 'CUI') or
+                setattr(self, '_write_lock', __import__('threading').Lock()) or
+                setattr(self, '_buffer', []) or
+                setattr(self, '_buffer_size', 10)
+            )
         ):
             tracer = enable_tracing("sqlite")
             assert isinstance(tracer, SQLiteTracer)

@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-# ICDEV GovProposal — Contract Manager (Phase 60, D-CPMP-1)
+# ICDEV™ GovProposal — Contract Manager (Phase 60, D-CPMP-1)
 # CRUD for contracts, CLINs, WBS, deliverables with status transition enforcement.
 
 """
@@ -29,8 +29,8 @@ Usage:
 import argparse
 import json
 import os
-import sqlite3
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -43,7 +43,6 @@ _CONFIG_PATH = _ROOT / "args" / "govcon_config.yaml"
 
 # ── Config ───────────────────────────────────────────────────────────
 
-
 def _load_config():
     if _CONFIG_PATH.exists():
         with open(_CONFIG_PATH) as f:
@@ -53,41 +52,33 @@ def _load_config():
 
 _CFG = _load_config()
 
-CONTRACT_TRANSITIONS = _CFG.get(
-    "contract_transitions",
-    {
-        "draft": ["active"],
-        "active": ["option_pending", "complete", "terminated"],
-        "option_pending": ["active", "complete", "terminated"],
-        "complete": ["closed"],
-        "closed": [],
-        "terminated": ["closed"],
-    },
-)
+CONTRACT_TRANSITIONS = _CFG.get("contract_transitions", {
+    "draft": ["active"],
+    "active": ["option_pending", "complete", "terminated"],
+    "option_pending": ["active", "complete", "terminated"],
+    "complete": ["closed"],
+    "closed": [],
+    "terminated": ["closed"],
+})
 
-DELIVERABLE_TRANSITIONS = _CFG.get(
-    "deliverable_transitions",
-    {
-        "not_started": ["in_progress"],
-        "in_progress": ["draft_complete", "overdue"],
-        "draft_complete": ["internal_review"],
-        "internal_review": ["submitted", "in_progress"],
-        "submitted": ["government_review"],
-        "government_review": ["accepted", "rejected"],
-        "accepted": [],
-        "rejected": ["resubmitted"],
-        "resubmitted": ["government_review"],
-        "overdue": ["in_progress", "submitted"],
-    },
-)
+DELIVERABLE_TRANSITIONS = _CFG.get("deliverable_transitions", {
+    "not_started": ["in_progress"],
+    "in_progress": ["draft_complete", "overdue"],
+    "draft_complete": ["internal_review"],
+    "internal_review": ["submitted", "in_progress"],
+    "submitted": ["government_review"],
+    "government_review": ["accepted", "rejected"],
+    "accepted": [],
+    "rejected": ["resubmitted"],
+    "resubmitted": ["government_review"],
+    "overdue": ["in_progress", "submitted"],
+})
 
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
-
 def _get_db():
-    conn = sqlite3.connect(str(_DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
@@ -104,7 +95,7 @@ def _uuid():
 def _audit(conn, action, details="", actor="contract_manager"):
     try:
         conn.execute(
-            "INSERT INTO audit_trail (id, timestamp, event_type, actor, action, details, session_id) "
+            "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (_uuid(), _now(), "cpmp.contract_manager", actor, action, details, "cpmp"),
         )
@@ -122,7 +113,6 @@ def _record_status_change(conn, entity_type, entity_id, old_status, new_status, 
 
 
 # ── Contracts ────────────────────────────────────────────────────────
-
 
 def create_contract(data):
     """Create a new contract."""
@@ -155,8 +145,7 @@ def create_contract(data):
             "draft",
             data.get("opportunity_id"),
             data.get("notes"),
-            _now(),
-            _now(),
+            _now(), _now(),
             data.get("created_by"),
         ),
     )
@@ -188,7 +177,8 @@ def get_contract(contract_id):
         "SELECT COUNT(*) FROM cpmp_deliverables WHERE contract_id = ?", (contract_id,)
     ).fetchone()[0]
     contract["overdue_count"] = conn.execute(
-        "SELECT COUNT(*) FROM cpmp_deliverables WHERE contract_id = ? AND status = 'overdue'", (contract_id,)
+        "SELECT COUNT(*) FROM cpmp_deliverables WHERE contract_id = ? AND status = 'overdue'",
+        (contract_id,)
     ).fetchone()[0]
     contract["subcontractor_count"] = conn.execute(
         "SELECT COUNT(*) FROM cpmp_subcontractors WHERE contract_id = ?", (contract_id,)
@@ -226,21 +216,9 @@ def update_contract(contract_id, data):
         return {"status": "error", "message": f"Contract {contract_id} not found"}
 
     updatable = [
-        "contract_number",
-        "title",
-        "agency",
-        "cor_name",
-        "cor_email",
-        "cor_phone",
-        "contract_type",
-        "total_value",
-        "funded_value",
-        "ceiling_value",
-        "pop_start",
-        "pop_end",
-        "naics_code",
-        "notes",
-        "idiq_contract_id",
+        "contract_number", "title", "agency", "cor_name", "cor_email", "cor_phone",
+        "contract_type", "total_value", "funded_value", "ceiling_value",
+        "pop_start", "pop_end", "naics_code", "notes", "idiq_contract_id",
     ]
     sets = []
     params = []
@@ -257,7 +235,7 @@ def update_contract(contract_id, data):
     params.append(_now())
     params.append(contract_id)
 
-    conn.execute(f"UPDATE cpmp_contracts SET {', '.join(sets)} WHERE id = ?", params)
+    conn.execute(f"UPDATE cpmp_contracts SET {', '.join(sets)} WHERE id = ?", params)  # nosec B608 -- table/column names are internal constants, not user input
     _audit(conn, "update_contract", f"Updated contract {contract_id}: {list(data.keys())}")
     conn.commit()
     conn.close()
@@ -294,7 +272,6 @@ def transition_contract(contract_id, new_status, changed_by=None, reason=None):
 
 # ── CLINs ────────────────────────────────────────────────────────────
 
-
 def create_clin(contract_id, data):
     """Create a CLIN under a contract."""
     conn = _get_db()
@@ -308,17 +285,11 @@ def create_clin(contract_id, data):
         "total_value, funded_value, billed_value, status, created_at, updated_at) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
-            clin_id,
-            contract_id,
-            data.get("clin_number", ""),
-            data.get("description"),
-            data.get("type", "labor"),
-            data.get("total_value", 0.0),
-            data.get("funded_value", 0.0),
+            clin_id, contract_id, data.get("clin_number", ""),
+            data.get("description"), data.get("type", "labor"),
+            data.get("total_value", 0.0), data.get("funded_value", 0.0),
             data.get("billed_value", 0.0),
-            "active",
-            _now(),
-            _now(),
+            "active", _now(), _now(),
         ),
     )
     _audit(conn, "create_clin", f"Created CLIN {data.get('clin_number')} on contract {contract_id}")
@@ -345,7 +316,8 @@ def update_clin(clin_id, data):
         conn.close()
         return {"status": "error", "message": f"CLIN {clin_id} not found"}
 
-    updatable = ["clin_number", "description", "type", "total_value", "funded_value", "billed_value", "status"]
+    updatable = ["clin_number", "description", "type", "total_value", "funded_value",
+                 "billed_value", "status"]
     sets, params = [], []
     for field in updatable:
         if field in data:
@@ -356,14 +328,13 @@ def update_clin(clin_id, data):
         return {"status": "error", "message": "No updatable fields provided"}
     sets.append("updated_at = ?")
     params.extend([_now(), clin_id])
-    conn.execute(f"UPDATE cpmp_clins SET {', '.join(sets)} WHERE id = ?", params)
+    conn.execute(f"UPDATE cpmp_clins SET {', '.join(sets)} WHERE id = ?", params)  # nosec B608 -- table/column names are internal constants, not user input
     conn.commit()
     conn.close()
     return {"status": "ok", "clin_id": clin_id}
 
 
 # ── WBS ──────────────────────────────────────────────────────────────
-
 
 def create_wbs(contract_id, data):
     """Create a WBS element (supports hierarchy via parent_id)."""
@@ -386,18 +357,11 @@ def create_wbs(contract_id, data):
         "status, created_at, updated_at) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
-            wbs_id,
-            contract_id,
-            parent_id,
-            data.get("wbs_number", ""),
-            data.get("title", ""),
-            data.get("description"),
+            wbs_id, contract_id, parent_id, data.get("wbs_number", ""),
+            data.get("title", ""), data.get("description"),
             data.get("budget_at_completion", 0.0),
-            data.get("planned_start"),
-            data.get("planned_finish"),
-            "not_started",
-            _now(),
-            _now(),
+            data.get("planned_start"), data.get("planned_finish"),
+            "not_started", _now(), _now(),
         ),
     )
     _record_status_change(conn, "wbs", wbs_id, None, "not_started", "system", "WBS created")
@@ -410,7 +374,9 @@ def create_wbs(contract_id, data):
 def list_wbs(contract_id):
     """List WBS elements for a contract."""
     conn = _get_db()
-    rows = conn.execute("SELECT * FROM cpmp_wbs WHERE contract_id = ? ORDER BY wbs_number", (contract_id,)).fetchall()
+    rows = conn.execute(
+        "SELECT * FROM cpmp_wbs WHERE contract_id = ? ORDER BY wbs_number", (contract_id,)
+    ).fetchall()
     conn.close()
     return {"status": "ok", "total": len(rows), "wbs_elements": [dict(r) for r in rows]}
 
@@ -418,7 +384,9 @@ def list_wbs(contract_id):
 def build_wbs_tree(contract_id):
     """Build hierarchical WBS tree from flat list."""
     conn = _get_db()
-    rows = conn.execute("SELECT * FROM cpmp_wbs WHERE contract_id = ? ORDER BY wbs_number", (contract_id,)).fetchall()
+    rows = conn.execute(
+        "SELECT * FROM cpmp_wbs WHERE contract_id = ? ORDER BY wbs_number", (contract_id,)
+    ).fetchall()
     conn.close()
 
     elements = {r["id"]: dict(r) for r in rows}
@@ -444,21 +412,10 @@ def update_wbs(wbs_id, data):
         conn.close()
         return {"status": "error", "message": f"WBS {wbs_id} not found"}
 
-    updatable = [
-        "wbs_number",
-        "title",
-        "description",
-        "budget_at_completion",
-        "pv_cumulative",
-        "ev_cumulative",
-        "ac_cumulative",
-        "percent_complete",
-        "planned_start",
-        "planned_finish",
-        "actual_start",
-        "actual_finish",
-        "status",
-    ]
+    updatable = ["wbs_number", "title", "description", "budget_at_completion",
+                 "pv_cumulative", "ev_cumulative", "ac_cumulative", "percent_complete",
+                 "planned_start", "planned_finish", "actual_start", "actual_finish",
+                 "status"]
     old_status = row["status"]
     sets, params = [], []
     for field in updatable:
@@ -471,7 +428,7 @@ def update_wbs(wbs_id, data):
 
     sets.append("updated_at = ?")
     params.extend([_now(), wbs_id])
-    conn.execute(f"UPDATE cpmp_wbs SET {', '.join(sets)} WHERE id = ?", params)
+    conn.execute(f"UPDATE cpmp_wbs SET {', '.join(sets)} WHERE id = ?", params)  # nosec B608 -- table/column names are internal constants, not user input
 
     if "status" in data and data["status"] != old_status:
         _record_status_change(conn, "wbs", wbs_id, old_status, data["status"])
@@ -482,7 +439,6 @@ def update_wbs(wbs_id, data):
 
 
 # ── Deliverables ─────────────────────────────────────────────────────
-
 
 def create_deliverable(contract_id, data):
     """Create a deliverable / CDRL under a contract."""
@@ -499,27 +455,17 @@ def create_deliverable(contract_id, data):
         "created_at, updated_at) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
-            deliv_id,
-            contract_id,
-            data.get("cdrl_number"),
-            data.get("did_number"),
-            data.get("title", ""),
-            data.get("description"),
-            data.get("type", "cdrl"),
-            data.get("cdrl_type"),
-            data.get("frequency"),
-            data.get("due_date"),
-            "not_started",
-            data.get("wbs_id"),
-            data.get("notes"),
-            _now(),
-            _now(),
+            deliv_id, contract_id,
+            data.get("cdrl_number"), data.get("did_number"),
+            data.get("title", ""), data.get("description"),
+            data.get("type", "cdrl"), data.get("cdrl_type"),
+            data.get("frequency"), data.get("due_date"),
+            "not_started", data.get("wbs_id"), data.get("notes"),
+            _now(), _now(),
         ),
     )
     _record_status_change(conn, "deliverable", deliv_id, None, "not_started", "system", "Deliverable created")
-    _audit(
-        conn, "create_deliverable", f"Created deliverable {data.get('cdrl_number', deliv_id)} on contract {contract_id}"
-    )
+    _audit(conn, "create_deliverable", f"Created deliverable {data.get('cdrl_number', deliv_id)} on contract {contract_id}")
     conn.commit()
     conn.close()
     return {"status": "ok", "deliverable_id": deliv_id}
@@ -553,13 +499,14 @@ def get_deliverable(deliverable_id):
 
     deliverable = dict(row)
     generations = conn.execute(
-        "SELECT * FROM cpmp_cdrl_generations WHERE deliverable_id = ? ORDER BY created_at DESC", (deliverable_id,)
+        "SELECT * FROM cpmp_cdrl_generations WHERE deliverable_id = ? ORDER BY created_at DESC",
+        (deliverable_id,)
     ).fetchall()
     deliverable["generations"] = [dict(g) for g in generations]
 
     history = conn.execute(
-        "SELECT * FROM cpmp_status_history WHERE entity_type = 'deliverable' AND entity_id = ? ORDER BY created_at DESC",  # noqa: E501
-        (deliverable_id,),
+        "SELECT * FROM cpmp_status_history WHERE entity_type = 'deliverable' AND entity_id = ? ORDER BY created_at DESC",
+        (deliverable_id,)
     ).fetchall()
     deliverable["status_history"] = [dict(h) for h in history]
 
@@ -575,23 +522,9 @@ def update_deliverable(deliverable_id, data):
         conn.close()
         return {"status": "error", "message": f"Deliverable {deliverable_id} not found"}
 
-    updatable = [
-        "cdrl_number",
-        "did_number",
-        "title",
-        "description",
-        "type",
-        "cdrl_type",
-        "frequency",
-        "due_date",
-        "submitted_date",
-        "accepted_date",
-        "rejected_date",
-        "days_overdue",
-        "generated_by_tool",
-        "wbs_id",
-        "notes",
-    ]
+    updatable = ["cdrl_number", "did_number", "title", "description", "type",
+                 "cdrl_type", "frequency", "due_date", "submitted_date", "accepted_date",
+                 "rejected_date", "days_overdue", "generated_by_tool", "wbs_id", "notes"]
     sets, params = [], []
     for field in updatable:
         if field in data:
@@ -602,7 +535,7 @@ def update_deliverable(deliverable_id, data):
         return {"status": "error", "message": "No updatable fields provided"}
     sets.append("updated_at = ?")
     params.extend([_now(), deliverable_id])
-    conn.execute(f"UPDATE cpmp_deliverables SET {', '.join(sets)} WHERE id = ?", params)
+    conn.execute(f"UPDATE cpmp_deliverables SET {', '.join(sets)} WHERE id = ?", params)  # nosec B608 -- table/column names are internal constants, not user input
     conn.commit()
     conn.close()
     return {"status": "ok", "deliverable_id": deliverable_id}
@@ -636,7 +569,7 @@ def transition_deliverable(deliverable_id, new_status, changed_by=None, reason=N
 
     set_clauses = ", ".join(f"{k} = ?" for k in updates)
     params = list(updates.values()) + [deliverable_id]
-    conn.execute(f"UPDATE cpmp_deliverables SET {set_clauses} WHERE id = ?", params)
+    conn.execute(f"UPDATE cpmp_deliverables SET {set_clauses} WHERE id = ?", params)  # nosec B608 -- table/column names are internal constants, not user input
     _record_status_change(conn, "deliverable", deliverable_id, old_status, new_status, changed_by, reason)
     _audit(conn, "transition_deliverable", f"Deliverable {deliverable_id}: {old_status} → {new_status}")
     conn.commit()
@@ -666,9 +599,7 @@ def compute_overdue_deliverables(contract_id=None):
             "UPDATE cpmp_deliverables SET status = 'overdue', days_overdue = ?, updated_at = ? WHERE id = ?",
             (days, _now(), row["id"]),
         )
-        _record_status_change(
-            conn, "deliverable", row["id"], row["status"], "overdue", "system", f"{days} days overdue"
-        )
+        _record_status_change(conn, "deliverable", row["id"], row["status"], "overdue", "system", f"{days} days overdue")
         updated += 1
 
     _audit(conn, "compute_overdue", f"Marked {updated} deliverables as overdue")
@@ -679,9 +610,8 @@ def compute_overdue_deliverables(contract_id=None):
 
 # ── CLI ──────────────────────────────────────────────────────────────
 
-
 def main():
-    parser = argparse.ArgumentParser(description="ICDEV GovProposal Contract Manager (Phase 60)")
+    parser = argparse.ArgumentParser(description="ICDEV™ GovProposal Contract Manager (Phase 60)")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--list-contracts", action="store_true")
     group.add_argument("--get-contract", action="store_true")

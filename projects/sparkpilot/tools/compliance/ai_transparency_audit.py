@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """AI Transparency Audit — cross-framework transparency assessment.
 
 Runs all 4 AI transparency assessors, checks model/system cards,

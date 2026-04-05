@@ -14,13 +14,13 @@ Covers:
   - No duplicate values across categories
 """
 
+
 from icdev.tools.observability import genai_attributes as ga
 
 
 # ---------------------------------------------------------------------------
 # GenAI Core Constants
 # ---------------------------------------------------------------------------
-
 
 class TestGenAIOperation:
     def test_operation_name(self):
@@ -75,9 +75,8 @@ class TestGenAIUsage:
 
 
 # ---------------------------------------------------------------------------
-# ICDEV Extensions
+# ICDEV™ Extensions
 # ---------------------------------------------------------------------------
-
 
 class TestICDEVExtensions:
     def test_thinking_tokens(self):
@@ -100,7 +99,6 @@ class TestICDEVExtensions:
 # MCP Tool Call (D284)
 # ---------------------------------------------------------------------------
 
-
 class TestMCPAttributes:
     def test_tool_name(self):
         assert ga.MCP_TOOL_NAME == "mcp.tool.name"
@@ -122,7 +120,6 @@ class TestMCPAttributes:
 # A2A (D285)
 # ---------------------------------------------------------------------------
 
-
 class TestA2AAttributes:
     def test_source_agent(self):
         assert ga.A2A_SOURCE_AGENT == "a2a.source_agent"
@@ -138,9 +135,8 @@ class TestA2AAttributes:
 
 
 # ---------------------------------------------------------------------------
-# ICDEV Metadata
+# ICDEV™ Metadata
 # ---------------------------------------------------------------------------
-
 
 class TestICDEVMetadata:
     def test_project_id(self):
@@ -159,7 +155,6 @@ class TestICDEVMetadata:
 # ---------------------------------------------------------------------------
 # Span Names
 # ---------------------------------------------------------------------------
-
 
 class TestSpanNames:
     def test_mcp_tool_call(self):
@@ -182,7 +177,6 @@ class TestSpanNames:
 # Span Kinds
 # ---------------------------------------------------------------------------
 
-
 class TestSpanKinds:
     def test_internal(self):
         assert ga.KIND_INTERNAL == "INTERNAL"
@@ -204,7 +198,6 @@ class TestSpanKinds:
 # Status Codes
 # ---------------------------------------------------------------------------
 
-
 class TestStatusCodes:
     def test_unset(self):
         assert ga.STATUS_UNSET == "UNSET"
@@ -220,21 +213,15 @@ class TestStatusCodes:
 # Cross-cutting
 # ---------------------------------------------------------------------------
 
-
 class TestNamingConventions:
     def test_genai_prefix(self):
         """All GenAI constants should use gen_ai.* prefix."""
         genai_attrs = [
-            ga.GEN_AI_OPERATION_NAME,
-            ga.GEN_AI_SYSTEM,
-            ga.GEN_AI_AGENT_ID,
-            ga.GEN_AI_AGENT_NAME,
-            ga.GEN_AI_REQUEST_MODEL,
-            ga.GEN_AI_REQUEST_TEMPERATURE,
-            ga.GEN_AI_RESPONSE_MODEL,
-            ga.GEN_AI_RESPONSE_FINISH_REASON,
-            ga.GEN_AI_USAGE_INPUT_TOKENS,
-            ga.GEN_AI_USAGE_OUTPUT_TOKENS,
+            ga.GEN_AI_OPERATION_NAME, ga.GEN_AI_SYSTEM,
+            ga.GEN_AI_AGENT_ID, ga.GEN_AI_AGENT_NAME,
+            ga.GEN_AI_REQUEST_MODEL, ga.GEN_AI_REQUEST_TEMPERATURE,
+            ga.GEN_AI_RESPONSE_MODEL, ga.GEN_AI_RESPONSE_FINISH_REASON,
+            ga.GEN_AI_USAGE_INPUT_TOKENS, ga.GEN_AI_USAGE_OUTPUT_TOKENS,
         ]
         for attr in genai_attrs:
             assert attr.startswith("gen_ai."), f"{attr} missing gen_ai. prefix"
@@ -254,7 +241,6 @@ class TestNamingConventions:
     def test_no_duplicate_values(self):
         """All constant values should be unique."""
         import inspect
-
         members = inspect.getmembers(ga)
         values = []
         for name, val in members:

@@ -35,7 +35,7 @@ Modernize legacy DoD applications using the 7 Rs of Cloud Migration Strategy. Pr
 
 ## Prerequisites
 
-- [ ] ICDEV project initialized (`/icdev-init` or `goals/init_project.md` completed)
+- [ ] ICDEV™ project initialized (`/icdev-init` or `goals/init_project.md` completed)
 - [ ] Legacy source code accessible at a known path on the filesystem
 - [ ] Project defaults configured (`args/project_defaults.yaml`)
 - [ ] `memory/MEMORY.md` loaded (session context)
@@ -579,9 +579,9 @@ Log at each major milestone: registration, analysis, strategy approval, plan cre
 
 ---
 
-## GOTCHA Layer Mapping
+## FORGE Layer Mapping
 
-| Step | GOTCHA Layer | Component |
+| Step | FORGE Layer | Component |
 |------|-------------|-----------|
 | Register and Analyze | Tools | `legacy_analyzer.py` |
 | Extract Architecture | Tools | `architecture_extractor.py` |

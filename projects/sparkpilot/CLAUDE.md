@@ -187,7 +187,7 @@ python tools/ci/workflows/icdev_sdlc.py 123          # Run full SDLC pipeline
 
 ---
 
-## Architecture: GOTCHA Framework
+## Architecture: FORGE Framework
 
 This is a 6-layer agentic system.  The AI (you) is the orchestration layer -- you read goals, call tools, apply args, reference context, and use hard prompts.  You never execute work directly; you delegate to deterministic Python scripts.
 
@@ -259,7 +259,7 @@ All generated artifacts MUST include classification markings appropriate to impa
 | Tier | Agent | Port | Role |
 |------|-------|------|------|
 | Core | Orchestrator | 9443 | Task routing, workflow management |
-| Core | Architect | 9444 | ATLAS A/T phases, system design |
+| Core | Architect | 9444 | ANVIL A/T phases, system design |
 | Domain | Builder | 9445 | TDD code gen (RED->GREEN->REFACTOR) |
 | Support | Knowledge | 9449 | Self-healing patterns, recommendations |
 | Support | Monitor | 9450 | Log analysis, metrics, alerts, health checks |
@@ -367,7 +367,7 @@ SparkPilot makes embedded RTOS development accessible to anyone — from a begin
 | **Tier 0** | Browser Simulator (WASM/JS) | FreeRTOS POSIX port in browser, virtual peripherals, no install needed |
 | **Tier 1** | FreeRTOS MCU (Cortex-M, ESP32, RISC-V) | TinyML inference, MQTT telemetry, OTA updates, SparkPilot Device SDK (~8KB) |
 | **Tier 2** | Edge Gateway (RPi, Jetson) | Local LLM (llama.cpp), multi-agent coordination, edge inference |
-| **Tier 3** | Cloud/ICDEV (Bedrock, SageMaker) | Full LLM orchestration, compliance monitoring, self-healing |
+| **Tier 3** | Cloud/ICDEV™ (Bedrock, SageMaker) | Full LLM orchestration, compliance monitoring, self-healing |
 
 ### Key Capabilities
 
@@ -449,10 +449,10 @@ AST-based code quality metrics, smell detection, deterministic maintainability s
 - Smell detection: 5 smell types (long function, deep nesting, high complexity, too many params, god class)
 - Runtime feedback: `runtime_feedback.py` (test-to-source mapping)
 
-### ATLAS Workflow
+### ANVIL Workflow
 
-Build process follows the ATLAS methodology:
-1. **Model** -- Import/validate SysML and DOORS models (M-ATLAS pre-phase)
+Build process follows the ANVIL methodology:
+1. **Model** -- Import/validate SysML and DOORS models (M-ANVIL pre-phase)
 1. **Model** -- model
 2. **Architect** -- System design, component decomposition, interface contracts
 3. **Trace** -- Requirements traceability matrix, compliance mapping
@@ -463,7 +463,7 @@ Build process follows the ATLAS methodology:
 ### Orchestration
 
 - Prompt chains: Declarative YAML multi-step LLM reasoning (plan_critique_refine, scout_analyze_recommend)
-- Dispatcher mode: Orchestrator restricted to delegation tools only (GOTCHA separation of concerns)
+- Dispatcher mode: Orchestrator restricted to delegation tools only (FORGE separation of concerns)
 - Session purpose: Declared intent per session for NIST AU-3 audit traceability
 ```bash
 python tools/agent/prompt_chain_executor.py --list --json
@@ -499,7 +499,7 @@ python tools/agent/session_purpose.py --declare "task description" --project-id 
 
 | Goal | File | Purpose |
 |------|------|---------|
-| ATLAS Workflow | `goals/build_app.md` | 5-step build: Architect -> Trace -> Link -> Assemble -> Stress-test |
+| ANVIL Workflow | `goals/build_app.md` | 5-step build: Architect -> Trace -> Link -> Assemble -> Stress-test |
 | TDD Workflow | `goals/tdd_workflow.md` | RED->GREEN->REFACTOR cycle with Cucumber/Gherkin |
 | Compliance Workflow | `goals/compliance_workflow.md` | Generate SSP, POAM, STIG, SBOM, CUI markings |
 | Security Scan | `goals/security_scan.md` | SAST, dependency audit, secret detection, container scan |
@@ -520,7 +520,7 @@ python tools/agent/session_purpose.py --declare "task description" --project-id 
 | AI Accountability | `goals/ai_accountability.md` | Oversight plans, CAIO, appeals, incident response, ethics reviews |
 | OWASP Agentic Security | `goals/owasp_agentic_security.md` | Behavioral drift, tool chain validation, trust scoring, RBAC |
 | Code Intelligence | `goals/code_intelligence.md` | AST metrics, smell detection, maintainability scoring |
-| Multi-Agent Orchestration | `goals/multi_agent_orchestration.md` | Prompt chains, dispatcher mode, session purpose, ATLAS critique |
+| Multi-Agent Orchestration | `goals/multi_agent_orchestration.md` | Prompt chains, dispatcher mode, session purpose, ANVIL critique |
 
 ---
 
@@ -543,7 +543,7 @@ python tools/agent/session_purpose.py --declare "task description" --project-id 
 - RICOAS gates block on: readiness score < 0.7, unresolved critical gaps, RED requirements without alternative COAs
 - Observability gates block on: tracing not active, provenance graph empty, XAI assessment not completed
 - Code Quality gates block on: average cyclomatic complexity > 25
-- **This application CANNOT generate child applications** -- it is a generated child app of ICDEV.  The agentic fitness assessor, app blueprint engine, and child app generator are intentionally excluded.
+- **This application CANNOT generate child applications** -- it is a generated child app of ICDEV™.  The agentic fitness assessor, app blueprint engine, and child app generator are intentionally excluded.
 
 ### Cloud Service Provider Integration
 
@@ -573,7 +573,7 @@ python tools/agent/session_purpose.py --declare "task description" --project-id 
 - **D4:** Statistical methods for pattern detection; Bedrock LLM for root cause analysis
 - **D7:** Python stdlib xml.etree.ElementTree for XMI/ReqIF parsing (zero deps, air-gap safe)
 - **D8:** Normalized DB tables for model elements (enables SQL joins across digital thread)
-- **D9:** M-ATLAS adds Model pre-phase to ATLAS (backward compatible -- skips if no model)
+- **D9:** M-ANVIL adds Model pre-phase to ANVIL (backward compatible -- skips if no model)
 - **D12:** N:M digital thread links (one block -> many code modules; one control -> many requirements)
 - **D21:** Readiness scoring uses deterministic weighted average (reproducible, not probabilistic)
 - **D22:** Monte Carlo uses Python stdlib random (zero deps, air-gap safe)

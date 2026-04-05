@@ -8,17 +8,38 @@ import argparse
 import json
 import re
 import sqlite3
+import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(BASE_DIR))
+
+from tools.db.storage import get_connection  # noqa: E402
 DB_PATH = BASE_DIR / "data" / "icdev.db"
+
+# D-EVO-7: Confidence decay config (from args/evolution_config.yaml)
+_DECAY_ENABLED = False
+_DECAY_HALF_LIFE_DAYS = 90
+_DECAY_MIN_FLOOR = 0.01
+
+try:
+    import yaml as _yaml
+    _decay_cfg_path = BASE_DIR / "args" / "evolution_config.yaml"
+    if _decay_cfg_path.exists():
+        with open(_decay_cfg_path, encoding="utf-8") as _f:
+            _decay_data = _yaml.safe_load(_f) or {}
+        _sh_cfg = _decay_data.get("self_healing", {}).get("confidence_decay", {})
+        _DECAY_ENABLED = _sh_cfg.get("enabled", False)
+        _DECAY_HALF_LIFE_DAYS = _sh_cfg.get("half_life_days", 90)
+        _DECAY_MIN_FLOOR = _sh_cfg.get("min_floor", 0.01)
+except Exception:
+    pass
 
 
 def _get_db(db_path: Path = None) -> sqlite3.Connection:
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -136,7 +157,8 @@ def match_known_pattern(features: dict, db_path: Path = None) -> list:
     try:
         patterns = conn.execute(
             """SELECT id, pattern_type, pattern_signature, description,
-                      root_cause, remediation, confidence, auto_healable
+                      root_cause, remediation, confidence, auto_healable,
+                      updated_at
                FROM knowledge_patterns
                ORDER BY confidence DESC"""
         ).fetchall()
@@ -168,7 +190,21 @@ def match_known_pattern(features: dict, db_path: Path = None) -> list:
             if features.get("has_database") and ("database" in desc or "pool" in desc):
                 type_boost += 0.1
 
-            combined_score = min((sig_score + type_boost) * p["confidence"], 1.0)
+            # D-EVO-7: Apply time-decay to confidence (lazy, at query time)
+            effective_confidence = p["confidence"]
+            updated = p["updated_at"] if "updated_at" in p.keys() else None
+            if updated and _DECAY_ENABLED:
+                try:
+                    updated_dt = datetime.fromisoformat(
+                        str(updated).replace("Z", "+00:00"))
+                    age_days = (datetime.now(timezone.utc) - updated_dt).days
+                    decay = 2 ** (-(age_days / _DECAY_HALF_LIFE_DAYS))
+                    effective_confidence = max(
+                        p["confidence"] * decay, _DECAY_MIN_FLOOR)
+                except (ValueError, TypeError):
+                    pass
+
+            combined_score = min((sig_score + type_boost) * effective_confidence, 1.0)
 
             if combined_score > 0.1:  # Minimum threshold
                 matches.append(

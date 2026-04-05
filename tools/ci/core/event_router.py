@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Event Router — central routing with lane-aware session queue (D133)
+# ICDEV™ Event Router — central routing with lane-aware session queue (D133)
 
 """
 Central event router for all CI/CD trigger sources.
@@ -22,7 +22,6 @@ Usage:
 """
 
 import json
-import sqlite3
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -30,6 +29,7 @@ from pathlib import Path
 from typing import Optional
 
 from tools.ci.core.event_envelope import EventEnvelope
+from tools.db.storage import get_connection
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 DB_PATH = PROJECT_ROOT / "data" / "icdev.db"
@@ -84,7 +84,7 @@ class EventRouter:
     def _ensure_tables(self):
         """Create ci_pipeline_runs table if not exists."""
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = get_connection(db_path=str(self.db_path))
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS ci_pipeline_runs (
                     id TEXT PRIMARY KEY,
@@ -218,7 +218,7 @@ class EventRouter:
         if not session_key:
             return None
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = get_connection(db_path=str(self.db_path))
             cursor = conn.execute(
                 "SELECT run_id FROM ci_pipeline_runs "
                 "WHERE session_key = ? AND status IN ('running', 'recovering') "
@@ -298,7 +298,7 @@ class EventRouter:
         max_queued = self._config.get("max_queued_events_per_session", 20)
 
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = get_connection(db_path=str(self.db_path))
             # Check queue depth
             cursor = conn.execute(
                 "SELECT COUNT(*) FROM ci_event_queue WHERE session_key = ? AND status = 'queued'",
@@ -334,7 +334,7 @@ class EventRouter:
     def _create_pipeline_run(self, envelope: EventEnvelope, workflow: str, run_id: str):
         """Record a new pipeline run in the database."""
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = get_connection(db_path=str(self.db_path))
             conn.execute(
                 "INSERT INTO ci_pipeline_runs "
                 "(id, session_key, run_id, platform, workflow, status, trigger_source, event_id) "
@@ -378,7 +378,7 @@ class EventRouter:
     def update_pipeline_status(self, run_id: str, status: str):
         """Update pipeline run status (called by workflow scripts on completion)."""
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = get_connection(db_path=str(self.db_path))
             now = datetime.now(timezone.utc).isoformat()
             completed_at = now if status in ("completed", "failed") else None
             conn.execute(
@@ -399,7 +399,7 @@ class EventRouter:
         """
         results = []
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = get_connection(db_path=str(self.db_path))
             cursor = conn.execute(
                 "SELECT id, envelope_json FROM ci_event_queue "
                 "WHERE session_key = ? AND status = 'queued' "
@@ -435,7 +435,7 @@ class EventRouter:
     def _update_queue_status(self, queue_id: int, status: str):
         """Update queue entry status."""
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = get_connection(db_path=str(self.db_path))
             now = datetime.now(timezone.utc).isoformat()
             conn.execute(
                 "UPDATE ci_event_queue SET status = ?, processed_at = ? WHERE id = ?",

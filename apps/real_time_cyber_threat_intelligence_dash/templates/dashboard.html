@@ -1,0 +1,26 @@
+{% extends "base.html" %}{% set active = "dashboard" %}
+{% block content %}
+<div class="page-header"><h1>Dashboard</h1></div>
+<div class="stat-grid" id="stats-grid"></div>
+<div class="card"><div class="card__body card__body--no-pad">
+    <table class="table table--striped" id="data-table">
+        <thead><tr><th>Name</th><th>Description</th><th>Score</th><th>Status</th></tr></thead>
+        <tbody id="data-body"></tbody>
+    </table>
+</div></div>
+{% endblock %}
+{% block scripts %}
+<script>
+fetch('/api/stats').then(r=>r.json()).then(stats => {
+    document.getElementById('stats-grid').innerHTML = Object.entries(stats).map(([k,v]) =>
+        '<div class="stat-card"><div class="stat-card__value">'+v.toLocaleString()+'</div><div class="stat-card__label">'+k+'</div></div>'
+    ).join('');
+});
+fetch('/api/threats').then(r=>r.json()).then(data => {
+    const rows = data['threats'] || [];
+    document.getElementById('data-body').innerHTML = rows.slice(0,100).map(r =>
+        '<tr><td>'+r.name+'</td><td>'+(r.description||'')+'</td><td>'+(r.score?r.score.toFixed(2):'—')+'</td><td>'+(r.status||'—')+'</td></tr>'
+    ).join('');
+});
+</script>
+{% endblock %}

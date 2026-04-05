@@ -227,11 +227,11 @@ def _build_system_info(project, system_name, system_info=None, conn=None):
         # Section 14
         "date_prepared": now.strftime("%Y-%m-%d"),
         "document_version": "1.0",
-        "plan_prepared_by": "ICDEV Compliance Engine",
+        "plan_prepared_by": "ICDEV™ Compliance Engine",
         "next_review_date": f"{now.year + 1}-{now.strftime('%m-%d')}",
         "version_1": "1.0",
         "version_1_date": now.strftime("%Y-%m-%d"),
-        "version_1_author": "ICDEV Compliance Engine",
+        "version_1_author": "ICDEV™ Compliance Engine",
         "version_1_changes": "Initial SSP generation",
 
         # Classification

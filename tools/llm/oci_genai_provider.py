@@ -2,7 +2,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Oracle Cloud Infrastructure (OCI) Generative AI LLM Provider.
 
 Supports OCI Generative AI Service for Cohere and Meta Llama models

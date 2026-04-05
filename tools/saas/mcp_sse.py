@@ -3,10 +3,10 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""ICDEV SaaS -- MCP-over-SSE Transport.
+# POC: ICDEV™ System Administrator
+"""ICDEV™ SaaS -- MCP-over-SSE Transport.
 
-Converts ICDEV's stdio MCP servers to HTTP SSE for remote SaaS clients.
+Converts ICDEV™'s stdio MCP servers to HTTP SSE for remote SaaS clients.
 Implements JSON-RPC 2.0 dispatch for MCP tool calls with tenant isolation.
 
 Auth is handled by the gateway middleware -- by the time a request reaches
@@ -38,7 +38,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from flask import Blueprint, Response, g, jsonify, request
+from flask import Blueprint, Response, g, jsonify, request  # noqa: E402
 
 logger = logging.getLogger("saas.mcp_sse")
 
@@ -111,7 +111,7 @@ def _broadcast_event(tenant_id: str, event_type: str, data: dict) -> None:
 TOOL_REGISTRY = [
     {
         "name": "project_create",
-        "description": "Create a new ICDEV-managed project",
+        "description": "Create a new ICDEV™-managed project",
         "module": "tools.project.project_create",
         "function": "create_project",
         "inputSchema": {

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ICDEV SaaS Platform — Pydantic Models.
+"""ICDEV™ SaaS Platform — Pydantic Models.
 
 CUI // SP-CTI
 """

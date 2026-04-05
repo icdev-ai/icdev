@@ -3,13 +3,13 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""ICDEV SaaS -- Tenant Database Adapter.
+# POC: ICDEV™ System Administrator
+"""ICDEV™ SaaS -- Tenant Database Adapter.
 
 Routes database operations to the correct tenant's isolated database.
-Acts as the bridge between the API gateway and existing ICDEV tools.
+Acts as the bridge between the API gateway and existing ICDEV™ tools.
 
-In ICDEV SaaS, every tenant gets its own SQLite file (dev) or PostgreSQL
+In ICDEV™ SaaS, every tenant gets its own SQLite file (dev) or PostgreSQL
 schema (prod).  Existing tools were written for a single-tenant icdev.db.
 This adapter transparently redirects their DB access so the same tool code
 works unmodified in a multi-tenant context.
@@ -30,6 +30,7 @@ import sqlite3
 import sys
 import threading
 import time
+from tools.db.storage import get_connection
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional, Tuple
 
@@ -116,8 +117,7 @@ def _get_platform_conn() -> sqlite3.Connection:
         raise FileNotFoundError(
             "Platform database not found at {}. Run: python tools/saas/platform_db.py --init".format(PLATFORM_DB_PATH)
         )
-    conn = sqlite3.connect(str(PLATFORM_DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     return conn
 
 
@@ -242,8 +242,7 @@ def get_tenant_db_connection(tenant_id: str) -> sqlite3.Connection:
     if not db_path.exists():
         raise FileNotFoundError("Tenant database not found: {}. Provision the tenant first.".format(db_path))
 
-    conn = sqlite3.connect(str(db_path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     logger.debug("Connected to SQLite for tenant %s at %s", tenant_id, db_path)
@@ -258,9 +257,9 @@ def call_tool_with_tenant_db(
     tenant_id: str,
     **kwargs,
 ) -> Any:
-    """Call an existing ICDEV tool function with the tenant's database.
+    """Call an existing ICDEV™ tool function with the tenant's database.
 
-    Most ICDEV tools accept a ``db_path`` parameter.  This adapter:
+    Most ICDEV™ tools accept a ``db_path`` parameter.  This adapter:
 
     1. Resolves the tenant DB path from the platform database.
     2. Inspects the tool function signature.
@@ -268,7 +267,7 @@ def call_tool_with_tenant_db(
     4. Calls the tool and returns its result.
 
     Args:
-        tool_func: The ICDEV tool function to call.
+        tool_func: The ICDEV™ tool function to call.
         tenant_id: The authenticated tenant's ID.
         **kwargs: Additional keyword arguments forwarded to tool_func.
 

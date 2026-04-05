@@ -1,5 +1,5 @@
 ---
-description: "ICDEV workflow: "Sync requirements with Jira, ServiceNow, GitLab, and DOORS NG""
+description: "ICDEV™ workflow: "Sync requirements with Jira, ServiceNow, GitLab, and DOORS NG""
 globs:
   - "**/*.py"
   - "**/*.yaml"

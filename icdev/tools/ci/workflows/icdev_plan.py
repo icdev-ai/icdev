@@ -1,9 +1,9 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Plan — Agentic planning workflow
+# ICDEV™ Plan — Agentic planning workflow
 # Adapted from ADW adw_plan.py with dual platform support
 
 """
-ICDEV Plan — Issue classification, branch creation, and plan generation.
+ICDEV™ Plan — Issue classification, branch creation, and plan generation.
 
 Usage:
     python tools/ci/workflows/icdev_plan.py <issue-number> [run-id]
@@ -82,7 +82,7 @@ def main():
     run_id = ensure_run_id(issue_number, run_id)
     state = ICDevState.load(run_id)
     logger = setup_logger(run_id, "icdev_plan")
-    logger.info(f"ICDEV Plan starting — run_id: {run_id}, issue: #{issue_number}")
+    logger.info(f"ICDEV™ Plan starting — run_id: {run_id}, issue: #{issue_number}")
 
     check_env_vars(logger)
 

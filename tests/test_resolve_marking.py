@@ -20,7 +20,7 @@ _TMP = tempfile.gettempdir().replace("'", "''")
 
 @pytest.fixture
 def db_path(tmp_path):
-    """Create a temporary ICDEV database with minimal schema."""
+    """Create a temporary ICDEV™ database with minimal schema."""
     db_file = tmp_path / "test_icdev.db"
     conn = sqlite3.connect(str(db_file))
     conn.execute(f"""

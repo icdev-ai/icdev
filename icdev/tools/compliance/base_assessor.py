@@ -3,8 +3,8 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""Base Compliance Framework Assessor for ICDEV.
+# POC: ICDEV™ System Administrator
+"""Base Compliance Framework Assessor for ICDEV™.
 
 Provides a reusable base class for all framework-specific assessors.
 Each assessor loads its framework catalog, inherits NIST 800-53

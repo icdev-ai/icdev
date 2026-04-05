@@ -264,7 +264,7 @@ def create_server() -> MCPServer:
         input_schema={
             "type": "object",
             "properties": {
-                "project_id": {"type": "string", "description": "ICDEV project ID"},
+                "project_id": {"type": "string", "description": "ICDEV™ project ID"},
                 "customer_name": {"type": "string", "description": "Customer/stakeholder name"},
                 "customer_org": {"type": "string", "description": "Customer organization"},
                 "impact_level": {

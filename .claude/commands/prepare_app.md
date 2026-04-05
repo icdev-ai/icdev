@@ -1,6 +1,6 @@
 # Prepare Application — Pre-Test/Review Setup
 
-Setup the ICDEV environment for E2E tests or review validation.
+Setup the ICDEV™ environment for E2E tests or review validation.
 
 ## Variables
 

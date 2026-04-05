@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Cross-Pollinator -- brokers capability sharing between child applications.
 
 Capabilities proven in one child can be proposed for adoption by siblings.
@@ -853,7 +853,7 @@ class CrossPollinator:
 def main():
     parser = argparse.ArgumentParser(
         description=(
-            "ICDEV Cross-Pollinator -- broker capability sharing "
+            "ICDEV™ Cross-Pollinator -- broker capability sharing "
             "between child applications (REQ-36-040, HITL required)"
         )
     )

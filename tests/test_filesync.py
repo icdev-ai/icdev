@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Tests for ICDEV File Sync Module (D-SYNC-1 through D-SYNC-12).
+"""Tests for ICDEV™ File Sync Module (D-SYNC-1 through D-SYNC-12).
 
 Covers: ignore parser, scanner, change detector, conflict resolver,
 transfer executor, providers (local, sftp, cloud), watcher, sync engine.

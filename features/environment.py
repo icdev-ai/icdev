@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-"""Behave environment configuration for ICDEV BDD tests."""
+"""Behave environment configuration for ICDEV™ BDD tests."""
 
 import os
 import sys

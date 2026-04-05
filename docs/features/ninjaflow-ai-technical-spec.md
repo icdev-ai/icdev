@@ -7,7 +7,7 @@
 | Product | NinjaFlow AI |
 | Version | 0.1.0 (MVP) |
 | Date | 2026-03-01 |
-| Author | ICDEV Research + Innovation + Creative Engines |
+| Author | ICDEV™ Research + Innovation + Creative Engines |
 | Status | DRAFT |
 | Classification | CUI // SP-CTI |
 
@@ -346,7 +346,7 @@ CREATE TABLE risk_snapshots (
 | CFTC Reg AT §1.81 | Risk controls pre-trade | Risk Manager Agent circuit breakers |
 | CFTC Reg AT §1.82 | Algo testing requirements | Walk-forward + Monte Carlo backtesting |
 | CFTC Reg AT §1.83 | Reporting to DCO/DCM | Compliance Agent automated reports |
-| NFA Rule 2-36(e)(12) | Cybersecurity program | ICDEV security scanning pipeline |
+| NFA Rule 2-36(e)(12) | Cybersecurity program | ICDEV™ security scanning pipeline |
 | NFA Rule 2-9(a) | Supervision of activities | Multi-agent audit trail |
 | SEC Rule 15c3-5 | Market access risk controls | Pre-trade risk checks in Executor |
 | FINRA Rule 3110 | Supervisory system | Compliance dashboard + alerts |
@@ -432,7 +432,7 @@ CREATE TABLE risk_snapshots (
 | Charts | SVG (custom) | - | - | Yes |
 | IPC | Protocol Buffers | 3.x | BSD | Yes |
 
-**All copyleft libraries excluded** (freqtrade GPL, backtrader GPL, OctoBot GPL) per ICDEV D202 license policy.
+**All copyleft libraries excluded** (freqtrade GPL, backtrader GPL, OctoBot GPL) per ICDEV™ D202 license policy.
 
 ---
 

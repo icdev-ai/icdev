@@ -1,7 +1,7 @@
 # [TEMPLATE: CUI // SP-CTI]
 """Collaboration patterns for multi-agent orchestration.
 
-Implements five structured collaboration patterns used by the ICDEV
+Implements five structured collaboration patterns used by the ICDEV™
 multi-agent system: reviewer, debate, consensus, veto, and escalation.
 Each pattern orchestrates agent interactions using BedrockClient and logs
 collaboration events to agent_collaboration_history and the audit trail.
@@ -18,6 +18,7 @@ import sqlite3
 import sys
 import time
 import uuid
+from tools.db.storage import get_connection
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import List, Optional
@@ -34,7 +35,6 @@ logger = logging.getLogger("icdev.collaboration")
 try:
     from tools.llm.router import LLMRouter
     from tools.llm.provider import LLMRequest
-
     _LLM_AVAILABLE = True
 except ImportError:
     _LLM_AVAILABLE = False
@@ -45,7 +45,6 @@ except ImportError:
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
 except ImportError:
-
     def audit_log_event(**kwargs):
         logger.debug("audit_logger unavailable — skipping audit: %s", kwargs.get("action", ""))
 
@@ -54,27 +53,18 @@ except ImportError:
 # Helpers
 # ---------------------------------------------------------------------------
 
-
 def _get_db(db_path=None) -> sqlite3.Connection:
     """Open a DB connection with row factory."""
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(path))
     return conn
 
 
-def _log_collaboration(
-    project_id: str,
-    agent_a_id: str,
-    agent_b_id: str,
-    collaboration_type: str,
-    task_id: str = None,
-    workflow_id: str = None,
-    outcome: str = None,
-    lesson_learned: str = None,
-    duration_ms: int = None,
-    db_path=None,
-) -> int:
+def _log_collaboration(project_id: str, agent_a_id: str, agent_b_id: str,
+                       collaboration_type: str, task_id: str = None,
+                       workflow_id: str = None, outcome: str = None,
+                       lesson_learned: str = None, duration_ms: int = None,
+                       db_path=None) -> int:
     """Record a collaboration event in agent_collaboration_history."""
     conn = _get_db(db_path)
     try:
@@ -83,17 +73,8 @@ def _log_collaboration(
                (project_id, agent_a_id, agent_b_id, collaboration_type,
                 task_id, workflow_id, outcome, lesson_learned, duration_ms)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                project_id,
-                agent_a_id,
-                agent_b_id,
-                collaboration_type,
-                task_id,
-                workflow_id,
-                outcome,
-                lesson_learned,
-                duration_ms,
-            ),
+            (project_id, agent_a_id, agent_b_id, collaboration_type,
+             task_id, workflow_id, outcome, lesson_learned, duration_ms),
         )
         conn.commit()
         return cursor.lastrowid
@@ -109,9 +90,9 @@ def _load_prompt_template(template_name: str) -> str:
     return ""
 
 
-def _invoke_llm(
-    system_prompt: str, user_prompt: str, agent_id: str = "", project_id: str = "", output_schema: dict = None
-) -> dict:
+def _invoke_llm(system_prompt: str, user_prompt: str,
+                agent_id: str = "", project_id: str = "",
+                output_schema: dict = None) -> dict:
     """Invoke LLM via router and parse JSON response. Returns parsed dict or fallback."""
     if not _LLM_AVAILABLE:
         logger.warning("LLM router unavailable — returning empty fallback")
@@ -151,10 +132,23 @@ def _invoke_llm(
         content = "\n".join(json_lines)
 
     try:
-        return json.loads(content)
+        parsed = json.loads(content)
     except (json.JSONDecodeError, ValueError):
-        logger.warning("Failed to parse Bedrock response as JSON")
-        return {"raw_content": resp.content}
+        logger.warning("Failed to parse LLM response as JSON")
+        return {"raw_content": resp.content, "_parse_failed": True}
+
+    # Validate against output_schema if provided
+    if output_schema and isinstance(parsed, dict):
+        required = output_schema.get("required", [])
+        missing = [k for k in required if k not in parsed]
+        if missing:
+            logger.warning(
+                "LLM response missing required fields: %s",
+                missing,
+            )
+            parsed["_missing_fields"] = missing
+
+    return parsed
 
 
 def _load_schema(schema_name: str) -> Optional[dict]:
@@ -169,10 +163,9 @@ def _load_schema(schema_name: str) -> Optional[dict]:
 # Pattern 1: Reviewer Pattern
 # ---------------------------------------------------------------------------
 
-
-def reviewer_pattern(
-    producer_output: dict, reviewer_agent_id: str, skill_id: str, project_id: str, max_rounds: int = 3, db_path=None
-) -> dict:
+def reviewer_pattern(producer_output: dict, reviewer_agent_id: str,
+                     skill_id: str, project_id: str, max_rounds: int = 3,
+                     db_path=None) -> dict:
     """Producer generates -> Reviewer evaluates -> Approve or Reject with feedback -> Revise.
 
     The reviewer evaluates the producer's output and decides to approve or reject.
@@ -212,25 +205,18 @@ def reviewer_pattern(
         rounds_used = round_num
 
         # Build review prompt
-        system_prompt = (
-            template
-            if template
-            else (
-                "You are a reviewing agent. Evaluate the output and respond with JSON: "
-                '{"decision": "approve"|"reject", "confidence": 0-1, "feedback": "...", "issues": [...]}'
-            )
+        system_prompt = template if template else (
+            "You are a reviewing agent. Evaluate the output and respond with JSON: "
+            '{"decision": "approve"|"reject", "confidence": 0-1, "feedback": "...", "issues": [...]}'
         )
 
-        user_prompt = json.dumps(
-            {
-                "round": round_num,
-                "max_rounds": max_rounds,
-                "producer_output": current_output,
-                "previous_feedback": feedback_history,
-                "skill_id": skill_id,
-            },
-            indent=2,
-        )
+        user_prompt = json.dumps({
+            "round": round_num,
+            "max_rounds": max_rounds,
+            "producer_output": current_output,
+            "previous_feedback": feedback_history,
+            "skill_id": skill_id,
+        }, indent=2)
 
         # Invoke Bedrock for review decision
         decision = _invoke_llm(
@@ -246,15 +232,13 @@ def reviewer_pattern(
         feedback = decision.get("feedback", "")
         issues = decision.get("issues", [])
 
-        feedback_history.append(
-            {
-                "round": round_num,
-                "decision": verdict,
-                "confidence": confidence,
-                "feedback": feedback,
-                "issues": issues,
-            }
-        )
+        feedback_history.append({
+            "round": round_num,
+            "decision": verdict,
+            "confidence": confidence,
+            "feedback": feedback,
+            "issues": issues,
+        })
 
         if verdict == "approve":
             approved = True
@@ -284,7 +268,8 @@ def reviewer_pattern(
         actor=reviewer_agent_id,
         action=f"Reviewer pattern completed: {'approved' if approved else 'rejected'} after {rounds_used} rounds",
         project_id=project_id,
-        details={"pattern": "reviewer", "approved": approved, "rounds": rounds_used, "duration_ms": duration_ms},
+        details={"pattern": "reviewer", "approved": approved, "rounds": rounds_used,
+                 "duration_ms": duration_ms},
         classification="CUI",
     )
 
@@ -302,8 +287,8 @@ def reviewer_pattern(
 # Pattern 2: Debate Pattern
 # ---------------------------------------------------------------------------
 
-
-def debate_pattern(topic: str, agent_ids: List[str], project_id: str, rounds: int = 2, db_path=None) -> dict:
+def debate_pattern(topic: str, agent_ids: List[str], project_id: str,
+                   rounds: int = 2, db_path=None) -> dict:
     """Multiple agents argue positions on a topic. Each sees others' arguments.
 
     Each agent presents their position, and in subsequent rounds they respond
@@ -342,25 +327,18 @@ def debate_pattern(topic: str, agent_ids: List[str], project_id: str, rounds: in
 
         def _debate_turn(agent_id: str) -> dict:
             """Single agent's debate turn."""
-            system_prompt = (
-                template
-                if template
-                else (
-                    "You are participating in a structured debate. Present your position as JSON: "
-                    '{"position": "support"|"oppose"|"neutral", "confidence": 0-1, '
-                    '"arguments": [...], "counterarguments": [...], "recommendation": "..."}'
-                )
+            system_prompt = template if template else (
+                "You are participating in a structured debate. Present your position as JSON: "
+                '{"position": "support"|"oppose"|"neutral", "confidence": 0-1, '
+                '"arguments": [...], "counterarguments": [...], "recommendation": "..."}'
             )
-            user_prompt = json.dumps(
-                {
-                    "topic": topic,
-                    "agent_role": agent_id,
-                    "round": round_num,
-                    "total_rounds": rounds,
-                    "previous_positions": previous_positions_text,
-                },
-                indent=2,
-            )
+            user_prompt = json.dumps({
+                "topic": topic,
+                "agent_role": agent_id,
+                "round": round_num,
+                "total_rounds": rounds,
+                "previous_positions": previous_positions_text,
+            }, indent=2)
 
             result = _invoke_llm(
                 system_prompt=system_prompt,
@@ -383,17 +361,15 @@ def debate_pattern(topic: str, agent_ids: List[str], project_id: str, rounds: in
                 except Exception as exc:
                     agent_id = futures[future]
                     logger.error("Debate turn failed for %s: %s", agent_id, exc)
-                    round_positions.append(
-                        {
-                            "agent_id": agent_id,
-                            "round": round_num,
-                            "position": "neutral",
-                            "confidence": 0.0,
-                            "arguments": [f"Error: {exc}"],
-                            "counterarguments": [],
-                            "recommendation": "Unable to participate due to error",
-                        }
-                    )
+                    round_positions.append({
+                        "agent_id": agent_id,
+                        "round": round_num,
+                        "position": "neutral",
+                        "confidence": 0.0,
+                        "arguments": [f"Error: {exc}"],
+                        "counterarguments": [],
+                        "recommendation": "Unable to participate due to error",
+                    })
 
         all_positions.extend(round_positions)
 
@@ -419,7 +395,7 @@ def debate_pattern(topic: str, agent_ids: List[str], project_id: str, rounds: in
 
     # Log pairwise collaborations
     for i, a in enumerate(agent_ids):
-        for b in agent_ids[i + 1 :]:
+        for b in agent_ids[i + 1:]:
             _log_collaboration(
                 project_id=project_id,
                 agent_a_id=a,
@@ -435,7 +411,8 @@ def debate_pattern(topic: str, agent_ids: List[str], project_id: str, rounds: in
         actor="orchestrator-agent",
         action=f"Debate completed: {'consensus' if consensus else 'no consensus'} on '{topic}'",
         project_id=project_id,
-        details={"pattern": "debate", "consensus": consensus, "positions": position_counts, "duration_ms": duration_ms},
+        details={"pattern": "debate", "consensus": consensus, "positions": position_counts,
+                 "duration_ms": duration_ms},
         classification="CUI",
     )
 
@@ -454,10 +431,9 @@ def debate_pattern(topic: str, agent_ids: List[str], project_id: str, rounds: in
 # Pattern 3: Consensus Pattern
 # ---------------------------------------------------------------------------
 
-
-def consensus_pattern(
-    proposal: dict, voter_agent_ids: List[str], project_id: str, threshold: float = 0.67, db_path=None
-) -> dict:
+def consensus_pattern(proposal: dict, voter_agent_ids: List[str],
+                      project_id: str, threshold: float = 0.67,
+                      db_path=None) -> dict:
     """Agents vote on a proposal. Passes if vote ratio >= threshold.
 
     Each agent evaluates the proposal and votes approve/reject with rationale.
@@ -480,7 +456,8 @@ def consensus_pattern(
         actor="orchestrator-agent",
         action=f"Consensus pattern started with {len(voter_agent_ids)} voters (threshold={threshold})",
         project_id=project_id,
-        details={"pattern": "consensus", "voter_count": len(voter_agent_ids), "threshold": threshold},
+        details={"pattern": "consensus", "voter_count": len(voter_agent_ids),
+                 "threshold": threshold},
         classification="CUI",
     )
 
@@ -493,14 +470,11 @@ def consensus_pattern(
             '{"vote": "approve" or "reject", "confidence": 0.0-1.0, '
             '"rationale": "brief explanation"}'
         )
-        user_prompt = json.dumps(
-            {
-                "proposal": proposal,
-                "agent_role": agent_id,
-                "threshold": threshold,
-            },
-            indent=2,
-        )
+        user_prompt = json.dumps({
+            "proposal": proposal,
+            "agent_role": agent_id,
+            "threshold": threshold,
+        }, indent=2)
 
         result = _invoke_llm(
             system_prompt=system_prompt,
@@ -554,16 +528,11 @@ def consensus_pattern(
     audit_log_event(
         event_type="agent_collaboration_completed",
         actor="orchestrator-agent",
-        action=f"Consensus {'reached' if approved else 'not reached'}: {approve_count}/{total_valid} approved (ratio={ratio:.2f}, threshold={threshold})",  # noqa: E501
+        action=f"Consensus {'reached' if approved else 'not reached'}: {approve_count}/{total_valid} approved (ratio={ratio:.2f}, threshold={threshold})",
         project_id=project_id,
-        details={
-            "pattern": "consensus",
-            "approved": approved,
-            "ratio": ratio,
-            "approve_count": approve_count,
-            "total_valid": total_valid,
-            "duration_ms": duration_ms,
-        },
+        details={"pattern": "consensus", "approved": approved, "ratio": ratio,
+                 "approve_count": approve_count, "total_valid": total_valid,
+                 "duration_ms": duration_ms},
         classification="CUI",
     )
 
@@ -583,8 +552,8 @@ def consensus_pattern(
 # Pattern 4: Veto Pattern
 # ---------------------------------------------------------------------------
 
-
-def veto_pattern(output: dict, authority_agent_id: str, topic: str, project_id: str, db_path=None) -> dict:
+def veto_pattern(output: dict, authority_agent_id: str, topic: str,
+                 project_id: str, db_path=None) -> dict:
     """Domain authority reviews output for violations. Can hard/soft veto.
 
     The authority agent evaluates the output against its domain expertise.
@@ -614,7 +583,6 @@ def veto_pattern(output: dict, authority_agent_id: str, topic: str, project_id: 
     # Load authority info
     try:
         from tools.agent.authority import check_authority
-
         authority_info = check_authority(authority_agent_id, topic)
     except ImportError:
         authority_info = {"has_authority": True, "veto_type": "soft", "topics": [topic]}
@@ -622,26 +590,19 @@ def veto_pattern(output: dict, authority_agent_id: str, topic: str, project_id: 
     template = _load_prompt_template("veto_check_prompt.md")
     schema = _load_schema("veto_decision.json")
 
-    system_prompt = (
-        template
-        if template
-        else (
-            "You are a domain authority agent. Evaluate the output for violations. "
-            'Respond with JSON: {"veto": true/false, "veto_type": "hard"|"soft"|null, '
-            '"reason": "...", "evidence": "...", "recommendations": [...]}'
-        )
+    system_prompt = template if template else (
+        "You are a domain authority agent. Evaluate the output for violations. "
+        'Respond with JSON: {"veto": true/false, "veto_type": "hard"|"soft"|null, '
+        '"reason": "...", "evidence": "...", "recommendations": [...]}'
     )
 
-    user_prompt = json.dumps(
-        {
-            "authority_agent_id": authority_agent_id,
-            "authority_topics": authority_info.get("topics", [topic]),
-            "veto_type": authority_info.get("veto_type", "soft"),
-            "topic": topic,
-            "content": output,
-        },
-        indent=2,
-    )
+    user_prompt = json.dumps({
+        "authority_agent_id": authority_agent_id,
+        "authority_topics": authority_info.get("topics", [topic]),
+        "veto_type": authority_info.get("veto_type", "soft"),
+        "topic": topic,
+        "content": output,
+    }, indent=2)
 
     decision = _invoke_llm(
         system_prompt=system_prompt,
@@ -663,7 +624,6 @@ def veto_pattern(output: dict, authority_agent_id: str, topic: str, project_id: 
     if vetoed:
         try:
             from tools.agent.authority import record_veto
-
             record_veto(
                 authority_agent_id=authority_agent_id,
                 vetoed_agent_id="producer",
@@ -704,7 +664,8 @@ def veto_pattern(output: dict, authority_agent_id: str, topic: str, project_id: 
         actor=authority_agent_id,
         action=f"Veto check completed: {'VETOED' if vetoed else 'PASSED'} for topic '{topic}'",
         project_id=project_id,
-        details={"pattern": "veto", "vetoed": vetoed, "veto_type": veto_type, "duration_ms": duration_ms},
+        details={"pattern": "veto", "vetoed": vetoed, "veto_type": veto_type,
+                 "duration_ms": duration_ms},
         classification="CUI",
     )
 
@@ -725,8 +686,8 @@ def veto_pattern(output: dict, authority_agent_id: str, topic: str, project_id: 
 # Pattern 5: Escalation Pattern
 # ---------------------------------------------------------------------------
 
-
-def escalation_pattern(task_context: dict, escalation_reason: str, project_id: str, db_path=None) -> dict:
+def escalation_pattern(task_context: dict, escalation_reason: str,
+                       project_id: str, db_path=None) -> dict:
     """Escalates a blocked task to human review. Creates approval_workflow entry.
 
     When an agent is blocked (e.g., hard veto, low confidence, conflicting
@@ -750,7 +711,8 @@ def escalation_pattern(task_context: dict, escalation_reason: str, project_id: s
         actor="orchestrator-agent",
         action=f"Task escalated to human review: {escalation_reason}",
         project_id=project_id,
-        details={"escalation_id": escalation_id, "reason": escalation_reason, "task_context": task_context},
+        details={"escalation_id": escalation_id, "reason": escalation_reason,
+                 "task_context": task_context},
         classification="CUI",
     )
 
@@ -772,12 +734,10 @@ def escalation_pattern(task_context: dict, escalation_reason: str, project_id: s
                 "escalated",
                 "orchestrator-agent",
                 json.dumps(["human-reviewer"]),
-                json.dumps(
-                    {
-                        "escalation_reason": escalation_reason,
-                        "task_context": task_context,
-                    }
-                ),
+                json.dumps({
+                    "escalation_reason": escalation_reason,
+                    "task_context": task_context,
+                }),
                 "CUI",
             ),
         )
@@ -812,10 +772,11 @@ def escalation_pattern(task_context: dict, escalation_reason: str, project_id: s
 # CLI entry point
 # ---------------------------------------------------------------------------
 
-
 def main():
     """CLI for testing collaboration patterns."""
-    parser = argparse.ArgumentParser(description="ICDEV Collaboration Patterns — multi-agent interaction orchestration")
+    parser = argparse.ArgumentParser(
+        description="ICDEV™ Collaboration Patterns — multi-agent interaction orchestration"
+    )
     sub = parser.add_subparsers(dest="pattern", help="Collaboration pattern to execute")
 
     # Reviewer

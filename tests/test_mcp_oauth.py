@@ -111,7 +111,7 @@ class TestMCPOAuthVerifier:
     def test_api_key_not_icdev_prefix(self, verifier):
         result = verifier._verify_api_key("not_icdev_key")
         assert result["verified"] is False
-        assert "Not an ICDEV API key" in result["error"]
+        assert "Not an ICDEV™ API key" in result["error"]
 
     def test_api_key_no_db(self, tmp_path):
         from icdev.tools.saas.mcp_oauth import MCPOAuthVerifier

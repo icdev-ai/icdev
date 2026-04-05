@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Runtime Feedback Collector — test-to-source correlation for ICDEV.
+"""Runtime Feedback Collector — test-to-source correlation for ICDEV™.
 
 Phase 52 (D332, D334). Parses pytest JUnit XML output and correlates test
 results back to source functions via naming convention. Stores append-only
@@ -18,7 +18,7 @@ import re
 import sqlite3
 import uuid
 import xml.etree.ElementTree as ET
-from datetime import datetime, timezone
+from tools.db.storage import get_connection
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -35,15 +35,10 @@ def _get_db(db_path: Optional[Path] = None) -> sqlite3.Connection:
     p = db_path or DB_PATH
     if not p.exists():
         raise FileNotFoundError(f"Database not found: {p}")
-    conn = sqlite3.connect(str(p))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(db_path))
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
-
-
-def _now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _uid() -> str:
@@ -72,7 +67,7 @@ class RuntimeFeedbackCollector:
         """Parse JUnit XML produced by pytest --junitxml=path."""
         results: List[Dict[str, Any]] = []
         try:
-            tree = ET.parse(str(xml_path))
+            tree = ET.parse(str(xml_path))  # nosec B314 -- parsing trusted internal MBSE/config XML
         except (ET.ParseError, FileNotFoundError):
             return results
 
@@ -330,7 +325,7 @@ def main():
     parser = argparse.ArgumentParser(description="Runtime Feedback Collector — test-to-source correlation (Phase 52)")
     parser.add_argument("--xml", help="Path to JUnit XML file")
     parser.add_argument("--stdout", help="Raw pytest -v output text")
-    parser.add_argument("--project-id", help="ICDEV project ID")
+    parser.add_argument("--project-id", help="ICDEV™ project ID")
     parser.add_argument("--run-id", help="Test run identifier")
     parser.add_argument("--db-path", help="Override DB path")
     parser.add_argument("--health", action="store_true", help="Compute health for a function")

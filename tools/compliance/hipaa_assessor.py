@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """HIPAA Security Rule Assessment Engine.
 
 Assesses projects against HIPAA Security Rule (45 CFR §164.308-316)

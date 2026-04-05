@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """SOC 2 Type II Trust Service Criteria Assessment Engine.
 
 Assesses projects against AICPA SOC 2 Trust Service Criteria across

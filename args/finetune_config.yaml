@@ -196,3 +196,53 @@ security:
   block_secret_to_cloud: true  # SECRET data = local only
   require_classification_label: true
   audit_all_training_events: true
+
+# ── RAG-to-FT Automated Pipeline (D-KARL-5) ──────────────────────────
+rag_ft_pipeline:
+  enabled: true
+  auto_approve_threshold: 0.8
+  source_types:
+    - innovation_signals
+    - research_dossiers
+    - compliance_artifacts
+  schedule_minutes: 360
+  max_pairs_per_run: 100
+  default_dataset_name: rag-auto-pipeline
+  default_purpose: general
+
+# ── KG-to-FT Pair Generation (D-KARL-6) ──────────────────────────────
+kg_ft_pipeline:
+  enabled: true
+  strategies:
+    - entity_relationship
+    - community_cluster
+    - compliance_crosswalk
+  questions_per_entity: 2
+  min_community_size: 3
+  max_pairs_per_graph: 50
+
+# ── Dataset Taxonomy (D-RAG-24, D-FT-23 — Know Your RAG) ────────────
+taxonomy:
+  enabled: true
+  labels:
+    - fact_single
+    - summary
+    - reasoning
+    - unanswerable
+  min_label_pct: 10                  # Warn if any label < 10%
+  max_label_pct: 60                  # Warn if any label > 60%
+  statement_extraction: true         # Use statement extraction for grounded pairs
+
+# ── Quality Feedback Loop (D-KARL-8, D-KARL-9) ──────────────────────
+quality_feedback:
+  enabled: true
+  rag_eval_thresholds:
+    min_ndcg: 0.5
+    min_mrr: 0.4
+    min_faithfulness: 0.6
+  consecutive_failures_before_retrain: 3
+  target_pairs_per_failing_query: 5
+  auto_remediate: true               # D-KARL-9: Auto-generate pairs on degradation
+  use_statement_extraction: true     # D-FT-23: Use Know Your RAG statement extraction
+  taxonomy_aware_generation: true    # Target weak taxonomy labels
+  max_auto_pairs_per_cycle: 50

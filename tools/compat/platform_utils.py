@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Cross-platform compatibility utilities for ICDEV.
+"""Cross-platform compatibility utilities for ICDEV™.
 
 Centralizes OS detection and platform-specific behavior (D145).
 Uses only Python stdlib (air-gap safe).
@@ -43,12 +43,12 @@ def get_home_dir() -> Path:
 
 
 def get_project_root() -> Path:
-    """Return ICDEV project root."""
+    """Return ICDEV™ project root."""
     return Path(__file__).resolve().parent.parent.parent
 
 
 def get_data_dir() -> Path:
-    """Return ICDEV data directory (relative to project root)."""
+    """Return ICDEV™ data directory (relative to project root)."""
     return get_project_root() / "data"
 
 

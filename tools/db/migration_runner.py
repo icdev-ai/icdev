@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""ICDEV Database Migration Runner.
+"""ICDEV™ Database Migration Runner.
 
 D150: Lightweight migration framework using stdlib only (no Alembic).
 Tracks schema versions via `schema_migrations` table. Supports .sql and .py

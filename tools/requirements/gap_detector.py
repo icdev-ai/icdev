@@ -16,7 +16,7 @@ Usage:
 
 import argparse
 import json
-import sqlite3
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -38,8 +38,7 @@ def _get_connection(db_path=None):
     path = db_path or DB_PATH
     if not path.exists():
         raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -231,7 +230,7 @@ def detect_gaps(session_id: str, checks: dict = None, db_path=None) -> dict:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="ICDEV Gap Detector")
+    parser = argparse.ArgumentParser(description="ICDEV™ Gap Detector")
     parser.add_argument("--session-id", required=True, help="Intake session ID")
     parser.add_argument("--check-security", action="store_true")
     parser.add_argument("--check-compliance", action="store_true")

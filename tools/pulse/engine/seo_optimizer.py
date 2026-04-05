@@ -1,4 +1,4 @@
-"""ICDEV Pulse SEO optimization engine.
+"""ICDEV™ Pulse SEO optimization engine.
 
 Optimizes blog posts for search engines: title/meta tuning, keyword
 extraction, JSON-LD schema markup, YAML frontmatter generation,
@@ -309,7 +309,7 @@ def _optimize_title(title: str, primary_keyword: str) -> str:
     if len(optimized) > TITLE_MAX_LEN:
         optimized = _truncate(optimized, TITLE_MAX_LEN)
     elif len(optimized) < TITLE_MIN_LEN and primary_keyword:
-        optimized = f"{optimized} | ICDEV"
+        optimized = f"{optimized} | ICDEV™"
         optimized = optimized[:TITLE_MAX_LEN]
 
     return optimized
@@ -337,7 +337,7 @@ def _build_meta_description(description: str, content: str, primary_keyword: str
     if len(meta) > META_DESC_MAX_LEN:
         meta = _truncate(meta, META_DESC_MAX_LEN)
     elif len(meta) < META_DESC_MIN_LEN and primary_keyword:
-        suffix = f" Learn more about {primary_keyword} at ICDEV."
+        suffix = f" Learn more about {primary_keyword} at ICDEV™."
         if len(meta) + len(suffix) <= META_DESC_MAX_LEN:
             meta += suffix
 
@@ -421,7 +421,7 @@ def generate_schema_json(post: dict[str, Any]) -> dict[str, Any]:
 
     date_published = post.get("date", datetime.now(timezone.utc).isoformat())
     date_modified = post.get("date_modified", date_published)
-    author_name = post.get("author", "ICDEV Team")
+    author_name = post.get("author", "ICDEV™ Team")
     image = post.get("image", f"{SITE_URL}/images/default-og.png")
 
     schema: dict[str, Any] = {
@@ -435,7 +435,7 @@ def generate_schema_json(post: dict[str, Any]) -> dict[str, Any]:
         },
         "publisher": {
             "@type": "Organization",
-            "name": "ICDEV",
+            "name": "ICDEV™",
             "url": SITE_URL,
             "logo": {
                 "@type": "ImageObject",
@@ -474,7 +474,7 @@ def generate_frontmatter(post: dict[str, Any]) -> str:
     canonical_url = seo.get("canonical_url", f"{SITE_URL}/blog/{slug}")
 
     date = post.get("date", datetime.now(timezone.utc).strftime("%Y-%m-%d"))
-    author = post.get("author", "ICDEV Team")
+    author = post.get("author", "ICDEV™ Team")
     tags = post.get("tags", keywords)
     image = post.get("image", "")
     draft = post.get("draft", False)

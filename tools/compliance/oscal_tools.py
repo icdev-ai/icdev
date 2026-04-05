@@ -22,18 +22,23 @@ Usage:
     python tools/compliance/oscal_tools.py --catalog-list --family AC --json
     python tools/compliance/oscal_tools.py --catalog-stats --json
 """
+from __future__ import annotations
 
 import argparse
 import json
 import logging
 import os
 import shutil
-import sqlite3
 import subprocess
 import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+
+_BASE = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(_BASE))
+
+from tools.db.storage import get_connection  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -441,7 +446,7 @@ def _run_oscal_cli(subcommand, cli_args, timeout=None):
 
 
 def _validate_structural(file_path, artifact_type=None):
-    """Layer 1: ICDEV built-in structural validation (always available)."""
+    """Layer 1: ICDEV™ built-in structural validation (always available)."""
     start = time.monotonic()
     try:
         from tools.compliance.oscal_generator import validate_oscal
@@ -792,7 +797,7 @@ def _log_validation(project_id, artifact_type, file_path, validator_result, db_p
         return
 
     try:
-        conn = sqlite3.connect(str(db_path))
+        conn = get_connection(db_path=str(db_path))
         conn.execute(
             """INSERT INTO oscal_validation_log
                (project_id, artifact_type, file_path, validator, valid,
@@ -820,7 +825,7 @@ def validate_oscal_deep(file_path, artifact_type=None, validators=None, project_
     """Multi-layer OSCAL validation pipeline (D305).
 
     Runs up to 3 validation layers in order:
-      1. ICDEV structural (always)
+      1. ICDEV™ structural (always)
       2. oscal-pydantic model (if installed)
       3. oscal-cli Metaschema (if installed + Java present)
 

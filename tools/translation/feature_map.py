@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
+from __future__ import annotations
+
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D -- Authorized DoD Personnel Only
-# POC: ICDEV System Administrator
-"""Feature Map Loader — ICDEV Cross-Language Translation (Phase 43, D247)
+# POC: ICDEV™ System Administrator
+"""Feature Map Loader — ICDEV™ Cross-Language Translation (Phase 43, D247)
 
 Loads and applies 3-part feature mapping rules adopted from Amazon Oxidizer
 research (PLDI 2025). Each rule has:
@@ -329,7 +331,7 @@ def main():
     import sys
 
     parser = argparse.ArgumentParser(
-        description=f"{CUI_BANNER}\nICDEV Feature Map Loader (D247)",
+        description=f"{CUI_BANNER}\nICDEV™ Feature Map Loader (D247)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--source-language", help="Source language")

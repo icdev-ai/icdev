@@ -15,6 +15,7 @@ import os
 import sqlite3
 import sys
 import time
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -30,19 +31,33 @@ orchestration_api = Blueprint("orchestration_api", __name__, url_prefix="/api/or
 
 
 def _get_db():
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(DB_PATH))
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
 
+def _is_pg(conn):
+    """Check if connection is PostgreSQL."""
+    return getattr(conn, '_backend', None) == 'postgresql'
+
+
 def _table_exists(conn, table_name):
-    """Check if a table exists in the database."""
-    row = conn.execute(
-        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?",
-        (table_name,),
-    ).fetchone()
-    return row[0] > 0
+    """Check if a table exists in the database (SQLite or PostgreSQL)."""
+    try:
+        if _is_pg(conn):
+            row = conn.execute(
+                "SELECT COUNT(*) FROM information_schema.tables "
+                "WHERE table_schema='public' AND table_name=?",
+                (table_name,),
+            ).fetchone()
+        else:
+            row = conn.execute(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?",
+                (table_name,),
+            ).fetchone()
+        return row[0] > 0
+    except Exception:
+        return False
 
 
 def _safe_count(conn, sql, params=()):
@@ -455,25 +470,25 @@ def get_prompt_chains():
 
 
 # =====================================================================
-# ATLAS Critiques (graceful — table may not exist)
+# ANVIL Critiques (graceful — table may not exist)
 # =====================================================================
 
 
 @orchestration_api.route("/critiques")
 def get_critiques():
-    """Return ATLAS critique sessions (if table exists)."""
+    """Return ANVIL critique sessions (if table exists)."""
     try:
         conn = _get_db()
         limit = int(request.args.get("limit", 20))
 
-        if not _table_exists(conn, "atlas_critique_sessions"):
+        if not _table_exists(conn, "anvil_critique_sessions"):
             conn.close()
-            return jsonify({"status": "ok", "critiques": [], "note": "atlas_critique_sessions table not yet created"})
+            return jsonify({"status": "ok", "critiques": [], "note": "anvil_critique_sessions table not yet created"})
 
         critiques = _safe_query(
             conn,
             """SELECT id, status, consensus, total_findings, critical_count, created_at
-               FROM atlas_critique_sessions
+               FROM anvil_critique_sessions
                ORDER BY created_at DESC LIMIT ?""",
             (limit,),
         )

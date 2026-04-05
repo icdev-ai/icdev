@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Tests for ICDEV Trace Context — W3C traceparent (D281).
+"""Tests for ICDEV™ Trace Context — W3C traceparent (D281).
 
 Covers:
   - TraceContext creation and serialization

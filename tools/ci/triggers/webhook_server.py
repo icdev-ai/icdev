@@ -1,9 +1,11 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Webhook Server — GitHub + GitLab + Slack + Mattermost webhook support
+from __future__ import annotations
+
+# ICDEV™ Webhook Server — GitHub + GitLab + Slack + Mattermost webhook support
 # Refactored to use EventEnvelope + EventRouter (D132, D133)
 
 """
-Webhook server for ICDEV CI/CD — receives events from GitHub, GitLab,
+Webhook server for ICDEV™ CI/CD — receives events from GitHub, GitLab,
 Slack, and Mattermost.
 
 All incoming webhooks are normalized into EventEnvelope objects and routed
@@ -42,9 +44,9 @@ from flask import Flask, request, jsonify
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from tools.ci.core.event_envelope import EventEnvelope, BOT_IDENTIFIER
-from tools.ci.core.event_router import EventRouter
-from tools.ci.modules.vcs import VCS
+from tools.ci.core.event_envelope import EventEnvelope, BOT_IDENTIFIER  # noqa: E402
+from tools.ci.core.event_router import EventRouter  # noqa: E402
+from tools.ci.modules.vcs import VCS  # noqa: E402
 
 # Configuration
 PORT = int(os.getenv("PORT", "8001"))
@@ -94,7 +96,7 @@ def _post_ack_comment(envelope: EventEnvelope, result: dict):
         vcs = VCS(platform=envelope.platform)
         vcs.comment_on_issue(
             int(envelope.session_key) if envelope.session_key.isdigit() else envelope.session_key,
-            f"{BOT_IDENTIFIER} ICDEV Webhook: Detected `{workflow}` workflow\n\n"
+            f"{BOT_IDENTIFIER} ICDEV™ Webhook: Detected `{workflow}` workflow\n\n"
             f"Run ID: `{run_id}`\n"
             f"Source: {envelope.source}\n"
             f"Logs: `agents/{run_id}/{workflow}/`",
@@ -352,7 +354,7 @@ def alert_webhook():
 
 if __name__ == "__main__":
     print("CUI // SP-CTI")
-    print(f"Starting ICDEV Webhook Server on port {PORT}")
+    print(f"Starting ICDEV™ Webhook Server on port {PORT}")
     print("  GitHub endpoint:      POST /gh-webhook")
     print("  GitLab endpoint:      POST /gl-webhook")
     slack_cfg = _CHANNEL_CONFIG.get("slack", {})
@@ -367,4 +369,4 @@ if __name__ == "__main__":
         print("  Mattermost:           disabled")
     print("  Alert webhook:        POST /alert-webhook")
     print("  Health check:         GET  /health")
-    app.run(host="0.0.0.0", port=PORT, debug=False)
+    app.run(host="0.0.0.0", port=PORT, debug=False)  # nosec B104 -- intentional bind-all for containerized/dev deployment

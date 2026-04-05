@@ -19,6 +19,7 @@ import json
 import logging
 import sqlite3
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -99,12 +100,11 @@ def _forecast_id() -> str:
 
 
 def _get_db(db_path: Optional[str] = None) -> sqlite3.Connection:
-    """Connect to ICDEV database."""
+    """Connect to ICDEV™ database."""
     path = db_path or str(_DB_PATH)
     if not Path(path).exists():
         raise FileNotFoundError(f"Database not found: {path}")
-    conn = sqlite3.connect(path)
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(path))
     return conn
 
 

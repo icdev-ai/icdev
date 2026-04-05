@@ -261,7 +261,7 @@ class TestTracedGenerator:
             @traced_generator()
             def empty_gen():
                 return
-                yield  # noqa: unreachable
+                yield  # noqa: F811
 
             items = list(empty_gen())
             assert items == []

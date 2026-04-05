@@ -3,8 +3,8 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""Feature Spec Generator for ICDEV Creative Engine -- template-based spec generation from ranked gaps.
+# POC: ICDEV™ System Administrator
+"""Feature Spec Generator for ICDEV™ Creative Engine -- template-based spec generation from ranked gaps.
 
 Transforms scored feature gaps and their associated pain points into structured,
 template-based feature specifications with competitive analysis, acceptance criteria,
@@ -31,10 +31,10 @@ Usage:
 import argparse
 import json
 import os
-import sqlite3
 import sys
 import uuid
-from datetime import datetime, timezone
+from tools.db.storage import get_connection
+from tools.common.helpers import now_iso
 from pathlib import Path
 
 # =========================================================================
@@ -52,21 +52,18 @@ CONFIG_PATH = BASE_DIR / "args" / "creative_config.yaml"
 # =========================================================================
 try:
     import yaml
-
     _HAS_YAML = True
 except ImportError:
     _HAS_YAML = False
 
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
-
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
 
     def audit_log_event(**kwargs):
         return -1
-
 
 # =========================================================================
 # CONSTANTS
@@ -243,14 +240,9 @@ def _get_db(db_path=None):
     path = db_path or DB_PATH
     if not Path(str(path)).exists():
         raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(path))
     return conn
 
-
-def _now():
-    """ISO-8601 UTC timestamp."""
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _spec_id():
@@ -262,13 +254,10 @@ def _audit(event_type, action, details=None):
     """Write audit trail entry (append-only, D6)."""
     if _HAS_AUDIT:
         try:
-            audit_log_event(
-                event_type=event_type,
-                actor="creative-engine",
-                action=action,
-                details=json.dumps(details) if details else None,
-                project_id="creative-engine",
-            )
+            audit_log_event(event_type=event_type, actor="creative-engine",
+                            action=action,
+                            details=json.dumps(details) if details else None,
+                            project_id="creative-engine")
         except Exception:
             pass
 
@@ -373,12 +362,10 @@ def _build_quotes_section(signal_ids, config, db_path=None):
     conn = _get_db(db_path)
     try:
         # Build parameterized query for signal IDs
-        ids_to_fetch = signal_ids[: max_quotes * 2]  # fetch extra in case some lack body
+        ids_to_fetch = signal_ids[:max_quotes * 2]  # fetch extra in case some lack body
         placeholders = ",".join("?" for _ in ids_to_fetch)
-        query = (
-            f"SELECT id, body, source, rating FROM creative_signals "
-            f"WHERE id IN ({placeholders}) ORDER BY discovered_at DESC"
-        )
+        query = (f"SELECT id, body, source, rating FROM creative_signals "  # nosec B608 -- table/column names are internal constants, not user input
+                 f"WHERE id IN ({placeholders}) ORDER BY discovered_at DESC")
         rows = conn.execute(query, ids_to_fetch).fetchall()
     finally:
         conn.close()
@@ -457,9 +444,7 @@ def _build_competitive_analysis(feature_gap, config, db_path=None):
         elif gap_pct >= 25:
             lines.append("Some competitors address this, but a meaningful gap remains.")
         else:
-            lines.append(
-                "Most competitors already address this -- differentiation will require a superior implementation."
-            )
+            lines.append("Most competitors already address this -- differentiation will require a superior implementation.")
 
     return "\n".join(lines)
 
@@ -538,7 +523,9 @@ def _build_acceptance_criteria(pain_point, category):
     criteria = []
     for i, outcome in enumerate(outcomes, 1):
         criteria.append(
-            f"{i}. Given a user experiences **{category}** issues, When **{title}** is implemented, Then {outcome}"
+            f"{i}. Given a user experiences **{category}** issues, "
+            f"When **{title}** is implemented, "
+            f"Then {outcome}"
         )
 
     # Always add CUI marking criterion
@@ -578,38 +565,28 @@ def _build_competitive_advantage(feature_gap, pain_point):
     severity = pain_point.get("severity", "medium")
 
     if total_comp == 0:
-        return (
-            "No competitor data available. This feature addresses a "
-            f"**{severity}**-severity {category} pain point identified from user feedback."
-        )
+        return ("No competitor data available. This feature addresses a "
+                f"**{severity}**-severity {category} pain point identified from user feedback.")
 
     gap_pct = int(((total_comp - supports) / total_comp) * 100)
 
     if gap_pct >= 75:
-        return (
-            f"**Strong first-mover advantage.** {gap_pct}% of competitors ({total_comp - supports} "
-            f"of {total_comp}) do not offer this capability. Implementing this feature "
-            f"addresses a {severity}-severity {category} gap and positions us as the "
-            f"market leader in this area."
-        )
+        return (f"**Strong first-mover advantage.** {gap_pct}% of competitors ({total_comp - supports} "
+                f"of {total_comp}) do not offer this capability. Implementing this feature "
+                f"addresses a {severity}-severity {category} gap and positions us as the "
+                f"market leader in this area.")
     elif gap_pct >= 50:
-        return (
-            f"**Meaningful differentiation.** {gap_pct}% of competitors lack this feature. "
-            f"Delivering a well-designed solution for this {severity}-severity {category} "
-            f"issue will provide a clear competitive edge."
-        )
+        return (f"**Meaningful differentiation.** {gap_pct}% of competitors lack this feature. "
+                f"Delivering a well-designed solution for this {severity}-severity {category} "
+                f"issue will provide a clear competitive edge.")
     elif gap_pct >= 25:
-        return (
-            f"**Incremental advantage.** While some competitors ({supports} of {total_comp}) "
-            f"address this, a superior implementation that resolves the underlying "
-            f"{severity}-severity {category} pain point can still differentiate our offering."
-        )
+        return (f"**Incremental advantage.** While some competitors ({supports} of {total_comp}) "
+                f"address this, a superior implementation that resolves the underlying "
+                f"{severity}-severity {category} pain point can still differentiate our offering.")
     else:
-        return (
-            f"**Table-stakes feature.** Most competitors ({supports} of {total_comp}) "
-            f"already address this. Implementation is necessary to maintain competitive parity, "
-            f"but differentiation will require a notably better user experience."
-        )
+        return (f"**Table-stakes feature.** Most competitors ({supports} of {total_comp}) "
+                f"already address this. Implementation is necessary to maintain competitive parity, "
+                f"but differentiation will require a notably better user experience.")
 
 
 def _build_target_persona(category):
@@ -643,7 +620,7 @@ def _build_sources_list(pain_point, db_path=None):
     conn = _get_db(db_path)
     try:
         placeholders = ",".join("?" for _ in signal_ids[:50])
-        query = f"SELECT DISTINCT source FROM creative_signals WHERE id IN ({placeholders})"
+        query = f"SELECT DISTINCT source FROM creative_signals WHERE id IN ({placeholders})"  # nosec B608 -- table/column names are internal constants, not user input
         rows = conn.execute(query, signal_ids[:50]).fetchall()
     finally:
         conn.close()
@@ -673,27 +650,31 @@ def generate_spec(feature_gap_id, db_path=None):
     conn = _get_db(db_path)
     try:
         # Fetch feature gap
-        gap_row = conn.execute("SELECT * FROM creative_feature_gaps WHERE id = ?", (feature_gap_id,)).fetchone()
+        gap_row = conn.execute(
+            "SELECT * FROM creative_feature_gaps WHERE id = ?",
+            (feature_gap_id,)
+        ).fetchone()
         if not gap_row:
             return {"error": f"Feature gap not found: {feature_gap_id}"}
         feature_gap = dict(gap_row)
 
         # Check if spec already exists for this gap
         existing = conn.execute(
-            "SELECT id, status FROM creative_specs WHERE feature_gap_id = ?", (feature_gap_id,)
+            "SELECT id, status FROM creative_specs WHERE feature_gap_id = ?",
+            (feature_gap_id,)
         ).fetchone()
         if existing:
-            return {
-                "error": f"Spec already exists for feature gap {feature_gap_id}",
-                "spec_id": existing["id"],
-                "spec_status": existing["status"],
-            }
+            return {"error": f"Spec already exists for feature gap {feature_gap_id}",
+                    "spec_id": existing["id"], "spec_status": existing["status"]}
 
         # Fetch associated pain point
         pain_point_id = feature_gap.get("pain_point_id")
         pain_point = None
         if pain_point_id:
-            pp_row = conn.execute("SELECT * FROM creative_pain_points WHERE id = ?", (pain_point_id,)).fetchone()
+            pp_row = conn.execute(
+                "SELECT * FROM creative_pain_points WHERE id = ?",
+                (pain_point_id,)
+            ).fetchone()
             if pp_row:
                 pain_point = dict(pp_row)
 
@@ -734,9 +715,9 @@ def generate_spec(feature_gap_id, db_path=None):
                 gap_uniqueness_score = composite_score
                 effort_to_impact_score = composite_score
         else:
-            composite_score = (
-                w_freq * pain_frequency_score + w_gap * gap_uniqueness_score + w_effort * effort_to_impact_score
-            )
+            composite_score = (w_freq * pain_frequency_score +
+                               w_gap * gap_uniqueness_score +
+                               w_effort * effort_to_impact_score)
 
         # Build sections
         category = pain_point.get("category", "other")
@@ -782,7 +763,7 @@ def generate_spec(feature_gap_id, db_path=None):
 
         # Store in creative_specs
         spec_id = _spec_id()
-        now = _now()
+        now = now_iso()
         conn.execute(
             """INSERT INTO creative_specs
             (id, feature_gap_id, pain_point_id, title, spec_content,
@@ -800,30 +781,21 @@ def generate_spec(feature_gap_id, db_path=None):
                 effort,
                 PERSONA_MAP.get(category, "developer"),
                 competitive_advantage,
-                json.dumps(
-                    {
-                        "score_breakdown": score_breakdown,
-                        "signal_count": len(signal_ids),
-                        "category": category,
-                    }
-                ),
+                json.dumps({
+                    "score_breakdown": score_breakdown,
+                    "signal_count": len(signal_ids),
+                    "category": category,
+                }),
                 now,
             ),
         )
         conn.commit()
 
-        _audit(
-            "creative.spec.generated",
-            f"Generated spec {spec_id} from feature gap {feature_gap_id}",
-            {
-                "spec_id": spec_id,
-                "feature_gap_id": feature_gap_id,
-                "pain_point_id": pain_point_id,
-                "composite_score": composite_score,
-                "effort": effort,
-                "category": category,
-            },
-        )
+        _audit("creative.spec.generated",
+               f"Generated spec {spec_id} from feature gap {feature_gap_id}",
+               {"spec_id": spec_id, "feature_gap_id": feature_gap_id,
+                "pain_point_id": pain_point_id, "composite_score": composite_score,
+                "effort": effort, "category": category})
 
         return {
             "spec_id": spec_id,
@@ -863,26 +835,18 @@ def generate_all_eligible(db_path=None):
     conn = _get_db(db_path)
     try:
         # Fetch all feature gaps with status='identified' that don't already have specs
-        gaps = [
-            dict(r)
-            for r in conn.execute("""
+        gaps = [dict(r) for r in conn.execute("""
             SELECT fg.* FROM creative_feature_gaps fg
             LEFT JOIN creative_specs cs ON fg.id = cs.feature_gap_id
             WHERE fg.status = 'identified' AND cs.id IS NULL
             ORDER BY fg.gap_score DESC
-        """).fetchall()
-        ]
+        """).fetchall()]
     finally:
         conn.close()
 
     if not gaps:
-        return {
-            "generated": 0,
-            "skipped_low_score": 0,
-            "skipped_budget": 0,
-            "message": "No eligible feature gaps found.",
-            "results": [],
-        }
+        return {"generated": 0, "skipped_low_score": 0, "skipped_budget": 0,
+                "message": "No eligible feature gaps found.", "results": []}
 
     generated = 0
     skipped_low_score = 0
@@ -902,7 +866,8 @@ def generate_all_eligible(db_path=None):
             conn2 = _get_db(db_path)
             try:
                 pp_row = conn2.execute(
-                    "SELECT composite_score FROM creative_pain_points WHERE id = ?", (pain_point_id,)
+                    "SELECT composite_score FROM creative_pain_points WHERE id = ?",
+                    (pain_point_id,)
                 ).fetchone()
                 if pp_row and pp_row["composite_score"] is not None:
                     composite_score = pp_row["composite_score"]
@@ -915,55 +880,42 @@ def generate_all_eligible(db_path=None):
 
         if composite_score < auto_spec_threshold:
             skipped_low_score += 1
-            results.append(
-                {
-                    "feature_gap_id": gap["id"],
-                    "feature_name": gap.get("feature_name", ""),
-                    "composite_score": composite_score,
-                    "result": "skipped_low_score",
-                    "status": "skipped",
-                }
-            )
+            results.append({
+                "feature_gap_id": gap["id"],
+                "feature_name": gap.get("feature_name", ""),
+                "composite_score": composite_score,
+                "result": "skipped_low_score",
+                "status": "skipped",
+            })
             continue
 
         # Generate spec
         result = generate_spec(gap["id"], db_path)
         if "error" in result:
-            results.append(
-                {
-                    "feature_gap_id": gap["id"],
-                    "feature_name": gap.get("feature_name", ""),
-                    "result": result["error"],
-                    "status": "error",
-                }
-            )
+            results.append({
+                "feature_gap_id": gap["id"],
+                "feature_name": gap.get("feature_name", ""),
+                "result": result["error"],
+                "status": "error",
+            })
         else:
             generated += 1
-            results.append(
-                {
-                    "feature_gap_id": gap["id"],
-                    "feature_name": gap.get("feature_name", ""),
-                    "spec_id": result["spec_id"],
-                    "composite_score": result["composite_score"],
-                    "estimated_effort": result["estimated_effort"],
-                    "result": result["spec_id"],
-                    "status": "generated",
-                }
-            )
+            results.append({
+                "feature_gap_id": gap["id"],
+                "feature_name": gap.get("feature_name", ""),
+                "spec_id": result["spec_id"],
+                "composite_score": result["composite_score"],
+                "estimated_effort": result["estimated_effort"],
+                "result": result["spec_id"],
+                "status": "generated",
+            })
 
-    _audit(
-        "creative.spec.batch",
-        f"Batch spec generation: {generated} generated, "
-        f"{skipped_low_score} below threshold, {skipped_budget} over budget",
-        {
-            "generated": generated,
-            "skipped_low_score": skipped_low_score,
-            "skipped_budget": skipped_budget,
-            "budget": max_budget,
-            "threshold": auto_spec_threshold,
-            "total_gaps": len(gaps),
-        },
-    )
+    _audit("creative.spec.batch",
+           f"Batch spec generation: {generated} generated, "
+           f"{skipped_low_score} below threshold, {skipped_budget} over budget",
+           {"generated": generated, "skipped_low_score": skipped_low_score,
+            "skipped_budget": skipped_budget, "budget": max_budget,
+            "threshold": auto_spec_threshold, "total_gaps": len(gaps)})
 
     return {
         "generated": generated,
@@ -989,12 +941,10 @@ def list_specs(status=None, limit=20, db_path=None):
     """
     conn = _get_db(db_path)
     try:
-        query = (
-            "SELECT cs.id, cs.feature_gap_id, cs.pain_point_id, cs.title, "
-            "cs.composite_score, cs.estimated_effort, cs.target_persona, "
-            "cs.status, cs.reviewer, cs.reviewed_at, cs.created_at "
-            "FROM creative_specs cs"
-        )
+        query = ("SELECT cs.id, cs.feature_gap_id, cs.pain_point_id, cs.title, "
+                 "cs.composite_score, cs.estimated_effort, cs.target_persona, "
+                 "cs.status, cs.reviewer, cs.reviewed_at, cs.created_at "
+                 "FROM creative_specs cs")
         params = []
 
         if status:
@@ -1010,25 +960,25 @@ def list_specs(status=None, limit=20, db_path=None):
 
         specs = []
         for row in rows:
-            specs.append(
-                {
-                    "spec_id": row["id"],
-                    "feature_gap_id": row["feature_gap_id"],
-                    "pain_point_id": row["pain_point_id"],
-                    "title": row["title"],
-                    "composite_score": row["composite_score"],
-                    "estimated_effort": row["estimated_effort"],
-                    "effort_details": EFFORT_MAP.get(row["estimated_effort"], {}),
-                    "target_persona": row["target_persona"],
-                    "status": row["status"],
-                    "reviewer": row["reviewer"],
-                    "reviewed_at": row["reviewed_at"],
-                    "created_at": row["created_at"],
-                }
-            )
+            specs.append({
+                "spec_id": row["id"],
+                "feature_gap_id": row["feature_gap_id"],
+                "pain_point_id": row["pain_point_id"],
+                "title": row["title"],
+                "composite_score": row["composite_score"],
+                "estimated_effort": row["estimated_effort"],
+                "effort_details": EFFORT_MAP.get(row["estimated_effort"], {}),
+                "target_persona": row["target_persona"],
+                "status": row["status"],
+                "reviewer": row["reviewer"],
+                "reviewed_at": row["reviewed_at"],
+                "created_at": row["created_at"],
+            })
 
         # Counts by status
-        count_rows = conn.execute("SELECT status, COUNT(*) as cnt FROM creative_specs GROUP BY status").fetchall()
+        count_rows = conn.execute(
+            "SELECT status, COUNT(*) as cnt FROM creative_specs GROUP BY status"
+        ).fetchall()
         counts = {r["status"]: r["cnt"] for r in count_rows}
 
         return {
@@ -1057,7 +1007,10 @@ def get_spec(spec_id, db_path=None):
 
     conn = _get_db(db_path)
     try:
-        row = conn.execute("SELECT * FROM creative_specs WHERE id = ?", (spec_id,)).fetchone()
+        row = conn.execute(
+            "SELECT * FROM creative_specs WHERE id = ?",
+            (spec_id,)
+        ).fetchone()
         if not row:
             return {"error": f"Spec not found: {spec_id}"}
 
@@ -1067,8 +1020,9 @@ def get_spec(spec_id, db_path=None):
         gap_summary = {}
         if spec.get("feature_gap_id"):
             gap_row = conn.execute(
-                "SELECT id, feature_name, gap_score, market_demand, status FROM creative_feature_gaps WHERE id = ?",
-                (spec["feature_gap_id"],),
+                "SELECT id, feature_name, gap_score, market_demand, status "
+                "FROM creative_feature_gaps WHERE id = ?",
+                (spec["feature_gap_id"],)
             ).fetchone()
             if gap_row:
                 gap_summary = dict(gap_row)
@@ -1079,7 +1033,7 @@ def get_spec(spec_id, db_path=None):
             pp_row = conn.execute(
                 "SELECT id, title, category, severity, frequency, composite_score "
                 "FROM creative_pain_points WHERE id = ?",
-                (spec["pain_point_id"],),
+                (spec["pain_point_id"],)
             ).fetchone()
             if pp_row:
                 pp_summary = dict(pp_row)
@@ -1128,10 +1082,8 @@ def _format_human(action, result):
         lines.append(f"\n  Spec Generated: {result.get('spec_id')}")
         lines.append(f"  Title: {result.get('title')}")
         lines.append(f"  Score: {result.get('composite_score', 0):.2f}")
-        lines.append(
-            f"  Effort: {result.get('estimated_effort')} "
-            f"({EFFORT_MAP.get(result.get('estimated_effort', 'M'), {}).get('label', '')})"
-        )
+        lines.append(f"  Effort: {result.get('estimated_effort')} "
+                      f"({EFFORT_MAP.get(result.get('estimated_effort', 'M'), {}).get('label', '')})")
         lines.append(f"  Persona: {result.get('target_persona')}")
         lines.append(f"  Category: {result.get('category')}")
         lines.append(f"  Gap: {result.get('feature_gap_id')}")
@@ -1152,11 +1104,9 @@ def _format_human(action, result):
             name = r.get("feature_name", "")[:50]
             lines.append(f"  [{icon:4s}] {r.get('feature_gap_id', '')}: {name}")
             if r["status"] == "generated":
-                lines.append(
-                    f"         -> {r.get('spec_id', '')} "
-                    f"(score={r.get('composite_score', 0):.2f}, "
-                    f"effort={r.get('estimated_effort', 'N/A')})"
-                )
+                lines.append(f"         -> {r.get('spec_id', '')} "
+                              f"(score={r.get('composite_score', 0):.2f}, "
+                              f"effort={r.get('estimated_effort', 'N/A')})")
 
     elif action == "list":
         specs = result.get("specs", [])
@@ -1167,32 +1117,30 @@ def _format_human(action, result):
             lines.append(f"  Status distribution: {counts_str}")
         lines.append("-" * 70)
         for s in specs:
-            lines.append(
-                f"  {s['spec_id']}  [{s['status']:10s}]  "
-                f"score={s['composite_score']:.2f}  "
-                f"effort={s['estimated_effort']}"
-            )
+            lines.append(f"  {s['spec_id']}  [{s['status']:10s}]  "
+                          f"score={s['composite_score']:.2f}  "
+                          f"effort={s['estimated_effort']}")
             lines.append(f"    Title: {s['title'][:60]}")
-            lines.append(f"    Persona: {s.get('target_persona', 'N/A')}  Created: {s.get('created_at', 'N/A')}")
+            lines.append(f"    Persona: {s.get('target_persona', 'N/A')}  "
+                          f"Created: {s.get('created_at', 'N/A')}")
             lines.append("")
 
     elif action == "get":
         lines.append(f"\n  Spec: {result.get('spec_id')}")
         lines.append(f"  Title: {result.get('title')}")
         lines.append(f"  Score: {result.get('composite_score', 0):.2f}")
-        lines.append(
-            f"  Effort: {result.get('estimated_effort')} ({result.get('effort_details', {}).get('label', '')})"
-        )
+        lines.append(f"  Effort: {result.get('estimated_effort')} "
+                      f"({result.get('effort_details', {}).get('label', '')})")
         lines.append(f"  Status: {result.get('status')}")
         lines.append(f"  Persona: {result.get('target_persona')}")
         pp = result.get("pain_point", {})
         if pp:
-            lines.append(
-                f"  Pain Point: {pp.get('title', 'N/A')} ({pp.get('category', 'N/A')}, {pp.get('severity', 'N/A')})"
-            )
+            lines.append(f"  Pain Point: {pp.get('title', 'N/A')} "
+                          f"({pp.get('category', 'N/A')}, {pp.get('severity', 'N/A')})")
         fg = result.get("feature_gap", {})
         if fg:
-            lines.append(f"  Feature Gap: {fg.get('feature_name', 'N/A')} (gap_score={fg.get('gap_score', 0):.2f})")
+            lines.append(f"  Feature Gap: {fg.get('feature_name', 'N/A')} "
+                          f"(gap_score={fg.get('gap_score', 0):.2f})")
         lines.append("")
         lines.append("-" * 70)
         lines.append("  SPEC CONTENT:")
@@ -1212,32 +1160,40 @@ def main():
         description="Feature Spec Generator -- template-based spec generation from ranked gaps (CUI // SP-CTI)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="Examples:\n"
-        "  %(prog)s --generate --feature-gap-id fg-abc123 --json\n"
-        "  %(prog)s --generate-all --json\n"
-        "  %(prog)s --list --status generated --limit 10 --json\n"
-        "  %(prog)s --get --spec-id cspec-abc123 --json\n"
-        "  %(prog)s --generate --feature-gap-id fg-abc123 --human\n",
+               "  %(prog)s --generate --feature-gap-id fg-abc123 --json\n"
+               "  %(prog)s --generate-all --json\n"
+               "  %(prog)s --list --status generated --limit 10 --json\n"
+               "  %(prog)s --get --spec-id cspec-abc123 --json\n"
+               "  %(prog)s --generate --feature-gap-id fg-abc123 --human\n",
     )
 
     # Actions
     actions = parser.add_mutually_exclusive_group(required=True)
-    actions.add_argument("--generate", action="store_true", help="Generate spec for a single feature gap")
-    actions.add_argument("--generate-all", action="store_true", help="Generate specs for all eligible feature gaps")
-    actions.add_argument("--list", action="store_true", help="List generated specs")
-    actions.add_argument("--get", action="store_true", help="Get full spec content by ID")
+    actions.add_argument("--generate", action="store_true",
+                         help="Generate spec for a single feature gap")
+    actions.add_argument("--generate-all", action="store_true",
+                         help="Generate specs for all eligible feature gaps")
+    actions.add_argument("--list", action="store_true",
+                         help="List generated specs")
+    actions.add_argument("--get", action="store_true",
+                         help="Get full spec content by ID")
 
     # Parameters
-    parser.add_argument("--feature-gap-id", type=str, default=None, help="Feature gap ID (for --generate)")
-    parser.add_argument("--spec-id", type=str, default=None, help="Spec ID (for --get)")
-    parser.add_argument(
-        "--status", type=str, default=None, choices=list(VALID_STATUSES), help="Filter by status (for --list)"
-    )
-    parser.add_argument("--limit", type=int, default=20, help="Max results (for --list, default 20)")
+    parser.add_argument("--feature-gap-id", type=str, default=None,
+                        help="Feature gap ID (for --generate)")
+    parser.add_argument("--spec-id", type=str, default=None,
+                        help="Spec ID (for --get)")
+    parser.add_argument("--status", type=str, default=None,
+                        choices=list(VALID_STATUSES),
+                        help="Filter by status (for --list)")
+    parser.add_argument("--limit", type=int, default=20,
+                        help="Max results (for --list, default 20)")
 
     # Output
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--human", action="store_true", help="Human-readable output")
-    parser.add_argument("--db-path", type=str, default=None, help="Override database path")
+    parser.add_argument("--db-path", type=str, default=None,
+                        help="Override database path")
 
     args = parser.parse_args()
     db_path = Path(args.db_path) if args.db_path else None

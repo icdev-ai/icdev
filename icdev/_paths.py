@@ -1,7 +1,7 @@
-"""Centralized ICDEV path resolution.
+"""Centralized ICDEV™ path resolution.
 
 Resolves the project root and data directories (args, context, goals,
-hardprompts) whether ICDEV is run from a source checkout or installed
+hardprompts) whether ICDEV™ is run from a source checkout or installed
 via pip.
 
 Resolution order:
@@ -36,7 +36,7 @@ _SOURCE_ROOT = _find_project_root()
 
 
 def get_project_root() -> Path:
-    """Return the ICDEV project root directory.
+    """Return the ICDEV™ project root directory.
 
     For source checkout: returns the repo root (parent of icdev/).
     For pip install: returns the icdev package directory.
@@ -54,7 +54,7 @@ def get_project_root() -> Path:
 
 
 def get_data_path(name: str) -> Path:
-    """Resolve a GOTCHA data directory (args, context, goals, hardprompts, etc.).
+    """Resolve a FORGE data directory (args, context, goals, hardprompts, etc.).
 
     Args:
         name: Directory name — one of 'args', 'context', 'goals',

@@ -14,8 +14,8 @@ Usage:
 import argparse
 import hashlib
 import json
-import sqlite3
 import sys
+from tools.db.storage import get_connection
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -35,7 +35,6 @@ def _load_config():
     }
     try:
         import yaml
-
         if config_path.exists():
             with open(config_path, encoding="utf-8") as f:
                 data = yaml.safe_load(f) or {}
@@ -56,8 +55,7 @@ def compute_content_hash(content):
 def _get_connection(db_path=None):
     """Get a DB connection with WAL mode for concurrent safety."""
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path), timeout=10)
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(path))
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
@@ -125,26 +123,17 @@ def capture(
             conn.close()
             return {"status": "duplicate", "buffer_id": existing["id"]}
 
-        conn.execute(
+        cur = conn.execute(
             """INSERT INTO memory_buffer
                (content, content_hash, type, importance, source,
                 user_id, tenant_id, session_id, tool_name, metadata)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                content,
-                content_hash,
-                memory_type,
-                importance,
-                source,
-                user_id,
-                tenant_id,
-                session_id,
-                tool_name,
-                json.dumps(metadata) if metadata else None,
-            ),
+            (content, content_hash, memory_type, importance, source,
+             user_id, tenant_id, session_id, tool_name,
+             json.dumps(metadata) if metadata else None),
         )
         conn.commit()
-        buffer_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        buffer_id = cur.lastrowid
 
         # Check buffer size for auto-flush threshold
         count = conn.execute("SELECT COUNT(*) FROM memory_buffer").fetchone()[0]
@@ -219,15 +208,9 @@ def flush_buffer(db_path=None):
                        (content, type, importance, content_hash,
                         user_id, tenant_id, source)
                        VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                    (
-                        row["content"],
-                        row["type"],
-                        row["importance"],
-                        row["content_hash"],
-                        row["user_id"],
-                        row["tenant_id"],
-                        row["source"],
-                    ),
+                    (row["content"], row["type"], row["importance"],
+                     row["content_hash"], row["user_id"], row["tenant_id"],
+                     row["source"]),
                 )
                 flushed += 1
                 flushed_ids.append(row["id"])
@@ -239,7 +222,7 @@ def flush_buffer(db_path=None):
         if flushed_ids:
             placeholders = ",".join("?" * len(flushed_ids))
             conn.execute(
-                f"DELETE FROM memory_buffer WHERE id IN ({placeholders})",
+                f"DELETE FROM memory_buffer WHERE id IN ({placeholders})",  # nosec B608 -- table/column names are internal constants, not user input
                 flushed_ids,
             )
 
@@ -266,8 +249,12 @@ def buffer_status(db_path=None):
 
     try:
         total = conn.execute("SELECT COUNT(*) FROM memory_buffer").fetchone()[0]
-        by_source = conn.execute("SELECT source, COUNT(*) as cnt FROM memory_buffer GROUP BY source").fetchall()
-        oldest = conn.execute("SELECT MIN(created_at) FROM memory_buffer").fetchone()[0]
+        by_source = conn.execute(
+            "SELECT source, COUNT(*) as cnt FROM memory_buffer GROUP BY source"
+        ).fetchall()
+        oldest = conn.execute(
+            "SELECT MIN(created_at) FROM memory_buffer"
+        ).fetchone()[0]
         conn.close()
 
         return {
@@ -283,10 +270,14 @@ def buffer_status(db_path=None):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Auto-capture memory from hooks/tools (D181)")
+    parser = argparse.ArgumentParser(
+        description="Auto-capture memory from hooks/tools (D181)"
+    )
     parser.add_argument("--content", help="Content to capture")
-    parser.add_argument("--source", choices=VALID_SOURCES, default="hook", help="Capture source")
-    parser.add_argument("--type", choices=VALID_TYPES, default="event", dest="memory_type", help="Memory type")
+    parser.add_argument("--source", choices=VALID_SOURCES, default="hook",
+                        help="Capture source")
+    parser.add_argument("--type", choices=VALID_TYPES, default="event",
+                        dest="memory_type", help="Memory type")
     parser.add_argument("--importance", type=int, default=3, help="Importance 1-10")
     parser.add_argument("--user-id", help="User ID (D180)")
     parser.add_argument("--tenant-id", help="Tenant ID (D180)")
@@ -315,7 +306,8 @@ def main():
         if args.json:
             print(json.dumps({"classification": "CUI // SP-CTI", **result}, indent=2))
         else:
-            print(f"Flushed {result['flushed']} entries ({result['duplicates']} duplicates, {result['errors']} errors)")
+            print(f"Flushed {result['flushed']} entries "
+                  f"({result['duplicates']} duplicates, {result['errors']} errors)")
         return
 
     if not args.content:
@@ -336,7 +328,8 @@ def main():
         print(json.dumps({"classification": "CUI // SP-CTI", **result}, indent=2))
     else:
         if result["status"] == "captured":
-            print(f"Captured to buffer (id: {result['buffer_id']}, buffer size: {result['buffer_size']})")
+            print(f"Captured to buffer (id: {result['buffer_id']}, "
+                  f"buffer size: {result['buffer_size']})")
             if result.get("auto_flushed"):
                 fr = result["flush_result"]
                 print(f"  Auto-flushed: {fr['flushed']} entries")

@@ -1,9 +1,9 @@
 # CUI // SP-CTI
-"""ICDEV Pulse Capability Scanner — loads capability YAML files and matches
+"""ICDEV™ Pulse Capability Scanner — loads capability YAML files and matches
 capabilities to article topics via deterministic keyword scoring.
 
 Design decisions:
-    D-PULSE-CAP-1: Capability YAML files in context/capabilities/ (GOTCHA context layer)
+    D-PULSE-CAP-1: Capability YAML files in context/capabilities/ (FORGE context layer)
     D-PULSE-CAP-4: Deterministic keyword matching for capability lookup (zero LLM)
 
 Usage:
@@ -35,7 +35,6 @@ CAPABILITIES_DIR = PROJECT_ROOT / "context" / "capabilities"
 
 
 # ── Core functions ────────────────────────────────────────────────────
-
 
 def load_all_capabilities() -> list[dict]:
     """Read all context/capabilities/*.yaml and return a flat list of capabilities.
@@ -70,9 +69,8 @@ def load_all_capabilities() -> list[dict]:
         except Exception as e:
             logger.warning("Failed to load %s: %s", yaml_file.name, e)
 
-    logger.info(
-        "Loaded %d capabilities from %d domain files", len(capabilities), len(list(CAPABILITIES_DIR.glob("*.yaml")))
-    )
+    logger.info("Loaded %d capabilities from %d domain files",
+                len(capabilities), len(list(CAPABILITIES_DIR.glob("*.yaml"))))
     return capabilities
 
 
@@ -251,17 +249,20 @@ def format_capability_context(capabilities: list[dict]) -> str:
 
 # ── CLI ───────────────────────────────────────────────────────────────
 
-
 def main():
     """CLI entry point."""
-    parser = argparse.ArgumentParser(description="ICDEV Pulse Capability Scanner (CUI // SP-CTI)")
+    parser = argparse.ArgumentParser(
+        description="ICDEV™ Pulse Capability Scanner (CUI // SP-CTI)"
+    )
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--list", action="store_true", help="List all capabilities")
     group.add_argument("--domains", action="store_true", help="List domains only")
     group.add_argument("--match", type=str, help="Match capabilities to keywords")
-    group.add_argument("--format-context", type=str, help="Match and format for drafter injection")
+    group.add_argument("--format-context", type=str,
+                       help="Match and format for drafter injection")
 
-    parser.add_argument("--top-n", type=int, default=5, help="Max capabilities to return (default: 5)")
+    parser.add_argument("--top-n", type=int, default=5,
+                        help="Max capabilities to return (default: 5)")
     parser.add_argument("--json", action="store_true", help="JSON output")
     args = parser.parse_args()
 

@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Phase 46: Observability & Tracing Configuration (D290)
+# ICDEV™ Phase 46: Observability & Tracing Configuration (D290)
 #
 # Controls tracer backend, sampling, retention, content policy, and integrations.
 # Auto-detect: ICDEV_MLFLOW_TRACKING_URI set → "otel" mode, else → "sqlite" mode.
@@ -78,7 +78,7 @@ mlflow:
   # Set via ICDEV_MLFLOW_TRACKING_URI env var for auto-detection
   tracking_uri: ""
 
-  # Experiment name for ICDEV traces
+  # Experiment name for ICDEV™ traces
   experiment_name: "icdev-traces"
 
   # Export interval (seconds) for batch SQLite→MLflow upload

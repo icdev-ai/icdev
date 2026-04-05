@@ -1,7 +1,7 @@
 /**
- * ICDEV Dashboard - UX Utilities Module
+ * ICDEV™ Dashboard - UX Utilities Module
  * Comprehensive UX helpers for non-technical government users ("GI proof").
- * Extends window.ICDEV (created by api.js).
+ * Extends window.ICDEV™ (created by api.js).
  *
  * Features:
  *   1. Glossary tooltip system (DoD/compliance acronyms)
@@ -15,7 +15,7 @@
 (function () {
     "use strict";
 
-    // Ensure ICDEV namespace exists (api.js should have created it)
+    // Ensure ICDEV™ namespace exists (api.js should have created it)
     var ICDEV = window.ICDEV || {};
     window.ICDEV = ICDEV;
 
@@ -50,7 +50,7 @@
         "ISSO":    "Information System Security Officer \u2014 person responsible for system security",
         "RMF":     "Risk Management Framework \u2014 the 6-step process for getting your ATO",
         "eMASS":   "Enterprise Mission Assurance Support Service \u2014 DoD\u2019s system for tracking ATOs",
-        "A2A":     "Agent-to-Agent \u2014 how ICDEV\u2019s AI agents communicate with each other",
+        "A2A":     "Agent-to-Agent \u2014 how ICDEV™\u2019s AI agents communicate with each other",
         "SAFe":    "Scaled Agile Framework \u2014 method for organizing large development teams",
         "WSJF":    "Weighted Shortest Job First \u2014 prioritization formula: value divided by effort",
         "BDD":     "Behavior-Driven Development \u2014 writing tests in plain English before coding",
@@ -712,7 +712,7 @@
     ICDEV.createProgressPipeline = function createProgressPipeline(containerId, steps) {
         var container = document.getElementById(containerId);
         if (!container) {
-            console.error("[ICDEV UX] Pipeline container not found: #" + containerId);
+            console.error("[ICDEV™ UX] Pipeline container not found: #" + containerId);
             return;
         }
 

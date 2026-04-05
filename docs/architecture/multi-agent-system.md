@@ -4,7 +4,7 @@ CUI // SP-CTI
 
 ## Overview
 
-ICDEV operates a 15-agent multi-agent system organized into 3 tiers: Core (2 agents), Domain (11 agents), and Support (2 agents). Agents communicate via the A2A protocol (JSON-RPC 2.0 over mutual TLS) within a Kubernetes cluster. Each agent publishes an Agent Card for service discovery. Claude Code interacts with the system through 19 MCP servers using stdio transport.
+ICDEV™ operates a 15-agent multi-agent system organized into 3 tiers: Core (2 agents), Domain (11 agents), and Support (2 agents). Agents communicate via the A2A protocol (JSON-RPC 2.0 over mutual TLS) within a Kubernetes cluster. Each agent publishes an Agent Card for service discovery. Claude Code interacts with the system through 19 MCP servers using stdio transport.
 
 ---
 
@@ -22,7 +22,7 @@ ICDEV operates a 15-agent multi-agent system organized into 3 tiers: Core (2 age
                         |           |               |
                         |  +--------v----------+    |
                         |  | Architect:8444     |    |
-                        |  | ATLAS/M-ATLAS,    |    |
+                        |  | ANVIL/M-ANVIL,    |    |
                         |  | system design     |    |
                         |  +-------------------+    |
                         +----------+----------------+
@@ -51,7 +51,7 @@ ICDEV operates a 15-agent multi-agent system organized into 3 tiers: Core (2 age
 | Tier | Agent | Port | Primary Role | Effort Level |
 |------|-------|------|-------------|--------------|
 | Core | **Orchestrator** | 8443 | Task routing, workflow management, DAG execution | high |
-| Core | **Architect** | 8444 | ATLAS/M-ATLAS Architecture and Trace phases, system design | high |
+| Core | **Architect** | 8444 | ANVIL/M-ANVIL Architecture and Trace phases, system design | high |
 | Domain | **Builder** | 8445 | TDD code generation (RED-GREEN-REFACTOR), scaffolding | max |
 | Domain | **Compliance** | 8446 | ATO artifacts (SSP, POAM, STIG, SBOM, FedRAMP, CMMC, OSCAL, eMASS, cATO) | high |
 | Domain | **Security** | 8447 | SAST, dependency audit, secret detection, container scanning | high |
@@ -143,11 +143,11 @@ traceparent: 00-<trace-id>-<span-id>-01
 
 ## MCP Servers
 
-ICDEV exposes 19 MCP servers using stdio transport for Claude Code integration. All servers are configured in `.mcp.json` at the project root.
+ICDEV™ exposes 19 MCP servers using stdio transport for Claude Code integration. All servers are configured in `.mcp.json` at the project root.
 
 ### Unified MCP Gateway (D301) — Recommended
 
-The **`icdev-unified`** gateway aggregates all 225 tools from 18 domain servers plus 55 new tool wrappers into a single MCP server process. This reduces `.mcp.json` from 18+ entries to 1 while giving all AI coding tools (not just Claude Code) access to every ICDEV capability.
+The **`icdev-unified`** gateway aggregates all 225 tools from 18 domain servers plus 55 new tool wrappers into a single MCP server process. This reduces `.mcp.json` from 18+ entries to 1 while giving all AI coding tools (not just Claude Code) access to every ICDEV™ capability.
 
 **Architecture:**
 - **Declarative registry** (`tool_registry.py`): Maps tool name to (module, handler, schema)
@@ -434,7 +434,7 @@ Users can provide their own LLM API keys (D175-D178):
 
 ## Model Fallback Chain
 
-ICDEV uses a cascading fallback chain for LLM model availability (D37):
+ICDEV™ uses a cascading fallback chain for LLM model availability (D37):
 
 ```
 Primary         Fallback 1         Fallback 2

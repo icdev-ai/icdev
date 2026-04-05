@@ -3,11 +3,11 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""Child App Generator - generates mini-ICDEV clone applications from blueprints.
+# POC: ICDEV™ System Administrator
+"""Child App Generator - generates mini-ICDEV™ clone applications from blueprints.
 
-This is the core engine for ICDEV Phase 19 agentic app generation. Every child
-app includes the full GOTCHA framework, ATLAS workflow, own agents, memory system,
+This is the core engine for ICDEV™ Phase 19 agentic app generation. Every child
+app includes the full FORGE framework, ANVIL workflow, own agents, memory system,
 and CI/CD — everything except the ability to generate new applications.
 
 Decision D21: Copy-and-adapt over template library.
@@ -81,7 +81,7 @@ def _get_child_app_model_config() -> dict:
 # Constants
 # ---------------------------------------------------------------------------
 
-# ICDEV base ports — used for port remapping
+# ICDEV™ base ports — used for port remapping
 ICDEV_PORTS = {
     "orchestrator": 8443, "architect": 8444, "builder": 8445,
     "compliance": 8446, "security": 8447, "infrastructure": 8448,
@@ -197,14 +197,14 @@ def _apply_adaptations(content: str, adaptations: List[str], blueprint: dict) ->
         elif adaptation == "app_name_replace":
             # Replace identifiers but preserve CUI header structure
             content = re.sub(
-                r'\bICDEV\b', app_name.upper().replace('-', '_'), content)
+                r'\bICDEV™\b', app_name.upper().replace('-', '_'), content)
             content = re.sub(
                 r'\bicdev\b', app_name.lower().replace('-', '_'), content)
 
         elif adaptation == "bot_identifier_replace":
             bot_id = blueprint.get("cicd_config", {}).get(
                 "bot_identifier", f"[{app_name.upper()}-BOT]")
-            content = content.replace("[ICDEV-BOT]", bot_id)
+            content = content.replace("[ICDEV™-BOT]", bot_id)
 
         elif adaptation == "classification_update":
             if classification == "SECRET":
@@ -306,7 +306,7 @@ def _copy_directory(
 # ---------------------------------------------------------------------------
 
 def step_01_create_directory_tree(child_root: Path, blueprint: dict) -> dict:
-    """Step 1: Create the full GOTCHA directory structure."""
+    """Step 1: Create the full FORGE directory structure."""
     created_dirs = []
     capabilities = blueprint.get("capabilities", {})
 
@@ -335,7 +335,7 @@ def step_01_create_directory_tree(child_root: Path, blueprint: dict) -> dict:
 def step_02_copy_and_adapt_tools(
     child_root: Path, blueprint: dict, icdev_root: Path
 ) -> dict:
-    """Step 2: Copy ICDEV tools to child app with adaptations applied."""
+    """Step 2: Copy ICDEV™ tools to child app with adaptations applied."""
     manifest = blueprint.get("file_manifest", [])
     total_copied = 0
     total_skipped = 0
@@ -412,7 +412,7 @@ def _get_agent_skills(agent_name: str, blueprint: dict) -> list:
 
     Priority:
     1. Blueprint agent 'skills' field (if provided by the blueprint)
-    2. Known ICDEV defaults (orchestrator, architect, builder, etc.)
+    2. Known ICDEV™ defaults (orchestrator, architect, builder, etc.)
     3. Auto-generated from the agent's 'role' description
     """
     # 1. Check blueprint for explicit skills
@@ -420,7 +420,7 @@ def _get_agent_skills(agent_name: str, blueprint: dict) -> list:
         if agent.get("name") == agent_name and agent.get("skills"):
             return agent["skills"]
 
-    # 2. Known ICDEV defaults for standard agents
+    # 2. Known ICDEV™ defaults for standard agents
     skills_map = {
         "orchestrator": [
             {
@@ -442,8 +442,8 @@ def _get_agent_skills(agent_name: str, blueprint: dict) -> list:
             },
             {
                 "id": "atlas-workflow",
-                "name": "ATLAS Workflow",
-                "description": "Execute ATLAS build phases",
+                "name": "ANVIL Workflow",
+                "description": "Execute ANVIL build phases",
             },
         ],
         "builder": [
@@ -587,7 +587,7 @@ def _generate_mcp_stubs(
     )
 
     stubs_written = 0
-    # Map known ICDEV agent roles to MCP server names
+    # Map known ICDEV™ agent roles to MCP server names
     mcp_map = {
         "orchestrator": "core_server",
         "architect": "core_server",   # shared
@@ -686,7 +686,7 @@ def _generate_dashboard_stub(
 ) -> bool:
     """Generate a minimal capability-driven Flask dashboard stub.
 
-    Instead of copying ICDEV's dashboard (which has ICDEV-specific routes),
+    Instead of copying ICDEV™'s dashboard (which has ICDEV™-specific routes),
     generate a minimal Flask app with routes driven by the child app's
     enabled capabilities. The child app developer fills in domain-specific
     logic.
@@ -782,7 +782,7 @@ def _generate_dashboard_stub(
         f'# {cui_line}\n'
         f'"""{app_name} Dashboard — Flask SSR + HTMX\n'
         f'\n'
-        f'Generated by ICDEV child app generator.\n'
+        f'Generated by ICDEV™ child app generator.\n'
         f'Customize routes and pages for your domain.\n'
         f'"""\n'
         f'\n'
@@ -1141,7 +1141,7 @@ def step_04_memory_bootstrap(child_root: Path, blueprint: dict) -> dict:
         f"\n"
         f"## Identity\n"
         f"- **Application:** {app_name}\n"
-        f"- **Generated by:** ICDEV (parent application)\n"
+        f"- **Generated by:** ICDEV™ (parent application)\n"
         f"- **Classification:** {classification}\n"
         f"- **Impact Level:** {impact_level}\n"
         f"- **Architecture:** {architecture}\n"
@@ -1191,14 +1191,14 @@ def step_04_memory_bootstrap(child_root: Path, blueprint: dict) -> dict:
         f"(To be populated during first session)\n"
         f"\n"
         f"## Key Facts\n"
-        f"- This is a generated child application of ICDEV\n"
+        f"- This is a generated child application of ICDEV™\n"
         f"- This application CANNOT generate child applications "
         f"(grandchild prevention)\n"
-        f"- ATLAS workflow does not include fitness assessment step\n"
+        f"- ANVIL workflow does not include fitness assessment step\n"
     )
     if parent_cb.get("enabled"):
         memory_content += (
-            f"- Parent ICDEV callback URL: "
+            f"- Parent ICDEV™ callback URL: "
             f"{parent_cb.get('url', 'N/A')}\n"
         )
     memory_content += (
@@ -1415,7 +1415,7 @@ def step_07_args_and_context(child_root: Path, blueprint: dict, icdev_root: Path
         c, _ = _copy_directory(lang_src, ctx_dest / "languages", [], blueprint)
         copied += c
 
-    # Copy context/agentic/ (without fitness rubric — ICDEV-only)
+    # Copy context/agentic/ (without fitness rubric — ICDEV™-only)
     agentic_src = ctx_src / "agentic"
     if agentic_src.exists():
         c, _ = _copy_directory(
@@ -1534,7 +1534,7 @@ def step_07_args_and_context(child_root: Path, blueprint: dict, icdev_root: Path
 
 
 def step_08_a2a_callback_client(child_root: Path, blueprint: dict) -> dict:
-    """Step 8: Generate A2A callback client for parent ICDEV communication."""
+    """Step 8: Generate A2A callback client for parent ICDEV™ communication."""
     app_name = blueprint["app_name"]
     parent_cb = blueprint.get("parent_callback", {})
     classification = blueprint.get("classification", "CUI")
@@ -1547,9 +1547,9 @@ def step_08_a2a_callback_client(child_root: Path, blueprint: dict) -> dict:
 # {cui_line}
 # Controlled by: Department of Defense
 # CUI Category: CTI
-"""A2A Callback Client — calls parent ICDEV for capabilities not included locally.
+"""A2A Callback Client — calls parent ICDEV™ for capabilities not included locally.
 
-This child application ({app_name}) can request services from its parent ICDEV
+This child application ({app_name}) can request services from its parent ICDEV™
 instance using the A2A protocol (JSON-RPC 2.0).
 
 Excluded capabilities (must call parent for):
@@ -1573,7 +1573,7 @@ logger = logging.getLogger("{app_name}.a2a_callback")
 
 
 def call_parent(method: str, params: dict = None, timeout: int = 30) -> dict:
-    """Send JSON-RPC 2.0 request to parent ICDEV.
+    """Send JSON-RPC 2.0 request to parent ICDEV™.
 
     Args:
         method: The RPC method name (e.g. "modernization.analyze_legacy").
@@ -1628,7 +1628,7 @@ def call_parent(method: str, params: dict = None, timeout: int = 30) -> dict:
 
 
 def check_health() -> bool:
-    """Check if parent ICDEV is reachable."""
+    """Check if parent ICDEV™ is reachable."""
     if not PARENT_URL:
         return False
     try:
@@ -1758,14 +1758,14 @@ Thumbs.db
 def _copy_license_files(
     child_root: Path, blueprint: dict, icdev_root: Path
 ) -> dict:
-    """Copy ICDEV license validator (and optionally generator) to child app.
+    """Copy ICDEV™ license validator (and optionally generator) to child app.
 
     For demo apps, also auto-generates a 30-day trial license file.
 
     Args:
         child_root: Root directory of the child app.
         blueprint: Blueprint dict.
-        icdev_root: ICDEV project root.
+        icdev_root: ICDEV™ project root.
 
     Returns:
         Dict with files copied and license info.
@@ -1831,34 +1831,28 @@ def _copy_license_files(
         )
         files_copied.append("data/license.json")
 
-    # D-CHILD-5: AGPL-3.0 license for government deliveries
-    license_type = blueprint.get("license", "AGPL-3.0")
-    if license_type == "AGPL-3.0":
-        agpl_text = (
-            f"GNU AFFERO GENERAL PUBLIC LICENSE\n"
-            f"Version 3, 19 November 2007\n\n"
-            f"Copyright (C) {datetime.now(tz=timezone.utc).year} "
-            f"{blueprint.get('customer_org', 'ICDEV Enterprise Delivery')}\n\n"
-            f"This program is free software: you can redistribute it and/or modify\n"
-            f"it under the terms of the GNU Affero General Public License as\n"
-            f"published by the Free Software Foundation, either version 3 of the\n"
-            f"License, or (at your option) any later version.\n\n"
-            f"This program is distributed in the hope that it will be useful,\n"
-            f"but WITHOUT ANY WARRANTY; without even the implied warranty of\n"
-            f"MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the\n"
-            f"GNU Affero General Public License for more details.\n\n"
-            f"You should have received a copy of the GNU Affero General Public\n"
-            f"License along with this program. If not, see\n"
-            f"<https://www.gnu.org/licenses/>.\n\n"
+    # D-CHILD-5: Apache-2.0 license for government deliveries
+    license_type = blueprint.get("license", "Apache-2.0")
+    if license_type == "Apache-2.0":
+        apache_text = (
+            f"Copyright 2024-{datetime.now(tz=timezone.utc).year} "
+            f"{blueprint.get('customer_org', 'ICDEV™ Enterprise Delivery')}\n\n"
+            f"Licensed under the Apache License, Version 2.0 (the \"License\");\n"
+            f"you may not use this file except in compliance with the License.\n"
+            f"You may obtain a copy of the License at\n\n"
+            f"    http://www.apache.org/licenses/LICENSE-2.0\n\n"
+            f"Unless required by applicable law or agreed to in writing, software\n"
+            f"distributed under the License is distributed on an \"AS IS\" BASIS,\n"
+            f"WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n"
+            f"See the License for the specific language governing permissions and\n"
+            f"limitations under the License.\n\n"
             f"---\n"
             f"Application: {app_name}\n"
-            f"Generated by: ICDEV Enterprise Delivery (D374)\n"
-            f"License grants free internal use for government operations.\n"
-            f"Network use (SaaS) requires AGPL-3.0 source disclosure.\n"
+            f"Generated by: ICDEV™ Enterprise Delivery (D374)\n"
         )
         lic_path = child_root / "LICENSE"
-        lic_path.write_text(agpl_text, encoding="utf-8")
-        files_copied.append("LICENSE (AGPL-3.0)")
+        lic_path.write_text(apache_text, encoding="utf-8")
+        files_copied.append("LICENSE (Apache-2.0)")
 
     logger.info(
         "Step 9b: License files copied: %s (demo=%s, license=%s)",
@@ -1890,7 +1884,7 @@ def step_09c_claude_code_config(
     claude_src = icdev_root / ".claude"
 
     if not claude_src.exists():
-        logger.info("Step 9c: No .claude directory found in ICDEV root — skipping")
+        logger.info("Step 9c: No .claude directory found in ICDEV™ root — skipping")
         return {"files_copied": [], "files_skipped": [], "skipped": True}
 
     claude_dst = child_root / ".claude"
@@ -1921,7 +1915,7 @@ def step_09c_claude_code_config(
                 continue
             dst_file = cmds_dst / cmd_file.name
             content = cmd_file.read_text(encoding="utf-8", errors="replace")
-            content = content.replace("ICDEV", blueprint["app_name"])
+            content = content.replace("ICDEV™", blueprint["app_name"])
             dst_file.write_text(content, encoding="utf-8")
             files_copied.append(f".claude/commands/{cmd_file.name}")
 
@@ -1972,7 +1966,7 @@ def step_09c_claude_code_config(
     if settings_src.exists():
         settings_dst = claude_dst / "settings.json"
         content = settings_src.read_text(encoding="utf-8", errors="replace")
-        content = content.replace("ICDEV", blueprint["app_name"])
+        content = content.replace("ICDEV™", blueprint["app_name"])
         settings_dst.write_text(content, encoding="utf-8")
         files_copied.append(".claude/settings.json")
 
@@ -2137,7 +2131,7 @@ def step_10_csp_mcp_config(child_root: Path, blueprint: dict) -> dict:
         "Use them for cloud-native operations specific to the target deployment environment.",
         "",
         f"For capabilities not available via {provider.upper()} MCP servers, use the A2A",
-        "callback to parent ICDEV.",
+        "callback to parent ICDEV™.",
     ])
 
     integration_path = child_root / "context" / "agentic" / "csp_integration.md"
@@ -2176,7 +2170,7 @@ CAP_DESCRIPTIONS: Dict[str, str] = {
     "devsecops": "DevSecOps — Pipeline security, policy-as-code (Kyverno/OPA), image attestation",
     "zta": "Zero Trust Architecture — 7-pillar maturity, NIST 800-207, service mesh, mTLS",
     "mosa": "DoD MOSA — Modular Open Systems, ICD/TSP generation, modularity analysis",
-    "marketplace": "GOTCHA Marketplace — Federated asset sharing, 7-gate security pipeline",
+    "marketplace": "FORGE Marketplace — Federated asset sharing, 7-gate security pipeline",
     "innovation": "Innovation Engine — Autonomous self-improvement, web scanning, trend detection",
     "translation": "Cross-Language Translation — 5-phase hybrid pipeline, 30 language pairs",
     "observability": "Observability & XAI — Distributed tracing, provenance, AgentSHAP attribution",
@@ -2186,7 +2180,7 @@ CAP_DESCRIPTIONS: Dict[str, str] = {
 
 
 def _generate_readme(child_root: Path, blueprint: dict) -> dict:
-    """Generate README.md that tells the ICDEV story and lists capabilities used.
+    """Generate README.md that tells the ICDEV™ story and lists capabilities used.
 
     Args:
         child_root: Root directory of the generated child app.
@@ -2220,14 +2214,14 @@ def _generate_readme(child_root: Path, blueprint: dict) -> dict:
             "classified, or sensitive data.\n"
         )
 
-    # Title + ICDEV intro
+    # Title + ICDEV™ intro
     sections.append(f"# {app_name}\n")
     sections.append(
-        f"**Built with [ICDEV](https://github.com/icdev) — the Intelligent "
+        f"**Built with [ICDEV™](https://github.com/icdev) — the Intelligent "
         f"Coding Development platform.**\n\n"
-        f"ICDEV is a meta-builder that autonomously constructs Gov/DoD applications "
-        f"using the GOTCHA framework (Goals, Orchestration, Tools, Args, Context, "
-        f"Hard Prompts) and the ATLAS workflow (Architect → Trace → Link → Assemble "
+        f"ICDEV™ is a meta-builder that autonomously constructs Gov/DoD applications "
+        f"using the FORGE framework (Goals, Orchestration, Tools, Args, Context, "
+        f"Hard Prompts) and the ANVIL workflow (Architect → Trace → Link → Assemble "
         f"→ Stress-test). It handles the full SDLC with TDD/BDD, NIST 800-53 RMF "
         f"compliance, and self-healing capabilities.\n"
     )
@@ -2244,7 +2238,7 @@ def _generate_readme(child_root: Path, blueprint: dict) -> dict:
     # Architecture
     sections.append(
         "## Architecture\n\n"
-        "This application follows the **GOTCHA 6-Layer Framework**:\n\n"
+        "This application follows the **FORGE 6-Layer Framework**:\n\n"
         "| Layer | Role |\n"
         "|-------|------|\n"
         "| **Goals** | Process definitions — what to achieve, which tools, expected outputs |\n"
@@ -2255,11 +2249,11 @@ def _generate_readme(child_root: Path, blueprint: dict) -> dict:
         "| **Hard Prompts** | Reusable LLM instruction templates |\n"
     )
 
-    # ICDEV Capabilities Used — the "sell" section
+    # ICDEV™ Capabilities Used — the "sell" section
     if active_caps:
-        sections.append("## ICDEV Capabilities Used\n")
+        sections.append("## ICDEV™ Capabilities Used\n")
         sections.append(
-            "This application leverages the following ICDEV capabilities:\n"
+            "This application leverages the following ICDEV™ capabilities:\n"
         )
         for cap in active_caps:
             desc = CAP_DESCRIPTIONS.get(cap, cap.replace("_", " ").title())
@@ -2312,7 +2306,7 @@ def _generate_readme(child_root: Path, blueprint: dict) -> dict:
     gen_date = blueprint.get("generated_at", datetime.now(tz=timezone.utc).isoformat())
     sections.append("---\n")
     sections.append(
-        f"*Generated by ICDEV on {gen_date[:10]}*\n"
+        f"*Generated by ICDEV™ on {gen_date[:10]}*\n"
     )
 
     readme_content = "\n".join(sections)
@@ -2345,9 +2339,9 @@ This file provides guidance to Claude Code when working with {app_name}.
 
 ---
 
-## Architecture: GOTCHA Framework
+## Architecture: FORGE Framework
 
-This is a 6-layer agentic system: Goals, Orchestration, Tools, Args, Context, Hard Prompts.
+This is a 6-layer agentic system: Frameworks, Orchestration, Routines, Guidance, Evidence.
 
 ### Key Files
 - `goals/manifest.md` — Index of all goal workflows
@@ -2406,7 +2400,7 @@ Every failure strengthens the system. Be direct. Be reliable. Get it done.
 def step_12_audit_and_registration(
     child_root: Path, blueprint: dict, db_path: Path
 ) -> dict:
-    """Step 12: Log to ICDEV audit trail and register in child_app_registry."""
+    """Step 12: Log to ICDEV™ audit trail and register in child_app_registry."""
     app_name = blueprint["app_name"]
     blueprint_hash = blueprint.get("blueprint_hash", "")
 
@@ -2450,7 +2444,7 @@ def step_12_audit_and_registration(
             conn.commit()
             conn.close()
             registered = True
-            logger.info("Step 12: Registered child app in ICDEV database")
+            logger.info("Step 12: Registered child app in ICDEV™ database")
     except Exception as e:
         logger.warning("Step 12: Failed to register in DB: %s", e)
 
@@ -2519,7 +2513,7 @@ def step_12_audit_and_registration(
 def step_13_production_audit(child_root: Path, blueprint: dict) -> dict:
     """Run production audit on the generated child app.
 
-    Invokes ICDEV's production_audit.py as a subprocess with the child app
+    Invokes ICDEV™'s production_audit.py as a subprocess with the child app
     as the working directory, then stores the results in the child app's
     data directory.
 
@@ -2586,21 +2580,21 @@ def step_13_production_audit(child_root: Path, blueprint: dict) -> dict:
 
 
 # ============================================================
-# STEP 14: GOTCHA Compliance Validation
+# STEP 14: FORGE Compliance Validation
 # ============================================================
 
 
 def step_14_gotcha_validation(child_root: Path, blueprint: dict) -> dict:
-    """Step 14: Validate GOTCHA framework compliance of generated child app.
+    """Step 14: Validate FORGE framework compliance of generated child app.
 
-    Runs the gotcha_validator to verify all 6 GOTCHA layers are populated
-    and ATLAS workflow structure is present. This ensures child apps follow
-    the GOTCHA framework as mandated by build_app.md.
+    Runs the forge_validator to verify all 6 FORGE layers are populated
+    and ANVIL workflow structure is present. This ensures child apps follow
+    the FORGE framework as mandated by build_app.md.
 
     BMAD-adapted: adversarial validation — assumes the build is incomplete
     until proven otherwise.
     """
-    validate_fn = _import_sister("gotcha_validator", "validate")
+    validate_fn = _import_sister("forge_validator", "validate")
 
     if validate_fn:
         report = validate_fn(child_root)
@@ -2618,18 +2612,18 @@ def step_14_gotcha_validation(child_root: Path, blueprint: dict) -> dict:
         for check in report_dict.get("checks", []):
             if check.get("status") == "fail":
                 logger.warning(
-                    "GOTCHA validation FAIL: %s — %s (fix: %s)",
+                    "FORGE validation FAIL: %s — %s (fix: %s)",
                     check.get("check_id"), check.get("message"),
                     check.get("fix_suggestion"),
                 )
             elif check.get("status") == "warn":
                 logger.info(
-                    "GOTCHA validation WARN: %s — %s",
+                    "FORGE validation WARN: %s — %s",
                     check.get("check_id"), check.get("message"),
                 )
 
         logger.info(
-            "Step 14: GOTCHA validation — score %.0f%% (%d/%d passed, %d failed)",
+            "Step 14: FORGE validation — score %.0f%% (%d/%d passed, %d failed)",
             report_dict.get("score", 0) * 100,
             report_dict.get("passed_checks", 0),
             report_dict.get("total_checks", 0),
@@ -2646,13 +2640,13 @@ def step_14_gotcha_validation(child_root: Path, blueprint: dict) -> dict:
         }
 
     # Fallback: basic directory existence check
-    logger.warning("Step 14: gotcha_validator not available, running basic check")
+    logger.warning("Step 14: forge_validator not available, running basic check")
     gotcha_dirs = ["goals", "tools", "args", "context", "hardprompts", "memory"]
     present = [d for d in gotcha_dirs if (child_root / d).is_dir()]
     missing = [d for d in gotcha_dirs if d not in present]
 
     if missing:
-        logger.warning("Step 14: Missing GOTCHA directories: %s", ", ".join(missing))
+        logger.warning("Step 14: Missing FORGE directories: %s", ", ".join(missing))
 
     return {
         "method": "fallback",
@@ -2677,14 +2671,14 @@ def generate_child_app(
     """Generate a complete child application from a blueprint.
 
     Executes 17 steps sequentially (12 core + 9b license + 9c claude config +
-    11b README + 13 audit + 14 GOTCHA validation), collecting results from each.
+    11b README + 13 audit + 14 FORGE validation), collecting results from each.
 
     Args:
         blueprint: Complete blueprint dict from app_blueprint.py.
         project_path: Parent directory for the child app.
         name: Child application name.
-        icdev_root: Path to ICDEV project root (auto-detected if None).
-        db_path: Path to ICDEV database (auto-detected if None).
+        icdev_root: Path to ICDEV™ project root (auto-detected if None).
+        db_path: Path to ICDEV™ database (auto-detected if None).
 
     Returns:
         Summary dict with step results and overall status.
@@ -2761,7 +2755,7 @@ def generate_child_app(
 def main():
     """CLI entry point for child app generation."""
     parser = argparse.ArgumentParser(
-        description="Generate mini-ICDEV clone child application from blueprint",
+        description="Generate mini-ICDEV™ clone child application from blueprint",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="Example:\n  python tools/builder/child_app_generator.py "
                "--blueprint bp.json --project-path /tmp --name my-app --json",
@@ -2773,9 +2767,9 @@ def main():
     parser.add_argument("--name", required=True,
                         help="Child application name")
     parser.add_argument("--icdev-root",
-                        help="Path to ICDEV root (default: auto-detect)")
+                        help="Path to ICDEV™ root (default: auto-detect)")
     parser.add_argument("--db-path",
-                        help="Path to ICDEV database (default: data/icdev.db)")
+                        help="Path to ICDEV™ database (default: data/icdev.db)")
     parser.add_argument("--json", action="store_true",
                         help="Output results as JSON")
     parser.add_argument("--verbose", action="store_true",

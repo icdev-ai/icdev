@@ -13,6 +13,7 @@ import json
 import logging
 import sqlite3
 import sys
+from tools.db.storage import get_connection
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -39,21 +40,18 @@ except ImportError:
 # Helpers
 # ---------------------------------------------------------------------------
 
-
 def _get_db(db_path=None) -> sqlite3.Connection:
     """Open a DB connection with row factory."""
     if get_db_connection:
         return get_db_connection(db_path or DB_PATH)
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(path))
     return conn
 
 
 # ---------------------------------------------------------------------------
 # Authority Matrix
 # ---------------------------------------------------------------------------
-
 
 def load_authority_matrix(config_path=None) -> dict:
     """Load the domain authority matrix from args/agent_authority.yaml.
@@ -74,7 +72,8 @@ def load_authority_matrix(config_path=None) -> dict:
             with open(path, "r", encoding="utf-8") as f:
                 raw = yaml.safe_load(f) or {}
             authority = raw.get("authority", {})
-            logger.info("Loaded authority matrix: %d agents from %s", len(authority), path)
+            logger.info("Loaded authority matrix: %d agents from %s",
+                        len(authority), path)
             return authority
         except Exception as exc:
             logger.warning("Failed to load authority matrix from %s: %s", path, exc)
@@ -85,10 +84,8 @@ def load_authority_matrix(config_path=None) -> dict:
         "security-agent": {
             "veto_type": "hard",
             "topics": [
-                "code_generation",
-                "dependency_addition",
-                "infrastructure_change",
-                "secret_management",
+                "code_generation", "dependency_addition",
+                "infrastructure_change", "secret_management",
                 "container_configuration",
             ],
             "description": "Security agent can hard-veto security-sensitive changes",
@@ -96,10 +93,8 @@ def load_authority_matrix(config_path=None) -> dict:
         "compliance-agent": {
             "veto_type": "hard",
             "topics": [
-                "artifact_generation",
-                "deployment",
-                "classification_marking",
-                "ato_submission",
+                "artifact_generation", "deployment",
+                "classification_marking", "ato_submission",
                 "data_handling",
             ],
             "description": "Compliance agent can hard-veto compliance-sensitive changes",
@@ -107,11 +102,8 @@ def load_authority_matrix(config_path=None) -> dict:
         "architect-agent": {
             "veto_type": "soft",
             "topics": [
-                "system_design",
-                "schema_change",
-                "api_design",
-                "technology_selection",
-                "architecture_pattern",
+                "system_design", "schema_change", "api_design",
+                "technology_selection", "architecture_pattern",
             ],
             "description": "Architect agent can soft-veto design decisions",
         },
@@ -163,13 +155,11 @@ def get_required_reviewers(topic: str, config_path=None) -> list:
     for agent_id, config in matrix.items():
         topics = config.get("topics", [])
         if topic in topics:
-            reviewers.append(
-                {
-                    "agent_id": agent_id,
-                    "veto_type": config.get("veto_type", "soft"),
-                    "description": config.get("description", ""),
-                }
-            )
+            reviewers.append({
+                "agent_id": agent_id,
+                "veto_type": config.get("veto_type", "soft"),
+                "description": config.get("description", ""),
+            })
 
     return reviewers
 
@@ -178,19 +168,10 @@ def get_required_reviewers(topic: str, config_path=None) -> list:
 # Veto Recording (append-only — NIST AU compliance)
 # ---------------------------------------------------------------------------
 
-
-def record_veto(
-    authority_agent_id: str,
-    vetoed_agent_id: str,
-    task_id: str,
-    workflow_id: str,
-    project_id: str,
-    topic: str,
-    veto_type: str,
-    reason: str,
-    evidence: str = None,
-    db_path=None,
-) -> int:
+def record_veto(authority_agent_id: str, vetoed_agent_id: str,
+                task_id: str, workflow_id: str, project_id: str,
+                topic: str, veto_type: str, reason: str,
+                evidence: str = None, db_path=None) -> int:
     """Record a veto in the agent_vetoes table. Returns veto ID.
 
     This is an append-only operation — vetoes are never deleted or modified
@@ -218,23 +199,17 @@ def record_veto(
                (authority_agent_id, vetoed_agent_id, task_id, workflow_id,
                 project_id, topic, veto_type, reason, evidence, status)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')""",
-            (authority_agent_id, vetoed_agent_id, task_id, workflow_id, project_id, topic, veto_type, reason, evidence),
+            (authority_agent_id, vetoed_agent_id, task_id, workflow_id,
+             project_id, topic, veto_type, reason, evidence),
         )
         conn.commit()
         veto_id = cursor.lastrowid
-        logger.info(
-            "Veto #%d recorded: %s %s-veto on '%s' for agent '%s'",
-            veto_id,
-            authority_agent_id,
-            veto_type,
-            topic,
-            vetoed_agent_id,
-        )
+        logger.info("Veto #%d recorded: %s %s-veto on '%s' for agent '%s'",
+                     veto_id, authority_agent_id, veto_type, topic, vetoed_agent_id)
 
         # Audit trail
         try:
             from tools.audit.audit_logger import log_event
-
             log_event(
                 event_type="agent_veto_issued",
                 actor=authority_agent_id,
@@ -256,9 +231,8 @@ def record_veto(
         conn.close()
 
 
-def record_override(
-    veto_id: int, overridden_by: str, justification: str, approval_id: str = None, db_path=None
-) -> bool:
+def record_override(veto_id: int, overridden_by: str, justification: str,
+                    approval_id: str = None, db_path=None) -> bool:
     """Mark a veto as overridden with justification.
 
     Soft vetoes can be overridden by the orchestrator with justification.
@@ -277,7 +251,9 @@ def record_override(
     conn = _get_db(db_path)
     try:
         # Fetch current veto
-        row = conn.execute("SELECT * FROM agent_vetoes WHERE id = ?", (veto_id,)).fetchone()
+        row = conn.execute(
+            "SELECT * FROM agent_vetoes WHERE id = ?", (veto_id,)
+        ).fetchone()
 
         if not row:
             logger.error("Veto #%d not found", veto_id)
@@ -307,7 +283,6 @@ def record_override(
         # Audit trail
         try:
             from tools.audit.audit_logger import log_event
-
             log_event(
                 event_type="agent_veto_overridden",
                 actor=overridden_by,
@@ -329,7 +304,8 @@ def record_override(
         conn.close()
 
 
-def get_veto_history(project_id: str = None, agent_id: str = None, db_path=None) -> list:
+def get_veto_history(project_id: str = None, agent_id: str = None,
+                     db_path=None) -> list:
     """Get veto history filtered by project and/or agent.
 
     Args:
@@ -364,10 +340,11 @@ def get_veto_history(project_id: str = None, agent_id: str = None, db_path=None)
 # CLI entry point
 # ---------------------------------------------------------------------------
 
-
 def main():
     """CLI for domain authority management."""
-    parser = argparse.ArgumentParser(description="ICDEV Domain Authority — enforce agent veto rights per topic")
+    parser = argparse.ArgumentParser(
+        description="ICDEV™ Domain Authority — enforce agent veto rights per topic"
+    )
     sub = parser.add_subparsers(dest="command", help="Command to execute")
 
     # Check authority

@@ -15,7 +15,7 @@ from typing import Any, Dict, List
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
-from tools.db.storage import get_connection
+from tools.db.storage import get_connection  # noqa: E402
 
 
 def _utcnow_iso() -> str:
@@ -26,7 +26,6 @@ def _draft_opportunity(opp_id: str) -> Dict[str, Any]:
     """Draft responses for all unmapped statements in an opportunity."""
     try:
         from tools.govcon.response_drafter import draft_all_for_opportunity
-
         result = draft_all_for_opportunity(opp_id)
         return result if isinstance(result, dict) else {"status": "ok", "drafted": 0}
     except ImportError:
@@ -49,14 +48,15 @@ def _get_pulse_content(opp_id: str) -> List[Dict[str, str]]:
             "FROM pg_pulse_proposal_links "
             "WHERE opportunity_id = ? AND link_type = 'content_reuse' "
             "ORDER BY relevance_score DESC LIMIT 5",
-            (opp_id,),
+            (opp_id,)
         ).fetchall()
         if existing:
             return [dict(r) for r in existing]
 
         # Try to find matching Pulse articles by keyword overlap
         opp_row = conn.execute(
-            "SELECT title, description FROM proposal_opportunities WHERE id = ?", (opp_id,)
+            "SELECT title, description FROM proposal_opportunities WHERE id = ?",
+            (opp_id,)
         ).fetchone()
         if not opp_row:
             return []
@@ -69,26 +69,27 @@ def _get_pulse_content(opp_id: str) -> List[Dict[str, str]]:
         # Query pulse_posts if table exists
         try:
             posts = conn.execute(
-                "SELECT id, title, body FROM pulse_posts WHERE status = 'published' ORDER BY published_at DESC LIMIT 50"
+                "SELECT id, title, body FROM pulse_posts "
+                "WHERE status = 'published' "
+                "ORDER BY published_at DESC LIMIT 50"
             ).fetchall()
         except Exception:
             return []
 
         matches = []
         for post in posts:
-            score = _keyword_overlap_score(keywords, (post["title"] or "") + " " + (post["body"] or ""))
+            score = _keyword_overlap_score(
+                keywords, (post["title"] or "") + " " + (post["body"] or "")
+            )
             if score > 0.1:
-                matches.append(
-                    {
-                        "pulse_post_id": post["id"],
-                        "title": post["title"],
-                        "relevance_score": round(score, 3),
-                    }
-                )
+                matches.append({
+                    "pulse_post_id": post["id"],
+                    "title": post["title"],
+                    "relevance_score": round(score, 3),
+                })
 
         # Store links for future lookups
         import uuid
-
         for match in matches[:5]:
             try:
                 conn.execute(
@@ -96,13 +97,9 @@ def _get_pulse_content(opp_id: str) -> List[Dict[str, str]]:
                     "(id, opportunity_id, pulse_post_id, link_type, "
                     "relevance_score, created_at) "
                     "VALUES (?, ?, ?, 'content_reuse', ?, ?)",
-                    (
-                        f"pgpl-{uuid.uuid4().hex[:10]}",
-                        opp_id,
-                        match["pulse_post_id"],
-                        match["relevance_score"],
-                        _utcnow_iso(),
-                    ),
+                    (f"pgpl-{uuid.uuid4().hex[:10]}", opp_id,
+                     match["pulse_post_id"], match["relevance_score"],
+                     _utcnow_iso())
                 )
             except Exception:
                 pass
@@ -117,83 +114,17 @@ def _get_pulse_content(opp_id: str) -> List[Dict[str, str]]:
 def _extract_keywords(title: str, description: str) -> List[str]:
     """Extract keywords from title and description (deterministic)."""
     import re
-
     text = (title + " " + description).lower()
     # Remove common stop words
     stop_words = {
-        "the",
-        "a",
-        "an",
-        "is",
-        "are",
-        "was",
-        "were",
-        "be",
-        "been",
-        "being",
-        "have",
-        "has",
-        "had",
-        "do",
-        "does",
-        "did",
-        "will",
-        "would",
-        "shall",
-        "should",
-        "may",
-        "might",
-        "must",
-        "can",
-        "could",
-        "for",
-        "and",
-        "nor",
-        "but",
-        "or",
-        "yet",
-        "so",
-        "in",
-        "on",
-        "at",
-        "to",
-        "of",
-        "with",
-        "by",
-        "from",
-        "as",
-        "into",
-        "through",
-        "during",
-        "before",
-        "after",
-        "above",
-        "below",
-        "between",
-        "out",
-        "off",
-        "over",
-        "under",
-        "again",
-        "further",
-        "then",
-        "once",
-        "this",
-        "that",
-        "these",
-        "those",
-        "it",
-        "its",
-        "not",
-        "all",
-        "each",
-        "every",
-        "both",
-        "few",
-        "more",
-        "most",
-        "other",
-        "some",
+        "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
+        "have", "has", "had", "do", "does", "did", "will", "would", "shall",
+        "should", "may", "might", "must", "can", "could", "for", "and", "nor",
+        "but", "or", "yet", "so", "in", "on", "at", "to", "of", "with", "by",
+        "from", "as", "into", "through", "during", "before", "after", "above",
+        "below", "between", "out", "off", "over", "under", "again", "further",
+        "then", "once", "this", "that", "these", "those", "it", "its", "not",
+        "all", "each", "every", "both", "few", "more", "most", "other", "some",
     }
     words = re.findall(r"\b[a-z]{3,}\b", text)
     return list(set(w for w in words if w not in stop_words))[:30]
@@ -212,7 +143,6 @@ def _enrich_draft_with_kb(opp_id: str, draft_count: int) -> Dict[str, Any]:
     """Enrich existing drafts with knowledge base content (D-PG-4)."""
     try:
         from tools.govcon.knowledge_base import search_blocks
-
         conn = get_connection()
         try:
             # Get draft responses that could benefit from KB enrichment
@@ -220,7 +150,7 @@ def _enrich_draft_with_kb(opp_id: str, draft_count: int) -> Dict[str, Any]:
                 "SELECT id, section_text FROM proposal_section_drafts "
                 "WHERE opportunity_id = ? AND status = 'draft' "
                 "ORDER BY created_at DESC LIMIT 20",
-                (opp_id,),
+                (opp_id,)
             ).fetchall()
         finally:
             conn.close()
@@ -280,19 +210,17 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         # Step 3: Enrich with knowledge base
         kb_result = _enrich_draft_with_kb(row["id"], drafted)
 
-        draft_results.append(
-            {
-                "opportunity_id": row["id"],
-                "title": row["title"],
-                "drafts_created": drafted,
-                "pulse_articles_linked": len(pulse_content),
-                "kb_enrichment": kb_result,
-            }
-        )
+        draft_results.append({
+            "opportunity_id": row["id"],
+            "title": row["title"],
+            "drafts_created": drafted,
+            "pulse_articles_linked": len(pulse_content),
+            "kb_enrichment": kb_result,
+        })
 
     if draft_results:
         confidences = [r.get("drafts_created", 0) for r in draft_results]
-        sum(confidences) / len(confidences) if confidences else 0
+        _ = sum(confidences) / len(confidences) if confidences else 0
 
     return {
         "success": True,

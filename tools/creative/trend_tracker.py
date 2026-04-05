@@ -3,8 +3,8 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""Pain Point Trend Detection for ICDEV Creative Engine — detect trends over time.
+# POC: ICDEV™ System Administrator
+"""Pain Point Trend Detection for ICDEV™ Creative Engine — detect trends over time.
 
 Analyzes creative_pain_points entries to identify emerging, active, declining, and
 stale trends by clustering pain points with keyword co-occurrence. All analysis is
@@ -41,9 +41,10 @@ import hashlib
 import json
 import os
 import re
-import sqlite3
 import sys
 import uuid
+from tools.db.storage import get_connection
+from tools.common.helpers import now_iso
 from collections import Counter, defaultdict
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -63,14 +64,12 @@ CONFIG_PATH = BASE_DIR / "args" / "creative_config.yaml"
 # =========================================================================
 try:
     import yaml
-
     _HAS_YAML = True
 except ImportError:
     _HAS_YAML = False
 
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
-
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
@@ -78,152 +77,28 @@ except ImportError:
     def audit_log_event(**kwargs):
         return -1
 
-
 # =========================================================================
 # CONSTANTS
 # =========================================================================
 # Hardcoded English stopwords (~100 common words) — no NLTK dependency needed
-STOPWORDS = frozenset(
-    {
-        "a",
-        "an",
-        "and",
-        "are",
-        "as",
-        "at",
-        "be",
-        "been",
-        "by",
-        "but",
-        "can",
-        "could",
-        "did",
-        "do",
-        "does",
-        "for",
-        "from",
-        "had",
-        "has",
-        "have",
-        "he",
-        "her",
-        "him",
-        "his",
-        "how",
-        "i",
-        "if",
-        "in",
-        "into",
-        "is",
-        "it",
-        "its",
-        "just",
-        "may",
-        "me",
-        "might",
-        "more",
-        "most",
-        "must",
-        "my",
-        "no",
-        "nor",
-        "not",
-        "of",
-        "on",
-        "or",
-        "our",
-        "out",
-        "own",
-        "re",
-        "s",
-        "she",
-        "should",
-        "so",
-        "some",
-        "such",
-        "t",
-        "than",
-        "that",
-        "the",
-        "their",
-        "them",
-        "then",
-        "there",
-        "these",
-        "they",
-        "this",
-        "those",
-        "through",
-        "to",
-        "too",
-        "up",
-        "us",
-        "very",
-        "was",
-        "we",
-        "were",
-        "what",
-        "when",
-        "where",
-        "which",
-        "while",
-        "who",
-        "whom",
-        "why",
-        "will",
-        "with",
-        "would",
-        "you",
-        "your",
-        "about",
-        "above",
-        "after",
-        "again",
-        "all",
-        "also",
-        "am",
-        "any",
-        "because",
-        "before",
-        "being",
-        "between",
-        "both",
-        "during",
-        "each",
-        "few",
-        "further",
-        "get",
-        "got",
-        "here",
-        "how",
-        "itself",
-        "let",
-        "like",
-        "make",
-        "many",
-        "much",
-        "new",
-        "now",
-        "off",
-        "old",
-        "one",
-        "only",
-        "other",
-        "over",
-        "same",
-        "set",
-        "since",
-        "still",
-        "take",
-        "two",
-        "under",
-        "use",
-        "used",
-        "using",
-        "way",
-        "well",
-    }
-)
+STOPWORDS = frozenset({
+    "a", "an", "and", "are", "as", "at", "be", "been", "by", "but",
+    "can", "could", "did", "do", "does", "for", "from", "had", "has",
+    "have", "he", "her", "him", "his", "how", "i", "if", "in", "into",
+    "is", "it", "its", "just", "may", "me", "might", "more", "most",
+    "must", "my", "no", "nor", "not", "of", "on", "or", "our", "out",
+    "own", "re", "s", "she", "should", "so", "some", "such", "t",
+    "than", "that", "the", "their", "them", "then", "there", "these",
+    "they", "this", "those", "through", "to", "too", "up", "us",
+    "very", "was", "we", "were", "what", "when", "where", "which",
+    "while", "who", "whom", "why", "will", "with", "would", "you",
+    "your", "about", "above", "after", "again", "all", "also", "am",
+    "any", "because", "before", "being", "between", "both", "during",
+    "each", "few", "further", "get", "got", "here", "how", "itself",
+    "let", "like", "make", "many", "much", "new", "now", "off", "old",
+    "one", "only", "other", "over", "same", "set", "since", "still",
+    "take", "two", "under", "use", "used", "using", "way", "well",
+})
 
 # Minimum keyword length to consider
 MIN_KEYWORD_LEN = 3
@@ -245,14 +120,9 @@ def _get_db(db_path=None):
     path = db_path or DB_PATH
     if not Path(path).exists():
         raise FileNotFoundError(f"Database not found: {path}")
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(path))
     return conn
 
-
-def _now():
-    """ISO-8601 timestamp."""
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _trend_id():
@@ -427,7 +297,7 @@ def detect_trends(days=30, min_signals=3, db_path=None):
 
         if not rows:
             return {
-                "detected_at": _now(),
+                "detected_at": now_iso(),
                 "time_window_days": detection_window,
                 "min_signals": min_sigs,
                 "pain_points_analyzed": 0,
@@ -466,19 +336,17 @@ def detect_trends(days=30, min_signals=3, db_path=None):
             else:
                 kw_list = _extract_keywords(f"{title} {desc}")
 
-            pain_data.append(
-                {
-                    "id": row["id"],
-                    "title": title,
-                    "description": desc,
-                    "category": row["category"],
-                    "frequency": row["frequency"] or 1,
-                    "keywords": frozenset(kw_list),
-                    "severity": row["severity"] or "medium",
-                    "first_seen": row["first_seen"],
-                    "last_seen": row["last_seen"],
-                }
-            )
+            pain_data.append({
+                "id": row["id"],
+                "title": title,
+                "description": desc,
+                "category": row["category"],
+                "frequency": row["frequency"] or 1,
+                "keywords": frozenset(kw_list),
+                "severity": row["severity"] or "medium",
+                "first_seen": row["first_seen"],
+                "last_seen": row["last_seen"],
+            })
 
         # -----------------------------------------------------------------
         # Step 4: Group by category
@@ -554,8 +422,8 @@ def detect_trends(days=30, min_signals=3, db_path=None):
                 # Dates
                 dates = sorted(pp["last_seen"] for pp in cluster_points if pp["last_seen"])
                 first_dates = sorted(pp["first_seen"] for pp in cluster_points if pp["first_seen"])
-                first_seen = first_dates[0] if first_dates else _now()
-                last_seen = dates[-1] if dates else _now()
+                first_seen = first_dates[0] if first_dates else now_iso()
+                last_seen = dates[-1] if dates else now_iso()
 
                 # Auto-generate name from top 3 keywords
                 name = " + ".join(common_keywords[:3])
@@ -585,11 +453,7 @@ def detect_trends(days=30, min_signals=3, db_path=None):
                 # Step 8: Lifecycle status based on velocity
                 # -----------------------------------------------------------------
                 status = _determine_lifecycle(
-                    velocity,
-                    acceleration,
-                    last_seen,
-                    now,
-                    stale_after,
+                    velocity, acceleration, last_seen, now, stale_after,
                 )
 
                 # Severity distribution for metadata
@@ -628,7 +492,9 @@ def detect_trends(days=30, min_signals=3, db_path=None):
         # -----------------------------------------------------------------
         # Step 9: Mark stale trends — no new pain points in stale_after_days
         # -----------------------------------------------------------------
-        stale_cutoff = (now - timedelta(days=stale_after)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        stale_cutoff = (now - timedelta(days=stale_after)).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
         # Find stale trends (latest row per fingerprint that hasn't been updated)
         stale_candidates = conn.execute(
             """SELECT DISTINCT keyword_fingerprint
@@ -640,7 +506,9 @@ def detect_trends(days=30, min_signals=3, db_path=None):
         for row in stale_candidates:
             fp = row["keyword_fingerprint"]
             # Only mark stale if no recent detection refreshed it
-            already_fresh = any(t["keyword_fingerprint"] == fp for t in detected_trends)
+            already_fresh = any(
+                t["keyword_fingerprint"] == fp for t in detected_trends
+            )
             if not already_fresh:
                 # Insert a stale row to preserve history (append-only)
                 latest = conn.execute(
@@ -654,10 +522,12 @@ def detect_trends(days=30, min_signals=3, db_path=None):
                         "id": _trend_id(),
                         "name": latest["name"],
                         "category": latest["category"],
-                        "pain_point_ids": json.loads(latest["pain_point_ids"]) if latest["pain_point_ids"] else [],
+                        "pain_point_ids": json.loads(latest["pain_point_ids"])
+                            if latest["pain_point_ids"] else [],
                         "signal_count": latest["signal_count"],
                         "keyword_fingerprint": fp,
-                        "keywords": json.loads(latest["keywords"]) if latest["keywords"] else [],
+                        "keywords": json.loads(latest["keywords"])
+                            if latest["keywords"] else [],
                         "velocity": 0.0,
                         "acceleration": 0.0 - (latest["velocity"] or 0.0),
                         "status": "stale",
@@ -686,7 +556,7 @@ def detect_trends(days=30, min_signals=3, db_path=None):
         )
 
         return {
-            "detected_at": _now(),
+            "detected_at": now_iso(),
             "time_window_days": detection_window,
             "min_signals": min_sigs,
             "pain_points_analyzed": len(deduped),
@@ -787,7 +657,7 @@ def _store_trend(conn, trend):
             trend["first_seen"],
             trend["last_seen"],
             json.dumps(trend["metadata"]),
-            _now(),
+            now_iso(),
             "CUI",
         ),
     )
@@ -824,7 +694,7 @@ def get_trend_report(db_path=None):
 
         if not rows:
             return {
-                "generated_at": _now(),
+                "generated_at": now_iso(),
                 "total": 0,
                 "by_status": {},
                 "top_trending": [],
@@ -843,15 +713,18 @@ def get_trend_report(db_path=None):
                     "id": row["id"],
                     "name": row["name"],
                     "category": row["category"],
-                    "pain_point_ids": json.loads(row["pain_point_ids"]) if row["pain_point_ids"] else [],
+                    "pain_point_ids": json.loads(row["pain_point_ids"])
+                        if row["pain_point_ids"] else [],
                     "signal_count": row["signal_count"],
-                    "keywords": json.loads(row["keywords"]) if row["keywords"] else [],
+                    "keywords": json.loads(row["keywords"])
+                        if row["keywords"] else [],
                     "velocity": row["velocity"],
                     "acceleration": row["acceleration"],
                     "status": row["status"],
                     "first_seen": row["first_seen"],
                     "last_seen": row["last_seen"],
-                    "metadata": json.loads(row["metadata"]) if row["metadata"] else {},
+                    "metadata": json.loads(row["metadata"])
+                        if row["metadata"] else {},
                     "detected_at": row["detected_at"],
                 }
                 deduped.append(trend)
@@ -876,7 +749,9 @@ def get_trend_report(db_path=None):
         }
 
         total = len(deduped)
-        avg_velocity = sum(t["velocity"] for t in deduped) / total if total else 0
+        avg_velocity = (
+            sum(t["velocity"] for t in deduped) / total if total else 0
+        )
         total_signals = sum(t["signal_count"] for t in deduped)
 
         # Summary text
@@ -894,7 +769,7 @@ def get_trend_report(db_path=None):
         )
 
         return {
-            "generated_at": _now(),
+            "generated_at": now_iso(),
             "total": total,
             "by_status": dict(by_status),
             "top_trending": [_trend_summary(t) for t in top_trending],
@@ -1121,21 +996,41 @@ def _print_human(args, result):
 # CLI
 # =========================================================================
 def main():
-    parser = argparse.ArgumentParser(description="ICDEV Creative Trend Tracker -- detect pain point trends over time")
+    parser = argparse.ArgumentParser(
+        description="ICDEV™ Creative Trend Tracker -- detect pain point trends over time"
+    )
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--human", action="store_true", help="Human-readable output")
-    parser.add_argument("--db-path", type=Path, default=None, help="Database path override")
-
-    group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--detect", action="store_true", help="Detect trends from pain points within the time window")
-    group.add_argument("--report", action="store_true", help="Generate a summary report of all tracked trends")
-    group.add_argument(
-        "--velocity", action="store_true", help="Get velocity metrics for a specific trend (requires --trend-id)"
+    parser.add_argument(
+        "--db-path", type=Path, default=None, help="Database path override"
     )
 
-    parser.add_argument("--days", type=int, default=30, help="Time window in days for trend detection (default: 30)")
-    parser.add_argument("--min-signals", type=int, default=3, help="Minimum pain points to form a trend (default: 3)")
-    parser.add_argument("--trend-id", type=str, default=None, help="Trend ID for --velocity command")
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument(
+        "--detect", action="store_true",
+        help="Detect trends from pain points within the time window"
+    )
+    group.add_argument(
+        "--report", action="store_true",
+        help="Generate a summary report of all tracked trends"
+    )
+    group.add_argument(
+        "--velocity", action="store_true",
+        help="Get velocity metrics for a specific trend (requires --trend-id)"
+    )
+
+    parser.add_argument(
+        "--days", type=int, default=30,
+        help="Time window in days for trend detection (default: 30)"
+    )
+    parser.add_argument(
+        "--min-signals", type=int, default=3,
+        help="Minimum pain points to form a trend (default: 3)"
+    )
+    parser.add_argument(
+        "--trend-id", type=str, default=None,
+        help="Trend ID for --velocity command"
+    )
 
     args = parser.parse_args()
 
@@ -1152,7 +1047,9 @@ def main():
             if not args.trend_id:
                 print("ERROR: --velocity requires --trend-id", file=sys.stderr)
                 sys.exit(1)
-            result = get_velocity(trend_id=args.trend_id, db_path=args.db_path)
+            result = get_velocity(
+                trend_id=args.trend_id, db_path=args.db_path
+            )
         else:
             result = {"error": "No action specified"}
 

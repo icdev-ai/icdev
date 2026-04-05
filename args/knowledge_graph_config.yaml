@@ -12,6 +12,14 @@ extraction:
     - person
     - document
     - standard
+    # Financial entity types (AlphaDesk)
+    - ticker
+    - sector
+    - executive
+    - supplier
+    - commodity
+    - etf
+    - macro_indicator
 
 graph_rag:
   # D-KARL-1: Per-query-type scoring profiles
@@ -36,6 +44,28 @@ graph_rag:
       centrality: 0.4
       recency: 0.3
       keywords: ["security", "vulnerability", "threat", "attack", "CVE", "SAST", "injection"]
+
+    # Financial profiles (AlphaDesk KG extension)
+    supply_chain:
+      edge_weight: 0.5
+      centrality: 0.2
+      recency: 0.3
+      keywords: ["supplier", "customer", "supply chain", "sourcing", "vendor", "component", "tier-1", "dependency"]
+    sector_rotation:
+      edge_weight: 0.3
+      centrality: 0.4
+      recency: 0.3
+      keywords: ["sector", "rotation", "relative strength", "momentum", "flow", "leadership", "cyclical", "defensive"]
+    contagion_risk:
+      edge_weight: 0.5
+      centrality: 0.3
+      recency: 0.2
+      keywords: ["risk", "contagion", "default", "exposure", "cascade", "dependency", "concentration", "systemic"]
+    opportunity:
+      edge_weight: 0.2
+      centrality: 0.3
+      recency: 0.5
+      keywords: ["buy", "upgrade", "catalyst", "breakout", "undervalued", "momentum", "earnings", "growth"]
 
   # D-KARL-2: Context compression via scanner-tier LLM
   compression:
@@ -63,3 +93,13 @@ ingestion:
     - .json
     - .yaml
     - .yml
+
+# D-KARL-7: Entity enrichment (centrality + embeddings)
+enrichment:
+  centrality:
+    degree_weight: 0.6
+    betweenness_weight: 0.4
+    max_exact_nodes: 500
+  embeddings:
+    enabled: true
+    batch_size: 20

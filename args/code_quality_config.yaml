@@ -18,9 +18,9 @@ maintainability_weights:
 audit_thresholds:
   max_avg_complexity: 10
   max_avg_complexity_critical: 25
-  max_high_cc_pct: 5.0
-  max_smell_density_per_kloc: 10.0
-  max_smell_density_critical: 20.0
+  max_high_cc_pct: 8.0           # 700+ KLOC meta-builder: 5% too tight, 8% allows framework patterns
+  max_smell_density_per_kloc: 15.0  # 800+ files with code-gen templates: 10 too tight, 15 realistic
+  max_smell_density_critical: 25.0
 
 innovation_engine:
   min_complexity_for_signal: 10

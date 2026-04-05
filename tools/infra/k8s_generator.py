@@ -169,7 +169,7 @@ def generate_deployment(project_path: str, app_config: dict = None) -> list:
                                 "periodSeconds": 10,
                             },
                             "volumeMounts": [
-                                {"name": "tmp", "mountPath": "/tmp"},
+                                {"name": "tmp", "mountPath": "/tmp"},  # nosec B108 -- temp path for ephemeral scratch files
                                 {"name": "config", "mountPath": "/etc/app/config", "readOnly": True},
                             ],
                             "env": [
@@ -523,7 +523,7 @@ def generate_hpa(project_path: str, config: dict = None) -> list:
 # ---------------------------------------------------------------------------
 # Agent Deployments (Phase 19 — per-agent K8s manifests)
 # ---------------------------------------------------------------------------
-# Default agent definitions matching ICDEV multi-agent architecture
+# Default agent definitions matching ICDEV™ multi-agent architecture
 DEFAULT_AGENTS = [
     {
         "name": "orchestrator",
@@ -619,7 +619,7 @@ DEFAULT_AGENTS = [
 def generate_agent_deployments(project_path: str, blueprint: dict = None) -> list:
     """Generate K8s deployments for each agent (non-root, read-only rootfs).
 
-    Creates a Deployment and Service for each agent in the ICDEV multi-agent
+    Creates a Deployment and Service for each agent in the ICDEV™ multi-agent
     architecture. All containers run as non-root with read-only root filesystem,
     drop ALL capabilities, and enforce security context constraints per STIG.
 
@@ -741,7 +741,7 @@ def generate_agent_deployments(project_path: str, blueprint: dict = None) -> lis
                                     {"name": "TLS_CA_PATH", "value": "/etc/tls/ca.crt"},
                                 ],
                                 "volumeMounts": [
-                                    {"name": "tmp", "mountPath": "/tmp"},
+                                    {"name": "tmp", "mountPath": "/tmp"},  # nosec B108 -- temp path for ephemeral scratch files
                                     {"name": "tls-certs", "mountPath": "/etc/tls", "readOnly": True},
                                     {"name": "config", "mountPath": "/etc/agent/config", "readOnly": True},
                                 ],

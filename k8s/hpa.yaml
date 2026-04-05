@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Horizontal Pod Autoscaler Manifests
+# ICDEV™ Horizontal Pod Autoscaler Manifests
 # D141: CPU/memory baseline; custom metrics Phase 2
 # Driven by args/scaling_config.yaml profiles
 # Cloud-agnostic — requires Metrics Server on any K8s distribution

@@ -5,7 +5,6 @@ Provides helpers to look up, create, and update connection records in the
 ``db_connections`` table of icdev.db.  Also resolves secret references for
 auth credentials.
 """
-
 from __future__ import annotations
 
 import logging
@@ -32,7 +31,9 @@ def get_connection(
     db = db_path or str(DB_PATH)
     try:
         conn = _get_conn(db)
-        row = conn.execute("SELECT * FROM db_connections WHERE id = ?", (connection_id,)).fetchone()
+        row = conn.execute(
+            "SELECT * FROM db_connections WHERE id = ?", (connection_id,)
+        ).fetchone()
         conn.close()
         if row:
             return dict(row)
@@ -62,7 +63,9 @@ def update_connection(
     values = list(filtered.values()) + [connection_id]
     try:
         conn = _get_conn(db)
-        conn.execute(f"UPDATE db_connections SET {set_clause} WHERE id = ?", values)
+        conn.execute(
+            f"UPDATE db_connections SET {set_clause} WHERE id = ?", values  # nosec B608 -- table/column names are internal constants, not user input
+        )
         conn.commit()
         conn.close()
         return True
@@ -94,7 +97,6 @@ def resolve_secret(auth_secret_ref: str) -> Optional[str]:
 
 def _get_conn(db_path: str) -> sqlite3.Connection:
     """Open a SQLite connection with WAL and row_factory."""
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(db_path))
     conn.execute("PRAGMA journal_mode=WAL")
     return conn

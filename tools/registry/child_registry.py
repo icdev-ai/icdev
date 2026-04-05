@@ -3,8 +3,8 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""Enhanced Child App Registry for ICDEV Evolution Engine.
+# POC: ICDEV™ System Administrator
+"""Enhanced Child App Registry for ICDEV™ Evolution Engine.
 
 Provides CRUD operations over the child_app_registry and
 child_capabilities tables. Tracks child app lifecycle, capabilities,
@@ -28,6 +28,7 @@ import hashlib
 import json
 import sqlite3
 import sys
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -53,9 +54,11 @@ class ChildRegistry:
 
     def _get_connection(self) -> sqlite3.Connection:
         if not self.db_path.exists():
-            raise FileNotFoundError(f"Database not found: {self.db_path}\nRun: python tools/db/init_icdev_db.py")
-        conn = sqlite3.connect(str(self.db_path))
-        conn.row_factory = sqlite3.Row
+            raise FileNotFoundError(
+                f"Database not found: {self.db_path}\n"
+                "Run: python tools/db/init_icdev_db.py"
+            )
+        conn = get_connection(db_path=str(self.db_path))
         return conn
 
     def _generate_id(self, prefix: str = "child") -> str:
@@ -96,11 +99,8 @@ class ChildRegistry:
         conn.commit()
 
     def _log_audit_event(
-        self,
-        conn: sqlite3.Connection,
-        project_id: str,
-        action: str,
-        details: Dict,
+        self, conn: sqlite3.Connection, project_id: str,
+        action: str, details: Dict,
     ) -> None:
         """Log an audit event (append-only, D6)."""
         try:
@@ -164,31 +164,19 @@ class ChildRegistry:
                     blueprint_json, status, created_at, updated_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
-                    child_id,
-                    parent_project_id,
-                    name,
-                    child_type,
-                    project_path,
-                    target_cloud,
-                    compliance_required,
+                    child_id, parent_project_id, name, child_type,
+                    project_path, target_cloud, compliance_required,
                     blueprint_json or "{}",
-                    "registered",
-                    now,
-                    now,
+                    "registered", now, now,
                 ),
             )
             conn.commit()
 
-            self._log_audit_event(
-                conn,
-                parent_project_id,
-                "child_registered",
-                {
-                    "child_id": child_id,
-                    "child_name": name,
-                    "child_type": child_type,
-                },
-            )
+            self._log_audit_event(conn, parent_project_id, "child_registered", {
+                "child_id": child_id,
+                "child_name": name,
+                "child_type": child_type,
+            })
 
             return {
                 "child_id": child_id,
@@ -205,10 +193,7 @@ class ChildRegistry:
             conn.close()
 
     def update_child_status(
-        self,
-        child_id: str,
-        status: str,
-        notes: str = "",
+        self, child_id: str, status: str, notes: str = "",
     ) -> Dict[str, Any]:
         """Update child app status.
 
@@ -222,15 +207,14 @@ class ChildRegistry:
             Dict with updated status.
         """
         valid_statuses = (
-            "registered",
-            "generating",
-            "active",
-            "degraded",
-            "stopped",
-            "decommissioned",
+            "registered", "generating", "active", "degraded",
+            "stopped", "decommissioned",
         )
         if status not in valid_statuses:
-            raise ValueError(f"Invalid status '{status}'. Must be one of: {', '.join(valid_statuses)}")
+            raise ValueError(
+                f"Invalid status '{status}'. Must be one of: "
+                f"{', '.join(valid_statuses)}"
+            )
 
         conn = self._get_connection()
         try:
@@ -253,16 +237,11 @@ class ChildRegistry:
             ).fetchone()
             parent_id = row["parent_project_id"] if row else ""
 
-            self._log_audit_event(
-                conn,
-                parent_id,
-                "child_status_updated",
-                {
-                    "child_id": child_id,
-                    "new_status": status,
-                    "notes": notes,
-                },
-            )
+            self._log_audit_event(conn, parent_id, "child_status_updated", {
+                "child_id": child_id,
+                "new_status": status,
+                "notes": notes,
+            })
 
             return {
                 "child_id": child_id,
@@ -352,7 +331,9 @@ class ChildRegistry:
                        WHERE child_id = ?""",
                     (child["id"],),
                 ).fetchone()
-                child["capability_count"] = cap_count["cnt"] if cap_count else 0
+                child["capability_count"] = (
+                    cap_count["cnt"] if cap_count else 0
+                )
                 children.append(child)
 
             return {
@@ -398,13 +379,8 @@ class ChildRegistry:
                     learned_at, metadata, updated_at)
                    VALUES (?, ?, ?, 'active', ?, ?, ?, ?)""",
                 (
-                    child_id,
-                    capability_name,
-                    version,
-                    source,
-                    now,
-                    json.dumps(metadata or {}),
-                    now,
+                    child_id, capability_name, version, source,
+                    now, json.dumps(metadata or {}), now,
                 ),
             )
             conn.commit()
@@ -416,17 +392,12 @@ class ChildRegistry:
             ).fetchone()
             parent_id = row["parent_project_id"] if row else ""
 
-            self._log_audit_event(
-                conn,
-                parent_id,
-                "capability_added",
-                {
-                    "child_id": child_id,
-                    "capability_name": capability_name,
-                    "version": version,
-                    "source": source,
-                },
-            )
+            self._log_audit_event(conn, parent_id, "capability_added", {
+                "child_id": child_id,
+                "capability_name": capability_name,
+                "version": version,
+                "source": source,
+            })
 
             return {
                 "child_id": child_id,
@@ -440,9 +411,7 @@ class ChildRegistry:
             conn.close()
 
     def remove_capability(
-        self,
-        child_id: str,
-        capability_name: str,
+        self, child_id: str, capability_name: str,
     ) -> Dict[str, Any]:
         """Remove (disable) a capability from a child app.
 
@@ -469,7 +438,10 @@ class ChildRegistry:
             conn.commit()
 
             if result.rowcount == 0:
-                raise ValueError(f"Capability '{capability_name}' not found for child '{child_id}'.")
+                raise ValueError(
+                    f"Capability '{capability_name}' not found for "
+                    f"child '{child_id}'."
+                )
 
             return {
                 "child_id": child_id,
@@ -526,9 +498,10 @@ class ChildRegistry:
 # CLI
 # =====================================================================
 
-
 def main():
-    parser = argparse.ArgumentParser(description="ICDEV Child App Registry — manage child apps and capabilities")
+    parser = argparse.ArgumentParser(
+        description="ICDEV™ Child App Registry — manage child apps and capabilities"
+    )
 
     # Actions
     action = parser.add_mutually_exclusive_group(required=True)
@@ -597,7 +570,9 @@ def main():
 
         elif args.add_capability:
             if not args.child_id or not args.capability_name:
-                parser.error("--add-capability requires --child-id and --capability-name")
+                parser.error(
+                    "--add-capability requires --child-id and --capability-name"
+                )
             result = registry.add_capability(
                 child_id=args.child_id,
                 capability_name=args.capability_name,
@@ -607,7 +582,9 @@ def main():
 
         elif args.remove_capability:
             if not args.child_id or not args.capability_name:
-                parser.error("--remove-capability requires --child-id and --capability-name")
+                parser.error(
+                    "--remove-capability requires --child-id and --capability-name"
+                )
             result = registry.remove_capability(
                 child_id=args.child_id,
                 capability_name=args.capability_name,

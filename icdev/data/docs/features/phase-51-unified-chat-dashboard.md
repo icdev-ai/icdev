@@ -9,14 +9,14 @@
 | Status | Implemented |
 | Priority | P1 |
 | Dependencies | Phase 44 (Innovation Adaptation — multi-stream chat, extensions), Phase 50 (AI Governance — chat advisory, sidebar) |
-| Author | ICDEV Architect Agent |
+| Author | ICDEV™ Architect Agent |
 | Date | 2026-02-24 |
 
 ---
 
 ## 1. Problem Statement
 
-Prior to Phase 51, the ICDEV dashboard had two separate chat pages serving overlapping purposes:
+Prior to Phase 51, the ICDEV™ dashboard had two separate chat pages serving overlapping purposes:
 
 - **`/chat`** — RICOAS requirements intake chat with session-based conversations, wizard parameter passing, readiness gauges, COA generation, BDD preview, and build pipeline sidebar. Tightly coupled to the intake engine.
 - **`/chat-streams`** — Phase 44 multi-stream parallel chat with context sidebar, message stream, intervention controls, and dirty-tracking state queries. General-purpose agent chat without RICOAS features.

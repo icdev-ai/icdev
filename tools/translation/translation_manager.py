@@ -14,9 +14,9 @@ Supports --extract-only, --translate-only, --validate-only, --dry-run, --complia
 
 import argparse
 import json
-import sqlite3
 import time
 import uuid
+from tools.db.storage import get_connection
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -29,7 +29,7 @@ def _create_job(db_path, project_id, source_language, target_language, source_pa
     """Create a translation job record in the database."""
     job_id = str(uuid.uuid4())
     try:
-        conn = sqlite3.connect(str(db_path))
+        conn = get_connection(db_path=str(db_path))
         c = conn.cursor()
         c.execute(
             """INSERT INTO translation_jobs
@@ -50,7 +50,7 @@ def _update_job_status(db_path, job_id, status, **kwargs):
     if not db_path or not job_id:
         return
     try:
-        conn = sqlite3.connect(str(db_path))
+        conn = get_connection(db_path=str(db_path))
         c = conn.cursor()
 
         sets = ["status = ?"]
@@ -62,7 +62,7 @@ def _update_job_status(db_path, job_id, status, **kwargs):
         values.append(job_id)
 
         c.execute(
-            f"UPDATE translation_jobs SET {', '.join(sets)} WHERE id = ?",
+            f"UPDATE translation_jobs SET {', '.join(sets)} WHERE id = ?",  # nosec B608 -- table/column names are internal constants, not user input
             values,
         )
         conn.commit()
@@ -507,7 +507,7 @@ def run_pipeline(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Phase 43 — Cross-Language Translation Pipeline",
+        description="ICDEV™ Phase 43 — Cross-Language Translation Pipeline",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -568,7 +568,7 @@ Examples:
     if args.json:
         print(json.dumps(result, indent=2))
     else:
-        print(f"ICDEV Translation: {args.source_language} → {args.target_language}")
+        print(f"ICDEV™ Translation: {args.source_language} → {args.target_language}")
         print(f"  Job ID:   {result.get('job_id', 'N/A')}")
         print(f"  Status:   {result.get('status', 'unknown').upper()}")
         print(f"  Elapsed:  {result.get('elapsed_seconds', 0)}s")

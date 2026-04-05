@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Marketplace Search Engine — Hybrid keyword + semantic search over marketplace assets.
 
 Combines BM25 keyword scoring with semantic vector search for relevance-ranked
@@ -51,10 +51,9 @@ import json
 import math
 import os
 import re
-import sqlite3
 import struct
 import sys
-from datetime import datetime, timezone
+from tools.db.storage import get_connection
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -71,35 +70,30 @@ DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db
 # ---------------------------------------------------------------------------
 try:
     from rank_bm25 import BM25Okapi
-
     _HAS_BM25 = True
 except ImportError:
     _HAS_BM25 = False
 
 try:
     import numpy as np
-
     _HAS_NUMPY = True
 except ImportError:
     _HAS_NUMPY = False
 
 try:
     import requests as _requests
-
     _HAS_REQUESTS = True
 except ImportError:
     _HAS_REQUESTS = False
 
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
-
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
 
     def audit_log_event(**kwargs):
         return -1
-
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -121,15 +115,12 @@ def _get_db(db_path=None):
     """Get database connection with dict-like row access."""
     path = db_path or DB_PATH
     if not path.exists():
-        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+        raise FileNotFoundError(
+            f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py"
+        )
+    conn = get_connection(db_path=str(path))
     return conn
 
-
-def _now():
-    """ISO-8601 timestamp."""
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _audit(event_type, actor, action, details=None):
@@ -155,7 +146,7 @@ def _tokenize(text):
 
     Returns list of non-empty tokens.
     """
-    return [t for t in re.split(r"[^a-z0-9]+", text.lower()) if t]
+    return [t for t in re.split(r'[^a-z0-9]+', text.lower()) if t]
 
 
 # ---------------------------------------------------------------------------
@@ -337,20 +328,16 @@ def _generate_embedding_ollama(text):
         try:
             import urllib.request
             import urllib.error
-
             url = f"{OLLAMA_BASE_URL}/api/embeddings"
-            payload = json.dumps(
-                {
-                    "model": OLLAMA_EMBED_MODEL,
-                    "prompt": text,
-                }
-            ).encode("utf-8")
+            payload = json.dumps({
+                "model": OLLAMA_EMBED_MODEL,
+                "prompt": text,
+            }).encode("utf-8")
             req = urllib.request.Request(
-                url,
-                data=payload,
+                url, data=payload,
                 headers={"Content-Type": "application/json"},
             )
-            with urllib.request.urlopen(req, timeout=30) as resp:
+            with urllib.request.urlopen(req, timeout=30) as resp:  # nosec B310 -- URL scheme validated; internal/configured endpoints only
                 data = json.loads(resp.read().decode("utf-8"))
                 return data.get("embedding")
         except Exception:
@@ -398,7 +385,9 @@ def _generate_embedding_fallback(text):
         # Use multiple rounds with index suffix
         token_vec = []
         for chunk_idx in range(0, dims, 32):
-            chunk_hash = hashlib.sha256(f"{token}:{chunk_idx}".encode("utf-8")).digest()
+            chunk_hash = hashlib.sha256(
+                f"{token}:{chunk_idx}".encode("utf-8")
+            ).digest()
             for byte_val in chunk_hash:
                 if len(token_vec) >= dims:
                     break
@@ -539,7 +528,9 @@ def reindex_all(db_path=None):
     """
     conn = _get_db(db_path)
     try:
-        rows = conn.execute("SELECT id FROM marketplace_assets WHERE status = 'published'").fetchall()
+        rows = conn.execute(
+            "SELECT id FROM marketplace_assets WHERE status = 'published'"
+        ).fetchall()
     finally:
         conn.close()
 
@@ -558,13 +549,11 @@ def reindex_all(db_path=None):
             results["details"].append(result)
         except Exception as e:
             results["errors"] += 1
-            results["details"].append(
-                {
-                    "status": "error",
-                    "asset_id": row["id"],
-                    "error": str(e),
-                }
-            )
+            results["details"].append({
+                "status": "error",
+                "asset_id": row["id"],
+                "error": str(e),
+            })
 
     _audit(
         event_type="marketplace_search_reindex",
@@ -583,17 +572,9 @@ def reindex_all(db_path=None):
 # ---------------------------------------------------------------------------
 # Main search function
 # ---------------------------------------------------------------------------
-def search_assets(
-    query,
-    asset_type=None,
-    impact_level=None,
-    catalog_tier=None,
-    tenant_id=None,
-    limit=50,
-    bm25_weight=0.6,
-    semantic_weight=0.4,
-    db_path=None,
-):
+def search_assets(query, asset_type=None, impact_level=None, catalog_tier=None,
+                  tenant_id=None, limit=50, bm25_weight=0.6, semantic_weight=0.4,
+                  db_path=None):
     """Hybrid search over published marketplace assets.
 
     Combines BM25 keyword scoring with semantic vector similarity for
@@ -696,7 +677,7 @@ def search_assets(
             emb_rows = conn.execute(
                 f"""SELECT asset_id, embedding
                     FROM marketplace_embeddings
-                    WHERE asset_id IN ({placeholders})""",
+                    WHERE asset_id IN ({placeholders})""",  # nosec B608 -- table/column names are internal constants, not user input
                 asset_ids,
             ).fetchall()
 
@@ -743,32 +724,30 @@ def search_assets(
             if final_score <= 0 and len(query_terms) > 0:
                 continue
 
-            combined_results.append(
-                {
-                    "asset_id": asset["id"],
-                    "slug": asset["slug"],
-                    "name": asset["name"],
-                    "display_name": asset.get("display_name"),
-                    "asset_type": asset["asset_type"],
-                    "description": asset["description"],
-                    "current_version": asset["current_version"],
-                    "classification": asset["classification"],
-                    "impact_level": asset["impact_level"],
-                    "publisher_tenant_id": asset.get("publisher_tenant_id"),
-                    "publisher_org": asset.get("publisher_org"),
-                    "catalog_tier": asset["catalog_tier"],
-                    "tags": asset.get("tags"),
-                    "compliance_controls": asset.get("compliance_controls"),
-                    "supported_languages": asset.get("supported_languages"),
-                    "download_count": asset.get("download_count", 0),
-                    "install_count": asset.get("install_count", 0),
-                    "avg_rating": asset.get("avg_rating", 0.0),
-                    "rating_count": asset.get("rating_count", 0),
-                    "relevance_score": round(final_score, 4),
-                    "bm25_score": round(bm25_s, 4),
-                    "semantic_score": round(sem_s, 4) if sem_s is not None else None,
-                }
-            )
+            combined_results.append({
+                "asset_id": asset["id"],
+                "slug": asset["slug"],
+                "name": asset["name"],
+                "display_name": asset.get("display_name"),
+                "asset_type": asset["asset_type"],
+                "description": asset["description"],
+                "current_version": asset["current_version"],
+                "classification": asset["classification"],
+                "impact_level": asset["impact_level"],
+                "publisher_tenant_id": asset.get("publisher_tenant_id"),
+                "publisher_org": asset.get("publisher_org"),
+                "catalog_tier": asset["catalog_tier"],
+                "tags": asset.get("tags"),
+                "compliance_controls": asset.get("compliance_controls"),
+                "supported_languages": asset.get("supported_languages"),
+                "download_count": asset.get("download_count", 0),
+                "install_count": asset.get("install_count", 0),
+                "avg_rating": asset.get("avg_rating", 0.0),
+                "rating_count": asset.get("rating_count", 0),
+                "relevance_score": round(final_score, 4),
+                "bm25_score": round(bm25_s, 4),
+                "semantic_score": round(sem_s, 4) if sem_s is not None else None,
+            })
 
         # Sort by relevance score descending
         combined_results.sort(key=lambda x: x["relevance_score"], reverse=True)
@@ -796,30 +775,37 @@ def search_assets(
 # CLI
 # ---------------------------------------------------------------------------
 def main():
-    parser = argparse.ArgumentParser(description="ICDEV Marketplace Search Engine — Hybrid BM25 + Semantic Search")
+    parser = argparse.ArgumentParser(
+        description="ICDEV™ Marketplace Search Engine — Hybrid BM25 + Semantic Search"
+    )
     parser.add_argument("--json", action="store_true", help="Output as JSON")
-    parser.add_argument("--db-path", type=Path, default=None, help="Override database path")
+    parser.add_argument("--db-path", type=Path, default=None,
+                        help="Override database path")
 
     # Actions (mutually exclusive)
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--search", metavar="QUERY", help="Search published marketplace assets")
-    group.add_argument("--index", metavar="ASSET_ID", help="Index a single asset for semantic search")
-    group.add_argument("--reindex-all", action="store_true", help="Reindex all published assets")
+    group.add_argument("--search", metavar="QUERY",
+                       help="Search published marketplace assets")
+    group.add_argument("--index", metavar="ASSET_ID",
+                       help="Index a single asset for semantic search")
+    group.add_argument("--reindex-all", action="store_true",
+                       help="Reindex all published assets")
 
     # Search filters
-    parser.add_argument(
-        "--asset-type",
-        choices=["skill", "goal", "hardprompt", "context", "args", "compliance"],
-        help="Filter by asset type",
-    )
-    parser.add_argument("--impact-level", choices=["IL2", "IL4", "IL5", "IL6"], help="Filter by impact level")
-    parser.add_argument("--catalog-tier", choices=["tenant_local", "central_vetted"], help="Filter by catalog tier")
+    parser.add_argument("--asset-type",
+                        choices=["skill", "goal", "hardprompt", "context", "args", "compliance"],
+                        help="Filter by asset type")
+    parser.add_argument("--impact-level", choices=["IL2", "IL4", "IL5", "IL6"],
+                        help="Filter by impact level")
+    parser.add_argument("--catalog-tier", choices=["tenant_local", "central_vetted"],
+                        help="Filter by catalog tier")
     parser.add_argument("--tenant-id", help="Filter by publisher tenant ID")
-    parser.add_argument("--limit", type=int, default=50, help="Maximum results (default: 50)")
-    parser.add_argument("--bm25-weight", type=float, default=0.6, help="BM25 keyword score weight (default: 0.6)")
-    parser.add_argument(
-        "--semantic-weight", type=float, default=0.4, help="Semantic similarity score weight (default: 0.4)"
-    )
+    parser.add_argument("--limit", type=int, default=50,
+                        help="Maximum results (default: 50)")
+    parser.add_argument("--bm25-weight", type=float, default=0.6,
+                        help="BM25 keyword score weight (default: 0.6)")
+    parser.add_argument("--semantic-weight", type=float, default=0.4,
+                        help="Semantic similarity score weight (default: 0.4)")
 
     args = parser.parse_args()
     db_path = Path(args.db_path) if args.db_path else None
@@ -854,7 +840,7 @@ def main():
             if args.search:
                 total = result.get("total", 0)
                 method = result.get("search_method", "unknown")
-                print(f'Search: "{args.search}" ({total} results, method: {method})')
+                print(f"Search: \"{args.search}\" ({total} results, method: {method})")
                 if not result.get("semantic_available"):
                     print("  (Semantic search unavailable -- using keyword search only)")
                 print()
@@ -884,10 +870,8 @@ def main():
                 if result.get("reason"):
                     print(f"  reason: {result['reason']}")
             elif args.reindex_all:
-                print(
-                    f"Reindex: {result.get('indexed', 0)}/{result.get('total', 0)} indexed, "
-                    f"{result.get('skipped', 0)} skipped, {result.get('errors', 0)} errors"
-                )
+                print(f"Reindex: {result.get('indexed', 0)}/{result.get('total', 0)} indexed, "
+                      f"{result.get('skipped', 0)} skipped, {result.get('errors', 0)} errors")
             else:
                 for k, v in result.items():
                     print(f"  {k}: {v}")

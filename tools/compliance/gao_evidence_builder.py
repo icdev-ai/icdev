@@ -3,14 +3,14 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """GAO Evidence Builder — compile audit evidence per GAO-21-519SP.
 
-Pulls evidence from existing ICDEV data (audit_trail, ai_telemetry,
+Pulls evidence from existing ICDEV™ data (audit_trail, ai_telemetry,
 XAI, SHAP, provenance) to build evidence packages aligned with GAO's
 4 accountability principles.
 
-ADR D313: Reuses existing ICDEV data — no new data collection needed.
+ADR D313: Reuses existing ICDEV™ data — no new data collection needed.
 
 Usage:
     python tools/compliance/gao_evidence_builder.py --project-id proj-123 --json
@@ -20,6 +20,7 @@ import argparse
 import json
 import sqlite3
 import sys
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict
@@ -29,15 +30,14 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 
 def _get_connection(db_path: Path = DB_PATH) -> sqlite3.Connection:
-    conn = sqlite3.connect(str(db_path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(db_path))
     return conn
 
 
 def _count_table(conn: sqlite3.Connection, table: str, project_id: str) -> int:
     try:
         row = conn.execute(
-            f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = ?",
+            f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = ?",  # nosec B608 -- table/column names are internal constants, not user input
             (project_id,),
         ).fetchone()
         return row["cnt"] if row else 0
@@ -47,14 +47,14 @@ def _count_table(conn: sqlite3.Connection, table: str, project_id: str) -> int:
 
 def _count_table_global(conn: sqlite3.Connection, table: str) -> int:
     try:
-        row = conn.execute(f"SELECT COUNT(*) as cnt FROM {table}").fetchone()
+        row = conn.execute(f"SELECT COUNT(*) as cnt FROM {table}").fetchone()  # nosec B608 -- table/column names are internal constants, not user input
         return row["cnt"] if row else 0
     except Exception:
         return 0
 
 
 def build_evidence(project_id: str, db_path: Path = DB_PATH) -> Dict:
-    """Build GAO evidence package from existing ICDEV data."""
+    """Build GAO evidence package from existing ICDEV™ data."""
     conn = _get_connection(db_path)
     try:
         now = datetime.now(timezone.utc).isoformat()

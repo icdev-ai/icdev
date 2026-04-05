@@ -6,7 +6,12 @@ from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools" / "compliance"))
+_PROJECT_ROOT = str(Path(__file__).resolve().parent.parent)
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
+sys.path.insert(
+    0, str(Path(__file__).resolve().parent.parent / "tools" / "compliance")
+)
 from ai_impact_assessor import IMPACT_DIMENSIONS, assess_impact, get_impact_summary
 
 
@@ -69,14 +74,18 @@ def test_assess_impact_defaults(db_path):
 
 def test_assess_impact_with_all_high(db_path):
     responses = {d["id"]: "high" for d in IMPACT_DIMENSIONS}
-    result = assess_impact("proj-1", "ChatBot v1", dimension_responses=responses, db_path=str(db_path))
+    result = assess_impact(
+        "proj-1", "ChatBot v1", dimension_responses=responses, db_path=str(db_path)
+    )
     assert result["overall_risk_score"] >= 70
     assert result["risk_level"] == "high"
 
 
 def test_assess_impact_with_all_low(db_path):
     responses = {d["id"]: "low" for d in IMPACT_DIMENSIONS}
-    result = assess_impact("proj-1", "ChatBot v1", dimension_responses=responses, db_path=str(db_path))
+    result = assess_impact(
+        "proj-1", "ChatBot v1", dimension_responses=responses, db_path=str(db_path)
+    )
     assert result["risk_level"] == "low"
 
 
@@ -85,7 +94,9 @@ def test_assess_impact_with_mixed(db_path):
     responses = {}
     for i, dim_id in enumerate(dim_ids):
         responses[dim_id] = "high" if i % 2 == 0 else "low"
-    result = assess_impact("proj-1", "ChatBot v1", dimension_responses=responses, db_path=str(db_path))
+    result = assess_impact(
+        "proj-1", "ChatBot v1", dimension_responses=responses, db_path=str(db_path)
+    )
     # Mixed should generally land in medium range
     assert result["risk_level"] in ("high", "medium", "low")
     assert 0 <= result["overall_risk_score"] <= 100
@@ -113,13 +124,17 @@ def test_assess_impact_stores_in_db(db_path):
 
 
 def test_assess_impact_with_reviewer(db_path):
-    result = assess_impact("proj-1", "ChatBot v1", reviewer="isso@mil", db_path=str(db_path))
+    result = assess_impact(
+        "proj-1", "ChatBot v1", reviewer="isso@mil", db_path=str(db_path)
+    )
     assert "overall_risk_score" in result
 
 
 def test_assess_impact_with_none_response(db_path):
     responses = {d["id"]: "none" for d in IMPACT_DIMENSIONS}
-    result = assess_impact("proj-1", "ChatBot v1", dimension_responses=responses, db_path=str(db_path))
+    result = assess_impact(
+        "proj-1", "ChatBot v1", dimension_responses=responses, db_path=str(db_path)
+    )
     assert result["overall_risk_score"] == 0 or result["risk_level"] == "low"
 
 
@@ -131,11 +146,15 @@ def test_assess_impact_with_none_response(db_path):
 def test_risk_level_thresholds(db_path):
     # Test boundary at 70 (high threshold) and 40 (medium threshold)
     responses_high = {d["id"]: "high" for d in IMPACT_DIMENSIONS}
-    result_high = assess_impact("proj-1", "System A", dimension_responses=responses_high, db_path=str(db_path))
+    result_high = assess_impact(
+        "proj-1", "System A", dimension_responses=responses_high, db_path=str(db_path)
+    )
     assert result_high["risk_level"] == "high"
 
     responses_low = {d["id"]: "low" for d in IMPACT_DIMENSIONS}
-    result_low = assess_impact("proj-1", "System B", dimension_responses=responses_low, db_path=str(db_path))
+    result_low = assess_impact(
+        "proj-1", "System B", dimension_responses=responses_low, db_path=str(db_path)
+    )
     assert result_low["risk_level"] == "low"
 
 

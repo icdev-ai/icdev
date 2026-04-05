@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """AI Accountability Audit — cross-framework accountability assessment.
 
 Checks all accountability evidence across OMB M-25-21, M-26-04, GAO-21-519SP,
@@ -22,6 +22,7 @@ import argparse
 import json
 import sqlite3
 import sys
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict
@@ -154,8 +155,7 @@ ACCOUNTABILITY_CHECKS = [
 
 
 def _get_connection(db_path: Path = DB_PATH) -> sqlite3.Connection:
-    conn = sqlite3.connect(str(db_path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(db_path))
     return conn
 
 

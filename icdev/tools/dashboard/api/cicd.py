@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Dashboard CI/CD API — pipeline status, conversations, connectors
+# ICDEV™ Dashboard CI/CD API — pipeline status, conversations, connectors
 
 """
 Dashboard API endpoints for CI/CD pipeline monitoring.

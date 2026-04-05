@@ -1,6 +1,6 @@
 # [TEMPLATE: CUI // SP-CTI]
 #!/usr/bin/env python3
-"""7R Migration Strategy Recommendation Engine for ICDEV DoD Modernization.
+"""7R Migration Strategy Recommendation Engine for ICDEV™ DoD Modernization.
 
 Evaluates legacy applications against the 7 Rs of cloud migration:
   Rehost, Replatform, Refactor, Rearchitect, Repurchase, Retire, Retain
@@ -24,9 +24,9 @@ Compliance:     NIST 800-53 Rev 5 / RMF
 import argparse
 import json
 import math
-import sqlite3
 import sys
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -41,24 +41,13 @@ CATALOG_PATH = BASE_DIR / "context" / "modernization" / "seven_rs_catalog.json"
 # Known EOL frameworks / languages for fitness checks
 # ---------------------------------------------------------------------------
 EOL_FRAMEWORKS = {
-    "struts",
-    "struts2",
-    "ejb2",
-    "jsf",
-    "jsf1",
-    "spring2",
-    "spring3",
-    "wcf",
-    "webforms",
-    "aspnet-webforms",
-    "silverlight",
-    "django1",
-    "flask0",
-    "rails3",
-    "rails4",
+    "struts", "struts2", "ejb2", "jsf", "jsf1",
+    "spring2", "spring3",
+    "wcf", "webforms", "aspnet-webforms", "silverlight",
+    "django1", "flask0",
+    "rails3", "rails4",
     "angularjs",
-    ".net-framework",
-    "dotnet-framework",
+    ".net-framework", "dotnet-framework",
 }
 
 EOL_LANGUAGES = {
@@ -136,7 +125,6 @@ ATO_IMPACT_ORDER = {
 # Database helper
 # ============================================================================
 
-
 def _get_db(db_path=None):
     """Return a sqlite3 connection with Row factory for dict-like access.
 
@@ -151,16 +139,17 @@ def _get_db(db_path=None):
     """
     path = db_path or DB_PATH
     if not path.exists():
-        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+        raise FileNotFoundError(
+            f"Database not found: {path}\n"
+            "Run: python tools/db/init_icdev_db.py"
+        )
+    conn = get_connection(db_path=str(path))
     return conn
 
 
 # ============================================================================
 # Catalog loader
 # ============================================================================
-
 
 def load_seven_rs_catalog(catalog_path=None):
     """Load the 7 Rs strategy catalog from JSON.
@@ -178,7 +167,8 @@ def load_seven_rs_catalog(catalog_path=None):
     path = catalog_path or CATALOG_PATH
     if not path.exists():
         raise FileNotFoundError(
-            f"Seven Rs catalog not found: {path}\nExpected at: context/modernization/seven_rs_catalog.json"
+            f"Seven Rs catalog not found: {path}\n"
+            "Expected at: context/modernization/seven_rs_catalog.json"
         )
     with open(path, "r", encoding="utf-8") as fh:
         catalog = json.load(fh)
@@ -188,7 +178,6 @@ def load_seven_rs_catalog(catalog_path=None):
 # ============================================================================
 # Application profile builder
 # ============================================================================
-
 
 def _get_app_profile(app_id, db_path=None):
     """Query legacy_applications and aggregate stats from related tables.
@@ -214,9 +203,13 @@ def _get_app_profile(app_id, db_path=None):
     conn = _get_db(db_path)
     try:
         # --- Core application row ---
-        row = conn.execute("SELECT * FROM legacy_applications WHERE id = ?", (app_id,)).fetchone()
+        row = conn.execute(
+            "SELECT * FROM legacy_applications WHERE id = ?", (app_id,)
+        ).fetchone()
         if row is None:
-            raise ValueError(f"Application '{app_id}' not found in legacy_applications.")
+            raise ValueError(
+                f"Application '{app_id}' not found in legacy_applications."
+            )
         profile = dict(row)
 
         # --- Component aggregates ---
@@ -287,11 +280,7 @@ def _get_app_profile(app_id, db_path=None):
             dtype = d.get("dependency_type", "unknown")
             dep_type_counts[dtype] = dep_type_counts.get(dtype, 0) + 1
         profile["dependency_type_counts"] = dep_type_counts
-        profile["external_dep_count"] = (
-            dep_type_counts.get("external", 0)
-            + dep_type_counts.get("third_party", 0)
-            + dep_type_counts.get("library", 0)
-        )
+        profile["external_dep_count"] = dep_type_counts.get("external", 0) + dep_type_counts.get("third_party", 0) + dep_type_counts.get("library", 0)
 
         # --- API aggregates ---
         api_rows = conn.execute(
@@ -309,7 +298,9 @@ def _get_app_profile(app_id, db_path=None):
         db_schemas = [dict(r) for r in db_rows]
         profile["db_schemas"] = db_schemas
         profile["db_schema_count"] = len(db_schemas)
-        profile["db_types"] = list(set((s.get("db_type") or "unknown").lower() for s in db_schemas))
+        profile["db_types"] = list(set(
+            (s.get("db_type") or "unknown").lower() for s in db_schemas
+        ))
 
         # --- Normalize key fields with safe defaults ---
         profile["loc_total"] = profile.get("loc_total") or 0
@@ -332,7 +323,6 @@ def _get_app_profile(app_id, db_path=None):
 # ============================================================================
 # Fitness check functions — one per strategy
 # ============================================================================
-
 
 def _check_rehost_fitness(profile):
     """Evaluate rehost (lift-and-shift) fitness.
@@ -481,7 +471,7 @@ def _check_replatform_fitness(profile):
     loc_total = profile.get("loc_total", 1)
     tech_debt = profile.get("tech_debt_hours", 0)
     # Rough heuristic: tech_debt_hours / (loc_total/100) gives a debt density
-    debt_density = tech_debt / max(loc_total / 100.0, 1.0)
+    debt_density = (tech_debt / max(loc_total / 100.0, 1.0))
     if debt_density < 5 and maint > 50:
         scores["minor_code_changes_only"] = 1.0
     elif debt_density < 15 and maint > 30:
@@ -758,7 +748,6 @@ def _check_retain_fitness(profile):
 # Scoring engine
 # ============================================================================
 
-
 def _score_strategy(strategy_id, check_results, catalog_criteria, weights=None):
     """Compute weighted score for a single strategy.
 
@@ -840,20 +829,17 @@ def _rank_strategies(scores):
     sorted_items = sorted(scores.items(), key=lambda x: x[1], reverse=True)
     ranked = []
     for rank_idx, (strategy_id, score) in enumerate(sorted_items, start=1):
-        ranked.append(
-            {
-                "rank": rank_idx,
-                "strategy_id": strategy_id,
-                "score": round(score, 4),
-            }
-        )
+        ranked.append({
+            "rank": rank_idx,
+            "strategy_id": strategy_id,
+            "score": round(score, 4),
+        })
     return ranked
 
 
 # ============================================================================
 # ATO impact, cost, and timeline estimation
 # ============================================================================
-
 
 def _assess_ato_impact(profile, strategy):
     """Determine the ATO impact level for the recommended strategy.
@@ -984,7 +970,6 @@ def _estimate_timeline(profile, strategy, catalog):
 # Tech debt reduction estimator
 # ============================================================================
 
-
 def _estimate_tech_debt_reduction(profile, strategy):
     """Estimate the percentage of technical debt addressed by the strategy.
 
@@ -1019,7 +1004,6 @@ def _estimate_tech_debt_reduction(profile, strategy):
 # ============================================================================
 # Risk scoring
 # ============================================================================
-
 
 def _compute_risk_score(profile, strategy, catalog):
     """Compute a risk score in [0.0, 1.0] combining strategy risk, profile
@@ -1066,14 +1050,18 @@ def _compute_risk_score(profile, strategy, catalog):
         dep_risk = 1.0
 
     # Weighted combination
-    risk = strategy_risk * 0.4 + health_risk * 0.3 + ato_risk * 0.2 + dep_risk * 0.1
+    risk = (
+        strategy_risk * 0.4
+        + health_risk * 0.3
+        + ato_risk * 0.2
+        + dep_risk * 0.1
+    )
     return round(max(0.0, min(1.0, risk)), 4)
 
 
 # ============================================================================
 # Main orchestrator
 # ============================================================================
-
 
 def _get_ui_complexity(app_id, project_id, db_path=None):
     """Query stored UI analysis for a legacy application.
@@ -1092,7 +1080,9 @@ def _get_ui_complexity(app_id, project_id, db_path=None):
     """
     try:
         conn = _get_db(db_path)
-        row = conn.execute("SELECT metadata FROM legacy_applications WHERE id = ?", (app_id,)).fetchone()
+        row = conn.execute(
+            "SELECT metadata FROM legacy_applications WHERE id = ?", (app_id,)
+        ).fetchone()
         conn.close()
 
         if row and row["metadata"]:
@@ -1204,7 +1194,9 @@ def run_seven_r_assessment(project_id, app_id, custom_weights=None, db_path=None
     strategy_scores = {}
     for strategy_id, check_results in fitness_results.items():
         cat_criteria = catalog_criteria_map.get(strategy_id, {})
-        strategy_scores[strategy_id] = _score_strategy(strategy_id, check_results, cat_criteria, weights=custom_weights)
+        strategy_scores[strategy_id] = _score_strategy(
+            strategy_id, check_results, cat_criteria, weights=custom_weights
+        )
 
     # Optional: Apply UI complexity adjustment (D85 — backward compatible)
     ui_complexity = _get_ui_complexity(app_id, project_id, db_path=db_path)
@@ -1353,7 +1345,6 @@ def _persist_assessment(assessment, db_path=None):
 # Decision matrix display
 # ============================================================================
 
-
 def generate_decision_matrix(app_id, db_path=None):
     """Pretty-print a decision matrix with all 7 strategies scored.
 
@@ -1421,52 +1412,23 @@ def generate_decision_matrix(app_id, db_path=None):
 
         risk_level = cat_info.get("risk_level", "medium")
         ato = _assess_ato_impact(profile_summary, sid)
-        cost_h = _estimate_cost(
-            profile_summary
-            if "loc_code" in profile_summary
-            else {
-                "loc_code": profile_summary.get("loc_code", 0),
-                "loc_total": profile_summary.get("loc_total", 0),
-                "maintainability_index": profile_summary.get("maintainability_index", 50),
-                "avg_complexity": profile_summary.get("avg_complexity", 0),
-            },
-            sid,
-            catalog,
-        )
-        timeline_w = _estimate_timeline(
-            {
-                "loc_code": profile_summary.get("loc_code", 0),
-                "loc_total": profile_summary.get("loc_total", 0),
-                "maintainability_index": profile_summary.get("maintainability_index", 50),
-                "avg_complexity": profile_summary.get("avg_complexity", 0),
-            },
-            sid,
-            catalog,
-        )
+        cost_h = _estimate_cost(profile_summary if "loc_code" in profile_summary else {"loc_code": profile_summary.get("loc_code", 0), "loc_total": profile_summary.get("loc_total", 0), "maintainability_index": profile_summary.get("maintainability_index", 50), "avg_complexity": profile_summary.get("avg_complexity", 0)}, sid, catalog)
+        timeline_w = _estimate_timeline({"loc_code": profile_summary.get("loc_code", 0), "loc_total": profile_summary.get("loc_total", 0), "maintainability_index": profile_summary.get("maintainability_index", 50), "avg_complexity": profile_summary.get("avg_complexity", 0)}, sid, catalog)
         tdr = _estimate_tech_debt_reduction(profile_summary, sid)
-        risk_s = _compute_risk_score(
-            {
-                "maintainability_index": profile_summary.get("maintainability_index", 50),
-                "external_dep_count": profile_summary.get("dependency_count", 0),
-            },
-            sid,
-            catalog,
-        )
+        risk_s = _compute_risk_score({"maintainability_index": profile_summary.get("maintainability_index", 50), "external_dep_count": profile_summary.get("dependency_count", 0)}, sid, catalog)
 
-        strategy_details.append(
-            {
-                "rank": rank,
-                "name": cat_info.get("name", sid.title()),
-                "id": sid,
-                "score": score,
-                "risk_level": risk_level,
-                "risk_score": risk_s,
-                "cost_hours": cost_h,
-                "timeline_weeks": timeline_w,
-                "ato_impact": ato,
-                "tech_debt_reduction": tdr,
-            }
-        )
+        strategy_details.append({
+            "rank": rank,
+            "name": cat_info.get("name", sid.title()),
+            "id": sid,
+            "score": score,
+            "risk_level": risk_level,
+            "risk_score": risk_s,
+            "cost_hours": cost_h,
+            "timeline_weeks": timeline_w,
+            "ato_impact": ato,
+            "tech_debt_reduction": tdr,
+        })
 
     # Format the matrix
     lines = []
@@ -1476,24 +1438,16 @@ def generate_decision_matrix(app_id, db_path=None):
     lines.append("")
     lines.append("7R MIGRATION STRATEGY DECISION MATRIX")
     lines.append(f"Application: {profile_summary.get('name', app_id)}")
-    lines.append(
-        f"Language:    {profile_summary.get('primary_language', 'N/A')} {profile_summary.get('language_version', '')}"
-    )
-    lines.append(
-        f"Framework:   {profile_summary.get('framework', 'N/A')} {profile_summary.get('framework_version', '')}"
-    )
-    lines.append(
-        f"LOC:         {profile_summary.get('loc_total', 'N/A'):,}"
-        if isinstance(profile_summary.get("loc_total"), (int, float))
-        else f"LOC:         {profile_summary.get('loc_total', 'N/A')}"
-    )
+    lines.append(f"Language:    {profile_summary.get('primary_language', 'N/A')} {profile_summary.get('language_version', '')}")
+    lines.append(f"Framework:   {profile_summary.get('framework', 'N/A')} {profile_summary.get('framework_version', '')}")
+    lines.append(f"LOC:         {profile_summary.get('loc_total', 'N/A'):,}" if isinstance(profile_summary.get('loc_total'), (int, float)) else f"LOC:         {profile_summary.get('loc_total', 'N/A')}")
     lines.append(f"Components:  {profile_summary.get('component_count', 'N/A')}")
     lines.append(f"Assessed:    {row_dict.get('assessed_at', 'N/A')}")
     lines.append("")
     lines.append("-" * 100)
 
     # Table header
-    header = f"{'Rank':<6}{'Strategy':<15}{'Score':<9}{'Risk':<10}{'Cost (hrs)':<12}{'Timeline':<12}{'ATO Impact':<14}{'Debt Reduction':<15}"  # noqa: E501
+    header = f"{'Rank':<6}{'Strategy':<15}{'Score':<9}{'Risk':<10}{'Cost (hrs)':<12}{'Timeline':<12}{'ATO Impact':<14}{'Debt Reduction':<15}"
     lines.append(header)
     lines.append("-" * 100)
 
@@ -1527,19 +1481,11 @@ def generate_decision_matrix(app_id, db_path=None):
     lines.append("RECOMMENDATION")
     lines.append(f"  Strategy:        {rec_details['name'] if rec_details else recommended.title()}")
     lines.append(f"  Score:           {rec_details['score']:.4f}" if rec_details else "  Score:           N/A")
-    lines.append(
-        f"  Risk:            {rec_details['risk_level'] if rec_details else 'N/A'} ({rec_details['risk_score']:.2f})"
-        if rec_details
-        else ""
-    )
+    lines.append(f"  Risk:            {rec_details['risk_level'] if rec_details else 'N/A'} ({rec_details['risk_score']:.2f})" if rec_details else "")
     lines.append(f"  Estimated Cost:  {rec_details['cost_hours']:,} hours" if rec_details else "  Estimated Cost:  N/A")
-    lines.append(
-        f"  Timeline:        {rec_details['timeline_weeks']} weeks" if rec_details else "  Timeline:        N/A"
-    )
+    lines.append(f"  Timeline:        {rec_details['timeline_weeks']} weeks" if rec_details else "  Timeline:        N/A")
     lines.append(f"  ATO Impact:      {rec_details['ato_impact']}" if rec_details else "  ATO Impact:      N/A")
-    lines.append(
-        f"  Debt Reduction:  {rec_details['tech_debt_reduction']:.0f}%" if rec_details else "  Debt Reduction:  N/A"
-    )
+    lines.append(f"  Debt Reduction:  {rec_details['tech_debt_reduction']:.0f}%" if rec_details else "  Debt Reduction:  N/A")
     lines.append("")
 
     # Rationale
@@ -1559,7 +1505,10 @@ def generate_decision_matrix(app_id, db_path=None):
         if len(strategy_details) >= 2:
             second = strategy_details[1]
             delta = rec_details["score"] - second["score"]
-            lines.append(f"  Margin:      {recommended} leads {second['id']} by {delta:.4f} ({delta * 100:.1f}%)")
+            lines.append(
+                f"  Margin:      {recommended} leads {second['id']} by "
+                f"{delta:.4f} ({delta * 100:.1f}%)"
+            )
             if delta < 0.05:
                 lines.append(
                     "  NOTE:        Scores are very close. Manual review of "
@@ -1592,7 +1541,6 @@ def generate_decision_matrix(app_id, db_path=None):
 # ============================================================================
 # CLI entry point
 # ============================================================================
-
 
 def main():
     """CLI entry point for the 7R assessment engine.
@@ -1670,14 +1618,8 @@ def main():
         # Serialise — strip non-serializable fields
         output = dict(assessment)
         # ranking is already a list of dicts, safe to serialize
-        output["scoring_weights"] = (
-            json.loads(output["scoring_weights"])
-            if isinstance(output["scoring_weights"], str)
-            else output["scoring_weights"]
-        )
-        output["evidence"] = (
-            json.loads(output["evidence"]) if isinstance(output["evidence"], str) else output["evidence"]
-        )
+        output["scoring_weights"] = json.loads(output["scoring_weights"]) if isinstance(output["scoring_weights"], str) else output["scoring_weights"]
+        output["evidence"] = json.loads(output["evidence"]) if isinstance(output["evidence"], str) else output["evidence"]
         print(json.dumps(output, indent=2, default=str))
     elif args.matrix:
         matrix_output = generate_decision_matrix(args.app_id)

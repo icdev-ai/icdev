@@ -1,9 +1,9 @@
 # CUI // SP-CTI
-"""MCP Wrapper Generator — scans ICDEV tools and produces MCP-compatible wrappers.
+"""MCP Wrapper Generator — scans ICDEV™ tools and produces MCP-compatible wrappers.
 
 Discovers CLI tools that support ``--json`` output and generates thin MCP
 tool handlers that invoke them via subprocess, enabling any MCP-compatible
-client to call ICDEV tools without custom integration code.
+client to call ICDEV™ tools without custom integration code.
 
 Architecture decision: deterministic scanning + template-based generation
 (no LLM in the critical path).
@@ -12,11 +12,13 @@ Architecture decision: deterministic scanning + template-based generation
 from __future__ import annotations
 
 import json
-import sys
 import pathlib
 import re
+import sys
 from datetime import datetime, timezone
 from typing import Any
+
+from tools.common.helpers import now_iso
 
 
 # ---------------------------------------------------------------------------
@@ -25,9 +27,6 @@ from typing import Any
 
 _TOOLS_ROOT = pathlib.Path(__file__).resolve().parent.parent  # tools/
 
-
-def _now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _has_json_flag(path: pathlib.Path) -> bool:
@@ -43,7 +42,7 @@ def _is_cli_tool(path: pathlib.Path) -> bool:
     """Heuristic: file has an ``if __name__`` guard."""
     try:
         text = path.read_text(encoding="utf-8", errors="replace")
-        return "__name__" in text and "__main__" in text
+        return '__name__' in text and '__main__' in text
     except OSError:
         return False
 
@@ -52,9 +51,8 @@ def _is_cli_tool(path: pathlib.Path) -> bool:
 # Public API — consumed by tools/dashboard/app.py
 # ---------------------------------------------------------------------------
 
-
 def scan_tools(tools_dir: str | None = None) -> dict:
-    """Discover ICDEV CLI tools eligible for MCP wrapping.
+    """Discover ICDEV™ CLI tools eligible for MCP wrapping.
 
     Returns
     -------
@@ -75,19 +73,21 @@ def scan_tools(tools_dir: str | None = None) -> dict:
 
     for py_file in sorted(root.rglob("*.py")):
         # Skip tests, __pycache__, __init__, etc.
-        if "__pycache__" in str(py_file) or py_file.name.startswith("__") or "test" in py_file.name.lower():
+        if (
+            "__pycache__" in str(py_file)
+            or py_file.name.startswith("__")
+            or "test" in py_file.name.lower()
+        ):
             continue
         if not _is_cli_tool(py_file):
             continue
 
         has_json = _has_json_flag(py_file)
-        discovered.append(
-            {
-                "path": str(py_file),
-                "name": py_file.stem,
-                "has_json": has_json,
-            }
-        )
+        discovered.append({
+            "path": str(py_file),
+            "name": py_file.stem,
+            "has_json": has_json,
+        })
 
     return {
         "status": "ok",
@@ -112,15 +112,13 @@ def list_wrapped(wrappers_dir: str | None = None) -> dict:
         for f in sorted(root.glob("*.py")):
             if f.name.startswith("__"):
                 continue
-            wrappers.append(
-                {
-                    "path": str(f),
-                    "name": f.stem,
-                    "generated_at": datetime.fromtimestamp(f.stat().st_mtime, tz=timezone.utc).strftime(
-                        "%Y-%m-%dT%H:%M:%SZ"
-                    ),
-                }
-            )
+            wrappers.append({
+                "path": str(f),
+                "name": f.stem,
+                "generated_at": datetime.fromtimestamp(
+                    f.stat().st_mtime, tz=timezone.utc
+                ).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            })
 
     return {
         "wrappers": wrappers,
@@ -158,7 +156,7 @@ def wrap_tool(tool_path: str, dry_run: bool = False) -> dict:
             "wrapper_path": str(wrapper_path),
             "name": wrapper_name,
             "dry_run": True,
-            "generated_at": _now(),
+            "generated_at": now_iso(),
         }
 
     wrapper_dir.mkdir(parents=True, exist_ok=True)
@@ -173,7 +171,7 @@ def wrap_tool(tool_path: str, dry_run: bool = False) -> dict:
         "wrapper_path": str(wrapper_path),
         "name": wrapper_name,
         "dry_run": False,
-        "generated_at": _now(),
+        "generated_at": now_iso(),
     }
 
 
@@ -207,7 +205,7 @@ def wrap_all(dry_run: bool = False, limit: int = 20) -> dict:
         "total": len(results),
         "skipped": len(eligible) - len(to_wrap),
         "dry_run": dry_run,
-        "generated_at": _now(),
+        "generated_at": now_iso(),
     }
 
 
@@ -215,14 +213,13 @@ def wrap_all(dry_run: bool = False, limit: int = 20) -> dict:
 # Template
 # ---------------------------------------------------------------------------
 
-
 def _render_wrapper(name: str, tool_path: str) -> str:
     """Render a minimal MCP tool handler that shells out to the CLI tool."""
     return f'''\
 # CUI // SP-CTI
 # Auto-generated MCP wrapper for {name}
 # Source tool: {tool_path}
-# Generated: {_now()}
+# Generated: {now_iso()}
 
 """MCP tool handler — delegates to {name} via subprocess."""
 

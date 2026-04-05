@@ -216,7 +216,7 @@ def _parse_wsdl(content: str, source_url: str) -> ForgeApiManifest:
     manifest.wsdl_url = source_url
 
     try:
-        root = ET.fromstring(content)
+        root = ET.fromstring(content)  # nosec B314 -- parsing trusted internal MBSE/config XML
         manifest.title = _wsdl_service_name(root)
         manifest.soap_operations = _wsdl_operations(root)
         manifest.base_url = _wsdl_address(root) or source_url

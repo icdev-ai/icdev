@@ -13,8 +13,8 @@ Implements:
 
 import argparse
 import json
-import sqlite3
 import sys
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -25,14 +25,14 @@ GATES_PATH = BASE_DIR / "args" / "security_gates.yaml"
 
 # Import sibling scanners
 sys.path.insert(0, str(BASE_DIR))
-from tools.security.sast_runner import run_bandit, evaluate_gate as sast_gate
-from tools.security.dependency_auditor import (
+from tools.security.sast_runner import run_bandit, evaluate_gate as sast_gate  # noqa: E402
+from tools.security.dependency_auditor import (  # noqa: E402
     audit_python,
     audit_javascript,
     evaluate_gate as dep_gate,
 )
-from tools.security.secret_detector import scan as scan_secrets, evaluate_gate as secret_gate
-from tools.security.container_scanner import (
+from tools.security.secret_detector import scan as scan_secrets, evaluate_gate as secret_gate  # noqa: E402
+from tools.security.container_scanner import (  # noqa: E402
     scan_image,
     scan_dockerfile,
     evaluate_gate as container_gate,
@@ -318,7 +318,7 @@ def evaluate_gates(aggregated: Dict) -> Dict:
 def _store_findings_in_db(aggregated: Dict, project_id: Optional[str]) -> None:
     """Store critical/high findings in the failure_log table."""
     try:
-        conn = sqlite3.connect(str(DB_PATH))
+        conn = get_connection()
         c = conn.cursor()
 
         # Collect all findings across all scans
@@ -412,7 +412,7 @@ def _collect_all_findings(aggregated: Dict) -> List[Dict]:
 def _log_audit(project_id: Optional[str], aggregated: Dict) -> None:
     """Log security scan to audit trail."""
     try:
-        conn = sqlite3.connect(str(DB_PATH))
+        conn = get_connection()
         c = conn.cursor()
         c.execute(
             """INSERT INTO audit_trail
@@ -486,7 +486,7 @@ def _clean_raw_output(data):
 def _print_summary(aggregated: Dict) -> None:
     """Print a human-readable summary of all scan results."""
     print("\n" + "=" * 60)
-    print("  ICDEV SECURITY SCAN SUMMARY")
+    print("  ICDEV™ SECURITY SCAN SUMMARY")
     print("=" * 60)
     print(f"  Project: {aggregated['project_path']}")
     print(f"  Timestamp: {aggregated['scan_timestamp']}")

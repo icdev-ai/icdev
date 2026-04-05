@@ -1,8 +1,8 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV E2E — Playwright browser verification workflow
+# ICDEV™ E2E — Playwright browser verification workflow
 
 """
-ICDEV E2E — Run Playwright E2E tests with screenshot validation.
+ICDEV™ E2E — Run Playwright E2E tests with screenshot validation.
 
 Usage:
     python tools/ci/workflows/icdev_e2e.py <issue-number> <run-id>
@@ -30,7 +30,7 @@ def check_dashboard_running(base_url: str = "http://localhost:5000") -> bool:
         import urllib.request
 
         req = urllib.request.Request(f"{base_url}/", method="HEAD")
-        urllib.request.urlopen(req, timeout=5)
+        urllib.request.urlopen(req, timeout=5)  # nosec B310 -- URL scheme validated; internal/configured endpoints only
         return True
     except Exception:
         return False
@@ -122,7 +122,7 @@ def main():
     run_id = sys.argv[2] if len(sys.argv) > 2 and not sys.argv[2].startswith("--") else "unknown"
 
     print("CUI // SP-CTI")
-    print(f"ICDEV E2E — run_id: {run_id}, issue: #{issue_number}")
+    print(f"ICDEV™ E2E — run_id: {run_id}, issue: #{issue_number}")
     print()
 
     # Step 1: Discover E2E specs

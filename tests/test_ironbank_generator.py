@@ -29,7 +29,7 @@ from icdev.tools.infra.ironbank_metadata_generator import (
 
 @pytest.fixture
 def icdev_db(tmp_path):
-    """Create a minimal ICDEV database for project lookup."""
+    """Create a minimal ICDEV™ database for project lookup."""
     db_path = tmp_path / "icdev.db"
     conn = sqlite3.connect(str(db_path))
     conn.execute("""

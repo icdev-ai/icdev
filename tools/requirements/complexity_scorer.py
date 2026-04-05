@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Scale-adaptive project complexity scorer (BMAD pattern).
 
 Assesses project complexity from intake session data and recommends the
@@ -11,7 +11,7 @@ appropriate pipeline depth:
 
   - **Quick Flow**: Simple project, abbreviated workflow
     (< 5 requirements, no compliance frameworks, IL2, < 5 turns)
-  - **Standard**: Moderate complexity, standard ICDEV pipeline
+  - **Standard**: Moderate complexity, standard ICDEV™ pipeline
   - **Full Pipeline**: Complex project, all 4 tiers of validation needed
 
 Usage:
@@ -21,7 +21,7 @@ Usage:
 
 import argparse
 import json
-import sqlite3
+from tools.db.storage import get_connection
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -30,11 +30,9 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 # Graceful import of audit logger
 try:
     from tools.audit.audit_logger import log_event
-
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
-
     def log_event(**kwargs) -> int:
         return -1
 
@@ -43,16 +41,16 @@ def _get_connection(db_path=None):
     """Get database connection with dict-like row access."""
     path = db_path or DB_PATH
     if not path.exists():
-        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+        raise FileNotFoundError(
+            f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py"
+        )
+    conn = get_connection(db_path=str(path))
     return conn
 
 
 # ---------------------------------------------------------------------------
 # Dimension scoring helpers
 # ---------------------------------------------------------------------------
-
 
 def _score_scope(requirement_count: int) -> tuple:
     """Score based on requirement count. Returns (score, detail)."""
@@ -126,7 +124,11 @@ def _score_risk_profile(impact_level: str, requirement_texts: list) -> tuple:
     base = il_score_map.get(il_key, 10)
 
     risk_keywords = ("classified", "secret")
-    has_risk_keyword = any(kw in (text or "").lower() for text in requirement_texts for kw in risk_keywords)
+    has_risk_keyword = any(
+        kw in (text or "").lower()
+        for text in requirement_texts
+        for kw in risk_keywords
+    )
     bonus = 20 if has_risk_keyword else 0
 
     score = min(100, base + bonus)
@@ -140,7 +142,6 @@ def _score_risk_profile(impact_level: str, requirement_texts: list) -> tuple:
 # ---------------------------------------------------------------------------
 # Pipeline recommendation
 # ---------------------------------------------------------------------------
-
 
 def _build_recommendation(overall_score: float, complexity_level: str) -> dict:
     """Build pipeline recommendation from complexity level."""
@@ -161,7 +162,7 @@ def _build_recommendation(overall_score: float, complexity_level: str) -> dict:
             "skip_tiers": ["tier_4"],
             "estimated_phases": 3,
             "rationale": (
-                "Moderate complexity project. Standard ICDEV pipeline recommended: "
+                "Moderate complexity project. Standard ICDEV™ pipeline recommended: "
                 "full TDD workflow, compliance artifact generation, and boundary "
                 "analysis. Tier 4 (full simulation/Monte Carlo) can be deferred."
             ),
@@ -184,7 +185,6 @@ def _build_recommendation(overall_score: float, complexity_level: str) -> dict:
 # Main scoring function
 # ---------------------------------------------------------------------------
 
-
 def score_complexity(session_id: str, db_path=None) -> dict:
     """Assess project complexity from intake session data.
 
@@ -194,7 +194,7 @@ def score_complexity(session_id: str, db_path=None) -> dict:
 
     Args:
         session_id: Intake session ID (e.g. "sess-abc123").
-        db_path: Optional Path override for the ICDEV database.
+        db_path: Optional Path override for the ICDEV™ database.
 
     Returns:
         Dict with status, scores, complexity_level, dimensions,
@@ -209,7 +209,9 @@ def score_complexity(session_id: str, db_path=None) -> dict:
     # ------------------------------------------------------------------
     # 1. Load session metadata
     # ------------------------------------------------------------------
-    session = conn.execute("SELECT * FROM intake_sessions WHERE id = ?", (session_id,)).fetchone()
+    session = conn.execute(
+        "SELECT * FROM intake_sessions WHERE id = ?", (session_id,)
+    ).fetchone()
     if not session:
         conn.close()
         raise ValueError(f"Session '{session_id}' not found.")
@@ -219,11 +221,16 @@ def score_complexity(session_id: str, db_path=None) -> dict:
     # ------------------------------------------------------------------
     # 2. Load requirements
     # ------------------------------------------------------------------
-    reqs = conn.execute("SELECT * FROM intake_requirements WHERE session_id = ?", (session_id,)).fetchall()
+    reqs = conn.execute(
+        "SELECT * FROM intake_requirements WHERE session_id = ?", (session_id,)
+    ).fetchall()
     reqs = [dict(r) for r in reqs]
     requirement_count = len(reqs)
     requirement_types = [r.get("requirement_type", "functional") for r in reqs]
-    requirement_texts = [(r.get("raw_text") or "") + " " + (r.get("refined_text") or "") for r in reqs]
+    requirement_texts = [
+        (r.get("raw_text") or "") + " " + (r.get("refined_text") or "")
+        for r in reqs
+    ]
 
     # ------------------------------------------------------------------
     # 3. Load conversation turns
@@ -338,9 +345,10 @@ def score_complexity(session_id: str, db_path=None) -> dict:
 # CLI
 # ---------------------------------------------------------------------------
 
-
 def main():
-    parser = argparse.ArgumentParser(description="ICDEV Scale-Adaptive Complexity Scorer (BMAD pattern)")
+    parser = argparse.ArgumentParser(
+        description="ICDEV™ Scale-Adaptive Complexity Scorer (BMAD pattern)"
+    )
     parser.add_argument("--session-id", required=True, help="Intake session ID")
     parser.add_argument("--json", action="store_true", help="JSON output")
     args = parser.parse_args()

@@ -3,8 +3,8 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""Cross-Signal Pattern Detection for ICDEV — detect emerging trends from innovation signals.
+# POC: ICDEV™ System Administrator
+"""Cross-Signal Pattern Detection for ICDEV™ — detect emerging trends from innovation signals.
 
 Analyzes patterns across multiple innovation signals to identify emerging trends,
 measure trend velocity, and produce actionable reports. All analysis is deterministic
@@ -902,7 +902,7 @@ def get_trend_velocity(trend_id, db_path=None):
 # =========================================================================
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Cross-Signal Trend Detector — detect emerging patterns from innovation signals"
+        description="ICDEV™ Cross-Signal Trend Detector — detect emerging patterns from innovation signals"
     )
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument(

@@ -3,11 +3,12 @@
 """ReqIF 1.2 parser for IBM DOORS NG requirement exports.
 
 Parses, validates, imports, exports, and diffs ReqIF XML files against the
-ICDEV doors_requirements table.  Uses only Python stdlib xml.etree.ElementTree
+ICDEV™ doors_requirements table.  Uses only Python stdlib xml.etree.ElementTree
 (no lxml — air-gapped environment).
 
 CUI // SP-CTI
 """
+from __future__ import annotations
 
 import argparse
 import hashlib
@@ -57,7 +58,7 @@ DOORS_ATTR_MAP = {
     "DOORS_ObjectType": "requirement_type",
 }
 
-# Normalise DOORS priority values to ICDEV enum
+# Normalise DOORS priority values to ICDEV™ enum
 PRIORITY_MAP = {
     "critical": "critical",
     "high": "high",
@@ -68,7 +69,7 @@ PRIORITY_MAP = {
     "optional": "low",
 }
 
-# Normalise DOORS object type values to ICDEV requirement_type enum
+# Normalise DOORS object type values to ICDEV™ requirement_type enum
 REQ_TYPE_MAP = {
     "functional": "functional",
     "non-functional": "non_functional",
@@ -626,7 +627,7 @@ def _walk_hierarchy(parent_el, ns: dict, depth: int = 0) -> list:
 
 def _map_doors_attributes(spec_object: dict, datatypes: dict,
                           spec_types: dict) -> dict:
-    """Map DOORS-specific ReqIF attributes to standard ICDEV fields.
+    """Map DOORS-specific ReqIF attributes to standard ICDEV™ fields.
 
     Mapping rules::
 
@@ -1058,9 +1059,9 @@ def export_reqif(project_id: str, output_path: str,
             attrib={
                 "IDENTIFIER": f"header-{uuid.uuid4()}",
                 "CREATION-TIME": _now(),
-                "REQ-IF-TOOL-ID": "ICDEV-ReqIF-Parser",
+                "REQ-IF-TOOL-ID": "ICDEV™-ReqIF-Parser",
                 "REQ-IF-VERSION": "1.2",
-                "SOURCE-TOOL-ID": "ICDEV",
+                "SOURCE-TOOL-ID": "ICDEV™",
                 "TITLE": f"Export for {project_id}",
             },
         )
@@ -1366,7 +1367,7 @@ def main():
         description="Import/export DOORS NG requirements via ReqIF 1.2"
     )
     parser.add_argument("--project-id", required=True,
-                        help="ICDEV project identifier")
+                        help="ICDEV™ project identifier")
     parser.add_argument("--file",
                         help="ReqIF file to import or diff against")
     parser.add_argument("--validate-only", action="store_true",

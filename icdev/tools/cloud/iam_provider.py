@@ -91,7 +91,7 @@ class AWSIAMProvider(IAMProvider):
             return None
         try:
             resp = client.create_user(UserName=name, Tags=[
-                {"Key": "Description", "Value": description or "ICDEV service account"},
+                {"Key": "Description", "Value": description or "ICDEV™ service account"},
                 {"Key": "ManagedBy", "Value": "icdev"},
             ])
             user = resp["User"]

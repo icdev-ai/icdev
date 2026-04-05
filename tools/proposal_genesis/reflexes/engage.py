@@ -19,7 +19,7 @@ from typing import Any, Dict, List, Optional
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
-from tools.db.storage import get_connection
+from tools.db.storage import get_connection  # noqa: E402
 
 
 def _utcnow_iso() -> str:
@@ -33,7 +33,6 @@ def _generate_id(prefix: str = "pg") -> str:
 # ---------------------------------------------------------------------------
 # Account discovery from opportunities
 # ---------------------------------------------------------------------------
-
 
 def _get_opportunities_without_accounts() -> List[Dict]:
     """Find tracked opportunities that don't yet have a CRM account."""
@@ -79,24 +78,15 @@ def _create_account_from_opportunity(opp: Dict) -> Optional[str]:
         naics = opp.get("naics_code", "") or ""
         account_type = _classify_account_type(agency)
 
-        conn.execute(
-            """
+        conn.execute("""
             INSERT INTO pg_crm_accounts
                 (id, name, agency, account_type, naics_codes, status,
                  created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-            (
-                account_id,
-                agency,
-                agency,
-                account_type,
-                naics,
-                "active",
-                now,
-                now,
-            ),
-        )
+        """, (
+            account_id, agency, agency, account_type, naics,
+            "active", now, now,
+        ))
 
         # Audit
         conn.execute(
@@ -127,34 +117,11 @@ def _classify_account_type(agency: str) -> str:
     """Classify account type from agency name."""
     agency_lower = (agency or "").lower()
     gov_keywords = [
-        "department",
-        "agency",
-        "bureau",
-        "office",
-        "administration",
-        "command",
-        "corps",
-        "center",
-        "institute",
-        "commission",
-        "dod",
-        "army",
-        "navy",
-        "air force",
-        "space force",
-        "dhs",
-        "fbi",
-        "cia",
-        "nsa",
-        "disa",
-        "dla",
-        "gsa",
-        "va ",
-        "hhs",
-        "cms",
-        "faa",
-        "fema",
-        "usda",
+        "department", "agency", "bureau", "office", "administration",
+        "command", "corps", "center", "institute", "commission",
+        "dod", "army", "navy", "air force", "space force",
+        "dhs", "fbi", "cia", "nsa", "disa", "dla", "gsa",
+        "va ", "hhs", "cms", "faa", "fema", "usda",
     ]
     if any(kw in agency_lower for kw in gov_keywords):
         return "government"
@@ -164,7 +131,6 @@ def _classify_account_type(agency: str) -> str:
 # ---------------------------------------------------------------------------
 # Interaction logging from opportunity activity
 # ---------------------------------------------------------------------------
-
 
 def _get_recent_audit_interactions() -> List[Dict]:
     """Pull recent audit events that represent interactions.
@@ -207,25 +173,22 @@ def _log_interaction(
     interaction_id = _generate_id("pgint")
     now = _utcnow_iso()
     try:
-        conn.execute(
-            """
+        conn.execute("""
             INSERT INTO pg_crm_interactions
                 (id, contact_id, account_id, interaction_type, subject,
                  notes, opportunity_id, interaction_date, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-            (
-                interaction_id,
-                "",  # No specific contact for system-generated interactions
-                account_id,
-                interaction_type,
-                subject,
-                notes,
-                opportunity_id,
-                now,
-                now,
-            ),
-        )
+        """, (
+            interaction_id,
+            "",  # No specific contact for system-generated interactions
+            account_id,
+            interaction_type,
+            subject,
+            notes,
+            opportunity_id,
+            now,
+            now,
+        ))
         conn.commit()
         return interaction_id
     except Exception:
@@ -267,7 +230,6 @@ def _get_account_for_agency(agency: str) -> Optional[str]:
 # Engagement scoring
 # ---------------------------------------------------------------------------
 
-
 def _compute_win_rate(conn, agency_name: str) -> float:
     """Compute historical win rate for an agency from pg_win_loss_records.
 
@@ -275,8 +237,7 @@ def _compute_win_rate(conn, agency_name: str) -> float:
     win/loss data exists yet.
     """
     try:
-        row = conn.execute(
-            """
+        row = conn.execute("""
             SELECT
                 COUNT(*) as total,
                 SUM(CASE WHEN wl.outcome = 'won' THEN 1 ELSE 0 END) as wins
@@ -284,9 +245,7 @@ def _compute_win_rate(conn, agency_name: str) -> float:
             JOIN sam_gov_opportunities o ON o.id = wl.opportunity_id
             WHERE LOWER(o.agency) = LOWER(?)
             AND wl.outcome IN ('won', 'lost')
-        """,
-            (agency_name,),
-        ).fetchone()
+        """, (agency_name,)).fetchone()
         if not row or row["total"] == 0:
             return 0.0
         return round(row["wins"] / row["total"], 3)
@@ -306,36 +265,32 @@ def _compute_engagement_scores() -> List[Dict]:
     conn = get_connection()
     scores = []
     try:
-        accounts = conn.execute("SELECT id, name FROM pg_crm_accounts WHERE status = 'active'").fetchall()
+        accounts = conn.execute(
+            "SELECT id, name FROM pg_crm_accounts WHERE status = 'active'"
+        ).fetchall()
 
         for acct in accounts:
             acct_id = acct["id"]
             acct_name = acct["name"]
 
             # Interaction count and recency
-            interaction_stats = conn.execute(
-                """
+            interaction_stats = conn.execute("""
                 SELECT COUNT(*) as cnt,
                        MAX(interaction_date) as last_date
                 FROM pg_crm_interactions
                 WHERE account_id = ?
-            """,
-                (acct_id,),
-            ).fetchone()
+            """, (acct_id,)).fetchone()
 
             interaction_count = interaction_stats["cnt"] if interaction_stats else 0
             last_interaction = interaction_stats["last_date"] if interaction_stats else None
 
             # Opportunity count
-            opp_stats = conn.execute(
-                """
+            opp_stats = conn.execute("""
                 SELECT COUNT(*) as cnt
                 FROM proposal_opportunities
                 WHERE agency = ?
                 AND status IN ('tracking', 'drafting', 'reviewing')
-            """,
-                (acct_name,),
-            ).fetchone()
+            """, (acct_name,)).fetchone()
 
             opportunity_count = opp_stats["cnt"] if opp_stats else 0
 
@@ -346,7 +301,12 @@ def _compute_engagement_scores() -> List[Dict]:
             win_rate = _compute_win_rate(conn, acct_name)
 
             # Weighted composite
-            score = recency_score * 0.30 + frequency_score * 0.25 + pipeline_score * 0.25 + win_rate * 0.20
+            score = (
+                recency_score * 0.30
+                + frequency_score * 0.25
+                + pipeline_score * 0.25
+                + win_rate * 0.20
+            )
 
             breakdown = {
                 "recency": round(recency_score, 3),
@@ -358,35 +318,25 @@ def _compute_engagement_scores() -> List[Dict]:
             score_id = _generate_id("pgeng")
             now = _utcnow_iso()
 
-            conn.execute(
-                """
+            conn.execute("""
                 INSERT INTO pg_crm_engagement_scores
                     (id, account_id, score, score_breakdown,
                      interaction_count, last_interaction_at,
                      opportunity_count, win_rate, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-                (
-                    score_id,
-                    acct_id,
-                    round(score, 3),
-                    json.dumps(breakdown),
-                    interaction_count,
-                    last_interaction,
-                    opportunity_count,
-                    win_rate,
-                    now,
-                ),
-            )
+            """, (
+                score_id, acct_id, round(score, 3),
+                json.dumps(breakdown),
+                interaction_count, last_interaction,
+                opportunity_count, win_rate, now,
+            ))
 
-            scores.append(
-                {
-                    "account_id": acct_id,
-                    "account_name": acct_name,
-                    "score": round(score, 3),
-                    "breakdown": breakdown,
-                }
-            )
+            scores.append({
+                "account_id": acct_id,
+                "account_name": acct_name,
+                "score": round(score, 3),
+                "breakdown": breakdown,
+            })
 
         conn.commit()
         return scores
@@ -414,9 +364,338 @@ def _score_recency(last_interaction_at: Optional[str]) -> float:
 
 
 # ---------------------------------------------------------------------------
-# Main entry point
+# Manual account CRUD
 # ---------------------------------------------------------------------------
 
+def create_account(
+    name: str,
+    agency: str = "",
+    sub_agency: str = "",
+    account_type: str = "government",
+    website: str = "",
+    naics_codes: str = "",
+    set_asides: str = "",
+    notes: str = "",
+    status: str = "active",
+) -> Dict[str, Any]:
+    """Manually create a CRM account."""
+    valid_types = ("government", "prime", "subcontractor", "partner", "other")
+    valid_statuses = ("active", "inactive", "prospect")
+    if account_type not in valid_types:
+        return {"success": False, "error": f"account_type must be one of {valid_types}"}
+    if status not in valid_statuses:
+        return {"success": False, "error": f"status must be one of {valid_statuses}"}
+    if not name.strip():
+        return {"success": False, "error": "name is required"}
+
+    conn = get_connection()
+    account_id = _generate_id("pgacct")
+    now = _utcnow_iso()
+    try:
+        conn.execute("""
+            INSERT INTO pg_crm_accounts
+                (id, name, agency, sub_agency, account_type, website,
+                 naics_codes, set_asides, notes, status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            account_id, name.strip(), agency, sub_agency, account_type,
+            website, naics_codes, set_asides, notes, status, now, now,
+        ))
+        conn.commit()
+        return {"success": True, "account_id": account_id}
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}
+    finally:
+        conn.close()
+
+
+def update_account(account_id: str, **fields) -> Dict[str, Any]:
+    """Update a CRM account. Pass only fields to change."""
+    allowed = {
+        "name", "agency", "sub_agency", "account_type", "website",
+        "naics_codes", "set_asides", "notes", "status",
+    }
+    updates = {k: v for k, v in fields.items() if k in allowed and v is not None}
+    if not updates:
+        return {"success": False, "error": "no valid fields to update"}
+
+    valid_types = ("government", "prime", "subcontractor", "partner", "other")
+    valid_statuses = ("active", "inactive", "prospect")
+    if "account_type" in updates and updates["account_type"] not in valid_types:
+        return {"success": False, "error": f"account_type must be one of {valid_types}"}
+    if "status" in updates and updates["status"] not in valid_statuses:
+        return {"success": False, "error": f"status must be one of {valid_statuses}"}
+
+    updates["updated_at"] = _utcnow_iso()
+    set_clause = ", ".join(f"{k} = ?" for k in updates)
+    values = list(updates.values()) + [account_id]
+
+    conn = get_connection()
+    try:
+        cur = conn.execute(
+            f"UPDATE pg_crm_accounts SET {set_clause} WHERE id = ?", values  # nosec B608 — columns from hardcoded allowlist
+        )
+        conn.commit()
+        if cur.rowcount == 0:
+            return {"success": False, "error": "account not found"}
+        return {"success": True, "account_id": account_id}
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}
+    finally:
+        conn.close()
+
+
+def list_accounts(
+    status: Optional[str] = None, limit: int = 50
+) -> List[Dict]:
+    """List CRM accounts, optionally filtered by status."""
+    conn = get_connection()
+    try:
+        if status:
+            rows = conn.execute(
+                "SELECT * FROM pg_crm_accounts WHERE status = ? "
+                "ORDER BY updated_at DESC LIMIT ?",
+                (status, limit),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM pg_crm_accounts ORDER BY updated_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+    except Exception:
+        return []
+    finally:
+        conn.close()
+
+
+def get_account(account_id: str) -> Optional[Dict]:
+    """Get a single CRM account by ID."""
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT * FROM pg_crm_accounts WHERE id = ?", (account_id,)
+        ).fetchone()
+        return dict(row) if row else None
+    except Exception:
+        return None
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Manual contact CRUD
+# ---------------------------------------------------------------------------
+
+VALID_INFLUENCE_LEVELS = (
+    "decision_maker", "influencer", "evaluator", "end_user", "unknown",
+)
+
+
+def create_contact(
+    account_id: str,
+    name: str,
+    title: str = "",
+    email: str = "",
+    phone: str = "",
+    role_in_procurement: str = "",
+    influence_level: str = "unknown",
+    notes: str = "",
+) -> Dict[str, Any]:
+    """Create a CRM contact under an account."""
+    if not name.strip():
+        return {"success": False, "error": "name is required"}
+    if influence_level not in VALID_INFLUENCE_LEVELS:
+        return {"success": False, "error": f"influence_level must be one of {VALID_INFLUENCE_LEVELS}"}
+
+    # Verify account exists
+    acct = get_account(account_id)
+    if not acct:
+        return {"success": False, "error": f"account {account_id} not found"}
+
+    conn = get_connection()
+    contact_id = _generate_id("pgcon")
+    now = _utcnow_iso()
+    try:
+        conn.execute("""
+            INSERT INTO pg_crm_contacts
+                (id, account_id, name, title, email, phone,
+                 role_in_procurement, influence_level, notes,
+                 last_contact_at, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            contact_id, account_id, name.strip(), title, email, phone,
+            role_in_procurement, influence_level, notes,
+            None, now, now,
+        ))
+        conn.commit()
+        return {"success": True, "contact_id": contact_id}
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}
+    finally:
+        conn.close()
+
+
+def update_contact(contact_id: str, **fields) -> Dict[str, Any]:
+    """Update a CRM contact. Pass only fields to change."""
+    allowed = {
+        "name", "title", "email", "phone", "role_in_procurement",
+        "influence_level", "notes", "account_id",
+    }
+    updates = {k: v for k, v in fields.items() if k in allowed and v is not None}
+    if not updates:
+        return {"success": False, "error": "no valid fields to update"}
+
+    if "influence_level" in updates and updates["influence_level"] not in VALID_INFLUENCE_LEVELS:
+        return {"success": False, "error": f"influence_level must be one of {VALID_INFLUENCE_LEVELS}"}
+
+    updates["updated_at"] = _utcnow_iso()
+    set_clause = ", ".join(f"{k} = ?" for k in updates)
+    values = list(updates.values()) + [contact_id]
+
+    conn = get_connection()
+    try:
+        cur = conn.execute(
+            f"UPDATE pg_crm_contacts SET {set_clause} WHERE id = ?", values  # nosec B608 — columns from hardcoded allowlist
+        )
+        conn.commit()
+        if cur.rowcount == 0:
+            return {"success": False, "error": "contact not found"}
+        return {"success": True, "contact_id": contact_id}
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}
+    finally:
+        conn.close()
+
+
+def delete_contact(contact_id: str) -> Dict[str, Any]:
+    """Delete a CRM contact."""
+    conn = get_connection()
+    try:
+        cur = conn.execute(
+            "DELETE FROM pg_crm_contacts WHERE id = ?", (contact_id,)
+        )
+        conn.commit()
+        if cur.rowcount == 0:
+            return {"success": False, "error": "contact not found"}
+        return {"success": True, "contact_id": contact_id}
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}
+    finally:
+        conn.close()
+
+
+def list_contacts(
+    account_id: Optional[str] = None, limit: int = 50
+) -> List[Dict]:
+    """List CRM contacts, optionally filtered by account."""
+    conn = get_connection()
+    try:
+        if account_id:
+            rows = conn.execute(
+                "SELECT c.*, a.name AS account_name "
+                "FROM pg_crm_contacts c "
+                "LEFT JOIN pg_crm_accounts a ON a.id = c.account_id "
+                "WHERE c.account_id = ? ORDER BY c.updated_at DESC LIMIT ?",
+                (account_id, limit),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT c.*, a.name AS account_name "
+                "FROM pg_crm_contacts c "
+                "LEFT JOIN pg_crm_accounts a ON a.id = c.account_id "
+                "ORDER BY c.updated_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+    except Exception:
+        return []
+    finally:
+        conn.close()
+
+
+def get_contact(contact_id: str) -> Optional[Dict]:
+    """Get a single CRM contact by ID."""
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT c.*, a.name AS account_name "
+            "FROM pg_crm_contacts c "
+            "LEFT JOIN pg_crm_accounts a ON a.id = c.account_id "
+            "WHERE c.id = ?",
+            (contact_id,),
+        ).fetchone()
+        return dict(row) if row else None
+    except Exception:
+        return None
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Manual interaction logging
+# ---------------------------------------------------------------------------
+
+VALID_INTERACTION_TYPES = (
+    "meeting", "call", "email", "conference", "site_visit",
+    "rfi_response", "industry_day", "other",
+)
+
+
+def log_manual_interaction(
+    account_id: str,
+    interaction_type: str,
+    subject: str,
+    contact_id: str = "",
+    notes: str = "",
+    opportunity_id: str = "",
+    interaction_date: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Log a manual CRM interaction (meeting, call, email, etc.)."""
+    if interaction_type not in VALID_INTERACTION_TYPES:
+        return {"success": False, "error": f"interaction_type must be one of {VALID_INTERACTION_TYPES}"}
+    if not subject.strip():
+        return {"success": False, "error": "subject is required"}
+
+    # Verify account exists
+    acct = get_account(account_id)
+    if not acct:
+        return {"success": False, "error": f"account {account_id} not found"}
+
+    conn = get_connection()
+    interaction_id = _generate_id("pgint")
+    now = _utcnow_iso()
+    date = interaction_date or now
+    try:
+        conn.execute("""
+            INSERT INTO pg_crm_interactions
+                (id, contact_id, account_id, interaction_type, subject,
+                 notes, opportunity_id, interaction_date, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            interaction_id, contact_id, account_id, interaction_type,
+            subject.strip(), notes, opportunity_id, date, now,
+        ))
+
+        # Update contact last_contact_at if a contact was specified
+        if contact_id:
+            conn.execute(
+                "UPDATE pg_crm_contacts SET last_contact_at = ?, updated_at = ? "
+                "WHERE id = ?",
+                (date, now, contact_id),
+            )
+
+        conn.commit()
+        return {"success": True, "interaction_id": interaction_id}
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Main entry point
+# ---------------------------------------------------------------------------
 
 def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     """Execute the Engage Reflex (R4).
@@ -468,8 +747,6 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     # Step 3: Compute engagement scores
     scores = _compute_engagement_scores()
     accounts_scored = len(scores)
-
-    accounts_created + interactions_logged + accounts_scored
 
     return {
         "success": True,

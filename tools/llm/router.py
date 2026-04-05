@@ -1,17 +1,20 @@
 # [TEMPLATE: CUI // SP-CTI]
 """Config-driven LLM router.
 
-Reads args/llm_config.yaml and resolves each ICDEV function to a
+Reads args/llm_config.yaml and resolves each ICDEV™ function to a
 provider + model via fallback chain. Probes provider availability
 and caches results.
 """
+from __future__ import annotations
 
 import copy
+import json
 import logging
 import os
 import re
-import sqlite3
 import time
+from datetime import datetime, timezone
+from tools.db.storage import get_connection
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
@@ -45,11 +48,17 @@ def _expand_env(value):
 
 
 class LLMRouter:
-    """Config-driven router that maps ICDEV functions to LLM providers.
+    """Config-driven router that maps ICDEV™ functions to LLM providers.
 
     Walks fallback chains, probes availability, and returns the first
     responsive provider + model pair.
     """
+
+    # Runtime dual-model toggle (None = use config/env, True/False = explicit)
+    _dual_model_runtime: Optional[bool] = None
+
+    # RL router singleton (shared across all LLMRouter instances in process)
+    _rl_router_instance = None
 
     def __init__(self, config_path=None):
         self._config_path = Path(config_path) if config_path else DEFAULT_CONFIG_PATH
@@ -61,6 +70,71 @@ class LLMRouter:
         self._cache_ttl: float = 1800.0
 
         self._load_config()
+
+    # -------------------------------------------------------------------
+    # Dual-model mode (RTX 4060 Ti 8GB VRAM — 2 models resident)
+    # -------------------------------------------------------------------
+    @classmethod
+    def set_dual_model(cls, enabled: bool) -> None:
+        """Toggle dual-model mode at runtime (e.g. from dashboard)."""
+        cls._dual_model_runtime = enabled
+        logger.info("Dual-model mode %s (runtime toggle)", "ENABLED" if enabled else "DISABLED")
+
+    @classmethod
+    def get_dual_model(cls) -> bool:
+        """Check if dual-model mode is active."""
+        if cls._dual_model_runtime is not None:
+            return cls._dual_model_runtime
+        env = os.environ.get("ICDEV_DUAL_MODEL", "").lower()
+        return env in ("true", "1", "yes")
+
+    @staticmethod
+    def is_dual_model_active(cfg: dict) -> bool:
+        """Check dual-model from config + env + runtime toggle."""
+        # Runtime toggle takes priority
+        if LLMRouter._dual_model_runtime is not None:
+            return LLMRouter._dual_model_runtime
+        # Env var next
+        env = os.environ.get("ICDEV_DUAL_MODEL", "").lower()
+        if env in ("true", "1", "yes"):
+            return True
+        if env in ("false", "0", "no"):
+            return False
+        # Config value (supports ${ICDEV_DUAL_MODEL:-false} expansion)
+        dm = cfg.get("dual_model", {})
+        val = str(dm.get("enabled", "false")).lower()
+        return val in ("true", "1", "yes")
+
+    # -------------------------------------------------------------------
+    # RL router (lazy singleton)
+    # -------------------------------------------------------------------
+    def _get_rl_router(self):
+        """Return the process-wide RLRouter singleton (lazy-init).
+
+        Reads `rl_routing.enabled` from llm_config.yaml (default True).
+        Falls back to a disabled stub on import errors so existing routing
+        is never disrupted.
+        """
+        if LLMRouter._rl_router_instance is not None:
+            return LLMRouter._rl_router_instance
+
+        enabled = self._config.get("rl_routing", {}).get("enabled", True)
+        try:
+            from tools.llm.rl_router import RLRouter
+            LLMRouter._rl_router_instance = RLRouter(enabled=enabled)
+        except Exception as exc:
+            logger.debug("RL router unavailable, using passthrough: %s", exc)
+
+            class _NoopRL:
+                def rank_models(self, fn, models):
+                    return models
+
+                def record_outcome(self, *a, **kw):
+                    pass
+
+            LLMRouter._rl_router_instance = _NoopRL()
+
+        return LLMRouter._rl_router_instance
 
     # -------------------------------------------------------------------
     # Config loading
@@ -326,6 +400,38 @@ class LLMRouter:
         route = routing.get(function, routing.get("default", {}))
         return route.get("chain", [])
 
+    def _log_telemetry(
+        self, function: str, request, response,
+        model_id: str, provider_name: str, latency_ms: int,
+    ) -> None:
+        """Log AI interaction to ai_telemetry table (D218)."""
+        import hashlib
+        prompt_text = " ".join(m.get("content", "") for m in (request.messages or []) if isinstance(m, dict))
+        prompt_hash = hashlib.sha256(prompt_text.encode("utf-8", errors="replace")).hexdigest()[:32]
+        response_hash = hashlib.sha256(
+            (getattr(response, "content", "") or "").encode("utf-8", errors="replace")
+        ).hexdigest()[:32]
+
+        try:
+            from tools.security.ai_telemetry_logger import AITelemetryLogger
+            logger_inst = AITelemetryLogger()
+            logger_inst.log_ai_interaction(
+                model_id=getattr(response, "model_id", model_id) or model_id,
+                provider=provider_name,
+                prompt_hash=prompt_hash,
+                response_hash=response_hash,
+                input_tokens=getattr(response, "input_tokens", 0) or 0,
+                output_tokens=getattr(response, "output_tokens", 0) or 0,
+                thinking_tokens=getattr(response, "thinking_tokens", 0) or 0,
+                latency_ms=float(latency_ms),
+                cost_usd=getattr(response, "cost_usd", 0.0) or 0.0,
+                project_id=getattr(request, "project_id", None),
+                function=function,
+                api_key_source=getattr(request, "api_key_source", "system") or "system",
+            )
+        except Exception:
+            pass
+
     def _scan_for_injection(self, request: LLMRequest) -> Optional[str]:
         """Scan request messages for prompt injection patterns.
 
@@ -368,6 +474,160 @@ class LLMRouter:
             )
 
         return result["action"]
+
+    # -------------------------------------------------------------------
+    # D-RDT-1: Pre-invoke redaction hook (all modules, all LLM calls)
+    # -------------------------------------------------------------------
+
+    # Singleton sanitizer — avoid re-creating on every invoke() call (D-RDT-9)
+    _redaction_sanitizer = None
+    _redaction_sanitizer_ts = 0.0
+    _REDACTION_CACHE_TTL = 1800  # 30 minutes
+
+    def _get_sanitizer(self):
+        """Get or create cached GovConSanitizer singleton."""
+        import time as _t
+        now = _t.time()
+        if (LLMRouter._redaction_sanitizer is not None
+                and (now - LLMRouter._redaction_sanitizer_ts) < self._REDACTION_CACHE_TTL):
+            return LLMRouter._redaction_sanitizer
+        try:
+            from tools.redaction.govcon_sanitizer import GovConSanitizer
+            LLMRouter._redaction_sanitizer = GovConSanitizer()
+            LLMRouter._redaction_sanitizer_ts = now
+            return LLMRouter._redaction_sanitizer
+        except ImportError:
+            return None
+
+    def _pre_invoke_redaction(self, function: str, request: LLMRequest) -> Optional[str]:
+        """Sanitize PII in request messages before sending to any LLM.
+
+        Applies to ALL modules. Checks if the function is in the enforced
+        scope and whether routing is local-only (skips if configured).
+
+        Returns session_id for de-anonymization, or None if skipped.
+        """
+        # D-RDT-4: Config toggle — skip redaction if explicitly disabled
+        rdcfg = self._config.get("redaction", {})
+        if not rdcfg.get("enabled", True):
+            return None
+
+        # D-RDT-5: Skip redaction for excluded functions (e.g. Pulse articles
+        # are public blog posts — redacting org names produces [ORGANIZATION]
+        # tokens that leak into published content).
+        excluded = rdcfg.get("excluded_functions", [])
+        if function in excluded:
+            return None
+
+        sanitizer = self._get_sanitizer()
+        if sanitizer is None:
+            return None
+
+        try:
+
+            # Check if routing is local-only for this function
+            chain = self._get_chain_for_function(function)
+            is_local = all(
+                self._get_model_config(m).get("provider") == "ollama"
+                for m in chain
+                if self._get_model_config(m)
+            )
+
+            # Extract text from messages
+            for msg in (request.messages or []):
+                if isinstance(msg, dict):
+                    content = msg.get("content", "")
+                    if isinstance(content, str) and content.strip():
+                        sanitized, meta = sanitizer.sanitize_for_llm(
+                            content,
+                            function_name=function,
+                            impact_level=request.classification or "IL4",
+                            is_local_only=is_local,
+                        )
+                        if not meta.get("skipped", True):
+                            msg["content"] = sanitized
+
+            # Also sanitize system_prompt if present
+            if request.system_prompt and request.system_prompt.strip():
+                sanitized, meta = sanitizer.sanitize_for_llm(
+                    request.system_prompt,
+                    function_name=function,
+                    impact_level=request.classification or "IL4",
+                    is_local_only=is_local,
+                )
+                if not meta.get("skipped", True):
+                    request.system_prompt = sanitized
+
+            return sanitizer.session_id
+
+        except Exception as exc:
+            logger.debug("Pre-invoke redaction failed (non-blocking): %s", exc)
+            return None
+
+    def _post_invoke_deanonymize(
+        self, response, redaction_session: Optional[str]
+    ):
+        """Restore original values in LLM response using redaction registry.
+
+        Round-trip de-anonymization: surrogates inserted by _pre_invoke_redaction
+        are replaced with original values so the caller sees real data.
+        Only operates when redaction_session is not None (redaction was applied).
+        """
+        if not redaction_session:
+            return response
+        # Check config toggle
+        rdcfg = self._config.get("redaction", {})
+        if not rdcfg.get("deanonymize_response", True):
+            return response
+        try:
+            sanitizer = self._get_sanitizer()
+            if sanitizer is None:
+                return response
+            # De-anonymize text content in response
+            if hasattr(response, "text") and response.text:
+                response.text = sanitizer.de_anonymize_response(response.text)
+            elif hasattr(response, "content") and isinstance(response.content, str):
+                response.content = sanitizer.de_anonymize_response(response.content)
+            elif isinstance(response, dict):
+                for key in ("text", "content"):
+                    if key in response and isinstance(response[key], str):
+                        response[key] = sanitizer.de_anonymize_response(response[key])
+        except Exception as exc:
+            logger.debug("Post-invoke de-anonymization failed (non-blocking): %s", exc)
+        return response
+
+    def _audit_redaction(
+        self, function: str, redaction_session: Optional[str],
+        detection_count: int = 0, entity_types: Optional[list] = None,
+        impact_level: str = "IL4",
+    ):
+        """Log redaction event to append-only redaction_audit table."""
+        if not redaction_session or detection_count == 0:
+            return
+        rdcfg = self._config.get("redaction", {})
+        if not rdcfg.get("audit_enabled", True):
+            return
+        try:
+            conn = get_connection()
+            conn.execute("""
+                INSERT INTO redaction_audit
+                    (id, session_id, function, detection_count,
+                     entity_types_json, impact_level, action, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            """, (
+                f"raud-{redaction_session[:8]}-{function[:20]}",
+                redaction_session,
+                function,
+                detection_count,
+                json.dumps(entity_types or []),
+                impact_level,
+                "redacted",
+                datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            ))
+            conn.commit()
+            conn.close()
+        except Exception as exc:
+            logger.debug("Redaction audit log failed (non-blocking): %s", exc)
 
     # -------------------------------------------------------------------
     # Two-tier routing helpers (D-TT1: qwen3 worker → Claude planner)
@@ -433,7 +693,7 @@ class LLMRouter:
 
         Args:
             request: Original LLM request.
-            function: ICDEV function name (checked against denylist).
+            function: ICDEV™ function name (checked against denylist).
 
         Returns:
             Augmented LLMRequest (or original if RAG unavailable/disabled).
@@ -501,7 +761,7 @@ class LLMRouter:
                 return request
 
             context_block = (
-                "\n[RELEVANT CONTEXT — retrieved from ICDEV knowledge base]\n"
+                "\n[RELEVANT CONTEXT — retrieved from ICDEV™ knowledge base]\n"
                 + "\n---\n".join(context_parts)
                 + "\n[END CONTEXT]\n"
             )
@@ -601,8 +861,7 @@ class LLMRouter:
             return None
 
         try:
-            conn = sqlite3.connect(str(db_path))
-            conn.row_factory = sqlite3.Row
+            conn = get_connection(db_path=str(db_path))
             row = conn.execute(
                 """SELECT ollama_model_name FROM ft_active_models
                    WHERE function_name = ? AND deactivated_at IS NULL
@@ -670,14 +929,26 @@ class LLMRouter:
           scanner_functions  → qwen3 only (no review)
         """
         cfg = self._config.get("two_tier", {})
-        if not cfg.get("enabled", False):
+        # Allow env var override: LLM_TWO_TIER_ENABLED=false disables two-tier
+        env_enabled = os.environ.get("LLM_TWO_TIER_ENABLED", "").lower()
+        if env_enabled in ("false", "0", "no"):
+            return None
+        if not cfg.get("enabled", False) and env_enabled not in ("true", "1", "yes"):
             return None
 
-        tier1 = cfg.get("tier1_model", "qwen3-local")
-        tier2 = cfg.get("tier2_model", "claude-sonnet")
+        tier1 = _expand_env(cfg.get("tier1_model", "qwen3-local"))
+        tier2 = _expand_env(cfg.get("tier2_model", "claude-sonnet"))
         planners = cfg.get("planner_functions", [])
         workers = cfg.get("worker_functions", [])
         scanners = cfg.get("scanner_functions", [])
+
+        # Dual-model mode: swap tier1 for smaller model to fit 2 models in VRAM
+        if self.is_dual_model_active(cfg):
+            dm = cfg.get("dual_model", {})
+            override_tier1 = dm.get("tier1_override")
+            if override_tier1:
+                tier1 = override_tier1
+                logger.debug("Dual-model active: tier1 swapped to %s", tier1)
 
         if function in planners:
             # Claude plans directly
@@ -729,9 +1000,15 @@ class LLMRouter:
             # Drafter unavailable — fall through to chain
 
         elif function in scanners:
-            # qwen3 only, no review
-            logger.debug("Two-tier: %s → scanner (qwen3 only)", function)
-            result = self._invoke_model_direct(tier1, request)
+            # Check for per-function model override
+            overrides = cfg.get("function_model_overrides", {})
+            # Dual-model mode: merge dual overrides on top of base overrides
+            if self.is_dual_model_active(cfg):
+                dm_overrides = cfg.get("dual_model", {}).get("function_overrides", {})
+                overrides = {**overrides, **dm_overrides}
+            scanner_model = overrides.get(function, tier1)
+            logger.debug("Two-tier: %s → scanner (%s only)", function, scanner_model)
+            result = self._invoke_model_direct(scanner_model, request)
             if result is not None:
                 return result
             # Fall through to chain on failure
@@ -746,7 +1023,7 @@ class LLMRouter:
         the next model in the chain rather than raising immediately.
 
         Args:
-            function: ICDEV function name (e.g. 'code_generation', 'nlq_sql').
+            function: ICDEV™ function name (e.g. 'code_generation', 'nlq_sql').
             request: Vendor-agnostic LLM request.
 
         Returns:
@@ -755,13 +1032,37 @@ class LLMRouter:
         Raises:
             RuntimeError: If no provider in the chain can serve the request.
         """
+        # Token budget enforcement (D-BUD-1: Paperclip-inspired per-agent hard-stops)
+        if request.agent_id:
+            try:
+                from tools.agent.token_tracker import check_budget, BudgetExceededError
+                budget = check_budget(request.agent_id)
+                if budget["action"] == "block":
+                    raise BudgetExceededError(request.agent_id, budget)
+                if budget["action"] == "warn":
+                    logger.warning(
+                        "Budget warning for %s: %s", request.agent_id, budget["message"]
+                    )
+            except ImportError:
+                pass  # token_tracker not available — skip budget check
+            except BudgetExceededError:
+                raise  # re-raise budget errors
+            except Exception as exc:
+                logger.debug("Budget check failed (non-blocking): %s", exc)
+
         # Scan for prompt injection before invoking (D217)
-        injection_action = self._scan_for_injection(request)
-        if injection_action == "block":
-            raise RuntimeError(
-                "Prompt injection detected with high confidence — request blocked. "
-                "Review the input content for injection patterns."
+        # Skip for trusted internal pipeline calls (e.g. Pulse draft with topic seeds)
+        if not request.skip_injection_scan:
+            injection_action = self._scan_for_injection(request)
+            if injection_action == "block":
+                raise RuntimeError(
+                    "Prompt injection detected with high confidence — request blocked. "
+                    "Review the input content for injection patterns."
             )
+
+        # D-RDT-1: Pre-invoke redaction — sanitize PII before sending to LLM
+        # Applies to ALL modules. Skips for local-only routing if configured.
+        _redaction_session = self._pre_invoke_redaction(function, request)
 
         # Apply configured effort if not set on request
         if not request.effort or request.effort == "medium":
@@ -773,6 +1074,8 @@ class LLMRouter:
             return two_tier_result
 
         chain = self._get_chain_for_function(function)
+        # RL routing: reorder chain by learned Q-values (epsilon-greedy)
+        chain = self._get_rl_router().rank_models(function, chain)
         last_error = None
 
         # D286: Create trace span for LLM invocation
@@ -825,6 +1128,24 @@ class LLMRouter:
                     span.set_status("OK")
                     span.end()
 
+                # D218: Log AI telemetry for usage dashboard
+                try:
+                    self._log_telemetry(
+                        function=function, request=request, response=response,
+                        model_id=model_id, provider_name=provider_name,
+                        latency_ms=_latency,
+                    )
+                except Exception:
+                    pass  # Best-effort — never block on telemetry
+
+                # D-RDT-2: Post-invoke de-anonymization — restore originals
+                response = self._post_invoke_deanonymize(response, _redaction_session)
+
+                # RL: record success so this model's Q-value improves
+                self._get_rl_router().record_outcome(
+                    function, model_name, success=True, latency_ms=_latency
+                )
+
                 return response
             except Exception as exc:
                 logger.warning(
@@ -848,6 +1169,10 @@ class LLMRouter:
                 last_error = exc
                 # Mark model as unavailable in cache so next call skips it
                 self._availability_cache[model_name] = False
+                # RL: record failure so this model's Q-value decreases
+                self._get_rl_router().record_outcome(
+                    function, model_name, success=False
+                )
                 continue
 
         raise RuntimeError(
@@ -856,6 +1181,9 @@ class LLMRouter:
 
     def invoke_streaming(self, function: str, request: LLMRequest):
         """Resolve provider and invoke with streaming + fallback."""
+        # D-RDT-3: Pre-invoke redaction for streaming path (parity with invoke)
+        _redaction_session = self._pre_invoke_redaction(function, request)
+
         if not request.effort or request.effort == "medium":
             request.effort = self.get_effort(function)
 

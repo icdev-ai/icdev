@@ -35,7 +35,7 @@ def consolidator():
 
 class TestKeywordExtraction:
     def test_basic(self):
-        kw = MemoryConsolidator._extract_keywords("The ICDEV system manages deployments")
+        kw = MemoryConsolidator._extract_keywords("The ICDEV™ system manages deployments")
         assert "icdev" in kw
         assert "system" in kw
         assert "manages" in kw

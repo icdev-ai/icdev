@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
+from __future__ import annotations
+
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D -- Authorized DoD Personnel Only
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """
-Version Migration Tool — ICDEV DoD Modernization System
+Version Migration Tool — ICDEV™ DoD Modernization System
 
 Transforms legacy source code to newer language versions using AST-based
 analysis and regex transformation rules.  Supports Python 2->3, Java 8->17,
@@ -1190,7 +1192,7 @@ def main():
     """CLI entry-point for the version migration tool."""
     parser = argparse.ArgumentParser(
         description=(
-            "ICDEV Version Migration Tool — transform legacy code to "
+            "ICDEV™ Version Migration Tool — transform legacy code to "
             "newer language versions (CUI // SP-CTI)"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -1260,7 +1262,7 @@ def main():
     if not args.json_output:
         print(f"{CUI_BANNER}")
         print("=" * 68)
-        print("ICDEV Version Migration Tool")
+        print("ICDEV™ Version Migration Tool")
         print(f"  Language : {args.language}")
         print(f"  From     : {args.from_ver or 'auto'}")
         print(f"  To       : {args.to_ver or 'auto'}")

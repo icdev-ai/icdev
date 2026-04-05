@@ -3,8 +3,8 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""6-Dimension Composite Challenge Scorer for ICDEV Research Engine.
+# POC: ICDEV™ System Administrator
+"""6-Dimension Composite Challenge Scorer for ICDEV™ Research Engine.
 
 Scores research challenges using a 6-dimension weighted average
 (D21 deterministic scoring pattern, D-RES-4):
@@ -13,8 +13,8 @@ Scores research challenges using a 6-dimension weighted average
   2. regulatory_pressure    (0.20) -- regulation count, enforcement actions
   3. technical_complexity   (0.15) -- academic paper density, patent activity
   4. competitive_saturation (0.15) -- inverse: fewer solutions = bigger opportunity
-  5. icdev_readiness        (0.15) -- ICDEV capability coverage score
-  6. compliance_alignment   (0.10) -- maps to existing ICDEV framework = 1.0
+  5. icdev_readiness        (0.15) -- ICDEV™ capability coverage score
+  6. compliance_alignment   (0.10) -- maps to existing ICDEV™ framework = 1.0
 
 Architecture:
     - Weights loaded from args/research_config.yaml under scoring.weights (D26 pattern)
@@ -50,9 +50,9 @@ import hashlib
 import json
 import os
 import re
-import sqlite3
 import sys
 import uuid
+from tools.db.storage import get_connection
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -72,14 +72,12 @@ CONFIG_PATH = BASE_DIR / "args" / "research_config.yaml"
 # =========================================================================
 try:
     import yaml
-
     _HAS_YAML = True
 except ImportError:
     _HAS_YAML = False
 
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
-
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
@@ -87,291 +85,83 @@ except ImportError:
     def audit_log_event(**kwargs):
         return -1
 
-
 # =========================================================================
 # CONSTANTS
 # =========================================================================
 # Hardcoded English stopwords (~100 common words) -- no NLTK dependency needed
-STOPWORDS = frozenset(
-    {
-        "a",
-        "an",
-        "and",
-        "are",
-        "as",
-        "at",
-        "be",
-        "been",
-        "by",
-        "but",
-        "can",
-        "could",
-        "did",
-        "do",
-        "does",
-        "for",
-        "from",
-        "had",
-        "has",
-        "have",
-        "he",
-        "her",
-        "him",
-        "his",
-        "how",
-        "i",
-        "if",
-        "in",
-        "into",
-        "is",
-        "it",
-        "its",
-        "just",
-        "may",
-        "me",
-        "might",
-        "more",
-        "most",
-        "must",
-        "my",
-        "no",
-        "nor",
-        "not",
-        "of",
-        "on",
-        "or",
-        "our",
-        "out",
-        "own",
-        "re",
-        "s",
-        "she",
-        "should",
-        "so",
-        "some",
-        "such",
-        "t",
-        "than",
-        "that",
-        "the",
-        "their",
-        "them",
-        "then",
-        "there",
-        "these",
-        "they",
-        "this",
-        "those",
-        "through",
-        "to",
-        "too",
-        "up",
-        "us",
-        "very",
-        "was",
-        "we",
-        "were",
-        "what",
-        "when",
-        "where",
-        "which",
-        "while",
-        "who",
-        "whom",
-        "why",
-        "will",
-        "with",
-        "would",
-        "you",
-        "your",
-        "about",
-        "above",
-        "after",
-        "again",
-        "all",
-        "also",
-        "am",
-        "any",
-        "because",
-        "before",
-        "being",
-        "between",
-        "both",
-        "during",
-        "each",
-        "few",
-        "further",
-        "get",
-        "got",
-        "here",
-        "itself",
-        "let",
-        "like",
-        "make",
-        "many",
-        "much",
-        "new",
-        "now",
-        "off",
-        "old",
-        "one",
-        "only",
-        "other",
-        "over",
-        "same",
-        "set",
-        "since",
-        "still",
-        "take",
-        "two",
-        "under",
-        "use",
-        "used",
-        "using",
-        "way",
-        "well",
-    }
-)
+STOPWORDS = frozenset({
+    "a", "an", "and", "are", "as", "at", "be", "been", "by", "but",
+    "can", "could", "did", "do", "does", "for", "from", "had", "has",
+    "have", "he", "her", "him", "his", "how", "i", "if", "in", "into",
+    "is", "it", "its", "just", "may", "me", "might", "more", "most",
+    "must", "my", "no", "nor", "not", "of", "on", "or", "our", "out",
+    "own", "re", "s", "she", "should", "so", "some", "such", "t",
+    "than", "that", "the", "their", "them", "then", "there", "these",
+    "they", "this", "those", "through", "to", "too", "up", "us",
+    "very", "was", "we", "were", "what", "when", "where", "which",
+    "while", "who", "whom", "why", "will", "with", "would", "you",
+    "your", "about", "above", "after", "again", "all", "also", "am",
+    "any", "because", "before", "being", "between", "both", "during",
+    "each", "few", "further", "get", "got", "here", "itself",
+    "let", "like", "make", "many", "much", "new", "now", "off", "old",
+    "one", "only", "other", "over", "same", "set", "since", "still",
+    "take", "two", "under", "use", "used", "using", "way", "well",
+})
 
 _WORD_RE = re.compile(r"\b[a-z][a-z0-9_-]{2,}\b")
 
 # Valid categories matching research_challenges CHECK constraint
 VALID_CATEGORIES = (
-    "infrastructure",
-    "compliance",
-    "security",
-    "ux",
-    "performance",
-    "integration",
-    "data",
-    "cost",
-    "scalability",
-    "automation",
-    "governance",
-    "other",
+    "infrastructure", "compliance", "security", "ux",
+    "performance", "integration", "data", "cost",
+    "scalability", "automation", "governance", "other",
 )
 
 # Category keyword banks for classification
 CATEGORY_KEYWORDS = {
     "infrastructure": [
-        "infrastructure",
-        "latency",
-        "throughput",
-        "architecture",
-        "microservice",
-        "deployment",
-        "hosting",
-        "cloud",
-        "server",
+        "infrastructure", "latency", "throughput", "architecture",
+        "microservice", "deployment", "hosting", "cloud", "server",
     ],
     "compliance": [
-        "compliance",
-        "regulatory",
-        "cftc",
-        "nfa",
-        "sec",
-        "audit",
-        "reporting",
-        "regulation",
-        "mandate",
-        "requirement",
+        "compliance", "regulatory", "cftc", "nfa", "sec", "audit",
+        "reporting", "regulation", "mandate", "requirement",
     ],
     "security": [
-        "security",
-        "encryption",
-        "authentication",
-        "vulnerability",
-        "breach",
-        "cyber",
-        "penetration",
-        "firewall",
-        "access-control",
+        "security", "encryption", "authentication", "vulnerability",
+        "breach", "cyber", "penetration", "firewall", "access-control",
     ],
     "ux": [
-        "interface",
-        "ui",
-        "ux",
-        "dashboard",
-        "usability",
-        "workflow",
-        "user-experience",
-        "frontend",
-        "display",
+        "interface", "ui", "ux", "dashboard", "usability",
+        "workflow", "user-experience", "frontend", "display",
     ],
     "performance": [
-        "performance",
-        "speed",
-        "latency",
-        "throughput",
-        "optimization",
-        "response-time",
-        "benchmark",
-        "fast",
+        "performance", "speed", "latency", "throughput",
+        "optimization", "response-time", "benchmark", "fast",
     ],
     "integration": [
-        "integration",
-        "api",
-        "connector",
-        "exchange",
-        "broker",
-        "interoperability",
-        "plugin",
-        "webhook",
+        "integration", "api", "connector", "exchange",
+        "broker", "interoperability", "plugin", "webhook",
     ],
     "data": [
-        "data",
-        "feed",
-        "market-data",
-        "historical",
-        "real-time",
-        "streaming",
-        "analytics",
-        "database",
-        "etl",
-        "pipeline",
+        "data", "feed", "market-data", "historical", "real-time",
+        "streaming", "analytics", "database", "etl", "pipeline",
     ],
     "cost": [
-        "cost",
-        "pricing",
-        "fee",
-        "commission",
-        "subscription",
-        "budget",
-        "expensive",
-        "affordable",
-        "license",
+        "cost", "pricing", "fee", "commission", "subscription",
+        "budget", "expensive", "affordable", "license",
     ],
     "scalability": [
-        "scale",
-        "concurrent",
-        "volume",
-        "enterprise",
-        "horizontal",
-        "vertical",
-        "distributed",
-        "cluster",
+        "scale", "concurrent", "volume", "enterprise",
+        "horizontal", "vertical", "distributed", "cluster",
     ],
     "automation": [
-        "automate",
-        "automation",
-        "algorithm",
-        "bot",
-        "systematic",
-        "scheduled",
-        "trigger",
-        "orchestration",
-        "workflow-engine",
+        "automate", "automation", "algorithm", "bot", "systematic",
+        "scheduled", "trigger", "orchestration", "workflow-engine",
     ],
     "governance": [
-        "governance",
-        "model",
-        "drift",
-        "explainability",
-        "bias",
-        "fairness",
-        "oversight",
-        "accountability",
-        "transparency",
+        "governance", "model", "drift", "explainability", "bias",
+        "fairness", "oversight", "accountability", "transparency",
     ],
     "other": [],
 }
@@ -402,9 +192,10 @@ def _get_db(db_path=None):
     """Get database connection with dict-like row access."""
     path = db_path or DB_PATH
     if not Path(str(path)).exists():
-        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+        raise FileNotFoundError(
+            f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py"
+        )
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -587,7 +378,9 @@ def _score_market_demand(challenge_data, signals, conn, config):
 
     score = min(
         1.0,
-        (signal_count / max_signals) * 0.6 + (avg_upvotes / 100.0) * 0.2 + (avg_citations / 50.0) * 0.2,
+        (signal_count / max_signals) * 0.6
+        + (avg_upvotes / 100.0) * 0.2
+        + (avg_citations / 50.0) * 0.2,
     )
 
     return max(0.0, min(1.0, score))
@@ -734,7 +527,7 @@ def _score_competitive_saturation(challenge_data, signals, conn, config):
 
 
 def _score_icdev_readiness(challenge_data, signals, conn, config):
-    """Score ICDEV readiness dimension.
+    """Score ICDEV™ readiness dimension.
 
     Queries research_capability_map for the challenge and uses coverage_score.
     If no mapping yet, returns 0.5 (neutral).
@@ -771,7 +564,7 @@ def _score_icdev_readiness(challenge_data, signals, conn, config):
 def _score_compliance_alignment(challenge_data, signals, conn, config):
     """Score compliance alignment dimension.
 
-    Checks if challenge maps to existing ICDEV compliance frameworks.
+    Checks if challenge maps to existing ICDEV™ compliance frameworks.
     Full match = 1.0, crosswalk-able = 0.5, no match = 0.0.
 
     Uses research_regulatory_map crosswalk_coverage for the challenge.
@@ -796,7 +589,8 @@ def _score_compliance_alignment(challenge_data, signals, conn, config):
 
     try:
         reg_rows = conn.execute(
-            "SELECT crosswalk_coverage, icdev_frameworks FROM research_regulatory_map WHERE challenge_id = ?",
+            "SELECT crosswalk_coverage, icdev_frameworks FROM research_regulatory_map "
+            "WHERE challenge_id = ?",
             (challenge_id,),
         ).fetchall()
     except Exception:
@@ -815,7 +609,7 @@ def _score_compliance_alignment(challenge_data, signals, conn, config):
     for rr in reg_rows:
         cov = float(rr["crosswalk_coverage"] or 0.0)
         total_coverage += cov
-        # Check if any mapping has ICDEV frameworks
+        # Check if any mapping has ICDEV™ frameworks
         try:
             frameworks = json.loads(rr["icdev_frameworks"] or "[]")
             if isinstance(frameworks, list) and len(frameworks) > 0:
@@ -858,7 +652,7 @@ def cluster_signals(session_id, db_path=None):
     conn = _get_db(db_path)
     try:
         rows = conn.execute(
-            "SELECT * FROM research_signals WHERE session_id = ? ORDER BY rowid ASC",
+            "SELECT * FROM research_signals WHERE session_id = ? ORDER BY discovered_at ASC",
             (session_id,),
         ).fetchall()
 
@@ -931,7 +725,8 @@ def cluster_signals(session_id, db_path=None):
 
                 # Check if challenge with this fingerprint already exists
                 existing = conn.execute(
-                    "SELECT id FROM research_challenges WHERE session_id = ? AND keyword_fingerprint = ?",
+                    "SELECT id FROM research_challenges "
+                    "WHERE session_id = ? AND keyword_fingerprint = ?",
                     (session_id, fingerprint),
                 ).fetchone()
                 if existing:
@@ -967,25 +762,24 @@ def cluster_signals(session_id, db_path=None):
                     ),
                 )
 
-                challenges.append(
-                    {
-                        "id": chal_id,
-                        "session_id": session_id,
-                        "title": challenge_title,
-                        "description": description,
-                        "category": cat,
-                        "signal_count": len(cluster),
-                        "keyword_fingerprint": fingerprint,
-                        "keywords": top_keywords,
-                        "status": "new",
-                    }
-                )
+                challenges.append({
+                    "id": chal_id,
+                    "session_id": session_id,
+                    "title": challenge_title,
+                    "description": description,
+                    "category": cat,
+                    "signal_count": len(cluster),
+                    "keyword_fingerprint": fingerprint,
+                    "keywords": top_keywords,
+                    "status": "new",
+                })
 
         conn.commit()
 
         _audit(
             "research.cluster",
-            f"Clustered {len(signal_data)} signals into {len(challenges)} challenges for session {session_id}",
+            f"Clustered {len(signal_data)} signals into {len(challenges)} challenges "
+            f"for session {session_id}",
             {
                 "session_id": session_id,
                 "signal_count": len(signal_data),
@@ -1022,7 +816,9 @@ def score_challenge(challenge_id, db_path=None):
 
     conn = _get_db(db_path)
     try:
-        row = conn.execute("SELECT * FROM research_challenges WHERE id = ?", (challenge_id,)).fetchone()
+        row = conn.execute(
+            "SELECT * FROM research_challenges WHERE id = ?", (challenge_id,)
+        ).fetchone()
         if not row:
             raise ValueError(f"Challenge not found: {challenge_id}")
 
@@ -1036,7 +832,7 @@ def score_challenge(challenge_id, db_path=None):
             if isinstance(signal_ids, list) and signal_ids:
                 placeholders = ",".join("?" for _ in signal_ids)
                 sig_rows = conn.execute(
-                    f"SELECT * FROM research_signals WHERE id IN ({placeholders})",
+                    f"SELECT * FROM research_signals WHERE id IN ({placeholders})",  # nosec B608 -- table/column names are internal constants, not user input
                     signal_ids,
                 ).fetchall()
                 signals = [dict(sr) for sr in sig_rows]
@@ -1054,7 +850,9 @@ def score_challenge(challenge_id, db_path=None):
         }
 
         # Weighted average (D21 deterministic pattern)
-        composite = sum(dimensions[dim] * weights.get(dim, 0.0) for dim in dimensions)
+        composite = sum(
+            dimensions[dim] * weights.get(dim, 0.0) for dim in dimensions
+        )
         composite = round(max(0.0, min(1.0, composite)), 4)
 
         # Determine severity band from thresholds
@@ -1152,14 +950,14 @@ def score_all_new(session_id=None, db_path=None):
             rows = conn.execute(
                 """SELECT * FROM research_challenges
                    WHERE status = 'new' AND session_id = ?
-                   ORDER BY rowid ASC""",
+                   ORDER BY last_seen ASC""",
                 (session_id,),
             ).fetchall()
         else:
             rows = conn.execute(
                 """SELECT * FROM research_challenges
                    WHERE status = 'new'
-                   ORDER BY rowid ASC"""
+                   ORDER BY last_seen ASC"""
             ).fetchall()
     finally:
         conn.close()
@@ -1202,15 +1000,13 @@ def score_all_new(session_id=None, db_path=None):
     results.sort(key=lambda r: r.get("composite_score", 0.0), reverse=True)
     top_5 = []
     for r in results[:5]:
-        top_5.append(
-            {
-                "challenge_id": r["challenge_id"],
-                "title": r["title"],
-                "composite_score": r["composite_score"],
-                "severity": r["severity"],
-                "category": r["category"],
-            }
-        )
+        top_5.append({
+            "challenge_id": r["challenge_id"],
+            "title": r["title"],
+            "composite_score": r["composite_score"],
+            "severity": r["severity"],
+            "category": r["category"],
+        })
 
     _audit(
         "research.score_batch",
@@ -1252,7 +1048,7 @@ def get_top_challenges(session_id, limit=20, db_path=None):
             """SELECT * FROM research_challenges
                WHERE session_id = ?
                AND composite_score IS NOT NULL
-               ORDER BY rowid ASC""",
+               ORDER BY last_seen ASC""",
             (session_id,),
         ).fetchall()
 
@@ -1274,22 +1070,20 @@ def get_top_challenges(session_id, limit=20, db_path=None):
             except (json.JSONDecodeError, TypeError):
                 breakdown = {}
 
-            scored.append(
-                {
-                    "challenge_id": ch["id"],
-                    "title": ch.get("title", ""),
-                    "description": ch.get("description", ""),
-                    "category": ch.get("category", ""),
-                    "signal_count": ch.get("signal_count", 0),
-                    "composite_score": score,
-                    "severity": ch.get("severity", "appendix"),
-                    "breakdown": breakdown.get("dimensions", {}),
-                    "keywords": json.loads(ch.get("keywords") or "[]"),
-                    "signal_ids": json.loads(ch.get("signal_ids") or "[]"),
-                    "first_seen": ch.get("first_seen", ""),
-                    "last_seen": ch.get("last_seen", ""),
-                }
-            )
+            scored.append({
+                "challenge_id": ch["id"],
+                "title": ch.get("title", ""),
+                "description": ch.get("description", ""),
+                "category": ch.get("category", ""),
+                "signal_count": ch.get("signal_count", 0),
+                "composite_score": score,
+                "severity": ch.get("severity", "appendix"),
+                "breakdown": breakdown.get("dimensions", {}),
+                "keywords": json.loads(ch.get("keywords") or "[]"),
+                "signal_ids": json.loads(ch.get("signal_ids") or "[]"),
+                "first_seen": ch.get("first_seen", ""),
+                "last_seen": ch.get("last_seen", ""),
+            })
 
         scored.sort(key=lambda x: x.get("composite_score", 0.0), reverse=True)
         return scored[:limit]
@@ -1313,7 +1107,7 @@ def list_challenges(session_id, db_path=None):
         rows = conn.execute(
             """SELECT * FROM research_challenges
                WHERE session_id = ?
-               ORDER BY composite_score DESC NULLS LAST, rowid ASC""",
+               ORDER BY CASE WHEN composite_score IS NULL THEN 1 ELSE 0 END, composite_score DESC, last_seen ASC""",
             (session_id,),
         ).fetchall()
 
@@ -1326,21 +1120,19 @@ def list_challenges(session_id, db_path=None):
 
         challenges = []
         for ch in by_fingerprint.values():
-            challenges.append(
-                {
-                    "challenge_id": ch["id"],
-                    "title": ch.get("title", ""),
-                    "description": ch.get("description", ""),
-                    "category": ch.get("category", ""),
-                    "signal_count": ch.get("signal_count", 0),
-                    "composite_score": ch.get("composite_score"),
-                    "severity": ch.get("severity", "appendix"),
-                    "status": ch.get("status", "new"),
-                    "keywords": json.loads(ch.get("keywords") or "[]"),
-                    "first_seen": ch.get("first_seen", ""),
-                    "last_seen": ch.get("last_seen", ""),
-                }
-            )
+            challenges.append({
+                "challenge_id": ch["id"],
+                "title": ch.get("title", ""),
+                "description": ch.get("description", ""),
+                "category": ch.get("category", ""),
+                "signal_count": ch.get("signal_count", 0),
+                "composite_score": ch.get("composite_score"),
+                "severity": ch.get("severity", "appendix"),
+                "status": ch.get("status", "new"),
+                "keywords": json.loads(ch.get("keywords") or "[]"),
+                "first_seen": ch.get("first_seen", ""),
+                "last_seen": ch.get("last_seen", ""),
+            })
 
         # Sort: scored first (by score desc), then new (by first_seen)
         challenges.sort(
@@ -1377,7 +1169,8 @@ def _print_human(args, result):
                 print(f"  {'#':>3s}  {'Category':>14s}  {'Signals':>7s}  Title")
                 print(f"  {'---':>3s}  {'-' * 14:>14s}  {'-------':>7s}  -----")
                 for i, ch in enumerate(result, 1):
-                    print(f"  {i:3d}  {ch['category']:>14s}  {ch['signal_count']:7d}  {ch['title'][:40]}")
+                    print(f"  {i:3d}  {ch['category']:>14s}  "
+                          f"{ch['signal_count']:7d}  {ch['title'][:40]}")
         else:
             print("\n  No signals to cluster.")
 
@@ -1386,7 +1179,8 @@ def _print_human(args, result):
         print(f"  Title:     {result.get('title', '')}")
         print(f"  Category:  {result.get('category', '')}")
         print(f"  Signals:   {result.get('signal_count', 0)}")
-        print(f"  Score:     {result.get('composite_score', 0):.4f}  [{result.get('severity', '')}]")
+        print(f"  Score:     {result.get('composite_score', 0):.4f}  "
+              f"[{result.get('severity', '')}]")
         print(f"  Status:    {result.get('status', '')}")
         print()
         print("  Dimensions:")
@@ -1403,14 +1197,14 @@ def _print_human(args, result):
         if result.get("top_5"):
             print()
             print("  Top 5 Challenges:")
-            print(f"    {'#':>3s}  {'Score':>7s}  {'Severity':>10s}  {'Category':>14s}  Title")
-            print(f"    {'---':>3s}  {'-------':>7s}  {'----------':>10s}  {'-' * 14:>14s}  -----")
+            print(f"    {'#':>3s}  {'Score':>7s}  {'Severity':>10s}  "
+                  f"{'Category':>14s}  Title")
+            print(f"    {'---':>3s}  {'-------':>7s}  {'----------':>10s}  "
+                  f"{'-' * 14:>14s}  -----")
             for i, t in enumerate(result["top_5"], 1):
-                print(
-                    f"    {i:3d}  {t['composite_score']:7.4f}  "
-                    f"{t['severity']:>10s}  {t['category']:>14s}  "
-                    f"{t['title'][:40]}"
-                )
+                print(f"    {i:3d}  {t['composite_score']:7.4f}  "
+                      f"{t['severity']:>10s}  {t['category']:>14s}  "
+                      f"{t['title'][:40]}")
 
     elif args.top:
         if isinstance(result, list):
@@ -1420,14 +1214,14 @@ def _print_human(args, result):
                 score = ch.get("composite_score", 0)
                 sev = ch.get("severity", "")
                 print(f"  {i:3d}. [{score:.4f}] {ch.get('title', '')[:60]}")
-                print(
-                    f"       Category: {ch.get('category', '')}  |  "
-                    f"Signals: {ch.get('signal_count', 0)}  |  "
-                    f"Severity: {sev}"
-                )
+                print(f"       Category: {ch.get('category', '')}  |  "
+                      f"Signals: {ch.get('signal_count', 0)}  |  "
+                      f"Severity: {sev}")
                 dims = ch.get("breakdown", {})
                 if dims:
-                    dim_str = "  ".join(f"{k[:12]}={v:.2f}" for k, v in dims.items())
+                    dim_str = "  ".join(
+                        f"{k[:12]}={v:.2f}" for k, v in dims.items()
+                    )
                     print(f"       {dim_str}")
                 print()
         else:
@@ -1437,18 +1231,18 @@ def _print_human(args, result):
         if isinstance(result, list):
             print(f"\n  All Challenges ({len(result)} total):")
             print()
-            print(f"  {'#':>3s}  {'Score':>7s}  {'Severity':>10s}  {'Status':>8s}  {'Category':>14s}  Title")
-            print(f"  {'---':>3s}  {'-------':>7s}  {'----------':>10s}  {'--------':>8s}  {'-' * 14:>14s}  -----")
+            print(f"  {'#':>3s}  {'Score':>7s}  {'Severity':>10s}  "
+                  f"{'Status':>8s}  {'Category':>14s}  Title")
+            print(f"  {'---':>3s}  {'-------':>7s}  {'----------':>10s}  "
+                  f"{'--------':>8s}  {'-' * 14:>14s}  -----")
             for i, ch in enumerate(result, 1):
                 score = ch.get("composite_score")
                 score_str = f"{score:7.4f}" if score is not None else "  --   "
-                print(
-                    f"  {i:3d}  {score_str}  "
-                    f"{ch.get('severity', ''):>10s}  "
-                    f"{ch.get('status', ''):>8s}  "
-                    f"{ch.get('category', ''):>14s}  "
-                    f"{ch.get('title', '')[:40]}"
-                )
+                print(f"  {i:3d}  {score_str}  "
+                      f"{ch.get('severity', ''):>10s}  "
+                      f"{ch.get('status', ''):>8s}  "
+                      f"{ch.get('category', ''):>14s}  "
+                      f"{ch.get('title', '')[:40]}")
         else:
             print("\n  No challenges found.")
 
@@ -1462,7 +1256,7 @@ def _print_human(args, result):
 def main():
     """CLI entry point."""
     parser = argparse.ArgumentParser(
-        description="ICDEV Research Engine Challenge Scorer -- CUI // SP-CTI",
+        description="ICDEV™ Research Engine Challenge Scorer -- CUI // SP-CTI",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Examples:\n"
@@ -1476,49 +1270,42 @@ def main():
     )
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--human", action="store_true", help="Human-readable output")
-    parser.add_argument("--db-path", type=Path, default=None, help="Database path override")
+    parser.add_argument(
+        "--db-path", type=Path, default=None, help="Database path override"
+    )
 
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(
-        "--cluster",
-        action="store_true",
+        "--cluster", action="store_true",
         help="Cluster signals into challenges (requires --session-id)",
     )
     group.add_argument(
-        "--score",
-        action="store_true",
+        "--score", action="store_true",
         help="Score all new (unscored) challenges (requires --session-id)",
     )
     group.add_argument(
-        "--score-one",
-        action="store_true",
+        "--score-one", action="store_true",
         help="Score a single challenge (requires --challenge-id)",
     )
     group.add_argument(
-        "--top",
-        action="store_true",
+        "--top", action="store_true",
         help="Get top challenges by composite score (requires --session-id)",
     )
     group.add_argument(
-        "--challenges",
-        action="store_true",
+        "--challenges", action="store_true",
         help="List all challenges for a session (requires --session-id)",
     )
 
     parser.add_argument(
-        "--session-id",
-        type=str,
+        "--session-id", type=str,
         help="Research session ID (required for --cluster, --score, --top, --challenges)",
     )
     parser.add_argument(
-        "--challenge-id",
-        type=str,
+        "--challenge-id", type=str,
         help="Challenge ID to score (required with --score-one)",
     )
     parser.add_argument(
-        "--limit",
-        type=int,
-        default=20,
+        "--limit", type=int, default=20,
         help="Max challenges to return (with --top, default 20)",
     )
 
@@ -1540,7 +1327,9 @@ def main():
         elif args.top:
             if not args.session_id:
                 parser.error("--top requires --session-id")
-            result = get_top_challenges(args.session_id, limit=args.limit, db_path=args.db_path)
+            result = get_top_challenges(
+                args.session_id, limit=args.limit, db_path=args.db_path
+            )
         elif args.challenges:
             if not args.session_id:
                 parser.error("--challenges requires --session-id")

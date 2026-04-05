@@ -1,8 +1,8 @@
 # [TEMPLATE: CUI // SP-CTI]
 
-# ICDEV On-Premises Installation Guide
+# ICDEV™ On-Premises Installation Guide
 
-This document covers the installation, configuration, and management of ICDEV in an air-gapped on-premises Kubernetes environment.
+This document covers the installation, configuration, and management of ICDEV™ in an air-gapped on-premises Kubernetes environment.
 
 ## Prerequisites
 
@@ -13,10 +13,10 @@ This document covers the installation, configuration, and management of ICDEV in
 | kubectl | 1.25+ | Configured with cluster access |
 | Docker or Podman | 20.10+ / 4.0+ | For loading container images |
 | Storage class | - | ReadWriteOnce for database PVC |
-| License key | - | Obtain from ICDEV team |
+| License key | - | Obtain from ICDEV™ team |
 
 **Resource requirements (minimum):**
-- 4 vCPUs, 8 GB RAM for ICDEV workloads
+- 4 vCPUs, 8 GB RAM for ICDEV™ workloads
 - 20 GB persistent storage for internal PostgreSQL
 - Additional resources for monitored applications
 
@@ -90,7 +90,7 @@ global:
 On a connected machine, build and export all container images:
 
 ```bash
-# Pull or build all ICDEV images
+# Pull or build all ICDEV™ images
 docker pull icdev/api-gateway:21.0.0
 docker pull icdev/orchestrator:21.0.0
 docker pull icdev/builder:21.0.0
@@ -175,7 +175,7 @@ platformDb:
 
 ### External PostgreSQL (Recommended for Production)
 
-Point ICDEV to your existing PostgreSQL or RDS instance:
+Point ICDEV™ to your existing PostgreSQL or RDS instance:
 
 ```yaml
 platformDb:

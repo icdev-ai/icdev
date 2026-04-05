@@ -21,7 +21,7 @@ from typing import Any, Dict, List, Optional
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
-from tools.db.storage import get_connection
+from tools.db.storage import get_connection  # noqa: E402
 
 
 def _utcnow_iso() -> str:
@@ -393,7 +393,7 @@ def _store_win_loss_record(opportunity_id: str, analysis: Dict) -> Optional[str]
                 analysis["competitor_strengths"],
                 analysis["our_strengths"],
                 analysis["our_weaknesses"],
-                json.dumps([l["lesson"] for l in analysis["lessons"]]),
+                json.dumps([item["lesson"] for item in analysis["lessons"]]),
                 now,
             ),
         )

@@ -4,7 +4,7 @@ CUI // SP-CTI
 
 ## Overview
 
-ICDEV supports 26 compliance frameworks through a unified architecture built on a dual-hub crosswalk model (D111). Implementing a control in one framework automatically cascades coverage to all mapped frameworks. The system uses the BaseAssessor ABC pattern (D116) to minimize per-framework implementation effort (~60 LOC vs ~400+ LOC) while maintaining full gate enforcement, OSCAL generation, and CLI support.
+ICDEV™ supports 26 compliance frameworks through a unified architecture built on a dual-hub crosswalk model (D111). Implementing a control in one framework automatically cascades coverage to all mapped frameworks. The system uses the BaseAssessor ABC pattern (D116) to minimize per-framework implementation effort (~60 LOC vs ~400+ LOC) while maintaining full gate enforcement, OSCAL generation, and CLI support.
 
 ---
 
@@ -429,8 +429,8 @@ Two modes of operation:
 
 | Mode | Description | Use Case |
 |------|-------------|----------|
-| **Push** | ICDEV writes controls/POAMs to eMASS | Automated ATO updates |
-| **Pull** | ICDEV reads eMASS status into local DB | Status synchronization |
+| **Push** | ICDEV™ writes controls/POAMs to eMASS | Automated ATO updates |
+| **Pull** | ICDEV™ reads eMASS status into local DB | Status synchronization |
 | **Hybrid** | Both push and pull | Full bidirectional sync |
 
 ### cATO (Continuous ATO)

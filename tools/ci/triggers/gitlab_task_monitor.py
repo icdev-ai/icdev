@@ -24,10 +24,10 @@ import json
 import os
 import re
 import signal
-import sqlite3
 import subprocess
 import sys
 import time
+from tools.db.storage import get_connection
 from pathlib import Path
 from typing import Optional
 
@@ -56,7 +56,7 @@ ICDEV_TAG_MAP = {
 TAG_PATTERN = re.compile(r"\{\{icdev:\s*(\w+)\}\}", re.IGNORECASE)
 
 # Bot marker to prevent loops
-BOT_MARKER = "[ICDEV-BOT]"
+BOT_MARKER = "[ICDEV™-BOT]"
 
 
 def extract_icdev_tag(text: str) -> Optional[str]:
@@ -73,7 +73,7 @@ def extract_icdev_tag(text: str) -> Optional[str]:
 def is_claimed(issue_iid: int) -> bool:
     """Check if an issue has already been claimed."""
     try:
-        conn = sqlite3.connect(str(DB_PATH))
+        conn = get_connection()
         row = conn.execute(
             "SELECT id FROM gitlab_task_claims WHERE issue_iid = ? AND status NOT IN ('failed')",
             (issue_iid,),
@@ -87,15 +87,15 @@ def is_claimed(issue_iid: int) -> bool:
 def claim_issue(issue_iid: int, issue_url: str, icdev_tag: str, worktree_name: str = None) -> str:
     """Claim an issue for processing. Returns claim ID."""
     try:
-        conn = sqlite3.connect(str(DB_PATH))
-        conn.execute(
+        conn = get_connection()
+        cur = conn.execute(
             """INSERT INTO gitlab_task_claims
                (issue_iid, issue_url, icdev_tag, worktree_name, status)
                VALUES (?, ?, ?, ?, 'claimed')""",
             (issue_iid, issue_url, icdev_tag, worktree_name),
         )
         conn.commit()
-        claim_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        claim_id = cur.lastrowid
         conn.close()
         return str(claim_id)
     except Exception as e:
@@ -106,7 +106,7 @@ def claim_issue(issue_iid: int, issue_url: str, icdev_tag: str, worktree_name: s
 def update_claim(issue_iid: int, status: str, run_id: str = None):
     """Update claim status."""
     try:
-        conn = sqlite3.connect(str(DB_PATH))
+        conn = get_connection()
         if run_id:
             conn.execute(
                 "UPDATE gitlab_task_claims SET status = ?, run_id = ?, completed_at = datetime('now') WHERE issue_iid = ? AND status = 'claimed'",  # noqa: E501
@@ -320,7 +320,7 @@ def poll_gitlab_tasks(interval: int = 20, dry_run: bool = False):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="ICDEV GitLab Task Board Monitor")
+    parser = argparse.ArgumentParser(description="ICDEV™ GitLab Task Board Monitor")
     parser.add_argument("--interval", type=int, default=20, help="Poll interval in seconds")
     parser.add_argument("--dry-run", action="store_true", help="Don't actually spawn workflows")
     parser.add_argument("--once", action="store_true", help="Poll once and exit")

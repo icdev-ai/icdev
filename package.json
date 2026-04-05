@@ -24,7 +24,7 @@
   },
   "keywords": [],
   "author": "",
-  "license": "AGPL-3.0-or-later",
+  "license": "Apache-2.0",
   "type": "commonjs",
   "bugs": {
     "url": "https://github.com/icdev-ai/icdev/issues"

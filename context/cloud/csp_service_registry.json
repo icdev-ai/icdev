@@ -5,7 +5,7 @@
     "last_updated": "2026-02-21T00:00:00Z",
     "updated_by": "icdev-architect",
     "schema_version": 1,
-    "notes": "This registry is the source of truth for ICDEV's understanding of CSP service offerings. The CSP monitor (tools/cloud/csp_monitor.py) diffs live CSP data against this registry to detect changes. Updates require human review unless auto_update is enabled in args/csp_monitor_config.yaml."
+    "notes": "This registry is the source of truth for ICDEV™'s understanding of CSP service offerings. The CSP monitor (tools/cloud/csp_monitor.py) diffs live CSP data against this registry to detect changes. Updates require human review unless auto_update is enabled in args/csp_monitor_config.yaml."
   },
   "service_categories": {
     "compute": "Container orchestration, serverless, VMs",

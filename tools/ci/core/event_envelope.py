@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Event Envelope — unified event format for all CI/CD triggers (D132)
+# ICDEV™ Event Envelope — unified event format for all CI/CD triggers (D132)
 
 """
 Unified event envelope for all CI/CD trigger sources.
@@ -19,13 +19,14 @@ Usage:
     result = router.route(envelope)
 """
 
+import re
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Optional
 
 
-BOT_IDENTIFIER = "[ICDEV-BOT]"
+BOT_IDENTIFIER = "[ICDEV™-BOT]"
 
 
 @dataclass
@@ -78,11 +79,22 @@ class EventEnvelope:
 
     @staticmethod
     def _check_bot(text: str, author: str = "") -> bool:
-        """Check if the message is from a bot."""
+        """Check if the message is from a bot.
+
+        Handles Unicode variance in the trademark symbol (™, \ufffd,
+        stripped, or mangled) so bot detection works regardless of
+        encoding/decoding artifacts on Windows or cross-platform.
+        """
         if BOT_IDENTIFIER in text:
             return True
-        if author and author.lower() in ("icdev-bot", "icdev"):
+        # Also check with ™ stripped (handles encoding corruption)
+        if "[ICDEV-BOT]" in text.upper():
             return True
+        if author:
+            # Strip ALL non-alphanumeric except hyphen, then lowercase
+            clean = re.sub(r"[^a-zA-Z0-9-]", "", author).lower()
+            if clean in ("icdev-bot", "icdev"):
+                return True
         return False
 
     @staticmethod

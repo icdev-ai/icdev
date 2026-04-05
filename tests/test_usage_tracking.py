@@ -26,7 +26,7 @@ except ImportError:
 
 @pytest.fixture()
 def db_path(tmp_path):
-    """Create a temporary ICDEV database with the full schema."""
+    """Create a temporary ICDEV™ database with the full schema."""
     path = tmp_path / "test_icdev.db"
     conn = sqlite3.connect(str(path))
     conn.executescript(SCHEMA_SQL)

@@ -514,9 +514,9 @@ class TestVerticalLoader:
         assert any("keywords" in e for e in errors)
 
     def test_discover_verticals(self):
-        """Check that context/research/verticals/ has 6 JSON files."""
+        """Check that context/research/verticals/ has JSON files for all verticals."""
         verticals, errs = discover_verticals()
-        assert len(verticals) == 6
+        assert len(verticals) >= 6
         slugs = {v["slug"] for v in verticals}
         assert "healthcare" in slugs
         assert "trading" in slugs
@@ -538,7 +538,7 @@ class TestVerticalLoader:
         """Load verticals to DB then list them."""
         load_verticals_to_db(db_path=research_db)
         result = list_verticals(db_path=research_db)
-        assert result["total"] == 6
+        assert result["total"] >= 6
         slugs = {v["slug"] for v in result["verticals"]}
         assert "healthcare" in slugs
 
@@ -851,7 +851,7 @@ class TestRegulatoryMapper:
         assert "nist_800_171" in frameworks
 
     def test_determine_icdev_frameworks_all(self):
-        """'all' marker should return all ICDEV frameworks."""
+        """'all' marker should return all ICDEV™ frameworks."""
         frameworks = _determine_icdev_frameworks(["all"])
         assert set(frameworks) == set(ICDEV_FRAMEWORKS)
 

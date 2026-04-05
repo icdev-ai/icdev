@@ -3,7 +3,7 @@
 """A2A v0.3 Agent Discovery Server.
 
 Provides a centralized agent discovery endpoint that returns v0.3 Agent Cards
-for all registered ICDEV agents. Supports capability-based filtering and
+for all registered ICDEV™ agents. Supports capability-based filtering and
 health-aware routing.
 
 Architecture Decisions:
@@ -25,6 +25,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(BASE_DIR))
+
+from tools.db.storage import get_connection  # noqa: E402
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 
@@ -32,8 +35,7 @@ def _get_connection(db_path=None):
     """Get database connection."""
     path = db_path or DB_PATH
     if path.exists():
-        conn = sqlite3.connect(str(path))
-        conn.row_factory = sqlite3.Row
+        conn = get_connection(db_path=str(path))
         return conn
     return None
 

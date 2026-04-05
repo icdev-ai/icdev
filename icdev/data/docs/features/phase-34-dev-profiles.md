@@ -9,14 +9,14 @@
 | Status | Implemented |
 | Priority | P2 |
 | Dependencies | Phase 21 (SaaS Multi-Tenancy), Phase 33 (Modular Installation) |
-| Author | ICDEV Architect Agent |
+| Author | ICDEV™ Architect Agent |
 | Date | 2026-02-23 |
 
 ---
 
 ## 1. Problem Statement
 
-ICDEV generates code, tests, compliance artifacts, infrastructure configurations, and documentation across 6 programming languages and 20+ compliance frameworks. Every organization has preferences: some teams use 4-space indentation while others use tabs; some prefer snake_case while others use camelCase; some mandate 80-character line limits while others allow 120; some require Go while others use Python; some need 100% branch coverage while others accept 80% line coverage.
+ICDEV™ generates code, tests, compliance artifacts, infrastructure configurations, and documentation across 6 programming languages and 20+ compliance frameworks. Every organization has preferences: some teams use 4-space indentation while others use tabs; some prefer snake_case while others use camelCase; some mandate 80-character line limits while others allow 120; some require Go while others use Python; some need 100% branch coverage while others accept 80% line coverage.
 
 Currently, these preferences are either hardcoded in tool defaults or scattered across `args/` YAML files with no organizational hierarchy. A tenant-level preference (e.g., "all projects in this organization use Go with gofmt and 120-character lines") cannot cascade down to individual projects. A program-level security mandate (e.g., "all projects under this program must use FIPS-validated crypto") cannot be enforced without per-project configuration. An ISSO who locks a security dimension at the tenant level has no way to prevent project-level overrides.
 
@@ -46,7 +46,7 @@ Dev Profiles solve this through a 5-layer deterministic cascade (Platform, Tenan
 |                  Dev Profile Cascade (5 Layers)                |
 |                                                                |
 |  +-------------------+                                        |
-|  | Platform Defaults |  (Hardcoded ICDEV baseline)            |
+|  | Platform Defaults |  (Hardcoded ICDEV™ baseline)            |
 |  +--------+----------+                                        |
 |           |                                                    |
 |           v                                                    |

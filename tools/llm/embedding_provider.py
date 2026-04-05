@@ -16,7 +16,6 @@ logger = logging.getLogger("icdev.llm.embedding")
 
 try:
     import openai as openai_sdk
-
     HAS_OPENAI = True
 except ImportError:
     openai_sdk = None
@@ -24,7 +23,6 @@ except ImportError:
 
 try:
     import boto3
-
     HAS_BOTO3 = True
 except ImportError:
     boto3 = None
@@ -32,7 +30,6 @@ except ImportError:
 
 try:
     import google.generativeai as genai
-
     HAS_GEMINI = True
 except ImportError:
     genai = None  # type: ignore[assignment]
@@ -46,13 +43,8 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
     the OpenAI embeddings endpoint via configurable base_url.
     """
 
-    def __init__(
-        self,
-        api_key: str = "",
-        base_url: str = "https://api.openai.com/v1",
-        model_id: str = "text-embedding-3-small",
-        dims: int = 1536,
-    ):
+    def __init__(self, api_key: str = "", base_url: str = "https://api.openai.com/v1",
+                 model_id: str = "text-embedding-3-small", dims: int = 1536):
         self._api_key = api_key
         self._base_url = base_url
         self._model_id = model_id
@@ -112,7 +104,9 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
 class BedrockEmbeddingProvider(EmbeddingProvider):
     """AWS Bedrock embedding provider for Amazon Titan Embeddings."""
 
-    def __init__(self, region: str = None, model_id: str = "amazon.titan-embed-text-v2:0", dims: int = 1024):
+    def __init__(self, region: str = None,
+                 model_id: str = "amazon.titan-embed-text-v2:0",
+                 dims: int = 1024):
         self._region = region or os.environ.get("AWS_DEFAULT_REGION", "us-gov-west-1")
         self._model_id = model_id
         self._dims = dims
@@ -163,7 +157,9 @@ class GeminiEmbeddingProvider(EmbeddingProvider):
     Follows D66 provider pattern and D73 graceful degradation.
     """
 
-    def __init__(self, api_key: str = "", model_id: str = "models/text-embedding-004", dims: int = 768):
+    def __init__(self, api_key: str = "",
+                 model_id: str = "models/text-embedding-004",
+                 dims: int = 768):
         self._api_key = api_key
         self._model_id = model_id if model_id.startswith("models/") else f"models/{model_id}"
         self._dims = dims
@@ -174,7 +170,10 @@ class GeminiEmbeddingProvider(EmbeddingProvider):
         if self._configured:
             return
         if not HAS_GEMINI:
-            raise ImportError("google-generativeai SDK required. Install: pip install google-generativeai")
+            raise ImportError(
+                "google-generativeai SDK required. "
+                "Install: pip install google-generativeai"
+            )
         if self._api_key:
             genai.configure(api_key=self._api_key)
         self._configured = True
@@ -229,7 +228,6 @@ class GeminiEmbeddingProvider(EmbeddingProvider):
 # ============================================================
 try:
     from openai import AzureOpenAI as _AzureEmbedClient
-
     _HAS_AZURE_EMBED = True
 except ImportError:
     _HAS_AZURE_EMBED = False
@@ -238,13 +236,9 @@ except ImportError:
 class AzureEmbeddingProvider(EmbeddingProvider):
     """Azure OpenAI embedding provider."""
 
-    def __init__(
-        self,
-        api_key: str = "",
-        endpoint: str = "",
-        api_version: str = "2024-02-01",
-        deployment: str = "text-embedding-ada-002",
-    ):
+    def __init__(self, api_key: str = "", endpoint: str = "",
+                 api_version: str = "2024-02-01",
+                 deployment: str = "text-embedding-ada-002"):
         self._api_key = api_key or os.environ.get("AZURE_OPENAI_API_KEY", "")
         self._endpoint = endpoint or os.environ.get("AZURE_OPENAI_ENDPOINT", "")
         self._api_version = api_version
@@ -298,7 +292,6 @@ class AzureEmbeddingProvider(EmbeddingProvider):
 # ============================================================
 try:
     import oci as _oci_embed
-
     _HAS_OCI_EMBED = True
 except ImportError:
     _HAS_OCI_EMBED = False
@@ -307,9 +300,9 @@ except ImportError:
 class OCIEmbeddingProvider(EmbeddingProvider):
     """Oracle OCI Generative AI Cohere embedding provider."""
 
-    def __init__(
-        self, compartment_id: str = "", model_id: str = "cohere.embed-english-v3.0", service_endpoint: str = ""
-    ):
+    def __init__(self, compartment_id: str = "",
+                 model_id: str = "cohere.embed-english-v3.0",
+                 service_endpoint: str = ""):
         self._compartment_id = compartment_id or os.environ.get("OCI_COMPARTMENT_OCID", "")
         self._model_id = model_id
         self._endpoint = service_endpoint or os.environ.get(
@@ -332,8 +325,7 @@ class OCIEmbeddingProvider(EmbeddingProvider):
             try:
                 config = _oci_embed.config.from_file()
                 self._client = _oci_embed.generative_ai_inference.GenerativeAiInferenceClient(
-                    config,
-                    service_endpoint=self._endpoint,
+                    config, service_endpoint=self._endpoint,
                 )
             except Exception:
                 pass
@@ -385,7 +377,6 @@ class OCIEmbeddingProvider(EmbeddingProvider):
 try:
     from ibm_watsonx_ai import Credentials as _IBMEmbedCreds
     from ibm_watsonx_ai.foundation_models import Embeddings as _IBMEmbeddings
-
     _HAS_IBM_EMBED = True
 except ImportError:
     _HAS_IBM_EMBED = False
@@ -394,12 +385,14 @@ except ImportError:
 class IBMWatsonxEmbeddingProvider(EmbeddingProvider):
     """IBM watsonx.ai Slate embedding provider."""
 
-    def __init__(
-        self, api_key: str = "", project_id: str = "", url: str = "", model_id: str = "ibm/slate-125m-english-rtrvr-v2"
-    ):
+    def __init__(self, api_key: str = "", project_id: str = "",
+                 url: str = "",
+                 model_id: str = "ibm/slate-125m-english-rtrvr-v2"):
         self._api_key = api_key or os.environ.get("IBM_CLOUD_API_KEY", "")
         self._project_id = project_id or os.environ.get("IBM_WATSONX_PROJECT_ID", "")
-        self._url = url or os.environ.get("IBM_WATSONX_URL", "https://us-south.ml.cloud.ibm.com")
+        self._url = url or os.environ.get(
+            "IBM_WATSONX_URL", "https://us-south.ml.cloud.ibm.com"
+        )
         self._model_id = model_id
         self._client = None
         self._dims = 768
@@ -448,9 +441,12 @@ class IBMWatsonxEmbeddingProvider(EmbeddingProvider):
 class OllamaEmbeddingProvider(EmbeddingProvider):
     """Ollama native /api/embed embedding provider (air-gap safe, zero cost)."""
 
-    def __init__(self, base_url: str = "", model_id: str = "nomic-embed-text", dims: int = 768):
+    def __init__(self, base_url: str = "", model_id: str = "nomic-embed-text",
+                 dims: int = 768):
         self._base_url = (
-            base_url or os.environ.get("OLLAMA_BASE_URL", "").rstrip("/").replace("/v1", "") or "http://localhost:11434"
+            base_url
+            or os.environ.get("OLLAMA_BASE_URL", "").rstrip("/").replace("/v1", "")
+            or "http://localhost:11434"
         )
         self._model_id = model_id
         self._dims = dims
@@ -465,7 +461,6 @@ class OllamaEmbeddingProvider(EmbeddingProvider):
 
     def embed(self, text: str) -> Optional[List[float]]:
         import urllib.request
-
         try:
             payload = json.dumps({"model": self._model_id, "input": text}).encode()
             req = urllib.request.Request(
@@ -474,7 +469,7 @@ class OllamaEmbeddingProvider(EmbeddingProvider):
                 headers={"Content-Type": "application/json"},
                 method="POST",
             )
-            with urllib.request.urlopen(req, timeout=30) as resp:
+            with urllib.request.urlopen(req, timeout=30) as resp:  # nosec B310 -- URL scheme validated; internal/configured endpoints only
                 data = json.loads(resp.read())
                 embeddings = data.get("embeddings", [])
                 return embeddings[0] if embeddings else None
@@ -484,7 +479,6 @@ class OllamaEmbeddingProvider(EmbeddingProvider):
 
     def embed_batch(self, texts: List[str]) -> List[Optional[List[float]]]:
         import urllib.request
-
         try:
             payload = json.dumps({"model": self._model_id, "input": texts}).encode()
             req = urllib.request.Request(
@@ -493,7 +487,7 @@ class OllamaEmbeddingProvider(EmbeddingProvider):
                 headers={"Content-Type": "application/json"},
                 method="POST",
             )
-            with urllib.request.urlopen(req, timeout=60) as resp:
+            with urllib.request.urlopen(req, timeout=60) as resp:  # nosec B310 -- URL scheme validated; internal/configured endpoints only
                 data = json.loads(resp.read())
                 return data.get("embeddings", [None] * len(texts))
         except Exception as exc:
@@ -502,10 +496,11 @@ class OllamaEmbeddingProvider(EmbeddingProvider):
 
     def check_availability(self) -> bool:
         import urllib.request
-
         try:
-            req = urllib.request.Request(f"{self._base_url}/api/tags", method="GET")
-            with urllib.request.urlopen(req, timeout=5) as resp:
+            req = urllib.request.Request(
+                f"{self._base_url}/api/tags", method="GET"
+            )
+            with urllib.request.urlopen(req, timeout=5) as resp:  # nosec B310 -- URL scheme validated; internal/configured endpoints only
                 data = json.loads(resp.read())
                 models = [m.get("name", "") for m in data.get("models", [])]
                 return any(self._model_id in m for m in models)

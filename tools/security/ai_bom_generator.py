@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """AI Bill of Materials (AI BOM) Generator.
 
 Catalogs all AI/ML components in a project: LLM providers, embedding models,
@@ -34,6 +34,7 @@ import re
 import sqlite3
 import sys
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -46,32 +47,13 @@ GATES_PATH = BASE_DIR / "args" / "security_gates.yaml"
 
 # AI framework packages to detect in requirements files
 AI_FRAMEWORK_PACKAGES = {
-    "openai",
-    "anthropic",
-    "boto3",
-    "ibm-watsonx-ai",
-    "google-generativeai",
-    "langchain",
-    "langchain-core",
-    "langchain-community",
-    "transformers",
-    "torch",
-    "tensorflow",
-    "numpy",
-    "scikit-learn",
-    "scipy",
-    "pandas",
-    "keras",
-    "onnx",
-    "onnxruntime",
-    "sentence-transformers",
-    "tiktoken",
-    "tokenizers",
-    "safetensors",
-    "accelerate",
-    "peft",
-    "huggingface-hub",
-    "diffusers",
+    "openai", "anthropic", "boto3", "ibm-watsonx-ai",
+    "google-generativeai", "langchain", "langchain-core",
+    "langchain-community", "transformers", "torch", "tensorflow",
+    "numpy", "scikit-learn", "scipy", "pandas", "keras",
+    "onnx", "onnxruntime", "sentence-transformers", "tiktoken",
+    "tokenizers", "safetensors", "accelerate", "peft",
+    "huggingface-hub", "diffusers",
 }
 
 
@@ -88,24 +70,25 @@ class AIBOMGenerator:
     def _get_connection(self) -> sqlite3.Connection:
         """Get a database connection with Row factory."""
         if not self.db_path.exists():
-            raise FileNotFoundError(f"Database not found: {self.db_path}\nRun: python tools/db/init_icdev_db.py")
-        conn = sqlite3.connect(str(self.db_path))
-        conn.row_factory = sqlite3.Row
+            raise FileNotFoundError(
+                f"Database not found: {self.db_path}\n"
+                "Run: python tools/db/init_icdev_db.py"
+            )
+        conn = get_connection(db_path=str(self.db_path))
         return conn
 
     def _get_project(self, conn: sqlite3.Connection, project_id: str) -> Dict:
         """Load project data from database."""
-        row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+        row = conn.execute(
+            "SELECT * FROM projects WHERE id = ?", (project_id,)
+        ).fetchone()
         if not row:
             raise ValueError(f"Project '{project_id}' not found.")
         return dict(row)
 
     def _log_audit_event(
-        self,
-        conn: sqlite3.Connection,
-        project_id: str,
-        action: str,
-        details: Dict,
+        self, conn: sqlite3.Connection, project_id: str,
+        action: str, details: Dict,
     ) -> None:
         """Log an audit trail event for AI BOM generation."""
         try:
@@ -145,7 +128,6 @@ class AIBOMGenerator:
 
         try:
             import yaml
-
             with open(config_path, "r", encoding="utf-8") as f:
                 config = yaml.safe_load(f) or {}
         except ImportError:
@@ -159,16 +141,14 @@ class AIBOMGenerator:
         for model_name, model_info in models.items():
             if not isinstance(model_info, dict):
                 continue
-            components.append(
-                {
-                    "component_type": "model",
-                    "component_name": model_name,
-                    "version": model_info.get("model_id", "unknown"),
-                    "provider": model_info.get("provider", "unknown"),
-                    "license": "proprietary",
-                    "source": str(config_path),
-                }
-            )
+            components.append({
+                "component_type": "model",
+                "component_name": model_name,
+                "version": model_info.get("model_id", "unknown"),
+                "provider": model_info.get("provider", "unknown"),
+                "license": "proprietary",
+                "source": str(config_path),
+            })
 
         # Extract embedding models
         embeddings = config.get("embeddings", {})
@@ -176,16 +156,14 @@ class AIBOMGenerator:
         for embed_name, embed_info in embed_models.items():
             if not isinstance(embed_info, dict):
                 continue
-            components.append(
-                {
-                    "component_type": "model",
-                    "component_name": f"embedding:{embed_name}",
-                    "version": embed_info.get("model_id", "unknown"),
-                    "provider": embed_info.get("provider", "unknown"),
-                    "license": "proprietary",
-                    "source": str(config_path),
-                }
-            )
+            components.append({
+                "component_type": "model",
+                "component_name": f"embedding:{embed_name}",
+                "version": embed_info.get("model_id", "unknown"),
+                "provider": embed_info.get("provider", "unknown"),
+                "license": "proprietary",
+                "source": str(config_path),
+            })
 
         return components
 
@@ -227,7 +205,7 @@ class AIBOMGenerator:
 
             # Model properties (4-space indent)
             if current_model and current_section == "models" and line.startswith("    "):
-                match = re.match(r"\s+(\w+):\s*(.+)", line)
+                match = re.match(r'\s+(\w+):\s*(.+)', line)
                 if match:
                     key = match.group(1)
                     value = match.group(2).strip()
@@ -253,7 +231,7 @@ class AIBOMGenerator:
                         continue
 
                     match = re.match(
-                        r"^([a-zA-Z0-9._-]+)\s*(?:([<>=!~]+)\s*([a-zA-Z0-9.*_-]+))?",
+                        r'^([a-zA-Z0-9._-]+)\s*(?:([<>=!~]+)\s*([a-zA-Z0-9.*_-]+))?',
                         line,
                     )
                     if not match:
@@ -265,16 +243,14 @@ class AIBOMGenerator:
                     if name not in AI_FRAMEWORK_PACKAGES:
                         continue
 
-                    components.append(
-                        {
-                            "component_type": "library",
-                            "component_name": name,
-                            "version": version,
-                            "provider": "pypi",
-                            "license": self._infer_license(name),
-                            "source": str(req_file),
-                        }
-                    )
+                    components.append({
+                        "component_type": "library",
+                        "component_name": name,
+                        "version": version,
+                        "provider": "pypi",
+                        "license": self._infer_license(name),
+                        "source": str(req_file),
+                    })
         except Exception:
             pass
 
@@ -304,16 +280,14 @@ class AIBOMGenerator:
             args_list = server_info.get("args", [])
             script = args_list[0] if args_list else "unknown"
 
-            components.append(
-                {
-                    "component_type": "service",
-                    "component_name": server_name,
-                    "version": "1.0.0",
-                    "provider": f"{command}:{script}",
-                    "license": "proprietary",
-                    "source": str(mcp_path),
-                }
-            )
+            components.append({
+                "component_type": "service",
+                "component_name": server_name,
+                "version": "1.0.0",
+                "provider": f"{command}:{script}",
+                "license": "proprietary",
+                "source": str(mcp_path),
+            })
 
         return components
 
@@ -323,12 +297,10 @@ class AIBOMGenerator:
 
     def _compute_hash(self, component_data: Dict) -> str:
         """Compute SHA-256 hash of component data for change detection."""
-        key_fields = (
-            f"{component_data.get('component_type', '')}"
-            f"/{component_data.get('component_name', '')}"
-            f"@{component_data.get('version', '')}"
-            f":{component_data.get('provider', '')}"
-        )
+        key_fields = f"{component_data.get('component_type', '')}" \
+                     f"/{component_data.get('component_name', '')}" \
+                     f"@{component_data.get('version', '')}" \
+                     f":{component_data.get('provider', '')}"
         return hashlib.sha256(key_fields.encode("utf-8")).hexdigest()
 
     def _assess_risk(self, component: Dict) -> str:
@@ -506,15 +478,10 @@ class AIBOMGenerator:
             conn.commit()
 
             # Log audit event
-            self._log_audit_event(
-                conn,
-                project_id,
-                "AI BOM stored",
-                {
-                    "components_stored": stored,
-                    "timestamp": now,
-                },
-            )
+            self._log_audit_event(conn, project_id, "AI BOM stored", {
+                "components_stored": stored,
+                "timestamp": now,
+            })
 
             return stored
         finally:
@@ -557,11 +524,16 @@ class AIBOMGenerator:
                 if stale_row and stale_row["newest"]:
                     try:
                         newest_str = stale_row["newest"]
-                        newest = datetime.fromisoformat(newest_str.replace("Z", "+00:00"))
-                        age_days = (datetime.now(timezone.utc) - newest).days
+                        newest = datetime.fromisoformat(
+                            newest_str.replace("Z", "+00:00")
+                        )
+                        age_days = (
+                            datetime.now(timezone.utc) - newest
+                        ).days
                         if age_days > max_age_days:
                             warnings.append(
-                                f"ai_bom_stale: BOM is {age_days} days old (threshold: {max_age_days} days)"
+                                f"ai_bom_stale: BOM is {age_days} days old "
+                                f"(threshold: {max_age_days} days)"
                             )
                     except Exception:
                         pass
@@ -575,7 +547,10 @@ class AIBOMGenerator:
             ).fetchone()
             high_risk = risk_row["cnt"] if risk_row else 0
             if high_risk > 0:
-                warnings.append(f"ai_bom_high_risk: {high_risk} component(s) with high/critical risk level")
+                warnings.append(
+                    f"ai_bom_high_risk: {high_risk} component(s) with "
+                    "high/critical risk level"
+                )
 
             gate_pass = len(blocking) == 0
 
@@ -638,10 +613,11 @@ class AIBOMGenerator:
 
     def run_cli(self) -> None:
         """Standard CLI entry point."""
-        parser = argparse.ArgumentParser(description="Generate AI Bill of Materials (AI BOM)")
+        parser = argparse.ArgumentParser(
+            description="Generate AI Bill of Materials (AI BOM)"
+        )
         parser.add_argument(
-            "--project-id",
-            required=True,
+            "--project-id", required=True,
             help="Project ID",
         )
         parser.add_argument(
@@ -649,24 +625,19 @@ class AIBOMGenerator:
             help="Path to project directory to scan",
         )
         parser.add_argument(
-            "--gate",
-            action="store_true",
+            "--gate", action="store_true",
             help="Evaluate AI BOM gate pass/fail only",
         )
         parser.add_argument(
-            "--json",
-            action="store_true",
+            "--json", action="store_true",
             help="JSON output",
         )
         parser.add_argument(
-            "--human",
-            action="store_true",
+            "--human", action="store_true",
             help="Human-readable colored output",
         )
         parser.add_argument(
-            "--db-path",
-            type=Path,
-            default=None,
+            "--db-path", type=Path, default=None,
             help="Database path override",
         )
         args = parser.parse_args()
@@ -702,7 +673,9 @@ class AIBOMGenerator:
                 sys.exit(1)
 
             # Scan project
-            scan_result = self.scan_project(args.project_id, args.project_dir)
+            scan_result = self.scan_project(
+                args.project_id, args.project_dir
+            )
 
             # Store in database
             stored = self.store_bom(

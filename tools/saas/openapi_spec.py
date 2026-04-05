@@ -3,10 +3,10 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""ICDEV SaaS -- OpenAPI 3.0.3 Specification Generator.
+# POC: ICDEV™ System Administrator
+"""ICDEV™ SaaS -- OpenAPI 3.0.3 Specification Generator.
 
-Generates a complete OpenAPI 3.0.3 specification for the ICDEV SaaS REST API.
+Generates a complete OpenAPI 3.0.3 specification for the ICDEV™ SaaS REST API.
 All 23 endpoints documented with request/response schemas, security schemes,
 and CUI classification metadata.
 
@@ -25,7 +25,7 @@ Usage:
 
 References:
     - OpenAPI 3.0.3: https://spec.openapis.org/oas/v3.0.3
-    - ICDEV REST API: tools/saas/rest_api.py
+    - ICDEV™ REST API: tools/saas/rest_api.py
     - API Gateway: tools/saas/api_gateway.py
 """
 
@@ -49,10 +49,10 @@ if str(BASE_DIR) not in sys.path:
 OPENAPI_BASE = {
     "openapi": "3.0.3",
     "info": {
-        "title": "ICDEV SaaS API",
+        "title": "ICDEV™ SaaS API",
         "version": "1.0.0",
         "description": (
-            "CUI // SP-CTI -- ICDEV Intelligent Certified Development platform "
+            "CUI // SP-CTI -- ICDEV™ Intelligent Certified Development platform "
             "REST API for multi-tenant SaaS operations.  All endpoints require "
             "authentication via API key, OAuth 2.0 bearer token, or CAC/PIV "
             "client certificate.  Responses include CUI classification headers "
@@ -60,7 +60,7 @@ OPENAPI_BASE = {
             "tier (Starter: 60/min, Professional: 300/min, Enterprise: unlimited)."
         ),
         "contact": {
-            "name": "ICDEV System Administrator",
+            "name": "ICDEV™ System Administrator",
             "email": "admin@icdev.mil",
         },
         "license": {
@@ -97,14 +97,14 @@ OPENAPI_BASE = {
             "name": "Compliance",
             "description": (
                 "Compliance artifact generation (SSP, POAM, STIG, SBOM, "
-                "FIPS 199/200).  Delegates to deterministic ICDEV tools."
+                "FIPS 199/200).  Delegates to deterministic ICDEV™ tools."
             ),
         },
         {
             "name": "Security",
             "description": (
                 "Security scanning operations (SAST, dependency audit).  "
-                "Delegates to deterministic ICDEV security tools."
+                "Delegates to deterministic ICDEV™ security tools."
             ),
         },
         {
@@ -1362,7 +1362,7 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="Generate ICDEV SaaS OpenAPI 3.0.3 specification.",
+        description="Generate ICDEV™ SaaS OpenAPI 3.0.3 specification.",
     )
     parser.add_argument(
         "--output",

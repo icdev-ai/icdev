@@ -24,8 +24,8 @@ CLI:
 import argparse
 import json
 import os
-import sqlite3
 import sys
+from tools.db.storage import get_connection
 from collections import deque
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -34,7 +34,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db")))
 
 SEVERITY_LEVELS = ("critical", "high", "medium", "low")
-TRIAGE_DECISIONS = ("remediate", "mitigate", "accept_risk", "defer", "false_positive", "not_applicable")
+TRIAGE_DECISIONS = ("remediate", "mitigate", "accept_risk", "defer",
+                    "false_positive", "not_applicable")
 EXPLOITABILITY = ("active", "poc", "theoretical", "none_known")
 
 # SLA windows in hours by severity
@@ -50,14 +51,15 @@ SLA_HOURS = {
 # Database helpers
 # ---------------------------------------------------------------------------
 
-
 def _get_connection(db_path=None):
     """Return a sqlite3 connection with Row factory."""
     path = Path(db_path) if db_path else DB_PATH
     if not path.exists():
-        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+        raise FileNotFoundError(
+            f"Database not found: {path}\n"
+            "Run: python tools/db/init_icdev_db.py"
+        )
+    conn = get_connection(db_path=str(db_path))
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
@@ -69,14 +71,9 @@ def _log_audit(conn, project_id, event_type, action, details):
             """INSERT INTO audit_trail
                (project_id, event_type, actor, action, details, classification)
                VALUES (?, ?, ?, ?, ?, ?)""",
-            (
-                project_id,
-                event_type,
-                "icdev-supply-chain-agent",
-                action,
-                json.dumps(details) if isinstance(details, dict) else str(details),
-                "CUI",
-            ),
+            (project_id, event_type, "icdev-supply-chain-agent", action,
+             json.dumps(details) if isinstance(details, dict) else str(details),
+             "CUI"),
         )
         conn.commit()
     except Exception as exc:
@@ -87,7 +84,6 @@ def _log_audit(conn, project_id, event_type, action, details):
 # Dependency graph helpers (self-contained BFS, no cross-module import)
 # ---------------------------------------------------------------------------
 
-
 def _load_edges(conn, project_id):
     """Load all dependency edges for a project into forward/backward adjacency maps."""
     rows = conn.execute(
@@ -97,7 +93,7 @@ def _load_edges(conn, project_id):
         (project_id,),
     ).fetchall()
 
-    forward = {}  # source -> [target, ...]
+    forward = {}   # source -> [target, ...]
     backward = {}  # target -> [source, ...]
     for r in rows:
         src = f"{r['source_type']}:{r['source_id']}"
@@ -163,18 +159,9 @@ def _compute_blast_radius(conn, project_id, component):
 # Core functions
 # ---------------------------------------------------------------------------
 
-
-def triage_cve(
-    project_id,
-    cve_id,
-    component,
-    cvss_score,
-    severity,
-    description,
-    package_version=None,
-    exploitability=None,
-    db_path=None,
-):
+def triage_cve(project_id, cve_id, component, cvss_score, severity,
+               description, package_version=None, exploitability=None,
+               db_path=None):
     """Triage a new CVE with automatic blast-radius analysis.
 
     Inserts into cve_triage, auto-computes upstream/downstream impact via
@@ -217,7 +204,7 @@ def triage_cve(
         upstream_json = json.dumps(upstream)
         downstream_json = json.dumps(downstream)
 
-        conn.execute(
+        cur = conn.execute(
             """INSERT INTO cve_triage
                (project_id, cve_id, package_name, package_version,
                 severity, cvss_score, exploitability,
@@ -225,40 +212,21 @@ def triage_cve(
                 upstream_impact, downstream_impact,
                 sla_deadline, triaged_by, triaged_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                project_id,
-                cve_id,
-                component,
-                package_version,
-                severity,
-                cvss_score,
-                exploitability,
-                None,
-                description,
-                upstream_json,
-                downstream_json,
-                sla_deadline,
-                "icdev-supply-chain-agent",
-                now.isoformat(),
-            ),
+            (project_id, cve_id, component, package_version,
+             severity, cvss_score, exploitability,
+             None, description,
+             upstream_json, downstream_json,
+             sla_deadline, "icdev-supply-chain-agent", now.isoformat()),
         )
         conn.commit()
 
-        triage_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        triage_id = cur.lastrowid
 
-        _log_audit(
-            conn,
-            project_id,
-            "cve_triaged",
-            f"Triaged {cve_id} (severity={severity}, blast_radius={blast_radius})",
-            {
-                "triage_id": triage_id,
-                "cve_id": cve_id,
-                "severity": severity,
-                "cvss_score": cvss_score,
-                "blast_radius": blast_radius,
-            },
-        )
+        _log_audit(conn, project_id, "cve_triaged",
+                   f"Triaged {cve_id} (severity={severity}, blast_radius={blast_radius})",
+                   {"triage_id": triage_id, "cve_id": cve_id,
+                    "severity": severity, "cvss_score": cvss_score,
+                    "blast_radius": blast_radius})
 
         return {
             "triage_id": triage_id,
@@ -276,7 +244,8 @@ def triage_cve(
         conn.close()
 
 
-def update_triage(triage_id, status, remediation_plan=None, assigned_to=None, db_path=None):
+def update_triage(triage_id, status, remediation_plan=None, assigned_to=None,
+                  db_path=None):
     """Update a CVE triage record.
 
     Args:
@@ -294,7 +263,9 @@ def update_triage(triage_id, status, remediation_plan=None, assigned_to=None, db
 
     conn = _get_connection(db_path)
     try:
-        row = conn.execute("SELECT * FROM cve_triage WHERE id = ?", (triage_id,)).fetchone()
+        row = conn.execute(
+            "SELECT * FROM cve_triage WHERE id = ?", (triage_id,)
+        ).fetchone()
         if not row:
             raise ValueError(f"Triage record '{triage_id}' not found.")
 
@@ -319,18 +290,14 @@ def update_triage(triage_id, status, remediation_plan=None, assigned_to=None, db
 
         params.append(triage_id)
         conn.execute(
-            f"UPDATE cve_triage SET {', '.join(updates)} WHERE id = ?",
+            f"UPDATE cve_triage SET {', '.join(updates)} WHERE id = ?",  # nosec B608 -- table/column names are internal constants, not user input
             params,
         )
         conn.commit()
 
-        _log_audit(
-            conn,
-            d["project_id"],
-            "cve_triaged",
-            f"Updated triage {triage_id} for {d['cve_id']}: {status}",
-            {"triage_id": triage_id, "decision": status},
-        )
+        _log_audit(conn, d["project_id"], "cve_triaged",
+                   f"Updated triage {triage_id} for {d['cve_id']}: {status}",
+                   {"triage_id": triage_id, "decision": status})
 
         return {
             "triage_id": triage_id,
@@ -434,19 +401,18 @@ def check_sla(project_id, db_path=None):
                     deadline_dt = datetime.fromisoformat(deadline_str)
                     if now > deadline_dt:
                         sla_overdue += 1
-                        hours_overdue = round((now - deadline_dt).total_seconds() / 3600, 1)
+                        hours_overdue = round(
+                            (now - deadline_dt).total_seconds() / 3600, 1)
                         if d.get("severity") == "critical":
                             overdue_critical += 1
-                        overdue_details.append(
-                            {
-                                "triage_id": d["id"],
-                                "cve_id": d["cve_id"],
-                                "component": d["package_name"],
-                                "severity": d.get("severity"),
-                                "sla_deadline": deadline_str,
-                                "hours_overdue": hours_overdue,
-                            }
-                        )
+                        overdue_details.append({
+                            "triage_id": d["id"],
+                            "cve_id": d["cve_id"],
+                            "component": d["package_name"],
+                            "severity": d.get("severity"),
+                            "sla_deadline": deadline_str,
+                            "hours_overdue": hours_overdue,
+                        })
                     else:
                         sla_compliant += 1
                 except (ValueError, TypeError):
@@ -482,7 +448,8 @@ def propagate_cve_impact(project_id, triage_id, db_path=None):
             (triage_id, project_id),
         ).fetchone()
         if not row:
-            raise ValueError(f"Triage record '{triage_id}' not found in project '{project_id}'.")
+            raise ValueError(
+                f"Triage record '{triage_id}' not found in project '{project_id}'.")
 
         d = dict(row)
         component = d["package_name"]
@@ -512,45 +479,40 @@ def propagate_cve_impact(project_id, triage_id, db_path=None):
                 src = f"{dr_dict['source_type']}:{dr_dict['source_id']}"
                 tgt = f"{dr_dict['target_type']}:{dr_dict['target_id']}"
                 if src in downstream_set or tgt in downstream_set:
-                    isa_impacts.append(
-                        {
-                            "isa_id": dr_dict.get("isa_id"),
-                            "partner_system": dr_dict.get("partner_system"),
-                            "isa_status": dr_dict.get("isa_status"),
-                            "affected_edge": f"{src} -> {tgt}",
-                            "data_types_at_risk": dr_dict.get("data_types_shared"),
-                        }
-                    )
+                    isa_impacts.append({
+                        "isa_id": dr_dict.get("isa_id"),
+                        "partner_system": dr_dict.get("partner_system"),
+                        "isa_status": dr_dict.get("isa_status"),
+                        "affected_edge": f"{src} -> {tgt}",
+                        "data_types_at_risk": dr_dict.get("data_types_shared"),
+                    })
 
         # Build affected systems summary
         affected_systems = []
         for ds in downstream:
-            affected_systems.append(
-                {
-                    "component": ds,
-                    "relationship": "downstream_dependent",
-                }
-            )
+            affected_systems.append({
+                "component": ds,
+                "relationship": "downstream_dependent",
+            })
 
         # Recommendations
         recommendations = []
         if severity == "critical":
             recommendations.append(
-                "CRITICAL CVE: Notify all downstream system owners within 4 hours per incident response SLA."
-            )
+                "CRITICAL CVE: Notify all downstream system owners within "
+                "4 hours per incident response SLA.")
         if isa_impacts:
             recommendations.append(
-                f"{len(isa_impacts)} ISA boundary(ies) affected. Notify partner system ISSOs and document in POA&M."
-            )
+                f"{len(isa_impacts)} ISA boundary(ies) affected. Notify partner "
+                "system ISSOs and document in POA&M.")
         if len(downstream) > 10:
             recommendations.append(
                 "Large blast radius. Consider emergency change request and "
-                "coordinated patching across dependent systems."
-            )
+                "coordinated patching across dependent systems.")
         if not recommendations:
             recommendations.append(
-                "Impact contained to direct component. Apply standard patch process per SLA timeline."
-            )
+                "Impact contained to direct component. Apply standard patch "
+                "process per SLA timeline.")
 
         result = {
             "cve_id": cve_id,
@@ -563,13 +525,10 @@ def propagate_cve_impact(project_id, triage_id, db_path=None):
             "recommendations": recommendations,
         }
 
-        _log_audit(
-            conn,
-            project_id,
-            "cve_impact_propagated",
-            f"Propagated impact for {cve_id} from {component}",
-            {"triage_id": triage_id, "blast_radius": len(downstream), "isa_crossings": len(isa_impacts)},
-        )
+        _log_audit(conn, project_id, "cve_impact_propagated",
+                   f"Propagated impact for {cve_id} from {component}",
+                   {"triage_id": triage_id, "blast_radius": len(downstream),
+                    "isa_crossings": len(isa_impacts)})
 
         return result
     finally:
@@ -580,35 +539,45 @@ def propagate_cve_impact(project_id, triage_id, db_path=None):
 # CLI
 # ---------------------------------------------------------------------------
 
-
 def main():
-    parser = argparse.ArgumentParser(description="CVE Triage with Blast Radius Analysis (RICOAS)")
-    parser.add_argument("--project-id", required=True, help="Project identifier")
+    parser = argparse.ArgumentParser(
+        description="CVE Triage with Blast Radius Analysis (RICOAS)")
+    parser.add_argument("--project-id", required=True,
+                        help="Project identifier")
     parser.add_argument("--json", action="store_true", help="Output as JSON")
 
     # Triage a new CVE
-    parser.add_argument("--triage", action="store_true", help="Triage a new CVE")
+    parser.add_argument("--triage", action="store_true",
+                        help="Triage a new CVE")
     parser.add_argument("--cve-id", help="CVE identifier (e.g. CVE-2025-1234)")
     parser.add_argument("--component", help="Affected package/component name")
     parser.add_argument("--cvss", type=float, help="CVSS score (0-10)")
-    parser.add_argument("--severity", choices=SEVERITY_LEVELS, help="CVE severity")
+    parser.add_argument("--severity", choices=SEVERITY_LEVELS,
+                        help="CVE severity")
     parser.add_argument("--description", help="CVE description")
     parser.add_argument("--version", help="Affected package version")
-    parser.add_argument("--exploitability", choices=EXPLOITABILITY, help="Exploitability level")
+    parser.add_argument("--exploitability", choices=EXPLOITABILITY,
+                        help="Exploitability level")
 
     # Update
-    parser.add_argument("--update", action="store_true", help="Update triage decision")
-    parser.add_argument("--triage-id", type=int, help="Triage record ID")
-    parser.add_argument("--decision", choices=TRIAGE_DECISIONS, help="Triage decision")
+    parser.add_argument("--update", action="store_true",
+                        help="Update triage decision")
+    parser.add_argument("--triage-id", type=int,
+                        help="Triage record ID")
+    parser.add_argument("--decision", choices=TRIAGE_DECISIONS,
+                        help="Triage decision")
     parser.add_argument("--remediation-plan", help="Remediation plan text")
     parser.add_argument("--assigned-to", help="Assignee name")
 
     # Query
-    parser.add_argument("--pending", action="store_true", help="List pending CVEs")
-    parser.add_argument("--sla-check", action="store_true", help="Check SLA compliance")
+    parser.add_argument("--pending", action="store_true",
+                        help="List pending CVEs")
+    parser.add_argument("--sla-check", action="store_true",
+                        help="Check SLA compliance")
 
     # Propagation
-    parser.add_argument("--propagate", action="store_true", help="Propagate CVE impact downstream")
+    parser.add_argument("--propagate", action="store_true",
+                        help="Propagate CVE impact downstream")
 
     args = parser.parse_args()
 
@@ -616,25 +585,24 @@ def main():
         result = None
 
         if args.triage:
-            if not all([args.cve_id, args.component, args.cvss is not None, args.severity, args.description]):
-                parser.error("--triage requires --cve-id, --component, --cvss, --severity, --description")
+            if not all([args.cve_id, args.component, args.cvss is not None,
+                        args.severity, args.description]):
+                parser.error(
+                    "--triage requires --cve-id, --component, --cvss, "
+                    "--severity, --description")
             result = triage_cve(
-                args.project_id,
-                args.cve_id,
-                args.component,
-                args.cvss,
-                args.severity,
-                args.description,
+                args.project_id, args.cve_id, args.component,
+                args.cvss, args.severity, args.description,
                 package_version=args.version,
-                exploitability=args.exploitability,
-            )
+                exploitability=args.exploitability)
 
         elif args.update:
             if not args.triage_id or not args.decision:
                 parser.error("--update requires --triage-id and --decision")
             result = update_triage(
-                args.triage_id, args.decision, remediation_plan=args.remediation_plan, assigned_to=args.assigned_to
-            )
+                args.triage_id, args.decision,
+                remediation_plan=args.remediation_plan,
+                assigned_to=args.assigned_to)
 
         elif args.pending:
             result = get_pending(args.project_id)
@@ -645,7 +613,8 @@ def main():
         elif args.propagate:
             if not args.triage_id:
                 parser.error("--propagate requires --triage-id")
-            result = propagate_cve_impact(args.project_id, args.triage_id)
+            result = propagate_cve_impact(
+                args.project_id, args.triage_id)
 
         else:
             parser.print_help()
@@ -672,9 +641,11 @@ def _print_human(data):
         print(f"  Blast Radius: {data['blast_radius']}")
         print(f"  SLA Deadline: {data['sla_deadline']} ({data.get('sla_hours', '?')}h)")
         if data.get("affected_upstream"):
-            print(f"  Upstream ({len(data['affected_upstream'])}): {', '.join(data['affected_upstream'][:5])}")
+            print(f"  Upstream ({len(data['affected_upstream'])}): "
+                  f"{', '.join(data['affected_upstream'][:5])}")
         if data.get("affected_downstream"):
-            print(f"  Downstream ({len(data['affected_downstream'])}): {', '.join(data['affected_downstream'][:5])}")
+            print(f"  Downstream ({len(data['affected_downstream'])}): "
+                  f"{', '.join(data['affected_downstream'][:5])}")
 
     elif "triage_decision" in data and "triage_id" in data:
         print(f"Triage Updated: {data.get('cve_id', 'N/A')}")
@@ -687,12 +658,10 @@ def _print_human(data):
     elif "pending" in data:
         print(f"Pending CVEs for {data['project_id']}: {data['pending_count']}")
         for p in data["pending"]:
-            print(
-                f"  [{p.get('severity', '?').upper()}] {p.get('cve_id', '?')} "
-                f"- {p.get('package_name', '?')} "
-                f"(CVSS {p.get('cvss_score', '?')}) "
-                f"SLA: {p.get('sla_deadline', 'N/A')}"
-            )
+            print(f"  [{p.get('severity', '?').upper()}] {p.get('cve_id', '?')} "
+                  f"- {p.get('package_name', '?')} "
+                  f"(CVSS {p.get('cvss_score', '?')}) "
+                  f"SLA: {p.get('sla_deadline', 'N/A')}")
 
     elif "sla_compliant" in data:
         print(f"SLA Check for {data['project_id']}")
@@ -703,7 +672,8 @@ def _print_human(data):
         if data.get("overdue_details"):
             print("  Overdue Details:")
             for od in data["overdue_details"]:
-                print(f"    {od['cve_id']} ({od['severity']}) - {od['component']} - {od['hours_overdue']}h overdue")
+                print(f"    {od['cve_id']} ({od['severity']}) - "
+                      f"{od['component']} - {od['hours_overdue']}h overdue")
 
     elif "affected_systems" in data and "isa_impacts" in data:
         print(f"CVE Impact Propagation: {data['cve_id']}")
@@ -717,11 +687,9 @@ def _print_human(data):
         if data["isa_impacts"]:
             print(f"  ISA Boundary Crossings ({len(data['isa_impacts'])}):")
             for i in data["isa_impacts"]:
-                print(
-                    f"    - ISA {i.get('isa_id', '?')}: "
-                    f"{i.get('partner_system', '?')} "
-                    f"(status={i.get('isa_status', '?')})"
-                )
+                print(f"    - ISA {i.get('isa_id', '?')}: "
+                      f"{i.get('partner_system', '?')} "
+                      f"(status={i.get('isa_status', '?')})")
         print("  Recommendations:")
         for r in data.get("recommendations", []):
             print(f"    - {r}")

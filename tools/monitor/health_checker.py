@@ -52,7 +52,7 @@ def check_health(
         req.add_header("User-Agent", "ICDev-HealthChecker/1.0")
         req.add_header("Accept", "application/json, text/plain, */*")
 
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:  # nosec B310 -- URL scheme validated; internal/configured endpoints only
             elapsed = (time.time() - start) * 1000
             body = resp.read().decode("utf-8", errors="replace")
 

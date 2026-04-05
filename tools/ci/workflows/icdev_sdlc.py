@@ -1,9 +1,9 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV SDLC — Complete Software Development Life Cycle orchestrator
+# ICDEV™ SDLC — Complete Software Development Life Cycle orchestrator
 # Adapted from ADW adw_sdlc.py with dual platform support
 
 """
-ICDEV SDLC — Chains together all workflow phases.
+ICDEV™ SDLC — Chains together all workflow phases.
 
 Usage:
     python tools/ci/workflows/icdev_sdlc.py <issue-number> [run-id] [--orchestrated]
@@ -27,14 +27,15 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from tools.ci.modules.workflow_ops import ensure_run_id
+from tools.ci.modules.workflow_ops import ensure_run_id  # noqa: E402
 
 
 # Phases eligible for self-recovery (D134)
 RECOVERABLE_PHASES = {"Test", "Build"}
 
 
-def run_phase(phase_name: str, script_name: str, issue_number: str, run_id: str, extra_args: list = None) -> bool:
+def run_phase(phase_name: str, script_name: str, issue_number: str,
+              run_id: str, extra_args: list = None) -> bool:
     """Run a workflow phase as a subprocess.
 
     For recoverable phases (Test, Build), failure triggers the recovery engine
@@ -46,16 +47,13 @@ def run_phase(phase_name: str, script_name: str, issue_number: str, run_id: str,
     if extra_args:
         cmd.extend(extra_args)
 
-    print(f"\n{'=' * 60}")
+    print(f"\n{'='*60}")
     print(f"  {phase_name.upper()} PHASE")
-    print(f"{'=' * 60}")
+    print(f"{'='*60}")
     print(f"Command: {' '.join(cmd)}")
 
     result = subprocess.run(
-        cmd,
-        cwd=str(PROJECT_ROOT),
-        capture_output=True,
-        text=True,
+        cmd, cwd=str(PROJECT_ROOT), capture_output=True, text=True,
     )
 
     # Print output to stdout for visibility
@@ -70,10 +68,8 @@ def run_phase(phase_name: str, script_name: str, issue_number: str, run_id: str,
         # Attempt self-recovery for eligible phases (D134)
         if phase_name in RECOVERABLE_PHASES:
             recovered = _attempt_phase_recovery(
-                phase_name,
-                result.stdout + result.stderr,
-                run_id,
-                issue_number,
+                phase_name, result.stdout + result.stderr,
+                run_id, issue_number,
             )
             if recovered:
                 print(f"\n{phase_name} phase RECOVERED — continuing pipeline")
@@ -86,10 +82,8 @@ def run_phase(phase_name: str, script_name: str, issue_number: str, run_id: str,
 
 
 def _attempt_phase_recovery(
-    phase_name: str,
-    failure_output: str,
-    run_id: str,
-    issue_number: str,
+    phase_name: str, failure_output: str,
+    run_id: str, issue_number: str,
 ) -> bool:
     """Invoke recovery engine for a failed phase."""
     try:
@@ -105,11 +99,7 @@ def _attempt_phase_recovery(
 
         print(f"\n[Recovery] Attempting self-recovery for {phase_name}...")
         result = engine.attempt_recovery(
-            parser_phase,
-            failure_output,
-            run_id,
-            issue_number,
-            state,
+            parser_phase, failure_output, run_id, issue_number, state,
         )
 
         if result.recovered:
@@ -122,7 +112,6 @@ def _attempt_phase_recovery(
             try:
                 from tools.ci.modules.vcs import VCS
                 from tools.ci.modules.workflow_ops import format_issue_message
-
                 vcs = VCS()
                 escalation = engine.format_escalation_message(result)
                 vcs.comment_on_issue(
@@ -151,9 +140,9 @@ def run_orchestrated(issue_number: str, run_id: str) -> bool:
     try:
         from tools.agent.team_orchestrator import TeamOrchestrator
 
-        print(f"\n{'=' * 60}")
+        print(f"\n{'='*60}")
         print("  ORCHESTRATED SDLC (Multi-Agent DAG)")
-        print(f"{'=' * 60}")
+        print(f"{'='*60}")
 
         orchestrator = TeamOrchestrator(max_workers=4)
 
@@ -214,14 +203,14 @@ def main():
     # Ensure run_id
     run_id = ensure_run_id(issue_number, run_id)
     print("CUI // SP-CTI")
-    print(f"ICDEV SDLC — run_id: {run_id}, issue: #{issue_number}")
+    print(f"ICDEV™ SDLC — run_id: {run_id}, issue: #{issue_number}")
 
     # Orchestrated mode: use TeamOrchestrator for DAG-based parallel execution
     if orchestrated:
         if run_orchestrated(issue_number, run_id):
-            print(f"\n{'=' * 60}")
-            print("  ICDEV SDLC COMPLETE (Orchestrated)")
-            print(f"{'=' * 60}")
+            print(f"\n{'='*60}")
+            print("  ICDEV™ SDLC COMPLETE (Orchestrated)")
+            print(f"{'='*60}")
             print(f"Run ID: {run_id}")
             print(f"Issue:  #{issue_number}")
             return
@@ -250,6 +239,25 @@ def main():
         # E2E failure is non-blocking warning — log but continue
         print("WARNING: E2E phase had failures — review screenshots before merge")
 
+    # Phase 3c: Coherence — internal consistency validation (D-WF-8)
+    # Catches schema/fixture/config mismatches before review to avoid wasted cycles.
+    try:
+        from tools.workflow.coherence_checker import run_checks as coherence_check
+        print(f"\n{'='*60}")
+        print("  COHERENCE PHASE")
+        print(f"{'='*60}")
+        coherence = coherence_check(autofix=True)
+        if coherence.overall_pass:
+            print(f"Coherence passed ({coherence.passed_checks}/{coherence.total_checks} checks)")
+            if coherence.total_fixes:
+                print(f"  Auto-fixed {coherence.total_fixes} issue(s)")
+        else:
+            print(f"WARNING: Coherence check found {coherence.failed_checks} failure(s), "
+                  f"{coherence.warned_checks} warning(s)")
+            # Non-blocking — log results but continue to review
+    except Exception as e:
+        print(f"WARNING: Coherence check unavailable: {e}")
+
     # Phase 4: Review
     if not run_phase("Review", "icdev_review", issue_number, run_id):
         print("Pipeline aborted at Review phase")
@@ -260,9 +268,9 @@ def main():
         print("Pipeline aborted at Comply phase")
         sys.exit(1)
 
-    print(f"\n{'=' * 60}")
-    print("  ICDEV SDLC COMPLETE")
-    print(f"{'=' * 60}")
+    print(f"\n{'='*60}")
+    print("  ICDEV™ SDLC COMPLETE")
+    print(f"{'='*60}")
     print(f"Run ID: {run_id}")
     print(f"Issue:  #{issue_number}")
     print("All phases completed successfully.")

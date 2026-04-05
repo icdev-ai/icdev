@@ -1,9 +1,9 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Review — Code review workflow
+# ICDEV™ Review — Code review workflow
 # Adapted from ADW adw_review.py with dual platform support
 
 """
-ICDEV Review — Automated code review against spec with security checks.
+ICDEV™ Review — Automated code review against spec with security checks.
 
 Usage:
     python tools/ci/workflows/icdev_review.py <issue-number> <run-id>
@@ -25,15 +25,15 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from tools.ci.modules.state import ICDevState
-from tools.ci.modules.git_ops import commit_changes, finalize_git_operations
-from tools.ci.modules.vcs import VCS
-from tools.ci.modules.agent import execute_template
-from tools.ci.modules.workflow_ops import (
+from tools.ci.modules.state import ICDevState  # noqa: E402
+from tools.ci.modules.git_ops import commit_changes, finalize_git_operations  # noqa: E402
+from tools.ci.modules.vcs import VCS  # noqa: E402
+from tools.ci.modules.agent import execute_template  # noqa: E402
+from tools.ci.modules.workflow_ops import (  # noqa: E402
     format_issue_message,
 )
-from tools.testing.data_types import AgentTemplateRequest
-from tools.testing.utils import setup_logger
+from tools.testing.data_types import AgentTemplateRequest  # noqa: E402
+from tools.testing.utils import setup_logger  # noqa: E402
 
 AGENT_REVIEWER = "icdev_reviewer"
 MAX_REVIEW_RETRY = 3
@@ -68,7 +68,7 @@ def main():
 
     state = ICDevState.load(run_id)
     logger = setup_logger(run_id, "icdev_review")
-    logger.info(f"ICDEV Review starting — run_id: {run_id}, issue: #{issue_number}")
+    logger.info(f"ICDEV™ Review starting — run_id: {run_id}, issue: #{issue_number}")
 
     try:
         vcs = VCS()

@@ -47,7 +47,7 @@ def load_cui_config(config_path=None):
             "controlled_by": "Department of Defense",
             "categories": "CTI",
             "distribution": "Distribution D",
-            "poc": "ICDEV System Administrator",
+            "poc": "ICDEV™ System Administrator",
         },
         "portion_marking": "(CUI)",
         "decontrol_instructions": "Decontrol on: 10 years from creation date",
@@ -56,7 +56,7 @@ def load_cui_config(config_path=None):
             "Controlled by: Department of Defense\n"
             "CUI Category: CTI\n"
             "Distribution: D\n"
-            "POC: ICDEV System Administrator"
+            "POC: ICDEV™ System Administrator"
         ),
         "document_header": (
             "////////////////////////////////////////////////////////////////////\n"

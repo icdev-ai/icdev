@@ -48,7 +48,7 @@ _CLASSIFICATION_PATTERNS = [
 DEFAULT_REDACTION_MSG = (
     "[REDACTED] Response contains {classification} content that cannot be "
     "displayed on this channel (max: {channel_il}). "
-    "View full response in the ICDEV dashboard."
+    "View full response in the ICDEV™ dashboard."
 )
 
 

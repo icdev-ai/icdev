@@ -10,8 +10,8 @@ Provides:
 """
 
 import os
-import sqlite3
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 
 from tools.dashboard.config import BYOK_ENABLED, BYOK_ENCRYPTION_KEY, DB_PATH
@@ -73,8 +73,7 @@ def decrypt_key(ciphertext: str) -> str:
 
 
 def _get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(DB_PATH))
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
@@ -146,7 +145,14 @@ def list_llm_keys(user_id: str) -> list:
 
 
 def revoke_llm_key(key_id: str, user_id: str = None) -> bool:
-    """Revoke an LLM key. If user_id provided, enforce ownership."""
+    """Revoke an LLM key. If user_id provided, enforce ownership.
+
+    Returns True on success.  When *user_id* is ``None`` the call is
+    idempotent — revoking a non-existent key is treated as a no-op
+    success (the key is already absent/revoked).  When *user_id* is
+    provided, False is returned if the key does not exist or belongs to
+    another user (ownership check failed).
+    """
     conn = _get_db()
     try:
         now = datetime.now(timezone.utc).isoformat()
@@ -157,15 +163,18 @@ def revoke_llm_key(key_id: str, user_id: str = None) -> bool:
                    WHERE id = ? AND user_id = ?""",
                 (now, key_id, user_id),
             )
+            conn.commit()
+            return cursor.rowcount > 0
         else:
-            cursor = conn.execute(
+            conn.execute(
                 """UPDATE dashboard_user_llm_keys
                    SET status = 'revoked', updated_at = ?
                    WHERE id = ?""",
                 (now, key_id),
             )
-        conn.commit()
-        return cursor.rowcount > 0
+            conn.commit()
+            # Idempotent: missing key is treated as already revoked
+            return True
     finally:
         conn.close()
 

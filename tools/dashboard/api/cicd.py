@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Dashboard CI/CD API — pipeline status, conversations, connectors
+# ICDEV™ Dashboard CI/CD API — pipeline status, conversations, connectors
 
 """
 Dashboard API endpoints for CI/CD pipeline monitoring.
@@ -12,8 +12,8 @@ Provides:
     GET /api/cicd/queue/<key>        — Queued events for a session
 """
 
-import sqlite3
 import sys
+from tools.db.storage import get_connection
 from pathlib import Path
 
 from flask import Blueprint, jsonify, request
@@ -29,8 +29,7 @@ cicd_api = Blueprint("cicd_api", __name__)
 
 def _get_db():
     """Get database connection with row_factory."""
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(DB_PATH))
     return conn
 
 

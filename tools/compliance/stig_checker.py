@@ -9,8 +9,8 @@ import argparse
 import json
 import os
 import re
-import sqlite3
 import sys
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -23,15 +23,19 @@ def _get_connection(db_path=None):
     """Get a database connection."""
     path = db_path or DB_PATH
     if not path.exists():
-        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+        raise FileNotFoundError(
+            f"Database not found: {path}\n"
+            "Run: python tools/db/init_icdev_db.py"
+        )
+    conn = get_connection(db_path=str(path))
     return conn
 
 
 def _get_project(conn, project_id):
     """Load project data."""
-    row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+    row = conn.execute(
+        "SELECT * FROM projects WHERE id = ?", (project_id,)
+    ).fetchone()
     if not row:
         raise ValueError(f"Project '{project_id}' not found.")
     return dict(row)
@@ -42,7 +46,8 @@ def _load_stig_template(stig_id):
     template_file = STIG_TEMPLATES_DIR / f"{stig_id}_stig.json"
     if not template_file.exists():
         raise FileNotFoundError(
-            f"STIG template not found: {template_file}\nAvailable templates: {_list_stig_templates()}"
+            f"STIG template not found: {template_file}\n"
+            f"Available templates: {_list_stig_templates()}"
         )
     with open(template_file, "r", encoding="utf-8") as f:
         return json.load(f)
@@ -52,7 +57,10 @@ def _list_stig_templates():
     """List available STIG template IDs."""
     if not STIG_TEMPLATES_DIR.exists():
         return []
-    return [f.stem.replace("_stig", "") for f in STIG_TEMPLATES_DIR.glob("*_stig.json")]
+    return [
+        f.stem.replace("_stig", "")
+        for f in STIG_TEMPLATES_DIR.glob("*_stig.json")
+    ]
 
 
 def _load_cui_config():
@@ -60,7 +68,6 @@ def _load_cui_config():
     try:
         sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
         from cui_marker import load_cui_config
-
         return load_cui_config()
     except ImportError:
         return {
@@ -108,18 +115,17 @@ def _log_audit_event(conn, project_id, action, details, file_path=None):
 #   comments: explanation string
 # ─────────────────────────────────────────────────────────────
 
-
 def _check_url_parameters(project_dir):
     """V-222602: Check that sensitive info is not in URL parameters."""
     # Look for common patterns of session/token in URL params
     bad_patterns = [
-        r"[?&](session_id|token|password|secret|api_key)=",
-        r"GET.*[?&](auth|credential|ssn)=",
+        r'[?&](session_id|token|password|secret|api_key)=',
+        r'GET.*[?&](auth|credential|ssn)=',
     ]
     issues = []
     for root, _, files in os.walk(project_dir):
         for fname in files:
-            if not fname.endswith((".py", ".js", ".ts", ".java", ".html")):
+            if not fname.endswith(('.py', '.js', '.ts', '.java', '.html')):
                 continue
             fpath = os.path.join(root, fname)
             try:
@@ -141,14 +147,14 @@ def _check_input_validation(project_dir):
     """V-222604: Check for input validation patterns."""
     # Look for parameterized queries and validation frameworks
     good_patterns = [
-        r"parameterized|prepared_statement|bindparam|execute\(.+,\s*\(",
-        r"@validates|@validator|ValidationError|validate_input|sanitize",
-        r"escape_html|bleach\.clean|markupsafe\.escape|xss_clean",
+        r'parameterized|prepared_statement|bindparam|execute\(.+,\s*\(',
+        r'@validates|@validator|ValidationError|validate_input|sanitize',
+        r'escape_html|bleach\.clean|markupsafe\.escape|xss_clean',
     ]
     found_validation = False
     for root, _, files in os.walk(project_dir):
         for fname in files:
-            if not fname.endswith((".py", ".js", ".ts", ".java")):
+            if not fname.endswith(('.py', '.js', '.ts', '.java')):
                 continue
             fpath = os.path.join(root, fname)
             try:
@@ -171,15 +177,15 @@ def _check_input_validation(project_dir):
 def _check_access_enforcement(project_dir):
     """V-222607: Check for access control enforcement."""
     auth_patterns = [
-        r"@login_required|@permission_required|@requires_auth",
-        r"requireAuth|isAuthenticated|authorize|checkPermission",
-        r"@Secured|@PreAuthorize|@RolesAllowed",
-        r"middleware.*auth|authMiddleware|guardRoute",
+        r'@login_required|@permission_required|@requires_auth',
+        r'requireAuth|isAuthenticated|authorize|checkPermission',
+        r'@Secured|@PreAuthorize|@RolesAllowed',
+        r'middleware.*auth|authMiddleware|guardRoute',
     ]
     found_auth = False
     for root, _, files in os.walk(project_dir):
         for fname in files:
-            if not fname.endswith((".py", ".js", ".ts", ".java")):
+            if not fname.endswith(('.py', '.js', '.ts', '.java')):
                 continue
             fpath = os.path.join(root, fname)
             try:
@@ -202,17 +208,17 @@ def _check_access_enforcement(project_dir):
 def _check_fips_crypto(project_dir):
     """V-222609: Check for FIPS-validated crypto usage."""
     bad_crypto = [
-        r"md5|sha1[^0-9]|DES\b|RC4|arcfour|3DES",
+        r'md5|sha1[^0-9]|DES\b|RC4|arcfour|3DES',
     ]
     good_crypto = [
-        r"sha256|sha384|sha512|aes|AES_256|FIPS|fips_mode",
+        r'sha256|sha384|sha512|aes|AES_256|FIPS|fips_mode',
     ]
     found_bad = []
     found_good = False
 
     for root, _, files in os.walk(project_dir):
         for fname in files:
-            if not fname.endswith((".py", ".js", ".ts", ".java", ".yaml", ".yml", ".tf")):
+            if not fname.endswith(('.py', '.js', '.ts', '.java', '.yaml', '.yml', '.tf')):
                 continue
             fpath = os.path.join(root, fname)
             try:
@@ -238,16 +244,16 @@ def _check_fips_crypto(project_dir):
 def _check_cookie_flags(project_dir):
     """V-222612: Check for Secure and HttpOnly cookie flags."""
     secure_cookie_patterns = [
-        r"SESSION_COOKIE_SECURE\s*=\s*True",
-        r"SESSION_COOKIE_HTTPONLY\s*=\s*True",
-        r"secure:\s*true.*httpOnly:\s*true|httpOnly:\s*true.*secure:\s*true",
-        r"cookie\.setSecure\(true\)|cookie\.setHttpOnly\(true\)",
-        r"SameSite.*Strict|SameSite.*Lax",
+        r'SESSION_COOKIE_SECURE\s*=\s*True',
+        r'SESSION_COOKIE_HTTPONLY\s*=\s*True',
+        r'secure:\s*true.*httpOnly:\s*true|httpOnly:\s*true.*secure:\s*true',
+        r'cookie\.setSecure\(true\)|cookie\.setHttpOnly\(true\)',
+        r'SameSite.*Strict|SameSite.*Lax',
     ]
     found = 0
     for root, _, files in os.walk(project_dir):
         for fname in files:
-            if not fname.endswith((".py", ".js", ".ts", ".java", ".yaml", ".yml")):
+            if not fname.endswith(('.py', '.js', '.ts', '.java', '.yaml', '.yml')):
                 continue
             fpath = os.path.join(root, fname)
             try:
@@ -267,17 +273,17 @@ def _check_cookie_flags(project_dir):
 def _check_security_headers(project_dir):
     """V-222614: Check for security headers configuration."""
     header_patterns = [
-        r"Content-Security-Policy|CSP_DEFAULT_SRC|contentSecurityPolicy",
-        r"X-Content-Type-Options.*nosniff",
-        r"X-Frame-Options.*(DENY|SAMEORIGIN)",
-        r"Strict-Transport-Security|HSTS|hsts",
-        r"Referrer-Policy",
-        r"helmet\(\)|securityHeaders|SecurityMiddleware",
+        r'Content-Security-Policy|CSP_DEFAULT_SRC|contentSecurityPolicy',
+        r'X-Content-Type-Options.*nosniff',
+        r'X-Frame-Options.*(DENY|SAMEORIGIN)',
+        r'Strict-Transport-Security|HSTS|hsts',
+        r'Referrer-Policy',
+        r'helmet\(\)|securityHeaders|SecurityMiddleware',
     ]
     found = 0
     for root, _, files in os.walk(project_dir):
         for fname in files:
-            if not fname.endswith((".py", ".js", ".ts", ".java", ".yaml", ".yml", ".conf")):
+            if not fname.endswith(('.py', '.js', '.ts', '.java', '.yaml', '.yml', '.conf')):
                 continue
             fpath = os.path.join(root, fname)
             try:
@@ -297,15 +303,15 @@ def _check_security_headers(project_dir):
 def _check_csrf_protection(project_dir):
     """V-222617: Check for CSRF protection."""
     csrf_patterns = [
-        r"csrf_token|csrfmiddleware|CsrfViewMiddleware",
-        r"csurf|csrf\(\)|csrfProtection",
-        r"@csrf_protect|csrf_exempt",
-        r"CsrfFilter|_csrf|csrfToken",
+        r'csrf_token|csrfmiddleware|CsrfViewMiddleware',
+        r'csurf|csrf\(\)|csrfProtection',
+        r'@csrf_protect|csrf_exempt',
+        r'CsrfFilter|_csrf|csrfToken',
     ]
     found = False
     for root, _, files in os.walk(project_dir):
         for fname in files:
-            if not fname.endswith((".py", ".js", ".ts", ".java", ".html")):
+            if not fname.endswith(('.py', '.js', '.ts', '.java', '.html')):
                 continue
             fpath = os.path.join(root, fname)
             try:
@@ -328,14 +334,14 @@ def _check_csrf_protection(project_dir):
 def _check_audit_logging(project_dir):
     """V-222620: Check for audit/security logging."""
     logging_patterns = [
-        r"audit_log|audit_trail|security_log",
-        r"logging\.getLogger|logger\.\w+|log\.\w+\(",
-        r"AuditEvent|SecurityEvent|audit_entry",
+        r'audit_log|audit_trail|security_log',
+        r'logging\.getLogger|logger\.\w+|log\.\w+\(',
+        r'AuditEvent|SecurityEvent|audit_entry',
     ]
     found = False
     for root, _, files in os.walk(project_dir):
         for fname in files:
-            if not fname.endswith((".py", ".js", ".ts", ".java")):
+            if not fname.endswith(('.py', '.js', '.ts', '.java')):
                 continue
             fpath = os.path.join(root, fname)
             try:
@@ -358,22 +364,22 @@ def _check_audit_logging(project_dir):
 def _check_error_handling(project_dir):
     """V-222635: Check that detailed errors are not exposed."""
     bad_patterns = [
-        r"DEBUG\s*=\s*True",
-        r"NODE_ENV.*development",
-        r"traceback\.print_exc|print_stack",
-        r"stack_trace.*response|response.*stack_trace",
+        r'DEBUG\s*=\s*True',
+        r'NODE_ENV.*development',
+        r'traceback\.print_exc|print_stack',
+        r'stack_trace.*response|response.*stack_trace',
     ]
     good_patterns = [
-        r"DEBUG\s*=\s*False",
-        r"NODE_ENV.*production",
-        r"custom_error_handler|errorHandler|exception_handler",
+        r'DEBUG\s*=\s*False',
+        r'NODE_ENV.*production',
+        r'custom_error_handler|errorHandler|exception_handler',
     ]
     found_bad = False
     found_good = False
 
     for root, _, files in os.walk(project_dir):
         for fname in files:
-            if not fname.endswith((".py", ".js", ".ts", ".java", ".yaml", ".yml", ".env")):
+            if not fname.endswith(('.py', '.js', '.ts', '.java', '.yaml', '.yml', '.env')):
                 continue
             fpath = os.path.join(root, fname)
             try:
@@ -484,7 +490,8 @@ def run_stig_check(
                        SET status = ?, comments = ?, assessed_by = ?,
                            assessed_at = ?, updated_at = ?
                        WHERE id = ?""",
-                    (status, comments, "icdev-stig-checker", now.isoformat(), now.isoformat(), existing["id"]),
+                    (status, comments, "icdev-stig-checker", now.isoformat(),
+                     now.isoformat(), existing["id"]),
                 )
             else:
                 conn.execute(
@@ -494,20 +501,12 @@ def run_stig_check(
                         status, comments, target_type, assessed_by, assessed_at)
                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
-                        project_id,
-                        stig_id,
-                        finding["finding_id"],
-                        finding["rule_id"],
-                        finding["severity"],
-                        finding["title"],
-                        finding.get("description", ""),
-                        finding.get("check_content", ""),
-                        finding.get("fix_text", ""),
-                        status,
-                        comments,
-                        target_type,
-                        "icdev-stig-checker",
-                        now.isoformat(),
+                        project_id, stig_id, finding["finding_id"],
+                        finding["rule_id"], finding["severity"],
+                        finding["title"], finding.get("description", ""),
+                        finding.get("check_content", ""), finding.get("fix_text", ""),
+                        status, comments, target_type,
+                        "icdev-stig-checker", now.isoformat(),
                     ),
                 )
 
@@ -531,7 +530,10 @@ def run_stig_check(
             "evaluated": gate,
             "passed": cat1_open == 0,
             "cat1_open": cat1_open,
-            "reason": ("PASS: 0 CAT1 findings Open" if cat1_open == 0 else f"FAIL: {cat1_open} CAT1 finding(s) Open"),
+            "reason": (
+                "PASS: 0 CAT1 findings Open" if cat1_open == 0
+                else f"FAIL: {cat1_open} CAT1 finding(s) Open"
+            ),
         }
 
         # Generate checklist document
@@ -549,7 +551,7 @@ def run_stig_check(
             f"**STIG Version:** {stig_data.get('metadata', {}).get('version', 'N/A')}",
             f"**Target Type:** {target_type}",
             f"**Assessment Date:** {now.strftime('%Y-%m-%d %H:%M UTC')}",
-            "**Assessed By:** ICDEV STIG Checker (automated)",
+            "**Assessed By:** ICDEV™ STIG Checker (automated)",
             "**Classification:** CUI // SP-CTI",
             "",
             "---",
@@ -566,7 +568,7 @@ def run_stig_check(
             cat_total = sum(s.values())
             total_findings += cat_total
             lines.append(
-                f"| {cat} | {s['Open']} | {s['NotAFinding']} | {s['Not_Applicable']} | {s['Not_Reviewed']} | {cat_total} |"  # noqa: E501
+                f"| {cat} | {s['Open']} | {s['NotAFinding']} | {s['Not_Applicable']} | {s['Not_Reviewed']} | {cat_total} |"
             )
 
         lines.append(f"| **Total** | | | | | **{total_findings}** |")
@@ -574,16 +576,14 @@ def run_stig_check(
 
         if gate:
             gate_icon = "PASS" if gate_result["passed"] else "**FAIL**"
-            lines.extend(
-                [
-                    "## Security Gate Evaluation",
-                    "",
-                    f"**Gate Result:** {gate_icon}",
-                    "**Criteria:** 0 CAT1 findings Open",
-                    f"**CAT1 Open:** {cat1_open}",
-                    "",
-                ]
-            )
+            lines.extend([
+                "## Security Gate Evaluation",
+                "",
+                f"**Gate Result:** {gate_icon}",
+                "**Criteria:** 0 CAT1 findings Open",
+                f"**CAT1 Open:** {cat1_open}",
+                "",
+            ])
 
         lines.extend(["---", ""])
 
@@ -593,20 +593,18 @@ def run_stig_check(
 
         for r in results:
             status_display = r["status"].replace("_", " ")
-            lines.extend(
-                [
-                    f"### {r['finding_id']}: {r['title']}",
-                    "",
-                    f"**Rule ID:** {r['rule_id']}",
-                    f"**Severity:** {r['severity']}",
-                    f"**Status:** {status_display}",
-                    "",
-                    f"**Comments:** {r['comments']}",
-                    "",
-                    "---",
-                    "",
-                ]
-            )
+            lines.extend([
+                f"### {r['finding_id']}: {r['title']}",
+                "",
+                f"**Rule ID:** {r['rule_id']}",
+                f"**Severity:** {r['severity']}",
+                f"**Status:** {status_display}",
+                "",
+                f"**Comments:** {r['comments']}",
+                "",
+                "---",
+                "",
+            ])
 
         lines.extend([doc_footer, ""])
         content = "\n".join(lines)
@@ -628,19 +626,13 @@ def run_stig_check(
             f.write(content)
 
         # Log audit event
-        _log_audit_event(
-            conn,
-            project_id,
-            f"STIG check completed ({stig_id})",
-            {
-                "stig_id": stig_id,
-                "target_type": target_type,
-                "summary": summary,
-                "gate_result": gate_result,
-                "output_file": str(out_file),
-            },
-            out_file,
-        )
+        _log_audit_event(conn, project_id, f"STIG check completed ({stig_id})", {
+            "stig_id": stig_id,
+            "target_type": target_type,
+            "summary": summary,
+            "gate_result": gate_result,
+            "output_file": str(out_file),
+        }, out_file)
 
         print("STIG check completed:")
         print(f"  File: {out_file}")
@@ -665,15 +657,32 @@ def run_stig_check(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="STIG checklist auto-generation and assessment")
+    parser = argparse.ArgumentParser(
+        description="STIG checklist auto-generation and assessment"
+    )
     parser.add_argument("--project-id", "--project", required=True, help="Project ID", dest="project_id")
-    parser.add_argument("--stig-id", default="webapp", help="STIG template ID (default: webapp)")
-    parser.add_argument("--target-type", default="app", help="Target type being assessed (default: app)")
-    parser.add_argument("--gate", action="store_true", help="Evaluate security gate (0 CAT1 = pass)")
+    parser.add_argument(
+        "--stig-id", default="webapp",
+        help="STIG template ID (default: webapp)"
+    )
+    parser.add_argument(
+        "--target-type", default="app",
+        help="Target type being assessed (default: app)"
+    )
+    parser.add_argument(
+        "--gate", action="store_true",
+        help="Evaluate security gate (0 CAT1 = pass)"
+    )
     parser.add_argument("--output", help="Output file path")
     parser.add_argument("--db", help="Database path")
-    parser.add_argument("--json", action="store_true", help="Output results as JSON")
-    parser.add_argument("--list-stigs", action="store_true", help="List available STIG templates")
+    parser.add_argument(
+        "--json", action="store_true",
+        help="Output results as JSON"
+    )
+    parser.add_argument(
+        "--list-stigs", action="store_true",
+        help="List available STIG templates"
+    )
     args = parser.parse_args()
 
     if args.list_stigs:
@@ -698,16 +707,11 @@ def main():
 
         if args.json:
             # Don't duplicate console output
-            print(
-                json.dumps(
-                    {
-                        "output_file": result["output_file"],
-                        "summary": result["summary"],
-                        "gate_result": result["gate_result"],
-                    },
-                    indent=2,
-                )
-            )
+            print(json.dumps({
+                "output_file": result["output_file"],
+                "summary": result["summary"],
+                "gate_result": result["gate_result"],
+            }, indent=2))
 
         if args.gate and not result["gate_result"]["passed"]:
             sys.exit(1)

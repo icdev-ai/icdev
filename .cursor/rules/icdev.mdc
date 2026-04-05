@@ -1,5 +1,5 @@
 ---
-description: ICDEV project rules — IL4 CUI compliance-aware development
+description: ICDEV™ project rules — IL4 CUI compliance-aware development
 globs:
   - "**/*.py"
   - "**/*.yaml"
@@ -8,13 +8,13 @@ globs:
 alwaysApply: true
 ---
 
-# ICDEV Project: ICDEV Project
+# ICDEV™ Project: ICDEV™ Project
 
 **IL4** | **CUI** | **python** webapp
 
 ## Architecture
 
-GOTCHA framework: you orchestrate deterministic Python CLI tools in `tools/`. All tools support `--json`. Read `goals/manifest.md` for workflows.
+FORGE framework: you orchestrate deterministic Python CLI tools in `tools/`. All tools support `--json`. Read `goals/manifest.md` for workflows.
 
 ## Rules
 
@@ -35,4 +35,4 @@ python tools/project/project_status.py --project-id "" --json
 
 ## MCP
 
-2 servers available. Register in Cursor MCP settings — see `.mcp.json` for definitions or run `python tools/dx/mcp_config_generator.py --platform cursor`.
+0 servers available. Register in Cursor MCP settings — see `.mcp.json` for definitions or run `python tools/dx/mcp_config_generator.py --platform cursor`.

@@ -2,7 +2,7 @@
 # CUI // SP-CTI
 """RAG ingestion manager — real-time + batch pipeline (D-RAG-9).
 
-Reads from ICDEV source tables, chunks content, embeds via Ollama
+Reads from ICDEV™ source tables, chunks content, embeds via Ollama
 nomic-embed-text (D-RAG-10), and stores in vector store with dedup.
 
 Usage:
@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import json
 import sqlite3
+from tools.db.storage import get_connection
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -42,7 +43,6 @@ def _get_embedding_provider():
     """Get embedding provider via LLM router (D-RAG-10)."""
     try:
         from tools.llm import get_embedding_provider
-
         return get_embedding_provider()
     except Exception:
         return None
@@ -55,13 +55,15 @@ def _embed_chunks(chunks, provider) -> int:
     embedded = 0
     batch_size = 20
     for i in range(0, len(chunks), batch_size):
-        batch = chunks[i : i + batch_size]
+        batch = chunks[i:i + batch_size]
         for chunk in batch:
             try:
                 if hasattr(provider, "embed"):
                     chunk.embedding = provider.embed(chunk.content)
                 else:
-                    resp = provider.embeddings.create(input=chunk.content, model="nomic-embed-text")
+                    resp = provider.embeddings.create(
+                        input=chunk.content, model="nomic-embed-text"
+                    )
                     chunk.embedding = resp.data[0].embedding
                 embedded += 1
             except Exception:
@@ -84,7 +86,7 @@ def _log_ingestion(
     correlation_id: str = "",
 ):
     """Log ingestion event to rag_ingestion_log (append-only, D-RAG-11, D-RAG-18)."""
-    conn = sqlite3.connect(str(db_path), timeout=10)
+    conn = get_connection()
     conn.execute("PRAGMA busy_timeout=5000")
     conn.execute(
         """INSERT INTO rag_ingestion_log
@@ -92,19 +94,8 @@ def _log_ingestion(
             content_hash, ingestion_mode, tenant_id, project_id, agent_id,
             correlation_id, classification)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'CUI')""",
-        (
-            source_type,
-            source_id,
-            source_table,
-            chunks_created,
-            chunks_skipped,
-            content_hash,
-            mode,
-            tenant_id,
-            project_id,
-            agent_id,
-            correlation_id,
-        ),
+        (source_type, source_id, source_table, chunks_created, chunks_skipped,
+         content_hash, mode, tenant_id, project_id, agent_id, correlation_id),
     )
     conn.commit()
     conn.close()
@@ -154,7 +145,6 @@ def ingest_source(
 
     # SEC: Whitelist validation — only allow identifiers from SOURCE_REGISTRY
     import re
-
     _IDENT_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]{0,63}$")
     for ident in [table, pk] + content_cols + metadata_cols:
         if not _IDENT_RE.match(ident):
@@ -162,10 +152,9 @@ def ingest_source(
 
     col_str = ", ".join(all_cols)
 
-    conn = sqlite3.connect(str(db_path), timeout=10)
+    conn = get_connection()
     conn.execute("PRAGMA busy_timeout=5000")
-    conn.row_factory = sqlite3.Row
-    sql = f"SELECT {col_str} FROM {table}"
+    sql = f"SELECT {col_str} FROM {table}"  # nosec B608 -- table/column names are internal constants, not user input
     conditions = []
     params: list = []
 
@@ -341,9 +330,11 @@ def get_status(tenant_id: str = "") -> Dict[str, Any]:
     last_ingestion = None
     if ICDEV_DB.exists():
         try:
-            conn = sqlite3.connect(str(ICDEV_DB), timeout=10)
+            conn = get_connection()
             conn.execute("PRAGMA busy_timeout=5000")
-            row = conn.execute("SELECT MAX(created_at) FROM rag_ingestion_log").fetchone()
+            row = conn.execute(
+                "SELECT MAX(created_at) FROM rag_ingestion_log"
+            ).fetchone()
             if row and row[0]:
                 last_ingestion = row[0]
             conn.close()
@@ -360,6 +351,16 @@ def get_status(tenant_id: str = "") -> Dict[str, Any]:
         "last_ingestion": last_ingestion,
         "registered_sources": len(SOURCE_REGISTRY),
     }
+
+
+def get_realtime_sources() -> List[str]:
+    """Return list of source types configured for real-time ingestion."""
+    return [name for name, cfg in SOURCE_REGISTRY.items() if cfg.get("mode") == "realtime"]
+
+
+def get_batch_sources() -> List[str]:
+    """Return list of source types configured for batch ingestion."""
+    return [name for name, cfg in SOURCE_REGISTRY.items() if cfg.get("mode") == "batch"]
 
 
 def ingest_single_record(

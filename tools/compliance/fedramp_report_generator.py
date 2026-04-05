@@ -12,8 +12,8 @@ FedRAMP assessment report with CUI markings."""
 import argparse
 import json
 import re
-import sqlite3
 import sys
+from tools.db.storage import get_connection
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -64,14 +64,15 @@ REMEDIATION_WINDOWS = {
 # Helper functions
 # ---------------------------------------------------------------------------
 
-
 def _get_connection(db_path=None):
     """Get a database connection with Row factory."""
     path = db_path or DB_PATH
     if not path.exists():
-        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+        raise FileNotFoundError(
+            f"Database not found: {path}\n"
+            "Run: python tools/db/init_icdev_db.py"
+        )
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -133,7 +134,7 @@ def _builtin_template():
         "## 9. Assessment Methodology\n\n"
         "**Scoring Formula:** Readiness Score = 100 x (satisfied + risk_accepted x 0.75) / "
         "(total - not_applicable)\n\n"
-        '**Gate Logic:** PASS if 0 "other_than_satisfied" critical controls AND '
+        "**Gate Logic:** PASS if 0 \"other_than_satisfied\" critical controls AND "
         "readiness score >= 80%\n\n"
         "---\n\n"
         "**Prepared by:** {{assessor}}\n"
@@ -144,7 +145,9 @@ def _builtin_template():
 
 def _get_project_data(conn, project_id):
     """Load project record from database."""
-    row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+    row = conn.execute(
+        "SELECT * FROM projects WHERE id = ?", (project_id,)
+    ).fetchone()
     if not row:
         raise ValueError(f"Project '{project_id}' not found in database.")
     return dict(row)
@@ -158,7 +161,6 @@ def _load_cui_config():
     """
     try:
         from tools.compliance.cui_marker import load_cui_config as _load
-
         return _load()
     except Exception:
         pass
@@ -168,7 +170,6 @@ def _load_cui_config():
         cui_marker_path = Path(__file__).resolve().parent / "cui_marker.py"
         if cui_marker_path.exists():
             import importlib.util
-
             spec = importlib.util.spec_from_file_location("cui_marker", cui_marker_path)
             mod = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(mod)
@@ -204,7 +205,6 @@ def _extract_family(control_id):
 # ---------------------------------------------------------------------------
 # Data retrieval
 # ---------------------------------------------------------------------------
-
 
 def _get_fedramp_assessments(conn, project_id, baseline):
     """Retrieve all FedRAMP assessment results for a project and baseline."""
@@ -242,7 +242,6 @@ def _get_sbom_records(conn, project_id):
 # ---------------------------------------------------------------------------
 # Score and status calculations
 # ---------------------------------------------------------------------------
-
 
 def _calculate_family_scores(assessments):
     """Calculate implementation status per NIST 800-53 control family.
@@ -365,15 +364,22 @@ def _evaluate_gate(assessments, readiness_score, family_scores):
     readiness_gate = "PASS" if readiness_score >= 80.0 else "FAIL"
 
     # Check 3: Family coverage
-    families_with_data = sum(1 for f in family_scores.values() if f.get("total", 0) > 0)
+    families_with_data = sum(
+        1 for f in family_scores.values() if f.get("total", 0) > 0
+    )
     # Consider gate passed if at least the major families are covered
     # Major families: AC, AU, CM, IA, SC, SA, RA, CA
     major_families = ["AC", "AU", "CM", "IA", "SC", "SA", "RA", "CA"]
-    major_covered = sum(1 for fam in major_families if family_scores.get(fam, {}).get("total", 0) > 0)
+    major_covered = sum(
+        1 for fam in major_families
+        if family_scores.get(fam, {}).get("total", 0) > 0
+    )
     family_coverage_gate = "PASS" if major_covered >= len(major_families) else "FAIL"
 
     # Overall gate
-    overall = "PASS" if all(g == "PASS" for g in [critical_gate, readiness_gate, family_coverage_gate]) else "FAIL"
+    overall = "PASS" if all(
+        g == "PASS" for g in [critical_gate, readiness_gate, family_coverage_gate]
+    ) else "FAIL"
 
     return {
         "gate_result": overall,
@@ -390,7 +396,6 @@ def _evaluate_gate(assessments, readiness_score, family_scores):
 # ---------------------------------------------------------------------------
 # Section builder functions
 # ---------------------------------------------------------------------------
-
 
 def _build_control_family_table(family_scores):
     """Build a markdown table summarising per-family scores."""
@@ -443,8 +448,12 @@ def _build_control_family_details(assessments, family_scores):
             sections.append("")
             continue
 
-        sections.append("| Control ID | Status | Implementation | Evidence | Notes |")
-        sections.append("|------------|--------|----------------|----------|-------|")
+        sections.append(
+            "| Control ID | Status | Implementation | Evidence | Notes |"
+        )
+        sections.append(
+            "|------------|--------|----------------|----------|-------|"
+        )
         for item in sorted(items, key=lambda x: x.get("control_id", "")):
             ctrl_id = item.get("control_id", "N/A")
             status = item.get("status", "not_assessed")
@@ -458,7 +467,9 @@ def _build_control_family_details(assessments, family_scores):
                 evidence = evidence[:57] + "..."
             if len(notes) > 60:
                 notes = notes[:57] + "..."
-            sections.append(f"| {ctrl_id} | {status} | {impl} | {evidence} | {notes} |")
+            sections.append(
+                f"| {ctrl_id} | {status} | {impl} | {evidence} | {notes} |"
+            )
         sections.append("")
 
     return "\n".join(sections)
@@ -470,7 +481,10 @@ def _build_gap_analysis_table(assessments):
     Lists all controls with status other_than_satisfied, not_assessed,
     or risk_accepted, ordered by family then control ID.
     """
-    gaps = [a for a in assessments if a.get("status") in ("other_than_satisfied", "not_assessed")]
+    gaps = [
+        a for a in assessments
+        if a.get("status") in ("other_than_satisfied", "not_assessed")
+    ]
     if not gaps:
         return "*No gaps identified. All assessed controls are satisfied or not applicable.*"
 
@@ -488,7 +502,9 @@ def _build_gap_analysis_table(assessments):
             impl = impl[:37] + "..."
         if len(notes) > 50:
             notes = notes[:47] + "..."
-        lines.append(f"| {ctrl_id} | {family} | {status} | {impl} | {notes} |")
+        lines.append(
+            f"| {ctrl_id} | {family} | {status} | {impl} | {notes} |"
+        )
 
     return "\n".join(lines)
 
@@ -498,14 +514,21 @@ def _build_recommendations(assessments, family_scores, gate_result):
     lines = []
 
     # Collect gaps
-    other_than_satisfied = [a for a in assessments if a.get("status") == "other_than_satisfied"]
-    not_assessed = [a for a in assessments if a.get("status") == "not_assessed"]
+    other_than_satisfied = [
+        a for a in assessments if a.get("status") == "other_than_satisfied"
+    ]
+    not_assessed = [
+        a for a in assessments if a.get("status") == "not_assessed"
+    ]
 
     if not other_than_satisfied and not not_assessed:
         return "*No recommendations. All controls are satisfied or not applicable.*"
 
     # Critical control recommendations first
-    critical_gaps = [a for a in other_than_satisfied if a.get("control_id") in CRITICAL_CONTROLS]
+    critical_gaps = [
+        a for a in other_than_satisfied
+        if a.get("control_id") in CRITICAL_CONTROLS
+    ]
     if critical_gaps:
         lines.append("**CRITICAL — Immediate Action Required:**")
         lines.append("")
@@ -517,12 +540,9 @@ def _build_recommendations(assessments, family_scores, gate_result):
 
     # Family-level recommendations for weakest families
     weak_families = sorted(
-        [
-            (code, data)
-            for code, data in family_scores.items()
-            if data.get("total", 0) > 0 and data.get("score", 100) < 80
-        ],
-        key=lambda x: x[1]["score"],
+        [(code, data) for code, data in family_scores.items()
+         if data.get("total", 0) > 0 and data.get("score", 100) < 80],
+        key=lambda x: x[1]["score"]
     )
     if weak_families:
         lines.append("**HIGH — Control Family Remediation:**")
@@ -531,7 +551,10 @@ def _build_recommendations(assessments, family_scores, gate_result):
             name = data.get("name", code)
             score = data.get("score", 0)
             ots = data.get("other_than_satisfied", 0)
-            lines.append(f"- **{code} ({name})**: Score {score:.1f}%. {ots} control(s) other than satisfied.")
+            lines.append(
+                f"- **{code} ({name})**: Score {score:.1f}%. "
+                f"{ots} control(s) other than satisfied."
+            )
         lines.append("")
 
     # Not assessed recommendations
@@ -539,14 +562,17 @@ def _build_recommendations(assessments, family_scores, gate_result):
         lines.append("**MEDIUM — Assessment Completion:**")
         lines.append("")
         lines.append(
-            f"- {len(not_assessed)} control(s) have not been assessed. Complete assessment to improve readiness score."
+            f"- {len(not_assessed)} control(s) have not been assessed. "
+            f"Complete assessment to improve readiness score."
         )
         # List families with unassessed controls
         unassessed_families = set()
         for a in not_assessed:
             unassessed_families.add(_extract_family(a.get("control_id", "")))
         if unassessed_families:
-            lines.append(f"- Affected families: {', '.join(sorted(unassessed_families))}")
+            lines.append(
+                f"- Affected families: {', '.join(sorted(unassessed_families))}"
+            )
         lines.append("")
 
     return "\n".join(lines)
@@ -558,7 +584,10 @@ def _build_remediation_plan(assessments):
     Lists controls needing remediation with estimated target dates
     based on criticality.
     """
-    needing_remediation = [a for a in assessments if a.get("status") in ("other_than_satisfied", "not_assessed")]
+    needing_remediation = [
+        a for a in assessments
+        if a.get("status") in ("other_than_satisfied", "not_assessed")
+    ]
     if not needing_remediation:
         return "*No items require remediation at this time.*"
 
@@ -568,13 +597,11 @@ def _build_remediation_plan(assessments):
         "|------------|--------|--------|----------|-------------|-----------------|",
     ]
 
-    for item in sorted(
-        needing_remediation,
-        key=lambda x: (
-            0 if x.get("control_id") in CRITICAL_CONTROLS else 1,
-            x.get("control_id", ""),
-        ),
-    ):
+    for item in sorted(needing_remediation,
+                       key=lambda x: (
+                           0 if x.get("control_id") in CRITICAL_CONTROLS else 1,
+                           x.get("control_id", ""),
+                       )):
         ctrl_id = item.get("control_id", "N/A")
         family = _extract_family(ctrl_id)
         status = item.get("status", "N/A")
@@ -599,7 +626,9 @@ def _build_remediation_plan(assessments):
         if len(action) > 50:
             action = action[:47] + "..."
 
-        lines.append(f"| {ctrl_id} | {family} | {status} | {priority} | {target} | {action} |")
+        lines.append(
+            f"| {ctrl_id} | {family} | {status} | {priority} | {target} | {action} |"
+        )
 
     return "\n".join(lines)
 
@@ -629,7 +658,8 @@ def _build_evidence_table(assessments):
             continue
         coverage = f"{100.0 * c['with_evidence'] / c['total']:.0f}%"
         lines.append(
-            f"| {code} | {name} | {c['total']} | {c['with_evidence']} | {c['without_evidence']} | {coverage} |"
+            f"| {code} | {name} | {c['total']} | {c['with_evidence']} "
+            f"| {c['without_evidence']} | {coverage} |"
         )
 
     # Totals row
@@ -637,12 +667,16 @@ def _build_evidence_table(assessments):
     total_with = sum(c["with_evidence"] for c in family_evidence.values())
     total_without = sum(c["without_evidence"] for c in family_evidence.values())
     total_cov = f"{100.0 * total_with / total_all:.0f}%" if total_all > 0 else "N/A"
-    lines.append(f"| **Total** | | **{total_all}** | **{total_with}** | **{total_without}** | **{total_cov}** |")
+    lines.append(
+        f"| **Total** | | **{total_all}** | **{total_with}** "
+        f"| **{total_without}** | **{total_cov}** |"
+    )
 
     return "\n".join(lines), total_with, total_without, total_cov
 
 
-def _build_executive_summary(readiness_score, readiness_level, gate_result, assessments, family_scores):
+def _build_executive_summary(readiness_score, readiness_level, gate_result,
+                             assessments, family_scores):
     """Build the executive summary paragraph.
 
     Provides a high-level overview of the FedRAMP assessment results
@@ -656,17 +690,20 @@ def _build_executive_summary(readiness_score, readiness_level, gate_result, asse
     not_assessed = sum(1 for a in assessments if a.get("status") == "not_assessed")
 
     # Count families with assessments
-    families_with_data = sum(1 for f in family_scores.values() if f.get("total", 0) > 0)
+    families_with_data = sum(
+        1 for f in family_scores.values() if f.get("total", 0) > 0
+    )
 
     # Count critical control failures
     critical_failures = sum(
-        1 for a in assessments if a.get("control_id") in CRITICAL_CONTROLS and a.get("status") == "other_than_satisfied"
+        1 for a in assessments
+        if a.get("control_id") in CRITICAL_CONTROLS
+        and a.get("status") == "other_than_satisfied"
     )
 
     # Identify weakest family
     scored_families = {
-        code: data
-        for code, data in family_scores.items()
+        code: data for code, data in family_scores.items()
         if data.get("total", 0) > 0 and data.get("total", 0) != data.get("not_applicable", 0)
     }
     weakest_family = ""
@@ -700,7 +737,9 @@ def _build_executive_summary(readiness_score, readiness_level, gate_result, asse
     else:
         lines.append("- All critical controls (AC-2, IA-2, SC-7, AU-2, CM-6) are satisfied.")
     if weakest_family:
-        lines.append(f"- Weakest control family: **{weakest_family}** ({weakest_score:.1f}%).")
+        lines.append(
+            f"- Weakest control family: **{weakest_family}** ({weakest_score:.1f}%)."
+        )
 
     return "\n".join(lines)
 
@@ -708,7 +747,6 @@ def _build_executive_summary(readiness_score, readiness_level, gate_result, asse
 # ---------------------------------------------------------------------------
 # Variable substitution & CUI markings
 # ---------------------------------------------------------------------------
-
 
 def _apply_cui_markings(content, cui_config):
     """Apply CUI header and footer banners to the report content."""
@@ -725,18 +763,15 @@ def _apply_cui_markings(content, cui_config):
 
 def _substitute_variables(template, variables):
     """Replace {{variable_name}} placeholders in the template."""
-
     def replacer(match):
         key = match.group(1).strip()
         return str(variables.get(key, match.group(0)))
-
     return re.sub(r"\{\{(\w+)\}\}", replacer, template)
 
 
 # ---------------------------------------------------------------------------
 # Audit logging
 # ---------------------------------------------------------------------------
-
 
 def _log_audit_event(conn, project_id, action, details, file_path):
     """Log an audit trail event for FedRAMP report generation."""
@@ -764,7 +799,6 @@ def _log_audit_event(conn, project_id, action, details, file_path):
 # ---------------------------------------------------------------------------
 # Main generator
 # ---------------------------------------------------------------------------
-
 
 def generate_fedramp_report(project_id, baseline="moderate", output_path=None, db_path=None):
     """Generate a FedRAMP security assessment report for a project.
@@ -822,11 +856,8 @@ def generate_fedramp_report(project_id, baseline="moderate", output_path=None, d
             _build_evidence_table(assessments)
         )
         executive_summary = _build_executive_summary(
-            readiness_score,
-            readiness_level,
-            gate_result,
-            assessments,
-            family_scores,
+            readiness_score, readiness_level, gate_result,
+            assessments, family_scores,
         )
 
         # Load CUI config for banner variables
@@ -868,6 +899,7 @@ def generate_fedramp_report(project_id, baseline="moderate", output_path=None, d
             "impact_level": project.get("impact_level", "IL5"),
             "cloud_environment": project.get("cloud_environment", "aws-govcloud"),
             "baseline": baseline.capitalize(),
+
             # Report metadata
             "version": new_version,
             "report_version": new_version,
@@ -876,6 +908,7 @@ def generate_fedramp_report(project_id, baseline="moderate", output_path=None, d
             "assessor": assessor,
             "generation_timestamp": now.strftime("%Y-%m-%d %H:%M UTC"),
             "icdev_version": "1.0",
+
             # Readiness and gate
             "readiness_score": f"{readiness_score:.1f}",
             "readiness_level": readiness_level,
@@ -883,10 +916,12 @@ def generate_fedramp_report(project_id, baseline="moderate", output_path=None, d
             "critical_control_gate": gate_result["critical_control_gate"],
             "readiness_gate": gate_result["readiness_gate"],
             "family_coverage_gate": gate_result["family_coverage_gate"],
+
             # Readiness level thresholds
             "readiness_level_80": "CURRENT" if readiness_score >= 80 else "--",
             "readiness_level_60": "CURRENT" if 60 <= readiness_score < 80 else "--",
             "readiness_level_below_60": "CURRENT" if readiness_score < 60 else "--",
+
             # Control counts
             "total_controls": str(total_controls),
             "controls_satisfied": str(controls_satisfied),
@@ -897,14 +932,17 @@ def generate_fedramp_report(project_id, baseline="moderate", output_path=None, d
             "critical_controls_not_satisfied": str(gate_result["critical_not_satisfied"]),
             "total_gaps": str(total_gaps),
             "remediation_effort": remediation_effort,
+
             # Percentages
             "pct_satisfied": _pct(controls_satisfied, total_controls),
             "pct_other_than_satisfied": _pct(controls_other, total_controls),
             "pct_not_applicable": _pct(controls_na, total_controls),
             "pct_risk_accepted": _pct(controls_risk, total_controls),
             "pct_not_assessed": _pct(controls_not_assessed, total_controls),
+
             # Executive summary
             "executive_summary": executive_summary,
+
             # Section content
             "control_family_table": control_family_table,
             "control_family_details": control_family_details,
@@ -912,16 +950,23 @@ def generate_fedramp_report(project_id, baseline="moderate", output_path=None, d
             "recommendations": recommendations,
             "remediation_plan": remediation_plan,
             "evidence_table": evidence_table,
+
             # Evidence coverage
             "controls_with_evidence": str(controls_with_evidence),
             "controls_without_evidence": str(controls_without_evidence),
             "evidence_coverage_pct": evidence_coverage_pct.replace("%", ""),
+
             # Cross-reference data
             "stig_findings_count": str(sum(r.get("cnt", 0) for r in stig_findings)),
             "sbom_records_count": str(len(sbom_records)),
+
             # CUI banners
-            "cui_banner_top": cui_config.get("document_header", cui_config.get("banner_top", "CUI // SP-CTI")),
-            "cui_banner_bottom": cui_config.get("document_footer", cui_config.get("banner_bottom", "CUI // SP-CTI")),
+            "cui_banner_top": cui_config.get(
+                "document_header", cui_config.get("banner_top", "CUI // SP-CTI")
+            ),
+            "cui_banner_bottom": cui_config.get(
+                "document_footer", cui_config.get("banner_bottom", "CUI // SP-CTI")
+            ),
         }
 
         # Per-family score variables
@@ -982,8 +1027,7 @@ def generate_fedramp_report(project_id, baseline="moderate", output_path=None, d
             "output_file": str(out_file),
         }
         _log_audit_event(
-            conn,
-            project_id,
+            conn, project_id,
             f"FedRAMP {baseline} report v{new_version} generated",
             audit_details,
             out_file,
@@ -1050,24 +1094,29 @@ def generate_fedramp_report(project_id, baseline="moderate", output_path=None, d
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Generate FedRAMP security assessment report")
+    parser = argparse.ArgumentParser(
+        description="Generate FedRAMP security assessment report"
+    )
     parser.add_argument("--project-id", required=True, help="Project ID")
     parser.add_argument(
-        "--baseline",
-        choices=["moderate", "high"],
-        default="moderate",
-        help="FedRAMP baseline level (default: moderate)",
+        "--baseline", choices=["moderate", "high"], default="moderate",
+        help="FedRAMP baseline level (default: moderate)"
     )
     parser.add_argument("--output-path", help="Output directory or file path")
-    parser.add_argument("--db-path", type=Path, default=DB_PATH, help="Database path")
     parser.add_argument(
-        "--format", choices=["text", "json"], default="text", help="Output format: text (default) or json"
+        "--db-path", type=Path, default=DB_PATH, help="Database path"
+    )
+    parser.add_argument(
+        "--format", choices=["text", "json"], default="text",
+        help="Output format: text (default) or json"
     )
     parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 
     try:
-        result = generate_fedramp_report(args.project_id, args.baseline, args.output_path, args.db_path)
+        result = generate_fedramp_report(
+            args.project_id, args.baseline, args.output_path, args.db_path
+        )
         if args.format == "json":
             print(json.dumps(result, indent=2))
         else:

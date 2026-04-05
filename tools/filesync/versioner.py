@@ -11,8 +11,8 @@ Pattern: tools/mbse/sync_engine.py for SHA-256 content hashing.
 import hashlib
 import os
 import shutil
-import sqlite3
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
@@ -62,21 +62,22 @@ class FileVersioner:
         versions_dir_name: Name of the versions subdirectory (default: .versions).
     """
 
-    def __init__(self, db_path: str, max_versions: int = 10, versions_dir_name: str = ".versions"):
+    def __init__(self, db_path: str, max_versions: int = 10,
+                 versions_dir_name: str = ".versions"):
         self._db_path = str(db_path)
         self._max_versions = max_versions
         self._versions_dir = versions_dir_name
         self._initialized = False
 
     def _get_db(self):
-        conn = sqlite3.connect(self._db_path)
-        conn.row_factory = sqlite3.Row
+        conn = get_connection(db_path=str(self._db_path))
         if not self._initialized:
             _ensure_versions_table(conn)
             self._initialized = True
         return conn
 
-    def snapshot_before_overwrite(self, job_id: str, dest_base: str, relative_path: str) -> Optional[Dict]:
+    def snapshot_before_overwrite(self, job_id: str, dest_base: str,
+                                  relative_path: str) -> Optional[Dict]:
         """Create a versioned snapshot of a file before it's overwritten.
 
         Args:
@@ -125,12 +126,9 @@ class FileVersioner:
 
         # Copy file to .versions/ directory
         ver_dir = os.path.join(dest_base, self._versions_dir, relative_path)
-        os.makedirs(
-            os.path.dirname(ver_dir)
-            if "/" in relative_path or "\\" in relative_path
-            else os.path.join(dest_base, self._versions_dir),
-            exist_ok=True,
-        )
+        os.makedirs(os.path.dirname(ver_dir) if "/" in relative_path or "\\" in relative_path
+                     else os.path.join(dest_base, self._versions_dir),
+                     exist_ok=True)
 
         # Version filename: original.ext -> original.ext.v3
         ver_filename = f"{relative_path}.v{next_ver}"
@@ -151,7 +149,8 @@ class FileVersioner:
                    (id, job_id, relative_path, version_number, content_hash,
                     file_size, version_path, action, created_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, 'auto', ?)""",
-                (ver_id, job_id, relative_path, next_ver, content_hash, file_size, ver_path, _now()),
+                (ver_id, job_id, relative_path, next_ver, content_hash,
+                 file_size, ver_path, _now()),
             )
             conn.commit()
 
@@ -183,7 +182,7 @@ class FileVersioner:
         if len(rows) <= self._max_versions:
             return
 
-        to_remove = rows[self._max_versions :]
+        to_remove = rows[self._max_versions:]
         for row in to_remove:
             # Delete version file
             vpath = row["version_path"]
@@ -196,7 +195,8 @@ class FileVersioner:
             conn.execute("DELETE FROM sync_file_versions WHERE id=?", (row["id"],))
         conn.commit()
 
-    def list_versions(self, job_id: str, relative_path: str = None, limit: int = 50) -> List[Dict]:
+    def list_versions(self, job_id: str, relative_path: str = None,
+                      limit: int = 50) -> List[Dict]:
         """List file versions for a job.
 
         Args:
@@ -239,7 +239,9 @@ class FileVersioner:
         """
         conn = self._get_db()
         try:
-            row = conn.execute("SELECT * FROM sync_file_versions WHERE id=?", (version_id,)).fetchone()
+            row = conn.execute(
+                "SELECT * FROM sync_file_versions WHERE id=?", (version_id,)
+            ).fetchone()
             if not row:
                 return {"status": "error", "error": f"Version not found: {version_id}"}
             ver = dict(row)
@@ -271,16 +273,9 @@ class FileVersioner:
                    (id, job_id, relative_path, version_number, content_hash,
                     file_size, version_path, action, created_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, 'restore', ?)""",
-                (
-                    restore_id,
-                    ver["job_id"],
-                    ver["relative_path"],
-                    ver["version_number"],
-                    ver["content_hash"],
-                    ver["file_size"],
-                    ver_path,
-                    _now(),
-                ),
+                (restore_id, ver["job_id"], ver["relative_path"],
+                 ver["version_number"], ver["content_hash"],
+                 ver["file_size"], ver_path, _now()),
             )
             conn.commit()
         finally:

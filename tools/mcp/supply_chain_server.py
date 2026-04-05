@@ -33,12 +33,10 @@ from tools.mcp.base_server import MCPServer  # noqa: E402
 # Lazy tool imports
 # ---------------------------------------------------------------------------
 
-
 def _import_tool(module_path, func_name):
     """Dynamically import a function from a module. Returns None if unavailable."""
     try:
         import importlib
-
         mod = importlib.import_module(module_path)
         return getattr(mod, func_name, None)
     except (ImportError, ModuleNotFoundError, AttributeError):
@@ -48,7 +46,6 @@ def _import_tool(module_path, func_name):
 # ---------------------------------------------------------------------------
 # Tool handlers
 # ---------------------------------------------------------------------------
-
 
 def handle_register_ato_system(args: dict) -> dict:
     """Register an existing ATO boundary system."""
@@ -312,7 +309,6 @@ def handle_triage_cve(args: dict) -> dict:
 # Server setup
 # ---------------------------------------------------------------------------
 
-
 def create_server() -> MCPServer:
     """Create and configure the Supply Chain MCP server."""
     server = MCPServer(name="icdev-supply-chain", version="1.0.0")
@@ -323,29 +319,13 @@ def create_server() -> MCPServer:
         input_schema={
             "type": "object",
             "properties": {
-                "project_id": {"type": "string", "description": "ICDEV project ID"},
+                "project_id": {"type": "string", "description": "ICDEV™ project ID"},
                 "system_name": {"type": "string", "description": "Name of the ATO system boundary"},
-                "ato_status": {
-                    "type": "string",
-                    "default": "active",
-                    "enum": ["active", "conditional", "expired", "pending"],
-                    "description": "Current ATO status",
-                },
-                "boundary_definition": {
-                    "type": "string",
-                    "description": "JSON string defining the boundary (components, networks, data flows)",
-                },
-                "baseline_controls": {
-                    "type": "string",
-                    "description": "JSON string of baseline NIST 800-53 controls implemented",
-                },
+                "ato_status": {"type": "string", "default": "active", "enum": ["active", "conditional", "expired", "pending"], "description": "Current ATO status"},
+                "boundary_definition": {"type": "string", "description": "JSON string defining the boundary (components, networks, data flows)"},
+                "baseline_controls": {"type": "string", "description": "JSON string of baseline NIST 800-53 controls implemented"},
                 "classification": {"type": "string", "default": "CUI", "description": "Classification marking"},
-                "impact_level": {
-                    "type": "string",
-                    "default": "IL4",
-                    "enum": ["IL2", "IL4", "IL5", "IL6"],
-                    "description": "DoD Impact Level",
-                },
+                "impact_level": {"type": "string", "default": "IL4", "enum": ["IL2", "IL4", "IL5", "IL6"], "description": "DoD Impact Level"},
             },
             "required": ["project_id", "system_name"],
         },
@@ -354,11 +334,11 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="assess_boundary_impact",
-        description="Assess a requirement's impact on an ATO boundary — returns GREEN/YELLOW/ORANGE/RED tier classification",  # noqa: E501
+        description="Assess a requirement's impact on an ATO boundary — returns GREEN/YELLOW/ORANGE/RED tier classification",
         input_schema={
             "type": "object",
             "properties": {
-                "project_id": {"type": "string", "description": "ICDEV project ID"},
+                "project_id": {"type": "string", "description": "ICDEV™ project ID"},
                 "system_id": {"type": "string", "description": "ATO system boundary ID"},
                 "requirement_id": {"type": "string", "description": "Requirement ID to assess"},
             },
@@ -373,11 +353,8 @@ def create_server() -> MCPServer:
         input_schema={
             "type": "object",
             "properties": {
-                "project_id": {"type": "string", "description": "ICDEV project ID"},
-                "assessment_id": {
-                    "type": "string",
-                    "description": "Boundary impact assessment ID (from assess_boundary_impact)",
-                },
+                "project_id": {"type": "string", "description": "ICDEV™ project ID"},
+                "assessment_id": {"type": "string", "description": "Boundary impact assessment ID (from assess_boundary_impact)"},
             },
             "required": ["project_id", "assessment_id"],
         },
@@ -390,30 +367,12 @@ def create_server() -> MCPServer:
         input_schema={
             "type": "object",
             "properties": {
-                "project_id": {"type": "string", "description": "ICDEV project ID"},
+                "project_id": {"type": "string", "description": "ICDEV™ project ID"},
                 "vendor_name": {"type": "string", "description": "Vendor or supplier name"},
-                "vendor_type": {
-                    "type": "string",
-                    "default": "software",
-                    "enum": ["software", "hardware", "cloud_service", "integrator", "open_source"],
-                    "description": "Type of vendor",
-                },
-                "country_of_origin": {
-                    "type": "string",
-                    "description": "ISO 3166-1 alpha-2 country code (e.g., US, GB, DE)",
-                },
-                "scrm_risk_tier": {
-                    "type": "string",
-                    "default": "medium",
-                    "enum": ["low", "medium", "high", "critical"],
-                    "description": "Initial SCRM risk tier",
-                },
-                "section_889_status": {
-                    "type": "string",
-                    "default": "compliant",
-                    "enum": ["compliant", "non_compliant", "under_review", "exempt"],
-                    "description": "Section 889 compliance status",
-                },
+                "vendor_type": {"type": "string", "default": "software", "enum": ["software", "hardware", "cloud_service", "integrator", "open_source"], "description": "Type of vendor"},
+                "country_of_origin": {"type": "string", "description": "ISO 3166-1 alpha-2 country code (e.g., US, GB, DE)"},
+                "scrm_risk_tier": {"type": "string", "default": "medium", "enum": ["low", "medium", "high", "critical"], "description": "Initial SCRM risk tier"},
+                "section_889_status": {"type": "string", "default": "compliant", "enum": ["compliant", "non_compliant", "under_review", "exempt"], "description": "Section 889 compliance status"},
             },
             "required": ["project_id", "vendor_name", "country_of_origin"],
         },
@@ -422,11 +381,11 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="build_dependency_graph",
-        description="Build or query the project supply chain dependency graph — vendors, components, and their relationships",  # noqa: E501
+        description="Build or query the project supply chain dependency graph — vendors, components, and their relationships",
         input_schema={
             "type": "object",
             "properties": {
-                "project_id": {"type": "string", "description": "ICDEV project ID"},
+                "project_id": {"type": "string", "description": "ICDEV™ project ID"},
             },
             "required": ["project_id"],
         },
@@ -435,24 +394,14 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="propagate_impact",
-        description="Propagate a vulnerability or supply chain event through the dependency graph to determine blast radius",  # noqa: E501
+        description="Propagate a vulnerability or supply chain event through the dependency graph to determine blast radius",
         input_schema={
             "type": "object",
             "properties": {
-                "project_id": {"type": "string", "description": "ICDEV project ID"},
+                "project_id": {"type": "string", "description": "ICDEV™ project ID"},
                 "component": {"type": "string", "description": "Affected component name"},
-                "impact_type": {
-                    "type": "string",
-                    "default": "vulnerability",
-                    "enum": ["vulnerability", "supply_disruption", "license_change", "eol_notice", "vendor_breach"],
-                    "description": "Type of supply chain impact",
-                },
-                "severity": {
-                    "type": "string",
-                    "default": "high",
-                    "enum": ["critical", "high", "medium", "low"],
-                    "description": "Impact severity",
-                },
+                "impact_type": {"type": "string", "default": "vulnerability", "enum": ["vulnerability", "supply_disruption", "license_change", "eol_notice", "vendor_breach"], "description": "Type of supply chain impact"},
+                "severity": {"type": "string", "default": "high", "enum": ["critical", "high", "medium", "low"], "description": "Impact severity"},
             },
             "required": ["project_id", "component"],
         },
@@ -465,18 +414,11 @@ def create_server() -> MCPServer:
         input_schema={
             "type": "object",
             "properties": {
-                "project_id": {"type": "string", "description": "ICDEV project ID"},
-                "action": {
-                    "type": "string",
-                    "enum": ["list", "create", "expiring", "review_due"],
-                    "description": "ISA management action",
-                },
+                "project_id": {"type": "string", "description": "ICDEV™ project ID"},
+                "action": {"type": "string", "enum": ["list", "create", "expiring", "review_due"], "description": "ISA management action"},
                 "source_system": {"type": "string", "description": "Source system name (required for create)"},
                 "target_system": {"type": "string", "description": "Target system name (required for create)"},
-                "data_types_shared": {
-                    "type": "string",
-                    "description": "Comma-separated data types shared between systems",
-                },
+                "data_types_shared": {"type": "string", "description": "Comma-separated data types shared between systems"},
                 "auth_date": {"type": "string", "description": "Authorization date (YYYY-MM-DD)"},
                 "expiry_date": {"type": "string", "description": "Expiry date (YYYY-MM-DD)"},
                 "days_ahead": {"type": "number", "default": 90, "description": "Look-ahead days for expiring check"},
@@ -492,13 +434,9 @@ def create_server() -> MCPServer:
         input_schema={
             "type": "object",
             "properties": {
-                "project_id": {"type": "string", "description": "ICDEV project ID"},
+                "project_id": {"type": "string", "description": "ICDEV™ project ID"},
                 "vendor_id": {"type": "string", "description": "Vendor ID (required when aggregate is false)"},
-                "aggregate": {
-                    "type": "boolean",
-                    "default": False,
-                    "description": "If true, assess all vendors for the project",
-                },
+                "aggregate": {"type": "boolean", "default": False, "description": "If true, assess all vendors for the project"},
             },
             "required": ["project_id"],
         },
@@ -507,19 +445,15 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="triage_cve",
-        description="Triage a CVE with blast radius analysis through the dependency graph — assigns SLA and escalation timeline",  # noqa: E501
+        description="Triage a CVE with blast radius analysis through the dependency graph — assigns SLA and escalation timeline",
         input_schema={
             "type": "object",
             "properties": {
-                "project_id": {"type": "string", "description": "ICDEV project ID"},
+                "project_id": {"type": "string", "description": "ICDEV™ project ID"},
                 "cve_id": {"type": "string", "description": "CVE identifier (e.g., CVE-2024-12345)"},
                 "component": {"type": "string", "description": "Affected component name"},
                 "cvss_score": {"type": "number", "description": "CVSS v3.1 base score (0.0-10.0)"},
-                "severity": {
-                    "type": "string",
-                    "enum": ["critical", "high", "medium", "low"],
-                    "description": "CVE severity level",
-                },
+                "severity": {"type": "string", "enum": ["critical", "high", "medium", "low"], "description": "CVE severity level"},
                 "description": {"type": "string", "description": "CVE description for context"},
             },
             "required": ["project_id", "cve_id", "component", "severity"],

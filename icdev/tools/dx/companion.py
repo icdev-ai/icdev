@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""ICDEV Universal AI Coding Companion — single CLI entry point.
+"""ICDEV™ Universal AI Coding Companion — single CLI entry point.
 
 Orchestrates tool detection, instruction file generation, MCP config
 generation, and skill translation across all supported AI coding tools.
@@ -175,7 +175,7 @@ def setup_companion(directory=None, platforms=None, write=False,
 
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Universal AI Coding Companion"
+        description="ICDEV™ Universal AI Coding Companion"
     )
     parser.add_argument("--dir", help="Project directory")
     parser.add_argument("--setup", action="store_true", help="Full setup")
@@ -241,7 +241,7 @@ def main():
             print(json.dumps(result, indent=2))
         else:
             s = result["summary"]
-            print(f"ICDEV Companion Setup — {s['project_name']}")
+            print(f"ICDEV™ Companion Setup — {s['project_name']}")
             print(f"{'=' * 50}")
             print(f"Platforms targeted: {s['platforms_targeted']}")
             print(f"Instruction files:  {s['instruction_files_written']} written")

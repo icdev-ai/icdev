@@ -28,7 +28,7 @@ from typing import Any, Dict, List, Optional, Tuple
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
-from tools.db.storage import get_connection
+from tools.db.storage import get_connection  # noqa: E402
 
 
 def _utcnow_iso() -> str:
@@ -250,7 +250,7 @@ def _get_healing_patterns() -> List[Dict[str, Any]]:
 
 
 def _get_builtin_patterns() -> List[Dict[str, Any]]:
-    """Return built-in healing patterns for common ICDEV failures."""
+    """Return built-in healing patterns for common ICDEV™ failures."""
     return [
         {
             "id": "builtin-stale-evidence",

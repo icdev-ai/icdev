@@ -60,7 +60,7 @@ def _api_request(
     }
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=30) as resp:  # nosec B310 -- URL scheme validated; internal/configured endpoints only
             return json.loads(resp.read())
     except Exception as exc:
         logger.warning("Marketplace API request failed: %s", exc)

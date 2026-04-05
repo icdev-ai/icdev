@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""List all ICDEV-managed projects from the database.
+"""List all ICDEV™-managed projects from the database.
 
 Supports two output formats:
   - brief: compact table view for terminal display
@@ -14,7 +14,7 @@ Usage:
 
 import argparse
 import json
-import sqlite3
+from tools.db.storage import get_connection
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -31,8 +31,7 @@ def list_projects(status_filter: str = None, output_format: str = "brief") -> di
     Returns:
         dict with 'projects' list and 'total' count.
     """
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     try:
         if status_filter:
             rows = conn.execute(
@@ -40,7 +39,9 @@ def list_projects(status_filter: str = None, output_format: str = "brief") -> di
                 (status_filter,),
             ).fetchall()
         else:
-            rows = conn.execute("SELECT * FROM projects ORDER BY created_at DESC").fetchall()
+            rows = conn.execute(
+                "SELECT * FROM projects ORDER BY created_at DESC"
+            ).fetchall()
 
         projects = []
         for row in rows:
@@ -75,7 +76,7 @@ def format_brief(data: dict) -> str:
         return "No projects found."
 
     # Column widths (minimum)
-    col_id = 8  # Show first 8 chars of UUID
+    col_id = 8       # Show first 8 chars of UUID
     col_name = 30
     col_type = 16
     col_class = 8
@@ -118,7 +119,8 @@ def format_brief(data: dict) -> str:
 
     # Add tech stack summary if any project has tech info
     has_tech = any(
-        p["tech_stack"]["backend"] or p["tech_stack"]["frontend"] or p["tech_stack"]["database"] for p in projects
+        p["tech_stack"]["backend"] or p["tech_stack"]["frontend"] or p["tech_stack"]["database"]
+        for p in projects
     )
     if has_tech:
         lines.append("")
@@ -144,14 +146,17 @@ def format_detailed(data: dict) -> str:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="List all ICDEV-managed projects")
-    parser.add_argument(
-        "--format",
-        choices=["brief", "detailed", "json"],
-        default="brief",
-        help="Output format (brief=table, detailed/json=full JSON)",
+    parser = argparse.ArgumentParser(
+        description="List all ICDEV™-managed projects"
     )
-    parser.add_argument("--status", choices=["active", "archived", "suspended"], help="Filter by project status")
+    parser.add_argument(
+        "--format", choices=["brief", "detailed", "json"], default="brief",
+        help="Output format (brief=table, detailed/json=full JSON)"
+    )
+    parser.add_argument(
+        "--status", choices=["active", "archived", "suspended"],
+        help="Filter by project status"
+    )
     parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 

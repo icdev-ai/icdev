@@ -1,7 +1,7 @@
 # CUI // SP-CTI
 """CLI Generator — produces argparse CLI wrappers from spec files.
 
-Generates standalone CLI entry-points for ICDEV tools so they can be
+Generates standalone CLI entry-points for ICDEV™ tools so they can be
 invoked from shell scripts, CI/CD pipelines, and the dashboard
 CLI-generator panel.
 
@@ -11,11 +11,9 @@ Architecture decision: deterministic code generation (no LLM).
 from __future__ import annotations
 
 import pathlib
-from datetime import datetime, timezone
 
+from tools.common.helpers import now_iso
 
-def _now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def generate(
@@ -61,7 +59,7 @@ def generate(
             "output_path": str(output_path),
             "name": resolved_name,
             "dry_run": True,
-            "generated_at": _now(),
+            "generated_at": now_iso(),
         }
 
     # Ensure output directory exists
@@ -77,7 +75,7 @@ def generate(
         "output_path": str(output_path),
         "name": resolved_name,
         "dry_run": False,
-        "generated_at": _now(),
+        "generated_at": now_iso(),
     }
 
 
@@ -87,7 +85,7 @@ def _render_cli_template(name: str, spec_path: str) -> str:
 # CUI // SP-CTI
 # Auto-generated CLI wrapper for {name}
 # Spec: {spec_path}
-# Generated: {_now()}
+# Generated: {now_iso()}
 
 """CLI entry-point for {name}."""
 

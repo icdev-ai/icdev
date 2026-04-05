@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-"""Shared event utility for ICDEV hooks — stores events + optional SIEM forwarding."""
+"""Shared event utility for ICDEV™ hooks — stores events + optional SIEM forwarding."""
 
 import hashlib
 import hmac
@@ -70,8 +70,9 @@ def forward_to_dashboard(event_data: dict):
     """Best-effort HTTP POST to dashboard SSE ingest endpoint."""
     try:
         import urllib.request
+        port = os.environ.get("ICDEV_DASHBOARD_PORT", "5000")
         req = urllib.request.Request(
-            "http://127.0.0.1:5000/api/events/ingest",
+            f"http://127.0.0.1:{port}/api/events/ingest",
             data=json.dumps(event_data).encode(),
             headers={"Content-Type": "application/json"},
             method="POST",

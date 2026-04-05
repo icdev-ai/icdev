@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
+from __future__ import annotations
+
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Competitive Intelligence Monitor — track competitor platforms and identify feature gaps.
 
 Monitors competitor platforms (Backstage, Drata, Vanta, Snyk, Trivy, Checkov, Iron Bank)
-to identify features ICDEV should consider implementing. GitHub-based competitors are
+to identify features ICDEV™ should consider implementing. GitHub-based competitors are
 scanned for releases and enhancement issues; website-based competitors produce placeholder
-signals. Gap analysis compares features against ICDEV tools/manifest.md keywords.
+signals. Gap analysis compares features against ICDEV™ tools/manifest.md keywords.
 
 Architecture:
     - Competitors defined in args/innovation_config.yaml under competitive_intel.competitors
@@ -200,7 +202,7 @@ def _extract_features(releases):
 
 # -- MANIFEST ANALYSIS --------------------------------------------------------
 def _load_manifest_keywords():
-    """Extract keyword set from ICDEV manifest tool descriptions."""
+    """Extract keyword set from ICDEV™ manifest tool descriptions."""
     if not MANIFEST_PATH.exists():
         return set()
     with open(MANIFEST_PATH, "r", encoding="utf-8") as f:
@@ -289,10 +291,10 @@ def scan_all_competitors(db_path=None):
             "totals": {"releases_found": tr, "features_found": tf, "issues_found": ti}}
 
 def gap_analysis(db_path=None):
-    """Compare competitor features against ICDEV capabilities via manifest keywords."""
+    """Compare competitor features against ICDEV™ capabilities via manifest keywords."""
     mkw = _load_manifest_keywords()
     if not mkw:
-        return {"error": "Could not load ICDEV manifest keywords"}
+        return {"error": "Could not load ICDEV™ manifest keywords"}
     conn = _get_db(db_path); _ensure_table(conn)
     all_gaps, stats = [], {}
 
@@ -338,7 +340,7 @@ def gap_analysis(db_path=None):
                 (f"sig-{uuid.uuid4().hex[:12]}", "competitive_intel", "gap",
                  f"Gap: {gap['competitor']} has '{gap['feature'][:80]}'",
                  f"Competitor '{gap['competitor']}' ({gap['category']}) offers "
-                 f"a capability ICDEV may lack: {gap['feature']}", "",
+                 f"a capability ICDEV™ may lack: {gap['feature']}", "",
                  json.dumps({"competitor": gap["competitor"], "category": gap["category"],
                              "overlap_score": gap["overlap_score"]}),
                  0.5, ch, _now(), gap["category"]))
@@ -455,13 +457,13 @@ def _print_human(args, result):
             print(f"  * {r}")
 
 def main():
-    p = argparse.ArgumentParser(description="ICDEV Competitive Intelligence Monitor")
+    p = argparse.ArgumentParser(description="ICDEV™ Competitive Intelligence Monitor")
     p.add_argument("--json", action="store_true", help="JSON output")
     p.add_argument("--db-path", type=Path, default=None, help="Database path override")
     g = p.add_mutually_exclusive_group(required=True)
     g.add_argument("--scan", action="store_true", help="Scan competitor(s)")
     g.add_argument("--gap-analysis", action="store_true",
-                   help="Compare competitor features against ICDEV")
+                   help="Compare competitor features against ICDEV™")
     g.add_argument("--report", action="store_true", help="Generate intel report")
     p.add_argument("--competitor", type=str, help="Specific competitor (with --scan)")
     p.add_argument("--all", action="store_true", help="Scan all competitors (with --scan)")

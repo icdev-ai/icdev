@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Language Support Module — unified language detection and registry for ICDEV.
+"""Language Support Module — unified language detection and registry for ICDEV™.
 
 Provides:
 - load_registry()        -> Load language profiles from language_registry.json
@@ -33,7 +33,7 @@ _CUI_LINES = [
     "Controlled by: Department of Defense",
     "CUI Category: CTI",
     "Distribution: D",
-    "POC: ICDEV System Administrator",
+    "POC: ICDEV™ System Administrator",
 ]
 
 
@@ -156,7 +156,10 @@ def get_language_profile(language: str) -> Dict:
 
     if language not in registry:
         supported = sorted(registry.keys())
-        raise ValueError(f"Language '{language}' not found in registry. Supported languages: {', '.join(supported)}")
+        raise ValueError(
+            f"Language '{language}' not found in registry. "
+            f"Supported languages: {', '.join(supported)}"
+        )
 
     return registry[language]
 
@@ -328,7 +331,9 @@ def get_supported_languages() -> List[str]:
 
 def main():
     """CLI entry point for language support operations."""
-    parser = argparse.ArgumentParser(description="Language detection and registry for ICDEV projects")
+    parser = argparse.ArgumentParser(
+        description="Language detection and registry for ICDEV™ projects"
+    )
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(
         "--detect",
@@ -371,7 +376,9 @@ def main():
                 for lang in languages:
                     result["details"][lang] = {
                         "package_manager": detect_package_manager(project_path, lang),
-                        "dependency_files": [str(p) for p in get_dependency_files(project_path, lang)],
+                        "dependency_files": [
+                            str(p) for p in get_dependency_files(project_path, lang)
+                        ],
                     }
                 print(json.dumps(result, indent=2))
             else:

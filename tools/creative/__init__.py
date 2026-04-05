@@ -3,8 +3,8 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""ICDEV Creative Engine — customer-centric feature opportunity discovery.
+# POC: ICDEV™ System Administrator
+"""ICDEV™ Creative Engine — customer-centric feature opportunity discovery.
 
 Automates competitor gap analysis, customer pain point discovery, and feature
 opportunity scouting from public review sites, community forums, and GitHub issues.

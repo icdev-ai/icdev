@@ -9,7 +9,7 @@
 | Status | Implemented |
 | Priority | P1 |
 | Dependencies | Phase 14 (Requirements Intake), Phase 17 (ATO Acceleration) |
-| Author | ICDEV Architect Agent |
+| Author | ICDEV™ Architect Agent |
 | Date | 2026-02-23 |
 
 ---
@@ -18,7 +18,7 @@
 
 Most DevSecOps failures stem from mismatched tooling: immature teams get overwhelmed by enterprise-grade security pipelines, while mature teams are held back by starter configurations. A one-size-fits-all pipeline approach forces every project through the same scanning stages regardless of organizational readiness, leading to alert fatigue at the low end and inadequate coverage at the high end. Without profile-driven generation, teams either disable security stages they cannot operate or accept a default configuration that does not match their actual maturity.
 
-Prior to this phase, ICDEV generated the same security pipeline for every project. There was no maturity model, no auto-detection of existing CI/CD tooling during requirements intake, no policy-as-code generation, and no attestation/signing workflow. Projects at DevSecOps Level 1 received the same gate configuration as projects at Level 5, creating friction and false confidence. IL6/SECRET projects lacked enforced minimum maturity floors, and air-gapped environments had no mechanism to restrict pipeline tooling to locally available scanners.
+Prior to this phase, ICDEV™ generated the same security pipeline for every project. There was no maturity model, no auto-detection of existing CI/CD tooling during requirements intake, no policy-as-code generation, and no attestation/signing workflow. Projects at DevSecOps Level 1 received the same gate configuration as projects at Level 5, creating friction and false confidence. IL6/SECRET projects lacked enforced minimum maturity floors, and air-gapped environments had no mechanism to restrict pipeline tooling to locally available scanners.
 
 Phase 24 introduces per-project DevSecOps profiles that control all downstream pipeline and infrastructure generation. Profiles are auto-detected during RICOAS intake from CI/CD tooling mentions, security scanner references, container orchestration signals, and compliance framework indicators. A 5-level maturity model (Basic through Optimizing) calibrates scanning stages, gate enforcement, policy-as-code generation (Kyverno/OPA), and image signing/attestation to what the organization can actually operate, with maturity evolving over time as capabilities grow.
 
@@ -32,7 +32,7 @@ Phase 24 introduces per-project DevSecOps profiles that control all downstream p
 4. Generate **profile-driven CI/CD pipeline security stages** as platform-specific YAML (GitLab CI, GitHub Actions, Jenkins) calibrated to the project's maturity level
 5. Generate **policy-as-code** (Kyverno or OPA/Gatekeeper) admission policies with NIST 800-53 control mappings
 6. Configure **image signing and SBOM attestation** (cosign) for Level 3+ projects with KMS or local key management
-7. Integrate DevSecOps-specific **security gates** with the existing ICDEV gate framework, additive to existing project gates
+7. Integrate DevSecOps-specific **security gates** with the existing ICDEV™ gate framework, additive to existing project gates
 8. Require **ISSO review and confirmation** before any profile becomes active
 
 ---

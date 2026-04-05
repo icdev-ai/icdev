@@ -1,9 +1,9 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Comply — Compliance artifact generation workflow
+# ICDEV™ Comply — Compliance artifact generation workflow
 # Runs SSP, POAM, STIG, SBOM, CUI marker and evaluates compliance gate
 
 """
-ICDEV Comply — Generate ATO compliance artifacts.
+ICDEV™ Comply — Generate ATO compliance artifacts.
 
 Usage:
     python tools/ci/workflows/icdev_comply.py <issue-number> <run-id>
@@ -26,13 +26,13 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from tools.ci.modules.state import ICDevState
-from tools.ci.modules.git_ops import commit_changes
-from tools.ci.modules.vcs import VCS
-from tools.ci.modules.workflow_ops import (
+from tools.ci.modules.state import ICDevState  # noqa: E402
+from tools.ci.modules.git_ops import commit_changes  # noqa: E402
+from tools.ci.modules.vcs import VCS  # noqa: E402
+from tools.ci.modules.workflow_ops import (  # noqa: E402
     BOT_IDENTIFIER,
 )
-from tools.testing.utils import setup_logger
+from tools.testing.utils import setup_logger  # noqa: E402
 
 AGENT_COMPLIANCE = "icdev_compliance"
 
@@ -232,7 +232,7 @@ def main():
     run_id = sys.argv[2]
 
     print("CUI // SP-CTI")
-    print(f"ICDEV Comply — run_id: {run_id}, issue: #{issue_number}")
+    print(f"ICDEV™ Comply — run_id: {run_id}, issue: #{issue_number}")
 
     # Set up
     logger = setup_logger(run_id, "icdev_comply")

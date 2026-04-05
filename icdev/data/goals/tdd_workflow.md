@@ -374,9 +374,9 @@ sequenceDiagram
 
 ---
 
-## GOTCHA Layer Mapping
+## FORGE Layer Mapping
 
-| Step | GOTCHA Layer | Component |
+| Step | FORGE Layer | Component |
 |------|-------------|-----------|
 | Define requirement | Goals | This document |
 | Write feature file | Tools | test_writer.py |

@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-# ICDEV GovProposal — Negative Event Tracker (Phase 60, D-CPMP-7)
+# ICDEV™ GovProposal — Negative Event Tracker (Phase 60, D-CPMP-7)
 # FY2026 NDAA event-based CPARS negative reporting with auto-detection.
 
 """
@@ -16,7 +16,7 @@ The corrective_action_status field IS updatable (tracks remediation
 progress, not the event record itself).
 
 Usage:
-    python tools/govcon/negative_event_tracker.py --record --contract-id <id> --event-type delinquent_delivery --severity high --description "..." --json  # noqa: E501
+    python tools/govcon/negative_event_tracker.py --record --contract-id <id> --event-type delinquent_delivery --severity high --description "..." --json
     python tools/govcon/negative_event_tracker.py --auto-detect --contract-id <id> --json
     python tools/govcon/negative_event_tracker.py --impact --contract-id <id> --json
     python tools/govcon/negative_event_tracker.py --update-corrective --event-id <id> --status completed --json
@@ -27,9 +27,9 @@ Usage:
 import argparse
 import json
 import os
-import sqlite3
 import sys
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -42,7 +42,6 @@ _CONFIG_PATH = _ROOT / "args" / "govcon_config.yaml"
 
 # -- Config ----------------------------------------------------------------
 
-
 def _load_config():
     if _CONFIG_PATH.exists():
         with open(_CONFIG_PATH) as f:
@@ -54,39 +53,28 @@ _CFG = _load_config()
 _NEG_CFG = _CFG.get("negative_events", {})
 _AUTO_CFG = _NEG_CFG.get("auto_detect", {})
 
-PENALTY_TABLE = _NEG_CFG.get(
-    "penalty_table",
-    {
-        "delinquent_delivery": 0.05,
-        "cost_overrun": 0.08,
-        "quality_rejection": 0.06,
-        "cybersecurity_breach": 0.10,
-        "flowdown_failure": 0.04,
-        "safety_violation": 0.12,
-        "compliance_violation": 0.06,
-        "cure_notice": 0.15,
-        "show_cause": 0.20,
-        "stop_work": 0.25,
-        "termination_default": 0.50,
-        "fraud_waste_abuse": 0.50,
-    },
-)
+PENALTY_TABLE = _NEG_CFG.get("penalty_table", {
+    "delinquent_delivery": 0.05,
+    "cost_overrun": 0.08,
+    "quality_rejection": 0.06,
+    "cybersecurity_breach": 0.10,
+    "flowdown_failure": 0.04,
+    "safety_violation": 0.12,
+    "compliance_violation": 0.06,
+    "cure_notice": 0.15,
+    "show_cause": 0.20,
+    "stop_work": 0.25,
+    "termination_default": 0.50,
+    "fraud_waste_abuse": 0.50,
+})
 
 CORRECTIVE_ACTION_DISCOUNT = _CFG.get("cpars", {}).get("corrective_action_discount", 0.50)
 
 VALID_EVENT_TYPES = (
-    "delinquent_delivery",
-    "cost_overrun",
-    "quality_rejection",
-    "cybersecurity_breach",
-    "flowdown_failure",
-    "safety_violation",
-    "compliance_violation",
-    "cure_notice",
-    "show_cause",
-    "stop_work",
-    "termination_default",
-    "fraud_waste_abuse",
+    "delinquent_delivery", "cost_overrun", "quality_rejection",
+    "cybersecurity_breach", "flowdown_failure", "safety_violation",
+    "compliance_violation", "cure_notice", "show_cause",
+    "stop_work", "termination_default", "fraud_waste_abuse",
 )
 
 VALID_SEVERITIES = ("low", "medium", "high", "critical")
@@ -96,10 +84,8 @@ VALID_CORRECTIVE_STATUSES = ("open", "in_progress", "completed", "verified")
 
 # -- Helpers ---------------------------------------------------------------
 
-
 def _get_db():
-    conn = sqlite3.connect(str(_DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
@@ -116,7 +102,7 @@ def _uuid():
 def _audit(conn, action, details="", actor="negative_event_tracker"):
     try:
         conn.execute(
-            "INSERT INTO audit_trail (id, timestamp, event_type, actor, action, details, session_id) "
+            "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (_uuid(), _now(), "cpmp.negative_event_tracker", actor, action, details, "cpmp"),
         )
@@ -124,7 +110,8 @@ def _audit(conn, action, details="", actor="negative_event_tracker"):
         pass
 
 
-def _record_status_change(conn, entity_type, entity_id, old_status, new_status, changed_by=None, reason=None):
+def _record_status_change(conn, entity_type, entity_id, old_status, new_status,
+                          changed_by=None, reason=None):
     """Record status change in cpmp_status_history (append-only, NIST AU-2)."""
     conn.execute(
         "INSERT INTO cpmp_status_history (entity_type, entity_id, old_status, new_status, changed_by, reason) "
@@ -142,7 +129,6 @@ def _contract_filter(base_query, contract_id, params):
 
 
 # -- Core Functions --------------------------------------------------------
-
 
 def record_event(contract_id, event_type, severity, description, **kwargs):
     """
@@ -197,11 +183,7 @@ def record_event(contract_id, event_type, severity, description, **kwargs):
         "created_at, updated_at) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
-            event_id,
-            contract_id,
-            event_type,
-            severity,
-            description,
+            event_id, contract_id, event_type, severity, description,
             kwargs.get("corrective_action"),
             "open",
             cpars_impact,
@@ -214,15 +196,12 @@ def record_event(contract_id, event_type, severity, description, **kwargs):
     )
 
     _record_status_change(
-        conn,
-        "negative_event",
-        event_id,
-        None,
-        "open",
+        conn, "negative_event", event_id, None, "open",
         detected_by,
         f"Negative event recorded: {event_type} ({severity})",
     )
-    _audit(conn, "record_event", f"Event {event_id}: {event_type}/{severity} on contract {contract_id}")
+    _audit(conn, "record_event",
+           f"Event {event_id}: {event_type}/{severity} on contract {contract_id}")
     conn.commit()
     conn.close()
 
@@ -290,10 +269,7 @@ def auto_detect_delinquent(contract_id=None):
             "created_at, updated_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
-                event_id,
-                row["contract_id"],
-                "delinquent_delivery",
-                severity,
+                event_id, row["contract_id"], "delinquent_delivery", severity,
                 f"Deliverable '{row['title']}' is {days} days overdue (due {row['due_date']})",
                 None,
                 "open",
@@ -306,23 +282,15 @@ def auto_detect_delinquent(contract_id=None):
             ),
         )
         _record_status_change(
-            conn,
-            "negative_event",
-            event_id,
-            None,
-            "open",
-            "auto_detect",
-            f"Auto-detected delinquent delivery: {row['title']}",
+            conn, "negative_event", event_id, None, "open",
+            "auto_detect", f"Auto-detected delinquent delivery: {row['title']}",
         )
         new_count += 1
 
     if new_count > 0:
-        _audit(
-            conn,
-            "auto_detect_delinquent",
-            f"Auto-detected {new_count} delinquent deliveries"
-            + (f" for contract {contract_id}" if contract_id else ""),
-        )
+        _audit(conn, "auto_detect_delinquent",
+               f"Auto-detected {new_count} delinquent deliveries"
+               + (f" for contract {contract_id}" if contract_id else ""))
     conn.commit()
     conn.close()
 
@@ -396,10 +364,7 @@ def auto_detect_cost_overrun(contract_id=None):
             "created_at, updated_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
-                event_id,
-                cid,
-                "cost_overrun",
-                severity,
+                event_id, cid, "cost_overrun", severity,
                 f"CPI below 0.85 for 3 consecutive periods (avg CPI: {avg_cpi:.3f})",
                 None,
                 "open",
@@ -412,22 +377,15 @@ def auto_detect_cost_overrun(contract_id=None):
             ),
         )
         _record_status_change(
-            conn,
-            "negative_event",
-            event_id,
-            None,
-            "open",
-            "auto_detect",
-            f"Auto-detected cost overrun: avg CPI {avg_cpi:.3f}",
+            conn, "negative_event", event_id, None, "open",
+            "auto_detect", f"Auto-detected cost overrun: avg CPI {avg_cpi:.3f}",
         )
         new_count += 1
 
     if new_count > 0:
-        _audit(
-            conn,
-            "auto_detect_cost_overrun",
-            f"Auto-detected {new_count} cost overrun events" + (f" for contract {contract_id}" if contract_id else ""),
-        )
+        _audit(conn, "auto_detect_cost_overrun",
+               f"Auto-detected {new_count} cost overrun events"
+               + (f" for contract {contract_id}" if contract_id else ""))
     conn.commit()
     conn.close()
 
@@ -494,10 +452,7 @@ def auto_detect_quality_rejection(contract_id=None):
             "created_at, updated_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
-                event_id,
-                row["contract_id"],
-                "quality_rejection",
-                severity,
+                event_id, row["contract_id"], "quality_rejection", severity,
                 f"Deliverable '{row['title']}' rejected {rejection_count} times",
                 None,
                 "open",
@@ -510,23 +465,15 @@ def auto_detect_quality_rejection(contract_id=None):
             ),
         )
         _record_status_change(
-            conn,
-            "negative_event",
-            event_id,
-            None,
-            "open",
-            "auto_detect",
-            f"Auto-detected quality rejection: {row['title']} ({rejection_count}x)",
+            conn, "negative_event", event_id, None, "open",
+            "auto_detect", f"Auto-detected quality rejection: {row['title']} ({rejection_count}x)",
         )
         new_count += 1
 
     if new_count > 0:
-        _audit(
-            conn,
-            "auto_detect_quality_rejection",
-            f"Auto-detected {new_count} quality rejection events"
-            + (f" for contract {contract_id}" if contract_id else ""),
-        )
+        _audit(conn, "auto_detect_quality_rejection",
+               f"Auto-detected {new_count} quality rejection events"
+               + (f" for contract {contract_id}" if contract_id else ""))
     conn.commit()
     conn.close()
 
@@ -585,10 +532,7 @@ def auto_detect_flowdown_failure(contract_id=None):
             "created_at, updated_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
-                event_id,
-                row["contract_id"],
-                "flowdown_failure",
-                severity,
+                event_id, row["contract_id"], "flowdown_failure", severity,
                 f"Subcontractor '{row['company_name']}' (value ${row['subcontract_value']:,.2f}) "
                 f"has incomplete flowdown requirements",
                 None,
@@ -602,23 +546,15 @@ def auto_detect_flowdown_failure(contract_id=None):
             ),
         )
         _record_status_change(
-            conn,
-            "negative_event",
-            event_id,
-            None,
-            "open",
-            "auto_detect",
-            f"Auto-detected flowdown failure: {row['company_name']}",
+            conn, "negative_event", event_id, None, "open",
+            "auto_detect", f"Auto-detected flowdown failure: {row['company_name']}",
         )
         new_count += 1
 
     if new_count > 0:
-        _audit(
-            conn,
-            "auto_detect_flowdown_failure",
-            f"Auto-detected {new_count} flowdown failure events"
-            + (f" for contract {contract_id}" if contract_id else ""),
-        )
+        _audit(conn, "auto_detect_flowdown_failure",
+               f"Auto-detected {new_count} flowdown failure events"
+               + (f" for contract {contract_id}" if contract_id else ""))
     conn.commit()
     conn.close()
 
@@ -693,19 +629,17 @@ def compute_cpars_impact(contract_id):
         if ca_status in ("open", "in_progress"):
             total_penalty += effective_impact
 
-        breakdown.append(
-            {
-                "event_id": row["id"],
-                "event_type": row["event_type"],
-                "severity": row["severity"],
-                "base_impact": base_impact,
-                "effective_impact": round(effective_impact, 4),
-                "corrective_action_status": ca_status,
-                "discount_applied": discount_applied,
-                "counts_toward_penalty": ca_status in ("open", "in_progress"),
-                "description": row["description"],
-            }
-        )
+        breakdown.append({
+            "event_id": row["id"],
+            "event_type": row["event_type"],
+            "severity": row["severity"],
+            "base_impact": base_impact,
+            "effective_impact": round(effective_impact, 4),
+            "corrective_action_status": ca_status,
+            "discount_applied": discount_applied,
+            "counts_toward_penalty": ca_status in ("open", "in_progress"),
+            "description": row["description"],
+        })
 
     conn.close()
 
@@ -737,10 +671,8 @@ def update_corrective_action(event_id, status, action_text=None):
         dict with status and transition info.
     """
     if status not in VALID_CORRECTIVE_STATUSES:
-        return {
-            "status": "error",
-            "message": f"Invalid corrective action status: {status}. Valid: {list(VALID_CORRECTIVE_STATUSES)}",
-        }
+        return {"status": "error",
+                "message": f"Invalid corrective action status: {status}. Valid: {list(VALID_CORRECTIVE_STATUSES)}"}
 
     conn = _get_db()
     row = conn.execute(
@@ -767,20 +699,17 @@ def update_corrective_action(event_id, status, action_text=None):
 
     params.append(event_id)
     conn.execute(
-        f"UPDATE cpmp_negative_events SET {', '.join(sets)} WHERE id = ?",
+        f"UPDATE cpmp_negative_events SET {', '.join(sets)} WHERE id = ?",  # nosec B608 -- table/column names are internal constants, not user input
         params,
     )
 
     _record_status_change(
-        conn,
-        "negative_event",
-        event_id,
-        old_status,
-        status,
+        conn, "negative_event", event_id, old_status, status,
         "corrective_action_update",
         f"Corrective action: {old_status} -> {status}" + (f": {action_text}" if action_text else ""),
     )
-    _audit(conn, "update_corrective_action", f"Event {event_id}: {old_status} -> {status}")
+    _audit(conn, "update_corrective_action",
+           f"Event {event_id}: {old_status} -> {status}")
     conn.commit()
     conn.close()
 
@@ -872,31 +801,25 @@ def check_ndaa_thresholds(contract_id):
     triggers = []
 
     if critical_events:
-        triggers.append(
-            {
-                "trigger": "critical_severity",
-                "description": f"{len(critical_events)} critical severity event(s) open",
-                "events": [dict(e) for e in critical_events],
-            }
-        )
+        triggers.append({
+            "trigger": "critical_severity",
+            "description": f"{len(critical_events)} critical severity event(s) open",
+            "events": [dict(e) for e in critical_events],
+        })
 
     if termination_events:
-        triggers.append(
-            {
-                "trigger": "termination_level",
-                "description": f"{len(termination_events)} termination-level event(s) open",
-                "events": [dict(e) for e in termination_events],
-            }
-        )
+        triggers.append({
+            "trigger": "termination_level",
+            "description": f"{len(termination_events)} termination-level event(s) open",
+            "events": [dict(e) for e in termination_events],
+        })
 
     if total_penalty > 0.30:
-        triggers.append(
-            {
-                "trigger": "penalty_threshold",
-                "description": f"Total active penalty ({total_penalty:.4f}) exceeds 0.30 threshold",
-                "total_penalty": total_penalty,
-            }
-        )
+        triggers.append({
+            "trigger": "penalty_threshold",
+            "description": f"Total active penalty ({total_penalty:.4f}) exceeds 0.30 threshold",
+            "total_penalty": total_penalty,
+        })
 
     notification_required = len(triggers) > 0
 
@@ -914,16 +837,22 @@ def check_ndaa_thresholds(contract_id):
 
 # -- CLI -------------------------------------------------------------------
 
-
 def main():
-    parser = argparse.ArgumentParser(description="ICDEV GovProposal — Negative Event Tracker (Phase 60, D-CPMP-7)")
+    parser = argparse.ArgumentParser(
+        description="ICDEV™ GovProposal — Negative Event Tracker (Phase 60, D-CPMP-7)")
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--record", action="store_true", help="Record a negative event")
-    group.add_argument("--auto-detect", action="store_true", help="Run all auto-detection functions")
-    group.add_argument("--impact", action="store_true", help="Compute CPARS impact for a contract")
-    group.add_argument("--update-corrective", action="store_true", help="Update corrective action status on an event")
-    group.add_argument("--list", action="store_true", help="List negative events for a contract")
-    group.add_argument("--ndaa-check", action="store_true", help="Check NDAA notification thresholds")
+    group.add_argument("--record", action="store_true",
+                       help="Record a negative event")
+    group.add_argument("--auto-detect", action="store_true",
+                       help="Run all auto-detection functions")
+    group.add_argument("--impact", action="store_true",
+                       help="Compute CPARS impact for a contract")
+    group.add_argument("--update-corrective", action="store_true",
+                       help="Update corrective action status on an event")
+    group.add_argument("--list", action="store_true",
+                       help="List negative events for a contract")
+    group.add_argument("--ndaa-check", action="store_true",
+                       help="Check NDAA notification thresholds")
 
     parser.add_argument("--contract-id", help="Contract UUID")
     parser.add_argument("--event-id", help="Negative event UUID")
@@ -941,14 +870,8 @@ def main():
 
     if args.record:
         if not args.contract_id or not args.event_type or not args.severity or not args.description:
-            print(
-                json.dumps(
-                    {
-                        "status": "error",
-                        "message": "--record requires --contract-id, --event-type, --severity, --description",
-                    }
-                )
-            )
+            print(json.dumps({"status": "error",
+                              "message": "--record requires --contract-id, --event-type, --severity, --description"}))
             sys.exit(1)
         kwargs = {}
         if args.deliverable_id:
@@ -959,7 +882,8 @@ def main():
             kwargs["corrective_action"] = args.corrective_action
         if args.detected_by:
             kwargs["detected_by"] = args.detected_by
-        result = record_event(args.contract_id, args.event_type, args.severity, args.description, **kwargs)
+        result = record_event(args.contract_id, args.event_type, args.severity,
+                              args.description, **kwargs)
 
     elif args.auto_detect:
         result = auto_detect_all(contract_id=args.contract_id)
@@ -972,9 +896,11 @@ def main():
 
     elif args.update_corrective:
         if not args.event_id or not args.status:
-            print(json.dumps({"status": "error", "message": "--update-corrective requires --event-id and --status"}))
+            print(json.dumps({"status": "error",
+                              "message": "--update-corrective requires --event-id and --status"}))
             sys.exit(1)
-        result = update_corrective_action(args.event_id, args.status, action_text=args.corrective_action)
+        result = update_corrective_action(args.event_id, args.status,
+                                          action_text=args.corrective_action)
 
     elif args.list:
         if not args.contract_id:

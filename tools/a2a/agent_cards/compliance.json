@@ -1,5 +1,5 @@
 {
-  "name": "ICDEV Compliance",
+  "name": "ICDEV™ Compliance",
   "description": "ATO artifact generation: SSP, POAM, STIG checklists, SBOM, CUI markings, and NIST 800-53 control mapping. Ensures continuous compliance throughout the development lifecycle.",
   "url": "https://localhost:8446",
   "version": "1.0.0",

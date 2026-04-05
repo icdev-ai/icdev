@@ -477,7 +477,7 @@ def _clean_raw_output(data):
 def _print_summary(aggregated: Dict) -> None:
     """Print a human-readable summary of all scan results."""
     print("\n" + "=" * 60)
-    print("  ICDEV SECURITY SCAN SUMMARY")
+    print("  ICDEV™ SECURITY SCAN SUMMARY")
     print("=" * 60)
     print(f"  Project: {aggregated['project_path']}")
     print(f"  Timestamp: {aggregated['scan_timestamp']}")

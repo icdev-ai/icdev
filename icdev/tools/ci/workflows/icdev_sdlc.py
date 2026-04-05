@@ -1,9 +1,9 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV SDLC — Complete Software Development Life Cycle orchestrator
+# ICDEV™ SDLC — Complete Software Development Life Cycle orchestrator
 # Adapted from ADW adw_sdlc.py with dual platform support
 
 """
-ICDEV SDLC — Chains together all workflow phases.
+ICDEV™ SDLC — Chains together all workflow phases.
 
 Usage:
     python tools/ci/workflows/icdev_sdlc.py <issue-number> [run-id] [--orchestrated]
@@ -203,13 +203,13 @@ def main():
     # Ensure run_id
     run_id = ensure_run_id(issue_number, run_id)
     print("CUI // SP-CTI")
-    print(f"ICDEV SDLC — run_id: {run_id}, issue: #{issue_number}")
+    print(f"ICDEV™ SDLC — run_id: {run_id}, issue: #{issue_number}")
 
     # Orchestrated mode: use TeamOrchestrator for DAG-based parallel execution
     if orchestrated:
         if run_orchestrated(issue_number, run_id):
             print(f"\n{'='*60}")
-            print("  ICDEV SDLC COMPLETE (Orchestrated)")
+            print("  ICDEV™ SDLC COMPLETE (Orchestrated)")
             print(f"{'='*60}")
             print(f"Run ID: {run_id}")
             print(f"Issue:  #{issue_number}")
@@ -250,7 +250,7 @@ def main():
         sys.exit(1)
 
     print(f"\n{'='*60}")
-    print("  ICDEV SDLC COMPLETE")
+    print("  ICDEV™ SDLC COMPLETE")
     print(f"{'='*60}")
     print(f"Run ID: {run_id}")
     print(f"Issue:  #{issue_number}")

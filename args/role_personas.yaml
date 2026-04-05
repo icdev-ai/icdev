@@ -1,11 +1,11 @@
 # [TEMPLATE: CUI // SP-CTI]
-# Role Persona Definitions for ICDEV Requirements Intake
+# Role Persona Definitions for ICDEV™ Requirements Intake
 #
 # Each persona defines how the intake agent behaves when roleplaying
 # as a specific professional role. The agent uses these system prompts,
 # opening questions, and priority topics to guide the conversation.
 #
-# Follows GOTCHA args pattern (D132) — change behavior without editing code.
+# Follows FORGE args pattern (D132) — change behavior without editing code.
 
 personas:
   pm:

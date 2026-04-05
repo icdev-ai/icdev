@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""eMASS sync orchestrator -- coordinates data flow between ICDEV and eMASS.
+"""eMASS sync orchestrator -- coordinates data flow between ICDEV™ and eMASS.
 
 Supports three modes:
     - api: Push data directly via the eMASS REST API (EMASSClient)
@@ -21,6 +21,7 @@ import argparse
 import json
 import sqlite3
 import sys
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -33,7 +34,6 @@ sys.path.insert(0, str(BASE_DIR))
 # ============================================================
 # Database helpers
 # ============================================================
-
 
 def _get_connection(db_path=None):
     """Get a database connection.
@@ -50,8 +50,7 @@ def _get_connection(db_path=None):
     path = Path(db_path) if db_path else DB_PATH
     if not path.exists():
         raise FileNotFoundError(f"Database not found: {path}")
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(db_path))
     return conn
 
 
@@ -60,7 +59,7 @@ def _log_audit(conn, project_id, action, details=None):
 
     Args:
         conn: Active database connection.
-        project_id: ICDEV project identifier.
+        project_id: ICDEV™ project identifier.
         action: Short action description (e.g., ``sync_completed_hybrid``).
         details: Optional dict of additional context.
     """
@@ -77,7 +76,7 @@ def _ensure_sync_tables(conn):
     """Ensure the emass_sync_log and emass_systems tables exist.
 
     These tables are created idempotently so the sync module works
-    even if the main ICDEV database schema has not been updated to
+    even if the main ICDEV™ database schema has not been updated to
     include them yet.
 
     Args:
@@ -120,24 +119,13 @@ def _ensure_sync_tables(conn):
     conn.commit()
 
 
-def _log_sync(
-    conn,
-    project_id,
-    mode,
-    status,
-    started_at,
-    details=None,
-    controls=0,
-    poam=0,
-    artifacts=0,
-    test_results=0,
-    error=None,
-):
+def _log_sync(conn, project_id, mode, status, started_at, details=None,
+              controls=0, poam=0, artifacts=0, test_results=0, error=None):
     """Write a record to the emass_sync_log table.
 
     Args:
         conn: Active database connection.
-        project_id: ICDEV project identifier.
+        project_id: ICDEV™ project identifier.
         mode: Sync mode used (api, export, hybrid).
         status: Final sync status (success, partial, error).
         started_at: ISO timestamp when sync started.
@@ -155,14 +143,8 @@ def _log_sync(
             error_message, details, classification)
            VALUES (?, ?, ?, ?, datetime('now'), ?, ?, ?, ?, ?, ?, 'CUI')""",
         (
-            project_id,
-            mode,
-            status,
-            started_at,
-            controls,
-            poam,
-            artifacts,
-            test_results,
+            project_id, mode, status, started_at,
+            controls, poam, artifacts, test_results,
             error,
             json.dumps(details) if details else None,
         ),
@@ -170,21 +152,14 @@ def _log_sync(
     conn.commit()
 
 
-def _update_emass_system(
-    conn,
-    project_id,
-    sync_status,
-    sync_mode,
-    emass_system_id=None,
-    auth_status=None,
-    auth_date=None,
-    auth_term_date=None,
-):
+def _update_emass_system(conn, project_id, sync_status, sync_mode,
+                         emass_system_id=None, auth_status=None,
+                         auth_date=None, auth_term_date=None):
     """Update or insert a record in the emass_systems table.
 
     Args:
         conn: Active database connection.
-        project_id: ICDEV project identifier.
+        project_id: ICDEV™ project identifier.
         sync_status: Last sync status.
         sync_mode: Last sync mode used.
         emass_system_id: eMASS system identifier (if known).
@@ -219,7 +194,7 @@ def _update_emass_system(
             params.append(auth_term_date)
         params.append(project_id)
         conn.execute(
-            f"UPDATE emass_systems SET {', '.join(updates)} WHERE project_id = ?",
+            f"UPDATE emass_systems SET {', '.join(updates)} WHERE project_id = ?",  # nosec B608 -- table/column names are internal constants, not user input
             params,
         )
     else:
@@ -246,13 +221,12 @@ def _update_emass_system(
 # Load project compliance data
 # ============================================================
 
-
 def _load_project_data(conn, project_id):
     """Load all project compliance data needed for sync.
 
     Args:
         conn: Active database connection.
-        project_id: ICDEV project identifier.
+        project_id: ICDEV™ project identifier.
 
     Returns:
         Dict with project, controls, poam_items, stig_findings,
@@ -307,7 +281,6 @@ def _load_project_data(conn, project_id):
 # API sync
 # ============================================================
 
-
 def _sync_via_api(project_id, db_path=None):
     """Push controls, POA&M, artifacts, and test results via eMASS REST API.
 
@@ -315,7 +288,7 @@ def _sync_via_api(project_id, db_path=None):
     independently so partial failures do not block other pushes.
 
     Args:
-        project_id: ICDEV project ID.
+        project_id: ICDEV™ project ID.
         db_path: Database path (optional).
 
     Returns:
@@ -380,27 +353,23 @@ def _sync_via_api(project_id, db_path=None):
                 (project_id,),
             ).fetchall()
             for row in ssp_rows:
-                artifacts.append(
-                    {
-                        "filename": Path(row["file_path"]).name,
-                        "type": "Procedure",
-                        "category": "Authorization Package",
-                        "description": f"SSP document for {project_id}",
-                    }
-                )
+                artifacts.append({
+                    "filename": Path(row["file_path"]).name,
+                    "type": "Procedure",
+                    "category": "Authorization Package",
+                    "description": f"SSP document for {project_id}",
+                })
             sbom_rows = conn2.execute(
                 "SELECT file_path FROM sbom_records WHERE project_id = ? AND file_path IS NOT NULL",
                 (project_id,),
             ).fetchall()
             for row in sbom_rows:
-                artifacts.append(
-                    {
-                        "filename": Path(row["file_path"]).name,
-                        "type": "Procedure",
-                        "category": "Supply Chain",
-                        "description": f"SBOM for {project_id}",
-                    }
-                )
+                artifacts.append({
+                    "filename": Path(row["file_path"]).name,
+                    "type": "Procedure",
+                    "category": "Supply Chain",
+                    "description": f"SBOM for {project_id}",
+                })
         finally:
             conn2.close()
 
@@ -440,7 +409,10 @@ def _sync_via_api(project_id, db_path=None):
             results["steps"]["pull_ato_status"] = {"error": str(e)}
 
         # Determine overall API sync status
-        step_errors = [s for s in results["steps"].values() if isinstance(s, dict) and s.get("error")]
+        step_errors = [
+            s for s in results["steps"].values()
+            if isinstance(s, dict) and s.get("error")
+        ]
         if not step_errors:
             results["status"] = "success"
         elif len(step_errors) < len(results["steps"]):
@@ -464,14 +436,13 @@ def _sync_via_api(project_id, db_path=None):
 # Export sync (file-based)
 # ============================================================
 
-
 def _sync_via_export(project_id, db_path=None):
     """Generate all CSV/ZIP exports for manual upload to eMASS.
 
     Uses emass_export.export_all_emass() to produce every export file.
 
     Args:
-        project_id: ICDEV project ID.
+        project_id: ICDEV™ project ID.
         db_path: Database path (optional).
 
     Returns:
@@ -494,9 +465,8 @@ def _sync_via_export(project_id, db_path=None):
 # Main sync orchestrator
 # ============================================================
 
-
 def sync_to_emass(project_id, mode="hybrid", db_path=None):
-    """Main sync orchestrator between ICDEV and eMASS.
+    """Main sync orchestrator between ICDEV™ and eMASS.
 
     Coordinates pushing compliance data (controls, POA&M, artifacts,
     test results) to eMASS using the specified mode.
@@ -514,7 +484,7 @@ def sync_to_emass(project_id, mode="hybrid", db_path=None):
         - ``audit_trail`` table (immutable audit event)
 
     Args:
-        project_id: ICDEV project ID.
+        project_id: ICDEV™ project ID.
         mode: Sync mode -- ``"api"``, ``"export"``, or ``"hybrid"``
               (default: ``"hybrid"``).
         db_path: Database path (optional).
@@ -588,11 +558,7 @@ def sync_to_emass(project_id, mode="hybrid", db_path=None):
 
         # Write to emass_sync_log
         _log_sync(
-            conn,
-            project_id,
-            mode,
-            effective_status,
-            sync_start,
+            conn, project_id, mode, effective_status, sync_start,
             details=summary,
             controls=len(data["controls"]),
             poam=len(data["poam_items"]),
@@ -602,24 +568,18 @@ def sync_to_emass(project_id, mode="hybrid", db_path=None):
 
         # Update emass_systems with last_sync
         _update_emass_system(
-            conn,
-            project_id,
+            conn, project_id,
             sync_status=effective_status,
             sync_mode=summary.get("mode_used", mode),
         )
 
         # Log to immutable audit trail
-        _log_audit(
-            conn,
-            project_id,
-            f"sync_completed_{mode}",
-            {
-                "mode": mode,
-                "mode_used": summary.get("mode_used", mode),
-                "data_counts": summary["data_counts"],
-                "status": summary["status"],
-            },
-        )
+        _log_audit(conn, project_id, f"sync_completed_{mode}", {
+            "mode": mode,
+            "mode_used": summary.get("mode_used", mode),
+            "data_counts": summary["data_counts"],
+            "status": summary["status"],
+        })
 
         return summary
 
@@ -658,7 +618,6 @@ def sync_to_emass(project_id, mode="hybrid", db_path=None):
 # Pull ATO status
 # ============================================================
 
-
 def pull_ato_status(project_id, db_path=None):
     """Pull ATO (Authorization to Operate) status from eMASS.
 
@@ -667,7 +626,7 @@ def pull_ato_status(project_id, db_path=None):
     ``emass_systems`` table.
 
     Args:
-        project_id: ICDEV project ID.
+        project_id: ICDEV™ project ID.
         db_path: Database path (optional).
 
     Returns:
@@ -688,7 +647,9 @@ def pull_ato_status(project_id, db_path=None):
         _ensure_sync_tables(conn)
 
         # Resolve eMASS system ID
-        project = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+        project = conn.execute(
+            "SELECT * FROM projects WHERE id = ?", (project_id,)
+        ).fetchone()
         if not project:
             raise ValueError(f"Project '{project_id}' not found.")
         project = dict(project)
@@ -722,8 +683,7 @@ def pull_ato_status(project_id, db_path=None):
 
         # Update local emass_systems record
         _update_emass_system(
-            conn,
-            project_id,
+            conn, project_id,
             sync_status="success",
             sync_mode="api",
             emass_system_id=str(emass_system_id),
@@ -744,15 +704,10 @@ def pull_ato_status(project_id, db_path=None):
             "pulled_at": datetime.now(timezone.utc).isoformat() + "Z",
         }
 
-        _log_audit(
-            conn,
-            project_id,
-            "pull_ato_status",
-            {
-                "emass_system_id": str(emass_system_id),
-                "authorization_status": result["authorizationStatus"],
-            },
-        )
+        _log_audit(conn, project_id, "pull_ato_status", {
+            "emass_system_id": str(emass_system_id),
+            "authorization_status": result["authorizationStatus"],
+        })
 
         print(f"[eMASS Sync] ATO Status for {project_id}: {result['authorizationStatus']}")
         return result
@@ -765,7 +720,6 @@ def pull_ato_status(project_id, db_path=None):
 # Sync history
 # ============================================================
 
-
 def get_sync_history(project_id, db_path=None):
     """Query the emass_sync_log table for past sync events.
 
@@ -773,7 +727,7 @@ def get_sync_history(project_id, db_path=None):
     most recent first.
 
     Args:
-        project_id: ICDEV project ID.
+        project_id: ICDEV™ project ID.
         db_path: Database path (optional).
 
     Returns:
@@ -817,35 +771,30 @@ def get_sync_history(project_id, db_path=None):
 # CLI Entry Point
 # ============================================================
 
-
 def main():
     """CLI entry point for eMASS sync tool."""
-    parser = argparse.ArgumentParser(description="Sync ICDEV compliance data to eMASS")
-    parser.add_argument(
-        "--project-id",
-        required=True,
-        help="ICDEV project ID",
+    parser = argparse.ArgumentParser(
+        description="Sync ICDEV™ compliance data to eMASS"
     )
     parser.add_argument(
-        "--mode",
-        default="hybrid",
+        "--project-id", required=True,
+        help="ICDEV™ project ID",
+    )
+    parser.add_argument(
+        "--mode", default="hybrid",
         choices=["api", "export", "hybrid"],
         help="Sync mode (default: hybrid -- try API, fall back to export)",
     )
     parser.add_argument(
-        "--pull-ato",
-        action="store_true",
+        "--pull-ato", action="store_true",
         help="Pull ATO status from eMASS instead of pushing data",
     )
     parser.add_argument(
-        "--history",
-        action="store_true",
+        "--history", action="store_true",
         help="Show sync history for the project",
     )
     parser.add_argument(
-        "--db-path",
-        type=Path,
-        default=DB_PATH,
+        "--db-path", type=Path, default=DB_PATH,
         help="Database path (default: data/icdev.db)",
     )
     parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")

@@ -3,11 +3,11 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """FedRAMP 20x Key Security Indicator (KSI) Generator.
 
 Generates machine-readable KSI evidence artifacts for FedRAMP 20x
-continuous authorization. Maps ICDEV evidence (DB records, configs,
+continuous authorization. Maps ICDEV™ evidence (DB records, configs,
 scan results) to 61 KSI definitions organized by NIST 800-53 families.
 
 Not a BaseAssessor — KSIs are evidence artifacts, not assessment checks.

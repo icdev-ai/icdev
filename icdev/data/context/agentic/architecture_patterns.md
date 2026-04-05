@@ -4,26 +4,26 @@
 
 ## Overview
 
-This document describes the architecture patterns used when ICDEV generates agentic child applications. These patterns ensure consistency, security, and compliance across all generated applications. Every pattern is enforced by the blueprint engine and verified during post-generation checks.
+This document describes the architecture patterns used when ICDEV™ generates agentic child applications. These patterns ensure consistency, security, and compliance across all generated applications. Every pattern is enforced by the blueprint engine and verified during post-generation checks.
 
-Child applications are self-contained agentic systems with their own agents, memory, goals, and tools. They operate independently but can communicate back to the parent ICDEV instance via A2A protocol when a callback URL is configured.
+Child applications are self-contained agentic systems with their own agents, memory, goals, and tools. They operate independently but can communicate back to the parent ICDEV™ instance via A2A protocol when a callback URL is configured.
 
 ---
 
-## Pattern 1: GOTCHA Framework
+## Pattern 1: FORGE Framework
 
-Every child application uses the 6-layer GOTCHA framework. This is non-negotiable — it is the structural foundation that separates probabilistic AI orchestration from deterministic tool execution.
+Every child application uses the 6-layer FORGE framework. This is non-negotiable — it is the structural foundation that separates probabilistic AI orchestration from deterministic tool execution.
 
 | Layer | Directory | Role in Child App |
 |-------|-----------|-------------------|
 | **Goals** | `goals/` | Process definitions — what to achieve, tool sequences, edge cases |
 | **Orchestration** | *(the AI)* | Read goal, select tools, apply args, reference context, handle errors |
-| **Tools** | `tools/` | Python scripts copied from ICDEV with path/port/db adaptations |
+| **Tools** | `tools/` | Python scripts copied from ICDEV™ with path/port/db adaptations |
 | **Context** | `context/` | Static reference material: compliance catalogs, language profiles, tone |
 | **Hard Prompts** | `hardprompts/` | Reusable LLM instruction templates for common tasks |
 | **Args** | `args/` | YAML/JSON behavior settings that change behavior without editing code |
 
-**Rationale:** LLMs are probabilistic. Business logic must be deterministic. 90% accuracy per step compounds to ~59% over 5 steps. GOTCHA enforces separation of concerns so the AI orchestrates while tools execute reliably.
+**Rationale:** LLMs are probabilistic. Business logic must be deterministic. 90% accuracy per step compounds to ~59% over 5 steps. FORGE enforces separation of concerns so the AI orchestrates while tools execute reliably.
 
 **Enforcement:** The scaffolder generates all 6 directories. Post-generation verification checks that each contains at least one file. CLAUDE.md documents the framework for the child's AI orchestrator.
 
@@ -37,7 +37,7 @@ Agents are organized into 3 tiers based on their role and criticality:
 | Agent | Port Offset | Role |
 |-------|-------------|------|
 | Orchestrator | +0 | Task routing, workflow management, result aggregation |
-| Architect | +1 | ATLAS/M-ATLAS A/T phases, system design, technology selection |
+| Architect | +1 | ANVIL/M-ANVIL A/T phases, system design, technology selection |
 | Builder | +2 | TDD code generation (RED-GREEN-REFACTOR), scaffolding, lint, format |
 
 ### Tier 2: Domain (Conditional — Based on Fitness Score)
@@ -56,7 +56,7 @@ Agents are organized into 3 tiers based on their role and criticality:
 
 **Port calculation:** `child_port = icdev_base_port + port_offset + user_port_offset`
 
-Example: ICDEV Orchestrator is 8443. User offset is 1000. Child Orchestrator is 8443 + 0 + 1000 = 9443.
+Example: ICDEV™ Orchestrator is 8443. User offset is 1000. Child Orchestrator is 8443 + 0 + 1000 = 9443.
 
 **Agent cards:** Each agent publishes an Agent Card at `/.well-known/agent.json` describing its capabilities, skills, and A2A endpoint. Cards are generated during scaffolding and stored in `tools/agent/cards/<agent-name>.json`.
 
@@ -86,7 +86,7 @@ Agent-to-agent communication uses JSON-RPC 2.0 over mutual TLS within a Kubernet
 - Network policies restrict agent-to-agent traffic within namespace
 - Audit logging on every A2A message (NIST AU-2)
 
-**Parent callback:** If `parent_callback_url` is configured, the child Orchestrator can send status updates and request assistance from the parent ICDEV instance using the same A2A protocol.
+**Parent callback:** If `parent_callback_url` is configured, the child Orchestrator can send status updates and request assistance from the parent ICDEV™ instance using the same A2A protocol.
 
 ---
 
@@ -104,7 +104,7 @@ blueprint.json
   ├── db_schema             # Core + capability tables
   ├── memory_config         # Memory system settings
   ├── cicd_config           # Pipeline template and stages
-  ├── atlas_config          # ATLAS or M-ATLAS workflow
+  ├── atlas_config          # ANVIL or M-ANVIL workflow
   ├── gotcha_dirs           # Directory structure specification
   ├── agent_ports           # Port assignments
   └── classification        # CUI markings and encryption
@@ -118,19 +118,19 @@ blueprint.json
 
 ## Pattern 5: Copy-and-Adapt
 
-Tools are copied from ICDEV with text adaptations applied during scaffolding. ICDEV's own tools are the single source of truth — there is no separate template library.
+Tools are copied from ICDEV™ with text adaptations applied during scaffolding. ICDEV™'s own tools are the single source of truth — there is no separate template library.
 
 **Adaptations applied during copy:**
-- Port numbers remapped (ICDEV base -> child base + offset)
+- Port numbers remapped (ICDEV™ base -> child base + offset)
 - Database name/path updated (`data/icdev.db` -> `data/<name>.db`)
 - Import paths adjusted for child directory structure
 - CUI markings verified/applied
-- ICDEV-specific references stripped (generation tools, parent paths)
+- ICDEV™-specific references stripped (generation tools, parent paths)
 
 **What is NOT copied:**
 - `tools/builder/agentic_fitness.py` (generation tool — grandchild prevention)
 - `tools/builder/app_blueprint.py` (generation tool — grandchild prevention)
-- Parent ICDEV configuration files
+- Parent ICDEV™ configuration files
 - `.env` files (secrets are never copied)
 
 **Rationale:** Templates drift from reality. By copying actual working tools, child apps inherit battle-tested code. Adaptations are minimal and deterministic (string replacements, not logic changes).
@@ -148,7 +148,7 @@ The child app's `args/project_defaults.yaml` contains `agentic_generation: false
 Generation tools (`agentic_fitness.py`, `app_blueprint.py`) are excluded from the file manifest. The `--agentic` flag is not available in the child's scaffolder.
 
 **Level 3: CLAUDE.md Documentation**
-The child's CLAUDE.md explicitly states: "This application CANNOT generate child applications. Agentic generation is only available in the parent ICDEV system."
+The child's CLAUDE.md explicitly states: "This application CANNOT generate child applications. Agentic generation is only available in the parent ICDEV™ system."
 
 **Rationale:** Uncontrolled proliferation of agentic systems creates security, compliance, and operational risks. Each generation layer adds configuration drift risk. Three independent enforcement levels ensure no single bypass can enable generation.
 
@@ -219,11 +219,11 @@ IF provider == "azure":
 
 ## Pattern 10: Port Offset
 
-Child agents use ICDEV base ports + a configurable offset (default: 1000).
+Child agents use ICDEV™ base ports + a configurable offset (default: 1000).
 
 **Default port assignments (with offset 1000):**
 
-| Agent | ICDEV Port | Child Port (offset 1000) |
+| Agent | ICDEV™ Port | Child Port (offset 1000) |
 |-------|------------|--------------------------|
 | Orchestrator | 8443 | 9443 |
 | Architect | 8444 | 9444 |
@@ -236,9 +236,9 @@ Child agents use ICDEV base ports + a configurable offset (default: 1000).
 | MBSE | 8451 | 9451 |
 | Modernization | 8452 | 9452 |
 
-**Multiple children:** When generating multiple child apps from the same ICDEV instance, each should use a different offset (1000, 2000, 3000, etc.) to avoid port conflicts.
+**Multiple children:** When generating multiple child apps from the same ICDEV™ instance, each should use a different offset (1000, 2000, 3000, etc.) to avoid port conflicts.
 
-**Rationale:** Port offsets allow ICDEV and child apps to coexist on the same host during development and testing without conflicts. In production K8s, each app has its own namespace and ports are internal.
+**Rationale:** Port offsets allow ICDEV™ and child apps to coexist on the same host during development and testing without conflicts. In production K8s, each app has its own namespace and ports are internal.
 
 ---
 
@@ -246,16 +246,16 @@ Child agents use ICDEV base ports + a configurable offset (default: 1000).
 
 | # | Pattern | Key Principle |
 |---|---------|---------------|
-| 1 | GOTCHA Framework | Separate AI orchestration from deterministic execution |
+| 1 | FORGE Framework | Separate AI orchestration from deterministic execution |
 | 2 | Agent Tiers | Core always present; domain conditional; support always present |
 | 3 | A2A Protocol | JSON-RPC 2.0 over mTLS for agent communication |
 | 4 | Blueprint-Driven | Single JSON drives all generation; no hardcoded decisions |
-| 5 | Copy-and-Adapt | ICDEV tools are the source of truth; adapt during copy |
+| 5 | Copy-and-Adapt | ICDEV™ tools are the source of truth; adapt during copy |
 | 6 | Grandchild Prevention | 3-layer enforcement: config flag, scaffolder strip, CLAUDE.md |
 | 7 | Minimal DB | Core tables first; capabilities expand via migration |
 | 8 | Dynamic CLAUDE.md | Jinja2 template renders only present capabilities |
 | 9 | CSP MCP Integration | Cloud provider MCP servers selected per blueprint |
-| 10 | Port Offset | Child ports = ICDEV base + offset (default 1000) |
+| 10 | Port Offset | Child ports = ICDEV™ base + offset (default 1000) |
 
 ---
 

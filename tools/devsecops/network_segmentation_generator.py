@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """K8s NetworkPolicy Manifest Generator for ZTA Micro-Segmentation.
 
 Generates enhanced Kubernetes NetworkPolicy manifests implementing Zero Trust
@@ -27,7 +27,7 @@ Usage:
 import argparse
 import json
 import os
-import sqlite3
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -50,7 +50,7 @@ _CUI_HEADER = (
     "# CONTROLLED UNCLASSIFIED INFORMATION\n"
     "# Authorized for: Internal project use only\n"
     "# Generated: {timestamp}\n"
-    "# Generator: ICDEV Network Segmentation Generator\n"
+    "# Generator: ICDEV™ Network Segmentation Generator\n"
     "# NIST 800-53: AC-3, AC-4, SC-7, SC-8, SC-13\n"
     "# ZTA Pillar: Network (micro-segmentation)\n"
     "# CUI // SP-CTI\n"
@@ -154,9 +154,8 @@ def _load_config() -> dict:
 
 
 def _get_db():
-    """Open connection to ICDEV SQLite database."""
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
+    """Open connection to ICDEV™ SQLite database."""
+    conn = get_connection()
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
@@ -590,7 +589,7 @@ def main():
     else:
         # Human-readable output
         print("=" * 70)
-        print("ICDEV Network Segmentation Generator — ZTA Micro-Segmentation")
+        print("ICDEV™ Network Segmentation Generator — ZTA Micro-Segmentation")
         print("Classification: CUI // SP-CTI")
         print("=" * 70)
         print(f"Generated at : {combined['generated_at']}")

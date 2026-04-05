@@ -27,7 +27,7 @@ from icdev.tools.db.init_icdev_db import DASHBOARD_AUTH_ALTER_SQL, SCHEMA_SQL
 
 @pytest.fixture()
 def tmp_db(tmp_path, monkeypatch):
-    """Create a temporary ICDEV database and monkeypatch DB_PATH."""
+    """Create a temporary ICDEV™ database and monkeypatch DB_PATH."""
     db_file = tmp_path / "icdev_test.db"
     conn = sqlite3.connect(str(db_file))
     conn.executescript(SCHEMA_SQL)
@@ -40,8 +40,10 @@ def tmp_db(tmp_path, monkeypatch):
     conn.close()
 
     # Monkeypatch DB_PATH in both config and auth modules
-    monkeypatch.setattr("icdev.tools.dashboard.config.DB_PATH", str(db_file))
-    monkeypatch.setattr("icdev.tools.dashboard.auth.DB_PATH", str(db_file))
+    import icdev.tools.dashboard.config  # Ensure module is loaded before setattr
+    import icdev.tools.dashboard.auth
+    monkeypatch.setattr(icdev.tools.dashboard.config, "DB_PATH", str(db_file))
+    monkeypatch.setattr(icdev.tools.dashboard.auth, "DB_PATH", str(db_file))
 
     return db_file
 

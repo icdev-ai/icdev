@@ -28,6 +28,7 @@ import argparse
 import json
 import sqlite3
 import sys
+from tools.db.storage import get_connection
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -216,8 +217,7 @@ class NarrativeGenerator:
         self._ensure_table()
 
     def _conn(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(str(self._db_path))
-        conn.row_factory = sqlite3.Row
+        conn = get_connection(db_path=str(self._db_path))
         return conn
 
     def _ensure_table(self) -> None:

@@ -1,5 +1,5 @@
 /* =========================================================================
-   ICDEV Dashboard - Government-themed Professional CSS
+   ICDEV™ Dashboard - Government-themed Professional CSS
    ========================================================================= */
 
 /* --- Reset & Base --- */
@@ -132,6 +132,41 @@ a:hover {
     color: var(--text-primary);
     border-bottom-color: var(--accent-blue);
     text-decoration: none;
+}
+
+/* --- Nav Dropdowns --- */
+.nav-dropdown {
+    position: relative;
+}
+.nav-dropdown-menu {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    background: var(--bg-secondary, #1e293b);
+    border: 1px solid var(--border-color, #334155);
+    border-radius: 6px;
+    padding: 4px 0;
+    min-width: 160px;
+    z-index: 100;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    list-style: none;
+    margin: 0;
+}
+.nav-dropdown:hover .nav-dropdown-menu {
+    display: block;
+}
+.nav-dropdown-menu li a {
+    padding: 6px 14px !important;
+    font-size: 0.78rem !important;
+    border-bottom: none !important;
+    display: block;
+    color: var(--text-secondary);
+}
+.nav-dropdown-menu li a:hover {
+    background: var(--bg-hover, #334155);
+    color: var(--text-primary);
+    border-bottom: none !important;
 }
 
 /* --- Main Content --- */
@@ -708,4 +743,20 @@ tbody tr:hover {
     .stat-bar {
         flex-direction: column;
     }
+}
+
+/* ── Print Styles (Base) ──────────────────────────────────────────────────── */
+@media print {
+  .navbar, .footer, .sidebar, .cui-banner, .page-actions,
+  .modal, .dropdown-menu, .toast, .notification-panel { display: none !important; }
+  .main-content { padding: 8px !important; margin: 0 !important; }
+  body { background: #fff !important; color: #111 !important; font-size: 11px; }
+  .card, .panel, .data-table { background: #fff !important; color: #111 !important; border: 1px solid #ccc !important; }
+  .card { break-inside: avoid; margin-bottom: 8px; }
+  .data-table th { background: #f0f0f0 !important; color: #111 !important; }
+  .data-table td { color: #111 !important; }
+  a { color: #111 !important; text-decoration: underline; }
+  .health-pill { border: 1px solid #999 !important; }
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+  @page { margin: 0.5in; }
 }

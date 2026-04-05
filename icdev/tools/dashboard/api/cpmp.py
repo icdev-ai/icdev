@@ -12,7 +12,7 @@ Integration points:
     cpars_predictor.py       → Deterministic weighted CPARS scoring
     subcontractor_tracker.py → FAR 52.219-9, ISR/SSR
     negative_event_tracker.py → NDAA event-based tracking
-    cdrl_generator.py        → CDRL auto-generation via ICDEV tools
+    cdrl_generator.py        → CDRL auto-generation via ICDEV™ tools
     sam_contract_sync.py     → SAM.gov Contract Awards API
 """
 
@@ -57,7 +57,7 @@ def _uuid():
 def _audit(conn, action, details="", actor="cpmp_api"):
     try:
         conn.execute(
-            "INSERT INTO audit_trail (id, timestamp, event_type, actor, action, details, session_id) "
+            "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (_uuid(), _now(), "cpmp.api", actor, action, details, "cpmp"),
         )

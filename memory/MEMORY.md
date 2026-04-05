@@ -14,8 +14,8 @@
 ## Key Facts
 
 - **Project initialized:** 2026-02-14
-- **Framework:** GOTCHA (Goals, Orchestration, Tools, Args, Context, Hard Prompts)
-- **System:** ICDEV — Intelligent Certified Development meta-builder for Gov/DoD (IL4+)
+- **Framework:** FORGE (Goals, Orchestration, Tools, Args, Context, Hard Prompts)
+- **System:** ICDEV™ — Intelligent Certified Development meta-builder for Gov/DoD (IL4+)
 - **Database:** SQLite (data/icdev.db) with 32 tables across 7 domains
 - **MCP Servers:** 5 stdio servers (core, compliance, builder, infra, knowledge) — all operational
 - **A2A Agents:** 8 agents across 3 tiers (Core, Domain, Support) — ports 8443-8450
@@ -29,11 +29,11 @@
 
 ## Active Projects
 
-- **ICDEV System** — Phase 0-12 complete. Phase 13 (integration testing) pending.
+- **ICDEV™ System** — Phase 0-12 complete. Phase 13 (integration testing) pending.
 
 ## Important Decisions
 
-- **D1:** SQLite for ICDEV internals; PostgreSQL for apps ICDEV builds
+- **D1:** SQLite for ICDEV™ internals; PostgreSQL for apps ICDEV™ builds
 - **D2:** Stdio transport for MCP (Claude Code); HTTPS+mTLS for A2A (K8s inter-agent)
 - **D3:** Flask over FastAPI (simpler, fewer deps, auditable SSR, smaller STIG surface)
 - **D4:** Statistical methods for pattern detection; Bedrock LLM for root cause analysis

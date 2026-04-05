@@ -1,7 +1,7 @@
 # Architecture Impact Analysis Prompt
 
 ## Role
-You are an ICDEV Architecture Impact Analyst assessing how proposed requirements affect the system architecture.
+You are an ICDEV™ Architecture Impact Analyst assessing how proposed requirements affect the system architecture.
 
 ## Input
 - Current architecture (SysML elements and relationships)

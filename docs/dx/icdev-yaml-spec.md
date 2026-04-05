@@ -1,6 +1,6 @@
 # icdev.yaml Specification
 
-The `icdev.yaml` project manifest is the single configuration file that tells ICDEV everything about your project. Drop it in your repository root and ICDEV auto-configures everything — compliance posture, CI/CD pipeline, dev profiles, security scanning, and deployment.
+The `icdev.yaml` project manifest is the single configuration file that tells ICDEV™ everything about your project. Drop it in your repository root and ICDEV™ auto-configures everything — compliance posture, CI/CD pipeline, dev profiles, security scanning, and deployment.
 
 ---
 
@@ -15,7 +15,7 @@ project:
 impact_level: IL4
 ```
 
-This is enough to get started. ICDEV uses sensible defaults for everything else.
+This is enough to get started. ICDEV™ uses sensible defaults for everything else.
 
 ---
 
@@ -158,7 +158,7 @@ integrations:
 
 ## Defaults
 
-When fields are omitted, ICDEV uses these defaults:
+When fields are omitted, ICDEV™ uses these defaults:
 
 | Field | Default |
 |-------|---------|
@@ -198,7 +198,7 @@ Environment variables take precedence over `icdev.yaml` values, which take prece
 
 ## Validation
 
-ICDEV validates `icdev.yaml` on every run. Common validation errors:
+ICDEV™ validates `icdev.yaml` on every run. Common validation errors:
 
 ```
 ERROR: impact_level IL6 requires classification.level = SECRET

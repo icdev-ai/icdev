@@ -46,7 +46,7 @@ So that I can ensure specs meet quality standards
 ## Solution Statement
 Implement the test feature by modifying components A, B, and C. The solution will
 handle edge cases and integrate with existing systems. It uses standard patterns
-from the ICDEV framework. The architecture follows a layered approach with clear
+from the ICDEV™ framework. The architecture follows a layered approach with clear
 separation of concerns between the presentation, business logic, and data access
 layers. Error handling covers all known failure modes.
 

@@ -1,5 +1,5 @@
 ---
-description: "ICDEV workflow: Run the full test suite (pytest unit + behave BDD) with coverage reporting and compliance tracking"
+description: "ICDEV™ workflow: Run the full test suite (pytest unit + behave BDD) with coverage reporting and compliance tracking"
 globs:
   - "**/*.py"
   - "**/*.yaml"

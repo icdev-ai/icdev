@@ -30,7 +30,6 @@ def _import_tool(module_path, func_name):
     """Dynamically import a function. Returns None if unavailable."""
     try:
         import importlib
-
         mod = importlib.import_module(module_path)
         return getattr(mod, func_name, None)
     except (ImportError, ModuleNotFoundError, AttributeError):
@@ -40,7 +39,6 @@ def _import_tool(module_path, func_name):
 # ---------------------------------------------------------------------------
 # Tool handlers
 # ---------------------------------------------------------------------------
-
 
 def handle_scaffold(args: dict) -> dict:
     """Generate project directory structure from templates."""
@@ -124,7 +122,9 @@ def handle_run_tests(args: dict) -> dict:
         cmd.append(str(project_path / "tests"))
 
         try:
-            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300, cwd=str(project_path))
+            proc = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=300, cwd=str(project_path)
+            )
             results["pytest"] = {
                 "returncode": proc.returncode,
                 "passed": proc.returncode == 0,
@@ -145,7 +145,9 @@ def handle_run_tests(args: dict) -> dict:
                 cmd.append("--verbose")
 
             try:
-                proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300, cwd=str(project_path))
+                proc = subprocess.run(
+                    cmd, capture_output=True, text=True, timeout=300, cwd=str(project_path)
+                )
                 results["behave"] = {
                     "returncode": proc.returncode,
                     "passed": proc.returncode == 0,
@@ -180,9 +182,7 @@ def handle_lint(args: dict) -> dict:
     try:
         proc = subprocess.run(
             [sys.executable, "-m", "bandit", "-r", project_dir, "-f", "json"],
-            capture_output=True,
-            text=True,
-            timeout=120,
+            capture_output=True, text=True, timeout=120,
         )
         results["bandit"] = {
             "returncode": proc.returncode,
@@ -213,10 +213,7 @@ def handle_format(args: dict) -> dict:
         try:
             proc = subprocess.run(
                 [sys.executable, "-m"] + cmd,
-                capture_output=True,
-                text=True,
-                timeout=60,
-                cwd=project_dir,
+                capture_output=True, text=True, timeout=60, cwd=project_dir,
             )
             results[tool_name] = {
                 "returncode": proc.returncode,
@@ -231,7 +228,6 @@ def handle_format(args: dict) -> dict:
 # ---------------------------------------------------------------------------
 # Phase 19: Agentic generation tool handlers
 # ---------------------------------------------------------------------------
-
 
 def handle_agentic_fitness(args: dict) -> dict:
     """Assess component fitness for agentic architecture (6-dimension scoring)."""
@@ -248,7 +244,8 @@ def handle_agentic_fitness(args: dict) -> dict:
     if not spec:
         raise ValueError("'spec' is required")
 
-    cmd = [sys.executable, str(BASE_DIR / "tools" / "builder" / "agentic_fitness.py"), "--spec", spec, "--json"]
+    cmd = [sys.executable, str(BASE_DIR / "tools" / "builder" / "agentic_fitness.py"),
+           "--spec", spec, "--json"]
     project_id = args.get("project_id")
     if project_id:
         cmd.extend(["--project-id", project_id])
@@ -295,20 +292,12 @@ def handle_generate_blueprint(args: dict) -> dict:
     if not app_name:
         raise ValueError("'app_name' is required")
 
-    cmd = [
-        sys.executable,
-        str(BASE_DIR / "tools" / "builder" / "app_blueprint.py"),
-        "--fitness-scorecard",
-        fitness_scorecard,
-        "--app-name",
-        app_name,
-        "--json",
-    ]
+    cmd = [sys.executable, str(BASE_DIR / "tools" / "builder" / "app_blueprint.py"),
+           "--fitness-scorecard", fitness_scorecard,
+           "--app-name", app_name, "--json"]
     user_decisions = args.get("user_decisions")
     if user_decisions:
-        cmd.extend(
-            ["--user-decisions", json.dumps(user_decisions) if isinstance(user_decisions, dict) else user_decisions]
-        )
+        cmd.extend(["--user-decisions", json.dumps(user_decisions) if isinstance(user_decisions, dict) else user_decisions])
     cloud_provider = args.get("cloud_provider")
     if cloud_provider:
         cmd.extend(["--cloud-provider", cloud_provider])
@@ -343,16 +332,9 @@ def handle_dev_profile_create(args: dict) -> dict:
             created_by=args.get("created_by", "mcp-client"),
         )
     # Fallback: subprocess
-    cmd = [
-        sys.executable,
-        str(BASE_DIR / "tools" / "builder" / "dev_profile_manager.py"),
-        "--scope",
-        args.get("scope", "project"),
-        "--scope-id",
-        args["scope_id"],
-        "--create",
-        "--json",
-    ]
+    cmd = [sys.executable, str(BASE_DIR / "tools" / "builder" / "dev_profile_manager.py"),
+           "--scope", args.get("scope", "project"),
+           "--scope-id", args["scope_id"], "--create", "--json"]
     if args.get("template"):
         cmd.extend(["--template", args["template"]])
     if args.get("created_by"):
@@ -375,16 +357,9 @@ def handle_dev_profile_get(args: dict) -> dict:
             scope_id=args["scope_id"],
             version=args.get("version"),
         )
-    cmd = [
-        sys.executable,
-        str(BASE_DIR / "tools" / "builder" / "dev_profile_manager.py"),
-        "--scope",
-        args.get("scope", "project"),
-        "--scope-id",
-        args["scope_id"],
-        "--get",
-        "--json",
-    ]
+    cmd = [sys.executable, str(BASE_DIR / "tools" / "builder" / "dev_profile_manager.py"),
+           "--scope", args.get("scope", "project"),
+           "--scope-id", args["scope_id"], "--get", "--json"]
     if args.get("version"):
         cmd.extend(["--version", str(args["version"])])
     try:
@@ -404,16 +379,9 @@ def handle_dev_profile_resolve(args: dict) -> dict:
             scope=args.get("scope", "project"),
             scope_id=args["scope_id"],
         )
-    cmd = [
-        sys.executable,
-        str(BASE_DIR / "tools" / "builder" / "dev_profile_manager.py"),
-        "--scope",
-        args.get("scope", "project"),
-        "--scope-id",
-        args["scope_id"],
-        "--resolve",
-        "--json",
-    ]
+    cmd = [sys.executable, str(BASE_DIR / "tools" / "builder" / "dev_profile_manager.py"),
+           "--scope", args.get("scope", "project"),
+           "--scope-id", args["scope_id"], "--resolve", "--json"]
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30, cwd=str(BASE_DIR))
         if proc.returncode == 0:
@@ -434,13 +402,8 @@ def handle_dev_profile_detect(args: dict) -> dict:
             if store:
                 store(result, tenant_id=args.get("tenant_id"), project_id=args.get("project_id"))
         return result
-    cmd = [
-        sys.executable,
-        str(BASE_DIR / "tools" / "builder" / "profile_detector.py"),
-        "--repo",
-        args["repo_path"],
-        "--json",
-    ]
+    cmd = [sys.executable, str(BASE_DIR / "tools" / "builder" / "profile_detector.py"),
+           "--repo", args["repo_path"], "--json"]
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60, cwd=str(BASE_DIR))
         if proc.returncode == 0:
@@ -451,7 +414,7 @@ def handle_dev_profile_detect(args: dict) -> dict:
 
 
 def handle_generate_child_app(args: dict) -> dict:
-    """Generate a mini-ICDEV clone child application."""
+    """Generate a mini-ICDEV™ clone child application."""
     generate = _import_tool("tools.builder.child_app_generator", "generate_child_app")
     if generate:
         blueprint = args.get("blueprint")
@@ -465,13 +428,8 @@ def handle_generate_child_app(args: dict) -> dict:
     if not blueprint:
         raise ValueError("'blueprint' path is required")
 
-    cmd = [
-        sys.executable,
-        str(BASE_DIR / "tools" / "builder" / "child_app_generator.py"),
-        "--blueprint",
-        blueprint,
-        "--json",
-    ]
+    cmd = [sys.executable, str(BASE_DIR / "tools" / "builder" / "child_app_generator.py"),
+           "--blueprint", blueprint, "--json"]
     output = args.get("output")
     if output:
         cmd.extend(["--output", output])
@@ -489,13 +447,12 @@ def handle_generate_child_app(args: dict) -> dict:
 # Server setup
 # ---------------------------------------------------------------------------
 
-
 def create_server() -> MCPServer:
     server = MCPServer(name="icdev-builder", version="1.0.0")
 
     server.register_tool(
         name="scaffold",
-        description="Generate a project directory structure from templates. Includes CUI markings, README, compliance directory, Dockerfile, .gitignore, and test scaffolding.",  # noqa: E501
+        description="Generate a project directory structure from templates. Includes CUI markings, README, compliance directory, Dockerfile, .gitignore, and test scaffolding.",
         input_schema={
             "type": "object",
             "properties": {
@@ -504,21 +461,12 @@ def create_server() -> MCPServer:
                     "type": "string",
                     "description": "Project type (includes multi-language scaffolds)",
                     "enum": [
-                        "webapp",
-                        "microservice",
-                        "api",
-                        "cli",
-                        "data_pipeline",
-                        "iac",
-                        "java-backend",
-                        "java-microservice",
-                        "go-backend",
-                        "go-microservice",
+                        "webapp", "microservice", "api", "cli", "data_pipeline", "iac",
+                        "java-backend", "java-microservice",
+                        "go-backend", "go-microservice",
                         "rust-backend",
-                        "csharp-backend",
-                        "csharp-api",
-                        "typescript-backend",
-                        "typescript-api",
+                        "csharp-backend", "csharp-api",
+                        "typescript-backend", "typescript-api",
                     ],
                     "default": "webapp",
                 },
@@ -540,7 +488,7 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="write_tests",
-        description="Generate test files from a feature description (RED phase of TDD). Creates Gherkin BDD feature files and language-specific step definitions/unit tests.",  # noqa: E501
+        description="Generate test files from a feature description (RED phase of TDD). Creates Gherkin BDD feature files and language-specific step definitions/unit tests.",
         input_schema={
             "type": "object",
             "properties": {
@@ -566,7 +514,7 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="generate_code",
-        description="Generate implementation code to make failing tests pass (GREEN phase of TDD). Analyzes test file to determine required code. Supports 6 languages.",  # noqa: E501
+        description="Generate implementation code to make failing tests pass (GREEN phase of TDD). Analyzes test file to determine required code. Supports 6 languages.",
         input_schema={
             "type": "object",
             "properties": {
@@ -586,7 +534,7 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="run_tests",
-        description="Execute the test suite using pytest (unit tests) and/or behave (BDD). Returns pass/fail status, output, and coverage data.",  # noqa: E501
+        description="Execute the test suite using pytest (unit tests) and/or behave (BDD). Returns pass/fail status, output, and coverage data.",
         input_schema={
             "type": "object",
             "properties": {
@@ -607,7 +555,7 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="lint",
-        description="Run linters on a project (multi-language: bandit, checkstyle, golangci-lint, clippy, dotnet analyzers, eslint).",  # noqa: E501
+        description="Run linters on a project (multi-language: bandit, checkstyle, golangci-lint, clippy, dotnet analyzers, eslint).",
         input_schema={
             "type": "object",
             "properties": {
@@ -620,7 +568,7 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="format",
-        description="Run code formatters on a project (multi-language: black, google-java-format, gofmt, rustfmt, dotnet-format, prettier).",  # noqa: E501
+        description="Run code formatters on a project (multi-language: black, google-java-format, gofmt, rustfmt, dotnet-format, prettier).",
         input_schema={
             "type": "object",
             "properties": {
@@ -634,7 +582,7 @@ def create_server() -> MCPServer:
     # Phase 19: Agentic generation tools
     server.register_tool(
         name="agentic_fitness",
-        description="Assess component fitness for agentic architecture. Scores across 6 dimensions (autonomy, statefulness, tool-density, collaboration, error-recovery, domain-complexity). Returns scorecard with overall_score and per-dimension ratings.",  # noqa: E501
+        description="Assess component fitness for agentic architecture. Scores across 6 dimensions (autonomy, statefulness, tool-density, collaboration, error-recovery, domain-complexity). Returns scorecard with overall_score and per-dimension ratings.",
         input_schema={
             "type": "object",
             "properties": {
@@ -648,7 +596,7 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="generate_blueprint",
-        description="Generate a deployment blueprint from a fitness scorecard. Produces agent topology, port assignments, MCP server config, goal selection, and infrastructure plan for the child application.",  # noqa: E501
+        description="Generate a deployment blueprint from a fitness scorecard. Produces agent topology, port assignments, MCP server config, goal selection, and infrastructure plan for the child application.",
         input_schema={
             "type": "object",
             "properties": {
@@ -680,15 +628,12 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="generate_child_app",
-        description="Generate a mini-ICDEV clone child application from a blueprint. Runs the 12-step generation pipeline: scaffold, agents, goals, tools, memory, DB, MCP, CLAUDE.md, CI/CD, compliance, Docker, K8s.",  # noqa: E501
+        description="Generate a mini-ICDEV™ clone child application from a blueprint. Runs the 12-step generation pipeline: scaffold, agents, goals, tools, memory, DB, MCP, CLAUDE.md, CI/CD, compliance, Docker, K8s.",
         input_schema={
             "type": "object",
             "properties": {
                 "blueprint": {"type": "string", "description": "Path to the blueprint JSON file"},
-                "output": {
-                    "type": "string",
-                    "description": "Output directory for the generated application (optional)",
-                },
+                "output": {"type": "string", "description": "Output directory for the generated application (optional)"},
             },
             "required": ["blueprint"],
         },
@@ -698,7 +643,7 @@ def create_server() -> MCPServer:
     # Phase 34: Dev profile management tools (D183-D188)
     server.register_tool(
         name="dev_profile_create",
-        description="Create a tenant/project development profile from a starter template or explicit data. Supports 6 starter templates (dod_baseline, fedramp_baseline, healthcare_baseline, financial_baseline, law_enforcement, startup). Profiles define coding standards, tooling preferences, and compliance requirements.",  # noqa: E501
+        description="Create a tenant/project development profile from a starter template or explicit data. Supports 6 starter templates (dod_baseline, fedramp_baseline, healthcare_baseline, financial_baseline, law_enforcement, startup). Profiles define coding standards, tooling preferences, and compliance requirements.",
         input_schema={
             "type": "object",
             "properties": {
@@ -709,14 +654,8 @@ def create_server() -> MCPServer:
                     "default": "project",
                 },
                 "scope_id": {"type": "string", "description": "Scope entity ID (e.g., tenant-abc, proj-123)"},
-                "template": {
-                    "type": "string",
-                    "description": "Starter template name (e.g., dod_baseline, fedramp_baseline, startup)",
-                },
-                "profile_data": {
-                    "type": "object",
-                    "description": "Explicit profile data (merged on top of template if both given)",
-                },
+                "template": {"type": "string", "description": "Starter template name (e.g., dod_baseline, fedramp_baseline, startup)"},
+                "profile_data": {"type": "object", "description": "Explicit profile data (merged on top of template if both given)"},
                 "created_by": {"type": "string", "description": "Creator identity", "default": "mcp-client"},
             },
             "required": ["scope_id"],
@@ -726,7 +665,7 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="dev_profile_get",
-        description="Get the current active development profile for a scope. Returns all profile dimensions (language, style, testing, architecture, security, compliance, operations, documentation, git, ai).",  # noqa: E501
+        description="Get the current active development profile for a scope. Returns all profile dimensions (language, style, testing, architecture, security, compliance, operations, documentation, git, ai).",
         input_schema={
             "type": "object",
             "properties": {
@@ -745,7 +684,7 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="dev_profile_resolve",
-        description="Resolve the 5-layer cascade (platform -> tenant -> program -> project -> user) to produce the effective merged profile with provenance tracking. Shows which scope set each value and whether dimensions are locked.",  # noqa: E501
+        description="Resolve the 5-layer cascade (platform -> tenant -> program -> project -> user) to produce the effective merged profile with provenance tracking. Shows which scope set each value and whether dimensions are locked.",
         input_schema={
             "type": "object",
             "properties": {
@@ -763,18 +702,14 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="dev_profile_detect",
-        description="Auto-detect development profile from an existing repository. Scans files, git history, CI/CD configs, and code patterns to suggest profile dimensions with confidence scores. Advisory only (D185) — requires explicit acceptance.",  # noqa: E501
+        description="Auto-detect development profile from an existing repository. Scans files, git history, CI/CD configs, and code patterns to suggest profile dimensions with confidence scores. Advisory only (D185) — requires explicit acceptance.",
         input_schema={
             "type": "object",
             "properties": {
                 "repo_path": {"type": "string", "description": "Path to repository to scan"},
                 "tenant_id": {"type": "string", "description": "Tenant ID (for storing detection results)"},
                 "project_id": {"type": "string", "description": "Project ID (for storing detection results)"},
-                "store": {
-                    "type": "boolean",
-                    "description": "Whether to store detection results in DB",
-                    "default": False,
-                },
+                "store": {"type": "boolean", "description": "Whether to store detection results in DB", "default": False},
             },
             "required": ["repo_path"],
         },

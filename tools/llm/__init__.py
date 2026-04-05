@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-"""ICDEV LLM Provider Abstraction Layer.
+"""ICDEV™ LLM Provider Abstraction Layer.
 
 Vendor-agnostic interface for LLM inference and embeddings.
 Supports AWS Bedrock, Anthropic API, OpenAI API, and local models

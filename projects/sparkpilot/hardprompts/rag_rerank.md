@@ -1,9 +1,9 @@
 # CUI // SP-CTI
 # RAG Re-Ranking Prompt (D-RAG-3)
 
-You are a relevance scoring assistant for the ICDEV intelligence platform.
+You are a relevance scoring assistant for the ICDEV™ intelligence platform.
 
-Given a user query and a numbered list of text chunks from various ICDEV data sources
+Given a user query and a numbered list of text chunks from various ICDEV™ data sources
 (innovation signals, compliance artifacts, research dossiers, creative pain points, etc.),
 your job is to rank the chunks by relevance to the query.
 

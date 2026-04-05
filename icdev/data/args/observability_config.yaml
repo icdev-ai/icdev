@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Observability Configuration — Hook events, agent execution, SIEM forwarding
+# ICDEV™ Observability Configuration — Hook events, agent execution, SIEM forwarding
 
 hooks:
   enabled: true

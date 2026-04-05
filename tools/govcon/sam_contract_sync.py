@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-# ICDEV GovProposal — SAM.gov Contract Awards Sync (Phase 60, D-CPMP-6)
+# ICDEV™ GovProposal — SAM.gov Contract Awards Sync (Phase 60, D-CPMP-6)
 # SAM.gov Contract Awards API v1 adapter, rate-limited with content hash dedup.
 
 """
@@ -19,10 +19,10 @@ import argparse
 import hashlib
 import json
 import os
-import sqlite3
 import sys
 import time
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -51,8 +51,7 @@ DELAY = RATE_LIMIT.get("delay_between_requests", 0.15)
 
 
 def _get_db():
-    conn = sqlite3.connect(str(_DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
@@ -74,7 +73,7 @@ def _content_hash(data):
 def _audit(conn, action, details="", actor="sam_contract_sync"):
     try:
         conn.execute(
-            "INSERT INTO audit_trail (id, timestamp, event_type, actor, action, details, session_id) "
+            "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (_uuid(), _now(), "cpmp.sam_contract_sync", actor, action, details, "cpmp"),
         )
@@ -86,7 +85,6 @@ def _safe_get(url, params=None, headers=None, timeout=30):
     """HTTP GET with error handling. Returns (data, error)."""
     try:
         import requests
-
         resp = requests.get(url, params=params, headers=headers, timeout=timeout)
         resp.raise_for_status()
         return resp.json(), None
@@ -107,6 +105,7 @@ def sync_awards(lookback_days=None):
             "status": "error",
             "message": f"SAM.gov API key not found. Set {API_KEY_ENV} environment variable.",
         }
+
 
     params = {
         "api_key": api_key,
@@ -133,7 +132,9 @@ def sync_awards(lookback_days=None):
     for award in awards:
         content = _content_hash(award)
 
-        existing = conn.execute("SELECT id FROM cpmp_sam_contract_awards WHERE content_hash = ?", (content,)).fetchone()
+        existing = conn.execute(
+            "SELECT id FROM cpmp_sam_contract_awards WHERE content_hash = ?", (content,)
+        ).fetchone()
         if existing:
             dup_count += 1
             continue
@@ -147,12 +148,9 @@ def sync_awards(lookback_days=None):
             "awarding_agency, naics_code, psc_code, content_hash, linked_contract_id, discovered_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
-                _uuid(),
-                sam_award_id,
+                _uuid(), sam_award_id,
                 award.get("solicitationNumber"),
-                award.get("awardee", {}).get("name")
-                if isinstance(award.get("awardee"), dict)
-                else award.get("awardee"),
+                award.get("awardee", {}).get("name") if isinstance(award.get("awardee"), dict) else award.get("awardee"),
                 award.get("awardee", {}).get("ueiSAM") if isinstance(award.get("awardee"), dict) else None,
                 award.get("awardee", {}).get("cageCode") if isinstance(award.get("awardee"), dict) else None,
                 award.get("award", {}).get("amount") if isinstance(award.get("award"), dict) else None,
@@ -216,12 +214,16 @@ def link_award_to_contract(sam_award_id, contract_id):
     """Link a SAM.gov award record to a CPMP contract."""
     conn = _get_db()
 
-    award = conn.execute("SELECT id FROM cpmp_sam_contract_awards WHERE sam_award_id = ?", (sam_award_id,)).fetchone()
+    award = conn.execute(
+        "SELECT id FROM cpmp_sam_contract_awards WHERE sam_award_id = ?", (sam_award_id,)
+    ).fetchone()
     if not award:
         conn.close()
         return {"status": "error", "message": f"SAM award {sam_award_id} not found"}
 
-    contract = conn.execute("SELECT id FROM cpmp_contracts WHERE id = ?", (contract_id,)).fetchone()
+    contract = conn.execute(
+        "SELECT id FROM cpmp_contracts WHERE id = ?", (contract_id,)
+    ).fetchone()
     if not contract:
         conn.close()
         return {"status": "error", "message": f"Contract {contract_id} not found"}
@@ -239,9 +241,8 @@ def link_award_to_contract(sam_award_id, contract_id):
 
 # ── CLI ──────────────────────────────────────────────────────────────
 
-
 def main():
-    parser = argparse.ArgumentParser(description="ICDEV GovProposal SAM.gov Contract Awards Sync (Phase 60)")
+    parser = argparse.ArgumentParser(description="ICDEV™ GovProposal SAM.gov Contract Awards Sync (Phase 60)")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--sync", action="store_true", help="Sync awards from SAM.gov")
     group.add_argument("--list", action="store_true", help="List cached awards")

@@ -4,7 +4,6 @@
 Two-tier LLM: qwen3 drafts connector body, Claude reviews and merges.
 Falls back to Jinja2-only template if LLM unavailable (air-gap safe).
 """
-
 from __future__ import annotations
 
 import hashlib
@@ -63,11 +62,18 @@ def _render_skeleton(
     display_name: str,
 ) -> str:
     """Render connector skeleton from Jinja2 template with fallback."""
-    template_str = TEMPLATE_MAP.get(selection.template_name, TEMPLATE_MAP["rest_connector"])
+    template_str = TEMPLATE_MAP.get(
+        selection.template_name, TEMPLATE_MAP["rest_connector"]
+    )
     class_name = _to_class_name(connector_name)
-    endpoint_map = {ep.path.split("/")[-1] or ep.path: ep.path for ep in manifest.endpoints[:20]}
+    endpoint_map = {
+        ep.path.split("/")[-1] or ep.path: ep.path
+        for ep in manifest.endpoints[:20]
+    }
     table_names = list(endpoint_map.keys()) or ["default"]
-    has_write = any(e.method in ("POST", "PUT", "PATCH") for e in manifest.endpoints)
+    has_write = any(
+        e.method in ("POST", "PUT", "PATCH") for e in manifest.endpoints
+    )
 
     context = {
         "connector_name": connector_name,
@@ -108,6 +114,7 @@ def _two_tier_generate(
     """Run two-tier LLM: qwen3 draft → Claude review."""
     try:
         from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
 
         router = LLMRouter()
     except ImportError:
@@ -138,17 +145,17 @@ def _two_tier_generate(
     )
 
     try:
-        worker_resp = router.invoke(
-            function="connector_code_generation",
-            prompt=worker_prompt,
+        worker_request = LLMRequest(
+            messages=[{"role": "user", "content": worker_prompt}],
         )
-        worker_draft = worker_resp.text if hasattr(worker_resp, "text") else str(worker_resp)
+        worker_resp = router.invoke("connector_code_generation", worker_request)
+        worker_draft = worker_resp.content if worker_resp and worker_resp.content else ""
 
-        review_resp = router.invoke(
-            function="connector_code_generation",
-            prompt=f"{reviewer_prompt}\n\nCode to review:\n```python\n{worker_draft}\n```",
+        review_request = LLMRequest(
+            messages=[{"role": "user", "content": f"{reviewer_prompt}\n\nCode to review:\n```python\n{worker_draft}\n```"}],
         )
-        final = review_resp.text if hasattr(review_resp, "text") else str(review_resp)
+        review_resp = router.invoke("connector_code_generation", review_request)
+        final = review_resp.content if review_resp and review_resp.content else ""
         return _extract_code_block(final) or _extract_code_block(worker_draft)
     except Exception as exc:
         raise RuntimeError(f"Two-tier generation failed: {exc}") from exc

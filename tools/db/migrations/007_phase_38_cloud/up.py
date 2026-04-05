@@ -8,6 +8,7 @@ Adds: cloud_provider_status (D230), cloud_tenant_csp_config,
 """
 
 
+
 def _table_exists(conn, table):
     """Check if a table exists."""
     cursor = conn.execute(

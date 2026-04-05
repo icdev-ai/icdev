@@ -1,10 +1,10 @@
 // CUI // SP-CTI
-// ICDEV Dashboard — Keyboard Shortcuts Module (Zero Dependencies)
+// ICDEV™ Dashboard — Keyboard Shortcuts Module (Zero Dependencies)
 // Classification: CUI // SP-CTI
 (function () {
     "use strict";
 
-    // Ensure ICDEV namespace exists (api.js should have created it)
+    // Ensure ICDEV™ namespace exists (api.js should have created it)
     var ICDEV = window.ICDEV || {};
     window.ICDEV = ICDEV;
 
@@ -491,7 +491,7 @@
      * @param {string} key  Single character key (after pressing `g`)
      * @param {string} path URL path to navigate to
      * @param {string} label Display label for the help modal
-     * @example ICDEV.setShortcut("x", "/settings", "Settings");
+     * @example ICDEV™.setShortcut("x", "/settings", "Settings");
      */
     ICDEV.setShortcut = function (key, path, label) {
         if (!key || key.length !== 1 || !path) return;

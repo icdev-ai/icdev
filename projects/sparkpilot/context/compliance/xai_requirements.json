@@ -2,7 +2,7 @@
   "framework_id": "xai",
   "framework_name": "Observability & Explainable AI (Phase 46)",
   "version": "1.0",
-  "description": "Requirements for observability, traceability, and explainable AI in ICDEV. Maps to NIST AI RMF MEASURE 2.5/2.7/2.8, DoD RAI Traceable principle, and ISO 42001.",
+  "description": "Requirements for observability, traceability, and explainable AI in ICDEV™. Maps to NIST AI RMF MEASURE 2.5/2.7/2.8, DoD RAI Traceable principle, and ISO 42001.",
   "requirements": [
     {
       "id": "XAI-001",

@@ -2,14 +2,14 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Vision-based SysML diagram extractor using multimodal LLMs.
 
 Extracts model elements and relationships from diagram screenshots when
 XMI export from Cameo Systems Modeler / MagicDraw is unavailable.  Uses
 vision-capable LLMs (Ollama LLaVA for air-gapped, Claude/GPT-4o for cloud)
 to analyze SysML diagram images and produce structured element/relationship
-data compatible with the ICDEV MBSE digital thread.
+data compatible with the ICDEV™ MBSE digital thread.
 
 Usage:
     # Extract elements from a diagram screenshot
@@ -245,7 +245,7 @@ def _normalize_relationship_type(raw_type: str) -> str:
 
 
 def _get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
-    """Open a connection to the ICDEV database."""
+    """Open a connection to the ICDEV™ database."""
     path = db_path or DB_PATH
     if not path.exists():
         raise FileNotFoundError(
@@ -450,13 +450,13 @@ def store_extracted_elements(
     source_image: str,
     db_path: Optional[Path] = None,
 ) -> Dict[str, Any]:
-    """Store vision-extracted elements and relationships in the ICDEV database.
+    """Store vision-extracted elements and relationships in the ICDEV™ database.
 
     For each extracted element, inserts a row into ``sysml_elements``.
     For each extracted relationship, inserts a row into ``sysml_relationships``.
 
     Args:
-        project_id: ICDEV project identifier.
+        project_id: ICDEV™ project identifier.
         extraction_result: Output from :func:`extract_diagram`.
         source_image: Path to the source diagram image.
         db_path: Override database path (default: data/icdev.db).
@@ -642,7 +642,7 @@ def validate_against_model(
     names and types with those in the extraction result.
 
     Args:
-        project_id: ICDEV project identifier.
+        project_id: ICDEV™ project identifier.
         extraction_result: Output from :func:`extract_diagram`.
         db_path: Override database path.
 
@@ -687,7 +687,7 @@ def validate_against_model(
 def main() -> None:
     """Command-line interface for SysML diagram extraction."""
     parser = argparse.ArgumentParser(
-        description="ICDEV Vision-Based SysML Diagram Extractor"
+        description="ICDEV™ Vision-Based SysML Diagram Extractor"
     )
     parser.add_argument(
         "--image", required=True,
@@ -699,11 +699,11 @@ def main() -> None:
     )
     parser.add_argument(
         "--project-id",
-        help="ICDEV project identifier (required for --store and --validate)",
+        help="ICDEV™ project identifier (required for --store and --validate)",
     )
     parser.add_argument(
         "--store", action="store_true",
-        help="Store extracted elements in the ICDEV database (requires --project-id)",
+        help="Store extracted elements in the ICDEV™ database (requires --project-id)",
     )
     parser.add_argument(
         "--validate", action="store_true",

@@ -6,7 +6,7 @@ Provides 5 MCP tools for managing remote command access:
     1. bind_user       — Initiate or complete a user binding ceremony
     2. list_bindings   — List active/pending/revoked bindings
     3. revoke_binding  — Revoke an active binding
-    4. send_command    — Execute an ICDEV command as if from a channel
+    4. send_command    — Execute an ICDEV™ command as if from a channel
     5. gateway_status  — Show gateway health, active channels, recent commands
 
 Transport: stdio (Claude Code integration)
@@ -15,6 +15,7 @@ Transport: stdio (Claude Code integration)
 import json
 import logging
 import sys
+from tools.db.storage import get_connection
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -118,7 +119,7 @@ def handle_revoke_binding(params):
 
 
 def handle_send_command(params):
-    """Execute an ICDEV command as if from a channel (for testing/admin)."""
+    """Execute an ICDEV™ command as if from a channel (for testing/admin)."""
     import yaml
     from tools.gateway.event_envelope import CommandEnvelope, parse_command_text
     from tools.gateway.command_router import execute_command
@@ -165,7 +166,6 @@ def handle_send_command(params):
 
 def handle_gateway_status(params):
     """Show gateway status: active channels, recent commands."""
-    import sqlite3
     import yaml
 
     config_path = BASE_DIR / "args" / "remote_gateway_config.yaml"
@@ -194,10 +194,9 @@ def handle_gateway_status(params):
 
     # Recent commands
     recent = []
-    db_path = BASE_DIR / "data" / "icdev.db"
+    BASE_DIR / "data" / "icdev.db"
     try:
-        conn = sqlite3.connect(str(db_path))
-        conn.row_factory = sqlite3.Row
+        conn = get_connection()
         rows = conn.execute(
             "SELECT id, channel, raw_command, execution_status, "
             "execution_time_ms, created_at FROM remote_command_log "
@@ -259,7 +258,7 @@ TOOLS = {
         },
     },
     "send_command": {
-        "description": "Execute an ICDEV command via the remote gateway (for testing/admin)",
+        "description": "Execute an ICDEV™ command via the remote gateway (for testing/admin)",
         "handler": handle_send_command,
         "inputSchema": {
             "type": "object",

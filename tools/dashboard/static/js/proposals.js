@@ -1,5 +1,5 @@
 // CUI // SP-CTI
-// ICDEV Dashboard — Proposal Lifecycle Tracker (Zero Dependencies)
+// ICDEV™ Dashboard — Proposal Lifecycle Tracker (Zero Dependencies)
 // Classification: CUI // SP-CTI
 (function () {
   'use strict';

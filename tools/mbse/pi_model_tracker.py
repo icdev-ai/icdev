@@ -41,8 +41,8 @@ Usage:
 import argparse
 import hashlib
 import json
-import sqlite3
 import sys
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -60,14 +60,15 @@ except ImportError:
 # Database helpers
 # ------------------------------------------------------------------
 
-
 def _get_connection(db_path=None):
     """Get a database connection with Row factory."""
     path = db_path or DB_PATH
     if not path.exists():
-        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+        raise FileNotFoundError(
+            f"Database not found: {path}\n"
+            "Run: python tools/db/init_icdev_db.py"
+        )
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -95,7 +96,6 @@ def _log_audit(conn, project_id, action, details):
 # ------------------------------------------------------------------
 # Internal helpers
 # ------------------------------------------------------------------
-
 
 def _compute_content_hash(project_id: str, conn) -> str:
     """Compute SHA-256 of current model state.
@@ -221,10 +221,9 @@ def _get_snapshot_data(project_id: str, conn) -> dict:
 # Core functions
 # ------------------------------------------------------------------
 
-
-def create_pi_snapshot(
-    project_id: str, pi_number: str, snapshot_type: str = "manual", notes: str = None, db_path=None
-) -> dict:
+def create_pi_snapshot(project_id: str, pi_number: str,
+                       snapshot_type: str = "manual", notes: str = None,
+                       db_path=None) -> dict:
     """Create a snapshot of current model state for a PI.
 
     Counts all sysml_elements, sysml_relationships, doors_requirements,
@@ -318,7 +317,8 @@ def create_pi_snapshot(
         conn.close()
 
 
-def compare_pi_snapshots(project_id: str, pi_from: str, pi_to: str, db_path=None) -> dict:
+def compare_pi_snapshots(project_id: str, pi_from: str, pi_to: str,
+                         db_path=None) -> dict:
     """Diff between two PI snapshots.
 
     Retrieves the most recent snapshot for each PI and computes deltas
@@ -391,7 +391,9 @@ def compare_pi_snapshots(project_id: str, pi_from: str, pi_to: str, db_path=None
         coverage_delta = {
             "coverage_pct_from": cov_from.get("coverage_pct", 0.0),
             "coverage_pct_to": cov_to.get("coverage_pct", 0.0),
-            "coverage_pct_delta": round(cov_to.get("coverage_pct", 0.0) - cov_from.get("coverage_pct", 0.0), 1),
+            "coverage_pct_delta": round(
+                cov_to.get("coverage_pct", 0.0) - cov_from.get("coverage_pct", 0.0), 1
+            ),
         }
 
         result = {
@@ -429,11 +431,9 @@ def compare_pi_snapshots(project_id: str, pi_from: str, pi_to: str, db_path=None
             for et, delta in element_type_deltas.items():
                 print(f"    {et}: {delta:+d}")
         if coverage_delta["coverage_pct_delta"] != 0:
-            print(
-                f"  Coverage: {coverage_delta['coverage_pct_from']}% -> "
-                f"{coverage_delta['coverage_pct_to']}% "
-                f"({coverage_delta['coverage_pct_delta']:+.1f}%)"
-            )
+            print(f"  Coverage: {coverage_delta['coverage_pct_from']}% -> "
+                  f"{coverage_delta['coverage_pct_to']}% "
+                  f"({coverage_delta['coverage_pct_delta']:+.1f}%)")
 
         return result
 
@@ -525,7 +525,7 @@ def get_model_velocity(project_id: str, db_path=None) -> dict:
         # Determine trend from last 3 PIs (or all if fewer)
         trend = "stable"
         if len(elements_added_list) >= 2:
-            recent = elements_added_list[-min(3, len(elements_added_list)) :]
+            recent = elements_added_list[-min(3, len(elements_added_list)):]
             if len(recent) >= 2:
                 if recent[-1] > recent[0] * 1.1:
                     trend = "improving"
@@ -549,14 +549,12 @@ def get_model_velocity(project_id: str, db_path=None) -> dict:
         print(f"  Trend:                {trend}")
         print()
         for entry in per_pi:
-            print(
-                f"  {entry['pi']}: elements={entry['elements']} "
-                f"(+{entry.get('elements_added', 0)}), "
-                f"reqs={entry['requirements']} "
-                f"(+{entry.get('requirements_added', 0)}), "
-                f"links={entry['thread_links']} "
-                f"(+{entry.get('thread_links_added', 0)})"
-            )
+            print(f"  {entry['pi']}: elements={entry['elements']} "
+                  f"(+{entry.get('elements_added', 0)}), "
+                  f"reqs={entry['requirements']} "
+                  f"(+{entry.get('requirements_added', 0)}), "
+                  f"links={entry['thread_links']} "
+                  f"(+{entry.get('thread_links_added', 0)})")
 
         return result
 
@@ -594,7 +592,9 @@ def get_model_burndown(project_id: str, db_path=None) -> dict:
         ).fetchone()["cnt"]
 
         unlinked_remaining = total_requirements - linked_requirements
-        burndown_pct = round((linked_requirements / total_requirements * 100), 1) if total_requirements > 0 else 0.0
+        burndown_pct = round(
+            (linked_requirements / total_requirements * 100), 1
+        ) if total_requirements > 0 else 0.0
 
         # Per-PI burndown from snapshot data
         rows = conn.execute(
@@ -618,16 +618,14 @@ def get_model_burndown(project_id: str, db_path=None) -> dict:
             except (json.JSONDecodeError, TypeError):
                 pass
             coverage = snap_data.get("coverage", {})
-            per_pi.append(
-                {
-                    "pi": pi_num,
-                    "total_requirements": coverage.get("total_requirements", 0),
-                    "linked_requirements": coverage.get("linked_requirements", 0),
-                    "unlinked_remaining": coverage.get("unlinked_requirements", 0),
-                    "coverage_pct": coverage.get("coverage_pct", 0.0),
-                    "snapshot_date": row["created_at"],
-                }
-            )
+            per_pi.append({
+                "pi": pi_num,
+                "total_requirements": coverage.get("total_requirements", 0),
+                "linked_requirements": coverage.get("linked_requirements", 0),
+                "unlinked_remaining": coverage.get("unlinked_requirements", 0),
+                "coverage_pct": coverage.get("coverage_pct", 0.0),
+                "snapshot_date": row["created_at"],
+            })
 
         result = {
             "total_requirements": total_requirements,
@@ -645,12 +643,10 @@ def get_model_burndown(project_id: str, db_path=None) -> dict:
         if per_pi:
             print()
             for entry in per_pi:
-                print(
-                    f"  {entry['pi']}: "
-                    f"{entry['linked_requirements']}/{entry['total_requirements']} linked "
-                    f"({entry['coverage_pct']}%), "
-                    f"{entry['unlinked_remaining']} remaining"
-                )
+                print(f"  {entry['pi']}: "
+                      f"{entry['linked_requirements']}/{entry['total_requirements']} linked "
+                      f"({entry['coverage_pct']}%), "
+                      f"{entry['unlinked_remaining']} remaining")
 
         return result
 
@@ -658,7 +654,8 @@ def get_model_burndown(project_id: str, db_path=None) -> dict:
         conn.close()
 
 
-def generate_pi_model_report(project_id: str, pi_number: str, db_path=None) -> str:
+def generate_pi_model_report(project_id: str, pi_number: str,
+                              db_path=None) -> str:
     """Generate a CUI-marked PI model status report.
 
     Includes snapshot summary, comparison with the previous PI,
@@ -684,7 +681,8 @@ def generate_pi_model_report(project_id: str, pi_number: str, db_path=None) -> s
         ).fetchone()
         if not snap_row:
             raise ValueError(
-                f"No snapshot found for PI '{pi_number}' in project '{project_id}'. Create one with --snapshot first."
+                f"No snapshot found for PI '{pi_number}' in project '{project_id}'. "
+                "Create one with --snapshot first."
             )
         snap = dict(snap_row)
 
@@ -794,15 +792,9 @@ def generate_pi_model_report(project_id: str, pi_number: str, db_path=None) -> s
             lines.append("| Metric | Previous | Current | Delta |")
             lines.append("|--------|----------|---------|-------|")
             lines.append(f"| Elements | {prev_snap_dict['element_count']} | {snap['element_count']} | {elem_d:+d} |")
-            lines.append(
-                f"| Relationships | {prev_snap_dict['relationship_count']} | {snap['relationship_count']} | {rel_d:+d} |"  # noqa: E501
-            )
-            lines.append(
-                f"| Requirements | {prev_snap_dict['requirement_count']} | {snap['requirement_count']} | {req_d:+d} |"
-            )
-            lines.append(
-                f"| Thread Links | {prev_snap_dict['thread_link_count']} | {snap['thread_link_count']} | {link_d:+d} |"
-            )
+            lines.append(f"| Relationships | {prev_snap_dict['relationship_count']} | {snap['relationship_count']} | {rel_d:+d} |")
+            lines.append(f"| Requirements | {prev_snap_dict['requirement_count']} | {snap['requirement_count']} | {req_d:+d} |")
+            lines.append(f"| Thread Links | {prev_snap_dict['thread_link_count']} | {snap['thread_link_count']} | {link_d:+d} |")
             lines.append(f"| Hash Changed | -- | -- | {'Yes' if hash_diff else 'No'} |")
         else:
             lines.append("No previous PI snapshot available for comparison.")
@@ -903,37 +895,32 @@ def generate_pi_model_report(project_id: str, pi_number: str, db_path=None) -> s
         code_ahead = sync_status.get("code_ahead", 0)
         if conflicts > 0:
             recommendations.append(
-                f"- **Sync Conflicts:** {conflicts} model-code conflicts detected. Resolve before PI end."
+                f"- **Sync Conflicts:** {conflicts} model-code conflicts detected. "
+                f"Resolve before PI end."
             )
         if model_ahead > 0 or code_ahead > 0:
             recommendations.append(
-                f"- **Sync Drift:** {model_ahead} model-ahead, {code_ahead} code-ahead. Synchronize model and code."
+                f"- **Sync Drift:** {model_ahead} model-ahead, {code_ahead} code-ahead. "
+                f"Synchronize model and code."
             )
 
         if not recommendations:
             recommendations.append("- Model state is healthy. Continue current pace.")
 
         lines.extend(recommendations)
-        lines.extend(
-            [
-                "",
-                "---",
-                "",
-                cui_footer,
-                "",
-            ]
-        )
+        lines.extend([
+            "",
+            "---",
+            "",
+            cui_footer,
+            "",
+        ])
 
         report_content = "\n".join(lines)
 
-        _log_audit(
-            conn,
-            project_id,
-            f"PI {pi_number} model report generated",
-            {
-                "pi_number": pi_number,
-            },
-        )
+        _log_audit(conn, project_id, f"PI {pi_number} model report generated", {
+            "pi_number": pi_number,
+        })
 
         print(f"PI model report generated for {pi_number}")
         return report_content
@@ -966,33 +953,29 @@ def list_snapshots(project_id: str, db_path=None) -> list:
 
         snapshots = []
         for row in rows:
-            snapshots.append(
-                {
-                    "id": row["id"],
-                    "pi_number": row["pi_number"],
-                    "snapshot_type": row["snapshot_type"],
-                    "element_count": row["element_count"],
-                    "relationship_count": row["relationship_count"],
-                    "requirement_count": row["requirement_count"],
-                    "thread_link_count": row["thread_link_count"],
-                    "content_hash": row["content_hash"],
-                    "notes": row["notes"],
-                    "created_at": row["created_at"],
-                }
-            )
+            snapshots.append({
+                "id": row["id"],
+                "pi_number": row["pi_number"],
+                "snapshot_type": row["snapshot_type"],
+                "element_count": row["element_count"],
+                "relationship_count": row["relationship_count"],
+                "requirement_count": row["requirement_count"],
+                "thread_link_count": row["thread_link_count"],
+                "content_hash": row["content_hash"],
+                "notes": row["notes"],
+                "created_at": row["created_at"],
+            })
 
         print(f"Snapshots for project {project_id}: ({len(snapshots)} total)")
         if snapshots:
             print()
             print(f"  {'ID':<6} {'PI':<12} {'Type':<12} {'Elems':<8} {'Rels':<8} {'Reqs':<8} {'Links':<8} {'Created'}")
-            print(f"  {'-' * 6} {'-' * 12} {'-' * 12} {'-' * 8} {'-' * 8} {'-' * 8} {'-' * 8} {'-' * 20}")
+            print(f"  {'-'*6} {'-'*12} {'-'*12} {'-'*8} {'-'*8} {'-'*8} {'-'*8} {'-'*20}")
             for s in snapshots:
-                print(
-                    f"  {s['id']:<6} {s['pi_number']:<12} {s['snapshot_type']:<12} "
-                    f"{s['element_count']:<8} {s['relationship_count']:<8} "
-                    f"{s['requirement_count']:<8} {s['thread_link_count']:<8} "
-                    f"{s['created_at']}"
-                )
+                print(f"  {s['id']:<6} {s['pi_number']:<12} {s['snapshot_type']:<12} "
+                      f"{s['element_count']:<8} {s['relationship_count']:<8} "
+                      f"{s['requirement_count']:<8} {s['thread_link_count']:<8} "
+                      f"{s['created_at']}")
         else:
             print("  No snapshots found. Use --snapshot to create one.")
 
@@ -1006,15 +989,15 @@ def list_snapshots(project_id: str, db_path=None) -> list:
 # CLI
 # ------------------------------------------------------------------
 
-
 def main():
-    parser = argparse.ArgumentParser(description="SAFe PI Model Tracking -- snapshots, velocity, burndown")
+    parser = argparse.ArgumentParser(
+        description="SAFe PI Model Tracking -- snapshots, velocity, burndown"
+    )
     parser.add_argument("--project-id", required=True, help="Project identifier")
     parser.add_argument("--pi", help="PI number (e.g., PI-25.1)")
     parser.add_argument("--snapshot", action="store_true", help="Create PI snapshot")
     parser.add_argument(
-        "--snapshot-type",
-        default="manual",
+        "--snapshot-type", default="manual",
         choices=["pi_start", "pi_end", "baseline", "milestone", "manual"],
         help="Snapshot type (default: manual)",
     )

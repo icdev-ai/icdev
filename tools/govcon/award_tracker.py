@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-# ICDEV GovCon Award Tracker — Phase 59 (D367)
+# ICDEV™ GovCon Award Tracker — Phase 59 (D367)
 # Tracks award notices from SAM.gov and builds competitor database.
 
 """
@@ -26,8 +26,8 @@ import hashlib
 import json
 import os
 import re
-import sqlite3
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
@@ -38,10 +38,8 @@ _CONFIG_PATH = _ROOT / "args" / "govcon_config.yaml"
 
 # ── helpers ───────────────────────────────────────────────────────────
 
-
 def _get_db():
-    conn = sqlite3.connect(str(_DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
@@ -57,7 +55,7 @@ def _content_hash(text):
 def _audit(conn, action, details="", actor="award_tracker"):
     try:
         conn.execute(
-            "INSERT INTO audit_trail (id, timestamp, event_type, actor, action, details, session_id) "
+            "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (str(uuid.uuid4()), _now(), "govcon.award_tracking", actor, action, details, "govcon"),
         )
@@ -68,7 +66,6 @@ def _audit(conn, action, details="", actor="award_tracker"):
 def _load_config():
     try:
         import yaml
-
         with open(_CONFIG_PATH) as f:
             return yaml.safe_load(f) or {}
     except Exception:
@@ -79,7 +76,6 @@ def _safe_get(url, params=None, headers=None, timeout=30):
     """Safe HTTP GET with error handling."""
     try:
         import requests
-
         resp = requests.get(url, params=params, headers=headers, timeout=timeout)
         resp.raise_for_status()
         return resp.json()
@@ -88,7 +84,6 @@ def _safe_get(url, params=None, headers=None, timeout=30):
 
 
 # ── award scanning ────────────────────────────────────────────────────
-
 
 def scan_awards():
     """Poll SAM.gov for award notices.
@@ -145,7 +140,9 @@ def scan_awards():
 
             # Dedup by content hash
             chash = _content_hash(f"{award['solicitation_number']}|{award['awardee_name']}|{award['award_amount']}")
-            existing = conn.execute("SELECT id FROM govcon_awards WHERE content_hash = ?", (chash,)).fetchone()
+            existing = conn.execute(
+                "SELECT id FROM govcon_awards WHERE content_hash = ?", (chash,)
+            ).fetchone()
             if existing:
                 continue
 
@@ -247,7 +244,9 @@ def _register_competitor(conn, award):
     if not name:
         return
 
-    existing = conn.execute("SELECT id FROM creative_competitors WHERE name = ?", (name,)).fetchone()
+    existing = conn.execute(
+        "SELECT id FROM creative_competitors WHERE name = ?", (name,)
+    ).fetchone()
 
     if existing:
         return  # Already tracked
@@ -265,8 +264,7 @@ def _register_competitor(conn, award):
                 f"Discovered from SAM.gov award: {award.get('title', '')[:200]}",
                 "",
                 "discovered",
-                _now(),
-                _now(),
+                _now(), _now(),
             ),
         )
     except Exception:
@@ -274,7 +272,6 @@ def _register_competitor(conn, award):
 
 
 # ── listing and querying ──────────────────────────────────────────────
-
 
 def list_awards(vendor=None, naics=None, agency=None, limit=50):
     """List tracked awards with optional filters."""
@@ -352,9 +349,8 @@ def get_stats():
 
 # ── CLI ───────────────────────────────────────────────────────────────
 
-
 def main():
-    parser = argparse.ArgumentParser(description="ICDEV GovCon Award Tracker (D367)")
+    parser = argparse.ArgumentParser(description="ICDEV™ GovCon Award Tracker (D367)")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--scan", action="store_true", help="Scan SAM.gov for award notices")
     group.add_argument("--list", action="store_true", help="List tracked awards")

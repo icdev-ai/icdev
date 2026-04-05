@@ -23,7 +23,7 @@ REALTIME_TABLES = {
     "research_challenges",
     "research_forecasts",
     "memory_entries",
-    "atlas_critique_findings",
+    "anvil_critique_findings",
 }
 
 # Map table names to source_type keys
@@ -37,7 +37,7 @@ TABLE_TO_SOURCE_TYPE = {
     "research_challenges": "research_challenges",
     "research_forecasts": "research_forecasts",
     "memory_entries": "memory_entries",
-    "atlas_critique_findings": "atlas_critique_findings",
+    "anvil_critique_findings": "anvil_critique_findings",
 }
 
 

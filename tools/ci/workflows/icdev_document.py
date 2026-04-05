@@ -1,9 +1,9 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Document — Documentation generation workflow
+# ICDEV™ Document — Documentation generation workflow
 # Adapted from ADW adw_document.py with dual platform support
 
 """
-ICDEV Document — Generate documentation for implemented features.
+ICDEV™ Document — Generate documentation for implemented features.
 
 Usage:
     python tools/ci/workflows/icdev_document.py <issue-number> <run-id>
@@ -28,15 +28,15 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from tools.ci.modules.state import ICDevState
-from tools.ci.modules.git_ops import create_branch, commit_changes, finalize_git_operations
-from tools.ci.modules.vcs import VCS
-from tools.ci.modules.agent import execute_template
-from tools.ci.modules.workflow_ops import (
+from tools.ci.modules.state import ICDevState  # noqa: E402
+from tools.ci.modules.git_ops import create_branch, commit_changes, finalize_git_operations  # noqa: E402
+from tools.ci.modules.vcs import VCS  # noqa: E402
+from tools.ci.modules.agent import execute_template  # noqa: E402
+from tools.ci.modules.workflow_ops import (  # noqa: E402
     format_issue_message,
 )
-from tools.testing.data_types import AgentTemplateRequest
-from tools.testing.utils import setup_logger
+from tools.testing.data_types import AgentTemplateRequest  # noqa: E402
+from tools.testing.utils import setup_logger  # noqa: E402
 
 AGENT_DOCUMENTER = "icdev_documenter"
 
@@ -70,7 +70,7 @@ def main():
 
     state = ICDevState.load(run_id)
     logger = setup_logger(run_id, "icdev_document")
-    logger.info(f"ICDEV Document starting — run_id: {run_id}, issue: #{issue_number}")
+    logger.info(f"ICDEV™ Document starting — run_id: {run_id}, issue: #{issue_number}")
 
     try:
         vcs = VCS()

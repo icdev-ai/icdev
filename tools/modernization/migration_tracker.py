@@ -1,10 +1,10 @@
 # [TEMPLATE: CUI // SP-CTI]
 #!/usr/bin/env python3
-"""SAFe PI-Cadenced Migration Progress Tracker for ICDEV DoD Modernization.
+"""SAFe PI-Cadenced Migration Progress Tracker for ICDEV™ DoD Modernization.
 
 Tracks migration progress across Program Increments (PIs) with velocity
 metrics, burndown projections, compliance gate checks, and detailed PI
-reporting.  Integrates with the ICDEV operational database to snapshot
+reporting.  Integrates with the ICDEV™ operational database to snapshot
 migration state, compute task-completion velocity, project remaining work,
 and enforce ATO compliance gates at PI boundaries.
 
@@ -55,6 +55,7 @@ import json
 import math
 import sqlite3
 import sys
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -87,8 +88,7 @@ def _get_db(db_path=None):
         sqlite3.Connection with row_factory = sqlite3.Row.
     """
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(path))
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
@@ -1026,7 +1026,7 @@ def check_pi_compliance_gate(plan_id, pi_number, db_path=None):
         )
         placeholders = ",".join("?" * len(compliance_task_types))
         incomplete_compliance = conn.execute(
-            f"SELECT COUNT(*) as cnt FROM migration_tasks "
+            f"SELECT COUNT(*) as cnt FROM migration_tasks "  # nosec B608 -- table/column names are internal constants, not user input
             f"WHERE plan_id = ? AND pi_number = ? "
             f"AND task_type IN ({placeholders}) "
             f"AND status NOT IN ('completed', 'skipped')",

@@ -30,7 +30,7 @@ from typing import Any, Dict, List, Optional
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
-from tools.db.storage import get_connection
+from tools.db.storage import get_connection  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -47,6 +47,7 @@ ARTIFACT_TYPES = [
     "capability_update",
     "code_patch",
     "training_pair",
+    "anticipation_report",
 ]
 
 # Promotion statuses
@@ -241,6 +242,25 @@ def promote_gkp(gkp_id: str, auto: bool = False) -> Dict[str, Any]:
         payload = json.loads(row["payload"])
         confidence = row["confidence"]
 
+        # Pre-promotion coherence gate (D-WF-8)
+        try:
+            from tools.workflow.coherence_checker import run_checks as coherence_check
+            coherence = coherence_check()
+            if not coherence.overall_pass:
+                _log_audit("genesis.promoter.coherence_warning", gkp_id, {
+                    "failed_checks": coherence.failed_checks,
+                    "warned_checks": coherence.warned_checks,
+                })
+                if auto:
+                    return {
+                        "status": "coherence_blocked",
+                        "gkp_id": gkp_id,
+                        "error": f"Coherence failed: {coherence.failed_checks} failures, {coherence.warned_checks} warnings",
+                    }
+                # Manual promotions proceed with warning logged
+        except Exception:
+            pass  # Graceful degradation — coherence unavailable does not block
+
         # Route to appropriate v1.x import handler
         import_result = _import_to_v1x(artifact_type, payload, confidence)
 
@@ -383,6 +403,8 @@ def _import_to_v1x(artifact_type: str, payload: Dict, confidence: float) -> Dict
             return _import_code_patch(payload)
         elif artifact_type == "training_pair":
             return _import_training_pair(payload)
+        elif artifact_type == "anticipation_report":
+            return _import_anticipation_report(payload, confidence)
         else:
             return {"success": False, "error": f"No import handler for: {artifact_type}"}
     except Exception as e:
@@ -545,6 +567,17 @@ def _import_code_patch(payload: Dict) -> Dict:
         "branch": payload.get("branch", "unknown"),
         "files_changed": payload.get("files_changed", []),
     }
+
+
+def _import_anticipation_report(payload: Dict, confidence: float) -> Dict:
+    """Import a regulatory anticipation report — creates a suggested kanban task."""
+    try:
+        from tools.oracle.kanban_bridge import create_suggested_task
+        task_id = create_suggested_task(payload, confidence)
+        return {"success": True, "table": "kanban_tasks", "id": task_id,
+                "note": "Suggested kanban task created from anticipation_report GKP"}
+    except Exception as e:
+        return {"success": False, "error": f"kanban_bridge.create_suggested_task: {e}"}
 
 
 def _import_training_pair(payload: Dict) -> Dict:

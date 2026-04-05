@@ -1,16 +1,15 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""ICDEV Playground — Read-only demo application.
+"""ICDEV™ Playground — Read-only demo application.
 
 Standalone Flask app on port 5001 with no authentication.
 Pre-loaded with sample projects, compliance data, and assessments
 for demonstration purposes.
 """
-
 import logging
 import os
-import sqlite3
 import sys
+from tools.db.storage import get_connection
 from pathlib import Path
 
 from flask import Flask, render_template
@@ -28,8 +27,7 @@ DB_PATH = PLAYGROUND_DIR / "playground.db"
 
 
 def _get_db():
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     return conn
 
 
@@ -41,8 +39,9 @@ def create_app():
         static_url_path="/playground/static",
     )
     import secrets as _secrets
-
-    app.config["SECRET_KEY"] = os.environ.get("PLAYGROUND_SECRET_KEY", _secrets.token_hex(32))
+    app.config["SECRET_KEY"] = os.environ.get(
+        "PLAYGROUND_SECRET_KEY", _secrets.token_hex(32)
+    )
 
     @app.context_processor
     def inject_demo():
@@ -63,7 +62,7 @@ def create_app():
                 "SELECT id, project_id, rule_id, severity, status, title FROM stig_findings ORDER BY severity"
             ).fetchall()
             poams = conn.execute(
-                "SELECT id, project_id, finding, status, severity, milestone, due_date FROM poam_items ORDER BY severity"  # noqa: E501
+                "SELECT id, project_id, finding, status, severity, milestone, due_date FROM poam_items ORDER BY severity"
             ).fetchall()
             return render_template(
                 "compliance.html",
@@ -82,7 +81,7 @@ def create_app():
                 "SELECT control_id, title, status FROM nist_controls ORDER BY control_id"
             ).fetchall()
             mappings = conn.execute(
-                "SELECT source_control, target_framework, target_requirement, status FROM crosswalk_mappings ORDER BY source_control"  # noqa: E501
+                "SELECT source_control, target_framework, target_requirement, status FROM crosswalk_mappings ORDER BY source_control"
             ).fetchall()
             return render_template(
                 "crosswalk.html",
@@ -114,12 +113,14 @@ def create_app():
     def ssp_preview():
         conn = _get_db()
         try:
-            project = conn.execute("SELECT * FROM projects WHERE id = 'proj-demo-001'").fetchone()
+            project = conn.execute(
+                "SELECT * FROM projects WHERE id = 'proj-demo-001'"
+            ).fetchone()
             controls = conn.execute(
-                "SELECT control_id, title, status, implementation_status FROM nist_controls WHERE project_id = 'proj-demo-001' ORDER BY control_id"  # noqa: E501
+                "SELECT control_id, title, status, implementation_status FROM nist_controls WHERE project_id = 'proj-demo-001' ORDER BY control_id"
             ).fetchall()
             poams = conn.execute(
-                "SELECT finding, severity, milestone, due_date FROM poam_items WHERE project_id = 'proj-demo-001' ORDER BY severity"  # noqa: E501
+                "SELECT finding, severity, milestone, due_date FROM poam_items WHERE project_id = 'proj-demo-001' ORDER BY severity"
             ).fetchall()
             return render_template(
                 "ssp_preview.html",
@@ -138,14 +139,13 @@ def main():
     # Initialize seed data if DB doesn't exist
     if not DB_PATH.exists():
         from tools.playground.seed_data import seed_playground_db
-
         seed_playground_db(str(DB_PATH))
         logger.info("Playground database seeded at %s", DB_PATH)
 
     app = create_app()
     port = int(os.environ.get("PLAYGROUND_PORT", 5001))
-    logger.info("Starting ICDEV Playground on port %d", port)
-    app.run(host="0.0.0.0", port=port, debug=os.environ.get("FLASK_DEBUG", "false").lower() == "true")
+    logger.info("Starting ICDEV™ Playground on port %d", port)
+    app.run(host="0.0.0.0", port=port, debug=os.environ.get("FLASK_DEBUG", "false").lower() == "true")  # nosec B104 -- intentional bind-all for containerized/dev deployment
 
 
 if __name__ == "__main__":

@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """AI Transparency Audit — cross-framework transparency assessment.
 
 Runs all 4 AI transparency assessors, checks model/system cards,
@@ -17,8 +17,8 @@ Usage:
 
 import argparse
 import json
-import sqlite3
 import sys
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Optional
@@ -60,10 +60,9 @@ def _safe_import_assess(
 
 def _count_table(db_path: Path, table: str, project_id: str) -> int:
     try:
-        conn = sqlite3.connect(str(db_path))
-        conn.row_factory = sqlite3.Row
+        conn = get_connection(db_path=str(db_path))
         row = conn.execute(
-            f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = ?",
+            f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = ?",  # nosec B608 -- table/column names are internal constants, not user input
             (project_id,),
         ).fetchone()
         conn.close()

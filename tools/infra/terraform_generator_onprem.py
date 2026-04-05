@@ -12,7 +12,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from tools.infra.terraform_generator import _render, _cui_header, _write
+from tools.infra.terraform_generator import _render, _cui_header, _write  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -159,7 +159,7 @@ resource "kubernetes_network_policy" "default_deny" {
   }
 }
 
-# PostgreSQL database for ICDEV
+# PostgreSQL database for ICDEV™
 resource "postgresql_database" "icdev" {
   name  = "$${var.project_name}_$${var.environment}"
   owner = var.db_admin_user

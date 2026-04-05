@@ -12,7 +12,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from tools.infra.terraform_generator import _render, _cui_header, _write
+from tools.infra.terraform_generator import _render, _cui_header, _write  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -809,6 +809,708 @@ def generate_vault(project_path: str) -> list:
 
 
 # ---------------------------------------------------------------------------
+# SCCA (Secure Cloud Computing Architecture) module — OCI
+# ---------------------------------------------------------------------------
+SCCA_OCI_MAIN = """\
+{{ cui_header }}
+# -------------------------------------------------------
+# SCCA OCI — VDSS VCN, VDMS VCN, Workload VCN, DRG, Network Firewall
+# -------------------------------------------------------
+
+# --- Compartments ---
+
+resource "oci_identity_compartment" "vdss" {
+  compartment_id = var.compartment_ocid
+  name           = "$${var.project_name}-scca-vdss"
+  description    = "SCCA VDSS compartment (CUI)"
+
+  freeform_tags = {
+    Classification = "CUI"
+    ManagedBy      = "icdev"
+    Role           = "VDSS"
+  }
+}
+
+resource "oci_identity_compartment" "vdms" {
+  compartment_id = var.compartment_ocid
+  name           = "$${var.project_name}-scca-vdms"
+  description    = "SCCA VDMS compartment (CUI)"
+
+  freeform_tags = {
+    Classification = "CUI"
+    ManagedBy      = "icdev"
+    Role           = "VDMS"
+  }
+}
+
+resource "oci_identity_compartment" "workload" {
+  compartment_id = var.compartment_ocid
+  name           = "$${var.project_name}-scca-workload"
+  description    = "SCCA Workload compartment (CUI)"
+
+  freeform_tags = {
+    Classification = "CUI"
+    ManagedBy      = "icdev"
+    Role           = "Workload"
+  }
+}
+
+# --- VDSS VCN ---
+
+resource "oci_core_vcn" "vdss" {
+  compartment_id = oci_identity_compartment.vdss.id
+  cidr_blocks    = [var.vcn_cidrs["vdss"]]
+  display_name   = "$${var.project_name}-scca-vdss-vcn"
+  dns_label      = "vdss"
+
+  freeform_tags = {
+    Classification = "CUI"
+    ManagedBy      = "icdev"
+    Role           = "VDSS"
+  }
+}
+
+resource "oci_core_subnet" "vdss_firewall" {
+  compartment_id             = oci_identity_compartment.vdss.id
+  vcn_id                     = oci_core_vcn.vdss.id
+  cidr_block                 = cidrsubnet(var.vcn_cidrs["vdss"], 8, 0)
+  display_name               = "$${var.project_name}-scca-vdss-fw-subnet"
+  dns_label                  = "vdssfw"
+  prohibit_public_ip_on_vnic = true
+
+  freeform_tags = {
+    Classification = "CUI"
+    ManagedBy      = "icdev"
+  }
+}
+
+# --- VDMS VCN ---
+
+resource "oci_core_vcn" "vdms" {
+  compartment_id = oci_identity_compartment.vdms.id
+  cidr_blocks    = [var.vcn_cidrs["vdms"]]
+  display_name   = "$${var.project_name}-scca-vdms-vcn"
+  dns_label      = "vdms"
+
+  freeform_tags = {
+    Classification = "CUI"
+    ManagedBy      = "icdev"
+    Role           = "VDMS"
+  }
+}
+
+resource "oci_core_subnet" "vdms_mgmt" {
+  compartment_id             = oci_identity_compartment.vdms.id
+  vcn_id                     = oci_core_vcn.vdms.id
+  cidr_block                 = cidrsubnet(var.vcn_cidrs["vdms"], 8, 0)
+  display_name               = "$${var.project_name}-scca-vdms-mgmt-subnet"
+  dns_label                  = "vdmsmgmt"
+  prohibit_public_ip_on_vnic = true
+
+  freeform_tags = {
+    Classification = "CUI"
+    ManagedBy      = "icdev"
+  }
+}
+
+# --- Workload VCN ---
+
+resource "oci_core_vcn" "workload" {
+  compartment_id = oci_identity_compartment.workload.id
+  cidr_blocks    = [var.vcn_cidrs["workload"]]
+  display_name   = "$${var.project_name}-scca-workload-vcn"
+  dns_label      = "workload"
+
+  freeform_tags = {
+    Classification = "CUI"
+    ManagedBy      = "icdev"
+    Role           = "Workload"
+  }
+}
+
+resource "oci_core_subnet" "workload_app" {
+  compartment_id             = oci_identity_compartment.workload.id
+  vcn_id                     = oci_core_vcn.workload.id
+  cidr_block                 = cidrsubnet(var.vcn_cidrs["workload"], 8, 0)
+  display_name               = "$${var.project_name}-scca-workload-app-subnet"
+  dns_label                  = "wlapp"
+  prohibit_public_ip_on_vnic = true
+
+  freeform_tags = {
+    Classification = "CUI"
+    ManagedBy      = "icdev"
+  }
+}
+
+# --- Dynamic Routing Gateway (DRG) ---
+
+resource "oci_core_drg" "scca" {
+  compartment_id = var.compartment_ocid
+  display_name   = "$${var.project_name}-scca-drg"
+
+  freeform_tags = {
+    Classification = "CUI"
+    ManagedBy      = "icdev"
+  }
+}
+
+resource "oci_core_drg_attachment" "vdss" {
+  drg_id       = oci_core_drg.scca.id
+  display_name = "vdss-attachment"
+
+  network_details {
+    id   = oci_core_vcn.vdss.id
+    type = "VCN"
+  }
+}
+
+resource "oci_core_drg_attachment" "vdms" {
+  drg_id       = oci_core_drg.scca.id
+  display_name = "vdms-attachment"
+
+  network_details {
+    id   = oci_core_vcn.vdms.id
+    type = "VCN"
+  }
+}
+
+resource "oci_core_drg_attachment" "workload" {
+  drg_id       = oci_core_drg.scca.id
+  display_name = "workload-attachment"
+
+  network_details {
+    id   = oci_core_vcn.workload.id
+    type = "VCN"
+  }
+}
+
+# --- Route Tables (all traffic through VDSS) ---
+
+resource "oci_core_route_table" "workload_via_vdss" {
+  compartment_id = oci_identity_compartment.workload.id
+  vcn_id         = oci_core_vcn.workload.id
+  display_name   = "$${var.project_name}-scca-workload-rt"
+
+  route_rules {
+    destination       = "0.0.0.0/0"
+    destination_type  = "CIDR_BLOCK"
+    network_entity_id = oci_core_drg.scca.id
+    description       = "Route all traffic through DRG to VDSS"
+  }
+
+  freeform_tags = {
+    Classification = "CUI"
+    ManagedBy      = "icdev"
+  }
+}
+
+resource "oci_core_route_table" "vdms_via_vdss" {
+  compartment_id = oci_identity_compartment.vdms.id
+  vcn_id         = oci_core_vcn.vdms.id
+  display_name   = "$${var.project_name}-scca-vdms-rt"
+
+  route_rules {
+    destination       = "0.0.0.0/0"
+    destination_type  = "CIDR_BLOCK"
+    network_entity_id = oci_core_drg.scca.id
+    description       = "Route all traffic through DRG to VDSS"
+  }
+
+  freeform_tags = {
+    Classification = "CUI"
+    ManagedBy      = "icdev"
+  }
+}
+
+# --- OCI Network Firewall in VDSS VCN ---
+
+resource "oci_network_firewall_network_firewall" "vdss" {
+  compartment_id = oci_identity_compartment.vdss.id
+  display_name   = "$${var.project_name}-scca-vdss-nfw"
+  subnet_id      = oci_core_subnet.vdss_firewall.id
+
+  network_firewall_policy_id = oci_network_firewall_network_firewall_policy.vdss.id
+
+  freeform_tags = {
+    Classification = "CUI"
+    ManagedBy      = "icdev"
+    Role           = "VDSS-Firewall"
+  }
+}
+
+resource "oci_network_firewall_network_firewall_policy" "vdss" {
+  compartment_id = oci_identity_compartment.vdss.id
+  display_name   = "$${var.project_name}-scca-vdss-fw-policy"
+
+  freeform_tags = {
+    Classification = "CUI"
+    ManagedBy      = "icdev"
+  }
+}
+"""
+
+SCCA_OCI_SECURITY = """\
+{{ cui_header }}
+# -------------------------------------------------------
+# SCCA OCI — Security (Cloud Guard, Vault with HSM)
+# -------------------------------------------------------
+
+# --- Cloud Guard ---
+
+resource "oci_cloud_guard_target" "scca" {
+  compartment_id       = var.compartment_ocid
+  display_name         = "$${var.project_name}-scca-cg-target"
+  target_resource_id   = var.compartment_ocid
+  target_resource_type = "COMPARTMENT"
+
+  freeform_tags = {
+    Classification = "CUI"
+    ManagedBy      = "icdev"
+  }
+}
+
+resource "oci_cloud_guard_detector_recipe" "config" {
+  compartment_id            = var.compartment_ocid
+  display_name              = "$${var.project_name}-scca-config-detector"
+  source_detector_recipe_id = "OCI_CONFIGURATION_DETECTOR_RECIPE"
+
+  freeform_tags = {
+    Classification = "CUI"
+    ManagedBy      = "icdev"
+  }
+}
+
+resource "oci_cloud_guard_detector_recipe" "activity" {
+  compartment_id            = var.compartment_ocid
+  display_name              = "$${var.project_name}-scca-activity-detector"
+  source_detector_recipe_id = "OCI_ACTIVITY_DETECTOR_RECIPE"
+
+  freeform_tags = {
+    Classification = "CUI"
+    ManagedBy      = "icdev"
+  }
+}
+
+# --- OCI Vault with HSM Key ---
+
+resource "oci_kms_vault" "scca" {
+  compartment_id = oci_identity_compartment.vdms.id
+  display_name   = "$${var.project_name}-scca-vault"
+  vault_type     = "VIRTUAL_PRIVATE"
+
+  freeform_tags = {
+    Classification = "CUI"
+    ManagedBy      = "icdev"
+    Purpose        = "SCCA HSM-protected key management"
+  }
+}
+
+resource "oci_kms_key" "scca_master" {
+  compartment_id      = oci_identity_compartment.vdms.id
+  display_name        = "$${var.project_name}-scca-master-key"
+  management_endpoint = oci_kms_vault.scca.management_endpoint
+
+  key_shape {
+    algorithm = "AES"
+    length    = 32
+  }
+
+  protection_mode = "HSM"
+
+  freeform_tags = {
+    Classification = "CUI"
+    ManagedBy      = "icdev"
+    Purpose        = "SCCA master encryption key — HSM protected"
+  }
+}
+"""
+
+SCCA_OCI_IDENTITY = """\
+{{ cui_header }}
+# -------------------------------------------------------
+# SCCA OCI — Identity (IAM Groups and Policies)
+# -------------------------------------------------------
+
+# --- IAM Groups ---
+
+resource "oci_identity_group" "vdss_admins" {
+  compartment_id = var.tenancy_ocid
+  name           = "$${var.project_name}-scca-vdss-admins"
+  description    = "SCCA VDSS administrators"
+
+  freeform_tags = {
+    Classification = "CUI"
+    ManagedBy      = "icdev"
+  }
+}
+
+resource "oci_identity_group" "vdms_admins" {
+  compartment_id = var.tenancy_ocid
+  name           = "$${var.project_name}-scca-vdms-admins"
+  description    = "SCCA VDMS administrators"
+
+  freeform_tags = {
+    Classification = "CUI"
+    ManagedBy      = "icdev"
+  }
+}
+
+resource "oci_identity_group" "workload_admins" {
+  compartment_id = var.tenancy_ocid
+  name           = "$${var.project_name}-scca-workload-admins"
+  description    = "SCCA Workload administrators"
+
+  freeform_tags = {
+    Classification = "CUI"
+    ManagedBy      = "icdev"
+  }
+}
+
+# --- IAM Policies ---
+
+resource "oci_identity_policy" "vdss_policy" {
+  compartment_id = var.compartment_ocid
+  name           = "$${var.project_name}-scca-vdss-policy"
+  description    = "SCCA VDSS compartment policy"
+
+  statements = [
+    "Allow group $${oci_identity_group.vdss_admins.name} to manage virtual-network-family in compartment $${oci_identity_compartment.vdss.name}",
+    "Allow group $${oci_identity_group.vdss_admins.name} to manage network-firewall-family in compartment $${oci_identity_compartment.vdss.name}",
+  ]
+
+  freeform_tags = {
+    Classification = "CUI"
+    ManagedBy      = "icdev"
+  }
+}
+
+resource "oci_identity_policy" "vdms_policy" {
+  compartment_id = var.compartment_ocid
+  name           = "$${var.project_name}-scca-vdms-policy"
+  description    = "SCCA VDMS compartment policy"
+
+  statements = [
+    "Allow group $${oci_identity_group.vdms_admins.name} to manage vaults in compartment $${oci_identity_compartment.vdms.name}",
+    "Allow group $${oci_identity_group.vdms_admins.name} to manage keys in compartment $${oci_identity_compartment.vdms.name}",
+    "Allow group $${oci_identity_group.vdms_admins.name} to manage logging-family in compartment $${oci_identity_compartment.vdms.name}",
+  ]
+
+  freeform_tags = {
+    Classification = "CUI"
+    ManagedBy      = "icdev"
+  }
+}
+
+resource "oci_identity_policy" "workload_policy" {
+  compartment_id = var.compartment_ocid
+  name           = "$${var.project_name}-scca-workload-policy"
+  description    = "SCCA Workload compartment policy"
+
+  statements = [
+    "Allow group $${oci_identity_group.workload_admins.name} to manage all-resources in compartment $${oci_identity_compartment.workload.name}",
+    "Allow group $${oci_identity_group.workload_admins.name} to use virtual-network-family in compartment $${oci_identity_compartment.vdss.name}",
+  ]
+
+  freeform_tags = {
+    Classification = "CUI"
+    ManagedBy      = "icdev"
+  }
+}
+"""
+
+SCCA_OCI_VARIABLES = """\
+{{ cui_header }}
+# -------------------------------------------------------
+# SCCA OCI — Variables
+# -------------------------------------------------------
+variable "tenancy_ocid" {
+  description = "OCI tenancy OCID"
+  type        = string
+}
+
+variable "compartment_ocid" {
+  description = "Parent compartment OCID for SCCA resources"
+  type        = string
+}
+
+variable "project_name" {
+  description = "Project identifier"
+  type        = string
+}
+
+variable "il_level" {
+  description = "DoD Impact Level (IL4, IL5, IL6)"
+  type        = string
+  default     = "IL4"
+
+  validation {
+    condition     = contains(["IL4", "IL5", "IL6"], var.il_level)
+    error_message = "IL level must be IL4, IL5, or IL6."
+  }
+}
+
+variable "region" {
+  description = "OCI Government Cloud region"
+  type        = string
+  default     = "us-langley-1"
+
+  validation {
+    condition     = contains(["us-langley-1", "us-luke-1"], var.region)
+    error_message = "Region must be an OCI Government Cloud region."
+  }
+}
+
+variable "vcn_cidrs" {
+  description = "CIDR blocks for SCCA VCNs (vdss, vdms, workload)"
+  type        = map(string)
+  default = {
+    vdss     = "10.0.0.0/16"
+    vdms     = "10.1.0.0/16"
+    workload = "10.2.0.0/16"
+  }
+}
+"""
+
+SCCA_OCI_OUTPUTS = """\
+{{ cui_header }}
+# -------------------------------------------------------
+# SCCA OCI — Outputs
+# -------------------------------------------------------
+output "drg_id" {
+  description = "Dynamic Routing Gateway OCID"
+  value       = oci_core_drg.scca.id
+}
+
+output "vdss_vcn_id" {
+  description = "VDSS VCN OCID"
+  value       = oci_core_vcn.vdss.id
+}
+
+output "vdms_vcn_id" {
+  description = "VDMS VCN OCID"
+  value       = oci_core_vcn.vdms.id
+}
+
+output "workload_vcn_id" {
+  description = "Workload VCN OCID"
+  value       = oci_core_vcn.workload.id
+}
+"""
+
+
+# ---------------------------------------------------------------------------
+# Security Baseline module — OCI
+# ---------------------------------------------------------------------------
+SECURITY_BASELINE_OCI_MAIN = """\
+{{ cui_header }}
+# -------------------------------------------------------
+# OCI Security Baseline — Cloud Guard, Vault, VSS, Service Connector
+# -------------------------------------------------------
+
+# --- Cloud Guard ---
+
+resource "oci_cloud_guard_cloud_guard_configuration" "baseline" {
+  compartment_id   = var.tenancy_ocid
+  reporting_region = var.region
+  status           = "ENABLED"
+}
+
+resource "oci_cloud_guard_detector_recipe" "config_detector" {
+  compartment_id = var.compartment_ocid
+  display_name   = "security-baseline-config-detector"
+
+  source_detector_recipe_id = "OCI-CONFIGURATION-DETECTOR-RECIPE"
+}
+
+resource "oci_cloud_guard_target" "baseline" {
+  compartment_id       = var.compartment_ocid
+  display_name         = "security-baseline-target"
+  target_resource_id   = var.compartment_ocid
+  target_resource_type = "COMPARTMENT"
+
+  target_detector_recipes {
+    detector_recipe_id = oci_cloud_guard_detector_recipe.config_detector.id
+  }
+}
+
+# --- Vault + HSM Key ---
+
+resource "oci_kms_vault" "baseline" {
+  compartment_id = var.compartment_ocid
+  display_name   = "security-baseline-vault"
+  vault_type     = "VIRTUAL_PRIVATE"
+}
+
+resource "oci_kms_key" "hsm_master" {
+  compartment_id = var.compartment_ocid
+  display_name   = "security-baseline-hsm-master-key"
+  management_endpoint = oci_kms_vault.baseline.management_endpoint
+
+  key_shape {
+    algorithm = "AES"
+    length    = 32
+  }
+
+  protection_mode = "HSM"
+}
+
+# --- Vulnerability Scanning Service (VSS) ---
+
+resource "oci_vulnerability_scanning_host_scan_recipe" "baseline" {
+  compartment_id = var.compartment_ocid
+  display_name   = "security-baseline-vss-recipe"
+
+  port_settings {
+    scan_level = "STANDARD"
+  }
+
+  schedule {
+    type        = "WEEKLY"
+    day_of_week = "SUNDAY"
+  }
+
+  agent_settings {
+    scan_level = "STANDARD"
+
+    agent_configuration {
+      vendor = "OCI"
+
+      cis_benchmark_settings {
+        scan_level = "STRICT"
+      }
+    }
+  }
+}
+
+# --- Service Connector (Events → Notifications) ---
+
+resource "oci_ons_notification_topic" "security_events" {
+  compartment_id = var.compartment_ocid
+  name           = "security-baseline-events"
+  description    = "Security baseline event notifications"
+}
+
+resource "oci_sch_service_connector" "security_events" {
+  compartment_id = var.compartment_ocid
+  display_name   = "security-baseline-event-connector"
+
+  source {
+    kind = "streaming"
+
+    cursor {
+      kind = "LATEST"
+    }
+  }
+
+  target {
+    kind     = "notifications"
+    topic_id = oci_ons_notification_topic.security_events.id
+  }
+}
+"""
+
+SECURITY_BASELINE_OCI_VARIABLES = """\
+{{ cui_header }}
+# -------------------------------------------------------
+# OCI Security Baseline — Variables
+# -------------------------------------------------------
+variable "tenancy_ocid" {
+  description = "OCI tenancy OCID"
+  type        = string
+}
+
+variable "compartment_ocid" {
+  description = "OCI compartment OCID for security baseline resources"
+  type        = string
+}
+
+variable "region" {
+  description = "OCI region"
+  type        = string
+  default     = "us-langley-1"
+}
+"""
+
+SECURITY_BASELINE_OCI_OUTPUTS = """\
+{{ cui_header }}
+# -------------------------------------------------------
+# OCI Security Baseline — Outputs
+# -------------------------------------------------------
+output "cloud_guard_target_id" {
+  description = "Cloud Guard target ID"
+  value       = oci_cloud_guard_target.baseline.id
+}
+
+output "vault_id" {
+  description = "OCI Vault ID"
+  value       = oci_kms_vault.baseline.id
+}
+
+output "vss_recipe_id" {
+  description = "Vulnerability Scanning Service recipe ID"
+  value       = oci_vulnerability_scanning_host_scan_recipe.baseline.id
+}
+"""
+
+
+def generate_security_baseline_oci(project_path: str, project_config: dict = None) -> list:
+    """Generate OCI Security Baseline Terraform module.
+
+    Produces terraform/modules/oci-security-baseline/ with main.tf (Cloud Guard
+    target + config detector recipe, Vault + HSM key, VSS host recipe, service
+    connector for events to notifications), variables.tf, and outputs.tf.
+
+    Args:
+        project_path: Target project directory.
+        project_config: Optional configuration dict.
+
+    Returns:
+        List of absolute file paths generated.
+    """
+    tf_dir = Path(project_path) / "terraform" / "modules" / "oci-security-baseline"
+    ctx = {"cui_header": _cui_header()}
+
+    files = []
+    for name, template in [
+        ("main.tf", SECURITY_BASELINE_OCI_MAIN),
+        ("variables.tf", SECURITY_BASELINE_OCI_VARIABLES),
+        ("outputs.tf", SECURITY_BASELINE_OCI_OUTPUTS),
+    ]:
+        p = _write(tf_dir / name, _render(template, ctx))
+        files.append(str(p))
+    return files
+
+
+def generate_scca_oci(project_path: str, project_config: dict = None) -> list:
+    """Generate SCCA (Secure Cloud Computing Architecture) Terraform module for OCI.
+
+    Produces terraform/modules/scca-oci/ with main.tf (VDSS/VDMS/Workload VCNs,
+    DRG, Network Firewall), security.tf, identity.tf, variables.tf, and outputs.tf.
+
+    Args:
+        project_path: Target project directory.
+        project_config: Optional configuration dict.
+
+    Returns:
+        List of absolute file paths generated.
+    """
+    tf_dir = Path(project_path) / "terraform" / "modules" / "scca-oci"
+    ctx = {"cui_header": _cui_header()}
+
+    files = []
+    for name, template in [
+        ("main.tf", SCCA_OCI_MAIN),
+        ("security.tf", SCCA_OCI_SECURITY),
+        ("identity.tf", SCCA_OCI_IDENTITY),
+        ("variables.tf", SCCA_OCI_VARIABLES),
+        ("outputs.tf", SCCA_OCI_OUTPUTS),
+    ]:
+        p = _write(tf_dir / name, _render(template, ctx))
+        files.append(str(p))
+    return files
+
+
+# ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
 def generate(project_path: str, project_config: dict = None) -> list:
@@ -836,6 +1538,8 @@ def generate(project_path: str, project_config: dict = None) -> list:
         "autonomous_db": lambda: generate_autonomous_db(project_path, config),
         "ocir": lambda: generate_ocir(project_path),
         "vault": lambda: generate_vault(project_path),
+        "scca_oci": lambda: generate_scca_oci(project_path, config),
+        "security_baseline_oci": lambda: generate_security_baseline_oci(project_path, config),
     }
 
     all_files = []
@@ -856,7 +1560,7 @@ def main():
     parser.add_argument(
         "--components",
         default="base,vcn,autonomous_db,ocir,vault",
-        help="Comma-separated components: base,vcn,autonomous_db,ocir,vault",
+        help="Comma-separated components: base,vcn,autonomous_db,ocir,vault,scca_oci,security_baseline_oci",
     )
     parser.add_argument("--project-name", default="icdev-project", help="Project name for resource naming")
     parser.add_argument(
@@ -895,6 +1599,8 @@ def main():
         "autonomous_db": lambda: generate_autonomous_db(args.project_path, config),
         "ocir": lambda: generate_ocir(args.project_path),
         "vault": lambda: generate_vault(args.project_path),
+        "scca_oci": lambda: generate_scca_oci(args.project_path, config),
+        "security_baseline_oci": lambda: generate_security_baseline_oci(args.project_path, config),
     }
 
     for comp in components:

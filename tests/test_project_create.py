@@ -21,7 +21,7 @@ from tests.conftest import MINIMAL_ICDEV_SCHEMA
 
 
 def _make_db(tmp_path):
-    """Create a minimal ICDEV database and return its path."""
+    """Create a minimal ICDEV™ database and return its path."""
     db_path = tmp_path / "data" / "icdev.db"
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(db_path))

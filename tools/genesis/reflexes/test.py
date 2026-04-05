@@ -50,7 +50,8 @@ def _find_untested_modules(max_results: int = 10) -> List[Dict[str, Any]]:
         test_name = f"test_{rel.parts[-1]}"
         # Check common test locations
         has_test = False
-        for test_dir in [tests_dir, tests_dir / "unit", tests_dir / "integration", tests_dir / "genesis_auto"]:
+        for test_dir in [tests_dir, tests_dir / "unit", tests_dir / "integration",
+                         tests_dir / "genesis_auto"]:
             if (test_dir / test_name).exists():
                 has_test = True
                 break
@@ -63,14 +64,12 @@ def _find_untested_modules(max_results: int = 10) -> List[Dict[str, Any]]:
                 break
 
         if not has_test:
-            untested.append(
-                {
-                    "module": str(rel).replace("\\", "/"),
-                    "path": str(py_file),
-                    "name": py_file.stem,
-                    "line_count": line_count,
-                }
-            )
+            untested.append({
+                "module": str(rel).replace("\\", "/"),
+                "path": str(py_file),
+                "name": py_file.stem,
+                "line_count": line_count,
+            })
 
     # Sort by directory depth (shallower = more important), then by size
     untested.sort(key=lambda x: (x["module"].count("/"), -x["line_count"]))
@@ -81,12 +80,10 @@ def _extract_api_surface(file_path: str) -> Optional[Dict[str, Any]]:
     """Use api_surface_extractor to get function signatures and types."""
     try:
         result = subprocess.run(
-            [sys.executable, "tools/testing/api_surface_extractor.py", "--file", file_path, "--json"],
-            capture_output=True,
-            text=True,
-            timeout=30,
-            cwd=str(BASE_DIR),
-            env={**os.environ, "PYTHONPATH": str(BASE_DIR)},
+            [sys.executable, "tools/testing/api_surface_extractor.py",
+             "--file", file_path, "--json"],
+            capture_output=True, text=True, timeout=30,
+            cwd=str(BASE_DIR), env={**os.environ, "PYTHONPATH": str(BASE_DIR)},
         )
         stdout = result.stdout.strip()
         json_start = stdout.find("{")
@@ -190,13 +187,11 @@ def _generate_test_code(module_info: Dict, api_surface: Dict) -> str:
 
     # Test public functions exist
     if pub_funcs:
-        lines.extend(
-            [
-                "",
-                "# --- Function Signature Tests ---",
-                "",
-            ]
-        )
+        lines.extend([
+            "",
+            "# --- Function Signature Tests ---",
+            "",
+        ])
         for func in pub_funcs[:15]:  # Cap at 15 functions
             fname = func["name"]
             params = func.get("parameters", [])
@@ -204,49 +199,43 @@ def _generate_test_code(module_info: Dict, api_surface: Dict) -> str:
             is_async = func.get("is_async", False)
 
             # Test function exists and is callable
-            lines.extend(
-                [
-                    f"def test_{module_name}_{fname}_exists():",
-                    f'    """Verify {fname} exists and is callable."""',
-                    "    try:",
-                    f"        from {import_path} import {fname}",
-                    f"        assert callable({fname}), '{fname} is not callable'",
-                    "    except ImportError:",
-                    '        pytest.skip("Module not importable")',
-                    "",
-                ]
-            )
+            lines.extend([
+                f"def test_{module_name}_{fname}_exists():",
+                f'    """Verify {fname} exists and is callable."""',
+                "    try:",
+                f"        from {import_path} import {fname}",
+                f"        assert callable({fname}), '{fname} is not callable'",
+                "    except ImportError:",
+                '        pytest.skip("Module not importable")',
+                "",
+            ])
 
             # Test function signature (parameter count)
-            non_default_params = [
-                p
-                for p in params
-                if p.get("default") is None and p["name"] not in ("self", "cls") and not p["name"].startswith("*")
-            ]
+            non_default_params = [p for p in params
+                                  if p.get("default") is None
+                                  and p["name"] not in ("self", "cls")
+                                  and not p["name"].startswith("*")]
             if non_default_params:
-                lines.extend(
-                    [
-                        f"def test_{module_name}_{fname}_signature():",
-                        f'    """Verify {fname} accepts expected parameters."""',
-                        "    import inspect",
-                        "    try:",
-                        f"        from {import_path} import {fname}",
-                        f"        sig = inspect.signature({fname})",
-                        "        params = list(sig.parameters.keys())",
-                    ]
-                )
+                lines.extend([
+                    f"def test_{module_name}_{fname}_signature():",
+                    f'    """Verify {fname} accepts expected parameters."""',
+                    "    import inspect",
+                    "    try:",
+                    f"        from {import_path} import {fname}",
+                    f"        sig = inspect.signature({fname})",
+                    "        params = list(sig.parameters.keys())",
+                ])
                 for p in non_default_params[:5]:
                     pname = p["name"]
                     lines.append(
-                        f'        assert "{pname}" in params, f"Missing parameter \\"{pname}\\" in {{params}}"'
+                        f'        assert "{pname}" in params, '
+                        f'f"Missing parameter \\"{pname}\\" in {{params}}"'
                     )
-                lines.extend(
-                    [
-                        "    except ImportError:",
-                        '        pytest.skip("Module not importable")',
-                        "",
-                    ]
-                )
+                lines.extend([
+                    "    except ImportError:",
+                    '        pytest.skip("Module not importable")',
+                    "",
+                ])
 
             # Test invocation with mock DB (if function uses get_connection)
             db_mock_needed = any("get_connection" in t or "storage" in t for t in mock_targets)
@@ -260,23 +249,21 @@ def _generate_test_code(module_info: Dict, api_surface: Dict) -> str:
                     param_values.append(_generate_param_fixture(p))
 
                 if len(param_values) <= 5:
-                    lines.extend(
-                        [
-                            f"def test_{module_name}_{fname}_invocation():",
-                            f'    """Verify {fname} can be called with test inputs."""',
-                            "    try:",
-                            f"        from {import_path} import {fname}",
-                            "    except ImportError:",
-                            '        pytest.skip("Module not importable")',
-                            "        return",
-                            "    mock_conn = MagicMock()",
-                            "    mock_conn.execute.return_value.fetchone.return_value = None",
-                            "    mock_conn.execute.return_value.fetchall.return_value = []",
-                            '    with patch("tools.db.storage.get_connection", return_value=mock_conn):',
-                            "        try:",
-                            f"            result = {fname}({', '.join(param_values)})",
-                        ]
-                    )
+                    lines.extend([
+                        f"def test_{module_name}_{fname}_invocation():",
+                        f'    """Verify {fname} can be called with test inputs."""',
+                        '    try:',
+                        f"        from {import_path} import {fname}",
+                        '    except ImportError:',
+                        '        pytest.skip("Module not importable")',
+                        '        return',
+                        '    mock_conn = MagicMock()',
+                        '    mock_conn.execute.return_value.fetchone.return_value = None',
+                        '    mock_conn.execute.return_value.fetchall.return_value = []',
+                        '    with patch("tools.db.storage.get_connection", return_value=mock_conn):',
+                        "        try:",
+                        f"            result = {fname}({', '.join(param_values)})",
+                    ])
                     if return_type:
                         rt = return_type.lower()
                         if "dict" in rt:
@@ -289,88 +276,79 @@ def _generate_test_code(module_info: Dict, api_surface: Dict) -> str:
                             lines.append("            assert isinstance(result, (int, float))")
                         elif "str" in rt:
                             lines.append("            assert isinstance(result, str)")
-                    lines.extend(
-                        [
-                            "        except (TypeError, ValueError, KeyError, AttributeError):",
-                            "            pass  # Expected with mock data",
-                            "        except Exception as e:",
-                            '            if "no such table" in str(e).lower():',
-                            "                pass  # DB not initialized",
-                            "            else:",
-                            "                raise",
-                            "",
-                        ]
-                    )
+                    lines.extend([
+                        "        except (TypeError, ValueError, KeyError, AttributeError):",
+                        "            pass  # Expected with mock data",
+                        "        except Exception as e:",
+                        '            if "no such table" in str(e).lower():',
+                        "                pass  # DB not initialized",
+                        "            else:",
+                        "                raise",
+                        "",
+                    ])
 
     # Test classes exist
     if pub_classes:
-        lines.extend(
-            [
-                "",
-                "# --- Class Tests ---",
-                "",
-            ]
-        )
+        lines.extend([
+            "",
+            "# --- Class Tests ---",
+            "",
+        ])
         for cls in pub_classes[:5]:
             cname = cls["name"]
-            lines.extend(
-                [
-                    f"def test_{module_name}_{cname}_exists():",
-                    f'    """Verify class {cname} exists."""',
-                    "    try:",
-                    f"        from {import_path} import {cname}",
-                    f"        assert isinstance({cname}, type), '{cname} is not a class'",
-                    "    except ImportError:",
-                    '        pytest.skip("Module not importable")',
-                    "",
-                ]
-            )
+            lines.extend([
+                f"def test_{module_name}_{cname}_exists():",
+                f'    """Verify class {cname} exists."""',
+                "    try:",
+                f"        from {import_path} import {cname}",
+                f"        assert isinstance({cname}, type), '{cname} is not a class'",
+                "    except ImportError:",
+                '        pytest.skip("Module not importable")',
+                "",
+            ])
 
             # Test class has expected public methods
             pub_methods = cls.get("public_methods", [])
             if pub_methods:
                 method_names = [m["name"] for m in pub_methods[:8]]
-                lines.extend(
-                    [
-                        f"def test_{module_name}_{cname}_methods():",
-                        f'    """Verify {cname} has expected public methods."""',
-                        "    try:",
-                        f"        from {import_path} import {cname}",
-                    ]
-                )
+                lines.extend([
+                    f"def test_{module_name}_{cname}_methods():",
+                    f'    """Verify {cname} has expected public methods."""',
+                    "    try:",
+                    f"        from {import_path} import {cname}",
+                ])
                 for mname in method_names:
-                    lines.append(f'        assert hasattr({cname}, "{mname}"), "Missing method {mname}"')
-                lines.extend(
-                    [
-                        "    except ImportError:",
-                        '        pytest.skip("Module not importable")',
-                        "",
-                    ]
-                )
+                    lines.append(
+                        f'        assert hasattr({cname}, "{mname}"), '
+                        f'"Missing method {mname}"'
+                    )
+                lines.extend([
+                    "    except ImportError:",
+                    '        pytest.skip("Module not importable")',
+                    "",
+                ])
 
     # Test constants
     if constants:
-        lines.extend(
-            [
-                "",
-                "# --- Constants ---",
-                "",
-                f"def test_{module_name}_constants():",
-                '    """Verify module exports expected constants."""',
-                "    try:",
-                f"        import {import_path} as mod",
-            ]
-        )
+        lines.extend([
+            "",
+            "# --- Constants ---",
+            "",
+            f"def test_{module_name}_constants():",
+            '    """Verify module exports expected constants."""',
+            "    try:",
+            f"        import {import_path} as mod",
+        ])
         for const in constants[:10]:
             cname = const["name"]
-            lines.append(f'        assert hasattr(mod, "{cname}"), "Missing constant {cname}"')
-        lines.extend(
-            [
-                "    except ImportError:",
-                '        pytest.skip("Module not importable")',
-                "",
-            ]
-        )
+            lines.append(
+                f'        assert hasattr(mod, "{cname}"), "Missing constant {cname}"'
+            )
+        lines.extend([
+            "    except ImportError:",
+            '        pytest.skip("Module not importable")',
+            "",
+        ])
 
     return "\n".join(lines)
 
@@ -420,9 +398,7 @@ def _run_test(test_file: Path, timeout: int = 60) -> Dict[str, Any]:
     try:
         result = subprocess.run(
             [sys.executable, "-m", "pytest", str(test_file), "-v", "--tb=short", "-x"],
-            capture_output=True,
-            text=True,
-            timeout=timeout,
+            capture_output=True, text=True, timeout=timeout,
             cwd=str(BASE_DIR),
             env={**os.environ, "PYTHONPATH": str(BASE_DIR)},
         )
@@ -479,26 +455,22 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
 
         if result.get("passed"):
             tests_passing += 1
-            results.append(
-                {
-                    "module": module_info["module"],
-                    "test_file": str(test_file.relative_to(BASE_DIR)),
-                    "generation_method": generation_method,
-                    "status": "passed",
-                    "test_count": test_code.count("\ndef test_"),
-                }
-            )
+            results.append({
+                "module": module_info["module"],
+                "test_file": str(test_file.relative_to(BASE_DIR)),
+                "generation_method": generation_method,
+                "status": "passed",
+                "test_count": test_code.count("\ndef test_"),
+            })
         else:
             # Remove failing test stubs (don't litter)
             test_file.unlink(missing_ok=True)
-            results.append(
-                {
-                    "module": module_info["module"],
-                    "generation_method": generation_method,
-                    "status": "failed",
-                    "error": result.get("error", result.get("stderr", "")[:200]),
-                }
-            )
+            results.append({
+                "module": module_info["module"],
+                "generation_method": generation_method,
+                "status": "failed",
+                "error": result.get("error", result.get("stderr", "")[:200]),
+            })
 
     return {
         "success": tests_passing > 0,

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
 CUI // SP-CTI
-ICDEV CLI Output Formatter
+ICDEV™ CLI Output Formatter
 ===========================
-Universal pretty-print for all ICDEV CLI tools.
+Universal pretty-print for all ICDEV™ CLI tools.
 Converts structured dicts to colored, tabular terminal output.
 
 Usage (in any tool's main()):

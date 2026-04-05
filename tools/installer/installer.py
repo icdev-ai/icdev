@@ -1,6 +1,6 @@
 # [TEMPLATE: CUI // SP-CTI]
 #!/usr/bin/env python3
-"""ICDEV Modular Installer — central CLI for configuring and installing ICDEV.
+"""ICDEV™ Modular Installer — central CLI for configuring and installing ICDEV™.
 
 Supports three modes of operation:
 
@@ -52,6 +52,7 @@ import json
 import re
 import sqlite3
 import sys
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -69,7 +70,7 @@ CUI_MARKINGS_PATH = BASE_DIR / "args" / "cui_markings.yaml"
 REGISTRY_PATH = DATA_DIR / "installation.json"
 
 # Ensure BASE_DIR is on sys.path so that ``from tools.xxx import ...`` works
-# when invoked directly (consistent with other ICDEV CLI tools).
+# when invoked directly (consistent with other ICDEV™ CLI tools).
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
@@ -82,14 +83,12 @@ if str(BASE_DIR) not in sys.path:
 def _get_module_registry():
     """Import and return the ModuleRegistry class."""
     from tools.installer.module_registry import ModuleRegistry
-
     return ModuleRegistry
 
 
 def _get_compliance_configurator():
     """Import and return the ComplianceConfigurator class."""
     from tools.installer.compliance_configurator import ComplianceConfigurator
-
     return ComplianceConfigurator
 
 
@@ -97,12 +96,10 @@ def _get_compliance_configurator():
 # Lightweight YAML loader (mirrors module_registry.py pattern)
 # ---------------------------------------------------------------------------
 
-
 def _load_yaml(path: Path) -> Dict[str, Any]:
     """Load a YAML file, falling back to a minimal parser if PyYAML is absent."""
     try:
         import yaml  # type: ignore
-
         with open(path, "r", encoding="utf-8") as fh:
             return yaml.safe_load(fh) or {}
     except ImportError:
@@ -155,7 +152,11 @@ def _load_yaml(path: Path) -> Dict[str, Any]:
 
             if val.startswith("[") and val.endswith("]"):
                 # Inline list: [a, b, c]
-                items = [v.strip().strip('"').strip("'") for v in val[1:-1].split(",") if v.strip()]
+                items = [
+                    v.strip().strip('"').strip("'")
+                    for v in val[1:-1].split(",")
+                    if v.strip()
+                ]
                 current[key] = items
             elif val:
                 # Scalar value
@@ -181,7 +182,6 @@ def _load_yaml(path: Path) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 # ModularDBInitializer
 # ---------------------------------------------------------------------------
-
 
 class ModularDBInitializer:
     """Selectively initialize database tables based on installed modules.
@@ -220,7 +220,6 @@ class ModularDBInitializer:
         # Import SCHEMA_SQL from the module
         try:
             import importlib.util
-
             spec = importlib.util.spec_from_file_location("init_icdev_db", str(init_path))
             if spec and spec.loader:
                 mod = importlib.util.module_from_spec(spec)
@@ -340,7 +339,7 @@ class ModularDBInitializer:
 
         # Execute the SQL
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(str(self.db_path))
+        conn = get_connection(db_path=str(self.db_path))
         tables_created: List[str] = []
         try:
             for stmt in statements:
@@ -352,7 +351,9 @@ class ModularDBInitializer:
             conn.commit()
 
             # Verify which tables now exist
-            cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+            cursor = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+            )
             existing_tables = {row[0] for row in cursor.fetchall()}
             tables_created = [t for t in table_names if t in existing_tables]
         finally:
@@ -369,7 +370,6 @@ class ModularDBInitializer:
 # ---------------------------------------------------------------------------
 # Profile and manifest loaders
 # ---------------------------------------------------------------------------
-
 
 def _load_profiles() -> Dict[str, Any]:
     """Load deployment profiles from YAML."""
@@ -395,20 +395,23 @@ def _get_all_compliance_ids(manifest: Dict[str, Any]) -> List[str]:
     """Return module IDs that are compliance posture modules."""
     modules = manifest.get("modules", {})
     return [
-        mod_id for mod_id, mod_def in modules.items() if isinstance(mod_def, dict) and mod_def.get("compliance_posture")
+        mod_id for mod_id, mod_def in modules.items()
+        if isinstance(mod_def, dict) and mod_def.get("compliance_posture")
     ]
 
 
 def _get_required_module_ids(manifest: Dict[str, Any]) -> List[str]:
     """Return module IDs that are required (always installed)."""
     modules = manifest.get("modules", {})
-    return [mod_id for mod_id, mod_def in modules.items() if isinstance(mod_def, dict) and mod_def.get("required")]
+    return [
+        mod_id for mod_id, mod_def in modules.items()
+        if isinstance(mod_def, dict) and mod_def.get("required")
+    ]
 
 
 # ---------------------------------------------------------------------------
 # Topological sort for dependency resolution
 # ---------------------------------------------------------------------------
-
 
 def _topological_sort(
     module_ids: List[str],
@@ -468,7 +471,9 @@ def _topological_sort(
 
     if len(sorted_list) != len(required):
         missing = required - set(sorted_list)
-        raise ValueError(f"Circular dependency detected among modules: {', '.join(sorted(missing))}")
+        raise ValueError(
+            f"Circular dependency detected among modules: {', '.join(sorted(missing))}"
+        )
 
     return sorted_list
 
@@ -476,7 +481,6 @@ def _topological_sort(
 # ---------------------------------------------------------------------------
 # CUI markings update
 # ---------------------------------------------------------------------------
-
 
 def _update_cui_markings(enabled: bool, dry_run: bool = False) -> Dict[str, Any]:
     """Update the CUI markings YAML to enable or disable CUI banners.
@@ -519,7 +523,6 @@ def _update_cui_markings(enabled: bool, dry_run: bool = False) -> Dict[str, Any]
 # ---------------------------------------------------------------------------
 # Installation engine
 # ---------------------------------------------------------------------------
-
 
 def install(
     modules: List[str],
@@ -636,7 +639,9 @@ def install(
     effective_cui = cui_enabled or compliance_config.get("cui_enabled", False)
     registry_data["cui_enabled"] = effective_cui
     registry_data["impact_level"] = compliance_config.get("impact_level", "IL2")
-    registry_data["security_gate_overrides"] = compliance_config.get("security_gate_overrides", {})
+    registry_data["security_gate_overrides"] = compliance_config.get(
+        "security_gate_overrides", {}
+    )
     registry_data["last_updated"] = now
 
     # Persist updated registry
@@ -651,13 +656,11 @@ def install(
     module_summary: List[Dict[str, str]] = []
     for mod_id in sorted_modules:
         mod_def = modules_cfg.get(mod_id, {})
-        module_summary.append(
-            {
-                "id": mod_id,
-                "name": mod_def.get("name", mod_id) if isinstance(mod_def, dict) else mod_id,
-                "category": mod_def.get("category", "") if isinstance(mod_def, dict) else "",
-            }
-        )
+        module_summary.append({
+            "id": mod_id,
+            "name": mod_def.get("name", mod_id) if isinstance(mod_def, dict) else mod_id,
+            "category": mod_def.get("category", "") if isinstance(mod_def, dict) else "",
+        })
 
     failed = [r for r in install_results if not r.get("success")]
 
@@ -686,7 +689,6 @@ def install(
 # ---------------------------------------------------------------------------
 # Interactive wizard
 # ---------------------------------------------------------------------------
-
 
 def _prompt_choice(prompt: str, options: List[str], default: int = 0) -> int:
     """Display a numbered list and prompt for a single selection.
@@ -818,7 +820,7 @@ def run_interactive(dry_run: bool = False) -> Dict[str, Any]:
 
     print()
     print("=" * 60)
-    print("  ICDEV Modular Installer — Interactive Wizard")
+    print("  ICDEV™ Modular Installer — Interactive Wizard")
     print("=" * 60)
 
     # ------------------------------------------------------------------
@@ -950,7 +952,8 @@ def run_interactive(dry_run: bool = False) -> Dict[str, Any]:
     # Optional modules not yet selected
     all_module_ids = _get_all_module_ids(manifest)
     optional_ids = [
-        m for m in all_module_ids if m not in already_included and not modules_cfg.get(m, {}).get("compliance_posture")
+        m for m in all_module_ids
+        if m not in already_included and not modules_cfg.get(m, {}).get("compliance_posture")
     ]
 
     optional_options = []
@@ -1043,7 +1046,6 @@ def run_interactive(dry_run: bool = False) -> Dict[str, Any]:
 # Profile-based (non-interactive) installation
 # ---------------------------------------------------------------------------
 
-
 def run_profile(
     profile_name: str,
     compliance_override: Optional[List[str]] = None,
@@ -1117,7 +1119,6 @@ def run_profile(
 # ---------------------------------------------------------------------------
 # Upgrade / add-module operations
 # ---------------------------------------------------------------------------
-
 
 def show_upgrade_options() -> Dict[str, Any]:
     """Show modules that can be added to the current installation.
@@ -1376,13 +1377,12 @@ def show_status() -> Dict[str, Any]:
 # Human-readable output formatting
 # ---------------------------------------------------------------------------
 
-
 def _format_install_result_human(result: Dict[str, Any]) -> str:
     """Format installation result for terminal display."""
     lines = [
         "",
         "=" * 60,
-        "  ICDEV Installation Summary",
+        "  ICDEV™ Installation Summary",
         "=" * 60,
         "",
     ]
@@ -1449,7 +1449,7 @@ def _format_status_human(result: Dict[str, Any]) -> str:
     lines = [
         "",
         "=" * 60,
-        "  ICDEV Installation Status",
+        "  ICDEV™ Installation Status",
         "=" * 60,
         "",
         f"  Profile:       {result.get('profile', 'default')}",
@@ -1507,7 +1507,7 @@ def _format_upgrade_human(result: Dict[str, Any]) -> str:
     lines = [
         "",
         "=" * 60,
-        "  ICDEV — Available Upgrades",
+        "  ICDEV™ — Available Upgrades",
         "=" * 60,
         "",
         f"  Currently installed: {result.get('installed_count', 0)} modules",
@@ -1544,11 +1544,10 @@ def _format_upgrade_human(result: Dict[str, Any]) -> str:
 # CLI entry point
 # ---------------------------------------------------------------------------
 
-
 def main() -> None:
     """Parse CLI arguments and dispatch to the appropriate mode."""
     parser = argparse.ArgumentParser(
-        description="ICDEV Modular Installer — configure and install ICDEV components",
+        description="ICDEV™ Modular Installer — configure and install ICDEV™ components",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""\
 Examples:
@@ -1575,64 +1574,53 @@ Examples:
     # Mode selection
     mode_group = parser.add_argument_group("Installation Modes")
     mode_group.add_argument(
-        "--interactive",
-        action="store_true",
+        "--interactive", action="store_true",
         help="Run the interactive 6-step installation wizard",
     )
     mode_group.add_argument(
-        "--profile",
-        metavar="NAME",
+        "--profile", metavar="NAME",
         help="Install using a named deployment profile (e.g., dod_team, healthcare)",
     )
     mode_group.add_argument(
-        "--upgrade",
-        action="store_true",
+        "--upgrade", action="store_true",
         help="Show available modules that can be added to the current installation",
     )
     mode_group.add_argument(
-        "--add-module",
-        metavar="MODULE_ID",
+        "--add-module", metavar="MODULE_ID",
         help="Add a single module (with dependencies) to the current installation",
     )
     mode_group.add_argument(
-        "--add-compliance",
-        metavar="FRAMEWORK_ID",
+        "--add-compliance", metavar="FRAMEWORK_ID",
         help="Add a compliance framework (with required modules) to the installation",
     )
     mode_group.add_argument(
-        "--status",
-        action="store_true",
+        "--status", action="store_true",
         help="Show the current installation status",
     )
 
     # Overrides for profile mode
     override_group = parser.add_argument_group("Profile Overrides")
     override_group.add_argument(
-        "--compliance",
-        metavar="FRAMEWORKS",
+        "--compliance", metavar="FRAMEWORKS",
         help="Comma-separated compliance framework IDs (overrides profile default)",
     )
     override_group.add_argument(
-        "--platform",
-        metavar="PLATFORM",
+        "--platform", metavar="PLATFORM",
         help="Deployment platform: docker, k8s, helm, aws_govcloud, azure_gov, on_prem",
     )
 
     # Output options
     output_group = parser.add_argument_group("Output Options")
     output_group.add_argument(
-        "--json",
-        action="store_true",
+        "--json", action="store_true",
         help="Output results as JSON",
     )
     output_group.add_argument(
-        "--human",
-        action="store_true",
+        "--human", action="store_true",
         help="Human-friendly colorized terminal output",
     )
     output_group.add_argument(
-        "--dry-run",
-        action="store_true",
+        "--dry-run", action="store_true",
         help="Preview what would be installed without executing",
     )
 
@@ -1649,8 +1637,7 @@ Examples:
             # Fallback: try to use output_formatter if available
             try:
                 from tools.cli.output_formatter import auto_format
-
-                print(auto_format(result, title="ICDEV Installer"))
+                print(auto_format(result, title="ICDEV™ Installer"))
             except ImportError:
                 print(json.dumps(result, indent=2, default=str))
 
@@ -1664,7 +1651,9 @@ Examples:
         elif args.profile:
             compliance_override = None
             if args.compliance:
-                compliance_override = [f.strip() for f in args.compliance.split(",") if f.strip()]
+                compliance_override = [
+                    f.strip() for f in args.compliance.split(",") if f.strip()
+                ]
 
             result = run_profile(
                 profile_name=args.profile,

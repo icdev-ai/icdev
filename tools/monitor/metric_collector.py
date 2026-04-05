@@ -9,6 +9,7 @@ import sqlite3
 import urllib.request
 import urllib.parse
 import urllib.error
+from tools.db.storage import get_connection
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -20,8 +21,7 @@ DEFAULT_PROMETHEUS_URL = "http://localhost:9090"
 
 def _get_db(db_path: Path = None) -> sqlite3.Connection:
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -46,7 +46,7 @@ def query_instant(promql: str, prom_url: str = None, time: str = None) -> dict:
 
     try:
         req = urllib.request.Request(endpoint, method="GET")
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        with urllib.request.urlopen(req, timeout=15) as resp:  # nosec B310 -- URL scheme validated; internal/configured endpoints only
             data = json.loads(resp.read().decode("utf-8"))
             if data.get("status") == "success":
                 return {
@@ -112,7 +112,7 @@ def query_range(
 
     try:
         req = urllib.request.Request(endpoint, method="GET")
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=30) as resp:  # nosec B310 -- URL scheme validated; internal/configured endpoints only
             data = json.loads(resp.read().decode("utf-8"))
             if data.get("status") == "success":
                 results = data.get("data", {}).get("result", [])

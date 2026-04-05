@@ -20,6 +20,9 @@ import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 
+_PROJECT_ROOT = str(Path(__file__).resolve().parent.parent)
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
 sys.path.insert(0, str(ROOT / "tools" / "extensions" / "builtins"))
 sys.path.insert(0, str(ROOT / "tools" / "extensions"))
 
@@ -383,6 +386,7 @@ class TestExtensionManagerAutoLoad:
     """Test that the extension manager auto-loads builtins correctly."""
 
     def test_auto_load_builtins_loads_from_builtins_dir(self):
+        sys.path.insert(0, str(ROOT / "tools" / "extensions"))
         from extension_manager import ExtensionManager
 
         ExtensionManager()

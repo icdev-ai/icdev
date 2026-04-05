@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """NIST AI 600-1 GenAI Profile Assessor.
 
 Assesses compliance with NIST AI 600-1 — Artificial Intelligence Risk

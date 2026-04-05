@@ -464,7 +464,7 @@ class TestFormatMarkdown:
             "warnings": ["No icdev.yaml found"],
         }
         md = _format_markdown(ctx)
-        assert "No ICDEV project detected" in md
+        assert "No ICDEV™ project detected" in md
         assert "icdev.yaml" in md
 
     def test_full_context_format(self):

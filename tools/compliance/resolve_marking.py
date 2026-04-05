@@ -32,6 +32,7 @@ import json
 import logging
 import sqlite3
 import sys
+from tools.db.storage import get_connection
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -45,10 +46,9 @@ DEFAULT_DB = BASE_DIR / "data" / "icdev.db"
 
 
 def _get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
-    """Open a read-only connection to the ICDEV database."""
+    """Open a read-only connection to the ICDEV™ database."""
     path = db_path or DEFAULT_DB
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -161,7 +161,7 @@ def resolve_project_marking(
 
         # vision_assertion: what to assert in screenshot validation
         if grep_pattern:
-            vision_assertion = f'A classification banner containing "{grep_pattern}" is visible at the top of the page'
+            vision_assertion = f"A classification banner containing \"{grep_pattern}\" is visible at the top of the page"
         else:
             vision_assertion = "A classification banner is visible at the top of the page"
 
@@ -199,7 +199,7 @@ def resolve_project_marking(
             "portion_marking": f"({'|'.join(categories)})",
             "highest_sensitivity": categories[0],
             "grep_pattern": mark,
-            "vision_assertion": f'A classification banner containing "{mark}" is visible at the top of the page',
+            "vision_assertion": f"A classification banner containing \"{mark}\" is visible at the top of the page",
         }
 
 
@@ -224,10 +224,11 @@ def _no_marking_result() -> Dict:
 # CLI
 # ---------------------------------------------------------------------------
 
-
 def main():
-    parser = argparse.ArgumentParser(description="ICDEV Classification Marking Resolver")
-    parser.add_argument("--project-id", required=True, help="ICDEV project ID")
+    parser = argparse.ArgumentParser(
+        description="ICDEV™ Classification Marking Resolver"
+    )
+    parser.add_argument("--project-id", required=True, help="ICDEV™ project ID")
     parser.add_argument("--json", action="store_true", help="Full JSON output")
     parser.add_argument("--banner-only", action="store_true", help="Print just the banner line")
     parser.add_argument("--code-header", metavar="LANG", help="Print code header for LANG (python, java, go, etc.)")
@@ -251,7 +252,6 @@ def main():
                 from tools.compliance.universal_classification_manager import (
                     get_composite_code_header,
                 )
-
                 subcats = {}
                 if "CUI" in result["categories"]:
                     subcats["CUI"] = "CTI"

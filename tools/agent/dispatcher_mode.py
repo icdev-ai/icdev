@@ -2,7 +2,7 @@
 # CUI // SP-CTI
 """Dispatcher-Only Orchestrator Mode (Phase 61, D-DISP-1).
 
-Enforces the GOTCHA principle that the Orchestration layer delegates work
+Enforces the FORGE principle that the Orchestration layer delegates work
 to domain agents rather than executing tools directly. When enabled,
 the orchestrator is restricted to dispatch-related tools only (task_dispatch,
 agent_status, agent_mailbox, workflow_status, prompt_chain_execute).
@@ -33,7 +33,8 @@ import logging
 import sqlite3
 import sys
 import uuid
-from datetime import datetime, timezone
+from tools.db.storage import get_connection
+from tools.common.helpers import now_iso
 from pathlib import Path
 from typing import List, Optional
 
@@ -50,16 +51,11 @@ logger = logging.getLogger("icdev.dispatcher_mode")
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-def _now() -> str:
-    """Return current UTC timestamp as ISO-8601 string."""
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
 
 def _get_db(db_path: Path = None) -> sqlite3.Connection:
     """Get a database connection with row factory."""
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -400,7 +396,7 @@ def enable_for_project(
     conn = _get_db(db_path)
     try:
         override_id = f"dmo-{uuid.uuid4().hex[:12]}"
-        now = _now()
+        now = now_iso()
 
         conn.execute(
             """INSERT INTO dispatcher_mode_overrides
@@ -466,7 +462,7 @@ def disable_for_project(project_id: str, disabled_by: str = "system", db_path: P
             """UPDATE dispatcher_mode_overrides
                SET enabled = 0, created_by = ?, created_at = ?
                WHERE project_id = ?""",
-            (disabled_by, _now(), project_id),
+            (disabled_by, now_iso(), project_id),
         )
         conn.commit()
 
@@ -524,7 +520,7 @@ def get_status(project_id: str = None, db_path: Path = None) -> dict:
 def main():
     """CLI for dispatcher mode management."""
     parser = argparse.ArgumentParser(
-        description="ICDEV Dispatcher Mode — restrict orchestrator to delegation-only (Phase 61)"
+        description="ICDEV™ Dispatcher Mode — restrict orchestrator to delegation-only (Phase 61)"
     )
     parser.add_argument(
         "--status",
@@ -574,7 +570,7 @@ def main():
             print(json.dumps(result, indent=2, default=str))
         else:
             effective = result["effective_dispatcher_mode"]
-            print("ICDEV Dispatcher Mode Status")
+            print("ICDEV™ Dispatcher Mode Status")
             print("Classification: CUI // SP-CTI")
             print()
             print(f"  Global enabled: {result['global_config']['enabled']}")

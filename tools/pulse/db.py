@@ -1,5 +1,6 @@
 # CUI // SP-CTI
-"""ICDEV Pulse database layer — uses ICDEV's storage abstraction (D-DB-20)."""
+"""ICDEV™ Pulse database layer — uses ICDEV™'s storage abstraction (D-DB-20)."""
+from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
@@ -198,6 +199,7 @@ def init_db():
             ("judge_color", "TEXT"),
             ("judge_composite", "REAL"),
             ("judge_combined", "REAL"),
+            ("seo_score", "REAL"),
         ]:
             try:
                 conn.execute(f"ALTER TABLE pulse_posts ADD COLUMN {col} {coltype}")
@@ -238,7 +240,7 @@ def insert_row(table: str, data: dict[str, Any]) -> str:
             values.append(v)
 
     with get_connection() as conn:
-        conn.execute(f"INSERT INTO {table} ({cols}) VALUES ({placeholders})", values)
+        conn.execute(f"INSERT INTO {table} ({cols}) VALUES ({placeholders})", values)  # nosec B608 -- table/column names are internal constants, not user input
         conn.commit()
     return data.get("id", "")
 
@@ -259,14 +261,14 @@ def update_row(table: str, row_id: str, data: dict[str, Any]):
     values.append(row_id)
 
     with get_connection() as conn:
-        conn.execute(f"UPDATE {table} SET {set_clause} WHERE id = ?", values)
+        conn.execute(f"UPDATE {table} SET {set_clause} WHERE id = ?", values)  # nosec B608 -- table/column names are internal constants, not user input
         conn.commit()
 
 
 def query_rows(table: str, where: str = "", params: tuple = (), limit: int = 100) -> list[dict]:
     """Query rows from a table."""
     table = _resolve_table(table)
-    sql = f"SELECT * FROM {table}"
+    sql = f"SELECT * FROM {table}"  # nosec B608 -- table/column names are internal constants, not user input
     if where:
         sql += f" WHERE {where}"
     sql += f" LIMIT {limit}"
@@ -280,7 +282,7 @@ def get_row(table: str, row_id: str) -> dict | None:
     """Get a single row by id."""
     table = _resolve_table(table)
     with get_connection() as conn:
-        row = conn.execute(f"SELECT * FROM {table} WHERE id = ?", (row_id,)).fetchone()
+        row = conn.execute(f"SELECT * FROM {table} WHERE id = ?", (row_id,)).fetchone()  # nosec B608 -- table/column names are internal constants, not user input
         return dict(row) if row else None
 
 

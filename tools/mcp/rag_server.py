@@ -6,7 +6,7 @@ Each handler is called from the unified MCP gateway via tool_registry.py.
 
 from __future__ import annotations
 
-import sqlite3
+from tools.db.storage import get_connection
 from pathlib import Path
 from typing import Any, Dict
 
@@ -15,9 +15,8 @@ ICDEV_DB = BASE_DIR / "data" / "icdev.db"
 
 
 def _get_db():
-    """Get connection to ICDEV DB."""
-    conn = sqlite3.connect(str(ICDEV_DB))
-    conn.row_factory = sqlite3.Row
+    """Get connection to ICDEV™ DB."""
+    conn = get_connection()
     return conn
 
 
@@ -34,7 +33,6 @@ def handle_rag_search(arguments: Dict[str, Any]) -> Dict[str, Any]:
 
     try:
         from tools.rag.retriever import RAGRetriever
-
         retriever = RAGRetriever(tenant_id=tenant_id)
         filters = {}
         if source_type:
@@ -69,7 +67,6 @@ def handle_rag_ingest(arguments: Dict[str, Any]) -> Dict[str, Any]:
 
     try:
         from tools.rag.ingestion_manager import ingest_source
-
         return ingest_source(
             source_type=source_type,
             tenant_id=tenant_id,
@@ -87,7 +84,6 @@ def handle_rag_status(arguments: Dict[str, Any]) -> Dict[str, Any]:
     tenant_id = arguments.get("tenant_id", "")
     try:
         from tools.rag.ingestion_manager import get_status
-
         return get_status(tenant_id=tenant_id)
     except ImportError:
         return {"error": "RAG ingestion manager not available"}
@@ -106,7 +102,6 @@ def handle_rag_chunk_info(arguments: Dict[str, Any]) -> Dict[str, Any]:
 
     try:
         from tools.rag.vector_store_factory import VectorStoreFactory
-
         store = VectorStoreFactory.create(tenant_id=tenant_id)
 
         if content_hash:
@@ -116,7 +111,6 @@ def handle_rag_chunk_info(arguments: Dict[str, Any]) -> Dict[str, Any]:
             chunk = None
             if store.provider_name == "sqlite":
                 import sqlite3 as s3
-
                 conn = s3.connect(str(store._db_path))
                 conn.row_factory = s3.Row
                 row = conn.execute(
@@ -163,19 +157,16 @@ def handle_rag_delete_source(arguments: Dict[str, Any]) -> Dict[str, Any]:
 
     try:
         from tools.rag.vector_store_factory import VectorStoreFactory
-
         store = VectorStoreFactory.create(tenant_id=tenant_id)
 
         if store.provider_name != "sqlite":
             return {"error": "Delete by source only supported for SQLite backend"}
 
         import sqlite3 as s3
-
         conn = s3.connect(str(store._db_path))
         # Get IDs first
         ids = [
-            row[0]
-            for row in conn.execute(
+            row[0] for row in conn.execute(
                 "SELECT id FROM rag_chunks WHERE source_type = ?",
                 (source_type,),
             ).fetchall()
@@ -202,7 +193,6 @@ def handle_rag_retention_migrate(arguments: Dict[str, Any]) -> Dict[str, Any]:
 
     try:
         from tools.rag.retention_manager import migrate_chunks
-
         return migrate_chunks(tenant_id=tenant_id, dry_run=dry_run)
     except ImportError:
         return {"error": "Retention manager not available"}
@@ -217,7 +207,6 @@ def handle_rag_reindex(arguments: Dict[str, Any]) -> Dict[str, Any]:
 
     try:
         from tools.rag.ingestion_manager import sweep_all
-
         source_list = None
         if sources:
             source_list = [s.strip() for s in sources.split(",")]
@@ -264,13 +253,11 @@ def handle_rag_providers(arguments: Dict[str, Any]) -> Dict[str, Any]:
     """List available vector store backends and embedding providers."""
     try:
         from tools.rag.vector_store_factory import VectorStoreFactory
-
         backends = VectorStoreFactory.list_available()
 
         embedding_available = False
         try:
             from tools.llm import get_embedding_provider
-
             provider = get_embedding_provider()
             embedding_available = provider is not None
         except Exception:

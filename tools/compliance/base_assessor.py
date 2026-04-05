@@ -3,8 +3,8 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""Base Compliance Framework Assessor for ICDEV.
+# POC: ICDEV™ System Administrator
+"""Base Compliance Framework Assessor for ICDEV™.
 
 Provides a reusable base class for all framework-specific assessors.
 Each assessor loads its framework catalog, inherits NIST 800-53
@@ -27,6 +27,7 @@ import argparse
 import json
 import sqlite3
 import sys
+from tools.db.storage import get_connection
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from pathlib import Path
@@ -46,12 +47,8 @@ class BaseAssessor(ABC):
     TABLE_NAME: str = ""
     CATALOG_FILENAME: str = ""
     STATUS_VALUES: Tuple[str, ...] = (
-        "not_assessed",
-        "satisfied",
-        "partially_satisfied",
-        "not_satisfied",
-        "not_applicable",
-        "risk_accepted",
+        "not_assessed", "satisfied", "partially_satisfied",
+        "not_satisfied", "not_applicable", "risk_accepted",
     )
 
     def __init__(self, db_path: Optional[Path] = None):
@@ -64,24 +61,24 @@ class BaseAssessor(ABC):
 
     def _get_connection(self) -> sqlite3.Connection:
         if not self.db_path.exists():
-            raise FileNotFoundError(f"Database not found: {self.db_path}\nRun: python tools/db/init_icdev_db.py")
-        conn = sqlite3.connect(str(self.db_path))
-        conn.row_factory = sqlite3.Row
+            raise FileNotFoundError(
+                f"Database not found: {self.db_path}\n"
+                "Run: python tools/db/init_icdev_db.py"
+            )
+        conn = get_connection(db_path=str(self.db_path))
         return conn
 
     def _get_project(self, conn: sqlite3.Connection, project_id: str) -> Dict:
-        row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+        row = conn.execute(
+            "SELECT * FROM projects WHERE id = ?", (project_id,)
+        ).fetchone()
         if not row:
             raise ValueError(f"Project '{project_id}' not found.")
         return dict(row)
 
     def _log_audit_event(
-        self,
-        conn: sqlite3.Connection,
-        project_id: str,
-        action: str,
-        details: Dict,
-        file_path: Optional[str] = None,
+        self, conn: sqlite3.Connection, project_id: str,
+        action: str, details: Dict, file_path: Optional[str] = None,
     ) -> None:
         try:
             conn.execute(
@@ -104,7 +101,11 @@ class BaseAssessor(ABC):
             print(f"Warning: Could not log audit event: {e}", file=sys.stderr)
 
     def _ensure_table(self, conn: sqlite3.Connection) -> None:
-        """Create the framework-specific assessments table if not exists."""
+        """Create the framework-specific assessments table if not exists.
+
+        Also reconciles missing columns for tables created by init_icdev_db.py
+        with an older schema.
+        """
         status_check = ", ".join(f"'{s}'" for s in self.STATUS_VALUES)
         conn.executescript(f"""
             CREATE TABLE IF NOT EXISTS {self.TABLE_NAME} (
@@ -129,6 +130,30 @@ class BaseAssessor(ABC):
             CREATE INDEX IF NOT EXISTS idx_{self.TABLE_NAME}_project
                 ON {self.TABLE_NAME}(project_id);
         """)
+        # Reconcile missing columns for pre-existing tables (D151 pattern)
+        expected_cols = [
+            ("requirement_title", "TEXT"),
+            ("family", "TEXT"),
+            ("evidence_description", "TEXT"),
+            ("evidence_path", "TEXT"),
+            ("automation_result", "TEXT"),
+            ("assessor", "TEXT DEFAULT 'icdev-compliance-engine'"),
+            ("updated_at", "TEXT"),
+        ]
+        existing = {
+            row[1]
+            for row in conn.execute(
+                f"PRAGMA table_info({self.TABLE_NAME})"
+            ).fetchall()
+        }
+        for col_name, col_def in expected_cols:
+            if col_name not in existing:
+                try:
+                    conn.execute(
+                        f"ALTER TABLE {self.TABLE_NAME} ADD COLUMN {col_name} {col_def}"
+                    )
+                except Exception:
+                    pass  # Column may have been added concurrently
         conn.commit()
 
     # -----------------------------------------------------------------
@@ -142,12 +167,18 @@ class BaseAssessor(ABC):
         catalog_path = CATALOG_DIR / self.CATALOG_FILENAME
         if not catalog_path.exists():
             raise FileNotFoundError(
-                f"Catalog not found: {catalog_path}\nExpected: context/compliance/{self.CATALOG_FILENAME}"
+                f"Catalog not found: {catalog_path}\n"
+                f"Expected: context/compliance/{self.CATALOG_FILENAME}"
             )
         with open(catalog_path, "r", encoding="utf-8") as f:
             data = json.load(f)
         # Support both "requirements" and "controls" root keys
-        self._catalog_cache = data.get("requirements") or data.get("controls") or data.get("criteria") or []
+        self._catalog_cache = (
+            data.get("requirements")
+            or data.get("controls")
+            or data.get("criteria")
+            or []
+        )
         return self._catalog_cache
 
     # -----------------------------------------------------------------
@@ -155,9 +186,7 @@ class BaseAssessor(ABC):
     # -----------------------------------------------------------------
 
     def _get_nist_implementations(
-        self,
-        conn: sqlite3.Connection,
-        project_id: str,
+        self, conn: sqlite3.Connection, project_id: str,
     ) -> Dict[str, str]:
         """Return a dict of {control_id: status} from project_controls."""
         try:
@@ -166,14 +195,15 @@ class BaseAssessor(ABC):
                    FROM project_controls WHERE project_id = ?""",
                 (project_id,),
             ).fetchall()
-            return {row["control_id"].upper(): row["implementation_status"] for row in rows}
+            return {
+                row["control_id"].upper(): row["implementation_status"]
+                for row in rows
+            }
         except Exception:
             return {}
 
     def _crosswalk_status(
-        self,
-        requirement: Dict,
-        nist_impl: Dict[str, str],
+        self, requirement: Dict, nist_impl: Dict[str, str],
     ) -> Optional[str]:
         """Determine status from crosswalked NIST implementations.
 
@@ -208,9 +238,7 @@ class BaseAssessor(ABC):
 
     @abstractmethod
     def get_automated_checks(
-        self,
-        project: Dict,
-        project_dir: Optional[str] = None,
+        self, project: Dict, project_dir: Optional[str] = None,
     ) -> Dict[str, str]:
         """Return automated check results for framework requirements.
 
@@ -289,27 +317,18 @@ class BaseAssessor(ABC):
                         nist_800_53_crosswalk, updated_at)
                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
-                        project_id,
-                        now,
-                        req_id,
-                        req_title,
-                        family,
-                        status,
-                        evidence,
-                        automation_result,
-                        crosswalk_json,
-                        now,
+                        project_id, now, req_id, req_title, family,
+                        status, evidence, automation_result,
+                        crosswalk_json, now,
                     ),
                 )
 
-                results.append(
-                    {
-                        "requirement_id": req_id,
-                        "title": req_title,
-                        "family": family,
-                        "status": status,
-                    }
-                )
+                results.append({
+                    "requirement_id": req_id,
+                    "title": req_title,
+                    "family": family,
+                    "status": status,
+                })
 
             conn.commit()
 
@@ -319,7 +338,9 @@ class BaseAssessor(ABC):
             partial = status_counts.get("partially_satisfied", 0)
             not_satisfied = status_counts.get("not_satisfied", 0)
             not_assessed = status_counts.get("not_assessed", 0)
-            coverage_pct = round(((satisfied + partial * 0.5) / total * 100) if total > 0 else 0, 1)
+            coverage_pct = round(
+                ((satisfied + partial * 0.5) / total * 100) if total > 0 else 0, 1
+            )
 
             summary = {
                 "framework_id": self.FRAMEWORK_ID,
@@ -349,34 +370,23 @@ class BaseAssessor(ABC):
                         last_assessed, updated_at)
                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
-                        project_id,
-                        self.FRAMEWORK_ID,
-                        total,
-                        satisfied,
-                        coverage_pct,
-                        gate,
-                        now,
-                        now,
+                        project_id, self.FRAMEWORK_ID, total,
+                        satisfied, coverage_pct, gate, now, now,
                     ),
                 )
                 conn.commit()
             except Exception:
                 pass  # Table may not exist yet
 
-            self._log_audit_event(
-                conn,
-                project_id,
-                f"{self.FRAMEWORK_NAME} assessment",
-                {
-                    "total": total,
-                    "satisfied": satisfied,
-                    "partially_satisfied": partial,
-                    "not_satisfied": not_satisfied,
-                    "not_assessed": not_assessed,
-                    "coverage_pct": coverage_pct,
-                    "gate_status": gate,
-                },
-            )
+            self._log_audit_event(conn, project_id, f"{self.FRAMEWORK_NAME} assessment", {
+                "total": total,
+                "satisfied": satisfied,
+                "partially_satisfied": partial,
+                "not_satisfied": not_satisfied,
+                "not_assessed": not_assessed,
+                "coverage_pct": coverage_pct,
+                "gate_status": gate,
+            })
 
             return summary
         finally:
@@ -400,7 +410,7 @@ class BaseAssessor(ABC):
             rows = conn.execute(
                 f"""SELECT requirement_id, requirement_title, family, status
                     FROM {self.TABLE_NAME}
-                    WHERE project_id = ?""",
+                    WHERE project_id = ?""",  # nosec B608 -- table/column names are internal constants, not user input
                 (project_id,),
             ).fetchall()
 
@@ -422,7 +432,10 @@ class BaseAssessor(ABC):
                 if status == "satisfied":
                     satisfied += 1
                 elif status == "not_satisfied":
-                    blocking.append(f"{row['requirement_id']}: {row['requirement_title']} ({row['family']})")
+                    blocking.append(
+                        f"{row['requirement_id']}: {row['requirement_title']} "
+                        f"({row['family']})"
+                    )
 
             coverage = round((satisfied / total * 100) if total > 0 else 0, 1)
             gate_pass = len(blocking) == 0 and coverage >= 80.0
@@ -513,10 +526,11 @@ class BaseAssessor(ABC):
 
     def run_cli(self) -> None:
         """Standard CLI entry point for all framework assessors."""
-        parser = argparse.ArgumentParser(description=f"{self.FRAMEWORK_NAME} Assessment Engine")
+        parser = argparse.ArgumentParser(
+            description=f"{self.FRAMEWORK_NAME} Assessment Engine"
+        )
         parser.add_argument(
-            "--project-id",
-            required=True,
+            "--project-id", required=True,
             help="Project ID to assess",
         )
         parser.add_argument(
@@ -524,24 +538,19 @@ class BaseAssessor(ABC):
             help="Path to project source code for automated checks",
         )
         parser.add_argument(
-            "--gate",
-            action="store_true",
+            "--gate", action="store_true",
             help="Evaluate gate pass/fail only",
         )
         parser.add_argument(
-            "--json",
-            action="store_true",
+            "--json", action="store_true",
             help="JSON output",
         )
         parser.add_argument(
-            "--human",
-            action="store_true",
+            "--human", action="store_true",
             help="Human-readable colored output",
         )
         parser.add_argument(
-            "--db-path",
-            type=Path,
-            default=None,
+            "--db-path", type=Path, default=None,
             help="Database path override",
         )
         parser.add_argument(
@@ -549,8 +558,7 @@ class BaseAssessor(ABC):
             help="Export results to files. Formats: csv, executive_summary, evidence_package, poam, all",
         )
         parser.add_argument(
-            "--output-dir",
-            default=".",
+            "--output-dir", default=".",
             help="Output directory for exported files (used with --export)",
         )
         args = parser.parse_args()

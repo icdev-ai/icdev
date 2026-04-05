@@ -1,46 +1,46 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-blue" alt="License">
+  <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License">
   <img src="https://img.shields.io/badge/python-3.9%2B-brightgreen" alt="Python 3.9+">
   <img src="https://img.shields.io/badge/compliance%20frameworks-42-orange" alt="Compliance Frameworks">
-  <img src="https://img.shields.io/badge/tools-500%2B-blueviolet" alt="Tools">
+  <img src="https://img.shields.io/badge/tools-530%2B-blueviolet" alt="Tools">
   <img src="https://img.shields.io/badge/agents-15-red" alt="Agents">
   <img src="https://img.shields.io/badge/languages-6-green" alt="Languages">
 </p>
 
-# ICDEV — Intelligent Certified Development Platform
+# ICDEV™ — Intelligent Certified Development Platform
 
 **A system that builds systems.**
 
-ICDEV is an AI-powered meta-builder that generates complete, autonomous applications — each with its own agent architecture, compliance automation, testing pipeline, and CI/CD integration. Describe what you need in plain English. Get an ATO-ready system with 42 compliance framework mappings, 15 coordinating AI agents, and every artifact you need for Authority to Operate.
+ICDEV™ is an AI-powered meta-builder that generates complete, autonomous applications — each with its own agent architecture, compliance automation, testing pipeline, and CI/CD integration. Describe what you need in plain English. Get an ATO-ready system with 42 compliance framework mappings, 15 coordinating AI agents, and every artifact you need for Authority to Operate.
 
 These aren't templates. They're living systems that can build their own features.
 
 One developer built this. Imagine what your team could do with it.
 
-> **DISCLAIMER:** This repository does NOT contain classified or Controlled Unclassified Information (CUI). Terms like "CUI", "SECRET", "IL4", "IL5", "IL6" appear throughout as **configuration values and template strings** — not as indicators that this repository itself is classified. Classification terminology references publicly available U.S. government standards ([EO 13526](https://www.archives.gov/isoo/policy-documents/cnsi-eo.html), [32 CFR Part 2002](https://www.ecfr.gov/current/title-32/subtitle-B/chapter-XX/part-2002), [NIST SP 800-53](https://csrc.nist.gov/publications/detail/sp/800-53/rev-5/final)). File headers containing `[TEMPLATE: CUI // SP-CTI]` are **template markers** demonstrating the format ICDEV applies to generated artifacts.
+> **DISCLAIMER:** This repository does NOT contain classified or Controlled Unclassified Information (CUI). Terms like "CUI", "SECRET", "IL4", "IL5", "IL6" appear throughout as **configuration values and template strings** — not as indicators that this repository itself is classified. Classification terminology references publicly available U.S. government standards ([EO 13526](https://www.archives.gov/isoo/policy-documents/cnsi-eo.html), [32 CFR Part 2002](https://www.ecfr.gov/current/title-32/subtitle-B/chapter-XX/part-2002), [NIST SP 800-53](https://csrc.nist.gov/publications/detail/sp/800-53/rev-5/final)). File headers containing `[TEMPLATE: CUI // SP-CTI]` are **template markers** demonstrating the format ICDEV™ applies to generated artifacts.
 
 ---
 
 ## A System That Builds Systems
 
-Most developer tools help you write code faster. ICDEV does something fundamentally different: it **generates entire applications** — each with its own multi-agent architecture, compliance automation, testing pipeline, memory system, and CI/CD integration. The generated application isn't a starter kit. It's an autonomous engineering platform that can build its own features using the same methodology that built it.
+Most developer tools help you write code faster. ICDEV™ does something fundamentally different: it **generates entire applications** — each with its own multi-agent architecture, compliance automation, testing pipeline, memory system, and CI/CD integration. The generated application isn't a starter kit. It's an autonomous engineering platform that can build its own features using the same methodology that built it.
 
-**GovProposal** is the proof. ICDEV generated GovProposal — a complete government proposal lifecycle management platform with a 14-step section workflow, color team review cycle, compliance matrix, timeline tracking, and assignment management. Then ICDEV connected it to a **GovCon Intelligence pipeline** that automatically discovers government opportunities, extracts requirements, maps capabilities, and drafts proposal responses.
+**GovProposal** is the proof. ICDEV™ generated GovProposal — a complete government proposal lifecycle management platform with a 14-step section workflow, color team review cycle, compliance matrix, timeline tracking, and assignment management. Then ICDEV™ connected it to a **GovCon Intelligence pipeline** that automatically discovers government opportunities, extracts requirements, maps capabilities, and drafts proposal responses.
 
 Together, they form a self-reinforcing flywheel:
 
 ```
-SAM.gov RFPs → Mine requirement patterns → Map to ICDEV capabilities → Identify gaps →
-Build enhancements → Draft proposals via GovProposal → Win → Deliver ICDEV on-prem → Repeat
+SAM.gov RFPs → Mine requirement patterns → Map to ICDEV™ capabilities → Identify gaps →
+Build enhancements → Draft proposals via GovProposal → Win → Deliver ICDEV™ on-prem → Repeat
 ```
 
-### How ICDEV Built GovProposal
+### How ICDEV™ Built GovProposal
 
-ICDEV generated GovProposal the same way it generates any application — through the GOTCHA framework and ATLAS workflow. GovProposal inherited:
+ICDEV™ generated GovProposal the same way it generates any application — through the FORGE framework and ANVIL workflow. GovProposal inherited:
 
 | What It Got | How It Works |
 |-------------|--------------|
-| **6-layer GOTCHA framework** | Goals, Orchestration, Tools, Args, Context, Hard Prompts — separating deterministic logic from AI |
+| **6-layer FORGE framework** | Frameworks, Orchestration, Routines, Guidance, Evidence — separating deterministic logic from AI |
 | **Multi-agent architecture** | 5 core agents (Orchestrator, Architect, Builder, Knowledge, Monitor) + 2 ATO agents |
 | **229-table database** | Append-only audit trail (NIST AU compliant), proposal lifecycle tables, compliance matrices |
 | **42 compliance frameworks** | Dual-hub crosswalk engine — implement a control once, map to FedRAMP, CMMC, CJIS, HIPAA, and 38 more |
@@ -48,19 +48,19 @@ ICDEV generated GovProposal the same way it generates any application — throug
 | **CI/CD integration** | GitHub + GitLab dual-platform, webhook-triggered workflows |
 | **Memory system** | Long-term facts, daily logs, semantic search — learns from every proposal cycle |
 
-But GovProposal isn't just a child app. ICDEV then layered on the **GovCon Intelligence pipeline** — 11 specialized tools that automate the entire government contracting capture process:
+But GovProposal isn't just a child app. ICDEV™ then layered on the **GovCon Intelligence pipeline** — 11 specialized tools that automate the entire government contracting capture process:
 
-### The ICDEV → GovProposal Workflow
+### The ICDEV™ → GovProposal Workflow
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                         ICDEV — GovCon Intelligence                         │
+│                         ICDEV™ — GovCon Intelligence                         │
 │                                                                             │
 │  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐    ┌───────────┐ │
 │  │   DISCOVER   │───▶│   EXTRACT    │───▶│     MAP      │───▶│   DRAFT   │ │
 │  │              │    │              │    │              │    │           │ │
 │  │ SAM.gov API  │    │ "Shall/must/ │    │ Match reqs   │    │ qwen3     │ │
-│  │ scan opps +  │    │  will" regex │    │ to ICDEV     │    │ drafts →  │ │
+│  │ scan opps +  │    │  will" regex │    │ to ICDEV™     │    │ drafts →  │ │
 │  │ track awards │    │ extraction   │    │ capability   │    │ Claude    │ │
 │  │              │    │ + domain     │    │ catalog      │    │ reviews   │ │
 │  │ 8 NAICS      │    │   classify   │    │ (30 entries) │    │           │ │
@@ -128,18 +128,18 @@ But GovProposal isn't just a child app. ICDEV then layered on the **GovCon Intel
 
 **Step by step:**
 
-1. **DISCOVER** — ICDEV scans SAM.gov's Opportunities API for solicitations, pre-solicitations, and RFIs across 8 NAICS codes. Award notices feed competitive intelligence.
+1. **DISCOVER** — ICDEV™ scans SAM.gov's Opportunities API for solicitations, pre-solicitations, and RFIs across 8 NAICS codes. Award notices feed competitive intelligence.
 
 2. **EXTRACT** — Deterministic regex extracts every "shall", "must", and "will" statement from RFP descriptions. Each is domain-classified (DevSecOps, AI/ML, ATO/RMF, Cloud, Security, Compliance, Agile, Data, Management) and clustered into patterns using keyword fingerprinting.
 
-3. **MAP** — Extracted requirements are matched against ICDEV's declarative capability catalog (~30 entries covering 42 compliance frameworks, 15 agents, and 500+ tools). Each requirement gets an **L/M/N grade**:
-   - **L** (≥ 80% coverage) — ICDEV fully meets this requirement
+3. **MAP** — Extracted requirements are matched against ICDEV™'s declarative capability catalog (~30 entries covering 42 compliance frameworks, 15 agents, and 500+ tools). Each requirement gets an **L/M/N grade**:
+   - **L** (≥ 80% coverage) — ICDEV™ fully meets this requirement
    - **M** (40–79%) — partial capability, enhancement recommended
    - **N** (< 40%) — gap identified, cross-registered to Innovation Engine for prioritized development
 
 4. **DRAFT** — Two-tier LLM pipeline: qwen3 generates a compact draft incorporating capability evidence, tool references, and compliance controls. Claude reviews and polishes. The draft is stored with `status='draft'` — a human must approve before it enters the proposal.
 
-5. **BRIDGE** — The GovCon API (20+ REST endpoints) moves data from ICDEV's intelligence tools into GovProposal's lifecycle tables:
+5. **BRIDGE** — The GovCon API (20+ REST endpoints) moves data from ICDEV™'s intelligence tools into GovProposal's lifecycle tables:
    - SAM.gov opportunities → `proposal_opportunities` (with licensing model tracking)
    - "Shall" statements → `proposal_compliance_matrix` (L/M/N auto-populated)
    - AI drafts → `proposal_section_drafts` → human approves → `proposal_sections`
@@ -150,40 +150,40 @@ But GovProposal isn't just a child app. ICDEV then layered on the **GovCon Intel
 
 This isn't a linear pipeline — it's a compounding cycle:
 
-- **Win** a contract → customer gets ICDEV deployed on-prem (free for winners)
-- **Deliver** → ICDEV's capabilities proven in production = stronger past performance evidence
+- **Win** a contract → customer gets ICDEV™ deployed on-prem (free for winners)
+- **Deliver** → ICDEV™'s capabilities proven in production = stronger past performance evidence
 - **Learn** → requirement patterns from real contracts improve capability mapping
-- **Build** → gaps identified by the MAP stage drive ICDEV development priorities
+- **Build** → gaps identified by the MAP stage drive ICDEV™ development priorities
 - **Repeat** → next proposal has better evidence, higher L/M/N scores, stronger drafts
 
-Every proposal ICDEV writes makes the next one better. The product IS the proposal evidence.
+Every proposal ICDEV™ writes makes the next one better. The product IS the proposal evidence.
 
 ---
 
-## Why ICDEV
+## Why ICDEV™
 
 ### For Government Contractors
 
-| Challenge | How ICDEV Solves It | Benefit |
+| Challenge | How ICDEV™ Solves It | Benefit |
 |-----------|---------------------|---------|
 | Monitoring SAM.gov is manual and error-prone | Automated scanning of 8 NAICS codes with deduplication and caching | Never miss an opportunity. Surface patterns across hundreds of RFPs. |
 | Compliance matrices take weeks to populate | L/M/N auto-grading from capability catalog with keyword-overlap scoring | Compliance matrix populated in seconds, not weeks. Fully auditable. |
 | Proposal writing is expensive ($50K–$500K per response) | Two-tier LLM drafting with reusable knowledge base and HITL approval | Draft responses in hours with evidence baked in. Human reviews, not writes from scratch. |
 | No visibility into competitive landscape | Award tracker + competitor profiler from SAM.gov award data | Know who wins what, at what value, in which NAICS codes. |
-| Past performance is hard to articulate | ICDEV's own capability catalog IS the evidence | "We have 42 compliance frameworks" isn't marketing — it's `SELECT COUNT(*)` from the same DB. |
+| Past performance is hard to articulate | ICDEV™'s own capability catalog IS the evidence | "We have 42 compliance frameworks" isn't marketing — it's `SELECT COUNT(*)` from the same DB. |
 
 ### For Government Agencies (Evaluators)
 
-| Challenge | How ICDEV Helps | Benefit |
+| Challenge | How ICDEV™ Helps | Benefit |
 |-----------|-----------------|---------|
-| Proposals claim capabilities they can't deliver | ICDEV's proposals reference actual tools, actual test results, actual compliance mappings | Every claim is verifiable against the delivered platform. |
-| ATO takes 12–18 months after award | ICDEV generates ATO artifacts (SSP, POAM, STIG, SBOM, OSCAL) automatically | ATO acceleration from day one of delivery. cATO-ready. |
-| Vendor lock-in | ICDEV is open source (AGPL-3.0), runs on 6 cloud providers or fully air-gapped | No proprietary dependencies. Full source code. Deploy anywhere. |
+| Proposals claim capabilities they can't deliver | ICDEV™'s proposals reference actual tools, actual test results, actual compliance mappings | Every claim is verifiable against the delivered platform. |
+| ATO takes 12–18 months after award | ICDEV™ generates ATO artifacts (SSP, POAM, STIG, SBOM, OSCAL) automatically | ATO acceleration from day one of delivery. cATO-ready. |
+| Vendor lock-in | ICDEV™ is open source (Apache 2.0), runs on 6 cloud providers or fully air-gapped | No proprietary dependencies. Full source code. Deploy anywhere. |
 | Difficulty evaluating technical depth | L/M/N grading is deterministic and reproducible | Same input always produces same compliance grade. Auditable. |
 
 ### What No Other Tool Does
 
-1. **The product writes its own proposals.** ICDEV generates the application AND writes the proposal to sell it. The capability evidence in the proposal comes from the same codebase that gets delivered. No other GovCon tool is simultaneously the proposal platform and the delivered product.
+1. **The product writes its own proposals.** ICDEV™ generates the application AND writes the proposal to sell it. The capability evidence in the proposal comes from the same codebase that gets delivered. No other GovCon tool is simultaneously the proposal platform and the delivered product.
 
 2. **Deterministic compliance grading.** Every "shall" statement in an RFP gets a machine-scored coverage grade (L/M/N) against a declarative capability catalog. This isn't LLM-generated opinion — it's keyword-overlap scoring that produces identical results every time. Air-gap safe.
 
@@ -191,7 +191,7 @@ Every proposal ICDEV writes makes the next one better. The product IS the propos
 
 4. **42 compliance frameworks, one implementation.** Implement a NIST 800-53 control once. The dual-hub crosswalk engine automatically maps it to FedRAMP, CMMC, CJIS, HIPAA, PCI DSS, ISO 27001, and 35+ more. This works for proposals too — the compliance matrix covers every framework the RFP requires.
 
-5. **Self-reinforcing economics.** Winners get ICDEV deployed free on-prem. This means every win creates a production reference, every production deployment generates telemetry that improves the next proposal, and every gap identified during delivery becomes a development priority. Commercial competitors charge for both the proposal tool AND the delivered platform. ICDEV is both.
+5. **Self-reinforcing economics.** Winners get ICDEV™ deployed free on-prem. This means every win creates a production reference, every production deployment generates telemetry that improves the next proposal, and every gap identified during delivery becomes a development priority. Commercial competitors charge for both the proposal tool AND the delivered platform. ICDEV™ is both.
 
 6. **Air-gap native.** Every tool works without internet access. Regex-based requirement extraction (not LLM). Keyword-overlap scoring (not embeddings). SQLite database (not cloud). Ollama for local LLM inference. Designed for SIPR/JWICS from day one.
 
@@ -199,7 +199,7 @@ Every proposal ICDEV writes makes the next one better. The product IS the propos
 
 ## From Idea to ATO in One Pipeline
 
-Most GovTech teams spend 12-18 months and millions of dollars getting from "we need an app" to a signed ATO. ICDEV compresses this into a single, auditable pipeline:
+Most GovTech teams spend 12-18 months and millions of dollars getting from "we need an app" to a signed ATO. ICDEV™ compresses this into a single, auditable pipeline:
 
 ```
 "We need a mission planning tool for IL5"
@@ -224,7 +224,7 @@ Most GovTech teams spend 12-18 months and millions of dollars getting from "we n
 │  Full application in 12 deterministic steps            │
 │  → 300+ files: agents, tools, goals, tests, CI/CD     │
 │  → 229-table database with append-only audit trail     │
-│  → GOTCHA framework + ATLAS workflow baked in          │
+│  → FORGE framework + ANVIL workflow baked in          │
 │  → Connected to 100+ cloud MCP servers (AWS/Azure/GCP/OCI/IBM) │
 └───────────────────────────┬───────────────────────────┘
                             ▼
@@ -254,7 +254,7 @@ Most GovTech teams spend 12-18 months and millions of dollars getting from "we n
 
 ### Step 1: Requirements Intake (RICOAS)
 
-You describe what you need in plain English. ICDEV's Requirements Analyst agent runs a conversational intake session that:
+You describe what you need in plain English. ICDEV™'s Requirements Analyst agent runs a conversational intake session that:
 
 - **Extracts requirements** automatically — categorized into 6 types (functional, non-functional, security, compliance, interface, data) at 4 priority levels
 - **Detects ambiguities** — 7 pattern categories flag vague language ("as needed", "TBD", "etc.") for clarification
@@ -280,7 +280,7 @@ You describe what you need in plain English. ICDEV's Requirements Analyst agent 
 
 ### Step 2: Simulation (Digital Program Twin)
 
-Before writing a single line of code, ICDEV simulates the program across 6 dimensions:
+Before writing a single line of code, ICDEV™ simulates the program across 6 dimensions:
 
 - **Schedule** — Monte Carlo with 10,000 iterations, P50/P80/P95 confidence intervals
 - **Cost** — $125-200/hr blended rate × estimated effort, low/high ranges
@@ -301,11 +301,11 @@ Each COA includes an architecture summary, PI roadmap, risk register, compliance
 
 ### Step 3: Application Generation
 
-This is where ICDEV does what no other tool does. From the approved blueprint, it generates a **complete, working application** in 12 deterministic steps:
+This is where ICDEV™ does what no other tool does. From the approved blueprint, it generates a **complete, working application** in 12 deterministic steps:
 
 | Step | What Gets Generated |
 |------|---------------------|
-| 1. Directory Tree | 40+ directories following GOTCHA structure |
+| 1. Directory Tree | 40+ directories following FORGE structure |
 | 2. Tools | All deterministic Python scripts, adapted with app-specific naming and ports |
 | 3. Agent Infrastructure | 5-7 AI agent definitions with Agent Cards, MCP server stubs, config |
 | 4. Memory System | MEMORY.md, daily logs, SQLite database, semantic search capability |
@@ -318,9 +318,9 @@ This is where ICDEV does what no other tool does. From the approved blueprint, i
 | 11. CLAUDE.md | Dynamic documentation (Jinja2) — only documents present capabilities |
 | 12. Audit & Registration | Logged to append-only audit trail, registered in child registry, genome manifest |
 
-The generated application isn't a template. It's a **living system** with its own GOTCHA framework, ATLAS workflow, multi-agent architecture, memory system, compliance automation, and CI/CD pipeline. It inherits ICDEV's capabilities but is independently deployable.
+The generated application isn't a template. It's a **living system** with its own FORGE framework, ANVIL workflow, multi-agent architecture, memory system, compliance automation, and CI/CD pipeline. It inherits ICDEV™'s capabilities but is independently deployable.
 
-Before generation, ICDEV scores **fitness across 6 dimensions** to determine the right architecture:
+Before generation, ICDEV™ scores **fitness across 6 dimensions** to determine the right architecture:
 
 | Dimension | Weight | What It Measures |
 |-----------|--------|------------------|
@@ -335,13 +335,13 @@ Score ≥ 6.0 → full agent architecture. 4.0–5.9 → hybrid. < 4.0 → tradi
 
 ### Step 4: Build (TDD + Security)
 
-Every feature is built using the ATLAS workflow with true TDD:
+Every feature is built using the ANVIL workflow with true TDD:
 
 ```
 [Model] → Architect → Trace → Link → Assemble → [Critique] → Stress-test
 ```
 
-The optional **ATLAS Critique** phase runs multi-agent adversarial review between Assemble and Stress-test. Security, Compliance, and Knowledge agents independently critique the plan in parallel, producing GO/NOGO/CONDITIONAL consensus before stress-testing begins.
+The optional **ANVIL Critique** phase runs multi-agent adversarial review between Assemble and Stress-test. Security, Compliance, and Knowledge agents independently critique the plan in parallel, producing GO/NOGO/CONDITIONAL consensus before stress-testing begins.
 
 The 9-step testing pipeline runs automatically:
 
@@ -357,14 +357,14 @@ The 9-step testing pipeline runs automatically:
 
 ### Step 5: Compliance (Automatic ATO Package)
 
-ICDEV generates every artifact you need for ATO:
+ICDEV™ generates every artifact you need for ATO:
 
 - **System Security Plan (SSP)** — covers all 17 FIPS 200 control families (AC, AT, AU, CA, CM, CP, IA, IR, MA, MP, PE, PL, PS, RA, SA, SC, SI) with dynamic baseline selection from FIPS 199 categorization
 - **Plan of Action & Milestones (POAM)** — auto-populated from scan findings
 - **STIG Checklist** — mapped to application technology stack
 - **Software Bill of Materials (SBOM)** — CycloneDX format, regenerated every build
 - **OSCAL artifacts** — machine-readable, validated against NIST Metaschema
-- **Control crosswalks** — implement AC-2 once, ICDEV maps it to FedRAMP, CMMC, 800-171, CJIS, HIPAA, PCI DSS, ISO 27001, and 35+ more
+- **Control crosswalks** — implement AC-2 once, ICDEV™ maps it to FedRAMP, CMMC, 800-171, CJIS, HIPAA, PCI DSS, ISO 27001, and 35+ more
 - **cATO evidence** — continuous monitoring with freshness tracking and automated evidence collection
 - **eMASS sync** — push/pull artifacts to eMASS
 
@@ -396,7 +396,7 @@ The **dual-hub crosswalk engine** eliminates duplicate assessments:
 ### Option 1: Install from PyPI (recommended)
 
 ```bash
-# Install ICDEV
+# Install ICDEV™
 pip install icdev
 
 # Add LLM providers (pick what you need)
@@ -515,7 +515,7 @@ python tools/builder/child_app_generator.py --blueprint blueprint.json \
 Agents communicate via A2A protocol (JSON-RPC 2.0 over mutual TLS). Each publishes an Agent Card at `/.well-known/agent.json`. Workflows use DAG-based parallel execution with domain authority vetoes.
 
 **Orchestration Controls:**
-- **Dispatcher mode** — Orchestrator delegates only, never executes tools directly (GOTCHA enforcement)
+- **Dispatcher mode** — Orchestrator delegates only, never executes tools directly (FORGE enforcement)
 - **Declarative prompt chains** — YAML-driven sequential LLM-to-LLM reasoning (plan → critique → refine)
 - **Session purpose tracking** — NIST AU-3 audit traceability for every agent session
 - **Async result injection** — high-priority mailbox delivery for completed background tasks
@@ -527,7 +527,7 @@ Agents communicate via A2A protocol (JSON-RPC 2.0 over mutual TLS). Each publish
 
 Government agencies and defense contractors sit on millions of lines of legacy code — COBOL, Fortran, Struts, .NET Framework, Python 2 — with the original developers long gone and zero institutional knowledge left. Hiring is impossible: nobody wants to maintain a 20-year-old Java 6 monolith on WebLogic. The code works, but it's a ticking time bomb of tech debt, unpatched CVEs, and expired ATOs.
 
-ICDEV solves this from both directions:
+ICDEV™ solves this from both directions:
 
 **Build new** — scaffold, TDD, lint, scan, and generate code in any of 6 languages with compliance baked in from line one:
 
@@ -540,16 +540,16 @@ ICDEV solves this from both directions:
 | C# | ASP.NET Core | xUnit | analyzers | SecurityCodeScan | SpecFlow | yes |
 | TypeScript | Express | Jest | eslint | eslint-security | cucumber-js | yes |
 
-**Modernize legacy** — when the original team is gone, ICDEV becomes the team:
+**Modernize legacy** — when the original team is gone, ICDEV™ becomes the team:
 
-- **7R Assessment** — automated analysis scores each application across Rehost, Replatform, Refactor, Rearchitect, Rebuild, Replace, and Retire using a weighted multi-criteria decision matrix. No tribal knowledge required — ICDEV reads the code.
+- **7R Assessment** — automated analysis scores each application across Rehost, Replatform, Refactor, Rearchitect, Rebuild, Replace, and Retire using a weighted multi-criteria decision matrix. No tribal knowledge required — ICDEV™ reads the code.
 - **Architecture Extraction** — static analysis maps the dependency graph, identifies coupling hotspots, measures complexity, and generates documentation that never existed. Works on codebases with zero comments and zero docs.
-- **Cross-Language Translation** — 5-phase hybrid pipeline translates between any of the 30 language pairs (Extract → Type-Check → Translate → Assemble → Validate+Repair). Migrating a Python 2 Flask app to Go? A legacy Java 8 monolith to modern Spring Boot? A .NET Framework service to ASP.NET Core? ICDEV generates pass@k candidate translations, validates with compiler feedback, and auto-repairs failures — up to 3 repair cycles per unit.
-- **Strangler Fig Tracking** — for large monoliths that can't be rewritten overnight, ICDEV manages the gradual migration: dual-system traceability, feature-by-feature cutover tracking, and a compliance bridge that maintains ≥95% ATO control coverage throughout the entire transition.
+- **Cross-Language Translation** — 5-phase hybrid pipeline translates between any of the 30 language pairs (Extract → Type-Check → Translate → Assemble → Validate+Repair). Migrating a Python 2 Flask app to Go? A legacy Java 8 monolith to modern Spring Boot? A .NET Framework service to ASP.NET Core? ICDEV™ generates pass@k candidate translations, validates with compiler feedback, and auto-repairs failures — up to 3 repair cycles per unit.
+- **Strangler Fig Tracking** — for large monoliths that can't be rewritten overnight, ICDEV™ manages the gradual migration: dual-system traceability, feature-by-feature cutover tracking, and a compliance bridge that maintains ≥95% ATO control coverage throughout the entire transition.
 - **Framework Migration** — declarative JSON mapping rules handle Struts → Spring Boot, Django 2 → Django 4, Rails 5 → Rails 7, Express → Fastify, and more. Add new migration paths without writing code.
-- **ATO Compliance Bridge** — this is the killer feature for modernization. Legacy apps often have existing ATOs. ICDEV ensures the modernized application inherits the original control mappings through the crosswalk engine, so you don't lose years of compliance work. The bridge validates coverage every PI and blocks deployment if it drops below 95%.
+- **ATO Compliance Bridge** — this is the killer feature for modernization. Legacy apps often have existing ATOs. ICDEV™ ensures the modernized application inherits the original control mappings through the crosswalk engine, so you don't lose years of compliance work. The bridge validates coverage every PI and blocks deployment if it drops below 95%.
 
-The bottom line: **you don't need the original developers**. You don't need a team that knows the legacy stack. ICDEV analyzes the codebase, scores the migration strategy, translates the code, and maintains ATO coverage — with an append-only audit trail documenting every decision for your ISSO.
+The bottom line: **you don't need the original developers**. You don't need a team that knows the legacy stack. ICDEV™ analyzes the codebase, scores the migration strategy, translates the code, and maintains ATO coverage — with an append-only audit trail documenting every decision for your ISSO.
 
 ---
 
@@ -564,13 +564,13 @@ The bottom line: **you don't need the original developers**. You don't need a te
 | **IBM** | Cloud for Government | watsonx.ai (Granite, Llama) |
 | **Local** | Air-Gapped | Ollama (Llama, Mistral, CodeGemma) |
 
-Generated applications connect to 100+ cloud-provider MCP servers automatically based on target CSP.
+All 6 providers have full **Infrastructure-as-Code generators** — Terraform modules with VPC/VNet/VCN networking, IAM, KMS encryption, container orchestration (EKS/AKS/GKE/OKE/IKS), and compliance-hardened defaults per cloud. Generated applications connect to 100+ cloud-provider MCP servers automatically based on target CSP.
 
 ---
 
-## GOTCHA Framework
+## FORGE Framework
 
-ICDEV's core architecture separates deterministic tools from probabilistic AI:
+ICDEV™'s core architecture separates deterministic tools from probabilistic AI:
 
 ```
 ┌──────────────────────────────────────────────────────┐
@@ -583,9 +583,9 @@ ICDEV's core architecture separates deterministic tools from probabilistic AI:
 └──────────────────────────────────────────────────────┘
 ```
 
-**Why?** LLMs are probabilistic. Business logic must be deterministic. 90% accuracy per step = ~59% over 5 steps. GOTCHA fixes this by keeping AI in the orchestration layer and critical logic in deterministic Python scripts.
+**Why?** LLMs are probabilistic. Business logic must be deterministic. 90% accuracy per step = ~59% over 5 steps. FORGE fixes this by keeping AI in the orchestration layer and critical logic in deterministic Python scripts.
 
-Generated child applications inherit the full GOTCHA framework — they aren't wrappers or templates, they're autonomous systems that can build their own features using the same methodology.
+Generated child applications inherit the full FORGE framework — they aren't wrappers or templates, they're autonomous systems that can build their own features using the same methodology.
 
 ---
 
@@ -607,7 +607,7 @@ Generated child applications inherit the full GOTCHA framework — they aren't w
 │          │ Infra    │ SupplyChn │           │            │
 │          │          │ Simulatn  │           │            │
 ├──────────┴──────────┴───────────┴───────────┴────────────┤
-│                   GOTCHA Framework                         │
+│                   FORGE Framework                         │
 │       Goals │ Tools │ Args │ Context │ Hard Prompts        │
 ├──────────────────────────────────────────────────────────┤
 │  SQLite (dev) / PostgreSQL (prod)  │   Multi-Cloud CSP    │
@@ -641,13 +641,18 @@ python tools/dashboard/app.py
 | `/ai-transparency` | AI Transparency: model cards, system cards, AI inventory, fairness, GAO readiness |
 | `/ai-accountability` | AI Accountability: oversight plans, CAIO registry, appeals, incidents, ethics reviews, reassessment |
 | `/code-quality` | Code Quality Intelligence: AST metrics, smell detection, maintainability trend, runtime feedback |
-| `/orchestration` | Real-time orchestration: agent grid, workflow DAG, SSE mailbox feed, prompt chains, ATLAS critiques |
+| `/orchestration` | Real-time orchestration: agent grid, workflow DAG, SSE mailbox feed, prompt chains, ANVIL critiques |
 | `/cpmp` | Contract Performance Management: EVM, CPARS prediction, deliverables, subcontractors, portfolio health |
 | `/cpmp/cor` | COR portal: government read-only contract oversight (deliverables, EVM, CPARS) |
 | `/proposals` | GovProposal lifecycle: opportunities, sections, compliance matrix, timeline, reviews |
 | `/govcon` | GovCon Intelligence: SAM.gov scanning, pipeline status, domain distribution |
 | `/govcon/requirements` | Requirement pattern analysis: frequency, domain heatmap, trend detection |
-| `/govcon/capabilities` | ICDEV capability coverage: L/M/N grading, gaps, enhancement recommendations |
+| `/govcon/capabilities` | ICDEV™ capability coverage: L/M/N grading, gaps, enhancement recommendations |
+| `/network/canvas` | Network Design Canvas: topology builder, drag-and-drop, cloud architecture diagrams |
+| `/network/compliance` | Network compliance audit: STIG findings, ACAS/Nessus vulnerability overlay, heat maps |
+| `/network/facilities` | Facilities management: rack layouts, power/cooling, cable tracking |
+| `/sre` | SRE Operations: runbook library, incident tracking, toil budgets, SLO monitoring |
+| `/pipeline` | Pipeline Canvas: visual CI/CD pipeline design with drag-and-drop stages |
 
 Auth: per-user API keys (SHA-256 hashed), 6 RBAC roles (admin, pm, developer, isso, co, cor). Optional BYOK (bring-your-own LLM keys) with AES-256 encryption.
 
@@ -690,7 +695,7 @@ Defense-in-depth by default:
 - **Dispatcher mode** — Orchestrator agent enforced as delegate-only, cannot execute tools directly
 - **Tiered file access control** — zero_access (`.env`, `*.pem`, `*.tfstate`), read_only (lock files, catalogs), no_delete (`CLAUDE.md`, goals, IaC)
 - **Session purpose tracking** — NIST AU-3 compliant session intent declaration with SHA-256 integrity hashing
-- **ATLAS adversarial critique** — multi-agent plan review with GO/NOGO/CONDITIONAL consensus before stress-testing
+- **ANVIL adversarial critique** — multi-agent plan review with GO/NOGO/CONDITIONAL consensus before stress-testing
 - **Self-healing** — confidence-based remediation (≥0.7 auto-fix, 0.3–0.7 suggest, <0.3 escalate)
 
 ---
@@ -743,7 +748,7 @@ icdev/
 │   ├── requirements/     # RICOAS intake, gap detection, SAFe decomposition
 │   ├── simulation/       # Digital Program Twin, Monte Carlo, COA generation
 │   ├── dashboard/        # Flask web UI, auth, RBAC, real-time events, orchestration dashboard
-│   ├── agent/            # Multi-agent orchestration, DAG workflows, prompt chains, ATLAS critique
+│   ├── agent/            # Multi-agent orchestration, DAG workflows, prompt chains, ANVIL critique
 │   ├── cloud/            # 6 CSP abstractions, region validation
 │   ├── saas/             # Multi-tenant platform layer
 │   ├── mcp/              # Unified MCP gateway (250+ tools)
@@ -752,6 +757,10 @@ icdev/
 │   ├── innovation/       # Autonomous self-improvement engine
 │   ├── creative/         # Customer-centric feature discovery
 │   ├── govcon/           # GovCon Intelligence — SAM.gov capture pipeline
+│   ├── network/          # Network Design Canvas — topology, ACAS/Nessus overlay, NL queries, cloud arch
+│   ├── infra/            # IaC generators — Terraform for AWS, Azure, GCP, OCI, IBM Cloud
+│   ├── sre/              # SRE Operations — runbooks, incident tracking, toil budgets, SLO monitoring
+│   ├── pipeline/         # Pipeline Canvas — visual CI/CD pipeline design
 │   └── ...               # 30+ more specialized categories
 ├── args/                 # 30+ YAML/JSON configuration files
 ├── context/              # 42 compliance catalogs, language profiles
@@ -763,6 +772,46 @@ icdev/
 ├── .claude/commands/     # 38 Claude Code slash commands
 └── CLAUDE.md             # Comprehensive architecture documentation
 ```
+
+---
+
+## Network Design Canvas
+
+Interactive topology builder for designing, documenting, and auditing network architectures — from rack-level facilities to cloud-scale deployments.
+
+| Capability | Description |
+|------------|-------------|
+| **Topology Builder** | Drag-and-drop canvas with 200+ device types (routers, switches, firewalls, servers, IoT, OT/ICS) and automatic link routing |
+| **Cloud Architecture** | Generate cloud diagrams for all 6 CSPs — VPC/VNet/VCN, subnets, security groups, load balancers, managed services |
+| **ACAS/Nessus Overlay** | Import `.nessus` scan files, auto-match hosts to topology nodes, render vulnerability heat maps with severity badges |
+| **Natural Language Queries** | Ask plain-English questions about any topology ("What happens if Core-Switch goes down?", "Show all paths between A and B") — powered by deterministic graph algorithms with local LLM fallback |
+| **STIG Compliance Audit** | Per-device STIG finding tracking, CAT I/II/III severity, audit history, exportable checklists |
+| **Inventory Export** | Export device inventory to CSV, JSON, or YAML with filtering by type, location, STIG status |
+| **Facilities Management** | Rack elevation diagrams, power/cooling tracking, cable management |
+
+Air-gap safe — all JavaScript vendored locally (JointJS, D3, Backbone), zero CDN dependencies.
+
+---
+
+## SRE Operations
+
+Site Reliability Engineering dashboard for managing operational excellence:
+
+- **Runbook Library** — searchable runbook catalog with step-by-step procedures, linked to services and alerts
+- **Incident Tracking** — incident lifecycle from detection to postmortem, with timeline and impact analysis
+- **Toil Budgets** — track and reduce toil with per-team budgets and automation ROI tracking
+- **SLO Monitoring** — service level objective tracking with error budget burn-rate alerts
+
+---
+
+## Pipeline Canvas
+
+Visual CI/CD pipeline design tool with drag-and-drop stage composition:
+
+- Design pipelines visually with connected stages (build, test, scan, deploy, gate)
+- Export to GitLab CI and GitHub Actions YAML
+- Compliance gate integration — security scan and approval stages auto-inserted based on impact level
+- Template library for common patterns (TDD, DevSecOps, cATO continuous monitoring)
 
 ---
 
@@ -802,7 +851,7 @@ Run `pip-licenses -f markdown` to audit all dependency licenses.
 
 ## Contributing
 
-We welcome contributions. ICDEV uses a Contributor License Agreement (CLA) to support dual licensing. The CLA does **not** transfer your copyright — you retain full ownership of your work.
+We welcome contributions. ICDEV™ uses a Contributor License Agreement (CLA) to support dual licensing. The CLA does **not** transfer your copyright — you retain full ownership of your work.
 
 ## Attribution
 
@@ -810,13 +859,13 @@ See [NOTICE](NOTICE) for third-party acknowledgments, standards references, and 
 
 ## License
 
-ICDEV is dual-licensed:
+ICDEV™ is dual-licensed:
 
-- **Open Source** — [GNU Affero General Public License v3.0 or later](LICENSE)
-  Free for internal use, academic research, open-source projects, and evaluation.
+- **Open Source** — [Apache License 2.0](LICENSE)
+  Free for use, modification, and distribution with patent protection.
 
 - **Commercial** — [Commercial License](COMMERCIAL.md)
-  Removes AGPL copyleft obligations for SaaS, embedded, or proprietary use.
+  Enterprise support, custom SLAs, and dedicated compliance consulting.
 
 ## Contact
 

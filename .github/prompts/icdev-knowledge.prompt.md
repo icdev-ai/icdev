@@ -1,6 +1,6 @@
 ---
 mode: agent
-description: "Query, search, and update the ICDEV learning knowledge base for patterns, solutions, and recommendations"
+description: "Query, search, and update the ICDEV™ learning knowledge base for patterns, solutions, and recommendations"
 tools:
   - terminal
   - file_search

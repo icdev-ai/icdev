@@ -1,11 +1,11 @@
-# ICDEV Project Rules
+# ICDEV™ Project Rules
 
-Project: ICDEV Project (IL4, CUI)
+Project: ICDEV™ Project (IL4, CUI)
 Type: python webapp
 
 ## Architecture
 
-GOTCHA framework — deterministic Python tools in `tools/` with `--json` output.
+FORGE framework — deterministic Python tools in `tools/` with `--json` output.
 Goals: `goals/manifest.md` | Tools: `tools/manifest.md` | Config: `args/`
 
 ## Rules

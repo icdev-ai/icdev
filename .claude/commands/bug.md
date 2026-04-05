@@ -1,8 +1,8 @@
-# Bug Fix — End-to-End (ATLAS Workflow)
+# Bug Fix — End-to-End (ANVIL Workflow)
 
-Plan, implement, validate through the full ICDEV DevSecOps pipeline, and commit a bug fix in one shot. The user provides only a description — ICDEV handles everything else.
+Plan, implement, validate through the full ICDEV™ DevSecOps pipeline, and commit a bug fix in one shot. The user provides only a description — ICDEV™ handles everything else.
 
-Follows the ATLAS workflow: Architect → Trace → Link → Assemble → Stress-test.
+Follows the ANVIL workflow: Architect → Navigate → Verify → Integrate → Launch.
 
 ## Instructions
 
@@ -51,7 +51,7 @@ Follows the ATLAS workflow: Architect → Trace → Link → Assemble → Stress
 
 7. **Post Plan to GitHub Issue**:
    ```bash
-   gh issue comment <number> --body "[ICDEV-BOT] Fix plan created: specs/<filename>.md
+   gh issue comment <number> --body "[ICDEV™-BOT] Fix plan created: specs/<filename>.md
    Branch: bug-issue-<number>-icdev-<run_id>-<name>"
    ```
 
@@ -61,9 +61,9 @@ Follows the ATLAS workflow: Architect → Trace → Link → Assemble → Stress
 
 9. **Classification Markings** — If `marking_required` is true, verify every new or modified Python file includes the classification header comment (`<resolved code_header>`). Add it to any file missing the marking. If `marking_required` is false, skip this step.
 
-### Phase 3: Validate — Full ICDEV DevSecOps Pipeline (Stress-test)
+### Phase 3: Validate — Full ICDEV™ DevSecOps Pipeline (Stress-test)
 
-Run the complete ICDEV validation pipeline across all 4 tiers. Every **GATE** must pass before committing. Fix failures and re-run until clean. Reference: `args/security_gates.yaml`
+Run the complete ICDEV™ validation pipeline across all 4 tiers. Every **GATE** must pass before committing. Fix failures and re-run until clean. Reference: `args/security_gates.yaml`
 
 **IMPORTANT — Audit Trail**: For every gate below, capture the **actual command output** (JSON where available). After all gates pass, write a structured validation report to:
 ```
@@ -474,7 +474,7 @@ If any gate produces a **blocker** finding that cannot be auto-fixed inline, cre
 
 46. **Post Completion to GitHub Issue** — Include actual results from each gate:
     ```bash
-    gh issue comment <number> --body "[ICDEV-BOT] Bug fix complete — all ICDEV DevSecOps gates passed.
+    gh issue comment <number> --body "[ICDEV™-BOT] Bug fix complete — all ICDEV™ DevSecOps gates passed.
     Plan: specs/<filename>.md
     Commit: $(git rev-parse --short HEAD)
     Validation Report: audit/issue-<number>-icdev-<run_id>-validation-report.md
@@ -783,7 +783,7 @@ IMPORTANT: Execute every step in order, top to bottom.
 $ARGUMENTS
 
 ## Report
-- Summarize what was done: issue created, branch created, plan written, fix implemented, all ICDEV DevSecOps gates passed.
+- Summarize what was done: issue created, branch created, plan written, fix implemented, all ICDEV™ DevSecOps gates passed.
 - Include the GitHub issue number and URL.
 - Include the path to the plan file in `specs/`.
 - Include the path to the validation report in `audit/`.

@@ -9,7 +9,7 @@ Pipeline: chunks → qwen3 generates Q&A → store as unapproved examples → hu
 
 Usage:
     python tools/finetune/pair_generator.py --generate --dataset-id "ds-xxx" --document-id "ftdoc-xxx" --json
-    python tools/finetune/pair_generator.py --generate-from-rag --dataset-id "ds-xxx" --source-table "research_signals" --json  # noqa: E501
+    python tools/finetune/pair_generator.py --generate-from-rag --dataset-id "ds-xxx" --source-table "research_signals" --json
     python tools/finetune/pair_generator.py --stats --dataset-id "ds-xxx" --json
 """
 
@@ -19,6 +19,7 @@ import argparse
 import hashlib
 import json
 import sqlite3
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -29,8 +30,7 @@ RAG_DB_PATH = BASE_DIR / "data" / "rag" / "rag_vectors.db"
 
 
 def _get_db(db_path: Optional[Path] = None) -> sqlite3.Connection:
-    conn = sqlite3.connect(str(db_path or DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(db_path))
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
@@ -51,7 +51,6 @@ def _load_config() -> Dict[str, Any]:
     if config_path.exists():
         try:
             import yaml
-
             with open(config_path) as f:
                 cfg = yaml.safe_load(f) or {}
             return cfg.get("dataset", {})
@@ -128,8 +127,8 @@ def _build_generation_prompt(
     purpose_hints = {
         "general": "Generate diverse questions covering facts, processes, and analysis.",
         "proposal_drafting": "Generate questions about proposal writing, requirements, deliverables, and compliance.",
-        "compliance_export": "Generate questions about compliance controls, security requirements, and assessment procedures.",  # noqa: E501
-        "code_generation": "Generate questions about code patterns, architecture decisions, and implementation approaches.",  # noqa: E501
+        "compliance_export": "Generate questions about compliance controls, security requirements, and assessment procedures.",
+        "code_generation": "Generate questions about code patterns, architecture decisions, and implementation approaches.",
         "custom": "Generate diverse questions covering the main topics in the text.",
     }
     hint = purpose_hints.get(purpose, purpose_hints["general"])
@@ -174,13 +173,11 @@ def _parse_pairs_response(
             q = pair.get("question", "").strip()
             a = pair.get("answer", "").strip()
             if q and a and len(q) > 10 and len(a) > 20:
-                result.append(
-                    {
-                        "system_prompt": system_prompt,
-                        "user_input": q,
-                        "expected_output": a,
-                    }
-                )
+                result.append({
+                    "system_prompt": system_prompt,
+                    "user_input": q,
+                    "expected_output": a,
+                })
         return result
     except (json.JSONDecodeError, ValueError):
         return []
@@ -209,13 +206,11 @@ def _generate_pairs_template(
         if not answer.endswith("."):
             answer += "."
 
-        pairs.append(
-            {
-                "system_prompt": "",
-                "user_input": question,
-                "expected_output": answer,
-            }
-        )
+        pairs.append({
+            "system_prompt": "",
+            "user_input": question,
+            "expected_output": answer,
+        })
 
     return pairs
 
@@ -336,10 +331,8 @@ def generate_from_rag_source(
             return {"success": False, "error": f"No RAG chunks found for source: {source_table}"}
 
         chunks = [
-            {
-                "content": r["content"] if isinstance(r, dict) else r[1],
-                "chunk_id": r["id"] if isinstance(r, dict) else r[0],
-            }
+            {"content": r["content"] if isinstance(r, dict) else r[1],
+             "chunk_id": r["id"] if isinstance(r, dict) else r[0]}
             for r in rows
         ]
     except Exception as e:
@@ -373,7 +366,7 @@ def get_generation_stats(
         ).fetchone()[0]
 
         approved = conn.execute(
-            "SELECT COUNT(*) FROM ft_dataset_examples WHERE dataset_id = ? AND source = 'rag_auto_generated' AND approved = 1",  # noqa: E501
+            "SELECT COUNT(*) FROM ft_dataset_examples WHERE dataset_id = ? AND source = 'rag_auto_generated' AND approved = 1",
             (dataset_id,),
         ).fetchone()[0]
 
@@ -402,10 +395,31 @@ def get_generation_stats(
 # -- CLI -----------------------------------------------------------------------
 
 
+def bayesian_rank_pairs(
+    dataset_id: str,
+    top_k: int = 50,
+    seed: int = 42,
+    db_path: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """Rank unapproved pairs by Bayesian information gain (D-BT-2, D-KARL-4).
+
+    Uses Bayesian Teaching to surface the most informative training pairs
+    first for human review, following Goldilocks difficulty calibration.
+    """
+    try:
+        from tools.intelligence.bayesian_teacher import score_training_pairs
+        return score_training_pairs(dataset_id, top_k=top_k, seed=seed, db_path=db_path)
+    except ImportError:
+        return {"success": False, "error": "Bayesian Teaching engine not available"}
+    except Exception as e:
+        return {"success": False, "error": f"Bayesian ranking failed: {e}"}
+
+
 def main():
     parser = argparse.ArgumentParser(description="Fine-tuning Q&A pair generator")
     parser.add_argument("--generate", action="store_true", help="Generate from document chunks")
     parser.add_argument("--generate-from-rag", action="store_true", help="Generate from RAG chunks")
+    parser.add_argument("--bayesian-rank", action="store_true", help="Rank pending pairs by Bayesian information gain (D-BT-2)")
     parser.add_argument("--stats", action="store_true", help="Generation statistics")
 
     parser.add_argument("--dataset-id", type=str, default="")
@@ -423,7 +437,7 @@ def main():
     args = parser.parse_args()
 
     if args.generate and args.dataset_id:
-        # For CLI, user provides document ID and we extract chunks from doc_extractor
+        # CLI --generate requires programmatic API with pre-extracted chunks
         if args.document_id:
             # Try to load chunks from a previous extraction
             result = {"success": False, "error": "Provide --file with --generate to extract and generate pairs"}
@@ -441,10 +455,15 @@ def main():
             tenant_id=args.tenant_id,
             project_id=args.project_id,
         )
+    elif args.bayesian_rank and args.dataset_id:
+        result = bayesian_rank_pairs(
+            dataset_id=args.dataset_id,
+            top_k=args.limit,
+        )
     elif args.stats and args.dataset_id:
         result = get_generation_stats(dataset_id=args.dataset_id)
     else:
-        result = {"success": False, "error": "Specify --generate, --generate-from-rag, or --stats with --dataset-id"}
+        result = {"success": False, "error": "Specify --generate, --generate-from-rag, --bayesian-rank, or --stats with --dataset-id"}
 
     print(json.dumps(result, indent=2, default=str))
 

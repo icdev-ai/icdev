@@ -16,7 +16,7 @@ Usage:
 
 import argparse
 import json
-import sqlite3
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -55,8 +55,7 @@ def _get_connection(db_path=None):
     path = db_path or DB_PATH
     if not path.exists():
         raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -135,7 +134,7 @@ def score_readiness(session_id: str, db_path=None) -> dict:
 
     if selected_frameworks:
         # Selecting frameworks IS the compliance declaration — full credit.
-        # ICDEV enforces the selected frameworks during build/deploy gates,
+        # ICDEV™ enforces the selected frameworks during build/deploy gates,
         # so the customer's intent is captured and will be validated.
         compliance = 1.0
     else:
@@ -299,7 +298,7 @@ def get_score_trend(session_id: str, db_path=None) -> dict:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="ICDEV Readiness Scorer")
+    parser = argparse.ArgumentParser(description="ICDEV™ Readiness Scorer")
     parser.add_argument("--session-id", required=True, help="Intake session ID")
     parser.add_argument("--trend", action="store_true", help="Show score trend")
     parser.add_argument("--threshold", type=float, default=0.7, help="Minimum readiness")

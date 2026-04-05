@@ -407,7 +407,7 @@ def _run_oscal_cli(subcommand, cli_args, timeout=None):
 # ---------------------------------------------------------------------------
 
 def _validate_structural(file_path, artifact_type=None):
-    """Layer 1: ICDEV built-in structural validation (always available)."""
+    """Layer 1: ICDEV™ built-in structural validation (always available)."""
     start = time.monotonic()
     try:
         from tools.compliance.oscal_generator import validate_oscal
@@ -776,7 +776,7 @@ def validate_oscal_deep(file_path, artifact_type=None, validators=None,
     """Multi-layer OSCAL validation pipeline (D305).
 
     Runs up to 3 validation layers in order:
-      1. ICDEV structural (always)
+      1. ICDEV™ structural (always)
       2. oscal-pydantic model (if installed)
       3. oscal-cli Metaschema (if installed + Java present)
 

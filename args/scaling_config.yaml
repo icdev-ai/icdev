@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Auto-Scaling Configuration
+# ICDEV™ Auto-Scaling Configuration
 # Controls HPA, PDB, topology spread, and node provisioning
 # Change scaling behavior without editing K8s manifests or tools
 # D141: CPU/memory baseline; custom metrics via Prometheus adapter as Phase 2

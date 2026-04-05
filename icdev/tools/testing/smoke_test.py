@@ -1,9 +1,9 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Smoke Test — verify all CLI tools are importable and --help works
+# ICDEV™ Smoke Test — verify all CLI tools are importable and --help works
 # Catches import errors after bulk refactors (renames, ruff cleanup, etc.)
 
 """
-ICDEV Smoke Test — validates all CLI tools compile and respond to --help.
+ICDEV™ Smoke Test — validates all CLI tools compile and respond to --help.
 
 Usage:
     python tools/testing/smoke_test.py                # Full smoke test
@@ -241,7 +241,7 @@ def run_smoke_test(quick: bool = False, verbose: bool = False) -> dict:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Smoke Test — verify all CLI tools compile and --help works"
+        description="ICDEV™ Smoke Test — verify all CLI tools compile and --help works"
     )
     parser.add_argument("--json", action="store_true", help="Machine-readable JSON output")
     parser.add_argument("--quick", action="store_true", help="py_compile only (skip --help)")
@@ -250,7 +250,7 @@ def main():
 
     if not args.json:
         mode_label = "quick (py_compile only)" if args.quick else "full (py_compile + --help)"
-        print(f"ICDEV Smoke Test — {mode_label}")
+        print(f"ICDEV™ Smoke Test — {mode_label}")
         print("=" * 60)
 
     summary = run_smoke_test(quick=args.quick, verbose=args.verbose)

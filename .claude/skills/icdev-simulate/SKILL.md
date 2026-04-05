@@ -2,7 +2,7 @@
 description: "Run Digital Program Twin simulations and generate COAs for requirements"
 ---
 
-# ICDEV Digital Program Twin Simulation
+# ICDEV™ Digital Program Twin Simulation
 
 Run what-if simulations across 6 dimensions, generate COAs (Speed/Balanced/Comprehensive), and use Monte Carlo for schedule/cost estimation.
 

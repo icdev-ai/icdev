@@ -8,8 +8,8 @@ All transitions logged in ft_promotion_log (append-only).
 
 Usage:
     python tools/finetune/promotion_manager.py --check --model-version-id "mv-xxx" --function "code_generation" --json
-    python tools/finetune/promotion_manager.py --auto-promote --model-version-id "mv-xxx" --function "code_generation" --json  # noqa: E501
-    python tools/finetune/promotion_manager.py --force-promote --model-version-id "mv-xxx" --function "code_generation" --json  # noqa: E501
+    python tools/finetune/promotion_manager.py --auto-promote --model-version-id "mv-xxx" --function "code_generation" --json
+    python tools/finetune/promotion_manager.py --force-promote --model-version-id "mv-xxx" --function "code_generation" --json
 """
 
 from __future__ import annotations
@@ -17,7 +17,8 @@ from __future__ import annotations
 import argparse
 import json
 import sqlite3
-from datetime import datetime, timezone
+from tools.db.storage import get_connection
+from tools.common.helpers import now_iso
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -26,14 +27,10 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 
 def _get_db(db_path: Optional[Path] = None) -> sqlite3.Connection:
-    conn = sqlite3.connect(str(db_path or DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(db_path))
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
-
-def _now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _load_thresholds() -> Dict[str, float]:
@@ -42,7 +39,6 @@ def _load_thresholds() -> Dict[str, float]:
     if config_path.exists():
         try:
             import yaml
-
             with open(config_path) as f:
                 cfg = yaml.safe_load(f) or {}
             promo = cfg.get("promotion", {})
@@ -138,15 +134,16 @@ def auto_promote(
     Checks eligibility first, then promotes via model_registry.
     """
     eligibility = check_promotion_eligibility(
-        model_version_id,
-        function_name,
-        db_path,
+        model_version_id, function_name, db_path,
     )
     if not eligibility.get("success"):
         return eligibility
 
     if not eligibility["eligible"]:
-        failed = [k for k, v in eligibility["checks"].items() if not v["pass"]]
+        failed = [
+            k for k, v in eligibility["checks"].items()
+            if not v["pass"]
+        ]
         return {
             "success": False,
             "error": f"Model does not meet auto-promotion thresholds. Failed: {', '.join(failed)}",
@@ -154,7 +151,6 @@ def auto_promote(
         }
 
     from tools.finetune.model_registry import promote_model
-
     result = promote_model(
         model_version_id=model_version_id,
         function_name=function_name,
@@ -175,16 +171,10 @@ def auto_promote(
                    (model_version_id, action, function_name, eval_score_summary,
                     reason, actor, tenant_id, project_id, created_at)
                    VALUES (?, 'auto_promoted', ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    model_version_id,
-                    function_name,
-                    json.dumps(eligibility["checks"]),
-                    "Auto-promoted: met all thresholds",
-                    activated_by,
-                    tenant_id,
-                    project_id,
-                    _now(),
-                ),
+                (model_version_id, function_name,
+                 json.dumps(eligibility["checks"]),
+                 "Auto-promoted: met all thresholds",
+                 activated_by, tenant_id, project_id, now_iso()),
             )
             conn.commit()
         except Exception:
@@ -210,7 +200,6 @@ def force_promote(
     Bypasses auto-promotion checks. Logs as 'override_promoted'.
     """
     from tools.finetune.model_registry import promote_model
-
     result = promote_model(
         model_version_id=model_version_id,
         function_name=function_name,
@@ -231,15 +220,9 @@ def force_promote(
                    (model_version_id, action, function_name,
                     reason, actor, tenant_id, project_id, created_at)
                    VALUES (?, 'override_promoted', ?, ?, ?, ?, ?, ?)""",
-                (
-                    model_version_id,
-                    function_name,
-                    f"Force-promoted: {reason}",
-                    activated_by,
-                    tenant_id,
-                    project_id,
-                    _now(),
-                ),
+                (model_version_id, function_name,
+                 f"Force-promoted: {reason}", activated_by,
+                 tenant_id, project_id, now_iso()),
             )
             conn.commit()
         except Exception:
@@ -272,27 +255,22 @@ def main():
 
     if args.check:
         result = check_promotion_eligibility(
-            args.model_version_id,
-            args.function,
+            args.model_version_id, args.function,
         )
     elif args.auto_promote:
         result = auto_promote(
-            args.model_version_id,
-            args.function,
+            args.model_version_id, args.function,
             routing_tier=args.routing_tier,
             activated_by=args.activated_by or "auto",
-            tenant_id=args.tenant_id,
-            project_id=args.project_id,
+            tenant_id=args.tenant_id, project_id=args.project_id,
         )
     elif args.force_promote:
         result = force_promote(
-            args.model_version_id,
-            args.function,
+            args.model_version_id, args.function,
             routing_tier=args.routing_tier,
             activated_by=args.activated_by,
             reason=args.reason,
-            tenant_id=args.tenant_id,
-            project_id=args.project_id,
+            tenant_id=args.tenant_id, project_id=args.project_id,
         )
     else:
         result = {"success": False, "error": "Specify --check, --auto-promote, or --force-promote"}

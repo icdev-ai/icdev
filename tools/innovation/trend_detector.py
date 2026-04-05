@@ -3,8 +3,8 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""Cross-Signal Pattern Detection for ICDEV — detect emerging trends from innovation signals.
+# POC: ICDEV™ System Administrator
+"""Cross-Signal Pattern Detection for ICDEV™ — detect emerging trends from innovation signals.
 
 Analyzes patterns across multiple innovation signals to identify emerging trends,
 measure trend velocity, and produce actionable reports. All analysis is deterministic
@@ -38,9 +38,10 @@ import hashlib
 import json
 import os
 import re
-import sqlite3
 import sys
 import uuid
+from tools.common.helpers import now_iso
+from tools.db.storage import get_connection
 from collections import Counter, defaultdict
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -247,14 +248,9 @@ def _get_db(db_path=None):
     path = db_path or DB_PATH
     if not path.exists():
         raise FileNotFoundError(f"Database not found: {path}")
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(path))
     return conn
 
-
-def _now():
-    """ISO-8601 timestamp."""
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _trend_id():
@@ -460,7 +456,7 @@ def detect_trends(time_window_days=30, min_signals=3, db_path=None):
 
         if not rows:
             return {
-                "detected_at": _now(),
+                "detected_at": now_iso(),
                 "time_window_days": time_window_days,
                 "min_signals": min_signals,
                 "signals_analyzed": 0,
@@ -661,7 +657,7 @@ def detect_trends(time_window_days=30, min_signals=3, db_path=None):
         )
 
         return {
-            "detected_at": _now(),
+            "detected_at": now_iso(),
             "time_window_days": time_window_days,
             "min_signals": min_signals,
             "signals_analyzed": len(rows),
@@ -750,7 +746,7 @@ def _store_trend(conn, trend):
                 json.dumps(trend["keywords"]),
                 json.dumps(trend["signal_ids"]),
                 json.dumps(trend["metadata"]),
-                _now(),
+                now_iso(),
                 trend["id"],
             ),
         )
@@ -775,7 +771,7 @@ def _store_trend(conn, trend):
                 json.dumps(trend["keywords"]),
                 json.dumps(trend["signal_ids"]),
                 json.dumps(trend["metadata"]),
-                _now(),
+                now_iso(),
             ),
         )
     conn.commit()
@@ -809,7 +805,7 @@ def get_trend_report(db_path=None):
 
         if not rows:
             return {
-                "generated_at": _now(),
+                "generated_at": now_iso(),
                 "total_trends": 0,
                 "by_status": {},
                 "by_category": {},
@@ -872,7 +868,7 @@ def get_trend_report(db_path=None):
         )
 
         return {
-            "generated_at": _now(),
+            "generated_at": now_iso(),
             "total_trends": total,
             "by_status": {status: [_trend_summary(t) for t in trend_list] for status, trend_list in by_status.items()},
             "by_category": {cat: [_trend_summary(t) for t in trend_list] for cat, trend_list in by_category.items()},
@@ -954,7 +950,7 @@ def get_trend_velocity(trend_id, db_path=None):
                     FROM innovation_signals
                     WHERE id IN ({placeholders})
                     GROUP BY day
-                    ORDER BY day""",
+                    ORDER BY day""",  # nosec B608 -- table/column names are internal constants, not user input
                 signal_ids,
             ).fetchall()
             for sr in signal_rows:
@@ -1025,7 +1021,7 @@ def get_trend_velocity(trend_id, db_path=None):
 # =========================================================================
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Cross-Signal Trend Detector — detect emerging patterns from innovation signals"
+        description="ICDEV™ Cross-Signal Trend Detector — detect emerging patterns from innovation signals"
     )
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--db-path", type=Path, default=None, help="Database path override")

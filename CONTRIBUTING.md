@@ -1,6 +1,6 @@
-# Contributing to ICDEV
+# Contributing to ICDEV™
 
-Thank you for contributing to ICDEV. This document covers the development setup,
+Thank you for contributing to ICDEV™. This document covers the development setup,
 coding standards, testing patterns, and contribution workflow.
 
 ## Developer Certificate of Origin (DCO)
@@ -69,7 +69,7 @@ python tools/testing/health_check.py
    ```python
    # [TEMPLATE: CUI // SP-CTI]
    ```
-   This is a template marker showing the format ICDEV applies to generated
+   This is a template marker showing the format ICDEV™ applies to generated
    artifacts. It does NOT indicate the file itself is CUI. See
    [Classification Markers](#classification-markers) below.
 4. **Add the tool to `tools/manifest.md`** with its name, path, purpose, and CLI usage.
@@ -83,11 +83,11 @@ python tools/testing/health_check.py
 - **No side effects.** Tools should not modify state outside their declared scope.
 - **Audit trail.** Any state-changing operation must log to the append-only audit trail.
 - **Air-gap safe.** Use only Python stdlib or approved dependencies. No internet-dependent features in core logic.
-- **Classification markings for generated output.** Use `classification_manager.py` for all marking generation in artifacts ICDEV produces — do not hard-code CUI banners.
+- **Classification markings for generated output.** Use `classification_manager.py` for all marking generation in artifacts ICDEV™ produces — do not hard-code CUI banners.
 
 ## Test Patterns
 
-ICDEV uses a 9-step testing pipeline:
+ICDEV™ uses a 9-step testing pipeline:
 
 1. **py_compile** — Python syntax validation (catches missing colons, bad indentation before tests run)
 2. **Ruff** (`ruff>=0.12`) — Ultra-fast Python linter (replaces flake8+isort+black)
@@ -217,26 +217,26 @@ Signed-off-by: Jane Doe <jane@example.com>
 
 ## Classification Markers
 
-ICDEV source files use **template markers** in their headers:
+ICDEV™ source files use **template markers** in their headers:
 
 ```python
 # [TEMPLATE: CUI // SP-CTI]
 ```
 
-These template markers demonstrate the classification format that ICDEV applies
+These template markers demonstrate the classification format that ICDEV™ applies
 to artifacts it generates for its users. **They do NOT indicate that the source
 file itself is CUI or classified.** See the [README.md](README.md) disclaimer.
 
-When ICDEV generates artifacts for a project (SSPs, POAMs, code files, etc.),
+When ICDEV™ generates artifacts for a project (SSPs, POAMs, code files, etc.),
 it applies actual classification markings appropriate to the project's impact
 level using `tools/compliance/classification_manager.py`. The template markers
-in the ICDEV source code itself serve as documentation of this format.
+in the ICDEV™ source code itself serve as documentation of this format.
 
 ## Dependency Guidelines
 
 - Prefer Python stdlib where possible (air-gap safe)
 - **Do not add GPL, AGPL, or SSPL licensed dependencies** without explicit
-  discussion and approval. ICDEV blocks copyleft licenses (see D202 in CLAUDE.md).
+  discussion and approval. ICDEV™ blocks copyleft licenses (see D202 in CLAUDE.md).
 - New dependencies must be added to `requirements.txt` with version pins.
 - Run `pip-licenses -f markdown` to verify license compatibility before submitting.
 

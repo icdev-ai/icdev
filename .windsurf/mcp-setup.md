@@ -1,4 +1,4 @@
-# Windsurf MCP Setup for ICDEV
+# Windsurf MCP Setup for ICDEV™
 
 ## Steps
 1. Open Windsurf Settings > Cascade > MCP
@@ -6,7 +6,7 @@
 
 ## Servers
   - **icdev-unified**: `python tools/mcp/unified_server.py`
-  - **playwright**: `npx @playwright/mcp@latest --isolated --config ./playwright-mcp-config.json --output-dir playwright`
+  - **playwright**: `docker run -i --rm --init --pull=never --add-host=host.docker.internal:host-gateway mcr.microsoft.com/playwright/mcp:latest --headless --isolated --caps=vision`
 
 ## Environment Variables
 - `ICDEV_DB_PATH`: `data/icdev.db`

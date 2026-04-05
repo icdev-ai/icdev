@@ -2,7 +2,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Vision-based screenshot validator using LLM vision models.
 
 Validates E2E test screenshots against assertions using multimodal LLMs
@@ -446,7 +446,7 @@ def validate_directory(
 # ---------------------------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Vision-Based Screenshot Validator"
+        description="ICDEV™ Vision-Based Screenshot Validator"
     )
     parser.add_argument("--json", action="store_true", help="Output as JSON")
 

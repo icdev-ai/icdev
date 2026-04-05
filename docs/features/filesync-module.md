@@ -14,7 +14,7 @@
 
 ## Problem Statement
 
-ICDEV projects require file and folder synchronization between local directories, remote SFTP servers, and cloud storage backends (S3, Azure Blob, GCS). Existing solutions (rsync, rclone) are external dependencies that complicate air-gapped deployments and don't integrate with ICDEV's audit trail, conflict resolution, or dashboard.
+ICDEV™ projects require file and folder synchronization between local directories, remote SFTP servers, and cloud storage backends (S3, Azure Blob, GCS). Existing solutions (rsync, rclone) are external dependencies that complicate air-gapped deployments and don't integrate with ICDEV™'s audit trail, conflict resolution, or dashboard.
 
 ## Goals
 

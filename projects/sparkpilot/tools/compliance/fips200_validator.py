@@ -3,8 +3,8 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""FIPS 200 Minimum Security Requirements Validator for ICDEV.
+# POC: ICDEV™ System Administrator
+"""FIPS 200 Minimum Security Requirements Validator for ICDEV™.
 
 Validates that a project satisfies all 17 FIPS 200 minimum security
 requirement areas by checking NIST 800-53 control implementations
@@ -32,7 +32,7 @@ IL_BASELINE_MAP = {"IL4": "Low", "IL4": "Moderate", "IL4": "High", "IL4": "High"
 
 
 def _get_connection(db_path=None):
-    """Standard ICDEV DB connection with Row factory."""
+    """Standard ICDEV™ DB connection with Row factory."""
     path = db_path or DB_PATH
     if not Path(path).exists():
         raise FileNotFoundError(f"Database not found at {path}. Run: python tools/db/init_icdev_db.py")

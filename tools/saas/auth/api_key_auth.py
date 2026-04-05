@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
-"""ICDEV SaaS — API Key Authentication.
+"""ICDEV™ SaaS — API Key Authentication.
 CUI // SP-CTI
 """
 
 import hashlib
 import logging
 import os
-import sqlite3
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -22,9 +21,11 @@ PLATFORM_DB_PATH = Path(os.environ.get("PLATFORM_DB_PATH", str(BASE_DIR / "data"
 
 
 def _get_platform_conn():
-    """Get platform DB connection."""
-    conn = sqlite3.connect(str(PLATFORM_DB_PATH))
-    conn.row_factory = sqlite3.Row
+    """Get platform DB connection (always SQLite)."""
+    import sqlite3 as _sqlite3
+    db_path = Path(os.environ.get("PLATFORM_DB_PATH", str(PLATFORM_DB_PATH)))
+    conn = _sqlite3.connect(str(db_path))
+    conn.row_factory = _sqlite3.Row
     return conn
 
 

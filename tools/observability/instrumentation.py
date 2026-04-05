@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Auto-instrumentation decorator for ICDEV observability (D280).
+"""Auto-instrumentation decorator for ICDEV™ observability (D280).
 
 Provides @traced() decorator that wraps functions in trace spans automatically.
 Captures function name, args hash, result status, duration, and errors.

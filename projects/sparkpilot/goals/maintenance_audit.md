@@ -166,8 +166,8 @@ Record:
 
 ---
 
-## GOTCHA Layer Mapping
-| Step | GOTCHA Layer | Component |
+## FORGE Layer Mapping
+| Step | FORGE Layer | Component |
 |------|-------------|-----------|
 | Dependency scan | Tools | dependency_scanner.py |
 | Vulnerability check | Tools | vulnerability_checker.py |

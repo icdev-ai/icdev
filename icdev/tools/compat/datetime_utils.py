@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-"""Timezone-aware datetime utilities for ICDEV.
+"""Timezone-aware datetime utilities for ICDEV™.
 
 Replaces deprecated datetime.utcnow() with timezone-aware alternatives.
 ADR D186: Compatible with all installation profiles (CUI and non-CUI).

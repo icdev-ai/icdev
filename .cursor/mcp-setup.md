@@ -1,4 +1,4 @@
-# Cursor MCP Setup for ICDEV
+# Cursor MCP Setup for ICDEV™
 
 ## Steps
 1. Open Cursor Settings (Cmd/Ctrl + ,)
@@ -7,7 +7,7 @@
 
 ## Servers
   - **icdev-unified**: `python tools/mcp/unified_server.py`
-  - **playwright**: `npx @playwright/mcp@latest --isolated --config ./playwright-mcp-config.json --output-dir playwright`
+  - **playwright**: `docker run -i --rm --init --pull=never --add-host=host.docker.internal:host-gateway mcr.microsoft.com/playwright/mcp:latest --headless --isolated --caps=vision`
 
 ## Quick Setup
 Copy `.mcp.json` to your Cursor MCP configuration. Cursor uses the same

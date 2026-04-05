@@ -18,6 +18,9 @@ from pathlib import Path
 
 import pytest
 
+_PROJECT_ROOT = str(Path(__file__).resolve().parent.parent)
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools" / "compliance"))
 from eu_ai_act_classifier import EUAIActClassifier
 
@@ -26,7 +29,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 @pytest.fixture
 def icdev_db(tmp_path):
-    """Create a minimal ICDEV database with tables needed for EU AI Act checks."""
+    """Create a minimal ICDEV™ database with tables needed for EU AI Act checks."""
     db_path = tmp_path / "icdev.db"
     conn = sqlite3.connect(str(db_path))
     conn.executescript("""

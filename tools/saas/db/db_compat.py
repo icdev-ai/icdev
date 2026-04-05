@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ICDEV SaaS - Database Compatibility Layer.
+"""ICDEV™ SaaS - Database Compatibility Layer.
 CUI // SP-CTI
 
 Provides a unified interface for both SQLite and PostgreSQL connections.

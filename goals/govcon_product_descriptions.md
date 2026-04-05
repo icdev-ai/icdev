@@ -6,23 +6,23 @@
 
 The GovCon proposal writing engine (Phase 59) now describes **two complete products** in proposal responses — not just individual tools or capabilities:
 
-1. **ICDEV** — The Intelligent Certified Development Platform (the system that builds systems)
+1. **ICDEV™** — The Intelligent Certified Development Platform (the system that builds systems)
 2. **Contract Performance Management Portal (CPMP)** — The post-award delivery tracking system
 
 This document describes how the proposal engine writes about each product, what content it includes, and how the system detects when a whole-product response is appropriate.
 
 ---
 
-## Product 1: ICDEV — The Platform
+## Product 1: ICDEV™ — The Platform
 
 ### What the Proposal Engine Writes
 
-When an RFP requirement mentions integrated platforms, complete solutions, SDLC automation, or end-to-end development, the response drafter describes ICDEV as a **complete product delivered on-premises to the customer**:
+When an RFP requirement mentions integrated platforms, complete solutions, SDLC automation, or end-to-end development, the response drafter describes ICDEV™ as a **complete product delivered on-premises to the customer**:
 
 | Aspect | What the Proposal Says |
 |--------|----------------------|
-| **Identity** | "ICDEV (Intelligent Certified Development) platform — a complete autonomous software development system" |
-| **Architecture** | 15 specialized AI agents, 6-layer GOTCHA framework, ATLAS workflow methodology |
+| **Identity** | "ICDEV™ (Intelligent Certified Development) platform — a complete autonomous software development system" |
+| **Architecture** | 15 specialized AI agents, 6-layer FORGE framework, ANVIL workflow methodology |
 | **Scale** | 42 compliance frameworks, 500+ deterministic tools, 6 first-class programming languages |
 | **Compliance** | Dual-hub crosswalk (NIST 800-53 + ISO 27001) — implement once, cascade everywhere |
 | **Deployment** | 6 CSPs (AWS GovCloud, Azure Gov, GCP Assured, OCI Gov, IBM IC4G, local/air-gapped) |
@@ -97,7 +97,7 @@ When an RFP requirement mentions contract management, CDRL tracking, deliverable
 
 The response drafter detects when a shall statement needs a product-level response (instead of individual capability response) using keyword matching:
 
-**ICDEV Platform triggers:**
+**ICDEV™ Platform triggers:**
 - "integrated platform", "complete solution", "end-to-end", "full lifecycle"
 - "software factory", "autonomous development", "unified platform"
 - "development platform", "SDLC platform", "comprehensive platform"
@@ -149,7 +149,7 @@ Human reviews → approves → flows to proposal_sections
 
 | Category | Purpose | Volume Type |
 |----------|---------|-------------|
-| `product_overview` | Whole-product description (ICDEV, CPMP) | technical |
+| `product_overview` | Whole-product description (ICDEV™, CPMP) | technical |
 | `integrated_solution` | How products work end-to-end as unified systems | technical |
 | `customer_value` | Benefits and ROI for government customers | management |
 
@@ -174,7 +174,7 @@ For each product in the catalog, `seed_from_catalog()` creates:
 
 | File | Change |
 |------|--------|
-| `context/govcon/icdev_capability_catalog.json` | Added `products` array with 2 product entries (ICDEV, CPMP) |
+| `context/govcon/icdev_capability_catalog.json` | Added `products` array with 2 product entries (ICDEV™, CPMP) |
 | `tools/govcon/knowledge_base.py` | Added 3 categories; updated `seed_from_catalog()` to seed product blocks |
 | `tools/govcon/response_drafter.py` | Added product templates, detection logic, LLM product context injection |
 | `args/govcon_config.yaml` | Added product detection config and knowledge base categories |
@@ -185,7 +185,7 @@ For each product in the catalog, `seed_from_catalog()` creates:
 
 Per project memory, Management Volume responses **must** reference:
 
-1. **ICDEV platform** — as the delivery mechanism (the product IS the compliance evidence)
+1. **ICDEV™ platform** — as the delivery mechanism (the product IS the compliance evidence)
 2. **Contract Management Portal** — for post-award requirements and CDRL tracking
 3. **The feedback loop** — how delivery performance informs future proposals
 
@@ -198,6 +198,6 @@ The response drafter now handles this automatically when Management Volume requi
 | ID | Decision | Rationale |
 |----|----------|-----------|
 | D363.1 | Product entries in catalog are separate from capability entries (`products` vs `capabilities` arrays) | Products describe whole solutions; capabilities describe components. Different search/match logic. |
-| D365.1 | Product detection uses keyword threshold (≥2 matches) | Prevents false positives on single-keyword matches (e.g., "cloud" alone shouldn't trigger ICDEV platform) |
+| D365.1 | Product detection uses keyword threshold (≥2 matches) | Prevents false positives on single-keyword matches (e.g., "cloud" alone shouldn't trigger ICDEV™ platform) |
 | D368.1 | Three new knowledge base categories: product_overview, integrated_solution, customer_value | Distinct from capability_description — product blocks describe integrated platforms, not individual tools |
 | D368.2 | Product KB blocks prepended to search results (higher priority) | When a requirement maps to a product, the whole-product context should appear first in the draft |

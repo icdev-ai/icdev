@@ -1,7 +1,7 @@
 # [TEMPLATE: CUI // SP-CTI]
 # Worktree Setup Prompt — Task Isolation Instructions
 
-You are setting up an isolated git worktree for an ICDEV task.
+You are setting up an isolated git worktree for an ICDEV™ task.
 
 ## Context
 - Task ID: {{task_id}}

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""ICDEV SaaS Tenant Admin Portal -- Flask Blueprint.
+"""ICDEV™ SaaS Tenant Admin Portal -- Flask Blueprint.
 
 CUI // SP-CTI
 
-Web-based administration portal for ICDEV SaaS tenants. Provides dashboard,
+Web-based administration portal for ICDEV™ SaaS tenants. Provides dashboard,
 project management, compliance overview, team management, API key management,
 usage metrics, audit trail viewer, and tenant settings.
 
@@ -37,9 +37,9 @@ import json
 import logging
 import os
 import secrets
-import sqlite3
 import sys
 import time
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -76,7 +76,6 @@ def _load_yaml(filepath: Path) -> dict:
     """Load a YAML file. Uses PyYAML if available, otherwise minimal parser."""
     try:
         import yaml
-
         with open(filepath, "r", encoding="utf-8") as fh:
             return yaml.safe_load(fh) or {}
     except ImportError:
@@ -116,13 +115,16 @@ _CUI_CONFIG = _load_yaml(_CUI_YAML) if _CUI_YAML.exists() else {}
 
 CUI_BANNER_TOP = os.environ.get(
     "ICDEV_CUI_BANNER_TOP",
-    _CUI_CONFIG.get("banner_top", "CUI // SP-CTI"),
+    _CUI_CONFIG.get("banner_top", ""),
 )
 CUI_BANNER_BOTTOM = os.environ.get(
     "ICDEV_CUI_BANNER_BOTTOM",
-    _CUI_CONFIG.get("banner_bottom", "CUI // SP-CTI"),
+    _CUI_CONFIG.get("banner_bottom", ""),
 )
-CUI_BANNER_ENABLED = os.environ.get("ICDEV_CUI_BANNER_ENABLED", "true").lower() in ("1", "true", "yes")
+CUI_BANNER_ENABLED = os.environ.get(
+    "ICDEV_CUI_BANNER_ENABLED",
+    _CUI_CONFIG.get("banner_enabled", "false"),
+).lower() in ("1", "true", "yes")
 
 # ---------------------------------------------------------------------------
 # Blueprint
@@ -203,10 +205,11 @@ def _inject_cui_banner():
 # Database Helpers
 # ---------------------------------------------------------------------------
 def _get_platform_conn():
-    """Get a connection to the platform database."""
+    """Get a connection to the platform database (always SQLite)."""
+    import sqlite3 as _sqlite3
     db_path = Path(os.environ.get("PLATFORM_DB_PATH", str(PLATFORM_DB)))
-    conn = sqlite3.connect(str(db_path))
-    conn.row_factory = sqlite3.Row
+    conn = _sqlite3.connect(str(db_path))
+    conn.row_factory = _sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
@@ -235,8 +238,7 @@ def _get_tenant_conn(tenant_id):
     if not db_path.exists():
         return None
 
-    tconn = sqlite3.connect(str(db_path))
-    tconn.row_factory = sqlite3.Row
+    tconn = get_connection()
     return tconn
 
 
@@ -248,8 +250,64 @@ def _utcnow():
 # ---------------------------------------------------------------------------
 # Auth Helpers (portal session)
 # ---------------------------------------------------------------------------
+def _auto_login_env_key():
+    """Auto-login using ICDEV_DASHBOARD_API_KEY from .env (mirrors dashboard behavior).
+
+    If the env key is set and valid, creates a portal session automatically
+    so the user never sees the login page.
+
+    Returns True if auto-login succeeded and session is now populated.
+    """
+    env_key = os.environ.get("ICDEV_DASHBOARD_API_KEY", "").strip()
+    if not env_key:
+        return False
+
+    key_hash = hashlib.sha256(env_key.encode("utf-8")).hexdigest()
+    conn = _get_platform_conn()
+    try:
+        row = conn.execute(
+            """SELECT k.id as key_id, k.tenant_id, k.user_id, k.status as key_status,
+                      u.role, u.email, u.display_name,
+                      t.status as tenant_status, t.name as tenant_name
+               FROM api_keys k
+               JOIN users u ON k.user_id = u.id AND k.tenant_id = u.tenant_id
+               JOIN tenants t ON k.tenant_id = t.id
+               WHERE k.key_hash = ?""",
+            (key_hash,),
+        ).fetchone()
+
+        if not row:
+            return False
+
+        row = dict(row)
+        if row["key_status"] not in ("active", 1) or row["tenant_status"] != "active":
+            return False
+
+        # Create portal session
+        portal_token = "psess_" + secrets.token_hex(24)
+        _register_portal_session(
+            portal_token, row["tenant_id"], row["user_id"], row["role"],
+        )
+        session["portal_tenant_id"] = row["tenant_id"]
+        session["portal_user_id"] = row["user_id"]
+        session["portal_user_role"] = row["role"]
+        session["portal_user_email"] = row["email"]
+        session["portal_user_name"] = row.get("display_name") or row["email"]
+        session["portal_tenant_name"] = row["tenant_name"]
+        session["portal_session_token"] = portal_token
+        return True
+    except Exception:
+        return False
+    finally:
+        conn.close()
+
+
 def _portal_auth_required(f):
-    """Decorator: redirect to login if no portal session."""
+    """Decorator: redirect to login if no portal session.
+
+    Auto-logs in via ICDEV_DASHBOARD_API_KEY from .env if no session exists
+    (same behavior as the main dashboard).
+    """
     from functools import wraps
 
     @wraps(f)
@@ -260,7 +318,9 @@ def _portal_auth_required(f):
             return f(*args, **kwargs)
         # Fall back to session-based auth
         if "portal_tenant_id" not in session:
-            return redirect(url_for("portal.login"))
+            # Try auto-login via .env key before redirecting to login
+            if not _auto_login_env_key():
+                return redirect(url_for("portal.login"))
         g.tenant_id = session["portal_tenant_id"]
         g.user_id = session.get("portal_user_id")
         g.user_role = session.get("portal_user_role")
@@ -318,7 +378,15 @@ def _get_subscription(tenant_id):
 # ---------------------------------------------------------------------------
 @portal_bp.route("/login", methods=["GET"])
 def login():
-    """Render the login page (public endpoint)."""
+    """Render the login page (public endpoint).
+
+    If already authenticated (session or .env auto-login), redirect to dashboard.
+    """
+    if "portal_tenant_id" in session:
+        return redirect(url_for("portal.dashboard"))
+    # Try auto-login via .env key
+    if _auto_login_env_key():
+        return redirect(url_for("portal.dashboard"))
     error = request.args.get("error")
     return render_template("login.html", error=error)
 
@@ -363,10 +431,7 @@ def login_post():
         # Generate opaque portal session token (Enhancement #1A)
         portal_token = "psess_" + secrets.token_hex(24)
         _register_portal_session(
-            portal_token,
-            row["tenant_id"],
-            row["user_id"],
-            row["role"],
+            portal_token, row["tenant_id"], row["user_id"], row["role"],
         )
 
         # Set session — NO raw API key stored (Enhancement #1A)
@@ -432,13 +497,17 @@ def dashboard():
             except Exception:
                 pass
             try:
-                row = tconn.execute("SELECT COUNT(*) as cnt FROM projects WHERE status = 'active'").fetchone()
+                row = tconn.execute(
+                    "SELECT COUNT(*) as cnt FROM projects WHERE status = 'active'"
+                ).fetchone()
                 active_projects = row["cnt"] if row else 0
             except Exception:
                 pass
             # Compliance score: average across projects
             try:
-                row = tconn.execute("SELECT AVG(compliance_score) as avg_score FROM projects").fetchone()
+                row = tconn.execute(
+                    "SELECT AVG(compliance_score) as avg_score FROM projects"
+                ).fetchone()
                 compliance_score = round(row["avg_score"] or 0)
             except Exception:
                 compliance_score = 0
@@ -617,7 +686,9 @@ def profile():
         conn.close()
 
     # BYOK LLM keys (only if enabled via env var)
-    byok_enabled = os.environ.get("ICDEV_BYOK_ENABLED", "false").lower() in ("1", "true", "yes")
+    byok_enabled = os.environ.get(
+        "ICDEV_BYOK_ENABLED", "false"
+    ).lower() in ("1", "true", "yes")
     llm_keys = []
     if byok_enabled:
         tconn = _get_tenant_conn(tenant_id)
@@ -843,71 +914,6 @@ def audit():
 
 
 # ---------------------------------------------------------------------------
-# Routes: Phase Roadmap
-# ---------------------------------------------------------------------------
-@portal_bp.route("/phases")
-@_portal_auth_required
-def phases():
-    """Phase roadmap — ICDEV phases filtered by tenant tier and impact level."""
-    tenant_id = g.tenant_id
-    tenant = _get_tenant_info(tenant_id)
-    tenant_name = tenant.get("name", "Unknown") if tenant else "Unknown"
-
-    # Determine tenant's tier and impact level for filtering
-    subscription = _get_subscription(tenant_id)
-    tier = (subscription or {}).get("tier", (tenant or {}).get("tier", "starter"))
-    impact_level = (tenant or {}).get("impact_level", "IL4")
-
-    # Load phases from registry
-    try:
-        from tools.dashboard.phase_loader import (
-            load_phases,
-            load_categories,
-            load_statuses,
-            get_phase_summary,
-            filter_phases,
-        )
-
-        all_phases = load_phases()
-        categories = load_categories()
-        statuses = load_statuses()
-
-        # Filter to phases available for this tenant's tier
-        phases_list = filter_phases(all_phases, tier=tier)
-        summary = get_phase_summary(phases_list)
-
-        # Also compute all-phases summary for comparison
-        all_summary = get_phase_summary(all_phases)
-    except (ImportError, Exception):
-        phases_list = []
-        categories = {}
-        statuses = {}
-        summary = {"total": 0, "completed": 0, "active": 0, "planned": 0, "progress_pct": 0, "by_category": {}}
-        all_summary = summary
-
-    # Optional category filter
-    cat_filter = request.args.get("category", "")
-    if cat_filter:
-        phases_list = [p for p in phases_list if p.get("category") == cat_filter]
-
-    return render_template(
-        "phases.html",
-        tenant_name=tenant_name,
-        phases=phases_list,
-        categories=categories,
-        statuses=statuses,
-        summary=summary,
-        all_summary=all_summary,
-        category_filter=cat_filter,
-        tenant_tier=tier,
-        tenant_il=impact_level,
-        user_name=session.get("portal_user_name", "User"),
-        user_role=session.get("portal_user_role", "viewer"),
-        active_page="phases",
-    )
-
-
-# ---------------------------------------------------------------------------
 # Routes: CMMC Self-Assessment (Phase 4 — Enhancement #8)
 # ---------------------------------------------------------------------------
 @portal_bp.route("/cmmc")
@@ -958,12 +964,16 @@ def oscal():
     tconn = _get_tenant_conn(tenant_id)
     if tconn:
         try:
-            val_rows = tconn.execute("SELECT * FROM oscal_validation_log ORDER BY created_at DESC LIMIT 50").fetchall()
+            val_rows = tconn.execute(
+                "SELECT * FROM oscal_validation_log ORDER BY created_at DESC LIMIT 50"
+            ).fetchall()
             validations = [dict(r) for r in val_rows]
         except Exception:
             pass
         try:
-            art_rows = tconn.execute("SELECT * FROM oscal_artifacts ORDER BY generated_at DESC LIMIT 50").fetchall()
+            art_rows = tconn.execute(
+                "SELECT * FROM oscal_artifacts ORDER BY generated_at DESC LIMIT 50"
+            ).fetchall()
             artifacts = [dict(r) for r in art_rows]
         except Exception:
             pass
@@ -1011,11 +1021,8 @@ def translations():
 
             total = len(jobs)
             completed = sum(1 for j in jobs if j.get("status") == "completed")
-            in_progress = sum(
-                1
-                for j in jobs
-                if j.get("status") in ("pending", "extracting", "translating", "assembling", "validating")
-            )
+            in_progress = sum(1 for j in jobs if j.get("status") in
+                              ("pending", "extracting", "translating", "assembling", "validating"))
             failed = sum(1 for j in jobs if j.get("status") in ("failed", "partial"))
 
             try:
@@ -1062,7 +1069,9 @@ def translation_detail(job_id):
     if tconn:
         try:
             try:
-                row = tconn.execute("SELECT * FROM translation_jobs WHERE id = ?", (job_id,)).fetchone()
+                row = tconn.execute(
+                    "SELECT * FROM translation_jobs WHERE id = ?", (job_id,)
+                ).fetchone()
                 job = dict(row) if row else None
             except Exception:
                 pass
@@ -1074,8 +1083,7 @@ def translation_detail(job_id):
                                   source_complexity, target_complexity,
                                   repair_count, candidate_selected
                            FROM translation_units WHERE job_id = ?
-                           ORDER BY created_at""",
-                        (job_id,),
+                           ORDER BY created_at""", (job_id,)
                     ).fetchall()
                     units = [dict(u) for u in rows]
                 except Exception:
@@ -1085,7 +1093,7 @@ def translation_detail(job_id):
                     rows = tconn.execute(
                         """SELECT check_type, passed, score, findings
                            FROM translation_validations WHERE job_id = ?""",
-                        (job_id,),
+                        (job_id,)
                     ).fetchall()
                     validations = [dict(v) for v in rows]
                 except Exception:
@@ -1096,7 +1104,7 @@ def translation_detail(job_id):
                         """SELECT source_import, target_import, mapping_source,
                                   confidence, domain
                            FROM translation_dependency_mappings WHERE job_id = ?""",
-                        (job_id,),
+                        (job_id,)
                     ).fetchall()
                     deps = [dict(d) for d in rows]
                 except Exception:
@@ -1202,7 +1210,9 @@ def ai_transparency():
     if tconn:
         try:
             try:
-                rows = tconn.execute("SELECT * FROM ai_use_case_inventory ORDER BY name").fetchall()
+                rows = tconn.execute(
+                    "SELECT * FROM ai_use_case_inventory ORDER BY name"
+                ).fetchall()
                 inventory = [dict(r) for r in rows]
             except Exception:
                 pass

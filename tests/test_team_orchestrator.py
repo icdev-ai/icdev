@@ -29,7 +29,7 @@ from icdev.tools.agent.team_orchestrator import (
 @pytest.fixture
 def orch_db(tmp_path):
     """Temporary database with agent_workflows and agent_subtasks tables plus
-    the minimal ICDEV tables needed by the orchestrator (audit_trail, agents)."""
+    the minimal ICDEV™ tables needed by the orchestrator (audit_trail, agents)."""
     db_path = tmp_path / "orchestrator.db"
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row

@@ -20,6 +20,7 @@ import os
 import sqlite3
 import ssl
 import uuid
+from tools.db.storage import get_connection
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
@@ -46,7 +47,7 @@ class A2AAgentServer:
         agent_id: str,
         name: str,
         description: str,
-        host: str = "0.0.0.0",
+        host: str = "0.0.0.0",  # nosec B104 -- intentional bind-all for containerized/dev deployment
         port: int = 8443,
         version: str = "1.0.0",
         db_path: Optional[Path] = None,
@@ -381,8 +382,7 @@ class A2AAgentServer:
 
     def _get_db(self) -> sqlite3.Connection:
         """Get a database connection."""
-        conn = sqlite3.connect(str(self.db_path))
-        conn.row_factory = sqlite3.Row
+        conn = get_connection(db_path=str(self.db_path))
         return conn
 
     def _persist_task(self, task: Task) -> None:
@@ -544,7 +544,7 @@ def main():
     parser.add_argument("--agent-id", default="test-agent", help="Agent ID")
     parser.add_argument("--name", default="Test Agent", help="Agent name")
     parser.add_argument("--description", default="A test A2A agent", help="Agent description")
-    parser.add_argument("--host", default="0.0.0.0", help="Bind host")
+    parser.add_argument("--host", default="0.0.0.0", help="Bind host")  # nosec B104 -- intentional bind-all for containerized/dev deployment
     parser.add_argument("--port", type=int, default=8443, help="Bind port")
     parser.add_argument("--tls-cert", help="TLS certificate path")
     parser.add_argument("--tls-key", help="TLS private key path")

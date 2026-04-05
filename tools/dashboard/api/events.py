@@ -14,8 +14,8 @@ networks, works with Flask's synchronous WSGI, and avoids long-lived connections
 """
 
 import json
-import sqlite3
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -33,8 +33,7 @@ DEFAULT_POLL_INTERVAL_MS = 3000
 
 
 def _get_db():
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(DB_PATH))
     return conn
 
 
@@ -149,6 +148,41 @@ def event_stream():
     """SSE endpoint for real-time event streaming (legacy — kept for backward compat).
 
     Prefer /api/events/poll for new integrations (D103).
+    """
+    from tools.dashboard.sse_manager import sse_manager
+
+    client_queue = sse_manager.add_client()
+
+    def generate():
+        try:
+            yield from sse_manager.generate_stream(client_queue)
+        finally:
+            sse_manager.remove_client(client_queue)
+
+    return Response(
+        generate(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
+
+
+@events_bp.route("/api/events/progress")
+def progress_stream():
+    """SSE endpoint for real-time progress updates on long-running operations.
+
+    Clients subscribe and receive structured progress events:
+        event: progress
+        data: {"operation_id": "...", "operation_type": "genesis_reflex",
+               "phase": "scan_item_23", "completed": 23, "total": 50,
+               "percent": 46.0, "status": "running"}
+
+    Supported operation_types: genesis_reflex, compliance_scan,
+    batch_workflow, marketplace_install, pulse_pipeline, filesync,
+    proposal_genesis, stig_check, vulnerability_scan.
     """
     from tools.dashboard.sse_manager import sse_manager
 

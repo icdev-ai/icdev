@@ -4,7 +4,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-"""Tests for tools.db.init_icdev_db — ICDEV database initialization."""
+"""Tests for tools.db.init_icdev_db — ICDEV™ database initialization."""
 
 import sqlite3
 from unittest.mock import patch

@@ -16,7 +16,7 @@ run_id: $4
   - A summary section with the issue context
   - Link to the implementation `plan_file` if it exists
   - Reference to the issue (Closes #<issue_number>)
-  - ICDEV tracking run ID
+  - ICDEV™ tracking run ID
   - CUI marking: `CUI // SP-CTI`
   - A checklist of what was done
 - Extract issue number, type, and title from the issue JSON

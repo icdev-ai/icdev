@@ -1,5 +1,7 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Recovery Engine — self-recovery from test/lint failures (D134)
+from __future__ import annotations
+
+# ICDEV™ Recovery Engine — self-recovery from test/lint failures (D134)
 
 """
 Self-recovery pipeline for CI/CD phase failures.

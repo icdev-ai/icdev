@@ -1,7 +1,7 @@
 // CUI // SP-CTI
 /**
- * ICDEV Dashboard - Real-Time Live Updates Module (HTTP Polling)
- * Extends window.ICDEV (created by api.js, extended by ux.js/charts.js/tables.js).
+ * ICDEV™ Dashboard - Real-Time Live Updates Module (HTTP Polling)
+ * Extends window.ICDEV™ (created by api.js, extended by ux.js/charts.js/tables.js).
  *
  * Features:
  *   1. HTTP polling transport (replaces SSE — D103)
@@ -139,7 +139,7 @@
         _consecutiveErrors = 0;
         _currentInterval = POLL_INTERVAL_MS;
         updateStatusDot(STATE_CONNECTED);
-        console.log("[ICDEV Live] HTTP polling started (" + POLL_INTERVAL_MS + "ms)");
+        console.log("[ICDEV™ Live] HTTP polling started (" + POLL_INTERVAL_MS + "ms)");
         // Do an initial poll immediately
         doPoll();
     }
@@ -149,7 +149,7 @@
         stopCountdown();
         _state = STATE_DISCONNECTED;
         updateStatusDot(STATE_DISCONNECTED);
-        console.log("[ICDEV Live] HTTP polling stopped.");
+        console.log("[ICDEV™ Live] HTTP polling stopped.");
     }
 
     function schedulePoll() {
@@ -184,7 +184,7 @@
                 _state = STATE_CONNECTED;
                 stopCountdown();
                 updateStatusDot(STATE_CONNECTED);
-                console.log("[ICDEV Live] Poll recovered — connected.");
+                console.log("[ICDEV™ Live] Poll recovered — connected.");
             }
 
             // Update cursor
@@ -216,7 +216,7 @@
             startCountdown();
         }
 
-        console.warn("[ICDEV Live] Poll error #" + _consecutiveErrors +
+        console.warn("[ICDEV™ Live] Poll error #" + _consecutiveErrors +
             ". Next poll in " + (_currentInterval / 1000) + "s");
         schedulePoll();
     }
@@ -558,7 +558,7 @@
                 if (!_pollTimer && _state !== STATE_DISCONNECTED) doPoll();
             }
         });
-        console.log("[ICDEV Live] Module initialized. HTTP poll transport (D103).");
+        console.log("[ICDEV™ Live] Module initialized. HTTP poll transport (D103).");
     }
 
     if (document.readyState === "loading") {

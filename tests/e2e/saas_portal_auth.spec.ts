@@ -41,7 +41,7 @@ test.describe('SaaS Portal Authentication', () => {
     }
 
     // Step 8: Verify page title
-    await expect(page).toHaveTitle(/ICDEV|Portal|Sign In/i);
+    await expect(page).toHaveTitle(/ICDEV™|Portal|Sign In/i);
 
     // Step 9: Verify classification footer text
     const classTerms = ['IL4', 'IL5', 'NIST', 'Authorized'];

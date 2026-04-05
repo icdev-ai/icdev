@@ -17,6 +17,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
+from tools.db.storage import get_connection
 
 logger = logging.getLogger("databridge.scale.write_batcher")
 
@@ -243,7 +244,7 @@ class WriteBatcher:
 
     def _open_conn(self) -> sqlite3.Connection:
         """Open a WAL-mode SQLite connection."""
-        conn = sqlite3.connect(self._db_path, check_same_thread=False)
+        conn = get_connection(db_path=str(self._db_path))
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=NORMAL")
         return conn

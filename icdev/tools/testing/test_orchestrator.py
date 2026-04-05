@@ -1,9 +1,9 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Test Orchestrator
+# ICDEV™ Test Orchestrator
 # Adapted from ADW adw_test.py — retry logic, resolution, E2E coordination
 
 """
-ICDEV Test Orchestrator — runs unit, BDD, E2E, security, and compliance tests
+ICDEV™ Test Orchestrator — runs unit, BDD, E2E, security, and compliance tests
 with automatic retry and failure resolution.
 
 Usage:
@@ -190,7 +190,7 @@ def run_ruff(project_dir: str, logger) -> TestResult:
 def run_bandit(project_dir: str, logger) -> TestResult:
     """Run Bandit SAST security scan.
 
-    Adapted from ADW test.md security scan step + ICDEV security tools.
+    Adapted from ADW test.md security scan step + ICDEV™ security tools.
     """
     logger.info("Running Bandit SAST scan...")
     env = get_safe_subprocess_env()
@@ -458,7 +458,7 @@ def run_tests_with_resolution(
         for ft in failed_tests:
             logger.info(f"  FAILED: {ft.test_name} - {ft.error or 'no error message'}")
 
-        # In ICDEV, resolution would invoke the builder agent to fix code
+        # In ICDEV™, resolution would invoke the builder agent to fix code
         # For now, just retry (the fix may come from external intervention)
         logger.info(f"Retrying tests (attempt {attempt + 1}/{max_attempts})...")
 
@@ -570,7 +570,7 @@ def run_e2e_tests_with_resolution(
 # --- Security & Compliance Gates ---
 
 def evaluate_security_gate(project_dir: str, logger) -> GateEvaluation:
-    """Evaluate security gate by running ICDEV security scans."""
+    """Evaluate security gate by running ICDEV™ security scans."""
     logger.info("Evaluating security gate...")
     gates = []
 
@@ -689,7 +689,7 @@ def generate_summary(
     lines = [
         "CUI // SP-CTI",
         "",
-        "## ICDEV Test Run Summary",
+        "## ICDEV™ Test Run Summary",
         "",
         "### Unit Tests",
         f"  Total: {len(unit_results)} | Passed: {unit_passed} | Failed: {unit_failed}",
@@ -733,9 +733,9 @@ def generate_summary(
 
 def main():
     """Main entry point for the test orchestrator."""
-    parser = argparse.ArgumentParser(description="ICDEV Test Orchestrator")
+    parser = argparse.ArgumentParser(description="ICDEV™ Test Orchestrator")
     parser.add_argument("--project-dir", required=True, help="Path to project under test")
-    parser.add_argument("--project-id", help="ICDEV project UUID")
+    parser.add_argument("--project-id", help="ICDEV™ project UUID")
     parser.add_argument("--skip-e2e", action="store_true", help="Skip E2E browser tests")
     parser.add_argument("--skip-security", action="store_true", help="Skip security gate")
     parser.add_argument("--skip-compliance", action="store_true", help="Skip compliance gate")
@@ -751,7 +751,7 @@ def main():
     logger = setup_logger(run_id, "test_orchestrator")
     run_dir = ensure_run_dir(run_id)
 
-    logger.info(f"ICDEV Test Orchestrator starting — Run ID: {run_id}")
+    logger.info(f"ICDEV™ Test Orchestrator starting — Run ID: {run_id}")
     logger.info(f"Project directory: {args.project_dir}")
 
     # Initialize state

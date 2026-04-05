@@ -25,7 +25,7 @@ from tools.finetune.provider import FineTuneProvider, FineTuneRequest, FineTuneS
 
 logger = logging.getLogger("icdev.finetune.openai")
 
-# OpenAI status → ICDEV status mapping
+# OpenAI status → ICDEV™ status mapping
 _STATUS_MAP = {
     "validating_files": "preparing",
     "queued": "pending",

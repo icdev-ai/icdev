@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Phase Registry — Centralized phase definitions (D26 declarative pattern)
+# ICDEV™ Phase Registry — Centralized phase definitions (D26 declarative pattern)
 # Used by Dashboard /phases and SaaS Portal /portal/phases
 #
 # Categories:
@@ -234,7 +234,7 @@ phases:
   - id: phase-19
     number: 19
     name: "Agentic Application Generation"
-    description: "Generate mini-ICDEV clone child apps with full GOTCHA/ATLAS workflow, 5-7 agents, memory system, compliance frameworks."
+    description: "Generate mini-ICDEV™ clone child apps with full FORGE/ANVIL workflow, 5-7 agents, memory system, compliance frameworks."
     status: completed
     category: platform
     agents: [orchestrator, architect, builder]
@@ -269,7 +269,7 @@ phases:
 
   - id: phase-22
     number: 22
-    name: "Federated GOTCHA Marketplace"
+    name: "Federated FORGE Marketplace"
     description: "Asset marketplace — publish, install, search, review skills/goals/hardprompts/context/args/compliance across tenant orgs with 9-gate security."
     status: completed
     category: platform

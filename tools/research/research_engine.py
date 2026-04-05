@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """
 Industry Research Engine — orchestrates 8-stage deep research pipeline.
 
@@ -18,7 +18,6 @@ Architecture:
   D-RES-10: Dossier → child app fitness via HITL
   D-RES-13: Parent-only (excluded from child apps)
 """
-
 from __future__ import annotations
 
 import argparse
@@ -29,6 +28,7 @@ import sqlite3
 import sys
 import time
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -42,18 +42,15 @@ CONFIG_PATH = BASE_DIR / "args" / "research_config.yaml"
 # --- Graceful imports ---
 try:
     import yaml
-
     _HAS_YAML = True
 except ImportError:
     _HAS_YAML = False
 
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
-
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
-
     def audit_log_event(**kwargs):
         return -1
 
@@ -66,9 +63,10 @@ def _now():
 def _get_db(db_path=None):
     path = db_path or DB_PATH
     if not Path(str(path)).exists():
-        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+        raise FileNotFoundError(
+            f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py"
+        )
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -119,7 +117,6 @@ def _in_quiet_hours(config):
 # =========================================================================
 # Pipeline Stages
 # =========================================================================
-
 
 def stage_scope(session_id, vertical_slug, db_path=None):
     """Stage 1: SCOPE — Create session, load vertical config, define focus."""
@@ -175,7 +172,7 @@ def stage_landscape(session_id, db_path=None):
 
 
 def stage_regulate(session_id, db_path=None):
-    """Stage 3: REGULATE — Scan regulatory bodies and map to ICDEV frameworks."""
+    """Stage 3: REGULATE — Scan regulatory bodies and map to ICDEV™ frameworks."""
     result = {"stage": "REGULATE", "started_at": _now()}
 
     run_scan = _try_import("tools.research.source_scanner", "run_scan")
@@ -408,7 +405,8 @@ STAGE_FUNCTIONS = {
 }
 
 
-def run_pipeline(session_id=None, vertical=None, name=None, description=None, focus_areas=None, db_path=None):
+def run_pipeline(session_id=None, vertical=None, name=None, description=None,
+                 focus_areas=None, db_path=None):
     """Run the full 9-stage research pipeline."""
     config = _load_config()
     pipeline_id = f"rpipe-{uuid.uuid4().hex[:8]}"
@@ -430,7 +428,7 @@ def run_pipeline(session_id=None, vertical=None, name=None, description=None, fo
                 )
                 if "error" in session_result:
                     return session_result
-                session_id = session_result["session_id"]
+                session_id = session_result.get("session_id") or session_result.get("id")
                 result["session"] = session_result
             except Exception as e:
                 return {"error": f"Failed to create session: {e}"}
@@ -487,17 +485,29 @@ def get_status(session_id=None, db_path=None):
             if get_session:
                 return get_session(session_id, db_path=db_path)
             # Fallback
-            row = conn.execute("SELECT * FROM research_sessions WHERE id = ?", (session_id,)).fetchone()
+            row = conn.execute(
+                "SELECT * FROM research_sessions WHERE id = ?", (session_id,)
+            ).fetchone()
             if not row:
                 return {"error": f"Session not found: {session_id}"}
             return dict(row)
 
         # Engine-wide status
-        sessions = conn.execute("SELECT status, COUNT(*) as cnt FROM research_sessions GROUP BY status").fetchall()
-        verticals = conn.execute("SELECT COUNT(*) as cnt FROM research_verticals WHERE active = 1").fetchone()
-        signals = conn.execute("SELECT COUNT(*) as cnt FROM research_signals").fetchone()
-        challenges = conn.execute("SELECT COUNT(*) as cnt FROM research_challenges").fetchone()
-        dossiers = conn.execute("SELECT COUNT(*) as cnt FROM research_dossiers").fetchone()
+        sessions = conn.execute(
+            "SELECT status, COUNT(*) as cnt FROM research_sessions GROUP BY status"
+        ).fetchall()
+        verticals = conn.execute(
+            "SELECT COUNT(*) as cnt FROM research_verticals WHERE active = 1"
+        ).fetchone()
+        signals = conn.execute(
+            "SELECT COUNT(*) as cnt FROM research_signals"
+        ).fetchone()
+        challenges = conn.execute(
+            "SELECT COUNT(*) as cnt FROM research_challenges"
+        ).fetchone()
+        dossiers = conn.execute(
+            "SELECT COUNT(*) as cnt FROM research_dossiers"
+        ).fetchone()
 
         return {
             "engine": "research",
@@ -559,10 +569,9 @@ def run_daemon(db_path=None):
 # CLI
 # =========================================================================
 
-
 def _print_human(args, result):
     print("=" * 70)
-    print("  ICDEV Industry Research Engine — CUI // SP-CTI")
+    print("  ICDEV™ Industry Research Engine — CUI // SP-CTI")
     print("=" * 70)
 
     if isinstance(result, dict) and "error" in result:
@@ -617,7 +626,7 @@ def _print_human(args, result):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Industry Research Engine — CUI // SP-CTI",
+        description="ICDEV™ Industry Research Engine — CUI // SP-CTI",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Examples:\n"
@@ -633,13 +642,8 @@ def main():
 
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--run", action="store_true", help="Run full pipeline")
-    group.add_argument(
-        "--run-stage",
-        type=str,
-        metavar="STAGE",
-        dest="run_stage",
-        help="Run single stage (SCOPE, LANDSCAPE, REGULATE, COMMUNITY, ACADEMIC, BUILD_BUY, SYNTHESIZE, DOSSIER)",
-    )
+    group.add_argument("--run-stage", type=str, metavar="STAGE", dest="run_stage",
+                        help="Run single stage (SCOPE, LANDSCAPE, REGULATE, COMMUNITY, ACADEMIC, BUILD_BUY, SYNTHESIZE, DOSSIER)")
     group.add_argument("--status", action="store_true", help="Engine or session status")
     group.add_argument("--daemon", action="store_true", help="Run in daemon mode")
 

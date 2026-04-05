@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Helm Values — GCP Government Override
+# ICDEV™ Helm Values — GCP Government Override
 # Usage: helm install icdev ./helm -f values.yaml -f values-gcp.yaml
 
 global:

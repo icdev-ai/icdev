@@ -2,7 +2,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Compliance diagram validator using vision LLMs.
 
 Validates SSP architecture diagrams, network zone diagrams, data flow
@@ -233,7 +233,7 @@ def validate_diagram(
         image_path: Path to the diagram image file (PNG, JPEG, etc.).
         diagram_type: One of ``network_zone``, ``architecture``,
             ``data_flow``, or ``ato_boundary``.
-        project_id: Optional ICDEV project identifier for audit logging.
+        project_id: Optional ICDEV™ project identifier for audit logging.
         expected_components: Optional list of component names that should
             appear in the diagram.
 
@@ -427,7 +427,7 @@ def check_boundary_diagram(
 
     Args:
         image_path: Path to the ATO boundary diagram image.
-        project_id: Optional ICDEV project identifier.
+        project_id: Optional ICDEV™ project identifier.
 
     Returns:
         Validation result dict.
@@ -472,7 +472,7 @@ def check_data_flow(
 def main():
     """Command-line interface for compliance diagram validation."""
     parser = argparse.ArgumentParser(
-        description="ICDEV Compliance Diagram Validator (Vision LLM)",
+        description="ICDEV™ Compliance Diagram Validator (Vision LLM)",
     )
     parser.add_argument(
         "--image",
@@ -488,7 +488,7 @@ def main():
     )
     parser.add_argument(
         "--project-id",
-        help="ICDEV project identifier (for audit logging)",
+        help="ICDEV™ project identifier (for audit logging)",
     )
     parser.add_argument(
         "--expected-components",

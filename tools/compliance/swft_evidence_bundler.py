@@ -2,7 +2,7 @@
 # CUI // SP-CTI
 """DoD SWFT (Software Factory Trust) Evidence Bundler.
 
-Packages ICDEV compliance artifacts into a SWFT-compliant evidence bundle
+Packages ICDEV™ compliance artifacts into a SWFT-compliant evidence bundle
 for DoD software factory authorization. Bundles SLSA provenance, SBOM,
 VEX, attestations, and compliance artifacts into a single package.
 
@@ -21,6 +21,7 @@ import hashlib
 import json
 import sqlite3
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -86,8 +87,7 @@ def _get_connection(db_path=None):
     """Get a database connection."""
     path = db_path or DB_PATH
     if path.exists():
-        conn = sqlite3.connect(str(path))
-        conn.row_factory = sqlite3.Row
+        conn = get_connection(db_path=str(path))
         return conn
     return None
 
@@ -119,7 +119,7 @@ def _collect_artifact_evidence(project_id: str, category: str, conn) -> dict:
     table, id_col = query_info
     try:
         row = conn.execute(
-            f"SELECT COUNT(*) as cnt FROM {table} WHERE {id_col} = ?",
+            f"SELECT COUNT(*) as cnt FROM {table} WHERE {id_col} = ?",  # nosec B608 -- table/column names are internal constants, not user input
             (project_id,),
         ).fetchone()
         if row and row["cnt"] > 0:
@@ -128,7 +128,7 @@ def _collect_artifact_evidence(project_id: str, category: str, conn) -> dict:
 
         # Get latest date
         date_row = conn.execute(
-            f"SELECT MAX(created_at) as latest FROM {table} WHERE {id_col} = ?",
+            f"SELECT MAX(created_at) as latest FROM {table} WHERE {id_col} = ?",  # nosec B608 -- table/column names are internal constants, not user input
             (project_id,),
         ).fetchone()
         if date_row and date_row["latest"]:

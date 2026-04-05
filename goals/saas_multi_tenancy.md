@@ -3,14 +3,14 @@
 > CUI // SP-CTI
 
 ## Purpose
-Transform ICDEV from a single-tenant CLI tool into a multi-tenant SaaS platform exposing compliance automation tools via REST API and MCP Streamable HTTP to external developers/teams while maintaining per-tenant data isolation and classification-aware security.
+Transform ICDEV™ from a single-tenant CLI tool into a multi-tenant SaaS platform exposing compliance automation tools via REST API and MCP Streamable HTTP to external developers/teams while maintaining per-tenant data isolation and classification-aware security.
 
 ## When to Use
-- Setting up ICDEV as a service for multiple teams/developers
+- Setting up ICDEV™ as a service for multiple teams/developers
 - Onboarding new tenants (organizations/teams)
 - Managing tenant lifecycle (create, provision, suspend, delete)
 - Configuring API access (keys, OAuth, CAC/PIV)
-- Deploying ICDEV on-premises at customer sites
+- Deploying ICDEV™ on-premises at customer sites
 - Managing subscription tiers and rate limits
 
 ## Workflow
@@ -40,7 +40,7 @@ python tools/saas/tenant_manager.py --create \
 ```
 Status: pending → provisioning → active
   a. Create dedicated database (SQLite dev / PostgreSQL prod)
-  b. Run full ICDEV schema against tenant DB (100+ tables)
+  b. Run full ICDEV™ schema against tenant DB (100+ tables)
   c. Create K8s namespace (icdev-tenant-{slug})
   d. Apply network policies (default deny, allow from gateway)
   e. For IL5+: create AWS sub-account, VPC, RDS
@@ -49,7 +49,7 @@ Status: pending → provisioning → active
 ```
 
 ### 4. API Access
-Tenants access ICDEV via two transports:
+Tenants access ICDEV™ via two transports:
 
 **REST API:**
 ```bash
@@ -159,7 +159,7 @@ API request → auth middleware → g.tenant_id
 
 ## Expected Outputs
 - Platform database with tenant records
-- Per-tenant isolated databases with full ICDEV schema
+- Per-tenant isolated databases with full ICDEV™ schema
 - Running API gateway accepting REST and MCP Streamable HTTP requests
 - Tenant admin portal at /portal/
 - K8s namespaces with network policies per tenant

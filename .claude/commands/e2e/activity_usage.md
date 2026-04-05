@@ -1,6 +1,6 @@
 # E2E Test: Activity Feed and Usage Tracking Pages
 
-Verify the ICDEV dashboard activity page loads with SSE connection indicator and activity entries, and the usage page displays cost breakdowns with period selection.
+Verify the ICDEV™ dashboard activity page loads with SSE connection indicator and activity entries, and the usage page displays cost breakdowns with period selection.
 
 ## Prerequisites
 - Flask dashboard running on http://localhost:5000

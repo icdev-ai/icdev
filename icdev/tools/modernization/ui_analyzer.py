@@ -2,8 +2,8 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""Legacy UI Screenshot Analysis Engine for ICDEV DoD Modernization.
+# POC: ICDEV™ System Administrator
+"""Legacy UI Screenshot Analysis Engine for ICDEV™ DoD Modernization.
 
 Analyzes legacy application UI screenshots using vision-capable LLMs to assess
 navigation complexity, form density, layout approach, accessibility indicators,
@@ -98,14 +98,14 @@ UI_ANALYSIS_SYSTEM_PROMPT = (
 # Database helper
 # ---------------------------------------------------------------------------
 def _get_db(db_path: Optional[Path] = None):
-    """Return a sqlite3 connection to the ICDEV operational database.
+    """Return a sqlite3 connection to the ICDEV™ operational database.
 
     Uses row_factory = sqlite3.Row for dict-like access.
     """
     path = db_path or DB_PATH
     if not path.exists():
         raise FileNotFoundError(
-            f"ICDEV database not found at {path}. "
+            f"ICDEV™ database not found at {path}. "
             "Run 'python tools/db/init_icdev_db.py' first."
         )
     conn = sqlite3.connect(str(path))
@@ -527,7 +527,7 @@ def store_ui_analysis(
 
     Args:
         app_id: Legacy application identifier.
-        project_id: ICDEV project identifier.
+        project_id: ICDEV™ project identifier.
         results: Analysis results dict to store.
         db_path: Optional override for the database path.
 
@@ -602,7 +602,7 @@ def store_ui_analysis(
 def main():
     """CLI entry point for legacy UI screenshot analysis."""
     parser = argparse.ArgumentParser(
-        description="ICDEV Legacy UI Screenshot Analyzer"
+        description="ICDEV™ Legacy UI Screenshot Analyzer"
     )
 
     group = parser.add_mutually_exclusive_group(required=True)
@@ -610,7 +610,7 @@ def main():
     group.add_argument("--image-dir", help="Directory containing screenshot images")
 
     parser.add_argument("--app-id", help="Legacy application ID (for DB storage / 7R integration)")
-    parser.add_argument("--project-id", help="ICDEV project ID")
+    parser.add_argument("--project-id", help="ICDEV™ project ID")
     parser.add_argument("--store", action="store_true", help="Store results in icdev.db")
     parser.add_argument("--score-only", action="store_true", help="Print only the complexity score")
     parser.add_argument("--json", action="store_true", help="Output as JSON")

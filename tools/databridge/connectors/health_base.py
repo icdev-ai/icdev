@@ -324,7 +324,7 @@ class HealthBaseConnector(DataConnector):
                     duration_ms=int((time.time() - start) * 1000),
                 )
 
-            root = ET.fromstring(resp.text)
+            root = ET.fromstring(resp.text)  # nosec B314 -- parsing trusted internal MBSE/config XML
             rows = [
                 {
                     "document_id": root.get("id", ""),

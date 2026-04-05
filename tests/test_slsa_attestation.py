@@ -16,7 +16,7 @@ import pytest
 
 @pytest.fixture
 def tmp_db(tmp_path):
-    """Create a temporary ICDEV database with minimal schema."""
+    """Create a temporary ICDEV™ database with minimal schema."""
     db_file = tmp_path / "icdev.db"
     conn = sqlite3.connect(str(db_file))
     conn.execute("""CREATE TABLE IF NOT EXISTS devsecops_pipeline_audit (

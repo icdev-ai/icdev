@@ -1,9 +1,11 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Workflow State Management
+from __future__ import annotations
+
+# ICDEV™ Workflow State Management
 # Adapted from ADW state.py
 
 """
-Persistent state management for ICDEV CI/CD workflows.
+Persistent state management for ICDEV™ CI/CD workflows.
 
 State is stored at agents/{run_id}/icdev_state.json and tracks:
 - run_id, issue_number, branch_name, plan_file, issue_class
@@ -38,7 +40,7 @@ CORE_FIELDS = {
 
 
 class ICDevState:
-    """Persistent workflow state for ICDEV CI/CD pipelines."""
+    """Persistent workflow state for ICDEV™ CI/CD pipelines."""
 
     def __init__(self, run_id: str, logger=None):
         self.run_id = run_id

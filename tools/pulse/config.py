@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-"""ICDEV Pulse configuration — integrated as ICDEV marketplace module.
+"""ICDEV™ Pulse configuration — integrated as ICDEV™ marketplace module.
 
 Updated 2026-03-12: Added template support, LLM router integration,
 and multi-stage pipeline configuration.
@@ -28,7 +28,7 @@ if _env_path.exists():
                 k, _, v = line.partition("=")
                 os.environ.setdefault(k.strip(), v.strip())
 
-# Paths — relative to ICDEV project root
+# Paths — relative to ICDEV™ project root
 BASE_DIR = Path(__file__).resolve().parent.parent.parent  # ICDev/
 PULSE_DIR = Path(__file__).resolve().parent  # tools/pulse/
 DATA_DIR = BASE_DIR / "data"
@@ -83,10 +83,10 @@ SITE_DOMAIN = "icdev.ai"
 SITE_URL = "https://icdev.ai"
 
 # ---------------------------------------------------------------------------
-# Research Topics — derived from ICDEV capabilities
+# Research Topics — derived from ICDEV™ capabilities
 # ---------------------------------------------------------------------------
 
-# Challenge-Solution: industry pain points that ICDEV solves
+# Challenge-Solution: industry pain points that ICDEV™ solves
 CHALLENGE_SOLUTION_TOPICS = [
     # Compliance & Authorization
     "FedRAMP authorization takes 12-18 months — how automation cuts it to weeks",
@@ -117,41 +117,41 @@ CHALLENGE_SOLUTION_TOPICS = [
     "TinyML and edge AI deployment challenges on resource-constrained devices",
 ]
 
-# Feature Spotlight: specific ICDEV features to deep-dive
+# Feature Spotlight: specific ICDEV™ features to deep-dive
 FEATURE_SPOTLIGHT_TOPICS = [
     # Core Platform
-    "ICDEV GOTCHA Framework: 6-layer architecture that separates AI from business logic",
-    "ICDEV multi-agent architecture: 12 specialized agents with A2A protocol",
-    "ICDEV LLM Router: token-optimized three-tier model routing (scanner, worker, planner)",
+    "ICDEV™ FORGE Framework: 6-layer architecture that separates AI from business logic",
+    "ICDEV™ multi-agent architecture: 12 specialized agents with A2A protocol",
+    "ICDEV™ LLM Router: token-optimized three-tier model routing (scanner, worker, planner)",
     # Compliance Tools
-    "ICDEV cATO Live Evidence Engine: continuous OSCAL streaming for real-time compliance",
-    "ICDEV Crosswalk Engine: implement one NIST control, auto-populate FedRAMP, CMMC, and 800-171",
-    "ICDEV SSP/POAM Generator: automated ATO artifact generation with CUI markings",
-    "ICDEV Secure by Design Assessor: CISA SbD and Cloudyrion 8-pillar alignment",
+    "ICDEV™ cATO Live Evidence Engine: continuous OSCAL streaming for real-time compliance",
+    "ICDEV™ Crosswalk Engine: implement one NIST control, auto-populate FedRAMP, CMMC, and 800-171",
+    "ICDEV™ SSP/POAM Generator: automated ATO artifact generation with CUI markings",
+    "ICDEV™ Secure by Design Assessor: CISA SbD and Cloudyrion 8-pillar alignment",
     # Security Tools
-    "ICDEV Threat Modeler: automated STRIDE analysis with NIST control mapping",
-    "ICDEV AI Security Suite: prompt injection detection, ATLAS assessment, and trust scoring",
-    "ICDEV Agent Trust Scorer: behavioral drift monitoring for agentic AI systems",
+    "ICDEV™ Threat Modeler: automated STRIDE analysis with NIST control mapping",
+    "ICDEV™ AI Security Suite: prompt injection detection, ATLAS assessment, and trust scoring",
+    "ICDEV™ Agent Trust Scorer: behavioral drift monitoring for agentic AI systems",
     # DevOps & Intelligence
-    "ICDEV PR Intelligence: compliance and security pre-checks before merge",
-    "ICDEV Developer Scorecard: 6-dimension project health monitoring",
-    "ICDEV VSM Dashboard: DORA metrics and pipeline bottleneck detection",
-    "ICDEV Golden Path Scaffolder: compliant project templates with security bootstrap",
+    "ICDEV™ PR Intelligence: compliance and security pre-checks before merge",
+    "ICDEV™ Developer Scorecard: 6-dimension project health monitoring",
+    "ICDEV™ VSM Dashboard: DORA metrics and pipeline bottleneck detection",
+    "ICDEV™ Golden Path Scaffolder: compliant project templates with security bootstrap",
     # Requirements & Simulation
-    "ICDEV RICOAS: AI-driven requirements intake with gap detection and SAFe decomposition",
-    "ICDEV ATO Simulator: Monte Carlo timeline prediction for authorization planning",
-    "ICDEV Digital Program Twin: what-if simulation and COA generation",
+    "ICDEV™ RICOAS: AI-driven requirements intake with gap detection and SAFe decomposition",
+    "ICDEV™ ATO Simulator: Monte Carlo timeline prediction for authorization planning",
+    "ICDEV™ Digital Program Twin: what-if simulation and COA generation",
     # Knowledge & Documentation
-    "ICDEV GraphRAG: knowledge graph retrieval with scoring profiles and context compression",
-    "ICDEV DocHub: living documentation engine with 8 audience profiles and 8 export formats",
-    "ICDEV WriteGuard: deterministic writing quality analysis for compliance documents",
+    "ICDEV™ GraphRAG: knowledge graph retrieval with scoring profiles and context compression",
+    "ICDEV™ DocHub: living documentation engine with 8 audience profiles and 8 export formats",
+    "ICDEV™ WriteGuard: deterministic writing quality analysis for compliance documents",
     # Embedded & IoT
-    "ICDEV SparkPilot: natural language to firmware with FreeRTOS and TinyML",
-    "ICDEV Fleet Manager: device registry, OTA updates, and canary deployments",
-    "ICDEV Connector Forge: dynamic API connector generation with sandbox validation",
+    "ICDEV™ SparkPilot: natural language to firmware with FreeRTOS and TinyML",
+    "ICDEV™ Fleet Manager: device registry, OTA updates, and canary deployments",
+    "ICDEV™ Connector Forge: dynamic API connector generation with sandbox validation",
     # Integration
-    "ICDEV Harness Engineering: AI agent maturity assessment and loop detection",
-    "ICDEV Observability Suite: distributed tracing, SHAP attribution, and XAI compliance",
+    "ICDEV™ Harness Engineering: AI agent maturity assessment and loop detection",
+    "ICDEV™ Observability Suite: distributed tracing, SHAP attribution, and XAI compliance",
 ]
 
 # Combined list for backward compatibility (used by researcher.py)

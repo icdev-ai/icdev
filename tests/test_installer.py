@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-"""Tests for ICDEV Installer — module registry, compliance configurator, installer.
+"""Tests for ICDEV™ Installer — module registry, compliance configurator, installer.
 
 Validates ModuleRegistry dependency tracking, ComplianceConfigurator framework
 mapping, ModularDBInitializer selective table creation, and the main installer

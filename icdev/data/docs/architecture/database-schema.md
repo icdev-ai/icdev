@@ -4,7 +4,7 @@ CUI // SP-CTI
 
 ## Overview
 
-ICDEV uses 5 SQLite databases for its internal operations. SQLite was chosen for zero-config portability (D1); applications built by ICDEV use PostgreSQL. The SaaS platform layer supports both SQLite (development) and PostgreSQL (production) via a compatibility layer.
+ICDEV™ uses 5 SQLite databases for its internal operations. SQLite was chosen for zero-config portability (D1); applications built by ICDEV™ use PostgreSQL. The SaaS platform layer supports both SQLite (development) and PostgreSQL (production) via a compatibility layer.
 
 ---
 
@@ -251,7 +251,7 @@ data/
 
 | Table | Purpose | Mutable |
 |-------|---------|---------|
-| `marketplace_assets` | Published GOTCHA asset metadata | Yes |
+| `marketplace_assets` | Published FORGE asset metadata | Yes |
 | `marketplace_versions` | Published asset versions (immutable, D80) | **Append-only** |
 | `marketplace_reviews` | ISSO/security officer review records | **Append-only** |
 | `marketplace_installations` | Asset installation records per tenant | Yes |
@@ -476,7 +476,7 @@ APPEND_ONLY_TABLES = [
 
 ## Database Migration System (D150)
 
-ICDEV uses a lightweight migration runner (stdlib only, no Alembic) for schema versioning.
+ICDEV™ uses a lightweight migration runner (stdlib only, no Alembic) for schema versioning.
 
 ### Migration Files
 

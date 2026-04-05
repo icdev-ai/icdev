@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Agent Model Test — Verify Claude Code models work
+# ICDEV™ Agent Model Test — Verify Claude Code models work
 # Adapted from ADW test_agents.py
 
 """
@@ -18,9 +18,9 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from tools.testing.data_types import AgentPromptRequest
-from tools.ci.modules.agent import prompt_claude_code
-from tools.testing.utils import make_run_id
+from tools.testing.data_types import AgentPromptRequest  # noqa: E402
+from tools.ci.modules.agent import prompt_claude_code  # noqa: E402
+from tools.testing.utils import make_run_id  # noqa: E402
 
 # Models to test
 MODELS = ["opus", "sonnet", "haiku"]

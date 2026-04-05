@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Innovation Engine Manager — main orchestrator for autonomous self-improvement.
 
 Coordinates the full innovation pipeline:
@@ -52,6 +52,8 @@ import os
 import sys
 import time
 import uuid
+from tools.common.helpers import now_iso
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -70,28 +72,23 @@ CONFIG_PATH = BASE_DIR / "args" / "innovation_config.yaml"
 # =========================================================================
 try:
     import yaml
-
     _HAS_YAML = True
 except ImportError:
     _HAS_YAML = False
 
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
-
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
-
     def audit_log_event(**kwargs):
         return -1
-
 
 # Import innovation sub-modules (all optional — graceful degradation)
 def _try_import(module_path, func_name):
     """Dynamically import a function with graceful fallback."""
     try:
         import importlib
-
         mod = importlib.import_module(module_path)
         return getattr(mod, func_name, None)
     except (ImportError, ModuleNotFoundError, AttributeError):
@@ -101,10 +98,6 @@ def _try_import(module_path, func_name):
 # =========================================================================
 # HELPERS
 # =========================================================================
-def _now():
-    """ISO-8601 timestamp."""
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
 
 def _load_config():
     """Load innovation config from YAML."""
@@ -168,7 +161,7 @@ def stage_discover(sources=None, db_path=None):
     Returns:
         Dict with discovery results.
     """
-    results = {"stage": "discover", "started_at": _now(), "sub_results": {}}
+    results = {"stage": "discover", "started_at": now_iso(), "sub_results": {}}
 
     # Web scanning
     run_scan = _try_import("tools.innovation.web_scanner", "run_scan")
@@ -182,7 +175,7 @@ def stage_discover(sources=None, db_path=None):
     else:
         results["sub_results"]["web_scanner"] = {"error": "web_scanner not available"}
 
-    results["completed_at"] = _now()
+    results["completed_at"] = now_iso()
     _audit("innovation.discover", "Discovery complete", results.get("sub_results"))
     return results
 
@@ -350,7 +343,7 @@ def run_full_pipeline(db_path=None):
 
     result = {
         "pipeline_id": pipeline_id,
-        "started_at": _now(),
+        "started_at": now_iso(),
         "stages": {},
         "quiet_hours": False,
     }
@@ -377,7 +370,7 @@ def run_full_pipeline(db_path=None):
     else:
         result["stages"]["generate"] = stage_generate(db_path=db_path)
 
-    result["completed_at"] = _now()
+    result["completed_at"] = now_iso()
     _audit("innovation.pipeline.complete", f"Pipeline {pipeline_id} completed", result)
 
     return result
@@ -401,15 +394,16 @@ def get_status(db_path=None):
     if not path.exists():
         return {"error": f"Database not found: {path}", "healthy": False}
 
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(path))
 
     try:
-        status = {"healthy": True, "timestamp": _now()}
+        status = {"healthy": True, "timestamp": now_iso()}
 
         # Signal counts by status
         try:
-            rows = conn.execute("SELECT status, COUNT(*) as count FROM innovation_signals GROUP BY status").fetchall()
+            rows = conn.execute(
+                "SELECT status, COUNT(*) as count FROM innovation_signals GROUP BY status"
+            ).fetchall()
             status["signals_by_status"] = {row["status"]: row["count"] for row in rows}
         except sqlite3.OperationalError:
             status["signals_by_status"] = {}
@@ -426,8 +420,9 @@ def get_status(db_path=None):
         # Recent signals (last 24h)
         try:
             from datetime import timedelta
-
-            cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%SZ")
+            cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).strftime(
+                "%Y-%m-%dT%H:%M:%SZ"
+            )
             recent = conn.execute(
                 "SELECT COUNT(*) as count FROM innovation_signals WHERE discovered_at >= ?",
                 (cutoff,),
@@ -438,14 +433,18 @@ def get_status(db_path=None):
 
         # Solution counts
         try:
-            rows = conn.execute("SELECT status, COUNT(*) as count FROM innovation_solutions GROUP BY status").fetchall()
+            rows = conn.execute(
+                "SELECT status, COUNT(*) as count FROM innovation_solutions GROUP BY status"
+            ).fetchall()
             status["solutions_by_status"] = {row["status"]: row["count"] for row in rows}
         except sqlite3.OperationalError:
             status["solutions_by_status"] = {}
 
         # Trend counts
         try:
-            rows = conn.execute("SELECT status, COUNT(*) as count FROM innovation_trends GROUP BY status").fetchall()
+            rows = conn.execute(
+                "SELECT status, COUNT(*) as count FROM innovation_trends GROUP BY status"
+            ).fetchall()
             status["trends_by_status"] = {row["status"]: row["count"] for row in rows}
         except sqlite3.OperationalError:
             status["trends_by_status"] = {}
@@ -489,7 +488,7 @@ def get_pipeline_report(db_path=None):
     triaged = signals_by_status.get("triaged", 0)
 
     report = {
-        "timestamp": _now(),
+        "timestamp": now_iso(),
         "pipeline_health": status.get("healthy", False),
         "total_signals": total,
         "signals_by_status": signals_by_status,
@@ -506,11 +505,17 @@ def get_pipeline_report(db_path=None):
 
     # Generate recommendations
     if new > 100:
-        report["recommendations"].append("High backlog of unscored signals — consider running --score")
+        report["recommendations"].append(
+            "High backlog of unscored signals — consider running --score"
+        )
     if scored > 50:
-        report["recommendations"].append("High backlog of untriaged signals — consider running --triage")
+        report["recommendations"].append(
+            "High backlog of untriaged signals — consider running --triage"
+        )
     if not status.get("healthy"):
-        report["recommendations"].append("Database tables missing — run: python tools/db/migrate.py --up")
+        report["recommendations"].append(
+            "Database tables missing — run: python tools/db/migrate.py --up"
+        )
 
     return report
 
@@ -536,19 +541,20 @@ def run_daemon(db_path=None):
 
     try:
         while True:
-            print(f"\n[{_now()}] Running pipeline...")
+            print(f"\n[{now_iso()}] Running pipeline...")
             try:
                 result = run_full_pipeline(db_path=db_path)
-                print(f"[{_now()}] Pipeline complete. Stages: {len(result.get('stages', {}))}")
+                print(f"[{now_iso()}] Pipeline complete. "
+                      f"Stages: {len(result.get('stages', {}))}")
             except Exception as e:
-                print(f"[{_now()}] Pipeline error: {e}", file=sys.stderr)
+                print(f"[{now_iso()}] Pipeline error: {e}", file=sys.stderr)
                 _audit("innovation.daemon.error", f"Pipeline error: {e}")
 
-            print(f"[{_now()}] Next run in {default_interval} hours...")
+            print(f"[{now_iso()}] Next run in {default_interval} hours...")
             time.sleep(interval_seconds)
 
     except KeyboardInterrupt:
-        print(f"\n[{_now()}] Daemon stopped by user")
+        print(f"\n[{now_iso()}] Daemon stopped by user")
         _audit("innovation.daemon.stop", "Daemon stopped by user")
 
 
@@ -556,7 +562,9 @@ def run_daemon(db_path=None):
 # CLI
 # =========================================================================
 def main():
-    parser = argparse.ArgumentParser(description="ICDEV Innovation Engine — autonomous self-improvement orchestrator")
+    parser = argparse.ArgumentParser(
+        description="ICDEV™ Innovation Engine — autonomous self-improvement orchestrator"
+    )
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--db-path", type=Path, default=None, help="Database path override")
 

@@ -2,7 +2,7 @@
 # CUI // SP-CTI
 """Genesis Audit Reflex — self-scan: code quality, security, compliance.
 
-Runs existing ICDEV analysis tools against the codebase and aggregates
+Runs existing ICDEV™ analysis tools against the codebase and aggregates
 findings into an audit report.  Non-destructive, read-only (GREEN tier).
 
 Scanner-tier only (zero Claude tokens).  Air-gap safe.
@@ -32,12 +32,8 @@ def _run_tool(cmd: List[str], timeout: int = 120) -> Dict[str, Any]:
     """Run a tool as subprocess, capture JSON output."""
     try:
         result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            cwd=str(BASE_DIR),
-            env={**os.environ, "PYTHONPATH": str(BASE_DIR)},
+            cmd, capture_output=True, text=True, timeout=timeout,
+            cwd=str(BASE_DIR), env={**os.environ, "PYTHONPATH": str(BASE_DIR)},
         )
         # Try to parse JSON from stdout
         stdout = result.stdout.strip()
@@ -65,16 +61,10 @@ def _run_tool(cmd: List[str], timeout: int = 120) -> Dict[str, Any]:
 def _check_code_quality() -> Dict[str, Any]:
     """Run code_analyzer.py on tools/ directory."""
     print("  Audit: code quality scan...")
-    result = _run_tool(
-        [
-            sys.executable,
-            "tools/analysis/code_analyzer.py",
-            "--project-dir",
-            "tools/",
-            "--json",
-        ],
-        timeout=180,
-    )
+    result = _run_tool([
+        sys.executable, "tools/analysis/code_analyzer.py",
+        "--project-dir", "tools/", "--json",
+    ], timeout=180)
 
     if result.get("success") and isinstance(result.get("data"), dict):
         data = result["data"]
@@ -95,16 +85,10 @@ def _check_code_quality() -> Dict[str, Any]:
 def _check_security() -> Dict[str, Any]:
     """Run SAST scanner on tools/ directory."""
     print("  Audit: security scan...")
-    result = _run_tool(
-        [
-            sys.executable,
-            "tools/security/sast_runner.py",
-            "--project-dir",
-            "tools/",
-            "--json",
-        ],
-        timeout=180,
-    )
+    result = _run_tool([
+        sys.executable, "tools/security/sast_runner.py",
+        "--project-dir", "tools/", "--json",
+    ], timeout=180)
 
     if result.get("success"):
         data = result.get("data", {})
@@ -125,16 +109,10 @@ def _check_security() -> Dict[str, Any]:
 def _check_secret_detection() -> Dict[str, Any]:
     """Run secret detector on the project."""
     print("  Audit: secret detection...")
-    result = _run_tool(
-        [
-            sys.executable,
-            "tools/security/secret_detector.py",
-            "--project-dir",
-            str(BASE_DIR),
-            "--json",
-        ],
-        timeout=120,
-    )
+    result = _run_tool([
+        sys.executable, "tools/security/secret_detector.py",
+        "--project-dir", str(BASE_DIR), "--json",
+    ], timeout=120)
 
     if result.get("success"):
         data = result.get("data", {})
@@ -151,16 +129,10 @@ def _check_secret_detection() -> Dict[str, Any]:
 def _check_dependency_audit() -> Dict[str, Any]:
     """Run dependency auditor."""
     print("  Audit: dependency audit...")
-    result = _run_tool(
-        [
-            sys.executable,
-            "tools/security/dependency_auditor.py",
-            "--project-dir",
-            str(BASE_DIR),
-            "--json",
-        ],
-        timeout=120,
-    )
+    result = _run_tool([
+        sys.executable, "tools/security/dependency_auditor.py",
+        "--project-dir", str(BASE_DIR), "--json",
+    ], timeout=120)
 
     if result.get("success"):
         data = result.get("data", {})
@@ -176,11 +148,32 @@ def _check_dependency_audit() -> Dict[str, Any]:
     return {"check": "dependency_audit", "status": "failed", "error": result.get("error", "unknown")}
 
 
+def _check_coherence() -> Dict[str, Any]:
+    """Run implementation coherence checker (D-WF-8)."""
+    print("  Audit: coherence check...")
+    try:
+        from tools.workflow.coherence_checker import run_checks as coherence_check
+        coherence_report = coherence_check()
+        return {
+            "check": "coherence",
+            "status": "completed",
+            "findings": {
+                "overall_pass": coherence_report.overall_pass,
+                "failed": coherence_report.failed_checks,
+                "warned": coherence_report.warned_checks,
+                "passed": coherence_report.passed_checks,
+                "total": coherence_report.total_checks,
+            },
+        }
+    except Exception as e:
+        return {"check": "coherence", "status": "failed", "error": str(e)}
+
+
 def _generate_audit_report(checks: List[Dict]) -> str:
     """Generate markdown audit report."""
     now = _utcnow()
     completed = [c for c in checks if c.get("status") == "completed"]
-    [c for c in checks if c.get("status") == "failed"]
+    _failed = [c for c in checks if c.get("status") == "failed"]  # noqa: F841
 
     lines = [
         "# Genesis Self-Audit Report",
@@ -234,21 +227,17 @@ def _generate_audit_report(checks: List[Dict]) -> str:
 
 def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     """Execute the Audit Reflex."""
-    enabled_checks = config.get(
-        "checks",
-        [
-            "code_quality",
-            "security_scan",
-            "secret_detection",
-            "dependency_audit",
-        ],
-    )
+    enabled_checks = config.get("checks", [
+        "code_quality", "security_scan", "secret_detection", "dependency_audit",
+        "coherence",
+    ])
 
     check_map = {
         "code_quality": _check_code_quality,
         "security_scan": _check_security,
         "secret_detection": _check_secret_detection,
         "dependency_audit": _check_dependency_audit,
+        "coherence": _check_coherence,
     }
 
     checks = []

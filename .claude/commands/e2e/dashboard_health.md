@@ -1,6 +1,6 @@
 # E2E Test: Dashboard Health Check
 
-Verify the ICDEV web dashboard loads correctly with CUI banners and core navigation.
+Verify the ICDEV™ web dashboard loads correctly with CUI banners and core navigation.
 
 ## Prerequisites
 - Flask dashboard running on http://localhost:5000
@@ -10,7 +10,7 @@ Verify the ICDEV web dashboard loads correctly with CUI banners and core navigat
 
 1. Navigate to http://localhost:5000
 2. Wait for the page to fully load
-3. Verify the page title contains "ICDEV"
+3. Verify the page title contains "ICDEV™"
 4. Screenshot the full dashboard page
 
 5. Assert the CUI banner "CUI // SP-CTI" is visible at the top of the page

@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """ISO/IEC 27001:2022 Assessment Engine.
 
 Assesses projects against ISO 27001:2022 Annex A controls (93 controls

@@ -44,6 +44,12 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv(PROJECT_ROOT / ".env")
+except ImportError:
+    pass
+
 from tools.db.storage import get_connection  # noqa: E402
 from tools.pulse.db import (  # noqa: E402
     get_existing_titles,
@@ -57,99 +63,41 @@ logger = logging.getLogger("pulse.sam_bridge")
 # ── Domain keywords (reused from govcon/knowledge_ingestion.py) ───────
 _DOMAIN_KEYWORDS: dict[str, list[str]] = {
     "devsecops": [
-        "devsecops",
-        "ci/cd",
-        "pipeline",
-        "jenkins",
-        "gitlab",
-        "devops",
-        "continuous integration",
-        "continuous delivery",
-        "container",
+        "devsecops", "ci/cd", "pipeline", "jenkins", "gitlab", "devops",
+        "continuous integration", "continuous delivery", "container",
     ],
     "ai_ml": [
-        "artificial intelligence",
-        "machine learning",
-        "ai",
-        "ml",
-        "neural network",
-        "deep learning",
-        "nlp",
-        "llm",
-        "model training",
+        "artificial intelligence", "machine learning", "ai", "ml",
+        "neural network", "deep learning", "nlp", "llm", "model training",
     ],
     "ato_rmf": [
-        "ato",
-        "rmf",
-        "authority to operate",
-        "risk management framework",
-        "authorization boundary",
-        "isso",
-        "issm",
-        "accreditation",
+        "ato", "rmf", "authority to operate", "risk management framework",
+        "authorization boundary", "isso", "issm", "accreditation",
     ],
     "cloud": [
-        "cloud",
-        "aws",
-        "azure",
-        "govcloud",
-        "saas",
-        "paas",
-        "iaas",
-        "serverless",
-        "microservice",
-        "kubernetes",
+        "cloud", "aws", "azure", "govcloud", "saas", "paas", "iaas",
+        "serverless", "microservice", "kubernetes",
     ],
     "security": [
-        "security",
-        "cybersecurity",
-        "stig",
-        "vulnerability",
-        "penetration",
-        "zero trust",
-        "encryption",
-        "fips",
-        "cac",
-        "pki",
+        "security", "cybersecurity", "stig", "vulnerability", "penetration",
+        "zero trust", "encryption", "fips", "cac", "pki",
     ],
     "compliance": [
-        "compliance",
-        "fedramp",
-        "nist",
-        "cmmc",
-        "800-53",
-        "800-171",
-        "control",
-        "audit",
-        "assessment",
+        "compliance", "fedramp", "nist", "cmmc", "800-53", "800-171",
+        "control", "audit", "assessment",
     ],
     "data": [
-        "data",
-        "database",
-        "analytics",
-        "etl",
-        "data lake",
-        "warehouse",
-        "migration",
-        "schema",
-        "api",
-        "integration",
+        "data", "database", "analytics", "etl", "data lake", "warehouse",
+        "migration", "schema", "api", "integration",
     ],
     "management": [
-        "management",
-        "pmo",
-        "schedule",
-        "milestone",
-        "wbs",
-        "earned value",
-        "risk register",
-        "staffing plan",
+        "management", "pmo", "schedule", "milestone", "wbs",
+        "earned value", "risk register", "staffing plan",
     ],
 }
 
 
 # ── Configuration ─────────────────────────────────────────────────────
-
 
 def _load_sam_bridge_config() -> dict:
     """Load sam_bridge config from args/pulse_templates.yaml."""
@@ -168,7 +116,6 @@ def _load_sam_bridge_config() -> dict:
 
 # ── Opportunity query ─────────────────────────────────────────────────
 
-
 def _get_unprocessed_opportunities(
     days_back: int = 30,
     filters: dict | None = None,
@@ -183,7 +130,9 @@ def _get_unprocessed_opportunities(
     with get_connection() as conn:
         # Check if sam_gov_opportunities table exists
         try:
-            conn.execute("SELECT 1 FROM sam_gov_opportunities LIMIT 1").fetchone()
+            conn.execute(
+                "SELECT 1 FROM sam_gov_opportunities LIMIT 1"
+            ).fetchone()
         except Exception:
             logger.warning("sam_gov_opportunities table not found — run SAM scanner first")
             return []
@@ -251,13 +200,15 @@ def _get_unprocessed_opportunities(
 
 # ── Pain point extraction (deterministic, zero LLM) ──────────────────
 
-
 def _classify_domain(text: str) -> str:
     """Classify a sentence into a domain using word-boundary keyword matching."""
     scores: dict[str, int] = {}
 
     for domain, keywords in _DOMAIN_KEYWORDS.items():
-        count = sum(1 for kw in keywords if re.search(r"\b" + re.escape(kw) + r"\b", text, re.IGNORECASE))
+        count = sum(
+            1 for kw in keywords
+            if re.search(r"\b" + re.escape(kw) + r"\b", text, re.IGNORECASE)
+        )
         if count > 0:
             scores[domain] = count
 
@@ -277,58 +228,21 @@ def _extract_pain_points(description: str, config: dict) -> list[dict]:
       5. Return groups with >= 2 matched sentences as pain points
     """
     extraction = config.get("extraction", {})
-    shall_patterns = extraction.get(
-        "shall_patterns",
-        [
-            r"shall\b",
-            r"must\b",
-            r"required to\b",
-            r"contractor will\b",
-        ],
-    )
-    challenge_keywords = extraction.get(
-        "challenge_keywords",
-        [
-            "cybersecurity",
-            "compliance",
-            "authorization",
-            "zero trust",
-            "DevSecOps",
-            "FedRAMP",
-            "CMMC",
-            "ATO",
-            "automation",
-            "modernization",
-            "cloud",
-            "migration",
-            "security",
-            "software",
-            "data center",
-            "network",
-            "IT services",
-            "enterprise",
-            "infrastructure",
-            "digital",
-            "analytics",
-            "intelligence",
-            "surveillance",
-            "logistics",
-            "supply chain",
-            "artificial intelligence",
-            "machine learning",
-            "SBOM",
-            "vulnerability",
-            "encryption",
-            "STIG",
-            "kubernetes",
-            "container",
-            "microservice",
-            "API",
-            "legacy system",
-            "agile",
-            "DevOps",
-        ],
-    )
+    shall_patterns = extraction.get("shall_patterns", [
+        r"shall\b", r"must\b", r"required to\b", r"contractor will\b",
+    ])
+    challenge_keywords = extraction.get("challenge_keywords", [
+        "cybersecurity", "compliance", "authorization", "zero trust",
+        "DevSecOps", "FedRAMP", "CMMC", "ATO", "automation",
+        "modernization", "cloud", "migration", "security",
+        "software", "data center", "network", "IT services",
+        "enterprise", "infrastructure", "digital", "analytics",
+        "intelligence", "surveillance", "logistics", "supply chain",
+        "artificial intelligence", "machine learning",
+        "SBOM", "vulnerability", "encryption", "STIG",
+        "kubernetes", "container", "microservice", "API",
+        "legacy system", "agile", "DevOps",
+    ])
 
     # Split into sentences
     sentences = re.split(r"[.!?]+", description)
@@ -343,25 +257,29 @@ def _extract_pain_points(description: str, config: dict) -> list[dict]:
             continue
 
         # Check shall-patterns
-        has_shall = any(re.search(p, sent, re.IGNORECASE) for p in shall_patterns)
+        has_shall = any(
+            re.search(p, sent, re.IGNORECASE)
+            for p in shall_patterns
+        )
 
         # Check challenge keywords (word-boundary match to avoid
         # false positives like "AI" matching "affairs" or "NAICS")
-        matched_kw = [kw for kw in challenge_keywords if re.search(r"\b" + re.escape(kw) + r"\b", sent, re.IGNORECASE)]
+        matched_kw = [
+            kw for kw in challenge_keywords
+            if re.search(r"\b" + re.escape(kw) + r"\b", sent, re.IGNORECASE)
+        ]
 
         # For short texts, also accept domain-keyword matches as sufficient
         domain_hit = _classify_domain(sent) != "general" if not matched_kw else False
 
         if has_shall or len(matched_kw) >= 1 or domain_hit:
             domain = _classify_domain(sent)
-            scored.append(
-                {
-                    "text": sent,
-                    "domain": domain,
-                    "keywords": matched_kw,
-                    "has_shall": has_shall,
-                }
-            )
+            scored.append({
+                "text": sent,
+                "domain": domain,
+                "keywords": matched_kw,
+                "has_shall": has_shall,
+            })
 
     # Group by domain
     by_domain: dict[str, list[dict]] = defaultdict(list)
@@ -369,30 +287,28 @@ def _extract_pain_points(description: str, config: dict) -> list[dict]:
         by_domain[s["domain"]].append(s)
 
     pain_points: list[dict] = []
-    # For short texts (titles), accept 1 match; for full descriptions require 2
-    min_sentences = 1 if len(description) < 300 else 2
+    # Accept 1 matched sentence per domain — the old threshold of 2 was
+    # filtering out too many legitimate opportunities.
     for domain, items in by_domain.items():
-        if len(items) >= min_sentences:
-            pain_points.append(
-                {
-                    "text": " ".join(i["text"] for i in items[:5]),
-                    "domain": domain,
-                    "keywords": list({kw for i in items for kw in i["keywords"]}),
-                    "sentence_count": len(items),
-                }
-            )
+        if len(items) >= 1:
+            pain_points.append({
+                "text": " ".join(i["text"] for i in items[:5]),
+                "domain": domain,
+                "keywords": list({kw for i in items for kw in i["keywords"]}),
+                "sentence_count": len(items),
+            })
 
     return pain_points
 
 
 # ── Generalization (strip specifics, create evergreen topic) ──────────
 
-
 def _generalize_topic(pain_point: dict, angles: dict) -> str:
     """Convert specific RFP pain point into generic/evergreen article topic.
 
     Strips solicitation numbers, agency names, dates.
-    Uses domain_angles mapping for the article angle.
+    Uses domain_angles mapping as a base, then appends unique keywords so
+    that each topic is distinct enough to survive dedup.
     """
     domain = pain_point.get("domain", "general")
     keywords = pain_point.get("keywords", [])
@@ -400,19 +316,30 @@ def _generalize_topic(pain_point: dict, angles: dict) -> str:
     # Use the configured angle for this domain
     angle = angles.get(domain, "Federal IT Modernization Challenges")
 
-    # Build a descriptive topic from the angle + top keywords
+    # Build a descriptive topic from the angle + top keywords.
+    # IMPORTANT: Always append keywords so topics are unique per opportunity.
+    # Without this, every cloud opp maps to the same generic angle string
+    # and the dedup layer kills them all after the first one.
     if keywords:
         # Pick up to 3 unique keywords that aren't already in the angle
         angle_lower = angle.lower()
-        unique_kw = [kw for kw in keywords if kw.lower() not in angle_lower][:3]
+        # Filter out very short keywords (< 3 chars) that add no specificity
+        unique_kw = [
+            kw for kw in keywords
+            if kw.lower() not in angle_lower and len(kw) >= 3
+        ][:3]
         if unique_kw:
             return f"{angle}: {', '.join(kw.title() for kw in unique_kw)}"
 
-    return angle
+    # If no unique keywords, append a hash fragment so the topic is still
+    # distinct from the base angle (prevents false dedup).
+    text_hash = hashlib.sha256(
+        pain_point.get("text", "")[:200].encode()
+    ).hexdigest()[:6]
+    return f"{angle} [{text_hash}]"
 
 
 # ── Deduplication (3-layer, matches existing Pulse patterns) ──────────
-
 
 def _content_hash(pain_points: list[dict]) -> str:
     """SHA-256 hash of extracted pain points for exact dedup."""
@@ -453,10 +380,14 @@ def _check_duplicate(
         except Exception:
             pass  # Table may not exist yet
 
-        # Also check article_topic for very similar topics
+        # Also check article_topic for very similar topics — but ONLY against
+        # entries that actually produced articles (drafted/published).  Comparing
+        # against skipped/pending entries causes cascading false positives since
+        # many share the same generic domain angle.
         try:
             existing_topics = conn.execute(
-                "SELECT article_topic FROM pulse_sam_article_log WHERE pipeline_status != 'failed'"
+                "SELECT article_topic FROM pulse_sam_article_log "
+                "WHERE pipeline_status IN ('drafted', 'published')"
             ).fetchall()
             for et in existing_topics:
                 if et["article_topic"] and _word_overlap(topic, et["article_topic"]) > threshold:
@@ -485,7 +416,6 @@ def _word_overlap(a: str, b: str) -> float:
 
 # ── Cluster builder ───────────────────────────────────────────────────
 
-
 def _build_cluster(topic: str, pain_points: list[dict], domain: str) -> dict:
     """Build a cluster dict compatible with run_full_pipeline()."""
     return {
@@ -503,7 +433,6 @@ def _build_cluster(topic: str, pain_points: list[dict], domain: str) -> dict:
 
 
 # ── Main orchestrator ─────────────────────────────────────────────────
-
 
 def run_sam_to_pulse(
     dry_run: bool = False,
@@ -524,6 +453,19 @@ def run_sam_to_pulse(
         return {"status": "disabled", "message": "sam_bridge.enabled is false"}
 
     init_db()
+
+    # Backfill URL-only / short descriptions before processing so extraction
+    # has the richest possible text to work with.
+    try:
+        from tools.govcon.sam_scanner import backfill_descriptions
+        bf_result = backfill_descriptions(limit=50, delay=0.3)
+        logger.info(
+            "Description backfill: %d updated, %d checked",
+            bf_result.get("updated_count", 0),
+            bf_result.get("total_checked", 0),
+        )
+    except Exception as exc:
+        logger.warning("Description backfill skipped: %s", exc)
 
     if max_articles is None:
         max_articles = config.get("max_articles_per_run", 5)
@@ -579,23 +521,34 @@ def run_sam_to_pulse(
             extraction_text = description
 
         if len(extraction_text) < 30:
-            details.append(
-                {
-                    "opportunity_id": opp_id,
-                    "title": opp_title,
-                    "status": "skipped",
-                    "reason": "insufficient_content",
-                }
-            )
+            details.append({
+                "opportunity_id": opp_id,
+                "title": opp_title,
+                "status": "skipped",
+                "reason": "insufficient_content",
+            })
             continue
 
         # Step 2: Extract pain points
         pain_points = _extract_pain_points(extraction_text, config)
+
+        # Fallback: if extraction found nothing, try classifying title alone.
+        # Many valid opps (e.g. "Post Quantum Cryptography Support") have
+        # short descriptions but obviously relevant titles.
+        if not pain_points and opp_title:
+            title_domain = _classify_domain(opp_title)
+            if title_domain != "general":
+                pain_points = [{
+                    "text": opp_title,
+                    "domain": title_domain,
+                    "keywords": [opp_title],
+                    "sentence_count": 1,
+                }]
+
         if not pain_points:
-            # Log as skipped in DB
-            insert_row(
-                "sam_article_log",
-                {
+            # Only log to DB on real runs — dry-runs must not consume opps
+            if not dry_run:
+                insert_row("sam_article_log", {
                     "id": f"sal-{uuid4().hex[:12]}",
                     "sam_opportunity_id": opp_id,
                     "opportunity_title": opp_title[:200] if opp_title else "",
@@ -606,26 +559,25 @@ def run_sam_to_pulse(
                     "skip_reason": "no_pain_points_extracted",
                     "content_hash": hashlib.sha256(description[:500].encode()).hexdigest()[:16],
                     "created_at": now,
-                },
-            )
-            details.append(
-                {
-                    "opportunity_id": opp_id,
-                    "title": opp_title,
-                    "status": "skipped",
-                    "reason": "no_pain_points_extracted",
-                }
-            )
+                })
+            details.append({
+                "opportunity_id": opp_id,
+                "title": opp_title,
+                "status": "skipped",
+                "reason": "no_pain_points_extracted",
+            })
             articles_skipped += 1
             continue
 
         # Step 2b: Demand signal detection (D-PULSE-CAP-2/3)
         try:
             from tools.pulse.engine.demand_detector import detect_demand_signals
-
             flat_keywords = []
             for pp_item in pain_points:
-                flat_keywords.extend(pp_item.get("keywords", []))
+                if isinstance(pp_item, dict):
+                    flat_keywords.extend(pp_item.get("keywords", []))
+                elif isinstance(pp_item, str):
+                    flat_keywords.append(pp_item)
             detect_demand_signals(flat_keywords, opp_id, opp_title or "")
         except Exception as e:
             logger.warning("Demand detection skipped for %s: %s", opp_id, e)
@@ -642,9 +594,8 @@ def run_sam_to_pulse(
             # Step 4: Dedup check (3-layer)
             is_dup, dup_reason = _check_duplicate(topic, c_hash, config)
             if is_dup:
-                insert_row(
-                    "sam_article_log",
-                    {
+                if not dry_run:
+                    insert_row("sam_article_log", {
                         "id": f"sal-{uuid4().hex[:12]}",
                         "sam_opportunity_id": opp_id,
                         "opportunity_title": opp_title[:200] if opp_title else "",
@@ -655,60 +606,50 @@ def run_sam_to_pulse(
                         "skip_reason": f"duplicate:{dup_reason}",
                         "content_hash": c_hash,
                         "created_at": now,
-                    },
-                )
-                details.append(
-                    {
-                        "opportunity_id": opp_id,
-                        "title": opp_title,
-                        "topic": topic,
-                        "domain": domain,
-                        "status": "skipped",
-                        "reason": f"duplicate:{dup_reason}",
-                    }
-                )
+                    })
+                details.append({
+                    "opportunity_id": opp_id,
+                    "title": opp_title,
+                    "topic": topic,
+                    "domain": domain,
+                    "status": "skipped",
+                    "reason": f"duplicate:{dup_reason}",
+                })
                 articles_skipped += 1
                 continue
 
             # Step 5: Log as pending
             log_id = f"sal-{uuid4().hex[:12]}"
-            insert_row(
-                "sam_article_log",
-                {
-                    "id": log_id,
-                    "sam_opportunity_id": opp_id,
-                    "opportunity_title": opp_title[:200] if opp_title else "",
-                    "domain_category": domain,
-                    "extracted_pain_points": json.dumps(pp.get("keywords", [])),
-                    "article_topic": topic,
-                    "pipeline_status": "pending",
-                    "content_hash": c_hash,
-                    "created_at": now,
-                },
-            )
+            insert_row("sam_article_log", {
+                "id": log_id,
+                "sam_opportunity_id": opp_id,
+                "opportunity_title": opp_title[:200] if opp_title else "",
+                "domain_category": domain,
+                "extracted_pain_points": json.dumps(pp.get("keywords", [])),
+                "article_topic": topic,
+                "pipeline_status": "pending",
+                "content_hash": c_hash,
+                "created_at": now,
+            })
 
             if dry_run:
-                details.append(
-                    {
-                        "opportunity_id": opp_id,
-                        "title": opp_title,
-                        "topic": topic,
-                        "domain": domain,
-                        "keywords": pp.get("keywords", []),
-                        "sentence_count": pp.get("sentence_count", 0),
-                        "status": "pending",
-                        "log_id": log_id,
-                        "dry_run": True,
-                    }
-                )
+                details.append({
+                    "opportunity_id": opp_id,
+                    "title": opp_title,
+                    "topic": topic,
+                    "domain": domain,
+                    "keywords": pp.get("keywords", []),
+                    "sentence_count": pp.get("sentence_count", 0),
+                    "status": "pending",
+                    "log_id": log_id,
+                    "dry_run": True,
+                })
                 continue
 
             # Step 6: Generate article via existing Pulse pipeline
             logger.info(
                 "Generating article: %s (domain=%s, opp=%s)",
-                topic,
-                domain,
-                opp_id,
+                topic, domain, opp_id,
             )
             try:
                 from tools.pulse.engine.scheduler import run_full_pipeline
@@ -722,52 +663,40 @@ def run_sam_to_pulse(
                 post_id = result.get("post_id", "")
                 pipeline_status = "drafted" if result.get("status") in ("ok", "completed") else "failed"
 
-                update_row(
-                    "sam_article_log",
-                    log_id,
-                    {
-                        "post_id": post_id,
-                        "pipeline_status": pipeline_status,
-                    },
-                )
+                update_row("sam_article_log", log_id, {
+                    "post_id": post_id,
+                    "pipeline_status": pipeline_status,
+                })
 
-                details.append(
-                    {
-                        "opportunity_id": opp_id,
-                        "title": opp_title,
-                        "topic": topic,
-                        "domain": domain,
-                        "status": pipeline_status,
-                        "post_id": post_id,
-                        "log_id": log_id,
-                        "quality_score": result.get("quality_score"),
-                        "writeguard_passed": result.get("writeguard_passed"),
-                        "word_count": result.get("word_count"),
-                    }
-                )
+                details.append({
+                    "opportunity_id": opp_id,
+                    "title": opp_title,
+                    "topic": topic,
+                    "domain": domain,
+                    "status": pipeline_status,
+                    "post_id": post_id,
+                    "log_id": log_id,
+                    "quality_score": result.get("quality_score"),
+                    "writeguard_passed": result.get("writeguard_passed"),
+                    "word_count": result.get("word_count"),
+                })
                 articles_generated += 1
 
             except Exception as exc:
                 logger.error("Pipeline failed for topic '%s': %s", topic, exc)
-                update_row(
-                    "sam_article_log",
-                    log_id,
-                    {
-                        "pipeline_status": "failed",
-                        "skip_reason": f"pipeline_error:{exc}",
-                    },
-                )
-                details.append(
-                    {
-                        "opportunity_id": opp_id,
-                        "title": opp_title,
-                        "topic": topic,
-                        "domain": domain,
-                        "status": "failed",
-                        "error": str(exc),
-                        "log_id": log_id,
-                    }
-                )
+                update_row("sam_article_log", log_id, {
+                    "pipeline_status": "failed",
+                    "skip_reason": f"pipeline_error:{exc}",
+                })
+                details.append({
+                    "opportunity_id": opp_id,
+                    "title": opp_title,
+                    "topic": topic,
+                    "domain": domain,
+                    "status": "failed",
+                    "error": str(exc),
+                    "log_id": log_id,
+                })
 
         if articles_generated >= max_articles:
             logger.info("Reached max_articles limit (%d)", max_articles)
@@ -786,7 +715,6 @@ def run_sam_to_pulse(
 
 
 # ── Query helpers ─────────────────────────────────────────────────────
-
 
 def get_pending_topics() -> dict:
     """List extracted topics that haven't been turned into articles yet."""
@@ -808,14 +736,110 @@ def get_pending_topics() -> dict:
             return {"status": "ok", "count": 0, "topics": []}
 
 
+def process_pending(max_articles: int | None = None) -> dict:
+    """Process existing pending entries through the Pulse pipeline.
+
+    Unlike run_sam_to_pulse (which discovers NEW opportunities), this
+    function picks up entries already in pulse_sam_article_log with
+    pipeline_status='pending' and pushes them through run_full_pipeline.
+    """
+    config = _load_sam_bridge_config()
+    template_type = config.get("template_type", "challenge_solution")
+    auto_rewrite = config.get("auto_rewrite", True)
+
+    init_db()
+
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT id, sam_opportunity_id, opportunity_title, "
+            "domain_category, article_topic "
+            "FROM pulse_sam_article_log "
+            "WHERE pipeline_status = 'pending' "
+            "ORDER BY created_at ASC"
+        ).fetchall()
+
+    pending = [dict(r) for r in rows]
+    if max_articles:
+        pending = pending[:max_articles]
+
+    if not pending:
+        return {"status": "ok", "message": "No pending items", "articles_generated": 0}
+
+    details: list[dict] = []
+    generated = 0
+
+    for entry in pending:
+        log_id = entry["id"]
+        topic = entry["article_topic"]
+        domain = entry["domain_category"]
+
+        if not topic:
+            logger.warning("Pending entry %s has no topic — skipping", log_id)
+            continue
+
+        logger.info("Processing pending: %s (domain=%s)", topic, domain)
+        try:
+            from tools.pulse.engine.scheduler import run_full_pipeline
+
+            result = run_full_pipeline(
+                topic_override=topic,
+                template_type=template_type,
+                auto_rewrite=auto_rewrite,
+            )
+
+            post_id = result.get("post_id", "")
+            status = "drafted" if result.get("status") in ("ok", "completed") else "failed"
+
+            update_row("sam_article_log", log_id, {
+                "post_id": post_id,
+                "pipeline_status": status,
+            })
+
+            details.append({
+                "log_id": log_id,
+                "topic": topic,
+                "domain": domain,
+                "status": status,
+                "post_id": post_id,
+                "quality_score": result.get("quality_score"),
+                "writeguard_passed": result.get("writeguard_passed"),
+                "word_count": result.get("word_count"),
+            })
+            generated += 1
+
+        except Exception as exc:
+            logger.error("Pipeline failed for pending '%s': %s", topic, exc)
+            update_row("sam_article_log", log_id, {
+                "pipeline_status": "failed",
+                "skip_reason": f"pipeline_error:{exc}",
+            })
+            details.append({
+                "log_id": log_id,
+                "topic": topic,
+                "status": "failed",
+                "error": str(exc),
+            })
+
+    return {
+        "status": "ok",
+        "articles_generated": generated,
+        "total_pending": len(pending),
+        "details": details,
+        "classification": "CUI",
+    }
+
+
 def get_stats() -> dict:
     """Statistics on SAM-to-Pulse pipeline."""
     with get_connection() as conn:
         try:
-            total = conn.execute("SELECT COUNT(*) as n FROM pulse_sam_article_log").fetchone()["n"]
+            total = conn.execute(
+                "SELECT COUNT(*) as n FROM pulse_sam_article_log"
+            ).fetchone()["n"]
 
             by_status = conn.execute(
-                "SELECT pipeline_status, COUNT(*) as n FROM pulse_sam_article_log GROUP BY pipeline_status"
+                "SELECT pipeline_status, COUNT(*) as n "
+                "FROM pulse_sam_article_log GROUP BY pipeline_status"
             ).fetchall()
 
             by_domain = conn.execute(
@@ -843,17 +867,21 @@ def get_stats() -> dict:
 
 # ── CLI ───────────────────────────────────────────────────────────────
 
-
 def main():
     """CLI entry point."""
-    parser = argparse.ArgumentParser(description="SAM.gov to Pulse Article Bridge (CUI // SP-CTI)")
+    parser = argparse.ArgumentParser(
+        description="SAM.gov to Pulse Article Bridge (CUI // SP-CTI)"
+    )
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--run", action="store_true", help="Run pipeline")
+    group.add_argument("--process-pending", action="store_true",
+                       help="Process existing pending entries through pipeline")
     group.add_argument("--dry-run", action="store_true", help="Extract without generating")
     group.add_argument("--list-pending", action="store_true", help="List pending topics")
     group.add_argument("--stats", action="store_true", help="Pipeline statistics")
 
-    parser.add_argument("--max-articles", type=int, default=None, help="Max articles to generate (overrides config)")
+    parser.add_argument("--max-articles", type=int, default=None,
+                        help="Max articles to generate (overrides config)")
     parser.add_argument("--json", action="store_true", help="JSON output")
     args = parser.parse_args()
 
@@ -865,6 +893,8 @@ def main():
 
     if args.run:
         result = run_sam_to_pulse(max_articles=args.max_articles)
+    elif args.process_pending:
+        result = process_pending(max_articles=args.max_articles)
     elif args.dry_run:
         result = run_sam_to_pulse(dry_run=True, max_articles=args.max_articles)
     elif args.list_pending:

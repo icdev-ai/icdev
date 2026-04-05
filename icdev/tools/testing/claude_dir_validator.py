@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""ICDEV .claude Directory Governance Validator.
+"""ICDEV™ .claude Directory Governance Validator.
 
 Cross-references .claude directory configuration (hooks, settings, commands,
-E2E specs) against the ICDEV codebase to detect drift. Ensures append-only
+E2E specs) against the ICDEV™ codebase to detect drift. Ensures append-only
 table protection, route documentation, deny rules, E2E coverage, and hook
 integrity stay aligned as new phases are added.
 
@@ -23,6 +23,7 @@ Usage:
 
 Exit codes: 0 = all checks pass, 1 = at least one check failed
 """
+from __future__ import annotations
 
 import argparse
 import ast
@@ -548,7 +549,7 @@ _JSON_FLAG_EXCLUDES = {
     "tools/cli/output_formatter.py",  # utility library with demo __main__
 }
 
-# Tools where --project refers to something other than ICDEV project ID
+# Tools where --project refers to something other than ICDEV™ project ID
 _PROJECT_NAMING_EXCLUDES = {
     "tools/testing/e2e_runner.py",  # --project = Playwright browser type
 }
@@ -771,7 +772,7 @@ def format_human(report: ClaudeConfigReport) -> str:
     """Format report for terminal output with ANSI colors."""
     lines = []
     lines.append("=" * 60)
-    lines.append("  ICDEV .claude Directory Governance Report")
+    lines.append("  ICDEV™ .claude Directory Governance Report")
     lines.append("=" * 60)
     lines.append("")
 
@@ -806,7 +807,7 @@ def format_human(report: ClaudeConfigReport) -> str:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Validate .claude directory alignment with ICDEV codebase"
+        description="Validate .claude directory alignment with ICDEV™ codebase"
     )
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--human", action="store_true", help="Colored terminal output")

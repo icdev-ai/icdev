@@ -23,7 +23,7 @@ from typing import Any, Dict, List, Optional
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
-from tools.db.storage import get_connection
+from tools.db.storage import get_connection  # noqa: E402
 
 
 def _utcnow_iso() -> str:
@@ -183,8 +183,29 @@ def _generate_case_study(draft: Dict, kb_blocks: List[Dict]) -> Dict[str, str]:
     body = "\n".join(sections)
     slug = _slugify(title)
 
+    raw_title = f"Case Study: {_sanitize_title(title)}"
+
+    # Phase 70: Sanitize case study through PulseSanitizer
+    # Removes agency names, program names, contract numbers, generalizes
+    # past performance details before staging as Pulse draft.
+    try:
+        from tools.redaction.pulse_sanitizer import PulseSanitizer
+        ps = PulseSanitizer()
+        sanitized = ps.sanitize_article(
+            title=raw_title, body=body, tags=tags, domain=domain,
+        )
+        return {
+            "title": sanitized["title"],
+            "slug": slug,
+            "body": sanitized["body"],
+            "domain": domain,
+            "tags": sanitized["tags"],
+        }
+    except ImportError:
+        pass  # Redaction module not installed — use raw output
+
     return {
-        "title": f"Case Study: {_sanitize_title(title)}",
+        "title": raw_title,
         "slug": slug,
         "body": body,
         "domain": domain,
@@ -258,7 +279,7 @@ def _extract_challenge(text: str, agency: str) -> str:
 def _extract_approach(text: str, capabilities: List[str]) -> str:
     """Extract or generate an approach description."""
     if not text:
-        return "ICDEV delivered a comprehensive solution leveraging proven methodologies."
+        return "ICDEV™ delivered a comprehensive solution leveraging proven methodologies."
 
     # Take middle portion of content as approach
     sentences = re.split(r"(?<=[.!?])\s+", text.strip())

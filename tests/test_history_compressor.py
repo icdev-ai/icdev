@@ -10,6 +10,7 @@ empty messages, single topic.
 import sys
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -157,14 +158,17 @@ class TestCompression:
         assert result == messages
 
     def test_compress_reduces_messages(self, compressor):
-        # Create many long messages that exceed budget
+        # Create many long messages that exceed budget.
+        # Mock _summarize_topic to avoid live LLM calls.
         messages = [
             _msg(
                 i, f"Long content about topic {'A' if i < 10 else 'B'} " * 50, minutes_offset=i * (35 if i == 10 else 2)
             )
             for i in range(1, 21)
         ]
-        result = compressor.compress(messages, budget_tokens=200)
+        with patch.object(compressor, "_summarize_topic",
+                          return_value="[summary of topic segment]"):
+            result = compressor.compress(messages, budget_tokens=200)
         total_original = sum(len(m["content"]) for m in messages)
         total_compressed = sum(len(m.get("content", "")) for m in result)
         assert total_compressed < total_original
@@ -207,8 +211,13 @@ class TestSummarization:
         assert result == ""
 
     def test_summarize_short_content(self, compressor):
+        # Mock LLM router invoke to avoid live inference calls.
+        # The test imports from icdev.tools, so patch that namespace.
+        # _summarize_topic falls back to truncation when the LLM is unavailable.
         messages = [_msg(1, "Hello"), _msg(2, "World")]
-        result = compressor._summarize_topic(messages, max_tokens=100)
+        with patch("icdev.tools.llm.router.LLMRouter.invoke",
+                   side_effect=RuntimeError("LLM unavailable in test")):
+            result = compressor._summarize_topic(messages, max_tokens=100)
         assert len(result) > 0
 
     def test_merge_summaries(self, compressor):

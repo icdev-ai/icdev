@@ -18,7 +18,6 @@ from typing import Any, Dict, List
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-
 def _count_syllables(word: str) -> int:
     word = word.lower().strip(".,!?;:'\"")
     if not word:
@@ -90,34 +89,17 @@ def _tone_check(text: str) -> Dict[str, Any]:
     text_lower = text.lower()
 
     informal = [
-        "gonna",
-        "wanna",
-        "gotta",
-        "kinda",
-        "sorta",
-        "ain't",
-        "stuff",
-        "things",
-        "basically",
-        "obviously",
-        "super",
-        "pretty much",
-        "a lot of",
-        "tons of",
+        "gonna", "wanna", "gotta", "kinda", "sorta", "ain't",
+        "stuff", "things", "basically", "obviously", "super",
+        "pretty much", "a lot of", "tons of",
     ]
     found = [w for w in informal if w in text_lower]
     if found:
         issues.append(f"informal language: {', '.join(found[:5])}")
 
     weak = [
-        "we think",
-        "we believe",
-        "we hope",
-        "we feel",
-        "maybe",
-        "perhaps",
-        "possibly",
-        "try to",
+        "we think", "we believe", "we hope", "we feel",
+        "maybe", "perhaps", "possibly", "try to",
     ]
     found_weak = [w for w in weak if w in text_lower]
     if found_weak:
@@ -135,15 +117,17 @@ def _ai_detection(text: str) -> Dict[str, Any]:
 
     lengths = [len(s.split()) for s in sentences]
     mean_len = sum(lengths) / len(lengths)
-    variance = sum((l - mean_len) ** 2 for l in lengths) / len(lengths)
-    burstiness = (variance**0.5) / mean_len if mean_len > 0 else 0
+    variance = sum((length - mean_len) ** 2 for length in lengths) / len(lengths)
+    burstiness = (variance ** 0.5) / mean_len if mean_len > 0 else 0
 
-    if burstiness < 0.3:
-        score = 0.5
-    elif burstiness < 0.5:
-        score = 0.7
+    # Higher burstiness = more sentence length variation = more human-like
+    # Lower burstiness = uniform sentence lengths = more AI-like
+    if burstiness >= 0.5:
+        score = 0.3  # High variation — likely human
+    elif burstiness >= 0.3:
+        score = 0.5  # Moderate variation — uncertain
     else:
-        score = 0.9
+        score = 0.8  # Low variation — likely AI
 
     return {"score": round(score, 2), "burstiness": round(burstiness, 3)}
 
@@ -199,7 +183,6 @@ def _ngrams(text: str, n: int) -> set:
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
-
 
 def analyze(
     text: str,
@@ -265,7 +248,9 @@ def analyze(
         "plagiarism": 0.15,
         "ai_detection": 0.15,
     }
-    quality_score = round(sum(checks[k]["score"] * w for k, w in weights.items()), 3)
+    quality_score = round(
+        sum(checks[k]["score"] * w for k, w in weights.items()), 3
+    )
 
     # Collect findings
     findings: List[Dict[str, Any]] = []

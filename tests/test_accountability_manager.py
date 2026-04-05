@@ -6,8 +6,11 @@ from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools" / "compliance"))
-from accountability_manager import (
+_PROJECT_ROOT = str(Path(__file__).resolve().parent.parent)
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
+
+from tools.compliance.accountability_manager import (
     VALID_APPEAL_STATUSES,
     VALID_FREQUENCIES,
     VALID_REVIEW_TYPES,
@@ -32,7 +35,7 @@ def conn():
         """CREATE TABLE IF NOT EXISTS audit_trail (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         project_id TEXT, event_type TEXT, actor TEXT, action TEXT,
-        details TEXT, classification TEXT, timestamp TEXT
+        details TEXT, classification TEXT, created_at TEXT
     )"""
     )
     c.commit()
@@ -48,7 +51,9 @@ def conn():
 def test_ensure_tables_creates_all_five(conn):
     """_ensure_tables should create oversight_plans, caio_designations,
     appeals, ethics_reviews, and reassessment_schedules."""
-    rows = conn.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").fetchall()
+    rows = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+    ).fetchall()
     table_names = {r["name"] for r in rows}
     expected = {
         "ai_oversight_plans",
@@ -90,7 +95,9 @@ def test_multiple_plans_per_project(conn):
     r1 = register_oversight_plan(conn, "proj-1", "Plan A")
     r2 = register_oversight_plan(conn, "proj-1", "Plan B")
     assert r1["plan_id"] != r2["plan_id"]
-    rows = conn.execute("SELECT * FROM ai_oversight_plans WHERE project_id='proj-1'").fetchall()
+    rows = conn.execute(
+        "SELECT * FROM ai_oversight_plans WHERE project_id='proj-1'"
+    ).fetchall()
     assert len(rows) == 2
 
 
@@ -109,7 +116,9 @@ def test_designate_caio_basic(conn):
 
 
 def test_designate_caio_custom_role(conn):
-    result = designate_caio(conn, "proj-1", "John Smith", role="AI Ethics Officer", organization="DoD")
+    result = designate_caio(
+        conn, "proj-1", "John Smith", role="AI Ethics Officer", organization="DoD"
+    )
     assert result["role"] == "AI Ethics Officer"
 
 
@@ -117,7 +126,9 @@ def test_multiple_caios_per_project(conn):
     r1 = designate_caio(conn, "proj-1", "Alice")
     r2 = designate_caio(conn, "proj-1", "Bob")
     assert r1["caio_id"] != r2["caio_id"]
-    rows = conn.execute("SELECT * FROM ai_caio_registry WHERE project_id='proj-1'").fetchall()
+    rows = conn.execute(
+        "SELECT * FROM ai_caio_registry WHERE project_id='proj-1'"
+    ).fetchall()
     assert len(rows) == 2
 
 
@@ -136,20 +147,26 @@ def test_file_appeal_basic(conn):
 
 
 def test_file_appeal_with_grievance(conn):
-    result = file_appeal(conn, "proj-1", "User B", "ChatBot v2", grievance="Biased output")
+    result = file_appeal(
+        conn, "proj-1", "User B", "ChatBot v2", grievance="Biased output"
+    )
     assert result["appeal_id"]
     assert result["status"] == "submitted"
 
 
 def test_resolve_appeal_basic(conn):
     appeal = file_appeal(conn, "proj-1", "User A", "System X")
-    resolved = resolve_appeal(conn, appeal["appeal_id"], resolution="Issue corrected", status="resolved")
+    resolved = resolve_appeal(
+        conn, appeal["appeal_id"], resolution="Issue corrected", status="resolved"
+    )
     assert resolved["status"] == "resolved"
 
 
 def test_resolve_appeal_dismissed(conn):
     appeal = file_appeal(conn, "proj-1", "User A", "System X")
-    resolved = resolve_appeal(conn, appeal["appeal_id"], resolution="Not reproducible", status="dismissed")
+    resolved = resolve_appeal(
+        conn, appeal["appeal_id"], resolution="Not reproducible", status="dismissed"
+    )
     assert resolved["status"] == "dismissed"
 
 
@@ -217,7 +234,9 @@ def test_schedule_reassessment_invalid_frequency(conn):
 
 
 def test_schedule_reassessment_with_last_assessed(conn):
-    result = schedule_reassessment(conn, "proj-1", "ChatBot v1", frequency="annual", last_assessed="2025-06-15")
+    result = schedule_reassessment(
+        conn, "proj-1", "ChatBot v1", frequency="annual", last_assessed="2025-06-15"
+    )
     assert result["schedule_id"]
     assert result["next_due"]
 
@@ -259,14 +278,18 @@ def test_get_accountability_summary_populated(conn):
 
 def test_audit_trail_recorded_on_plan(conn):
     register_oversight_plan(conn, "proj-1", "Plan A", created_by="admin")
-    rows = conn.execute("SELECT * FROM audit_trail WHERE project_id='proj-1'").fetchall()
+    rows = conn.execute(
+        "SELECT * FROM audit_trail WHERE project_id='proj-1'"
+    ).fetchall()
     # Should have at least one audit entry related to oversight plan registration
     assert len(rows) >= 1
 
 
 def test_audit_trail_recorded_on_appeal(conn):
     file_appeal(conn, "proj-1", "User A", "System X")
-    rows = conn.execute("SELECT * FROM audit_trail WHERE project_id='proj-1'").fetchall()
+    rows = conn.execute(
+        "SELECT * FROM audit_trail WHERE project_id='proj-1'"
+    ).fetchall()
     assert len(rows) >= 1
 
 

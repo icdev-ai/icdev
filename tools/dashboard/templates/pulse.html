@@ -1,11 +1,24 @@
 {% extends "base.html" %}
 {% block title %}{{ app_name }} — Pulse{% endblock %}
 {% block content %}
-<h1>ICDEV Pulse — Content Engine</h1>
+<h1>ICDEV™ Pulse — Content Engine</h1>
 
-<div class="intro-panel">
-    <h2>AI-Powered Blog Pipeline</h2>
-    <p>Research → Draft (Qwen3.5) → Quality Check (WriteGuard) → Rewrite (Claude Sonnet) → Review → Publish</p>
+<div class="intro-panel" style="display: flex; justify-content: space-between; align-items: center;">
+    <div>
+        <h2>AI-Powered Blog Pipeline</h2>
+        <p>Research → Draft → Quality Check (WriteGuard) → Rewrite → Review → Publish</p>
+    </div>
+    <div id="dual-model-toggle" style="text-align: right; min-width: 200px;">
+        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.85em;">
+            <span id="dm-label" style="white-space: nowrap;">Loading...</span>
+            <div style="position: relative; width: 48px; height: 24px;">
+                <input type="checkbox" id="dm-switch" style="opacity:0; width:0; height:0;" onchange="toggleDualModel(this.checked)">
+                <span id="dm-slider" style="position:absolute; cursor:pointer; top:0; left:0; right:0; bottom:0; background:#888; border-radius:12px; transition:.3s;"></span>
+                <span id="dm-knob" style="position:absolute; content:''; height:18px; width:18px; left:3px; top:3px; background:white; border-radius:50%; transition:.3s;"></span>
+            </div>
+        </label>
+        <div id="dm-detail" style="font-size: 0.75em; color: var(--muted); margin-top: 2px;"></div>
+    </div>
 </div>
 
 {% if error %}
@@ -63,16 +76,14 @@
     <!-- Stage Progress Bar -->
     <div class="pipeline-stages" id="pipeline-stages">
         <div class="stage" data-stage="research"><span class="stage-num">1</span> Research</div>
-        <div class="stage-arrow">&rarr;</div>
+        <div class="stage-arrow" data-after="research">&rarr;</div>
         <div class="stage" data-stage="draft"><span class="stage-num">2</span> Draft</div>
-        <div class="stage-arrow">&rarr;</div>
+        <div class="stage-arrow" data-after="draft">&rarr;</div>
         <div class="stage" data-stage="quality_check"><span class="stage-num">3</span> Quality</div>
-        <div class="stage-arrow">&rarr;</div>
+        <div class="stage-arrow" data-after="quality_check">&rarr;</div>
         <div class="stage" data-stage="rewrite"><span class="stage-num">4</span> Rewrite</div>
-        <div class="stage-arrow">&rarr;</div>
-        <div class="stage" data-stage="review"><span class="stage-num">5</span> Review</div>
-        <div class="stage-arrow">&rarr;</div>
-        <div class="stage" data-stage="publish"><span class="stage-num">6</span> Publish</div>
+        <div class="stage-arrow" data-after="rewrite">&rarr;</div>
+        <div class="stage" data-stage="publish"><span class="stage-num">5</span> Publish</div>
     </div>
 
     <!-- Pipeline Controls -->
@@ -154,7 +165,7 @@
     <div class="card-header">
         <h2>Posts</h2>
         <div style="display: flex; gap: 8px; align-items: center;">
-            <button class="btn btn-sm" onclick="enrichAllPosts()" id="btn-enrich-all" title="Rewrite all published posts with ICDEV capability context (Claude Sonnet)">Enrich All</button>
+            <button class="btn btn-sm" onclick="enrichAllPosts()" id="btn-enrich-all" title="Rewrite all published posts with ICDEV™ capability context (Claude Sonnet)">Enrich All</button>
             <select id="filter-status" aria-label="Filter by status" onchange="filterPosts()" style="padding: 6px 10px; border-radius: 6px;
                 border: 1px solid #1e2d45; background: #131c2e; color: #e2e8f0; font-size: 13px;">
                 <option value="">All Statuses</option>
@@ -316,18 +327,26 @@
     .intro-panel p { font-size: 13px; color: var(--text-dim); margin: 0; }
 
     /* Pipeline Stages */
-    .pipeline-stages { display: flex; align-items: center; gap: 4px; padding: 12px 0; flex-wrap: wrap; }
-    .stage { padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600;
-             background: rgba(255,255,255,.05); color: var(--text-dim); transition: all .2s; }
-    .stage.active { background: rgba(14,165,233,.2); color: var(--accent); }
-    .stage.completed { background: rgba(34,197,94,.15); color: #22c55e; }
-    .stage.failed { background: rgba(239,68,68,.15); color: #ef4444; }
-    .stage-num { display: inline-block; width: 18px; height: 18px; border-radius: 50%;
-                 background: rgba(255,255,255,.1); text-align: center; line-height: 18px;
-                 font-size: 10px; margin-right: 4px; }
-    .stage.active .stage-num { background: var(--accent); color: #000; }
+    .pipeline-stages { display: flex; align-items: center; gap: 6px; padding: 12px 0; flex-wrap: wrap; }
+    .stage { padding: 8px 14px; border-radius: 8px; font-size: 13px; font-weight: 600;
+             background: rgba(255,255,255,.05); color: var(--text-dim);
+             border: 2px solid transparent; transition: all 0.4s ease; }
+    .stage.active { background: rgba(14,165,233,.25); color: #38bdf8; border-color: #38bdf8;
+                    box-shadow: 0 0 12px rgba(56,189,248,0.3); animation: pulse-glow 1.5s ease-in-out infinite; }
+    .stage.completed { background: rgba(34,197,94,.2); color: #22c55e; border-color: #22c55e; }
+    .stage.failed { background: rgba(239,68,68,.2); color: #ef4444; border-color: #ef4444; }
+    .stage-num { display: inline-block; width: 20px; height: 20px; border-radius: 50%;
+                 background: rgba(255,255,255,.1); text-align: center; line-height: 20px;
+                 font-size: 11px; margin-right: 6px; transition: all 0.3s ease; }
+    .stage.active .stage-num { background: #38bdf8; color: #000; }
     .stage.completed .stage-num { background: #22c55e; color: #000; }
-    .stage-arrow { color: var(--text-dim); font-size: 14px; }
+    .stage.failed .stage-num { background: #ef4444; color: #fff; }
+    .stage-arrow { color: var(--text-dim); font-size: 16px; transition: color 0.3s ease; }
+    .stage-arrow.completed { color: #22c55e; }
+    @keyframes pulse-glow {
+        0%, 100% { box-shadow: 0 0 8px rgba(56,189,248,0.2); }
+        50% { box-shadow: 0 0 16px rgba(56,189,248,0.5); }
+    }
 
     /* Score Pills */
     .score-pill { padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
@@ -375,6 +394,9 @@ function setStageActive(stageId) {
 function setStageCompleted(stageId) {
     const el = document.querySelector('.stage[data-stage="' + stageId + '"]');
     if (el) { el.classList.remove('active'); el.classList.add('completed'); }
+    // Color the arrow after this stage green
+    const arrow = document.querySelector('.stage-arrow[data-after="' + stageId + '"]');
+    if (arrow) arrow.classList.add('completed');
 }
 
 function setStageFailed(stageId) {
@@ -385,6 +407,9 @@ function setStageFailed(stageId) {
 function resetStages() {
     document.querySelectorAll('.stage').forEach(s => {
         s.classList.remove('active', 'completed', 'failed');
+    });
+    document.querySelectorAll('.stage-arrow').forEach(a => {
+        a.classList.remove('completed');
     });
 }
 
@@ -446,19 +471,15 @@ function pollFullPipeline(runId) {
 
             // Update stage indicators based on status
             const stage = data.stage || '';
-            if (stage === 'research') { setStageActive('research'); }
-            if (stage === 'draft') { setStageCompleted('research'); setStageActive('draft'); }
-            if (stage === 'quality_check') {
-                setStageCompleted('research'); setStageCompleted('draft'); setStageActive('quality_check');
-            }
-            if (stage === 'rewrite') {
-                setStageCompleted('research'); setStageCompleted('draft');
-                setStageCompleted('quality_check'); setStageActive('rewrite');
-            }
-            if (stage === 'publish') {
-                setStageCompleted('research'); setStageCompleted('draft');
-                setStageCompleted('quality_check'); setStageCompleted('rewrite');
-                setStageActive('publish');
+            const STAGES = ['research', 'draft', 'quality_check', 'rewrite', 'publish'];
+            const idx = STAGES.indexOf(stage);
+            if (idx >= 0) {
+                // Mark all prior stages as completed
+                for (let i = 0; i < idx; i++) {
+                    setStageCompleted(STAGES[i]);
+                }
+                // Mark current stage as active
+                setStageActive(stage);
             }
 
             if (data.status === 'completed') {
@@ -649,7 +670,7 @@ async function showTab(tab) {
 // ── Enrich All Posts with Capabilities ──────────────────────────
 async function enrichAllPosts() {
     const btn = document.getElementById('btn-enrich-all');
-    if (!confirm('This will rewrite all published posts with ICDEV capability references via Claude Sonnet. Continue?')) return;
+    if (!confirm('This will rewrite all published posts with ICDEV™ capability references via Claude Sonnet. Continue?')) return;
     btn.disabled = true;
     btn.textContent = 'Enriching...';
     try {
@@ -936,5 +957,48 @@ async function generateVideo(postId) {
         btn.textContent = 'Gen';
     }
 }
+
+/* --- Dual-Model Toggle --- */
+function updateDualModelUI(data) {
+    const sw = document.getElementById('dm-switch');
+    const slider = document.getElementById('dm-slider');
+    const knob = document.getElementById('dm-knob');
+    const label = document.getElementById('dm-label');
+    const detail = document.getElementById('dm-detail');
+    if (!sw) return;
+    sw.checked = data.dual_model;
+    slider.style.background = data.dual_model ? 'var(--accent, #4a9eff)' : '#888';
+    knob.style.left = data.dual_model ? '27px' : '3px';
+    label.textContent = data.dual_model ? 'Speed Mode' : 'Quality Mode';
+    detail.textContent = data.description || '';
+}
+
+async function loadDualModelStatus() {
+    try {
+        const resp = await fetch('/api/llm/dual-model');
+        const data = await resp.json();
+        updateDualModelUI(data);
+    } catch(e) {
+        document.getElementById('dm-label').textContent = 'Unavailable';
+    }
+}
+
+async function toggleDualModel(enabled) {
+    try {
+        const resp = await fetch('/api/llm/dual-model', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({enabled: enabled})
+        });
+        const data = await resp.json();
+        updateDualModelUI(data);
+        showToast(enabled ? 'Speed Mode: 1.7B + Gemma3 (dual VRAM)' : 'Quality Mode: 9B (single model)', 'info');
+    } catch(e) {
+        showToast('Failed to toggle: ' + e.message, 'error');
+    }
+}
+
+// Init on page load
+document.addEventListener('DOMContentLoaded', loadDualModelStatus);
 </script>
 {% endblock %}

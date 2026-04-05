@@ -1,6 +1,6 @@
 # SDK & API Reference
 
-ICDEV exposes its full capability through three programmatic interfaces: REST API, MCP Streamable HTTP, and direct Python CLI. Use these when you need automation beyond what the conversational (Claude Code) or invisible (pipeline) tiers provide.
+ICDEV™ exposes its full capability through three programmatic interfaces: REST API, MCP Streamable HTTP, and direct Python CLI. Use these when you need automation beyond what the conversational (Claude Code) or invisible (pipeline) tiers provide.
 
 ---
 
@@ -179,7 +179,7 @@ Interactive Swagger UI is available at `/api/v1/docs` when the API gateway is ru
 
 ## MCP Streamable HTTP
 
-For Claude Code clients or MCP-compatible tools, ICDEV exposes the same functionality via MCP Streamable HTTP transport (spec 2025-03-26).
+For Claude Code clients or MCP-compatible tools, ICDEV™ exposes the same functionality via MCP Streamable HTTP transport (spec 2025-03-26).
 
 ### Endpoint
 
@@ -227,7 +227,7 @@ Full tool list: see `CLAUDE.md` MCP Servers section.
 
 ## Direct Python CLI
 
-Every ICDEV tool can be called from the command line. All tools support `--json` for structured output and `--human` for colored terminal output.
+Every ICDEV™ tool can be called from the command line. All tools support `--json` for structured output and `--human` for colored terminal output.
 
 ### Pattern
 

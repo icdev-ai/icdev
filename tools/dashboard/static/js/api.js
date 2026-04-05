@@ -1,5 +1,5 @@
 /**
- * ICDEV Dashboard - Minimal API Client
+ * ICDEV™ Dashboard - Minimal API Client
  * Provides fetch helpers and auto-refresh for dashboard sections.
  */
 
@@ -11,12 +11,12 @@
         try {
             const resp = await fetch(url);
             if (!resp.ok) {
-                console.error(`[ICDEV API] ${resp.status} ${resp.statusText} — ${url}`);
+                console.error(`[ICDEV™ API] ${resp.status} ${resp.statusText} — ${url}`);
                 return null;
             }
             return await resp.json();
         } catch (err) {
-            console.error(`[ICDEV API] Network error — ${url}`, err);
+            console.error(`[ICDEV™ API] Network error — ${url}`, err);
             return null;
         }
     }
@@ -60,7 +60,7 @@
         stopAutoRefresh();
         const ms = intervalMs || DEFAULT_INTERVAL_MS;
         _refreshInterval = setInterval(callback, ms);
-        console.log(`[ICDEV API] Auto-refresh started (${ms}ms)`);
+        console.log(`[ICDEV™ API] Auto-refresh started (${ms}ms)`);
     }
 
     function stopAutoRefresh() {
@@ -146,7 +146,7 @@
         return d.innerHTML;
     }
 
-    // Expose API to global scope — merge into existing ICDEV namespace (preserve inline scripts)
+    // Expose API to global scope — merge into existing ICDEV™ namespace (preserve inline scripts)
     var ns = window.ICDEV || {};
     ns.fetchJSON = fetchJSON;
     ns.updateText = updateText;

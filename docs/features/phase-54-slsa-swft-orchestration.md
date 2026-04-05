@@ -9,29 +9,29 @@
 | Status | Implemented |
 | Priority | P1 |
 | Dependencies | Phase 24 (DevSecOps Pipeline Security), Phase 37 (MITRE ATLAS Integration), Phase 47 (Unified MCP Gateway) |
-| Author | ICDEV Architect Agent |
+| Author | ICDEV™ Architect Agent |
 | Date | 2026-02-25 |
 
 ---
 
 ## 1. Problem Statement
 
-ICDEV generates compliance artifacts across 30+ frameworks and executes security scans, ATO acceleration, and build pipelines through individual CLI tools. However, three critical gaps remain:
+ICDEV™ generates compliance artifacts across 30+ frameworks and executes security scans, ATO acceleration, and build pipelines through individual CLI tools. However, three critical gaps remain:
 
-1. **No SLSA provenance.** DoD and federal software factories increasingly require SLSA (Supply-chain Levels for Software Artifacts) v1.0 provenance attestations to verify build integrity. ICDEV tracks build evidence across `devsecops_pipeline_audit`, `sbom_records`, and `audit_trail` tables, but never assembles it into the standardized in-toto v1 provenance format that Platform One and software factories expect.
+1. **No SLSA provenance.** DoD and federal software factories increasingly require SLSA (Supply-chain Levels for Software Artifacts) v1.0 provenance attestations to verify build integrity. ICDEV™ tracks build evidence across `devsecops_pipeline_audit`, `sbom_records`, and `audit_trail` tables, but never assembles it into the standardized in-toto v1 provenance format that Platform One and software factories expect.
 
-2. **No SWFT evidence bundling.** The DoD Software Factory Trust (SWFT) framework mandates a consolidated evidence package containing SLSA provenance, SBOM, VEX, SAST results, dependency audits, secret detection, and compliance assessments. ICDEV generates each artifact independently, but there is no tool to package them into a validated, hash-integrity-verified bundle for software factory authorization.
+2. **No SWFT evidence bundling.** The DoD Software Factory Trust (SWFT) framework mandates a consolidated evidence package containing SLSA provenance, SBOM, VEX, SAST results, dependency audits, secret detection, and compliance assessments. ICDEV™ generates each artifact independently, but there is no tool to package them into a validated, hash-integrity-verified bundle for software factory authorization.
 
 3. **No cross-phase orchestration.** Running an ATO acceleration requires manually invoking FIPS 199 categorization, then multi-framework assessment, then SSP generation, then POAM, then SBOM, then SLSA, then OSCAL -- each with the correct dependency ordering. Operators must memorize tool chains and execution order. There is no declarative way to compose multi-tool workflows with automatic dependency resolution.
 
-Without these capabilities, ICDEV cannot satisfy DoD software factory authorization requirements or provide operators with one-command compliance workflows.
+Without these capabilities, ICDEV™ cannot satisfy DoD software factory authorization requirements or provide operators with one-command compliance workflows.
 
 ---
 
 ## 2. Goals
 
 1. Generate SLSA v1.0 provenance statements in in-toto v1 format from existing build pipeline evidence
-2. Determine SLSA level (0-4) automatically from evidence collected across ICDEV databases
+2. Determine SLSA level (0-4) automatically from evidence collected across ICDEV™ databases
 3. Generate VEX (Vulnerability Exploitability eXchange) documents from vulnerability and CVE triage records
 4. Bundle all SWFT-required artifacts into a validated evidence package with SHA-256 integrity verification
 5. Validate SWFT evidence completeness, freshness, and gap analysis with actionable recommendations
@@ -74,7 +74,7 @@ Without these capabilities, ICDEV cannot satisfy DoD software factory authorizat
             │                               │
             ↓                               ↓
     ┌───────────────────────────────────────────────┐
-    │              Existing ICDEV Evidence           │
+    │              Existing ICDEV™ Evidence           │
     │                                               │
     │  devsecops_pipeline_audit  sbom_records       │
     │  audit_trail               vulnerability_records
@@ -128,7 +128,7 @@ Produces CycloneDX-format VEX documents by collecting vulnerability data from `v
 
 ### Component 2: SWFT Evidence Bundler (`tools/compliance/swft_evidence_bundler.py`)
 
-Packages ICDEV compliance artifacts into a DoD Software Factory Trust evidence bundle.
+Packages ICDEV™ compliance artifacts into a DoD Software Factory Trust evidence bundle.
 
 **10 Artifact Categories:**
 
@@ -155,7 +155,7 @@ Packages ICDEV compliance artifacts into a DoD Software Factory Trust evidence b
 
 ### Component 3: Cross-Phase Workflow Composer (`tools/orchestration/workflow_composer.py`)
 
-Declarative workflow engine that composes ICDEV tools into reusable DAG-based workflows.
+Declarative workflow engine that composes ICDEV™ tools into reusable DAG-based workflows.
 
 **Execution Pipeline:**
 1. Load YAML template from `args/workflow_templates/`
@@ -339,7 +339,7 @@ pytest tests/test_workflow_composer.py -v       # 17 tests
 
 | ID | Decision | Rationale |
 |----|----------|-----------|
-| D341 | SLSA attestation generator extends existing `attestation_manager.py` | Produces SLSA v1.0 provenance from build pipeline evidence already collected in ICDEV databases. Reuses existing infrastructure rather than introducing new attestation pipeline. |
+| D341 | SLSA attestation generator extends existing `attestation_manager.py` | Produces SLSA v1.0 provenance from build pipeline evidence already collected in ICDEV™ databases. Reuses existing infrastructure rather than introducing new attestation pipeline. |
 | D342 | CycloneDX version upgrade is backward-compatible with `--spec-version` flag | Default spec version 1.7 for new features, but allows `--spec-version 1.4` for environments requiring older format. No breaking changes to existing SBOM consumers. |
 | D343 | Workflow composer uses declarative YAML templates + `graphlib.TopologicalSorter` DAG | Add new workflows without code changes (D26 pattern). `TopologicalSorter` is stdlib Python 3.9+ (D40) -- air-gap safe, zero deps, cycle detection built-in. Templates define tool sequences with dependencies; engine resolves execution order automatically. |
 

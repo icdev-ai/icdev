@@ -16,7 +16,7 @@ CUI // SP-CTI
 Controlled by: Department of Defense
 CUI Category: CTI
 Distribution: D
-POC: ICDEV System Administrator
+POC: ICDEV™ System Administrator
 """
 
 from pathlib import Path
@@ -47,7 +47,7 @@ CUI_HEADER_PYTHON = """\
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """
 
 CUI_HEADER_C_STYLE = """\
@@ -55,7 +55,7 @@ CUI_HEADER_C_STYLE = """\
 // Controlled by: Department of Defense
 // CUI Category: CTI
 // Distribution: D
-// POC: ICDEV System Administrator
+// POC: ICDEV™ System Administrator
 """
 
 CUI_HEADER_XML = """\
@@ -63,7 +63,7 @@ CUI_HEADER_XML = """\
 <!-- Controlled by: Department of Defense -->
 <!-- CUI Category: CTI -->
 <!-- Distribution: D -->
-<!-- POC: ICDEV System Administrator -->
+<!-- POC: ICDEV™ System Administrator -->
 """
 
 CUI_HEADER_HASH = """\
@@ -71,7 +71,7 @@ CUI_HEADER_HASH = """\
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """
 
 CUI_HEADER_YAML = CUI_HEADER_HASH
@@ -81,7 +81,7 @@ CUI_HEADER_TOML = """\
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """
 
 CUI_HEADER_RUST = CUI_HEADER_C_STYLE
@@ -114,7 +114,7 @@ def _create_compliance_dirs(root: Path, files: List[str]) -> None:
 
 def _readme_content(name: str, project_type: str, description: str = "") -> str:
     """Generate a README with CUI banners."""
-    desc = description or f"A {project_type} project scaffolded by ICDEV Builder."
+    desc = description or f"A {project_type} project scaffolded by ICDEV™ Builder."
     return f"""{CUI_BANNER}
 
 # {name}
@@ -209,7 +209,7 @@ def scaffold_java_backend(project_path: str, name: str) -> List[str]:
     <artifactId>{name}</artifactId>
     <version>0.1.0-SNAPSHOT</version>
     <name>{name}</name>
-    <description>ICDEV scaffolded Spring Boot project — CUI // SP-CTI</description>
+    <description>ICDEV™ scaffolded Spring Boot project — CUI // SP-CTI</description>
 
     <properties>
         <java.version>17</java.version>
@@ -790,7 +790,7 @@ def scaffold_rust_backend(project_path: str, name: str) -> List[str]:
 name = "{crate_name}"
 version = "0.1.0"
 edition = "2021"
-description = "ICDEV scaffolded Rust backend — CUI // SP-CTI"
+description = "ICDEV™ scaffolded Rust backend — CUI // SP-CTI"
 
 [dependencies]
 actix-web = "4"
@@ -962,7 +962,7 @@ ENTRYPOINT ["./app"]
 
 # Read-only root filesystem — enforce via container runtime:
 #   docker run --read-only --tmpfs /tmp:rw,noexec,nosuid ...
-"""
+"""  # nosec B608 -- template content, not user input
     p = root / "Dockerfile"
     _write_file(p, dockerfile)
     files.append(str(p))
@@ -1050,7 +1050,7 @@ def scaffold_csharp_backend(project_path: str, name: str) -> List[str]:
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>{ns_name}</RootNamespace>
     <AssemblyName>{name}</AssemblyName>
-    <Description>ICDEV scaffolded .NET 8 project — CUI // SP-CTI</Description>
+    <Description>ICDEV™ scaffolded .NET 8 project — CUI // SP-CTI</Description>
   </PropertyGroup>
 
   <ItemGroup>
@@ -1336,7 +1336,7 @@ def scaffold_typescript_backend(project_path: str, name: str) -> List[str]:
         + f'"{name}"'
         + """,
   "version": "0.1.0",
-  "description": "ICDEV scaffolded TypeScript backend — CUI // SP-CTI",
+  "description": "ICDEV™ scaffolded TypeScript backend — CUI // SP-CTI",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
@@ -1634,7 +1634,7 @@ def generate_agentic_sidecar(project_root: Path, app_name: str, language: str) -
     """Generate Python agentic sidecar for non-Python language projects.
 
     Non-Python child apps get a Python sidecar in `sidecar/agentic/` that
-    provides GOTCHA framework, agents, and memory system alongside the main
+    provides FORGE framework, agents, and memory system alongside the main
     language project. Connected via docker-compose.yaml.
 
     Args:
@@ -1687,7 +1687,7 @@ CMD ["python", "orchestrator.py"]
 # CUI // SP-CTI
 \"\"\"Agentic sidecar orchestrator for {app_name} ({language}).
 
-This sidecar provides GOTCHA framework, ATLAS workflow, agent communication,
+This sidecar provides FORGE framework, ANVIL workflow, agent communication,
 and memory system alongside the main {language} application.
 \"\"\"
 

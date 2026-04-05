@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-# ICDEV GovCon Response Drafter — Phase 59 (D365)
+# ICDEV™ GovCon Response Drafter — Phase 59 (D365)
 # Two-tier LLM drafting: qwen3 worker drafts → Claude reviews.
 
 """
@@ -27,9 +27,9 @@ Usage:
 import argparse
 import json
 import os
-import sqlite3
 import sys
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -40,10 +40,8 @@ _CONFIG_PATH = _ROOT / "args" / "govcon_config.yaml"
 
 # ── helpers ───────────────────────────────────────────────────────────
 
-
 def _get_db():
-    conn = sqlite3.connect(str(_DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
@@ -55,7 +53,7 @@ def _now():
 def _audit(conn, action, details="", actor="response_drafter"):
     try:
         conn.execute(
-            "INSERT INTO audit_trail (id, timestamp, event_type, actor, action, details, session_id) "
+            "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (str(uuid.uuid4()), _now(), "govcon.response_draft", actor, action, details, "govcon"),
         )
@@ -66,7 +64,6 @@ def _audit(conn, action, details="", actor="response_drafter"):
 def _load_config():
     try:
         import yaml
-
         with open(_CONFIG_PATH) as f:
             return yaml.safe_load(f) or {}
     except Exception:
@@ -75,21 +72,28 @@ def _load_config():
 
 # ── LLM drafting ──────────────────────────────────────────────────────
 
-
 def _try_llm_draft(shall_text, capabilities, knowledge_blocks, domain):
     """Attempt two-tier LLM draft via tools.llm.router.
 
     Returns (draft_text, method) or (None, None) if unavailable.
+
+    Phase 70: Proposal content is sanitized before LLM invocation.
+    proposal_drafting routes to local Ollama only (args/llm_config.yaml).
+    Sanitizer runs as defense-in-depth even for local routing.
     """
     try:
         from tools.llm.router import LLMRouter
-
+        from tools.llm.provider import LLMRequest
         router = LLMRouter()
 
         # Build prompt for qwen3 worker
-        cap_descriptions = "\n".join(f"- {c['capability_name']}: {c.get('evidence', '')}" for c in capabilities[:3])
+        cap_descriptions = "\n".join(
+            f"- {c['capability_name']}: {c.get('evidence', '')}"
+            for c in capabilities[:3]
+        )
         kb_content = "\n".join(
-            f"- {kb.get('title', '')}: {(kb.get('content', '') or '')[:200]}" for kb in knowledge_blocks[:3]
+            f"- {kb.get('title', '')}: {(kb.get('content', '') or '')[:200]}"
+            for kb in knowledge_blocks[:3]
         )
 
         # Check for product-level context
@@ -97,8 +101,8 @@ def _try_llm_draft(shall_text, capabilities, knowledge_blocks, domain):
         product_context = ""
         if product_key == "icdev_platform":
             product_context = (
-                "\nPRODUCT CONTEXT: This response should describe ICDEV as a complete "
-                "integrated platform — a system that builds systems. Emphasize that ICDEV is "
+                "\nPRODUCT CONTEXT: This response should describe ICDEV™ as a complete "
+                "integrated platform — a system that builds systems. Emphasize that ICDEV™ is "
                 "delivered on-premises to the customer as a unified platform with 15 agents, "
                 "42 compliance frameworks, 500+ tools, and 6-language support. It is NOT a "
                 "collection of point tools — it is an integrated autonomous development system.\n"
@@ -129,13 +133,28 @@ def _try_llm_draft(shall_text, capabilities, knowledge_blocks, domain):
             f"- Keep to ~400 words, use bullet points for clarity\n"
         )
 
-        response = router.invoke(
-            function_name="proposal_drafting",
-            prompt=prompt,
-        )
+        # Phase 70: Sanitize prompt before LLM invocation (defense-in-depth)
+        # proposal_drafting already routes to local Ollama only via llm_config.yaml,
+        # but sanitizer catches PII as additional protection layer.
+        try:
+            from tools.redaction.govcon_sanitizer import GovConSanitizer
+            _sanitizer = GovConSanitizer()
+            prompt, _redaction_meta = _sanitizer.sanitize_for_llm(
+                prompt,
+                function_name="proposal_drafting",
+                impact_level="IL4",
+                is_local_only=True,  # Routes to Ollama — skip_for_local honored
+            )
+        except ImportError:
+            pass  # Redaction module not installed — proceed unsanitized
 
-        if response and response.get("content"):
-            return response["content"], "two_tier_llm"
+        request = LLMRequest(
+            messages=[{"role": "user", "content": prompt}],
+        )
+        response = router.invoke("proposal_drafting", request)
+
+        if response and response.content:
+            return response.content, "two_tier_llm"
 
     except Exception:
         pass
@@ -148,7 +167,7 @@ def _try_llm_draft(shall_text, capabilities, knowledge_blocks, domain):
 _RESPONSE_TEMPLATES = {
     "devsecops": (
         "The Contractor implements a comprehensive DevSecOps pipeline leveraging "
-        "the ICDEV platform's 9-step automated testing and security validation framework. "
+        "the ICDEV™ platform's 9-step automated testing and security validation framework. "
         "Our approach integrates {tools} to deliver continuous integration, continuous delivery, "
         "and continuous security monitoring.\n\n"
         "Key Implementation:\n"
@@ -161,7 +180,7 @@ _RESPONSE_TEMPLATES = {
     ),
     "ato_rmf": (
         "The Contractor provides fully automated ATO artifact generation and continuous "
-        "authorization monitoring through the ICDEV compliance automation platform. "
+        "authorization monitoring through the ICDEV™ compliance automation platform. "
         "Our approach covers the complete RMF lifecycle from categorization through "
         "continuous monitoring.\n\n"
         "Key Implementation:\n"
@@ -174,7 +193,7 @@ _RESPONSE_TEMPLATES = {
         "Evidence: {evidence}"
     ),
     "ai_ml": (
-        "The Contractor delivers comprehensive AI/ML governance through the ICDEV "
+        "The Contractor delivers comprehensive AI/ML governance through the ICDEV™ "
         "platform's responsible AI framework. Our approach addresses the full lifecycle "
         "of AI systems from development through deployment and monitoring.\n\n"
         "Key Implementation:\n"
@@ -188,7 +207,7 @@ _RESPONSE_TEMPLATES = {
     ),
     "cloud": (
         "The Contractor provides multi-cloud migration and modernization capabilities "
-        "through ICDEV's cloud-agnostic architecture supporting 6 cloud service providers. "
+        "through ICDEV™'s cloud-agnostic architecture supporting 6 cloud service providers. "
         "Our approach follows the 7R methodology for systematic modernization.\n\n"
         "Key Implementation:\n"
         "- Multi-cloud IaC generation (Terraform) for AWS GovCloud, Azure Gov, GCP Assured, OCI Gov, IBM IC4G\n"
@@ -199,7 +218,7 @@ _RESPONSE_TEMPLATES = {
         "Evidence: {evidence}"
     ),
     "security": (
-        "The Contractor implements defense-in-depth security through ICDEV's comprehensive "
+        "The Contractor implements defense-in-depth security through ICDEV™'s comprehensive "
         "security scanning and zero trust architecture capabilities.\n\n"
         "Key Implementation:\n"
         "- SAST, dependency audit, secret detection, container scanning\n"
@@ -211,7 +230,7 @@ _RESPONSE_TEMPLATES = {
         "Evidence: {evidence}"
     ),
     "compliance": (
-        "The Contractor provides automated multi-framework compliance through ICDEV's "
+        "The Contractor provides automated multi-framework compliance through ICDEV™'s "
         "42-framework compliance engine with dual-hub crosswalk.\n\n"
         "Key Implementation:\n"
         "- Dual-hub crosswalk: NIST 800-53 (US) + ISO 27001 (international)\n"
@@ -223,7 +242,7 @@ _RESPONSE_TEMPLATES = {
     ),
     "agile": (
         "The Contractor follows SAFe-based agile practices with AI-assisted requirements "
-        "intake and automated decomposition through the ICDEV RICOAS system.\n\n"
+        "intake and automated decomposition through the ICDEV™ RICOAS system.\n\n"
         "Key Implementation:\n"
         "- AI-driven conversational requirements intake\n"
         "- SAFe decomposition: Epic → Capability → Feature → Story → Enabler\n"
@@ -235,7 +254,7 @@ _RESPONSE_TEMPLATES = {
 }
 
 _DEFAULT_TEMPLATE = (
-    "The Contractor addresses this requirement through the ICDEV platform's "
+    "The Contractor addresses this requirement through the ICDEV™ platform's "
     "automated {domain} capabilities.\n\n"
     "Key Implementation:\n"
     "- {tools}\n"
@@ -249,10 +268,10 @@ _DEFAULT_TEMPLATE = (
 
 _PRODUCT_TEMPLATES = {
     "icdev_platform": (
-        "The Contractor delivers the ICDEV (Intelligent Certified Development) platform — "
+        "The Contractor delivers the ICDEV™ (Intelligent Certified Development) platform — "
         "a complete autonomous software development system that generates ATO-ready "
-        "government applications from natural language requirements. ICDEV orchestrates "
-        "15 specialized AI agents across its 6-layer GOTCHA framework to handle the full "
+        "government applications from natural language requirements. ICDEV™ orchestrates "
+        "15 specialized AI agents across its 6-layer FORGE framework to handle the full "
         "SDLC with TDD/BDD, multi-framework compliance automation, and continuous "
         "authorization monitoring.\n\n"
         "Platform Capabilities Delivered On-Premises:\n"
@@ -304,37 +323,16 @@ _PRODUCT_TEMPLATES = {
 # Keywords that trigger product-level responses instead of component-level
 _PRODUCT_TRIGGER_KEYWORDS = {
     "icdev_platform": [
-        "integrated platform",
-        "complete solution",
-        "end-to-end",
-        "full lifecycle",
-        "software factory",
-        "autonomous development",
-        "unified platform",
-        "meta-builder",
-        "system that builds",
-        "development platform",
-        "coding platform",
-        "SDLC platform",
-        "all-in-one",
-        "comprehensive platform",
-        "integrated development",
+        "integrated platform", "complete solution", "end-to-end", "full lifecycle",
+        "software factory", "autonomous development", "unified platform", "meta-builder",
+        "system that builds", "development platform", "coding platform", "SDLC platform",
+        "all-in-one", "comprehensive platform", "integrated development",
     ],
     "contract_management_portal": [
-        "contract management",
-        "CDRL",
-        "contract data requirements",
-        "CPARS",
-        "post-award",
-        "deliverable tracking",
-        "contract performance",
-        "obligation tracking",
-        "contract administration",
-        "delivery management",
-        "DD Form 1423",
-        "contract monitoring",
-        "performance monitoring",
-        "COR visibility",
+        "contract management", "CDRL", "contract data requirements", "CPARS",
+        "post-award", "deliverable tracking", "contract performance", "obligation tracking",
+        "contract administration", "delivery management", "DD Form 1423",
+        "contract monitoring", "performance monitoring", "COR visibility",
     ],
 }
 
@@ -388,7 +386,6 @@ def _template_draft(shall_text, capabilities, knowledge_blocks, domain):
     # Extract controls from capability catalog
     try:
         from tools.govcon.capability_mapper import load_capability_catalog
-
         catalog = load_capability_catalog()
         for cap in capabilities[:3]:
             cap_id = cap.get("capability_id", "")
@@ -401,7 +398,7 @@ def _template_draft(shall_text, capabilities, knowledge_blocks, domain):
 
     controls_str = ", ".join(sorted(set(controls_list)))[:100] or "SA-11, CA-2"
     tools_str = ", ".join(sorted(set(tools_list)))[:200] or domain
-    evidence_str = "; ".join(e for e in evidence_list if e)[:300] or "ICDEV platform automation"
+    evidence_str = "; ".join(e for e in evidence_list if e)[:300] or "ICDEV™ platform automation"
 
     draft = template.format(
         tools=tools_str,
@@ -415,7 +412,6 @@ def _template_draft(shall_text, capabilities, knowledge_blocks, domain):
 
 # ── draft pipeline ────────────────────────────────────────────────────
 
-
 def draft_response(shall_id):
     """Draft a response for a single shall statement.
 
@@ -428,7 +424,9 @@ def draft_response(shall_id):
     conn = _get_db()
 
     # Load shall statement
-    stmt = conn.execute("SELECT * FROM rfp_shall_statements WHERE id = ?", (shall_id,)).fetchone()
+    stmt = conn.execute(
+        "SELECT * FROM rfp_shall_statements WHERE id = ?", (shall_id,)
+    ).fetchone()
 
     if not stmt:
         conn.close()
@@ -453,32 +451,27 @@ def draft_response(shall_id):
     for cap in catalog:
         score = compute_coverage_score(keywords, cap)
         if score > 0.2:
-            capabilities.append(
-                {
-                    "capability_id": cap["id"],
-                    "capability_name": cap["name"],
-                    "score": score,
-                    "grade": coverage_to_grade(score),
-                    "evidence": cap.get("evidence", ""),
-                    "matched_keywords": sorted(
-                        set(k.lower() for k in keywords) & set(k.lower() for k in cap.get("keywords", []))
-                    ),
-                }
-            )
+            capabilities.append({
+                "capability_id": cap["id"],
+                "capability_name": cap["name"],
+                "score": score,
+                "grade": coverage_to_grade(score),
+                "evidence": cap.get("evidence", ""),
+                "matched_keywords": sorted(
+                    set(k.lower() for k in keywords) & set(k.lower() for k in cap.get("keywords", []))
+                ),
+            })
     capabilities.sort(key=lambda x: x["score"], reverse=True)
 
     # Find knowledge blocks — include product-level blocks when applicable
     from tools.govcon.knowledge_base import search_blocks
-
     kb_result = search_blocks(f"{domain} {shall_text[:100]}", domain=domain, top_k=3)
     knowledge_blocks = kb_result.get("results", [])
 
     # Also search for product-level blocks if requirement is cross-domain
     product_key = _detect_product_template(shall_text, domain)
     if product_key:
-        product_search = (
-            "ICDEV platform" if product_key == "icdev_platform" else "contract management portal CDRL CPARS"
-        )
+        product_search = "ICDEV™ platform" if product_key == "icdev_platform" else "contract management portal CDRL CPARS"
         product_kb = search_blocks(product_search, top_k=2)
         # Prepend product blocks (higher priority)
         product_results = product_kb.get("results", [])
@@ -508,26 +501,17 @@ def draft_response(shall_id):
         "status, reviewer_notes, created_at, updated_at, metadata) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
-            draft_id,
-            opp_id,
-            shall_id,
+            draft_id, opp_id, shall_id,
             json.dumps([c["capability_id"] for c in capabilities[:3]]),
             json.dumps([kb.get("id", "") for kb in knowledge_blocks[:3]]),
-            draft_text,
-            method,
-            confidence,
-            domain,
-            "draft",
-            "",
-            _now(),
-            _now(),
-            json.dumps(
-                {
-                    "capability_count": len(capabilities),
-                    "kb_count": len(knowledge_blocks),
-                    "best_coverage": best_coverage,
-                }
-            ),
+            draft_text, method, confidence, domain,
+            "draft", "",
+            _now(), _now(),
+            json.dumps({
+                "capability_count": len(capabilities),
+                "kb_count": len(knowledge_blocks),
+                "best_coverage": best_coverage,
+            }),
         ),
     )
     _audit(conn, "draft_response", f"Drafted {shall_id} via {method}, confidence={confidence}")
@@ -565,7 +549,9 @@ def draft_all_for_opportunity(opportunity_id, method="auto"):
         results.append(result)
 
     drafted = sum(1 for r in results if r.get("status") == "ok")
-    avg_confidence = sum(r.get("confidence", 0) for r in results if r.get("status") == "ok") / max(drafted, 1)
+    avg_confidence = (
+        sum(r.get("confidence", 0) for r in results if r.get("status") == "ok") / max(drafted, 1)
+    )
 
     return {
         "status": "ok",
@@ -610,7 +596,9 @@ def approve_draft(draft_id, reviewer="human", notes=""):
     conn = _get_db()
 
     # Verify draft exists and is in draft status
-    draft = conn.execute("SELECT * FROM proposal_section_drafts WHERE id = ?", (draft_id,)).fetchone()
+    draft = conn.execute(
+        "SELECT * FROM proposal_section_drafts WHERE id = ?", (draft_id,)
+    ).fetchone()
 
     if not draft:
         conn.close()
@@ -630,26 +618,18 @@ def approve_draft(draft_id, reviewer="human", notes=""):
         "status, reviewer_notes, created_at, updated_at, metadata) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
-            approved_id,
-            d["opportunity_id"],
-            d["shall_statement_id"],
-            d["capability_ids"],
-            d["knowledge_block_ids"],
-            d["draft_content"],
-            d["draft_method"],
-            d["confidence_score"],
+            approved_id, d["opportunity_id"], d["shall_statement_id"],
+            d["capability_ids"], d["knowledge_block_ids"],
+            d["draft_content"], d["draft_method"], d["confidence_score"],
             d["domain_category"],
             "approved",
             notes or f"Approved by {reviewer}",
-            d["created_at"],
-            _now(),
-            json.dumps(
-                {
-                    "original_draft_id": draft_id,
-                    "reviewer": reviewer,
-                    "approved_at": _now(),
-                }
-            ),
+            d["created_at"], _now(),
+            json.dumps({
+                "original_draft_id": draft_id,
+                "reviewer": reviewer,
+                "approved_at": _now(),
+            }),
         ),
     )
     _audit(conn, "approve_draft", f"Draft {draft_id} approved by {reviewer}")
@@ -666,9 +646,8 @@ def approve_draft(draft_id, reviewer="human", notes=""):
 
 # ── CLI ───────────────────────────────────────────────────────────────
 
-
 def main():
-    parser = argparse.ArgumentParser(description="ICDEV GovCon Response Drafter (D365)")
+    parser = argparse.ArgumentParser(description="ICDEV™ GovCon Response Drafter (D365)")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--draft", action="store_true", help="Draft response for single shall statement")
     group.add_argument("--draft-all", action="store_true", help="Draft responses for all shall statements")

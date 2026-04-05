@@ -16,11 +16,11 @@ import argparse
 import hashlib
 import json
 import math
-import sqlite3
 import uuid
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional
+from tools.db.storage import get_connection
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
@@ -72,7 +72,7 @@ class AITelemetryLogger:
         logged_at = datetime.now(timezone.utc).isoformat()
 
         try:
-            conn = sqlite3.connect(str(self._db_path))
+            conn = get_connection(db_path=str(self._db_path))
             conn.execute(
                 """INSERT INTO ai_telemetry
                    (id, project_id, user_id, agent_id, model_id, provider,
@@ -126,7 +126,7 @@ class AITelemetryLogger:
         cutoff = (datetime.now(timezone.utc) - timedelta(hours=window_hours)).isoformat()
 
         try:
-            conn = sqlite3.connect(str(self._db_path))
+            conn = get_connection(db_path=str(self._db_path))
 
             # Total volume in window
             row = conn.execute(
@@ -234,7 +234,7 @@ class AITelemetryLogger:
         baseline_end = (now - timedelta(hours=window_hours)).isoformat()
 
         try:
-            conn = sqlite3.connect(str(self._db_path))
+            conn = get_connection(db_path=str(self._db_path))
 
             # Get agent list
             if agent_id:
@@ -375,7 +375,7 @@ class AITelemetryLogger:
         cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
 
         try:
-            conn = sqlite3.connect(str(self._db_path))
+            conn = get_connection(db_path=str(self._db_path))
 
             where_parts = ["logged_at >= ?"]
             params = [cutoff]
@@ -389,7 +389,7 @@ class AITelemetryLogger:
 
             # Overall summary
             row = conn.execute(
-                f"SELECT COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), "
+                f"SELECT COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), "  # nosec B608 -- table/column names are internal constants, not user input
                 f"COALESCE(SUM(thinking_tokens), 0), COALESCE(SUM(cost_usd), 0), "
                 f"COALESCE(AVG(latency_ms), 0) FROM ai_telemetry WHERE {where}",
                 params,
@@ -398,7 +398,7 @@ class AITelemetryLogger:
             # By provider
             by_provider = {}
             for prow in conn.execute(
-                f"SELECT provider, COUNT(*), COALESCE(SUM(cost_usd), 0), "
+                f"SELECT provider, COUNT(*), COALESCE(SUM(cost_usd), 0), "  # nosec B608 -- table/column names are internal constants, not user input
                 f"COALESCE(SUM(input_tokens + output_tokens), 0) "
                 f"FROM ai_telemetry WHERE {where} GROUP BY provider",
                 params,
@@ -412,7 +412,7 @@ class AITelemetryLogger:
             # By model
             by_model = {}
             for mrow in conn.execute(
-                f"SELECT model_id, COUNT(*), COALESCE(SUM(cost_usd), 0) "
+                f"SELECT model_id, COUNT(*), COALESCE(SUM(cost_usd), 0) "  # nosec B608 -- table/column names are internal constants, not user input
                 f"FROM ai_telemetry WHERE {where} GROUP BY model_id",
                 params,
             ):

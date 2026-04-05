@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-"""Tests for the ICDEV SaaS API Gateway (tools/saas/api_gateway.py).
+"""Tests for the ICDEV™ SaaS API Gateway (tools/saas/api_gateway.py).
 
 Validates health endpoint, auth middleware, rate limiting, CORS configuration,
 metrics endpoint, error handling, Swagger/OpenAPI, CUI security headers,
@@ -26,7 +26,6 @@ except ImportError:
 # Fixtures
 # ---------------------------------------------------------------------------
 
-
 @pytest.fixture
 def app(platform_db, icdev_db):
     """Create a test app with TESTING=True and a temporary platform DB."""
@@ -45,7 +44,6 @@ def client(app):
 # ============================================================================
 # TestHealthEndpoint
 # ============================================================================
-
 
 class TestHealthEndpoint:
     """Verify GET /health returns correct JSON payload."""
@@ -74,7 +72,6 @@ class TestHealthEndpoint:
 # ============================================================================
 # TestAuthMiddleware
 # ============================================================================
-
 
 class TestAuthMiddleware:
     """Verify authentication middleware behavior on API endpoints."""
@@ -132,7 +129,6 @@ class TestAuthMiddleware:
 # TestRateLimiting
 # ============================================================================
 
-
 class TestRateLimiting:
     """Verify rate limiting behavior."""
 
@@ -172,14 +168,19 @@ class TestRateLimiting:
 # TestCORS
 # ============================================================================
 
-
 class TestCORS:
     """Verify CORS headers for allowed and disallowed origins."""
 
+    @staticmethod
+    def _dashboard_origin():
+        port = os.environ.get("ICDEV_DASHBOARD_PORT", "5000")
+        return f"http://localhost:{port}"
+
     def test_allowed_origin_gets_cors_header(self, client):
         """Request from allowed origin receives Access-Control-Allow-Origin."""
-        resp = client.get("/health", headers={"Origin": "http://localhost:5000"})
-        assert resp.headers.get("Access-Control-Allow-Origin") == "http://localhost:5000"
+        origin = self._dashboard_origin()
+        resp = client.get("/health", headers={"Origin": origin})
+        assert resp.headers.get("Access-Control-Allow-Origin") == origin
 
     def test_disallowed_origin_no_cors_header(self, client):
         """Request from unknown origin does not receive CORS header."""
@@ -188,14 +189,14 @@ class TestCORS:
 
     def test_options_preflight_returns_204(self, client):
         """OPTIONS preflight request returns 204."""
-        resp = client.options("/health", headers={"Origin": "http://localhost:5000"})
+        origin = self._dashboard_origin()
+        resp = client.options("/health", headers={"Origin": origin})
         assert resp.status_code == 204
 
 
 # ============================================================================
 # TestMetrics
 # ============================================================================
-
 
 class TestMetrics:
     """Verify /metrics endpoint and Prometheus format."""
@@ -224,7 +225,6 @@ class TestMetrics:
 # TestErrorHandling
 # ============================================================================
 
-
 class TestErrorHandling:
     """Verify JSON error handlers return correct status codes and structure."""
 
@@ -251,26 +251,19 @@ class TestErrorHandling:
 
     def test_500_error_handler_structure(self, app):
         """Internal errors return structured JSON with 'error' and 'code'."""
-
-        # Register a route at a public path (health is public per auth middleware)
-        @app.route("/health-500-trigger")
+        # Register a route under /health/ path prefix so it is recognised
+        # as a public endpoint by the auth middleware (which checks
+        # ``path.startswith(public + "/")`` for "/health").
+        @app.route("/health/trigger-500")
         def trigger_500():
             raise RuntimeError("deliberate test error")
-
-        # Also mark it as public so auth middleware lets it through
-        try:
-            from icdev.tools.saas.auth.middleware import PUBLIC_ENDPOINTS
-
-            PUBLIC_ENDPOINTS.add("/health-500-trigger")
-        except ImportError:
-            pass
 
         # Disable exception propagation so Flask uses 500 error handler
         app.config["TESTING"] = False
         app.config["PROPAGATE_EXCEPTIONS"] = False
         try:
             test_client = app.test_client()
-            resp = test_client.get("/health-500-trigger")
+            resp = test_client.get("/health/trigger-500")
             assert resp.status_code == 500
             data = resp.get_json()
             assert "error" in data
@@ -282,7 +275,6 @@ class TestErrorHandling:
 # ============================================================================
 # TestSwagger
 # ============================================================================
-
 
 class TestSwagger:
     """Verify OpenAPI/Swagger endpoints."""
@@ -319,7 +311,6 @@ class TestSwagger:
 # TestCUIHeaders
 # ============================================================================
 
-
 class TestCUIHeaders:
     """Verify CUI classification headers are present on every response."""
 
@@ -349,7 +340,6 @@ class TestCUIHeaders:
 # ============================================================================
 # TestFormatUptime
 # ============================================================================
-
 
 class TestFormatUptime:
     """Verify the uptime formatter produces human-readable strings."""

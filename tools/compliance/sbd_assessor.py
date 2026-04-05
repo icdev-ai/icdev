@@ -10,8 +10,8 @@ import argparse
 import json
 import os
 import re
-import sqlite3
 import sys
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -24,20 +24,23 @@ SBD_REQUIREMENTS_PATH = BASE_DIR / "context" / "compliance" / "cisa_sbd_requirem
 # Database helpers
 # -----------------------------------------------------------------
 
-
 def _get_connection(db_path=None):
     """Get a database connection with Row factory."""
     path = db_path or DB_PATH
     if not path.exists():
-        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+        raise FileNotFoundError(
+            f"Database not found: {path}\n"
+            "Run: python tools/db/init_icdev_db.py"
+        )
+    conn = get_connection(db_path=str(path))
     return conn
 
 
 def _get_project(conn, project_id):
     """Load project data from the projects table."""
-    row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+    row = conn.execute(
+        "SELECT * FROM projects WHERE id = ?", (project_id,)
+    ).fetchone()
     if not row:
         raise ValueError(f"Project '{project_id}' not found.")
     return dict(row)
@@ -47,13 +50,11 @@ def _get_project(conn, project_id):
 # Configuration helpers
 # -----------------------------------------------------------------
 
-
 def _load_cui_config():
     """Load CUI marking configuration."""
     try:
         sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
         from cui_marker import load_cui_config
-
         return load_cui_config()
     except ImportError:
         return {
@@ -108,7 +109,6 @@ def _log_audit_event(conn, project_id, action, details, file_path=None):
 # -----------------------------------------------------------------
 # Auto-check helper: walk project files matching extensions
 # -----------------------------------------------------------------
-
 
 def _scan_files(project_dir, extensions, patterns, threshold=1):
     """Scan project files for regex patterns.
@@ -184,7 +184,6 @@ def _dir_or_file_exists(project_dir, dir_names=None, glob_patterns=None):
 #    "details": "specifics"}
 # -----------------------------------------------------------------
 
-
 def _check_mfa_patterns(project_dir):
     """SBD-01: Scan auth code for MFA/2FA/TOTP/FIDO multi-factor patterns."""
     auth_patterns = [
@@ -208,7 +207,10 @@ def _check_mfa_patterns(project_dir):
     if matched:
         return {
             "status": "satisfied",
-            "evidence": (f"MFA/multi-factor authentication patterns found in {len(matched)} file(s)."),
+            "evidence": (
+                f"MFA/multi-factor authentication patterns found in "
+                f"{len(matched)} file(s)."
+            ),
             "details": "; ".join(os.path.basename(f) for f in matched[:5]),
         }
 
@@ -227,7 +229,8 @@ def _check_mfa_patterns(project_dir):
     return {
         "status": "not_satisfied",
         "evidence": (
-            f"Authentication code found in {len(auth_files)} file(s) but no MFA/2FA/TOTP/FIDO patterns detected."
+            f"Authentication code found in {len(auth_files)} file(s) but no "
+            "MFA/2FA/TOTP/FIDO patterns detected."
         ),
         "details": "Multi-factor authentication is required but not implemented.",
     }
@@ -258,15 +261,22 @@ def _check_default_passwords(project_dir):
     if matched:
         return {
             "status": "not_satisfied",
-            "evidence": (f"Default/hardcoded password patterns detected in {len(matched)} file(s)."),
+            "evidence": (
+                f"Default/hardcoded password patterns detected in "
+                f"{len(matched)} file(s)."
+            ),
             "details": (
-                "Files with potential default passwords: " + "; ".join(os.path.basename(f) for f in matched[:5])
+                "Files with potential default passwords: "
+                + "; ".join(os.path.basename(f) for f in matched[:5])
             ),
         }
 
     return {
         "status": "satisfied",
-        "evidence": (f"Scanned {total} file(s) -- no default or hardcoded password patterns detected."),
+        "evidence": (
+            f"Scanned {total} file(s) -- no default or hardcoded password "
+            "patterns detected."
+        ),
         "details": "No instances of hardcoded passwords, changeme, or default credentials.",
     }
 
@@ -299,23 +309,37 @@ def _check_memory_safe_language(project_dir):
     if safe_ratio > 0.9:
         return {
             "status": "satisfied",
-            "evidence": (f"Memory-safe languages: {safe_count}/{total} files ({safe_ratio:.0%})."),
-            "details": (f"Safe: {safe_count} | Unsafe: {unsafe_count}. Exceeds 90% threshold."),
+            "evidence": (
+                f"Memory-safe languages: {safe_count}/{total} files "
+                f"({safe_ratio:.0%})."
+            ),
+            "details": (
+                f"Safe: {safe_count} | Unsafe: {unsafe_count}. "
+                "Exceeds 90% threshold."
+            ),
         }
     elif safe_ratio > 0.5:
         return {
             "status": "partially_satisfied",
-            "evidence": (f"Memory-safe languages: {safe_count}/{total} files ({safe_ratio:.0%})."),
+            "evidence": (
+                f"Memory-safe languages: {safe_count}/{total} files "
+                f"({safe_ratio:.0%})."
+            ),
             "details": (
-                f"Safe: {safe_count} | Unsafe: {unsafe_count}. Between 50-90%. Must exceed 90% for full satisfaction."
+                f"Safe: {safe_count} | Unsafe: {unsafe_count}. "
+                "Between 50-90%. Must exceed 90% for full satisfaction."
             ),
         }
     else:
         return {
             "status": "not_satisfied",
-            "evidence": (f"Memory-safe languages: {safe_count}/{total} files ({safe_ratio:.0%})."),
+            "evidence": (
+                f"Memory-safe languages: {safe_count}/{total} files "
+                f"({safe_ratio:.0%})."
+            ),
             "details": (
-                f"Safe: {safe_count} | Unsafe: {unsafe_count}. At or below 50%. Significant memory safety risk."
+                f"Safe: {safe_count} | Unsafe: {unsafe_count}. "
+                "At or below 50%. Significant memory safety risk."
             ),
         }
 
@@ -374,13 +398,18 @@ def _check_memory_safety_tooling(project_dir):
     if all_matched:
         return {
             "status": "satisfied",
-            "evidence": (f"Memory safety tooling patterns found in {len(all_matched)} file(s)."),
+            "evidence": (
+                f"Memory safety tooling patterns found in "
+                f"{len(all_matched)} file(s)."
+            ),
             "details": "; ".join(os.path.basename(f) for f in all_matched[:5]),
         }
 
     return {
         "status": "not_satisfied",
-        "evidence": ("Memory-unsafe code present but no memory safety tooling detected."),
+        "evidence": (
+            "Memory-unsafe code present but no memory safety tooling detected."
+        ),
         "details": (
             "Expected: AddressSanitizer, -fsanitize, Valgrind, MSAN, TSAN, "
             "or equivalent tooling in build configurations."
@@ -429,7 +458,10 @@ def _check_patch_cadence(project_dir):
     if all_found:
         return {
             "status": "satisfied",
-            "evidence": (f"Automated dependency update tooling found: {len(all_found)} artifact(s)."),
+            "evidence": (
+                f"Automated dependency update tooling found: "
+                f"{len(all_found)} artifact(s)."
+            ),
             "details": "; ".join(os.path.basename(f) for f in all_found[:5]),
         }
 
@@ -476,7 +508,10 @@ def _check_vuln_disclosure(project_dir):
     if all_found:
         return {
             "status": "satisfied",
-            "evidence": (f"Vulnerability disclosure policy found: {len(all_found)} file(s)."),
+            "evidence": (
+                f"Vulnerability disclosure policy found: "
+                f"{len(all_found)} file(s)."
+            ),
             "details": "; ".join(os.path.basename(f) for f in all_found[:5]),
         }
 
@@ -484,7 +519,8 @@ def _check_vuln_disclosure(project_dir):
         "status": "not_satisfied",
         "evidence": "No vulnerability disclosure policy detected.",
         "details": (
-            "Expected: SECURITY.md, .well-known/security.txt, SECURITY.txt, or equivalent disclosure policy file."
+            "Expected: SECURITY.md, .well-known/security.txt, SECURITY.txt, "
+            "or equivalent disclosure policy file."
         ),
     }
 
@@ -550,9 +586,13 @@ def _check_audit_logging_complete(project_dir):
     elif count >= 1:
         return {
             "status": "partially_satisfied",
-            "evidence": (f"Partial audit logging detected: {count} distinct log event type(s) found."),
+            "evidence": (
+                f"Partial audit logging detected: {count} distinct log event "
+                f"type(s) found."
+            ),
             "details": (
-                f"Event types: {', '.join(sorted(found_types))}. Need 3+ distinct log event types for full compliance."
+                f"Event types: {', '.join(sorted(found_types))}. "
+                "Need 3+ distinct log event types for full compliance."
             ),
         }
 
@@ -602,7 +642,9 @@ def _check_tls_config(project_dir):
                 f"TLS configuration patterns found in {len(secure_matched)} "
                 f"file(s) with no insecure protocol patterns detected."
             ),
-            "details": "; ".join(os.path.basename(f) for f in secure_matched[:5]),
+            "details": "; ".join(
+                os.path.basename(f) for f in secure_matched[:5]
+            ),
         }
     elif secure_matched and insecure_matched:
         return {
@@ -614,7 +656,9 @@ def _check_tls_config(project_dir):
             ),
             "details": (
                 "Insecure files: "
-                + "; ".join(os.path.basename(f) for f in insecure_matched[:5])
+                + "; ".join(
+                    os.path.basename(f) for f in insecure_matched[:5]
+                )
                 + ". Remove SSLv3, TLSv1.0, TLSv1.1, and verify=False usage."
             ),
         }
@@ -652,7 +696,10 @@ def _check_encryption_at_rest(project_dir):
     if matched:
         return {
             "status": "satisfied",
-            "evidence": (f"Encryption-at-rest patterns found in {len(matched)} file(s)."),
+            "evidence": (
+                f"Encryption-at-rest patterns found in "
+                f"{len(matched)} file(s)."
+            ),
             "details": "; ".join(os.path.basename(f) for f in matched[:5]),
         }
 
@@ -660,7 +707,8 @@ def _check_encryption_at_rest(project_dir):
         "status": "not_satisfied",
         "evidence": "No encryption-at-rest patterns detected.",
         "details": (
-            "Expected: FIPS, AES-256, KMS, storage_encrypted, or server-side encryption configuration patterns."
+            "Expected: FIPS, AES-256, KMS, storage_encrypted, or "
+            "server-side encryption configuration patterns."
         ),
     }
 
@@ -689,14 +737,20 @@ def _check_rbac_least_priv(project_dir):
     if matched:
         return {
             "status": "satisfied",
-            "evidence": (f"RBAC / least-privilege patterns found in {len(matched)} file(s)."),
+            "evidence": (
+                f"RBAC / least-privilege patterns found in "
+                f"{len(matched)} file(s)."
+            ),
             "details": "; ".join(os.path.basename(f) for f in matched[:5]),
         }
 
     return {
         "status": "not_satisfied",
         "evidence": "No RBAC or least-privilege access control patterns detected.",
-        "details": ("Expected: @login_required, role_required, RBAC, RoleBinding, or least-privilege patterns."),
+        "details": (
+            "Expected: @login_required, role_required, RBAC, RoleBinding, "
+            "or least-privilege patterns."
+        ),
     }
 
 
@@ -726,15 +780,22 @@ def _check_input_validation(project_dir):
     if len(matched) >= 2:
         return {
             "status": "satisfied",
-            "evidence": (f"Input validation patterns found in {len(matched)} file(s)."),
+            "evidence": (
+                f"Input validation patterns found in "
+                f"{len(matched)} file(s)."
+            ),
             "details": "; ".join(os.path.basename(f) for f in matched[:5]),
         }
     elif len(matched) == 1:
         return {
             "status": "partially_satisfied",
-            "evidence": (f"Input validation patterns found in only 1 file: {os.path.basename(matched[0])}."),
+            "evidence": (
+                f"Input validation patterns found in only 1 file: "
+                f"{os.path.basename(matched[0])}."
+            ),
             "details": (
-                "Validation found in a single file. Should be applied consistently across all input handling code."
+                "Validation found in a single file. Should be applied "
+                "consistently across all input handling code."
             ),
         }
 
@@ -742,7 +803,8 @@ def _check_input_validation(project_dir):
         "status": "not_satisfied",
         "evidence": "No input validation patterns detected.",
         "details": (
-            "Expected: pydantic, marshmallow, cerberus, Joi, Zod, @Valid, validate_input, or sanitize patterns."
+            "Expected: pydantic, marshmallow, cerberus, Joi, Zod, @Valid, "
+            "validate_input, or sanitize patterns."
         ),
     }
 
@@ -771,7 +833,10 @@ def _check_output_encoding(project_dir):
     if matched:
         return {
             "status": "satisfied",
-            "evidence": (f"Output encoding / XSS prevention patterns found in {len(matched)} file(s)."),
+            "evidence": (
+                f"Output encoding / XSS prevention patterns found in "
+                f"{len(matched)} file(s)."
+            ),
             "details": "; ".join(os.path.basename(f) for f in matched[:5]),
         }
 
@@ -827,14 +892,26 @@ def _check_security_headers(project_dir):
     if count >= 3:
         return {
             "status": "satisfied",
-            "evidence": (f"{count} distinct security headers configured: {', '.join(sorted(found_headers))}."),
-            "details": ("Files: " + "; ".join(os.path.basename(f) for f in evidence_files[:5])),
+            "evidence": (
+                f"{count} distinct security headers configured: "
+                f"{', '.join(sorted(found_headers))}."
+            ),
+            "details": (
+                "Files: "
+                + "; ".join(os.path.basename(f) for f in evidence_files[:5])
+            ),
         }
     elif count >= 1:
         return {
             "status": "partially_satisfied",
-            "evidence": (f"Only {count} security header(s) detected: {', '.join(sorted(found_headers))}."),
-            "details": ("Need 3+ of: CSP, HSTS, X-Frame-Options, X-Content-Type-Options, CORS for full compliance."),
+            "evidence": (
+                f"Only {count} security header(s) detected: "
+                f"{', '.join(sorted(found_headers))}."
+            ),
+            "details": (
+                "Need 3+ of: CSP, HSTS, X-Frame-Options, "
+                "X-Content-Type-Options, CORS for full compliance."
+            ),
         }
 
     return {
@@ -864,8 +941,12 @@ def _check_secure_error_handling(project_dir):
     ]
     extensions = (".py", ".js", ".ts", ".yaml", ".yml", ".conf")
 
-    secure_matched, total = _scan_files(project_dir, extensions, secure_patterns)
-    insecure_matched, _ = _scan_files(project_dir, extensions, insecure_patterns)
+    secure_matched, total = _scan_files(
+        project_dir, extensions, secure_patterns
+    )
+    insecure_matched, _ = _scan_files(
+        project_dir, extensions, insecure_patterns
+    )
 
     if total == 0:
         return {
@@ -878,9 +959,12 @@ def _check_secure_error_handling(project_dir):
         return {
             "status": "satisfied",
             "evidence": (
-                f"Secure error handling patterns found in {len(secure_matched)} file(s) with no insecure patterns."
+                f"Secure error handling patterns found in "
+                f"{len(secure_matched)} file(s) with no insecure patterns."
             ),
-            "details": "; ".join(os.path.basename(f) for f in secure_matched[:5]),
+            "details": "; ".join(
+                os.path.basename(f) for f in secure_matched[:5]
+            ),
         }
     elif secure_matched and insecure_matched:
         return {
@@ -891,7 +975,9 @@ def _check_secure_error_handling(project_dir):
             ),
             "details": (
                 "Insecure files: "
-                + "; ".join(os.path.basename(f) for f in insecure_matched[:5])
+                + "; ".join(
+                    os.path.basename(f) for f in insecure_matched[:5]
+                )
                 + ". Remove DEBUG=True and stack trace exposure in responses."
             ),
         }
@@ -899,11 +985,14 @@ def _check_secure_error_handling(project_dir):
         return {
             "status": "not_satisfied",
             "evidence": (
-                f"Insecure error handling patterns detected in {len(insecure_matched)} file(s) with no secure patterns."
+                f"Insecure error handling patterns detected in "
+                f"{len(insecure_matched)} file(s) with no secure patterns."
             ),
             "details": (
                 "Files: "
-                + "; ".join(os.path.basename(f) for f in insecure_matched[:5])
+                + "; ".join(
+                    os.path.basename(f) for f in insecure_matched[:5]
+                )
                 + ". DEBUG=True, traceback exposure, or stack traces "
                 "in responses detected."
             ),
@@ -936,7 +1025,10 @@ def _check_sbom_freshness(project_dir):
         return {
             "status": "not_satisfied",
             "evidence": "No SBOM artifacts detected in the project.",
-            "details": ("Expected: *sbom*.json, *bom*.xml, *cyclonedx*, or *spdx* files."),
+            "details": (
+                "Expected: *sbom*.json, *bom*.xml, *cyclonedx*, or *spdx* "
+                "files."
+            ),
         }
 
     now = datetime.now(timezone.utc)
@@ -956,22 +1048,41 @@ def _check_sbom_freshness(project_dir):
     if fresh_files and not stale_files:
         return {
             "status": "satisfied",
-            "evidence": (f"SBOM artifact(s) found and fresh: {len(fresh_files)} file(s) modified within 30 days."),
-            "details": "; ".join(f"{os.path.basename(f)} ({d}d old)" for f, d in fresh_files[:5]),
+            "evidence": (
+                f"SBOM artifact(s) found and fresh: {len(fresh_files)} "
+                f"file(s) modified within 30 days."
+            ),
+            "details": "; ".join(
+                f"{os.path.basename(f)} ({d}d old)" for f, d in fresh_files[:5]
+            ),
         }
     elif fresh_files and stale_files:
         return {
             "status": "partially_satisfied",
-            "evidence": (f"{len(fresh_files)} fresh SBOM(s) but {len(stale_files)} stale SBOM(s) detected."),
-            "details": ("Stale: " + "; ".join(f"{os.path.basename(f)} ({d}d old)" for f, d in stale_files[:5])),
+            "evidence": (
+                f"{len(fresh_files)} fresh SBOM(s) but "
+                f"{len(stale_files)} stale SBOM(s) detected."
+            ),
+            "details": (
+                "Stale: "
+                + "; ".join(
+                    f"{os.path.basename(f)} ({d}d old)"
+                    for f, d in stale_files[:5]
+                )
+            ),
         }
 
     return {
         "status": "partially_satisfied",
-        "evidence": (f"SBOM artifact(s) found but all are stale (>30 days old): {len(stale_files)} file(s)."),
+        "evidence": (
+            f"SBOM artifact(s) found but all are stale (>30 days old): "
+            f"{len(stale_files)} file(s)."
+        ),
         "details": (
             "Stale: "
-            + "; ".join(f"{os.path.basename(f)} ({d}d old)" for f, d in stale_files[:5])
+            + "; ".join(
+                f"{os.path.basename(f)} ({d}d old)" for f, d in stale_files[:5]
+            )
             + ". Regenerate SBOM to meet freshness requirement."
         ),
     }
@@ -1003,12 +1114,7 @@ def _check_dep_vuln_scanning(project_dir):
         r"trivy\s+fs|grype\s+dir",
     ]
     ci_extensions = (
-        ".yaml",
-        ".yml",
-        ".json",
-        ".toml",
-        ".cfg",
-        ".ini",
+        ".yaml", ".yml", ".json", ".toml", ".cfg", ".ini",
     )
     ci_matched, _ = _scan_files(project_dir, ci_extensions, ci_patterns)
 
@@ -1016,8 +1122,13 @@ def _check_dep_vuln_scanning(project_dir):
     if all_found:
         return {
             "status": "satisfied",
-            "evidence": (f"Dependency vulnerability scanning tooling/results found: {len(all_found)} artifact(s)."),
-            "details": "; ".join(os.path.basename(f) for f in all_found[:5]),
+            "evidence": (
+                f"Dependency vulnerability scanning tooling/results found: "
+                f"{len(all_found)} artifact(s)."
+            ),
+            "details": "; ".join(
+                os.path.basename(f) for f in all_found[:5]
+            ),
         }
 
     return {
@@ -1070,8 +1181,12 @@ def _check_threat_model(project_dir):
     if all_found:
         return {
             "status": "satisfied",
-            "evidence": (f"Threat model artifact(s) found: {len(all_found)} item(s)."),
-            "details": "; ".join(os.path.basename(f) for f in all_found[:5]),
+            "evidence": (
+                f"Threat model artifact(s) found: {len(all_found)} item(s)."
+            ),
+            "details": "; ".join(
+                os.path.basename(f) for f in all_found[:5]
+            ),
         }
 
     return {
@@ -1099,14 +1214,8 @@ def _check_no_default_creds(project_dir):
         r"username.*=.*admin.*\n.*password.*=.*admin",
     ]
     extensions = (
-        ".yaml",
-        ".yml",
-        ".json",
-        ".conf",
-        ".env",
-        ".ini",
-        ".cfg",
-        ".properties",
+        ".yaml", ".yml", ".json", ".conf", ".env",
+        ".ini", ".cfg", ".properties",
     )
     matched, total = _scan_files(project_dir, extensions, bad_patterns)
 
@@ -1120,7 +1229,10 @@ def _check_no_default_creds(project_dir):
     if matched:
         return {
             "status": "not_satisfied",
-            "evidence": (f"Default credential patterns detected in {len(matched)} config file(s)."),
+            "evidence": (
+                f"Default credential patterns detected in "
+                f"{len(matched)} config file(s)."
+            ),
             "details": (
                 "Files with potential default credentials: "
                 + "; ".join(os.path.basename(f) for f in matched[:5])
@@ -1131,9 +1243,13 @@ def _check_no_default_creds(project_dir):
 
     return {
         "status": "satisfied",
-        "evidence": (f"Scanned {total} config file(s) -- no default credential patterns detected."),
+        "evidence": (
+            f"Scanned {total} config file(s) -- no default credential "
+            "patterns detected."
+        ),
         "details": (
-            "No instances of admin/admin, root/root, changeme, test/test, or other default credential patterns."
+            "No instances of admin/admin, root/root, changeme, test/test, "
+            "or other default credential patterns."
         ),
     }
 
@@ -1156,7 +1272,9 @@ def _check_secure_config_baselines(project_dir):
             continue
 
         checks = {
-            "non_root_user": bool(re.search(r"USER\s+(?!root)\S+", content)),
+            "non_root_user": bool(
+                re.search(r"USER\s+(?!root)\S+", content)
+            ),
             "drop_capabilities": bool(
                 re.search(
                     r"drop.*ALL|securityContext.*drop|cap_drop",
@@ -1182,7 +1300,9 @@ def _check_secure_config_baselines(project_dir):
         passed = sum(checks.values())
         if passed >= 2:
             hardened_docker += 1
-            docker_evidence.append(f"{os.path.basename(df_path)}: {passed}/4 hardening checks")
+            docker_evidence.append(
+                f"{os.path.basename(df_path)}: {passed}/4 hardening checks"
+            )
 
     # Check for insecure configs
     insecure_config_patterns = [
@@ -1191,7 +1311,9 @@ def _check_secure_config_baselines(project_dir):
         r"AllowOverride\s+All|PermitRootLogin\s+yes",
     ]
     config_extensions = (".py", ".yaml", ".yml", ".conf", ".json", ".ini")
-    insecure_matched, _ = _scan_files(project_dir, config_extensions, insecure_config_patterns)
+    insecure_matched, _ = _scan_files(
+        project_dir, config_extensions, insecure_config_patterns
+    )
 
     has_hardened = hardened_docker > 0
     has_insecure = len(insecure_matched) > 0
@@ -1213,17 +1335,24 @@ def _check_secure_config_baselines(project_dir):
                 f"insecure config patterns in {len(insecure_matched)} file(s)."
             ),
             "details": (
-                "Hardened: "
-                + "; ".join(docker_evidence)
+                "Hardened: " + "; ".join(docker_evidence)
                 + " | Insecure configs: "
-                + "; ".join(os.path.basename(f) for f in insecure_matched[:5])
+                + "; ".join(
+                    os.path.basename(f) for f in insecure_matched[:5]
+                )
             ),
         }
     elif not has_hardened and dockerfiles:
         return {
             "status": "not_satisfied",
-            "evidence": (f"Dockerfiles found ({len(dockerfiles)}) but none pass STIG hardening checks."),
-            "details": ("Expected: non-root USER, drop ALL capabilities, read-only rootfs, minimal base image."),
+            "evidence": (
+                f"Dockerfiles found ({len(dockerfiles)}) but none pass "
+                "STIG hardening checks."
+            ),
+            "details": (
+                "Expected: non-root USER, drop ALL capabilities, "
+                "read-only rootfs, minimal base image."
+            ),
         }
 
     # No Dockerfiles -- check configs only
@@ -1231,15 +1360,20 @@ def _check_secure_config_baselines(project_dir):
         r"DEBUG\s*=\s*False|DEBUG\s*:\s*false",
         r"security.*hardening|stig.*compliance|cis.*benchmark",
     ]
-    secure_matched, _ = _scan_files(project_dir, config_extensions, secure_config_patterns)
+    secure_matched, _ = _scan_files(
+        project_dir, config_extensions, secure_config_patterns
+    )
 
     if secure_matched and not has_insecure:
         return {
             "status": "partially_satisfied",
             "evidence": (
-                f"Secure configuration patterns found in {len(secure_matched)} file(s) but no Dockerfiles to assess."
+                f"Secure configuration patterns found in "
+                f"{len(secure_matched)} file(s) but no Dockerfiles to assess."
             ),
-            "details": "; ".join(os.path.basename(f) for f in secure_matched[:5]),
+            "details": "; ".join(
+                os.path.basename(f) for f in secure_matched[:5]
+            ),
         }
 
     return {
@@ -1275,20 +1409,32 @@ def _check_cui_markings(project_dir):
     if ratio > 0.8:
         return {
             "status": "satisfied",
-            "evidence": (f"CUI markings found in {len(matched)}/{total} files ({ratio:.0%})."),
+            "evidence": (
+                f"CUI markings found in {len(matched)}/{total} files "
+                f"({ratio:.0%})."
+            ),
             "details": f"Threshold: >80%. Files scanned: {total}.",
         }
     elif ratio > 0.4:
         return {
             "status": "partially_satisfied",
-            "evidence": (f"CUI markings found in {len(matched)}/{total} files ({ratio:.0%})."),
+            "evidence": (
+                f"CUI markings found in {len(matched)}/{total} files "
+                f"({ratio:.0%})."
+            ),
             "details": "Some files lack CUI markings. Must exceed 80% coverage.",
         }
     else:
         return {
             "status": "not_satisfied",
-            "evidence": (f"CUI markings found in only {len(matched)}/{total} files ({ratio:.0%})."),
-            "details": ("Majority of files lack CUI markings. Requires >80% coverage."),
+            "evidence": (
+                f"CUI markings found in only {len(matched)}/{total} files "
+                f"({ratio:.0%})."
+            ),
+            "details": (
+                "Majority of files lack CUI markings. "
+                "Requires >80% coverage."
+            ),
         }
 
 
@@ -1324,7 +1470,6 @@ AUTO_CHECKS = {
 # Core assessment function
 # -----------------------------------------------------------------
 
-
 def run_sbd_assessment(
     project_id,
     domain="all",
@@ -1357,7 +1502,10 @@ def run_sbd_assessment(
 
         # Filter by domain if specified
         if domain != "all":
-            requirements = [r for r in requirements if r.get("domain") == domain]
+            requirements = [
+                r for r in requirements
+                if r.get("domain") == domain
+            ]
             if not requirements:
                 raise ValueError(
                     f"No requirements found for domain '{domain}'. "
@@ -1371,7 +1519,10 @@ def run_sbd_assessment(
         # Resolve project directory for auto-checks
         if project_dir and Path(project_dir).is_dir():
             can_auto_check = True
-        elif project.get("directory_path") and Path(project["directory_path"]).is_dir():
+        elif (
+            project.get("directory_path")
+            and Path(project["directory_path"]).is_dir()
+        ):
             project_dir = project["directory_path"]
             can_auto_check = True
         else:
@@ -1403,12 +1554,16 @@ def run_sbd_assessment(
                 else:
                     # Auto-level requirement without a mapped check function
                     status = "not_assessed"
-                    evidence = "No automated check implemented for this requirement."
+                    evidence = (
+                        "No automated check implemented for this requirement."
+                    )
                     notes = "Manual review required."
 
             elif automation_level == "auto" and not can_auto_check:
                 status = "not_assessed"
-                evidence = "No project directory available for automated scanning."
+                evidence = (
+                    "No project directory available for automated scanning."
+                )
                 notes = "Provide --project-dir to enable auto-checks."
 
             elif automation_level == "semi" and can_auto_check:
@@ -1419,14 +1574,22 @@ def run_sbd_assessment(
                         status = check_result["status"]
                         evidence = check_result["evidence"]
                         details = check_result.get("details", "")
-                        notes = "Semi-automated check completed. Manual review required to verify full compliance."
+                        notes = (
+                            "Semi-automated check completed. "
+                            "Manual review required to verify full compliance."
+                        )
                     except Exception as e:
                         status = "not_assessed"
                         evidence = f"Partial auto-check error: {e}"
-                        notes = "Semi-automated check failed; full manual review required."
+                        notes = (
+                            "Semi-automated check failed; "
+                            "full manual review required."
+                        )
                 else:
                     status = "not_assessed"
-                    evidence = "Semi-automated: no automated component implemented."
+                    evidence = (
+                        "Semi-automated: no automated component implemented."
+                    )
                     notes = (
                         f"Manual review required. Evidence needed: "
                         f"{req.get('evidence_required', 'See requirement description.')}"
@@ -1434,7 +1597,9 @@ def run_sbd_assessment(
 
             elif automation_level == "semi" and not can_auto_check:
                 status = "not_assessed"
-                evidence = "Semi-automated check requires project directory."
+                evidence = (
+                    "Semi-automated check requires project directory."
+                )
                 notes = (
                     f"Manual review required. Evidence needed: "
                     f"{req.get('evidence_required', 'See requirement description.')}"
@@ -1485,12 +1650,14 @@ def run_sbd_assessment(
                         status,
                         evidence,
                         details if details else None,
-                        json.dumps(
-                            {
-                                "automation_level": automation_level,
-                                "check_function": (AUTO_CHECKS[req_id].__name__ if req_id in AUTO_CHECKS else None),
-                            }
-                        ),
+                        json.dumps({
+                            "automation_level": automation_level,
+                            "check_function": (
+                                AUTO_CHECKS[req_id].__name__
+                                if req_id in AUTO_CHECKS
+                                else None
+                            ),
+                        }),
                         req.get("cisa_commitment", ""),
                         notes if notes else None,
                         now.isoformat(),
@@ -1554,9 +1721,14 @@ def run_sbd_assessment(
         critical_not_satisfied = 0
         critical_failures = []
         for r in results:
-            if r["priority"] == "critical" and r["status"] == "not_satisfied":
+            if (
+                r["priority"] == "critical"
+                and r["status"] == "not_satisfied"
+            ):
                 critical_not_satisfied += 1
-                critical_failures.append(f"{r['requirement_id']}: {r['title']}")
+                critical_failures.append(
+                    f"{r['requirement_id']}: {r['title']}"
+                )
 
         gate_passed = critical_not_satisfied == 0
         gate_result = {
@@ -1565,7 +1737,8 @@ def run_sbd_assessment(
             "critical_not_satisfied": critical_not_satisfied,
             "critical_failures": critical_failures,
             "reason": (
-                "PASS: 0 critical-priority requirements have status not_satisfied"
+                "PASS: 0 critical-priority requirements have status "
+                "not_satisfied"
                 if gate_passed
                 else (
                     f"FAIL: {critical_not_satisfied} critical-priority "
@@ -1577,8 +1750,12 @@ def run_sbd_assessment(
 
         # -- Generate Markdown assessment report --
         cui_config = _load_cui_config()
-        doc_header = cui_config.get("document_header", "CUI // SP-CTI").strip()
-        doc_footer = cui_config.get("document_footer", "CUI // SP-CTI").strip()
+        doc_header = cui_config.get(
+            "document_header", "CUI // SP-CTI"
+        ).strip()
+        doc_footer = cui_config.get(
+            "document_footer", "CUI // SP-CTI"
+        ).strip()
 
         lines = [
             doc_header,
@@ -1587,9 +1764,12 @@ def run_sbd_assessment(
             "",
             f"**Project:** {project.get('name', project_id)} ({project_id})",
             f"**Assessment Date:** {now.strftime('%Y-%m-%d %H:%M UTC')}",
-            "**Assessor:** ICDEV Compliance Engine (automated)",
+            "**Assessor:** ICDEV™ Compliance Engine (automated)",
             f"**Domain Scope:** {domain}",
-            (f"**CISA SbD Revision:** {metadata.get('revision', 'N/A')}"),
+            (
+                f"**CISA SbD Revision:** "
+                f"{metadata.get('revision', 'N/A')}"
+            ),
             "**Classification:** CUI // SP-CTI",
             "",
             "---",
@@ -1599,8 +1779,14 @@ def run_sbd_assessment(
         ]
 
         # Summary table
-        lines.append("| Domain | Total | Satisfied | Partial | Not Satisfied | Not Assessed | N/A | Risk Accepted |")
-        lines.append("|--------|-------|-----------|---------|---------------|--------------|-----|---------------|")
+        lines.append(
+            "| Domain | Total | Satisfied | Partial | Not Satisfied "
+            "| Not Assessed | N/A | Risk Accepted |"
+        )
+        lines.append(
+            "|--------|-------|-----------|---------|---------------"
+            "|--------------|-----|---------------|"
+        )
 
         grand_total = {
             "total": 0,
@@ -1638,17 +1824,20 @@ def run_sbd_assessment(
 
         # Gate evaluation section
         if gate:
-            gate_label = "PASS" if gate_result["passed"] else "**FAIL**"
-            lines.extend(
-                [
-                    "## SbD Gate Evaluation",
-                    "",
-                    f"**Gate Result:** {gate_label}",
-                    ("**Criteria:** 0 critical-priority requirements with status not_satisfied"),
-                    f"**Critical Failures:** {critical_not_satisfied}",
-                    "",
-                ]
+            gate_label = (
+                "PASS" if gate_result["passed"] else "**FAIL**"
             )
+            lines.extend([
+                "## SbD Gate Evaluation",
+                "",
+                f"**Gate Result:** {gate_label}",
+                (
+                    "**Criteria:** 0 critical-priority requirements "
+                    "with status not_satisfied"
+                ),
+                f"**Critical Failures:** {critical_not_satisfied}",
+                "",
+            ])
             if critical_failures:
                 lines.append("**Failed Requirements:**")
                 for cf in critical_failures:
@@ -1672,23 +1861,25 @@ def run_sbd_assessment(
             for r in domain_results:
                 status_display = r["status"].replace("_", " ").title()
                 priority_display = r["priority"].upper()
-                nist_str = ", ".join(r["nist_controls"]) if r["nist_controls"] else "N/A"
+                nist_str = (
+                    ", ".join(r["nist_controls"])
+                    if r["nist_controls"]
+                    else "N/A"
+                )
                 cisa_str = r.get("cisa_commitment", "N/A") or "N/A"
 
-                lines.extend(
-                    [
-                        f"#### {r['requirement_id']}: {r['title']}",
-                        "",
-                        f"**Priority:** {priority_display}  ",
-                        f"**Status:** {status_display}  ",
-                        f"**Automation Level:** {r['automation_level']}  ",
-                        f"**NIST Controls:** {nist_str}  ",
-                        f"**CISA Commitment:** {cisa_str}",
-                        "",
-                        f"**Evidence:** {r['evidence']}",
-                        "",
-                    ]
-                )
+                lines.extend([
+                    f"#### {r['requirement_id']}: {r['title']}",
+                    "",
+                    f"**Priority:** {priority_display}  ",
+                    f"**Status:** {status_display}  ",
+                    f"**Automation Level:** {r['automation_level']}  ",
+                    f"**NIST Controls:** {nist_str}  ",
+                    f"**CISA Commitment:** {cisa_str}",
+                    "",
+                    f"**Evidence:** {r['evidence']}",
+                    "",
+                ])
                 if r["details"]:
                     lines.append(f"**Details:** {r['details']}")
                     lines.append("")
@@ -1713,8 +1904,16 @@ def run_sbd_assessment(
                 out_dir = BASE_DIR / ".tmp" / "compliance" / project_id
         out_dir.mkdir(parents=True, exist_ok=True)
 
-        domain_suffix = domain.lower().replace(" ", "_") if domain != "all" else "all"
-        out_file = out_dir / f"sbd_cisa_{project_id}_{domain_suffix}_{now.strftime('%Y%m%d_%H%M%S')}.md"
+        domain_suffix = (
+            domain.lower().replace(" ", "_")
+            if domain != "all"
+            else "all"
+        )
+        out_file = (
+            out_dir
+            / f"sbd_cisa_{project_id}_{domain_suffix}_"
+            f"{now.strftime('%Y%m%d_%H%M%S')}.md"
+        )
 
         with open(out_file, "w", encoding="utf-8") as f:
             f.write(content)
@@ -1789,8 +1988,12 @@ def assess_project(
 # -----------------------------------------------------------------
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Run SbD assessment per CISA Secure by Design")
-    parser.add_argument("--project-id", required=True, help="Project ID")
+    parser = argparse.ArgumentParser(
+        description="Run SbD assessment per CISA Secure by Design"
+    )
+    parser.add_argument(
+        "--project-id", required=True, help="Project ID"
+    )
     parser.add_argument(
         "--domain",
         default="all",

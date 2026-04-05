@@ -3,8 +3,8 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""FedRAMP Moderate/High assessment engine for ICDEV.
+# POC: ICDEV™ System Administrator
+"""FedRAMP Moderate/High assessment engine for ICDEV™.
 
 Loads FedRAMP baseline controls from fedramp_moderate_baseline.json or
 fedramp_high_baseline.json, performs automated checks per control family,
@@ -35,8 +35,8 @@ import argparse
 import json
 import os
 import re
-import sqlite3
 import sys
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -50,20 +50,23 @@ FEDRAMP_HIGH_PATH = BASE_DIR / "context" / "compliance" / "fedramp_high_baseline
 # Database helpers
 # -----------------------------------------------------------------
 
-
 def _get_connection(db_path=None):
     """Get a database connection with Row factory."""
     path = db_path or DB_PATH
     if not path.exists():
-        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+        raise FileNotFoundError(
+            f"Database not found: {path}\n"
+            "Run: python tools/db/init_icdev_db.py"
+        )
+    conn = get_connection(db_path=str(path))
     return conn
 
 
 def _get_project(conn, project_id):
     """Load project data from the projects table."""
-    row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+    row = conn.execute(
+        "SELECT * FROM projects WHERE id = ?", (project_id,)
+    ).fetchone()
     if not row:
         raise ValueError(f"Project '{project_id}' not found.")
     return dict(row)
@@ -96,13 +99,11 @@ def _log_audit_event(conn, project_id, action, details, file_path=None):
 # Configuration helpers
 # -----------------------------------------------------------------
 
-
 def _load_cui_config():
     """Load CUI marking configuration via classification_manager or fallback."""
     try:
         sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
         from classification_manager import get_document_banner
-
         banners = get_document_banner("CUI")
         return {
             "document_header": banners.get("header", "CUI // SP-CTI"),
@@ -139,7 +140,9 @@ def load_fedramp_baseline(baseline="moderate"):
     """
     baseline_lower = baseline.lower()
     if baseline_lower not in ("moderate", "high"):
-        raise ValueError(f"Invalid baseline '{baseline}'. Must be 'moderate' or 'high'.")
+        raise ValueError(
+            f"Invalid baseline '{baseline}'. Must be 'moderate' or 'high'."
+        )
 
     if baseline_lower == "moderate":
         catalog_path = FEDRAMP_MODERATE_PATH
@@ -222,7 +225,6 @@ def _try_inherit_nist_implementations(project_id, controls, db_path=None):
 # Auto-check helper: walk project files matching extensions
 # -----------------------------------------------------------------
 
-
 def _scan_files(project_dir, extensions, patterns, threshold=1):
     """Scan project files for regex patterns.
 
@@ -295,7 +297,6 @@ def _dir_or_file_exists(project_dir, dir_names=None, glob_patterns=None):
 #    "details": "specifics"}
 # -----------------------------------------------------------------
 
-
 def _check_access_control(project_dir):
     """AC family: Check for RBAC, least privilege, session management patterns."""
     patterns = [
@@ -322,14 +323,18 @@ def _check_access_control(project_dir):
         return {
             "status": "satisfied",
             "evidence": (
-                f"Access control patterns (RBAC, least privilege, session management) found in {len(matched)} file(s)."
+                f"Access control patterns (RBAC, least privilege, session "
+                f"management) found in {len(matched)} file(s)."
             ),
             "details": "; ".join(os.path.basename(f) for f in matched[:5]),
         }
     elif len(matched) == 1:
         return {
             "status": "other_than_satisfied",
-            "evidence": (f"Access control patterns found in only 1 file: {os.path.basename(matched[0])}."),
+            "evidence": (
+                f"Access control patterns found in only 1 file: "
+                f"{os.path.basename(matched[0])}."
+            ),
             "details": (
                 "Minimal access control detected. FedRAMP requires "
                 "comprehensive RBAC, least privilege, and session management."
@@ -340,7 +345,8 @@ def _check_access_control(project_dir):
         "status": "other_than_satisfied",
         "evidence": "No access control patterns detected (RBAC, least privilege, session mgmt).",
         "details": (
-            "Expected: @login_required, role_required, RBAC, RoleBinding, session_timeout, or least-privilege patterns."
+            "Expected: @login_required, role_required, RBAC, RoleBinding, "
+            "session_timeout, or least-privilege patterns."
         ),
     }
 
@@ -393,7 +399,8 @@ def _check_audit_logging(project_dir):
         return {
             "status": "satisfied",
             "evidence": (
-                f"Comprehensive audit logging: {count} distinct log event types across {len(evidence_files)} file(s)."
+                f"Comprehensive audit logging: {count} distinct log event "
+                f"types across {len(evidence_files)} file(s)."
             ),
             "details": (
                 f"Event types: {', '.join(sorted(found_types))}. "
@@ -473,14 +480,22 @@ def _check_identification_auth(project_dir):
         missing_type = "password policy" if mfa_matched else "MFA/PKI"
         return {
             "status": "other_than_satisfied",
-            "evidence": (f"Partial IA: {found_type} patterns found but {missing_type} patterns not detected."),
-            "details": ("FedRAMP requires both MFA/PKI and password policy enforcement."),
+            "evidence": (
+                f"Partial IA: {found_type} patterns found but {missing_type} "
+                f"patterns not detected."
+            ),
+            "details": (
+                "FedRAMP requires both MFA/PKI and password policy enforcement."
+            ),
         }
 
     return {
         "status": "other_than_satisfied",
         "evidence": "No MFA, PKI/CAC, or password policy patterns detected.",
-        "details": ("Expected: MFA, 2FA, TOTP, FIDO, PKI, CAC, password complexity, bcrypt/argon2 hashing patterns."),
+        "details": (
+            "Expected: MFA, 2FA, TOTP, FIDO, PKI, CAC, password complexity, "
+            "bcrypt/argon2 hashing patterns."
+        ),
     }
 
 
@@ -520,7 +535,9 @@ def _check_system_communications(project_dir):
                 f"TLS/encryption patterns found in {len(secure_matched)} "
                 f"file(s) with no insecure protocol patterns detected."
             ),
-            "details": "; ".join(os.path.basename(f) for f in secure_matched[:5]),
+            "details": "; ".join(
+                os.path.basename(f) for f in secure_matched[:5]
+            ),
         }
     elif secure_matched and insecure_matched:
         return {
@@ -552,16 +569,11 @@ def _check_config_management(project_dir):
         project_dir,
         dir_names=["terraform", "ansible", "cloudformation", "pulumi"],
         glob_patterns=[
-            "*.tf",
-            "*.tfvars",
-            "playbook*.yml",
-            "playbook*.yaml",
+            "*.tf", "*.tfvars",
+            "playbook*.yml", "playbook*.yaml",
             "ansible.cfg",
-            "*.cfn.yml",
-            "*.cfn.yaml",
-            "*.cfn.json",
-            "docker-compose*.yml",
-            "docker-compose*.yaml",
+            "*.cfn.yml", "*.cfn.yaml", "*.cfn.json",
+            "docker-compose*.yml", "docker-compose*.yaml",
         ],
     )
 
@@ -577,10 +589,8 @@ def _check_config_management(project_dir):
     ci_found = _dir_or_file_exists(
         project_dir,
         glob_patterns=[
-            ".gitlab-ci.yml",
-            ".github/workflows/*.yml",
-            "Jenkinsfile",
-            "azure-pipelines.yml",
+            ".gitlab-ci.yml", ".github/workflows/*.yml",
+            "Jenkinsfile", "azure-pipelines.yml",
             ".circleci/config.yml",
         ],
     )
@@ -598,10 +608,12 @@ def _check_config_management(project_dir):
     elif all_evidence:
         return {
             "status": "other_than_satisfied",
-            "evidence": (f"Partial configuration management: {len(all_evidence)} artifact(s) found."),
+            "evidence": (
+                f"Partial configuration management: {len(all_evidence)} "
+                f"artifact(s) found."
+            ),
             "details": (
-                "Found: "
-                + "; ".join(os.path.basename(f) for f in all_evidence[:5])
+                "Found: " + "; ".join(os.path.basename(f) for f in all_evidence[:5])
                 + ". FedRAMP requires IaC, baseline configs, and change management."
             ),
         }
@@ -621,13 +633,9 @@ def _check_incident_response(project_dir):
     found = _dir_or_file_exists(
         project_dir,
         glob_patterns=[
-            "SECURITY.md",
-            "SECURITY.txt",
-            "security.md",
-            "incident-response*",
-            "incident_response*",
-            "ir-plan*",
-            "ir_plan*",
+            "SECURITY.md", "SECURITY.txt", "security.md",
+            "incident-response*", "incident_response*",
+            "ir-plan*", "ir_plan*",
         ],
     )
     found_dirs = _dir_or_file_exists(
@@ -648,7 +656,9 @@ def _check_incident_response(project_dir):
     if len(all_found) >= 2:
         return {
             "status": "satisfied",
-            "evidence": (f"Incident response artifacts found: {len(all_found)} item(s)."),
+            "evidence": (
+                f"Incident response artifacts found: {len(all_found)} item(s)."
+            ),
             "details": "; ".join(os.path.basename(f) for f in all_found[:5]),
         }
     elif all_found:
@@ -676,25 +686,16 @@ def _check_risk_assessment(project_dir):
     found = _dir_or_file_exists(
         project_dir,
         glob_patterns=[
-            "threat-model*",
-            "threat_model*",
-            "STRIDE*",
-            "PASTA*",
-            "threat-analysis*",
-            "threat_analysis*",
-            "risk-assessment*",
-            "risk_assessment*",
-            "vulnerability-assessment*",
-            "vulnerability_assessment*",
+            "threat-model*", "threat_model*", "STRIDE*", "PASTA*",
+            "threat-analysis*", "threat_analysis*",
+            "risk-assessment*", "risk_assessment*",
+            "vulnerability-assessment*", "vulnerability_assessment*",
         ],
     )
     found_dirs = _dir_or_file_exists(
         project_dir,
         dir_names=[
-            "threat-model",
-            "threat_model",
-            "risk-assessment",
-            "risk_assessment",
+            "threat-model", "threat_model", "risk-assessment", "risk_assessment",
         ],
     )
 
@@ -710,14 +711,19 @@ def _check_risk_assessment(project_dir):
     if all_found:
         return {
             "status": "satisfied",
-            "evidence": (f"Risk assessment artifacts found: {len(all_found)} item(s)."),
+            "evidence": (
+                f"Risk assessment artifacts found: {len(all_found)} item(s)."
+            ),
             "details": "; ".join(os.path.basename(f) for f in all_found[:5]),
         }
 
     return {
         "status": "other_than_satisfied",
         "evidence": "No risk assessment or threat model artifacts detected.",
-        "details": ("Expected: threat model (STRIDE/PASTA), risk assessment, vulnerability assessment documentation."),
+        "details": (
+            "Expected: threat model (STRIDE/PASTA), risk assessment, "
+            "vulnerability assessment documentation."
+        ),
     }
 
 
@@ -727,15 +733,9 @@ def _check_security_assessment(project_dir):
         project_dir,
         dir_names=["tests", "test", "spec", "__tests__"],
         glob_patterns=[
-            "test_*.py",
-            "*_test.py",
-            "*.test.js",
-            "*.test.ts",
-            "*.spec.js",
-            "*.spec.ts",
-            "pytest.ini",
-            "setup.cfg",
-            "tox.ini",
+            "test_*.py", "*_test.py", "*.test.js", "*.test.ts",
+            "*.spec.js", "*.spec.ts",
+            "pytest.ini", "setup.cfg", "tox.ini",
         ],
     )
 
@@ -762,8 +762,7 @@ def _check_security_assessment(project_dir):
                 f"and security tools ({len(security_matched)} config(s)) detected."
             ),
             "details": (
-                "Tests: "
-                + "; ".join(os.path.basename(f) for f in test_found[:3])
+                "Tests: " + "; ".join(os.path.basename(f) for f in test_found[:3])
                 + " | Security: "
                 + "; ".join(os.path.basename(f) for f in security_matched[:3])
             ),
@@ -773,7 +772,9 @@ def _check_security_assessment(project_dir):
         missing_type = "security testing tools (SAST/DAST)" if has_tests else "test suites"
         return {
             "status": "other_than_satisfied",
-            "evidence": (f"Partial: {found_type} found but {missing_type} not detected."),
+            "evidence": (
+                f"Partial: {found_type} found but {missing_type} not detected."
+            ),
             "details": (
                 "FedRAMP requires both functional testing and security "
                 "assessment tools (SAST, DAST, vulnerability scanning)."
@@ -795,11 +796,8 @@ def _check_supply_chain(project_dir):
     sbom_found = _dir_or_file_exists(
         project_dir,
         glob_patterns=[
-            "*sbom*.json",
-            "*bom*.xml",
-            "*sbom*.xml",
-            "*cyclonedx*",
-            "*spdx*",
+            "*sbom*.json", "*bom*.xml", "*sbom*.xml",
+            "*cyclonedx*", "*spdx*",
         ],
     )
 
@@ -817,14 +815,9 @@ def _check_supply_chain(project_dir):
     lock_files = _dir_or_file_exists(
         project_dir,
         glob_patterns=[
-            "requirements*.txt",
-            "poetry.lock",
-            "Pipfile.lock",
-            "package-lock.json",
-            "yarn.lock",
-            "pnpm-lock.yaml",
-            "go.sum",
-            "Cargo.lock",
+            "requirements*.txt", "poetry.lock", "Pipfile.lock",
+            "package-lock.json", "yarn.lock", "pnpm-lock.yaml",
+            "go.sum", "Cargo.lock",
         ],
     )
 
@@ -840,8 +833,7 @@ def _check_supply_chain(project_dir):
                 f"dependency auditing ({len(dep_matched)} config(s)) detected."
             ),
             "details": (
-                "SBOM: "
-                + "; ".join(os.path.basename(f) for f in sbom_found[:3])
+                "SBOM: " + "; ".join(os.path.basename(f) for f in sbom_found[:3])
                 + " | Audit: "
                 + "; ".join(os.path.basename(f) for f in dep_matched[:3])
             ),
@@ -870,7 +862,8 @@ def _check_supply_chain(project_dir):
         "status": "other_than_satisfied",
         "evidence": "No supply chain risk management artifacts detected.",
         "details": (
-            "Expected: SBOM (CycloneDX/SPDX), dependency audit tools (pip-audit, npm audit, Snyk), lock files."
+            "Expected: SBOM (CycloneDX/SPDX), dependency audit tools "
+            "(pip-audit, npm audit, Snyk), lock files."
         ),
     }
 
@@ -898,7 +891,10 @@ def _check_data_encryption(project_dir):
     if matched:
         return {
             "status": "satisfied",
-            "evidence": (f"Encryption-at-rest patterns found in {len(matched)} file(s)."),
+            "evidence": (
+                f"Encryption-at-rest patterns found in "
+                f"{len(matched)} file(s)."
+            ),
             "details": "; ".join(os.path.basename(f) for f in matched[:5]),
         }
 
@@ -917,14 +913,9 @@ def _check_backup_recovery(project_dir):
     found = _dir_or_file_exists(
         project_dir,
         glob_patterns=[
-            "backup*",
-            "disaster-recovery*",
-            "disaster_recovery*",
-            "dr-plan*",
-            "dr_plan*",
-            "continuity*",
-            "bcp*",
-            "contingency*",
+            "backup*", "disaster-recovery*", "disaster_recovery*",
+            "dr-plan*", "dr_plan*", "continuity*",
+            "bcp*", "contingency*",
         ],
     )
     found_dirs = _dir_or_file_exists(
@@ -946,7 +937,9 @@ def _check_backup_recovery(project_dir):
     if all_found:
         return {
             "status": "satisfied",
-            "evidence": (f"Backup/recovery artifacts found: {len(all_found)} item(s)."),
+            "evidence": (
+                f"Backup/recovery artifacts found: {len(all_found)} item(s)."
+            ),
             "details": "; ".join(os.path.basename(f) for f in all_found[:5]),
         }
 
@@ -984,7 +977,10 @@ def _check_boundary_protection(project_dir):
     if len(matched) >= 2:
         return {
             "status": "satisfied",
-            "evidence": (f"Boundary protection patterns found in {len(matched)} file(s)."),
+            "evidence": (
+                f"Boundary protection patterns found in "
+                f"{len(matched)} file(s)."
+            ),
             "details": "; ".join(os.path.basename(f) for f in matched[:5]),
         }
     elif matched:
@@ -1001,7 +997,8 @@ def _check_boundary_protection(project_dir):
         "status": "other_than_satisfied",
         "evidence": "No boundary protection patterns detected.",
         "details": (
-            "Expected: security groups, firewalls, WAF, network policies, default-deny rules, subnet segmentation."
+            "Expected: security groups, firewalls, WAF, network policies, "
+            "default-deny rules, subnet segmentation."
         ),
     }
 
@@ -1029,7 +1026,10 @@ def _check_remote_access(project_dir):
     if matched:
         return {
             "status": "satisfied",
-            "evidence": (f"Remote access control patterns found in {len(matched)} file(s)."),
+            "evidence": (
+                f"Remote access control patterns found in "
+                f"{len(matched)} file(s)."
+            ),
             "details": "; ".join(os.path.basename(f) for f in matched[:5]),
         }
 
@@ -1064,7 +1064,9 @@ def _check_media_protection(project_dir):
     if matched:
         return {
             "status": "satisfied",
-            "evidence": (f"Media protection patterns found in {len(matched)} file(s)."),
+            "evidence": (
+                f"Media protection patterns found in {len(matched)} file(s)."
+            ),
             "details": "; ".join(os.path.basename(f) for f in matched[:5]),
         }
 
@@ -1103,7 +1105,9 @@ def _check_system_integrity(project_dir):
     if matched:
         return {
             "status": "satisfied",
-            "evidence": (f"System integrity patterns found in {len(matched)} file(s)."),
+            "evidence": (
+                f"System integrity patterns found in {len(matched)} file(s)."
+            ),
             "details": "; ".join(os.path.basename(f) for f in matched[:5]),
         }
 
@@ -1172,7 +1176,6 @@ def _get_auto_check(control):
 # Core assessment function
 # -----------------------------------------------------------------
 
-
 def run_fedramp_assessment(
     project_id,
     baseline="moderate",
@@ -1203,12 +1206,17 @@ def run_fedramp_assessment(
         metadata, controls = load_fedramp_baseline(baseline)
 
         # Try to inherit NIST 800-53 implementations via crosswalk
-        inherited = _try_inherit_nist_implementations(project_id, controls, db_path=db)
+        inherited = _try_inherit_nist_implementations(
+            project_id, controls, db_path=db
+        )
 
         # Resolve project directory for auto-checks
         if project_dir and Path(project_dir).is_dir():
             can_auto_check = True
-        elif project.get("directory_path") and Path(project["directory_path"]).is_dir():
+        elif (
+            project.get("directory_path")
+            and Path(project["directory_path"]).is_dir()
+        ):
             project_dir = project["directory_path"]
             can_auto_check = True
         else:
@@ -1238,7 +1246,10 @@ def run_fedramp_assessment(
                 nist_status = inherit_info.get("nist_status", "")
                 if nist_status == "implemented":
                     status = "satisfied"
-                    evidence = f"Inherited from NIST 800-53 {nist_id} implementation (status: {nist_status})."
+                    evidence = (
+                        f"Inherited from NIST 800-53 {nist_id} implementation "
+                        f"(status: {nist_status})."
+                    )
                     implementation_status = "inherited"
                     notes = "Auto-inherited via crosswalk engine."
                 elif nist_status == "partially_implemented":
@@ -1274,7 +1285,8 @@ def run_fedramp_assessment(
 
                     # Only upgrade status if auto-check is better
                     if status == "not_assessed" or (
-                        status == "other_than_satisfied" and check_result["status"] == "satisfied"
+                        status == "other_than_satisfied"
+                        and check_result["status"] == "satisfied"
                     ):
                         status = check_result["status"]
                         evidence = check_result["evidence"]
@@ -1301,7 +1313,9 @@ def run_fedramp_assessment(
                 "priority": priority,
                 "baseline": baseline,
                 "fedramp_parameters": ctrl.get("fedramp_parameters", {}),
-                "fedramp_additional_requirements": ctrl.get("fedramp_additional_requirements", ""),
+                "fedramp_additional_requirements": ctrl.get(
+                    "fedramp_additional_requirements", ""
+                ),
                 "status": status,
                 "implementation_status": implementation_status,
                 "customer_responsible": customer_responsible,
@@ -1332,13 +1346,15 @@ def run_fedramp_assessment(
                         customer_responsible,
                         evidence,
                         details if details else None,
-                        json.dumps(
-                            {
-                                "check_function": (_get_auto_check(ctrl).__name__ if _get_auto_check(ctrl) else None),
-                                "inherited": inherit_info.get("inherited", False),
-                                "nist_status": inherit_info.get("nist_status", ""),
-                            }
-                        ),
+                        json.dumps({
+                            "check_function": (
+                                _get_auto_check(ctrl).__name__
+                                if _get_auto_check(ctrl)
+                                else None
+                            ),
+                            "inherited": inherit_info.get("inherited", False),
+                            "nist_status": inherit_info.get("nist_status", ""),
+                        }),
                         notes if notes else None,
                         now.isoformat(),
                     ),
@@ -1353,26 +1369,9 @@ def run_fedramp_assessment(
 
         # -- Build summary by control family --
         family_order = [
-            "AC",
-            "AT",
-            "AU",
-            "CA",
-            "CM",
-            "CP",
-            "IA",
-            "IR",
-            "MA",
-            "MP",
-            "PE",
-            "PL",
-            "PM",
-            "PS",
-            "PT",
-            "RA",
-            "SA",
-            "SC",
-            "SI",
-            "SR",
+            "AC", "AT", "AU", "CA", "CM", "CP", "IA", "IR",
+            "MA", "MP", "PE", "PL", "PM", "PS", "PT", "RA",
+            "SA", "SC", "SI", "SR",
         ]
         family_names = {
             "AC": "Access Control",
@@ -1429,16 +1428,26 @@ def run_fedramp_assessment(
         # -- Compute overall scores --
         total_controls = len(results)
         satisfied_count = sum(1 for r in results if r["status"] == "satisfied")
-        ots_count = sum(1 for r in results if r["status"] == "other_than_satisfied")
-        na_count = sum(1 for r in results if r["status"] == "not_applicable")
-        not_assessed_count = sum(1 for r in results if r["status"] == "not_assessed")
-        risk_accepted_count = sum(1 for r in results if r["status"] == "risk_accepted")
+        ots_count = sum(
+            1 for r in results if r["status"] == "other_than_satisfied"
+        )
+        na_count = sum(
+            1 for r in results if r["status"] == "not_applicable"
+        )
+        not_assessed_count = sum(
+            1 for r in results if r["status"] == "not_assessed"
+        )
+        risk_accepted_count = sum(
+            1 for r in results if r["status"] == "risk_accepted"
+        )
         inherited_count = sum(1 for r in results if r.get("inherited"))
 
         assessable = total_controls - na_count
         if assessable > 0:
             overall_score = round(
-                (satisfied_count + risk_accepted_count * 0.75) / assessable * 100,
+                (satisfied_count + risk_accepted_count * 0.75)
+                / assessable
+                * 100,
                 1,
             )
         else:
@@ -1449,9 +1458,14 @@ def run_fedramp_assessment(
         critical_ots = 0
         critical_failures = []
         for r in results:
-            if r["priority"] == "P1" and r["status"] == "other_than_satisfied":
+            if (
+                r["priority"] == "P1"
+                and r["status"] == "other_than_satisfied"
+            ):
                 critical_ots += 1
-                critical_failures.append(f"{r['control_id']} ({r['nist_control_id']}): {r['title']}")
+                critical_failures.append(
+                    f"{r['control_id']} ({r['nist_control_id']}): {r['title']}"
+                )
 
         gate_passed = critical_ots == 0
         gate_result = {
@@ -1472,8 +1486,12 @@ def run_fedramp_assessment(
 
         # -- Generate Markdown assessment summary --
         cui_config = _load_cui_config()
-        doc_header = cui_config.get("document_header", "CUI // SP-CTI").strip()
-        doc_footer = cui_config.get("document_footer", "CUI // SP-CTI").strip()
+        doc_header = cui_config.get(
+            "document_header", "CUI // SP-CTI"
+        ).strip()
+        doc_footer = cui_config.get(
+            "document_footer", "CUI // SP-CTI"
+        ).strip()
 
         lines = [
             doc_header,
@@ -1482,7 +1500,7 @@ def run_fedramp_assessment(
             "",
             f"**Project:** {project.get('name', project_id)} ({project_id})",
             f"**Assessment Date:** {now.strftime('%Y-%m-%d %H:%M UTC')}",
-            "**Assessor:** ICDEV Compliance Engine (automated)",
+            "**Assessor:** ICDEV™ Compliance Engine (automated)",
             f"**Baseline:** FedRAMP {baseline.title()}",
             "**Classification:** CUI // SP-CTI",
             "",
@@ -1502,16 +1520,18 @@ def run_fedramp_assessment(
         ]
 
         # Summary table
-        lines.append("| Family | Name | Total | Satisfied | OTS | Not Assessed | N/A | Risk Accepted |")
-        lines.append("|--------|------|-------|-----------|-----|--------------|-----|---------------|")
+        lines.append(
+            "| Family | Name | Total | Satisfied | OTS "
+            "| Not Assessed | N/A | Risk Accepted |"
+        )
+        lines.append(
+            "|--------|------|-------|-----------|-----"
+            "|--------------|-----|---------------|"
+        )
 
         grand_total = {
-            "total": 0,
-            "satisfied": 0,
-            "other_than_satisfied": 0,
-            "not_assessed": 0,
-            "not_applicable": 0,
-            "risk_accepted": 0,
+            "total": 0, "satisfied": 0, "other_than_satisfied": 0,
+            "not_assessed": 0, "not_applicable": 0, "risk_accepted": 0,
         }
 
         for fam in family_order:
@@ -1539,23 +1559,28 @@ def run_fedramp_assessment(
 
         # Gate evaluation section
         if gate:
-            gate_label = "PASS" if gate_result["passed"] else "**FAIL**"
-            lines.extend(
-                [
-                    "## FedRAMP Readiness Gate",
-                    "",
-                    f"**Gate Result:** {gate_label}",
-                    ("**Criteria:** 0 P1 controls with status other_than_satisfied"),
-                    f"**P1 Failures:** {critical_ots}",
-                    "",
-                ]
+            gate_label = (
+                "PASS" if gate_result["passed"] else "**FAIL**"
             )
+            lines.extend([
+                "## FedRAMP Readiness Gate",
+                "",
+                f"**Gate Result:** {gate_label}",
+                (
+                    "**Criteria:** 0 P1 controls with status "
+                    "other_than_satisfied"
+                ),
+                f"**P1 Failures:** {critical_ots}",
+                "",
+            ])
             if critical_failures:
                 lines.append("**Failed Controls:**")
                 for cf in critical_failures[:10]:
                     lines.append(f"- {cf}")
                 if len(critical_failures) > 10:
-                    lines.append(f"- ... and {len(critical_failures) - 10} more")
+                    lines.append(
+                        f"- ... and {len(critical_failures) - 10} more"
+                    )
                 lines.append("")
 
         lines.extend(["---", ""])
@@ -1575,19 +1600,17 @@ def run_fedramp_assessment(
 
             for r in fam_results:
                 status_display = r["status"].replace("_", " ").title()
-                lines.extend(
-                    [
-                        f"#### {r['control_id']}: {r['title']}",
-                        "",
-                        f"**NIST Control:** {r['nist_control_id']}  ",
-                        f"**Priority:** {r['priority']}  ",
-                        f"**Status:** {status_display}  ",
-                        f"**Inherited:** {'Yes' if r.get('inherited') else 'No'}",
-                        "",
-                        f"**Evidence:** {r['evidence']}",
-                        "",
-                    ]
-                )
+                lines.extend([
+                    f"#### {r['control_id']}: {r['title']}",
+                    "",
+                    f"**NIST Control:** {r['nist_control_id']}  ",
+                    f"**Priority:** {r['priority']}  ",
+                    f"**Status:** {status_display}  ",
+                    f"**Inherited:** {'Yes' if r.get('inherited') else 'No'}",
+                    "",
+                    f"**Evidence:** {r['evidence']}",
+                    "",
+                ])
                 if r["details"]:
                     lines.append(f"**Details:** {r['details']}")
                     lines.append("")
@@ -1611,7 +1634,11 @@ def run_fedramp_assessment(
                 out_dir = BASE_DIR / ".tmp" / "compliance" / project_id
         out_dir.mkdir(parents=True, exist_ok=True)
 
-        out_file = out_dir / f"fedramp_{baseline}_{project_id}_{now.strftime('%Y%m%d_%H%M%S')}.md"
+        out_file = (
+            out_dir
+            / f"fedramp_{baseline}_{project_id}_"
+            f"{now.strftime('%Y%m%d_%H%M%S')}.md"
+        )
 
         with open(out_file, "w", encoding="utf-8") as f:
             f.write(content)
@@ -1709,8 +1736,12 @@ def assess_project(
 # -----------------------------------------------------------------
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Run FedRAMP Moderate/High assessment")
-    parser.add_argument("--project-id", required=True, help="Project ID")
+    parser = argparse.ArgumentParser(
+        description="Run FedRAMP Moderate/High assessment"
+    )
+    parser.add_argument(
+        "--project-id", required=True, help="Project ID"
+    )
     parser.add_argument(
         "--baseline",
         default="moderate",

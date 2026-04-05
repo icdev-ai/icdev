@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Marketplace MCP server exposing GOTCHA asset registry tools.
+"""Marketplace MCP server exposing FORGE asset registry tools.
 
 Tools:
     publish_asset    - Publish an asset through the 7-gate pipeline
@@ -14,6 +14,12 @@ Tools:
     check_compat     - Check IL/version/dependency compatibility
     sync_status      - Get federation sync status
     asset_scan       - Run security scanning on an asset
+    openclaw_import  - Import an OpenClaw skill into quarantine
+    openclaw_promote - Promote a quarantined import to marketplace
+    openclaw_reject  - Reject a quarantined import
+    openclaw_export  - Export an ICDEV™ skill to OpenClaw format
+    openclaw_list_quarantine - List quarantined imports
+    openclaw_list_exports    - List export records
 
 Resources:
     marketplace://catalog         - Full asset catalog
@@ -88,7 +94,7 @@ def _audit(event_type, actor, action, project_id=None, details=None):
 
 
 def handle_publish_asset(args: dict) -> dict:
-    """Publish a GOTCHA asset through the 7-gate security pipeline."""
+    """Publish a FORGE asset through the 7-gate security pipeline."""
     if not _MODULES_LOADED:
         raise RuntimeError(f"Marketplace modules not loaded: {_IMPORT_ERROR}")
 
@@ -281,6 +287,74 @@ def handle_asset_scan(args: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# OpenClaw Bridge handlers
+# ---------------------------------------------------------------------------
+
+def handle_openclaw_import(args: dict) -> dict:
+    """Import an OpenClaw skill into quarantine with 10-gate scanning."""
+    try:
+        from tools.marketplace.openclaw_bridge import import_skill
+        return import_skill(
+            source_path=args["source_path"],
+            tenant_id=args["tenant_id"],
+            imported_by=args["imported_by"],
+            clawhub_url=args.get("clawhub_url"),
+        )
+    except ImportError as exc:
+        return {"error": f"OpenClaw bridge not available: {exc}"}
+
+
+def handle_openclaw_promote(args: dict) -> dict:
+    """Promote a quarantined OpenClaw import to the marketplace."""
+    try:
+        from tools.marketplace.openclaw_bridge import promote_import
+        return promote_import(args["import_id"], args["promoted_by"])
+    except ImportError as exc:
+        return {"error": f"OpenClaw bridge not available: {exc}"}
+
+
+def handle_openclaw_reject(args: dict) -> dict:
+    """Reject a quarantined OpenClaw import."""
+    try:
+        from tools.marketplace.openclaw_bridge import reject_import
+        return reject_import(args["import_id"], args["rejected_by"], args["reason"])
+    except ImportError as exc:
+        return {"error": f"OpenClaw bridge not available: {exc}"}
+
+
+def handle_openclaw_export(args: dict) -> dict:
+    """Export an ICDEV™ skill to OpenClaw format."""
+    try:
+        from tools.marketplace.openclaw_bridge import export_skill
+        return export_skill(
+            asset_id=args["asset_id"],
+            version_id=args["version_id"],
+            output_path=args["output_path"],
+            exported_by=args["exported_by"],
+        )
+    except ImportError as exc:
+        return {"error": f"OpenClaw bridge not available: {exc}"}
+
+
+def handle_openclaw_list_quarantine(args: dict) -> dict:
+    """List quarantined OpenClaw imports."""
+    try:
+        from tools.marketplace.openclaw_bridge import list_quarantine
+        return list_quarantine(status_filter=args.get("status"))
+    except ImportError as exc:
+        return {"error": f"OpenClaw bridge not available: {exc}"}
+
+
+def handle_openclaw_list_exports(args: dict) -> dict:
+    """List OpenClaw export records."""
+    try:
+        from tools.marketplace.openclaw_bridge import list_exports
+        return list_exports(status_filter=args.get("status"))
+    except ImportError as exc:
+        return {"error": f"OpenClaw bridge not available: {exc}"}
+
+
+# ---------------------------------------------------------------------------
 # Resource handlers
 # ---------------------------------------------------------------------------
 
@@ -310,7 +384,7 @@ def create_server() -> MCPServer:
     # --- Tools ---
     server.register_tool(
         "publish_asset",
-        "Publish a GOTCHA asset (skill/goal/hardprompt/context/args/compliance) through 7-gate security pipeline",
+        "Publish a FORGE asset (skill/goal/hardprompt/context/args/compliance) through 7-gate security pipeline",
         {
             "type": "object",
             "properties": {

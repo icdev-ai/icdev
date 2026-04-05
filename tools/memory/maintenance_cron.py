@@ -18,10 +18,10 @@ Usage:
 
 import argparse
 import json
-import sqlite3
 import struct
 import sys
 import time
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -69,7 +69,7 @@ def flush_buffer(db_path=None):
 def embed_unembedded(db_path=None):
     """Generate embeddings for entries missing them (D72 compliant)."""
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
+    conn = get_connection(db_path=str(path))
     c = conn.cursor()
     c.execute("SELECT id, content FROM memory_entries WHERE embedding IS NULL")
     rows = c.fetchall()
@@ -170,7 +170,7 @@ def prune_stale(days=None, db_path=None):
     prune_types = cfg.get("prune_types", ["event", "thinking"])
 
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
+    conn = get_connection(db_path=str(path))
     c = conn.cursor()
 
     placeholders = ",".join("?" * len(prune_types))
@@ -178,7 +178,7 @@ def prune_stale(days=None, db_path=None):
         f"""DELETE FROM memory_entries
            WHERE importance <= ?
              AND type IN ({placeholders})
-             AND created_at < datetime('now', ? || ' days')""",
+             AND created_at < datetime('now', ? || ' days')""",  # nosec B608 -- table/column names are internal constants, not user input
         [min_importance] + prune_types + [str(-prune_days)],
     )
     pruned = c.rowcount

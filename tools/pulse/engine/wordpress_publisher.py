@@ -26,12 +26,13 @@ Usage:
   # JSON output
   python tools/pulse/engine/wordpress_publisher.py --publish --post-id "post-abc" --json
 """
+from __future__ import annotations
 
 import argparse
 import json
 import os
 import sys
-import xmlrpc.client  # nosec B411 — we control the WP server
+import xmlrpc.client  # nosec B411 — internal publisher talks to our own WordPress site
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -48,7 +49,7 @@ if _env_path.exists() and not os.getenv("WP_PASSWORD"):
             _k, _, _v = _line.partition("=")
             os.environ.setdefault(_k.strip(), _v.strip())
 
-from tools.pulse.db import get_row, query_rows, update_row
+from tools.pulse.db import get_row, query_rows, update_row  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -97,14 +98,8 @@ def _upload_image(wp, image_path: str, post_title: str = "") -> dict | None:
 
     # Determine MIME type from extension
     ext = img_path.suffix.lower()
-    mime_map = {
-        ".png": "image/png",
-        ".jpg": "image/jpeg",
-        ".jpeg": "image/jpeg",
-        ".webp": "image/webp",
-        ".gif": "image/gif",
-        ".svg": "image/svg+xml",
-    }
+    mime_map = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+                ".webp": "image/webp", ".gif": "image/gif", ".svg": "image/svg+xml"}
     mime_type = mime_map.get(ext, "image/png")
 
     filename = img_path.name
@@ -170,7 +165,6 @@ def _strip_hero_image_from_content(content: str) -> str:
     so including it inline in the body causes it to appear twice.
     """
     import re
-
     # Remove markdown hero images: ![Hero](...) — greedy match to handle URLs with parens/query strings
     content = re.sub(r"!\[Hero\]\(.*?\)\s*", "", content)
     # Remove <p> wrapped hero images: <p><img ... alt="Hero" ... /></p>
@@ -181,6 +175,87 @@ def _strip_hero_image_from_content(content: str) -> str:
     content = re.sub(r'<img[^>]*class="hero-image"[^>]*/?\s*>\s*', "", content)
     # Remove leftover [HERO_IMAGE] placeholders
     content = re.sub(r"\[HERO_IMAGE(?::[^\]]*)?\]\s*", "", content)
+    return content
+
+
+def _resolve_local_images(content: str, wp) -> str:
+    """Find local image paths in HTML/markdown content and upload to WordPress.
+
+    Catches patterns like:
+      src="/static/screenshots/foo.png"
+      src="tools/dashboard/static/screenshots/foo.png"
+      ![alt](/static/screenshots/foo.png)
+
+    Uploads each local file to WP media library and replaces the path with the
+    returned public URL.  If the file doesn't exist or upload fails, the
+    reference is left unchanged (better than silently dropping the image).
+    """
+    import re
+
+    # Directories to search for local images (most-specific first)
+    search_dirs = [
+        PROJECT_ROOT / "tools" / "dashboard" / "static" / "screenshots",
+        PROJECT_ROOT / "tools" / "dashboard" / "static",
+        PROJECT_ROOT / "playwright" / "screenshots",
+        PROJECT_ROOT,
+    ]
+
+    # Match src="..." or markdown ![...](...) with local-looking paths
+    # Local = starts with / (but not //) or doesn't start with http
+    local_img_re = re.compile(
+        r'(?:'
+        r'(?:src=["\'])(/static/screenshots/[^"\']+)["\']'  # HTML src="/static/..."
+        r'|'
+        r'!\[[^\]]*\]\((/static/screenshots/[^)]+)\)'  # Markdown ![](/static/...)
+        r'|'
+        r'(?:src=["\'])((?:tools/|playwright/)[^"\']+\.(?:png|jpg|jpeg|webp|gif))["\']'  # HTML src="playwright/..."
+        r'|'
+        r'!\[[^\]]*\]\(((?:tools/|playwright/)[^)]+\.(?:png|jpg|jpeg|webp|gif))\)'  # Markdown ![](playwright/...)
+        r'|'
+        r'!\[[^\]]*\]\(((?:[A-Z]:\\|/)[^)]+\.(?:png|jpg|jpeg|webp|gif))\)'  # Markdown ![](C:\abs\path.png)
+        r')'
+    )
+
+    replacements = {}
+    for m in local_img_re.finditer(content):
+        local_path = m.group(1) or m.group(2) or m.group(3) or m.group(4) or m.group(5)
+        if local_path in replacements:
+            continue  # Already processed
+
+        # Resolve to absolute filesystem path
+        resolved = None
+        # Check if it's already an absolute path
+        abs_candidate = Path(local_path)
+        if abs_candidate.is_absolute() and abs_candidate.exists():
+            resolved = abs_candidate
+        else:
+            # Strip leading slash for filesystem lookup
+            clean = local_path.lstrip("/")
+            for search_dir in search_dirs:
+                candidate = search_dir / clean
+                if candidate.exists():
+                    resolved = candidate
+                    break
+                # Also try just the filename
+                candidate = search_dir / Path(clean).name
+                if candidate.exists():
+                    resolved = candidate
+                    break
+
+        if not resolved:
+            _log(f"Local image not found on disk: {local_path}", "WARN")
+            continue
+
+        result = _upload_image(wp, str(resolved), resolved.stem)
+        if result and result.get("url"):
+            replacements[local_path] = result["url"]
+            _log(f"Uploaded inline image: {local_path} -> {result['url']}")
+        else:
+            _log(f"Failed to upload inline image: {local_path}", "WARN")
+
+    for old_path, new_url in replacements.items():
+        content = content.replace(old_path, new_url)
+
     return content
 
 
@@ -254,6 +329,9 @@ def publish_post(post_id: str, as_draft: bool = False) -> dict:
     wp = _get_client()
     wp_status = "draft" if as_draft else "publish"
     wp_post = _pulse_to_wp(post, status=wp_status)
+
+    # 2a. Resolve any local image paths in post_content → upload to WP
+    wp_post["post_content"] = _resolve_local_images(wp_post["post_content"], wp)
 
     # 2b. Upload hero image if available
     image_attachment = None
@@ -346,9 +424,7 @@ def list_wp_posts(count: int = 10) -> dict:
     wp = _get_client()
     try:
         posts = wp.wp.getPosts(
-            WP_BLOG_ID,
-            WP_USERNAME,
-            WP_PASSWORD,
+            WP_BLOG_ID, WP_USERNAME, WP_PASSWORD,
             {"number": count, "post_type": "post"},
             ["post_id", "post_title", "post_status", "post_date", "link"],
         )

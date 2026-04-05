@@ -487,7 +487,7 @@ def get_routing_table(db_path: Path = None, staleness_seconds: int = 120) -> dic
 def main():
     """CLI for skill routing and agent health introspection."""
     parser = argparse.ArgumentParser(
-        description="ICDEV Skill Router -- health-aware agent-skill routing"
+        description="ICDEV™ Skill Router -- health-aware agent-skill routing"
     )
     parser.add_argument(
         "--route-skill",

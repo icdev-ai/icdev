@@ -3,7 +3,7 @@
 """Remote Command Gateway Agent — Flask app on port 8458.
 
 Receives commands from messaging channels via webhooks, validates
-through 8-gate security chain, executes ICDEV tools, and returns
+through 8-gate security chain, executes ICDEV™ tools, and returns
 classification-filtered responses.
 
 Usage:
@@ -24,18 +24,22 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-import yaml
-from flask import Flask, request, jsonify
+import yaml  # noqa: E402
+from flask import Flask, request, jsonify  # noqa: E402
 
-from tools.gateway.security_chain import run_security_chain
-from tools.gateway.command_router import execute_command, is_command_allowed, requires_confirmation
-from tools.gateway.user_binder import create_challenge, verify_challenge, list_bindings, revoke_binding
+from tools.gateway.security_chain import run_security_chain  # noqa: E402
+from tools.gateway.command_router import (  # noqa: E402
+    execute_command, is_command_allowed, requires_confirmation
+)
+from tools.gateway.user_binder import (  # noqa: E402
+    create_challenge, verify_challenge, list_bindings, revoke_binding
+)
 
 # Channel adapter imports
-from tools.gateway.adapters.internal import InternalChatAdapter
-from tools.gateway.adapters.telegram import TelegramAdapter
-from tools.gateway.adapters.slack import SlackAdapter
-from tools.gateway.adapters.mattermost import MattermostAdapter
+from tools.gateway.adapters.internal import InternalChatAdapter  # noqa: E402
+from tools.gateway.adapters.telegram import TelegramAdapter  # noqa: E402
+from tools.gateway.adapters.slack import SlackAdapter  # noqa: E402
+from tools.gateway.adapters.mattermost import MattermostAdapter  # noqa: E402
 
 logger = logging.getLogger("icdev.gateway.agent")
 
@@ -90,7 +94,6 @@ def _load_adapters(config: Dict) -> Dict[str, Any]:
 # Flask App
 # ---------------------------------------------------------------------------
 
-
 def create_app() -> Flask:
     """Create and configure the gateway Flask application."""
     app = Flask(__name__)
@@ -107,35 +110,34 @@ def create_app() -> Flask:
     @app.route("/health", methods=["GET"])
     def health():
         env_mode = config.get("environment", {}).get("mode", "connected")
-        return jsonify(
-            {
-                "status": "healthy",
-                "agent": "gateway",
-                "port": config.get("gateway", {}).get("port", 8458),
-                "environment_mode": env_mode,
-                "active_channels": list(adapters.keys()),
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            }
-        )
+        return jsonify({
+            "status": "healthy",
+            "agent": "gateway",
+            "port": config.get("gateway", {}).get("port", 8458),
+            "environment_mode": env_mode,
+            "active_channels": list(adapters.keys()),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        })
 
     # ── Agent Card (A2A protocol) ──────────────────────────────
     @app.route("/.well-known/agent.json", methods=["GET"])
     def agent_card():
         card = config.get("gateway", {}).get("agent_card", {})
-        return jsonify(
-            {
-                "name": card.get("name", "ICDEV Remote Command Gateway"),
-                "description": card.get("description", ""),
-                "version": card.get("version", "1.0.0"),
-                "url": f"http://localhost:{config.get('gateway', {}).get('port', 8458)}",
-                "capabilities": [
-                    "remote_command_execution",
-                    "classification_filtering",
-                    "user_binding",
-                ],
-                "channels": {name: adapter.get_info() for name, adapter in adapters.items()},
-            }
-        )
+        return jsonify({
+            "name": card.get("name", "ICDEV™ Remote Command Gateway"),
+            "description": card.get("description", ""),
+            "version": card.get("version", "1.0.0"),
+            "url": f"http://localhost:{config.get('gateway', {}).get('port', 8458)}",
+            "capabilities": [
+                "remote_command_execution",
+                "classification_filtering",
+                "user_binding",
+            ],
+            "channels": {
+                name: adapter.get_info()
+                for name, adapter in adapters.items()
+            },
+        })
 
     # ── Binding Ceremony ───────────────────────────────────────
     @app.route("/gateway/bind", methods=["POST"])
@@ -150,15 +152,14 @@ def create_app() -> Flask:
             if not channel or not channel_user_id:
                 return jsonify({"error": "channel and channel_user_id required"}), 400
 
-            ttl = config.get("security", {}).get("binding", {}).get("challenge_ttl_minutes", 10)
+            ttl = config.get("security", {}).get("binding", {}).get(
+                "challenge_ttl_minutes", 10)
             code = create_challenge(channel, channel_user_id, ttl)
-            return jsonify(
-                {
-                    "challenge_code": code,
-                    "ttl_minutes": ttl,
-                    "message": "Enter this code in the ICDEV dashboard or provide your API key to complete binding.",
-                }
-            )
+            return jsonify({
+                "challenge_code": code,
+                "ttl_minutes": ttl,
+                "message": "Enter this code in the ICDEV™ dashboard or provide your API key to complete binding.",
+            })
 
         elif action == "verify":
             code = data.get("challenge_code", "")
@@ -196,12 +197,14 @@ def create_app() -> Flask:
         if not webhook_path:
             continue
 
-        _register_webhook_route(app, webhook_path, channel_name, adapter, config, command_allowlist)
+        _register_webhook_route(app, webhook_path, channel_name,
+                                adapter, config, command_allowlist)
 
     return app
 
 
-def _register_webhook_route(app: Flask, path: str, channel_name: str, adapter, config: Dict, allowlist: list):
+def _register_webhook_route(app: Flask, path: str, channel_name: str,
+                             adapter, config: Dict, allowlist: list):
     """Register a webhook route for a channel adapter."""
 
     @app.route(path, methods=["POST"], endpoint=f"webhook_{channel_name}")
@@ -231,17 +234,21 @@ def _register_webhook_route(app: Flask, path: str, channel_name: str, adapter, c
 
         # 4. Handle /bind command specially
         if envelope.command == "bind":
-            ttl = config.get("security", {}).get("binding", {}).get("challenge_ttl_minutes", 10)
-            code = create_challenge(envelope.channel, envelope.channel_user_id, ttl)
+            ttl = config.get("security", {}).get("binding", {}).get(
+                "challenge_ttl_minutes", 10)
+            code = create_challenge(
+                envelope.channel, envelope.channel_user_id, ttl)
             adapter.send_message(
                 envelope.channel_user_id,
-                f"Your binding code: `{code}`\nEnter this code in the ICDEV dashboard within {ttl} minutes.",
+                f"Your binding code: `{code}`\n"
+                f"Enter this code in the ICDEV™ dashboard within {ttl} minutes.",
                 envelope.channel_thread_id,
             )
             return jsonify({"status": "binding_initiated"}), 200
 
         # 5. Check allowlist
-        allowed, entry = is_command_allowed(envelope.command, channel_name, allowlist)
+        allowed, entry = is_command_allowed(
+            envelope.command, channel_name, allowlist)
         if not allowed:
             adapter.send_message(
                 envelope.channel_user_id,
@@ -252,17 +259,18 @@ def _register_webhook_route(app: Flask, path: str, channel_name: str, adapter, c
 
         # 6. Run security chain
         channel_config = config.get("channels", {}).get(channel_name, {})
-        passed, gate_results = run_security_chain(envelope, adapter, config, channel_config, allowlist)
+        passed, gate_results = run_security_chain(
+            envelope, adapter, config, channel_config, allowlist)
 
         if not passed:
             failed = next((r for r in gate_results if not r.passed), None)
             msg = f"Command rejected: {failed.reason}" if failed else "Security check failed"
             adapter.send_message(
-                envelope.channel_user_id,
-                msg,
+                envelope.channel_user_id, msg,
                 envelope.channel_thread_id,
             )
-            return jsonify({"status": "rejected", "gate": failed.gate_name if failed else "unknown"}), 200
+            return jsonify({"status": "rejected",
+                            "gate": failed.gate_name if failed else "unknown"}), 200
 
         # 7. Check confirmation requirement
         if requires_confirmation(envelope.command, allowlist):
@@ -280,14 +288,12 @@ def _register_webhook_route(app: Flask, path: str, channel_name: str, adapter, c
             envelope.channel_thread_id,
         )
 
-        return jsonify(
-            {
-                "status": "completed" if result["success"] else "failed",
-                "audit_id": result["audit_id"],
-                "filtered": result["filtered"],
-                "execution_time_ms": result["execution_time_ms"],
-            }
-        )
+        return jsonify({
+            "status": "completed" if result["success"] else "failed",
+            "audit_id": result["audit_id"],
+            "filtered": result["filtered"],
+            "execution_time_ms": result["execution_time_ms"],
+        })
 
     return handle_webhook
 
@@ -295,7 +301,6 @@ def _register_webhook_route(app: Flask, path: str, channel_name: str, adapter, c
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
-
 
 def main():
     logging.basicConfig(
@@ -305,14 +310,14 @@ def main():
 
     config = _load_config()
     gateway = config.get("gateway", {})
-    host = gateway.get("host", "0.0.0.0")
+    host = gateway.get("host", "0.0.0.0")  # nosec B104 -- intentional bind-all for containerized/dev deployment
     port = int(os.environ.get("PORT", gateway.get("port", 8458)))
     debug = gateway.get("debug", False)
 
     app = create_app()
 
     print("CUI // SP-CTI")
-    print(f"ICDEV Remote Command Gateway starting on {host}:{port}")
+    print(f"ICDEV™ Remote Command Gateway starting on {host}:{port}")
     print(f"Environment: {config.get('environment', {}).get('mode', 'connected')}")
     print(f"Active channels: {list(app.config.get('ADAPTERS', {}).keys())}")
 

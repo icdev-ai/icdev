@@ -4,7 +4,7 @@
 
 Reads documents (text, markdown) or DB table rows, extracts entities and
 relationships via text_network, merges and deduplicates across chunks,
-and stores the resulting graph in the ICDEV knowledge graph tables.
+and stores the resulting graph in the ICDEV™ knowledge graph tables.
 
 Usage:
     python tools/knowledge_graph/ingester.py --file /path/to/doc --project-id "sparkpilot" --json
@@ -20,6 +20,7 @@ import os
 import sqlite3
 import sys
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -34,12 +35,10 @@ sys.path.insert(0, str(BASE_DIR))
 # Database helpers
 # ---------------------------------------------------------------------------
 
-
 def _get_db() -> sqlite3.Connection:
     """Return a sqlite3 connection to icdev.db with Row factory."""
-    db_path = os.environ.get("ICDEV_DB_PATH", str(ICDEV_DB))
-    conn = sqlite3.connect(db_path, timeout=10)
-    conn.row_factory = sqlite3.Row
+    os.environ.get("ICDEV_DB_PATH", str(ICDEV_DB))
+    conn = get_connection()
     conn.execute("PRAGMA busy_timeout=5000")
     return conn
 
@@ -93,7 +92,6 @@ def _ensure_tables(conn: sqlite3.Connection) -> None:
 # Text chunking
 # ---------------------------------------------------------------------------
 
-
 def _chunk_text(text: str, chunk_size: int = 2000, overlap: int = 200) -> List[str]:
     """Split *text* into overlapping chunks.
 
@@ -139,103 +137,29 @@ def _chunk_text(text: str, chunk_size: int = 2000, overlap: int = 200) -> List[s
 
 _ENTITY_KEYWORDS: Dict[str, List[str]] = {
     "organization": [
-        "NIST",
-        "CISA",
-        "DoD",
-        "NSA",
-        "DISA",
-        "FedRAMP",
-        "OMB",
-        "GAO",
-        "DHS",
-        "FBI",
-        "CIA",
-        "NRO",
-        "NGA",
-        "CYBERCOM",
-        "DARPA",
-        "IARPA",
-        "ISO",
-        "IEEE",
-        "OWASP",
-        "MITRE",
-        "CMS",
-        "FDA",
-        "OCC",
-        "FDIC",
-        "SEC",
-        "FINRA",
-        "CFTC",
-        "HHS",
-        "ONC",
-        "FTC",
-        "DOT",
-        "CBP",
+        "NIST", "CISA", "DoD", "NSA", "DISA", "FedRAMP", "OMB", "GAO",
+        "DHS", "FBI", "CIA", "NRO", "NGA", "CYBERCOM", "DARPA", "IARPA",
+        "ISO", "IEEE", "OWASP", "MITRE", "CMS", "FDA", "OCC", "FDIC",
+        "SEC", "FINRA", "CFTC", "HHS", "ONC", "FTC", "DOT", "CBP",
     ],
     "framework": [
-        "NIST 800-53",
-        "NIST 800-171",
-        "FedRAMP",
-        "CMMC",
-        "CJIS",
-        "HIPAA",
-        "HITRUST",
-        "SOC 2",
-        "PCI DSS",
-        "ISO 27001",
-        "MOSA",
-        "ATLAS",
-        "OWASP LLM",
-        "NIST AI RMF",
-        "ISO 42001",
-        "FIPS 199",
-        "FIPS 200",
-        "CNSSI 1253",
-        "NIST 800-207",
-        "EU AI Act",
-        "OSCAL",
-        "STIX",
-        "STRIDE",
+        "NIST 800-53", "NIST 800-171", "FedRAMP", "CMMC", "CJIS",
+        "HIPAA", "HITRUST", "SOC 2", "PCI DSS", "ISO 27001",
+        "MOSA", "ATLAS", "OWASP LLM", "NIST AI RMF", "ISO 42001",
+        "FIPS 199", "FIPS 200", "CNSSI 1253", "NIST 800-207",
+        "EU AI Act", "OSCAL", "STIX", "STRIDE",
     ],
     "system": [
-        "Kubernetes",
-        "Docker",
-        "Terraform",
-        "Ansible",
-        "Helm",
-        "GitLab",
-        "GitHub",
-        "Jenkins",
-        "Splunk",
-        "Prometheus",
-        "Grafana",
-        "ELK",
-        "PostgreSQL",
-        "SQLite",
-        "Redis",
-        "Istio",
-        "Linkerd",
-        "Kyverno",
-        "OPA",
-        "Bedrock",
+        "Kubernetes", "Docker", "Terraform", "Ansible", "Helm",
+        "GitLab", "GitHub", "Jenkins", "Splunk", "Prometheus",
+        "Grafana", "ELK", "PostgreSQL", "SQLite", "Redis",
+        "Istio", "Linkerd", "Kyverno", "OPA", "Bedrock",
     ],
     "concept": [
-        "zero trust",
-        "continuous ATO",
-        "cATO",
-        "DevSecOps",
-        "supply chain",
-        "SBOM",
-        "STIG",
-        "SSP",
-        "POAM",
-        "risk management",
-        "threat model",
-        "digital thread",
-        "knowledge graph",
-        "RAG",
-        "fine-tuning",
-        "LoRA",
+        "zero trust", "continuous ATO", "cATO", "DevSecOps",
+        "supply chain", "SBOM", "STIG", "SSP", "POAM",
+        "risk management", "threat model", "digital thread",
+        "knowledge graph", "RAG", "fine-tuning", "LoRA",
     ],
 }
 
@@ -252,13 +176,11 @@ def _extract_entities(text: str) -> List[Dict[str, Any]]:
                 key = (kw.lower(), entity_type)
                 if key not in seen:
                     seen.add(key)
-                    found.append(
-                        {
-                            "label": kw,
-                            "entity_type": entity_type,
-                            "properties": {},
-                        }
-                    )
+                    found.append({
+                        "label": kw,
+                        "entity_type": entity_type,
+                        "properties": {},
+                    })
     return found
 
 
@@ -268,7 +190,7 @@ def _extract_edges(entities: List[Dict[str, Any]], text: str) -> List[Dict[str, 
     text_lower = text.lower()
 
     for i, src in enumerate(entities):
-        for tgt in entities[i + 1 :]:
+        for tgt in entities[i + 1:]:
             # Simple proximity heuristic: if both appear within 500 chars
             src_pos = text_lower.find(src["label"].lower())
             tgt_pos = text_lower.find(tgt["label"].lower())
@@ -276,21 +198,18 @@ def _extract_edges(entities: List[Dict[str, Any]], text: str) -> List[Dict[str, 
                 distance = abs(src_pos - tgt_pos)
                 if distance < 500:
                     weight = max(0.1, 1.0 - distance / 500.0)
-                    edges.append(
-                        {
-                            "source": src["label"],
-                            "target": tgt["label"],
-                            "relationship": "co_occurs_with",
-                            "weight": round(weight, 3),
-                        }
-                    )
+                    edges.append({
+                        "source": src["label"],
+                        "target": tgt["label"],
+                        "relationship": "co_occurs_with",
+                        "weight": round(weight, 3),
+                    })
     return edges
 
 
 # ---------------------------------------------------------------------------
 # Merge / dedup helpers
 # ---------------------------------------------------------------------------
-
 
 def _merge_entities(entities_list: List[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
     """Deduplicate entities across chunks by (label_lower, entity_type).
@@ -336,7 +255,6 @@ def _merge_edges(
 # Persistence
 # ---------------------------------------------------------------------------
 
-
 def _persist_graph(
     conn: sqlite3.Connection,
     graph_id: str,
@@ -355,15 +273,11 @@ def _persist_graph(
             metadata, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
-            graph_id,
-            project_id,
-            graph_name,
+            graph_id, project_id, graph_name,
             f"Ingested from {source_info}",
-            len(entities),
-            len(edges),
+            len(entities), len(edges),
             json.dumps({"source": source_info}),
-            now,
-            now,
+            now, now,
         ),
     )
 
@@ -377,12 +291,8 @@ def _persist_graph(
                (id, graph_id, label, entity_type, properties, created_at)
                VALUES (?, ?, ?, ?, ?, ?)""",
             (
-                node_id,
-                graph_id,
-                ent["label"],
-                ent["entity_type"],
-                json.dumps(ent.get("properties", {})),
-                now,
+                node_id, graph_id, ent["label"], ent["entity_type"],
+                json.dumps(ent.get("properties", {})), now,
             ),
         )
 
@@ -397,14 +307,9 @@ def _persist_graph(
                 properties, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                _gen_id("ke"),
-                graph_id,
-                src_id,
-                tgt_id,
-                edge["relationship"],
-                edge.get("weight", 1.0),
-                json.dumps(edge.get("properties", {})),
-                now,
+                _gen_id("ke"), graph_id, src_id, tgt_id,
+                edge["relationship"], edge.get("weight", 1.0),
+                json.dumps(edge.get("properties", {})), now,
             ),
         )
 
@@ -423,7 +328,6 @@ def _entity_type_counts(entities: List[Dict[str, Any]]) -> Dict[str, int]:
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
-
 
 def ingest_file(
     file_path: str,
@@ -463,13 +367,8 @@ def ingest_file(
     try:
         _ensure_tables(conn)
         _persist_graph(
-            conn,
-            graph_id,
-            project_id,
-            name,
-            merged_ents,
-            merged_edgs,
-            source_info=str(fp),
+            conn, graph_id, project_id, name,
+            merged_ents, merged_edgs, source_info=str(fp),
         )
     finally:
         conn.close()
@@ -494,7 +393,10 @@ def ingest_directory(
     if not dp.is_dir():
         return {"status": "error", "error": f"Not a directory: {dir_path}"}
 
-    files = sorted(p for p in dp.iterdir() if p.is_file() and p.suffix.lower() in (".md", ".txt"))
+    files = sorted(
+        p for p in dp.iterdir()
+        if p.is_file() and p.suffix.lower() in (".md", ".txt")
+    )
 
     if not files:
         return {"status": "error", "error": "No .md or .txt files found"}
@@ -529,13 +431,17 @@ def ingest_from_table(
     content_column: str = "content",
     limit: int = 100,
 ) -> Dict[str, Any]:
-    """Read rows from an ICDEV DB table and extract entities from content."""
+    """Read rows from an ICDEV™ DB table and extract entities from content."""
     conn = _get_db()
     try:
         _ensure_tables(conn)
 
         # Validate table exists
-        tables = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
+        tables = [
+            r[0] for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+        ]
         if table_name not in tables:
             return {"status": "error", "error": f"Table '{table_name}' not found"}
 
@@ -553,7 +459,10 @@ def ingest_from_table(
             if not content_column_found:
                 return {
                     "status": "error",
-                    "error": (f"Column '{content_column}' not found in '{table_name}'. Available: {columns}"),
+                    "error": (
+                        f"Column '{content_column}' not found in '{table_name}'. "
+                        f"Available: {columns}"
+                    ),
                 }
             content_column = content_column_found
 
@@ -571,7 +480,7 @@ def ingest_from_table(
         col_list = ", ".join(select_cols)
 
         rows = conn.execute(
-            f"SELECT {col_list} FROM {table_name} LIMIT ?",  # noqa: S608
+            f"SELECT {col_list} FROM {table_name} LIMIT ?",  # noqa: S608  # nosec B608 -- table/column names are internal constants, not user input
             (limit,),
         ).fetchall()
 
@@ -603,12 +512,8 @@ def ingest_from_table(
         merged_edgs = _merge_edges(all_edges, merged_ents)
 
         _persist_graph(
-            conn,
-            graph_id,
-            project_id,
-            graph_name,
-            merged_ents,
-            merged_edgs,
+            conn, graph_id, project_id, graph_name,
+            merged_ents, merged_edgs,
             source_info=f"table:{table_name}",
         )
     finally:
@@ -628,54 +533,40 @@ def ingest_from_table(
 # CLI
 # ---------------------------------------------------------------------------
 
-
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Knowledge Graph document ingester")
+    parser = argparse.ArgumentParser(
+        description="Knowledge Graph document ingester"
+    )
     parser.add_argument(
-        "--file",
-        type=str,
-        default=None,
+        "--file", type=str, default=None,
         help="Path to a single file to ingest (.md, .txt)",
     )
     parser.add_argument(
-        "--dir",
-        type=str,
-        default=None,
+        "--dir", type=str, default=None,
         help="Path to directory of files to ingest",
     )
     parser.add_argument(
-        "--source-table",
-        type=str,
-        default=None,
-        help="Name of ICDEV DB table to ingest from",
+        "--source-table", type=str, default=None,
+        help="Name of ICDEV™ DB table to ingest from",
     )
     parser.add_argument(
-        "--content-column",
-        type=str,
-        default="content",
+        "--content-column", type=str, default="content",
         help="Column name containing text content (default: content)",
     )
     parser.add_argument(
-        "--limit",
-        type=int,
-        default=100,
+        "--limit", type=int, default=100,
         help="Max rows to read from source table (default: 100)",
     )
     parser.add_argument(
-        "--project-id",
-        type=str,
-        required=True,
+        "--project-id", type=str, required=True,
         help="Project identifier",
     )
     parser.add_argument(
-        "--graph-name",
-        type=str,
-        default=None,
+        "--graph-name", type=str, default=None,
         help="Optional graph name (defaults to filename or table name)",
     )
     parser.add_argument(
-        "--json",
-        action="store_true",
+        "--json", action="store_true",
         help="Output as JSON",
     )
 
@@ -695,8 +586,7 @@ def main() -> None:
         result = ingest_directory(args.dir, args.project_id, args.graph_name)
     else:
         result = ingest_from_table(
-            args.source_table,
-            args.project_id,
+            args.source_table, args.project_id,
             content_column=args.content_column,
             limit=args.limit,
         )

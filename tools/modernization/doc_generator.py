@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Documentation Generator for ICDEV Legacy Code Modernization.
+"""Documentation Generator for ICDEV™ Legacy Code Modernization.
 
 Generates structured documentation from legacy code analysis data stored in
 icdev.db. Produces Markdown documents with CUI markings for API docs, data
@@ -17,9 +17,9 @@ Usage:
 
 import argparse
 import json
-import sqlite3
 import sys
 import textwrap
+from tools.db.storage import get_connection
 from collections import OrderedDict, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -62,7 +62,6 @@ COMPLEXITY_RATINGS = [
 # Database helpers
 # ---------------------------------------------------------------------------
 
-
 def _get_db(db_path=None):
     """Return a sqlite3 connection with Row factory for dict-like access.
 
@@ -77,9 +76,11 @@ def _get_db(db_path=None):
     """
     path = db_path or DB_PATH
     if not Path(path).exists():
-        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+        raise FileNotFoundError(
+            f"Database not found: {path}\n"
+            "Run: python tools/db/init_icdev_db.py"
+        )
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -96,9 +97,13 @@ def _get_app(conn, app_id):
     Raises:
         ValueError: If the application is not found.
     """
-    row = conn.execute("SELECT * FROM legacy_applications WHERE id = ?", (app_id,)).fetchone()
+    row = conn.execute(
+        "SELECT * FROM legacy_applications WHERE id = ?", (app_id,)
+    ).fetchone()
     if not row:
-        raise ValueError(f"Legacy application '{app_id}' not found in database.")
+        raise ValueError(
+            f"Legacy application '{app_id}' not found in database."
+        )
     return dict(row)
 
 
@@ -204,7 +209,6 @@ def _now_iso():
 # ---------------------------------------------------------------------------
 # 1. API Documentation
 # ---------------------------------------------------------------------------
-
 
 def generate_api_docs(app_id, output_dir, db_path=None):
     """Generate OpenAPI-like API documentation in Markdown.
@@ -377,7 +381,6 @@ def generate_api_docs(app_id, output_dir, db_path=None):
 # 2. Data Dictionary
 # ---------------------------------------------------------------------------
 
-
 def generate_data_dictionary(app_id, output_dir, db_path=None):
     """Generate a data dictionary from discovered database schemas.
 
@@ -396,7 +399,8 @@ def generate_data_dictionary(app_id, output_dir, db_path=None):
     try:
         app = _get_app(conn, app_id)
         schemas = conn.execute(
-            "SELECT * FROM legacy_db_schemas WHERE legacy_app_id = ? ORDER BY schema_name, table_name, column_name",
+            "SELECT * FROM legacy_db_schemas WHERE legacy_app_id = ? "
+            "ORDER BY schema_name, table_name, column_name",
             (app_id,),
         ).fetchall()
         schemas = [dict(r) for r in schemas]
@@ -427,15 +431,13 @@ def generate_data_dictionary(app_id, output_dir, db_path=None):
 
         # Track FK relationships
         if col.get("is_foreign_key") and col.get("foreign_table"):
-            relationships.append(
-                {
-                    "from_table": table,
-                    "from_column": col.get("column_name"),
-                    "to_table": col.get("foreign_table"),
-                    "to_column": col.get("foreign_column", "id"),
-                    "schema": schema,
-                }
-            )
+            relationships.append({
+                "from_table": table,
+                "from_column": col.get("column_name"),
+                "to_table": col.get("foreign_table"),
+                "to_column": col.get("foreign_column", "id"),
+                "schema": schema,
+            })
 
     # Build document
     lines = []
@@ -468,7 +470,8 @@ def generate_data_dictionary(app_id, output_dir, db_path=None):
         pk_count = sum(1 for c in tinfo["columns"] if c.get("is_primary_key"))
         fk_count = sum(1 for c in tinfo["columns"] if c.get("is_foreign_key"))
         lines.append(
-            f"{idx}. **{tinfo['table']}** ({tinfo['schema']}) - {col_count} columns, {pk_count} PK, {fk_count} FK"
+            f"{idx}. **{tinfo['table']}** ({tinfo['schema']}) "
+            f"- {col_count} columns, {pk_count} PK, {fk_count} FK"
         )
     lines.append("")
     lines.append("---")
@@ -495,7 +498,9 @@ def generate_data_dictionary(app_id, output_dir, db_path=None):
                 fk_ref = f"FK -> {col['foreign_table']}.{fk_col}"
             default = col.get("default_value", "") or ""
             constraints = col.get("constraints", "") or ""
-            lines.append(f"| `{cname}` | `{dtype}` | {nullable} | {pk} | {fk_ref} | {default} | {constraints} |")
+            lines.append(
+                f"| `{cname}` | `{dtype}` | {nullable} | {pk} | {fk_ref} | {default} | {constraints} |"
+            )
 
         lines.append("")
         lines.append("---")
@@ -540,7 +545,6 @@ def generate_data_dictionary(app_id, output_dir, db_path=None):
 # 3. Component Documentation
 # ---------------------------------------------------------------------------
 
-
 def generate_component_docs(app_id, output_dir, db_path=None):
     """Generate component documentation from legacy analysis.
 
@@ -560,7 +564,8 @@ def generate_component_docs(app_id, output_dir, db_path=None):
     try:
         app = _get_app(conn, app_id)
         components = conn.execute(
-            "SELECT * FROM legacy_components WHERE legacy_app_id = ? ORDER BY component_type, name",
+            "SELECT * FROM legacy_components WHERE legacy_app_id = ? "
+            "ORDER BY component_type, name",
             (app_id,),
         ).fetchall()
         components = [dict(r) for r in components]
@@ -639,10 +644,12 @@ def generate_component_docs(app_id, output_dir, db_path=None):
         lines.append(f"## {ctype.replace('_', ' ').title()} Components")
         lines.append("")
         lines.append(
-            "| Name | File Path | LOC | Complexity | Rating | Coupling | Cohesion | Deps In | Deps Out | Health |"
+            "| Name | File Path | LOC | Complexity | Rating | "
+            "Coupling | Cohesion | Deps In | Deps Out | Health |"
         )
         lines.append(
-            "|------|-----------|-----|------------|--------|----------|----------|---------|----------|--------|"
+            "|------|-----------|-----|------------|--------|"
+            "----------|----------|---------|----------|--------|"
         )
 
         for comp in comps:
@@ -716,7 +723,6 @@ def generate_component_docs(app_id, output_dir, db_path=None):
 # ---------------------------------------------------------------------------
 # 4. Dependency Map
 # ---------------------------------------------------------------------------
-
 
 def generate_dependency_map(app_id, output_dir, db_path=None):
     """Generate a text-based dependency matrix and list view.
@@ -792,12 +798,10 @@ def generate_dependency_map(app_id, output_dir, db_path=None):
                 pair = tuple(sorted([src, tgt]))
                 if pair not in checked:
                     checked.add(pair)
-                    circular.append(
-                        (
-                            comp_map.get(src, src),
-                            comp_map.get(tgt, tgt),
-                        )
-                    )
+                    circular.append((
+                        comp_map.get(src, src),
+                        comp_map.get(tgt, tgt),
+                    ))
 
     # Build document
     lines = []
@@ -843,7 +847,10 @@ def generate_dependency_map(app_id, output_dir, db_path=None):
         lines.append("|------|-----------|-----|-----|-------|")
         for rank, (cid, total) in enumerate(top_coupled, 1):
             cname = comp_map.get(cid, cid)
-            lines.append(f"| {rank} | `{cname}` | {in_degree.get(cid, 0)} | {out_degree.get(cid, 0)} | {total} |")
+            lines.append(
+                f"| {rank} | `{cname}` | {in_degree.get(cid, 0)} "
+                f"| {out_degree.get(cid, 0)} | {total} |"
+            )
         lines.append("")
         lines.append("---")
         lines.append("")
@@ -890,7 +897,8 @@ def generate_dependency_map(app_id, output_dir, db_path=None):
         lines.append("## Dependency Matrix")
         lines.append("")
         lines.append(
-            "Rows = source components, Columns = target components. Cell values indicate dependency type abbreviations."
+            "Rows = source components, Columns = target components. "
+            "Cell values indicate dependency type abbreviations."
         )
         lines.append("")
 
@@ -899,10 +907,14 @@ def generate_dependency_map(app_id, output_dir, db_path=None):
         header_pad = " " * col_width
         # Column headers
         header_line = header_pad + " | "
-        header_line += " | ".join(abbrev_names[cid].ljust(col_width) for cid in ordered_ids)
+        header_line += " | ".join(
+            abbrev_names[cid].ljust(col_width) for cid in ordered_ids
+        )
         lines.append("```")
         lines.append(header_line)
-        sep = "-" * col_width + "-+-" + "-+-".join("-" * col_width for _ in ordered_ids)
+        sep = "-" * col_width + "-+-" + "-+-".join(
+            "-" * col_width for _ in ordered_ids
+        )
         lines.append(sep)
 
         for src_id in ordered_ids:
@@ -913,7 +925,9 @@ def generate_dependency_map(app_id, output_dir, db_path=None):
                     cells.append(".".center(col_width))
                 elif tgt_id in adj.get(src_id, {}):
                     types = adj[src_id][tgt_id]
-                    abbrs = "".join(sorted(DEP_TYPE_ABBREV.get(t, "?") for t in types))
+                    abbrs = "".join(sorted(
+                        DEP_TYPE_ABBREV.get(t, "?") for t in types
+                    ))
                     cells.append(abbrs.center(col_width))
                 else:
                     cells.append(" " * col_width)
@@ -960,7 +974,6 @@ def generate_dependency_map(app_id, output_dir, db_path=None):
 # ---------------------------------------------------------------------------
 # 5. Tech Debt Report
 # ---------------------------------------------------------------------------
-
 
 def generate_tech_debt_report(app_id, output_dir, db_path=None):
     """Generate a technical debt analysis report.
@@ -1074,8 +1087,14 @@ def generate_tech_debt_report(app_id, output_dir, db_path=None):
     if top10:
         lines.append("## Top 10 Debt Hotspots")
         lines.append("")
-        lines.append("| Rank | Component | Type | LOC | Complexity | Coupling | Debt Score | Est. Hours |")
-        lines.append("|------|-----------|------|-----|------------|----------|------------|------------|")
+        lines.append(
+            "| Rank | Component | Type | LOC | Complexity | Coupling | "
+            "Debt Score | Est. Hours |"
+        )
+        lines.append(
+            "|------|-----------|------|-----|------------|----------|"
+            "------------|------------|"
+        )
         for rank, comp in enumerate(top10, 1):
             lines.append(
                 f"| {rank} | `{comp.get('name', '')}` "
@@ -1193,7 +1212,6 @@ def generate_tech_debt_report(app_id, output_dir, db_path=None):
 # ---------------------------------------------------------------------------
 # 6. Full Documentation (Orchestrator)
 # ---------------------------------------------------------------------------
-
 
 def generate_full_documentation(app_id, output_dir, db_path=None):
     """Orchestrate generation of all documentation types.
@@ -1359,7 +1377,9 @@ def main():
 
     try:
         if args.type == "all":
-            result = generate_full_documentation(args.app_id, args.output_dir, args.db_path)
+            result = generate_full_documentation(
+                args.app_id, args.output_dir, args.db_path
+            )
             if args.json_output:
                 print(json.dumps(result, indent=2))
             else:

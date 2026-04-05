@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Tests for OMB M-26-04 Unbiased AI assessor (Phase 48).
 
 Coverage: framework metadata, base class inheritance, catalog loading,

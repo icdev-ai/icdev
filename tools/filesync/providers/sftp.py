@@ -70,7 +70,7 @@ class SFTPSyncProvider(SyncTargetProvider):
                 client.load_system_host_keys()
                 client.set_missing_host_key_policy(paramiko.RejectPolicy())
             else:
-                client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                client.set_missing_host_key_policy(paramiko.AutoAddPolicy())  # nosec B507 — user opted into auto-trust via config
 
             connect_kwargs = {
                 "hostname": self._host,

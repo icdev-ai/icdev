@@ -2,7 +2,7 @@
 # CUI // SP-CTI
 """GraphRAG retrieval module — scoring profiles, context compression.
 
-Retrieves relevant nodes/edges from the ICDEV Knowledge Graph using
+Retrieves relevant nodes/edges from the ICDEV™ Knowledge Graph using
 configurable scoring profiles (D-KARL-1) and optional scanner-tier
 LLM compression (D-KARL-2, zero Claude tokens).
 
@@ -26,7 +26,11 @@ import json
 import logging
 import math
 import sqlite3
+import struct
 import time
+import urllib.request
+import urllib.error
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -66,87 +70,26 @@ SCORING_PROFILES: Dict[str, Dict[str, float]] = {
 # Keywords for auto-detecting profile from query text
 PROFILE_KEYWORDS: Dict[str, List[str]] = {
     "compliance": [
-        "compliance",
-        "compliant",
-        "audit",
-        "nist",
-        "fedramp",
-        "cmmc",
-        "stig",
-        "poam",
-        "ssp",
-        "ato",
-        "control",
-        "800-53",
-        "oscal",
-        "hipaa",
-        "pci",
-        "cjis",
-        "regulation",
-        "regulatory",
-        "framework",
-        "authorization",
-        "accreditation",
-        "assessment",
+        "compliance", "compliant", "audit", "nist", "fedramp", "cmmc",
+        "stig", "poam", "ssp", "ato", "control", "800-53", "oscal",
+        "hipaa", "pci", "cjis", "regulation", "regulatory", "framework",
+        "authorization", "accreditation", "assessment",
     ],
     "exploratory": [
-        "explore",
-        "discover",
-        "gap",
-        "gaps",
-        "find",
-        "search",
-        "what",
-        "overview",
-        "landscape",
-        "broad",
-        "unknown",
-        "investigate",
-        "opportunities",
-        "patterns",
-        "trends",
-        "related",
-        "connections",
+        "explore", "discover", "gap", "gaps", "find", "search", "what",
+        "overview", "landscape", "broad", "unknown", "investigate",
+        "opportunities", "patterns", "trends", "related", "connections",
     ],
     "provenance": [
-        "provenance",
-        "lineage",
-        "origin",
-        "trace",
-        "tracing",
-        "source",
-        "chain",
-        "custody",
-        "history",
-        "audit trail",
-        "evidence",
-        "artifact",
-        "derivation",
-        "prov",
-        "w3c",
+        "provenance", "lineage", "origin", "trace", "tracing", "source",
+        "chain", "custody", "history", "audit trail", "evidence",
+        "artifact", "derivation", "prov", "w3c",
     ],
     "security": [
-        "security",
-        "secure",
-        "threat",
-        "vulnerability",
-        "cve",
-        "attack",
-        "injection",
-        "sast",
-        "exploit",
-        "malware",
-        "zero trust",
-        "zta",
-        "encryption",
-        "authentication",
-        "authorization",
-        "rbac",
-        "atlas",
-        "mitre",
-        "owasp",
-        "stride",
-        "penetration",
+        "security", "secure", "threat", "vulnerability", "cve", "attack",
+        "injection", "sast", "exploit", "malware", "zero trust", "zta",
+        "encryption", "authentication", "authorization", "rbac",
+        "atlas", "mitre", "owasp", "stride", "penetration",
     ],
 }
 
@@ -158,11 +101,9 @@ RECENCY_HALF_LIFE_DAYS = 30.0
 # DB Helpers
 # ---------------------------------------------------------------------------
 
-
 def _get_db() -> sqlite3.Connection:
     """Get a connection to icdev.db."""
-    conn = sqlite3.connect(str(ICDEV_DB))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
@@ -237,7 +178,6 @@ def _query_hash(query: str) -> str:
 # Profile Auto-Detection (D-KARL-1)
 # ---------------------------------------------------------------------------
 
-
 def _auto_detect_profile(query: str) -> str:
     """Detect scoring profile from query keywords.
 
@@ -275,9 +215,77 @@ def _auto_detect_profile(query: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Node Scoring (D-KARL-1)
+# Semantic Search Helpers
 # ---------------------------------------------------------------------------
 
+def _cosine_similarity(a: bytes, b: bytes) -> float:
+    """Compute cosine similarity between two embedding BLOBs.
+
+    Embeddings are stored as packed float32 arrays (same format as
+    enricher.py: ``struct.pack(f'{len(vec)}f', *vec)``).
+
+    Args:
+        a: First embedding BLOB.
+        b: Second embedding BLOB.
+
+    Returns:
+        Cosine similarity in [-1, 1], or 0.0 on error.
+    """
+    try:
+        dim_a = len(a) // 4
+        dim_b = len(b) // 4
+        if dim_a != dim_b or dim_a == 0:
+            return 0.0
+        vec_a = struct.unpack(f"{dim_a}f", a)
+        vec_b = struct.unpack(f"{dim_b}f", b)
+        dot = sum(x * y for x, y in zip(vec_a, vec_b))
+        norm_a = math.sqrt(sum(x * x for x in vec_a))
+        norm_b = math.sqrt(sum(x * x for x in vec_b))
+        if norm_a == 0.0 or norm_b == 0.0:
+            return 0.0
+        return dot / (norm_a * norm_b)
+    except (struct.error, TypeError, ValueError):
+        return 0.0
+
+
+def _embed_query(query: str) -> Optional[List[float]]:
+    """Get embedding for a query string via Ollama nomic-embed-text.
+
+    Uses the same model as enricher.py for consistent vector space.
+    Falls back to None on any failure (Ollama down, model not loaded, etc.).
+
+    Args:
+        query: Text to embed.
+
+    Returns:
+        List of floats (768 dimensions for nomic-embed-text), or None.
+    """
+    try:
+        payload = json.dumps({
+            "model": "nomic-embed-text",
+            "input": query,
+        }).encode("utf-8")
+        req = urllib.request.Request(
+            "http://localhost:11434/api/embed",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:  # nosec B310 -- URL scheme validated; internal/configured endpoints only
+            body = json.loads(resp.read().decode("utf-8"))
+        embeddings = body.get("embeddings")
+        if embeddings and len(embeddings) > 0 and len(embeddings[0]) > 0:
+            return embeddings[0]
+        return None
+    except (urllib.error.URLError, urllib.error.HTTPError,
+            OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
+        logger.debug("Query embedding unavailable: %s", exc)
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Node Scoring (D-KARL-1)
+# ---------------------------------------------------------------------------
 
 def _compute_recency_score(created_at: str) -> float:
     """Exponential time-decay recency score.
@@ -295,7 +303,7 @@ def _compute_recency_score(created_at: str) -> float:
         # Handle both 'YYYY-MM-DD HH:MM:SS' and ISO-8601 formats
         ts_str = created_at.replace("T", " ").replace("Z", "")
         ts = datetime.strptime(ts_str[:19], "%Y-%m-%d %H:%M:%S")
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         age_days = max((now - ts).total_seconds() / 86400.0, 0.0)
         return math.pow(2, -(age_days / RECENCY_HALF_LIFE_DAYS))
     except (ValueError, TypeError):
@@ -358,7 +366,11 @@ def _score_nodes(
 
         recency = _compute_recency_score(created_at)
 
-        base_score = w_edge * avg_ew + w_centrality * min(centrality, 1.0) + w_recency * recency
+        base_score = (
+            w_edge * avg_ew
+            + w_centrality * min(centrality, 1.0)
+            + w_recency * recency
+        )
 
         # Text-match relevance bonus (up to +0.3)
         relevance_bonus = 0.0
@@ -368,8 +380,14 @@ def _score_nodes(
                 relevance_bonus += 0.1
         relevance_bonus = min(relevance_bonus, 0.3)
 
+        # Embedding similarity bonus (additive, up to +0.2)
+        embedding_bonus = 0.0
+        embedding_sim = node.get("_embedding_sim")
+        if embedding_sim is not None:
+            embedding_bonus = 0.2 * float(embedding_sim)
+
         node_copy = dict(node)
-        node_copy["score"] = round(base_score + relevance_bonus, 6)
+        node_copy["score"] = round(base_score + relevance_bonus + embedding_bonus, 6)
         scored.append(node_copy)
 
     scored.sort(key=lambda n: n["score"], reverse=True)
@@ -379,7 +397,6 @@ def _score_nodes(
 # ---------------------------------------------------------------------------
 # Context Formatting
 # ---------------------------------------------------------------------------
-
 
 def _format_context(
     nodes: List[Dict[str, Any]],
@@ -427,7 +444,10 @@ def _format_context(
     lines.append("")
 
     # Edges section — only include edges between returned nodes
-    relevant_edges = [e for e in edges if e.get("source_id") in node_ids or e.get("target_id") in node_ids]
+    relevant_edges = [
+        e for e in edges
+        if e.get("source_id") in node_ids or e.get("target_id") in node_ids
+    ]
 
     if relevant_edges:
         lines.append("--- Relationships ---")
@@ -456,7 +476,6 @@ def _format_context(
 # ---------------------------------------------------------------------------
 # Context Compression (D-KARL-2)
 # ---------------------------------------------------------------------------
-
 
 def _compress_context(context: str, query: str) -> str:
     """Compress verbose neighborhood context via scanner-tier LLM.
@@ -505,8 +524,7 @@ def _compress_context(context: str, query: str) -> str:
         if compressed and len(compressed) > 50:
             logger.info(
                 "Context compressed: %d -> %d chars (%.0f%% reduction)",
-                len(context),
-                len(compressed),
+                len(context), len(compressed),
                 (1 - len(compressed) / len(context)) * 100,
             )
             return compressed
@@ -522,7 +540,6 @@ def _compress_context(context: str, query: str) -> str:
 # ---------------------------------------------------------------------------
 # Retrieval Logging (append-only, NIST AU)
 # ---------------------------------------------------------------------------
-
 
 def _log_retrieval(
     conn: sqlite3.Connection,
@@ -562,7 +579,6 @@ def _log_retrieval(
 # ---------------------------------------------------------------------------
 # Main Retrieval Function
 # ---------------------------------------------------------------------------
-
 
 def retrieve(
     query: str,
@@ -633,9 +649,19 @@ def retrieve(
                 "nodes_returned": 0,
                 "edges_returned": 0,
                 "compressed": False,
+                "semantic_search": False,
                 "context": "(No knowledge graphs found for the given project.)",
                 "retrieval_ms": elapsed_ms,
             }
+
+        # Embed the query for semantic search (graceful degradation)
+        query_embedding = _embed_query(query)
+        query_embedding_blob: Optional[bytes] = None
+        semantic_search_used = False
+        if query_embedding is not None:
+            query_embedding_blob = struct.pack(
+                f"{len(query_embedding)}f", *query_embedding,
+            )
 
         # Step 2: Search nodes by keyword matching
         # Build LIKE clauses for each query term
@@ -657,7 +683,7 @@ def retrieve(
                 FROM kg_nodes
                 WHERE graph_id IN ({placeholders})
                   AND ({where_likes})
-            """
+            """  # nosec B608 -- table/column names are internal constants, not user input
             params: list = list(graph_ids) + like_params
             rows = conn.execute(sql, params).fetchall()
             matched_nodes = [dict(r) for r in rows]
@@ -670,9 +696,50 @@ def retrieve(
                 WHERE graph_id IN ({placeholders})
                 ORDER BY centrality DESC
                 LIMIT ?
-            """
+            """  # nosec B608 -- table/column names are internal constants, not user input
             rows = conn.execute(sql, list(graph_ids) + [top_k * 3]).fetchall()
             matched_nodes = [dict(r) for r in rows]
+
+        # Semantic search: augment keyword results with embedding similarity
+        if query_embedding_blob is not None:
+            semantic_search_used = True
+            matched_id_set_kw = {n["id"] for n in matched_nodes}
+
+            # Fetch all nodes with embeddings from target graphs
+            emb_sql = f"""
+                SELECT id, graph_id, label, entity_type, properties,
+                       centrality, created_at, embedding
+                FROM kg_nodes
+                WHERE graph_id IN ({placeholders})
+                  AND embedding IS NOT NULL
+            """  # nosec B608 -- table/column names are internal constants, not user input
+            emb_rows = conn.execute(emb_sql, list(graph_ids)).fetchall()
+
+            # Score each node by cosine similarity to query
+            sim_scored: List[tuple] = []
+            for row in emb_rows:
+                row_dict = dict(row)
+                emb_blob = row_dict.pop("embedding", None)
+                if emb_blob is None:
+                    continue
+                sim = _cosine_similarity(query_embedding_blob, emb_blob)
+                sim_scored.append((sim, row_dict))
+
+            # Sort by similarity descending, take top_k * 3
+            sim_scored.sort(key=lambda x: x[0], reverse=True)
+            sem_limit = top_k * 3
+
+            for sim, node_dict in sim_scored[:sem_limit]:
+                node_dict["_embedding_sim"] = sim
+                if node_dict["id"] not in matched_id_set_kw:
+                    matched_nodes.append(node_dict)
+                    matched_id_set_kw.add(node_dict["id"])
+                else:
+                    # Tag existing keyword-matched node with similarity
+                    for existing in matched_nodes:
+                        if existing["id"] == node_dict["id"]:
+                            existing["_embedding_sim"] = sim
+                            break
 
         total_matched = len(matched_nodes)
 
@@ -681,14 +748,8 @@ def retrieve(
             # Log empty retrieval
             if graph_ids:
                 _log_retrieval(
-                    conn,
-                    graph_ids[0],
-                    query,
-                    selected_profile,
-                    0,
-                    0,
-                    False,
-                    elapsed_ms,
+                    conn, graph_ids[0], query, selected_profile,
+                    0, 0, False, elapsed_ms,
                 )
             return {
                 "status": "ok",
@@ -699,6 +760,7 @@ def retrieve(
                 "nodes_returned": 0,
                 "edges_returned": 0,
                 "compressed": False,
+                "semantic_search": semantic_search_used,
                 "context": "(No matching nodes found for the query.)",
                 "retrieval_ms": elapsed_ms,
             }
@@ -715,7 +777,7 @@ def retrieve(
             WHERE graph_id IN ({placeholders})
               AND (source_id IN ({id_placeholders})
                    OR target_id IN ({id_placeholders}))
-        """
+        """  # nosec B608 -- table/column names are internal constants, not user input
         edge_params = list(graph_ids) + matched_ids + matched_ids
         edge_rows = conn.execute(edge_sql, edge_params).fetchall()
         all_edges = [dict(r) for r in edge_rows]
@@ -739,17 +801,14 @@ def retrieve(
                        centrality, created_at
                 FROM kg_nodes
                 WHERE id IN ({nbr_placeholders})
-            """
+            """  # nosec B608 -- table/column names are internal constants, not user input
             nbr_rows = conn.execute(nbr_sql, list(neighbor_ids)).fetchall()
             for r in nbr_rows:
                 matched_nodes.append(dict(r))
 
         # Step 4: Score nodes
         scored_nodes = _score_nodes(
-            matched_nodes,
-            all_edges,
-            selected_profile,
-            query_terms,
+            matched_nodes, all_edges, selected_profile, query_terms,
         )
 
         # Step 5: Take top_k
@@ -757,7 +816,10 @@ def retrieve(
 
         # Filter edges to only those connecting top_k nodes
         top_ids = {n["id"] for n in top_nodes}
-        top_edges = [e for e in all_edges if e.get("source_id") in top_ids or e.get("target_id") in top_ids]
+        top_edges = [
+            e for e in all_edges
+            if e.get("source_id") in top_ids or e.get("target_id") in top_ids
+        ]
 
         # Step 6: Format context
         raw_context = _format_context(top_nodes, top_edges)
@@ -795,6 +857,7 @@ def retrieve(
             "nodes_returned": len(top_nodes),
             "edges_returned": len(top_edges),
             "compressed": compressed,
+            "semantic_search": semantic_search_used,
             "context": final_context,
             "retrieval_ms": elapsed_ms,
         }
@@ -811,6 +874,7 @@ def retrieve(
             "nodes_returned": 0,
             "edges_returned": 0,
             "compressed": False,
+            "semantic_search": False,
             "context": f"Retrieval error: {exc}",
             "retrieval_ms": elapsed_ms,
         }
@@ -822,42 +886,34 @@ def retrieve(
 # CLI
 # ---------------------------------------------------------------------------
 
-
 def main() -> None:
     """CLI entry point."""
     parser = argparse.ArgumentParser(
         description="GraphRAG retrieval with scoring profiles (D-KARL-1/2)",
     )
     parser.add_argument(
-        "--query",
-        required=True,
+        "--query", required=True,
         help="Search query text",
     )
     parser.add_argument(
-        "--project-id",
-        default=None,
+        "--project-id", default=None,
         help="Optional project ID filter",
     )
     parser.add_argument(
-        "--profile",
-        default=None,
+        "--profile", default=None,
         choices=list(SCORING_PROFILES.keys()),
         help="Scoring profile (auto-detected from query if omitted)",
     )
     parser.add_argument(
-        "--top-k",
-        type=int,
-        default=10,
+        "--top-k", type=int, default=10,
         help="Maximum nodes to return (default: 10)",
     )
     parser.add_argument(
-        "--no-compress",
-        action="store_true",
+        "--no-compress", action="store_true",
         help="Skip scanner-tier LLM context compression",
     )
     parser.add_argument(
-        "--json",
-        action="store_true",
+        "--json", action="store_true",
         help="Output as JSON",
     )
 
@@ -881,8 +937,10 @@ def main() -> None:
         print(f"Status:   {status}")
         print(f"Profile:  {profile}{auto}")
         print(f"Matched:  {result.get('nodes_matched', 0)} nodes")
-        print(f"Returned: {result.get('nodes_returned', 0)} nodes, {result.get('edges_returned', 0)} edges")
+        print(f"Returned: {result.get('nodes_returned', 0)} nodes, "
+              f"{result.get('edges_returned', 0)} edges")
         print(f"Compressed: {result.get('compressed', False)}")
+        print(f"Semantic:   {result.get('semantic_search', False)}")
         print(f"Time:     {result.get('retrieval_ms', 0)} ms")
         print()
         print(result.get("context", ""))

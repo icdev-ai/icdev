@@ -6,7 +6,7 @@ Uses requests.post() against the Ollama native API endpoints:
 - /api/tags    — model listing / availability check
 
 This provider handles the Anthropic-style multimodal message format
-(used internally by ICDEV's LLMRequest) and converts it to Ollama's
+(used internally by ICDEV™'s LLMRequest) and converts it to Ollama's
 native image format: {"role": "user", "content": "text", "images": ["base64"]}.
 """
 
@@ -25,7 +25,6 @@ logger = logging.getLogger("icdev.llm.ollama")
 
 try:
     import requests
-
     HAS_REQUESTS = True
 except ImportError:
     requests = None  # type: ignore[assignment]
@@ -36,9 +35,9 @@ except ImportError:
 # Message format conversion: universal -> Ollama native
 # ---------------------------------------------------------------------------
 
-
-def _convert_messages_to_ollama(messages: List[Dict[str, Any]], system_prompt: str = "") -> List[Dict[str, Any]]:
-    """Convert ICDEV universal messages to Ollama native chat format.
+def _convert_messages_to_ollama(messages: List[Dict[str, Any]],
+                                system_prompt: str = "") -> List[Dict[str, Any]]:
+    """Convert ICDEV™ universal messages to Ollama native chat format.
 
     Handles three content shapes:
     1. Plain string:  {"role": "user", "content": "hello"}
@@ -115,7 +114,6 @@ def _convert_messages_to_ollama(messages: List[Dict[str, Any]], system_prompt: s
 # Provider implementation
 # ---------------------------------------------------------------------------
 
-
 class OllamaProvider(LLMProvider):
     """Native Ollama provider using the Ollama REST API.
 
@@ -127,13 +125,14 @@ class OllamaProvider(LLMProvider):
 
     def __init__(self, base_url: str = "http://localhost:11434"):
         self._base_url = base_url.rstrip("/")
-        self._timeout = 120  # seconds
+        self._timeout = 300  # seconds (increased for GPU contention with image gen)
 
     @property
     def provider_name(self) -> str:
         return "ollama"
 
-    def invoke(self, request: LLMRequest, model_id: str, model_config: dict) -> LLMResponse:
+    def invoke(self, request: LLMRequest, model_id: str,
+               model_config: dict) -> LLMResponse:
         """Invoke Ollama via native /api/chat (non-streaming)."""
         if not HAS_REQUESTS:
             raise ImportError("requests library required. Install: pip install requests")
@@ -141,7 +140,9 @@ class OllamaProvider(LLMProvider):
         start_time = time.time()
 
         # Build Ollama messages
-        ollama_messages = _convert_messages_to_ollama(request.messages, request.system_prompt)
+        ollama_messages = _convert_messages_to_ollama(
+            request.messages, request.system_prompt
+        )
 
         # Build request payload
         payload: Dict[str, Any] = {
@@ -165,6 +166,11 @@ class OllamaProvider(LLMProvider):
         if options:
             payload["options"] = options
 
+        # Disable thinking mode for qwen3+ models — they burn all num_predict
+        # tokens on reasoning before producing output, causing timeouts
+        if "qwen3" in model_id.lower():
+            payload["think"] = False
+
         # Structured output via Ollama's format parameter
         if request.output_schema and model_config.get("supports_structured_output", False):
             payload["format"] = "json"
@@ -179,14 +185,19 @@ class OllamaProvider(LLMProvider):
         except requests.ConnectionError:
             logger.error("Ollama connection refused at %s", self._base_url)
             raise ConnectionError(
-                f"Cannot connect to Ollama at {self._base_url}. Is Ollama running? Start with: ollama serve"
+                f"Cannot connect to Ollama at {self._base_url}. "
+                "Is Ollama running? Start with: ollama serve"
             )
         except requests.Timeout:
             logger.error("Ollama request timed out after %ds", self._timeout)
-            raise TimeoutError(f"Ollama request timed out after {self._timeout}s")
+            raise TimeoutError(
+                f"Ollama request timed out after {self._timeout}s"
+            )
         except requests.HTTPError as exc:
             logger.error("Ollama HTTP error: %s %s", resp_http.status_code, resp_http.text)
-            raise RuntimeError(f"Ollama returned HTTP {resp_http.status_code}: {resp_http.text}") from exc
+            raise RuntimeError(
+                f"Ollama returned HTTP {resp_http.status_code}: {resp_http.text}"
+            ) from exc
 
         data = resp_http.json()
 
@@ -220,7 +231,8 @@ class OllamaProvider(LLMProvider):
 
         return response
 
-    def invoke_streaming(self, request: LLMRequest, model_id: str, model_config: dict) -> Iterator[dict]:
+    def invoke_streaming(self, request: LLMRequest, model_id: str,
+                         model_config: dict) -> Iterator[dict]:
         """Invoke Ollama with streaming via native /api/chat."""
         if not HAS_REQUESTS:
             yield {"type": "error", "error": "requests library required"}
@@ -228,7 +240,9 @@ class OllamaProvider(LLMProvider):
 
         start_time = time.time()
 
-        ollama_messages = _convert_messages_to_ollama(request.messages, request.system_prompt)
+        ollama_messages = _convert_messages_to_ollama(
+            request.messages, request.system_prompt
+        )
 
         payload: Dict[str, Any] = {
             "model": model_id,
@@ -249,6 +263,10 @@ class OllamaProvider(LLMProvider):
 
         if options:
             payload["options"] = options
+
+        # Disable thinking mode for qwen3+ models (see invoke() comment)
+        if "qwen3" in model_id.lower():
+            payload["think"] = False
 
         if request.output_schema and model_config.get("supports_structured_output", False):
             payload["format"] = "json"

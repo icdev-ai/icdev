@@ -12,20 +12,20 @@ Integration points:
     cpars_predictor.py       → Deterministic weighted CPARS scoring
     subcontractor_tracker.py → FAR 52.219-9, ISR/SSR
     negative_event_tracker.py → NDAA event-based tracking
-    cdrl_generator.py        → CDRL auto-generation via ICDEV tools
+    cdrl_generator.py        → CDRL auto-generation via ICDEV™ tools
     sam_contract_sync.py     → SAM.gov Contract Awards API
 """
 
 import os
-import sqlite3
 import sys
 import uuid
-from datetime import datetime, timezone
+from tools.db.storage import get_connection
 from pathlib import Path
 
 from flask import Blueprint, g, jsonify, request
 
 from tools.dashboard.auth import require_role
+from tools.common.helpers import now_isoformat
 from tools.dashboard.config import DEFAULT_CLASSIFICATION
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
@@ -38,15 +38,11 @@ cpmp_api = Blueprint("cpmp_api", __name__, url_prefix="/api/cpmp")
 
 
 def _get_db():
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(DB_PATH))
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
 
-
-def _now():
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _uuid():
@@ -56,9 +52,9 @@ def _uuid():
 def _audit(conn, action, details="", actor="cpmp_api"):
     try:
         conn.execute(
-            "INSERT INTO audit_trail (id, timestamp, event_type, actor, action, details, session_id) "
+            "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (_uuid(), _now(), "cpmp.api", actor, action, details, "cpmp"),
+            (_uuid(), now_isoformat(), "cpmp.api", actor, action, details, "cpmp"),
         )
     except Exception:
         pass
@@ -73,7 +69,7 @@ def _cor_access_log(conn, user_id, contract_id, action):
         conn.execute(
             "INSERT INTO cpmp_cor_access_log (id, user_id, contract_id, action, accessed_at, classification) "
             "VALUES (?, ?, ?, ?, ?, ?)",
-            (_uuid(), user_id, contract_id, action, _now(), _classification()),
+            (_uuid(), user_id, contract_id, action, now_isoformat(), _classification()),
         )
     except Exception:
         pass

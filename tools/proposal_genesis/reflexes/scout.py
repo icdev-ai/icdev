@@ -20,7 +20,7 @@ from typing import Any, Dict, List
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
-from tools.db.storage import get_connection
+from tools.db.storage import get_connection  # noqa: E402
 
 REPORTS_DIR = BASE_DIR / "data" / "proposal_genesis" / "briefs"
 
@@ -114,7 +114,7 @@ def _find_competitor_overlaps() -> List[Dict]:
 
             where = " OR ".join(query_parts)
             competitors = conn.execute(
-                f"SELECT DISTINCT awardee_name, COUNT(*) as award_count "
+                f"SELECT DISTINCT awardee_name, COUNT(*) as award_count "  # nosec B608 — where clauses from parameterized builder
                 f"FROM govcon_awards WHERE {where} "
                 f"GROUP BY awardee_name ORDER BY award_count DESC LIMIT 5",
                 params,

@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
+from __future__ import annotations
+
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """SAFe Agile hierarchy decomposition engine.
 
 Decomposes intake session requirements into SAFe hierarchy:
@@ -32,8 +34,8 @@ import argparse
 import json
 import os
 import re
-import sqlite3
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime
 from pathlib import Path
 
@@ -42,22 +44,20 @@ DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db
 
 try:
     from tools.audit.audit_logger import log_event
-
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
-
-    def log_event(**kwargs):
-        return -1
+    def log_event(**kwargs): return -1
 
 
 def _get_connection(db_path=None):
     """Get database connection with dict-like row access."""
     path = db_path or DB_PATH
     if not path.exists():
-        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+        raise FileNotFoundError(
+            f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py"
+        )
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -82,33 +82,17 @@ _PRIORITY_BUSINESS_VALUE = {
 # ATO impact tier keywords
 _ATO_TIER_KEYWORDS = {
     "RED": [
-        "secret",
-        "ts/sci",
-        "top secret",
-        "classified",
-        "authorization boundary",
-        "ato boundary",
+        "secret", "ts/sci", "top secret", "classified",
+        "authorization boundary", "ato boundary",
     ],
     "ORANGE": [
-        "external system",
-        "new interface",
-        "new integration",
-        "mobile",
-        "byod",
-        "cloud migration",
-        "fips",
-        "encryption change",
-        "pki",
+        "external system", "new interface", "new integration",
+        "mobile", "byod", "cloud migration",
+        "fips", "encryption change", "pki",
     ],
     "YELLOW": [
-        "access control",
-        "rbac",
-        "audit",
-        "logging",
-        "authentication",
-        "cac",
-        "mfa",
-        "stig",
+        "access control", "rbac", "audit", "logging",
+        "authentication", "cac", "mfa", "stig",
     ],
 }
 
@@ -163,7 +147,6 @@ def _determine_dominant_priority(reqs):
 # ---------------------------------------------------------------------------
 # BDD generation
 # ---------------------------------------------------------------------------
-
 
 def generate_bdd_criteria(requirement_text, requirement_type):
     """Generate Gherkin Given/When/Then from requirement text.
@@ -221,7 +204,6 @@ def generate_bdd_criteria(requirement_text, requirement_type):
 # Core decomposition
 # ---------------------------------------------------------------------------
 
-
 def decompose_requirements(
     session_id,
     target_level="story",
@@ -249,7 +231,9 @@ def decompose_requirements(
     conn = _get_connection(db_path)
 
     # Verify session exists
-    session = conn.execute("SELECT * FROM intake_sessions WHERE id = ?", (session_id,)).fetchone()
+    session = conn.execute(
+        "SELECT * FROM intake_sessions WHERE id = ?", (session_id,)
+    ).fetchone()
     if not session:
         conn.close()
         raise ValueError(f"Session '{session_id}' not found.")
@@ -288,7 +272,10 @@ def decompose_requirements(
         # --- Create Epic ---
         epic_id = _generate_id("epic")
         epic_title = f"{rtype.replace('_', ' ').title()} Capabilities"
-        epic_description = f"All {rtype} requirements for the system. Contains {len(group_reqs)} requirement(s)."
+        epic_description = (
+            f"All {rtype} requirements for the system. "
+            f"Contains {len(group_reqs)} requirement(s)."
+        )
         req_ids = [r["id"] for r in group_reqs]
         epic_priority = _determine_dominant_priority(group_reqs)
         epic_tshirt = _estimate_tshirt(len(group_reqs)) if estimate else None
@@ -310,15 +297,9 @@ def decompose_requirements(
                 status, classification, created_at)
                VALUES (?, ?, ?, NULL, 'epic', ?, ?, ?, ?, NULL, NULL, ?, ?, ?, 'draft', 'CUI', ?)""",
             (
-                epic_id,
-                session_id,
-                project_id,
-                epic_title,
-                epic_description,
-                epic_bdd,
-                epic_tshirt,
-                epic_wsjf,
-                epic_ato,
+                epic_id, session_id, project_id,
+                epic_title, epic_description, epic_bdd,
+                epic_tshirt, epic_wsjf, epic_ato,
                 json.dumps(req_ids),
                 datetime.now().isoformat(),
             ),
@@ -350,7 +331,10 @@ def decompose_requirements(
                 feature_description = raw_text
                 feature_priority = req.get("priority", "medium")
                 feature_tshirt = _estimate_tshirt(1) if estimate else None  # one req = S
-                feature_wsjf = _compute_wsjf(feature_priority, feature_tshirt) if estimate and feature_tshirt else None
+                feature_wsjf = (
+                    _compute_wsjf(feature_priority, feature_tshirt)
+                    if estimate and feature_tshirt else None
+                )
                 feature_ato = _determine_ato_impact(raw_text)
 
                 feature_bdd = None
@@ -365,16 +349,9 @@ def decompose_requirements(
                         status, classification, created_at)
                        VALUES (?, ?, ?, ?, 'feature', ?, ?, ?, ?, NULL, NULL, ?, ?, ?, 'draft', 'CUI', ?)""",
                     (
-                        feature_id,
-                        session_id,
-                        project_id,
-                        epic_id,
-                        feature_title,
-                        feature_description,
-                        feature_bdd,
-                        feature_tshirt,
-                        feature_wsjf,
-                        feature_ato,
+                        feature_id, session_id, project_id, epic_id,
+                        feature_title, feature_description, feature_bdd,
+                        feature_tshirt, feature_wsjf, feature_ato,
                         json.dumps([req["id"]]),
                         datetime.now().isoformat(),
                     ),
@@ -403,7 +380,10 @@ def decompose_requirements(
                     story_description = raw_text
                     story_tshirt = "S" if estimate else None  # one req = S
                     story_points = _TSHIRT_NUMERIC.get(story_tshirt, 1) if estimate else None
-                    story_wsjf = _compute_wsjf(feature_priority, story_tshirt) if estimate and story_tshirt else None
+                    story_wsjf = (
+                        _compute_wsjf(feature_priority, story_tshirt)
+                        if estimate and story_tshirt else None
+                    )
                     story_ato = feature_ato
 
                     story_bdd = None
@@ -418,17 +398,9 @@ def decompose_requirements(
                             status, classification, created_at)
                            VALUES (?, ?, ?, ?, 'story', ?, ?, ?, ?, ?, NULL, ?, ?, ?, 'draft', 'CUI', ?)""",
                         (
-                            story_id,
-                            session_id,
-                            project_id,
-                            feature_id,
-                            story_title,
-                            story_description,
-                            story_bdd,
-                            story_tshirt,
-                            story_points,
-                            story_wsjf,
-                            story_ato,
+                            story_id, session_id, project_id, feature_id,
+                            story_title, story_description, story_bdd,
+                            story_tshirt, story_points, story_wsjf, story_ato,
                             json.dumps([req["id"]]),
                             datetime.now().isoformat(),
                         ),
@@ -468,7 +440,10 @@ def decompose_requirements(
                     f"support {len(group_reqs)} {rtype} requirement(s)."
                 )
                 enabler_tshirt = _estimate_tshirt(len(group_reqs)) if estimate else None
-                enabler_wsjf = _compute_wsjf("high", enabler_tshirt) if estimate and enabler_tshirt else None
+                enabler_wsjf = (
+                    _compute_wsjf("high", enabler_tshirt)
+                    if estimate and enabler_tshirt else None
+                )
 
                 enabler_bdd = None
                 if generate_bdd:
@@ -482,16 +457,9 @@ def decompose_requirements(
                         status, classification, created_at)
                        VALUES (?, ?, ?, ?, 'enabler', ?, ?, ?, ?, NULL, NULL, ?, ?, ?, 'draft', 'CUI', ?)""",
                     (
-                        enabler_id,
-                        session_id,
-                        project_id,
-                        epic_id,
-                        enabler_title,
-                        enabler_description,
-                        enabler_bdd,
-                        enabler_tshirt,
-                        enabler_wsjf,
-                        epic_ato,
+                        enabler_id, session_id, project_id, epic_id,
+                        enabler_title, enabler_description, enabler_bdd,
+                        enabler_tshirt, enabler_wsjf, epic_ato,
                         json.dumps(req_ids),
                         datetime.now().isoformat(),
                     ),
@@ -549,7 +517,6 @@ def decompose_requirements(
 # Query existing decomposition
 # ---------------------------------------------------------------------------
 
-
 def get_decomposition(session_id, level=None, db_path=None):
     """Return existing decomposition items for a session.
 
@@ -563,7 +530,9 @@ def get_decomposition(session_id, level=None, db_path=None):
     """
     conn = _get_connection(db_path)
 
-    session = conn.execute("SELECT * FROM intake_sessions WHERE id = ?", (session_id,)).fetchone()
+    session = conn.execute(
+        "SELECT * FROM intake_sessions WHERE id = ?", (session_id,)
+    ).fetchone()
     if not session:
         conn.close()
         raise ValueError(f"Session '{session_id}' not found.")
@@ -610,18 +579,9 @@ def get_decomposition(session_id, level=None, db_path=None):
 # ---------------------------------------------------------------------------
 
 _DEPENDENCY_KEYWORDS = [
-    "after",
-    "depends on",
-    "requires",
-    "once",
-    "from step",
-    "building on",
-    "following",
-    "result of",
-    "output of",
-    "blocked by",
-    "prerequisite",
-    "prior to",
+    "after", "depends on", "requires", "once", "from step",
+    "building on", "following", "result of", "output of",
+    "blocked by", "prerequisite", "prior to",
 ]
 
 
@@ -651,7 +611,6 @@ def detect_parallel_groups(session_id, db_path=None):
 
     # Group items by (parent_id, level)
     from collections import defaultdict
-
     siblings = defaultdict(list)
     for item in items:
         key = (item.get("parent_id") or "_root", item.get("level", ""))
@@ -668,7 +627,8 @@ def detect_parallel_groups(session_id, db_path=None):
         independent = []
         dependent = []
         for item in sibling_list:
-            text = (item.get("title", "") + " " + (item.get("acceptance_criteria") or "")).lower()
+            text = (item.get("title", "") + " " +
+                    (item.get("acceptance_criteria") or "")).lower()
             has_dep = any(kw in text for kw in _DEPENDENCY_KEYWORDS)
             if has_dep:
                 dependent.append(item)
@@ -683,15 +643,13 @@ def detect_parallel_groups(session_id, db_path=None):
                     "UPDATE safe_decomposition SET parallel_group = ? WHERE id = ?",
                     (group_id, item["id"]),
                 )
-            groups.append(
-                {
-                    "group_id": group_id,
-                    "parent_id": parent_id,
-                    "level": level,
-                    "item_count": len(independent),
-                    "items": [{"id": i["id"], "title": i["title"]} for i in independent],
-                }
-            )
+            groups.append({
+                "group_id": group_id,
+                "parent_id": parent_id,
+                "level": level,
+                "item_count": len(independent),
+                "items": [{"id": i["id"], "title": i["title"]} for i in independent],
+            })
 
     conn_write.commit()
     conn.close()
@@ -702,9 +660,10 @@ def detect_parallel_groups(session_id, db_path=None):
 # CLI
 # ---------------------------------------------------------------------------
 
-
 def main():
-    parser = argparse.ArgumentParser(description="ICDEV SAFe Decomposition Engine")
+    parser = argparse.ArgumentParser(
+        description="ICDEV™ SAFe Decomposition Engine"
+    )
     parser.add_argument("--session-id", required=True, help="Intake session ID")
     parser.add_argument(
         "--level",
@@ -713,24 +672,19 @@ def main():
         help="Target decomposition level (default: story)",
     )
     parser.add_argument(
-        "--generate-bdd",
-        action="store_true",
+        "--generate-bdd", action="store_true",
         help="Generate BDD Given/When/Then acceptance criteria",
     )
     parser.add_argument(
-        "--estimate",
-        action="store_true",
-        default=True,
+        "--estimate", action="store_true", default=True,
         help="Add T-shirt size estimates and WSJF scores (default: True)",
     )
     parser.add_argument(
-        "--get",
-        action="store_true",
+        "--get", action="store_true",
         help="Get existing decomposition instead of generating",
     )
     parser.add_argument(
-        "--annotate-parallel",
-        action="store_true",
+        "--annotate-parallel", action="store_true",
         help="Detect and annotate parallel task groups (D161)",
     )
     parser.add_argument("--json", action="store_true", help="JSON output")
@@ -761,13 +715,11 @@ def main():
             # We detect explicit --level by checking if it differs from default
             # For --get without --level, return all levels
             import sys
-
             explicit_level = None
             if "--level" in sys.argv:
                 explicit_level = args.level
             result = get_decomposition(
-                args.session_id,
-                level=explicit_level,
+                args.session_id, level=explicit_level,
             )
         else:
             # Generate decomposition
@@ -782,7 +734,8 @@ def main():
             print(json.dumps(result, indent=2, default=str))
         else:
             if args.get:
-                print(f"Decomposition for session {args.session_id}: {result['total_items']} items")
+                print(f"Decomposition for session {args.session_id}: "
+                      f"{result['total_items']} items")
                 for item in result.get("items", []):
                     level = item.get("level", "?")
                     indent = "  " * (
@@ -792,7 +745,10 @@ def main():
                     )
                     print(f"{indent}[{level.upper()}] {item.get('title', '?')}")
             else:
-                print(f"Created {result['items_created']} SAFe items from session {args.session_id}")
+                print(
+                    f"Created {result['items_created']} SAFe items "
+                    f"from session {args.session_id}"
+                )
                 levels = result.get("levels", {})
                 print(
                     f"  Epics: {levels.get('epics', 0)}, "

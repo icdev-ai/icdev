@@ -20,7 +20,7 @@ import re
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
 logger = logging.getLogger("sparkpilot.memory_consolidation")
 
@@ -189,12 +189,14 @@ Choose ONE action:
 
 Respond as JSON: {{"action": "ACTION", "target_id": <id_or_null>, "merged_content": "<text_or_null>", "reasoning": "<brief_explanation>", "confidence": <0.0-1.0>}}"""
 
-            response = router.generate(
-                function_name="memory_consolidation",
+            from tools.llm.provider import LLMRequest
+
+            request = LLMRequest(
                 messages=[{"role": "user", "content": prompt}],
             )
+            response = router.invoke("memory_consolidation", request)
 
-            text = response.get("content", str(response)) if isinstance(response, dict) else str(response)
+            text = response.content if response.content else str(response)
 
             # Parse JSON from response
             import re as _re

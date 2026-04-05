@@ -415,7 +415,7 @@ def handle_dev_profile_detect(args: dict) -> dict:
 
 
 def handle_generate_child_app(args: dict) -> dict:
-    """Generate a mini-ICDEV clone child application."""
+    """Generate a mini-ICDEV™ clone child application."""
     generate = _import_tool("icdev.tools.builder.child_app_generator", "generate_child_app")
     if generate:
         blueprint = args.get("blueprint")
@@ -629,7 +629,7 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="generate_child_app",
-        description="Generate a mini-ICDEV clone child application from a blueprint. Runs the 12-step generation pipeline: scaffold, agents, goals, tools, memory, DB, MCP, CLAUDE.md, CI/CD, compliance, Docker, K8s.",
+        description="Generate a mini-ICDEV™ clone child application from a blueprint. Runs the 12-step generation pipeline: scaffold, agents, goals, tools, memory, DB, MCP, CLAUDE.md, CI/CD, compliance, Docker, K8s.",
         input_schema={
             "type": "object",
             "properties": {

@@ -1,5 +1,5 @@
 ---
-description: "ICDEV workflow: Enforce code review gates with security checks, compliance validation, and merge readiness assessment"
+description: "ICDEV™ workflow: Enforce code review gates with security checks, compliance validation, and merge readiness assessment"
 globs:
   - "**/*.py"
   - "**/*.yaml"

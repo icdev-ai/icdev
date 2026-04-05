@@ -2,14 +2,14 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Vision-based SysML diagram extractor using multimodal LLMs.
 
 Extracts model elements and relationships from diagram screenshots when
 XMI export from Cameo Systems Modeler / MagicDraw is unavailable.  Uses
 vision-capable LLMs (Ollama LLaVA for air-gapped, Claude/GPT-4o for cloud)
 to analyze SysML diagram images and produce structured element/relationship
-data compatible with the ICDEV MBSE digital thread.
+data compatible with the ICDEV™ MBSE digital thread.
 
 Usage:
     # Extract elements from a diagram screenshot
@@ -36,6 +36,7 @@ import sqlite3
 import sys
 import time
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -56,7 +57,6 @@ logger = logging.getLogger("icdev.mbse.diagram_extractor")
 # ---------------------------------------------------------------------------
 try:
     from tools.testing.screenshot_validator import encode_image  # type: ignore
-
     _HAS_ENCODE = True
 except ImportError:
     _HAS_ENCODE = False
@@ -64,13 +64,9 @@ except ImportError:
     def encode_image(image_path: str) -> tuple:  # noqa: D103 – stub
         """Fallback: inline base64 encoding when screenshot_validator unavailable."""
         import base64
-
         _MEDIA_TYPES = {
-            ".png": "image/png",
-            ".jpg": "image/jpeg",
-            ".jpeg": "image/jpeg",
-            ".gif": "image/gif",
-            ".webp": "image/webp",
+            ".png": "image/png", ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp",
         }
         p = Path(image_path)
         if not p.exists():
@@ -83,10 +79,8 @@ except ImportError:
             b64 = base64.b64encode(f.read()).decode("utf-8")
         return b64, media_type
 
-
 try:
     from tools.audit.audit_logger import log_event  # type: ignore
-
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
@@ -94,20 +88,12 @@ except ImportError:
     def log_event(**kwargs) -> int:  # noqa: D103 – stub
         return -1
 
-
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 DIAGRAM_TYPES = [
-    "block_definition",
-    "internal_block",
-    "activity",
-    "sequence",
-    "state_machine",
-    "use_case",
-    "requirement",
-    "parametric",
-    "auto",
+    "block_definition", "internal_block", "activity", "sequence",
+    "state_machine", "use_case", "requirement", "parametric", "auto",
 ]
 
 # Map diagram types to DB diagram_type codes used in sysml_elements
@@ -115,53 +101,27 @@ _DIAGRAM_TYPE_TO_DB = {
     "block_definition": "bdd",
     "internal_block": "ibd",
     "activity": "act",
-    "sequence": "act",  # closest match in schema
+    "sequence": "act",       # closest match in schema
     "state_machine": "stm",
     "use_case": "uc",
     "requirement": "req",
-    "parametric": "bdd",  # closest match in schema
+    "parametric": "bdd",     # closest match in schema
     "auto": None,
 }
 
 # Valid element_type values from sysml_elements CHECK constraint
 _VALID_ELEMENT_TYPES = {
-    "block",
-    "interface_block",
-    "value_type",
-    "constraint_block",
-    "activity",
-    "action",
-    "object_node",
-    "control_flow",
-    "object_flow",
-    "requirement",
-    "use_case",
-    "actor",
-    "state_machine",
-    "state",
-    "package",
-    "profile",
-    "stereotype",
-    "port",
-    "connector",
+    "block", "interface_block", "value_type", "constraint_block",
+    "activity", "action", "object_node", "control_flow", "object_flow",
+    "requirement", "use_case", "actor", "state_machine", "state",
+    "package", "profile", "stereotype", "port", "connector",
 }
 
 # Valid relationship_type values from sysml_relationships CHECK constraint
 _VALID_RELATIONSHIP_TYPES = {
-    "association",
-    "composition",
-    "aggregation",
-    "generalization",
-    "dependency",
-    "realization",
-    "usage",
-    "allocate",
-    "satisfy",
-    "derive",
-    "verify",
-    "refine",
-    "trace",
-    "copy",
+    "association", "composition", "aggregation", "generalization",
+    "dependency", "realization", "usage", "allocate",
+    "satisfy", "derive", "verify", "refine", "trace", "copy",
 }
 
 # System prompt for SysML diagram extraction
@@ -285,12 +245,14 @@ def _normalize_relationship_type(raw_type: str) -> str:
 
 
 def _get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
-    """Open a connection to the ICDEV database."""
+    """Open a connection to the ICDEV™ database."""
     path = db_path or DB_PATH
     if not path.exists():
-        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+        raise FileNotFoundError(
+            f"Database not found: {path}\n"
+            "Run: python tools/db/init_icdev_db.py"
+        )
+    conn = get_connection(db_path=str(path))
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
@@ -303,7 +265,6 @@ def _check_vision_available() -> dict:
     """Check if a vision-capable LLM model is available for diagram extraction."""
     try:
         from tools.llm import get_router
-
         router = get_router()
         provider, model_id, model_cfg = router.get_provider_for_function("diagram_extraction")
 
@@ -320,7 +281,9 @@ def _check_vision_available() -> dict:
             "available": supports_vision,
             "model": model_id,
             "provider": provider.provider_name,
-            "error": None if supports_vision else (f"Model {model_id} does not have supports_vision: true"),
+            "error": None if supports_vision else (
+                f"Model {model_id} does not have supports_vision: true"
+            ),
         }
     except Exception as e:
         return {
@@ -365,7 +328,10 @@ def extract_diagram(
             "model_used": "",
             "duration_ms": 0,
             "notes": "",
-            "error": (f"Invalid diagram_type '{diagram_type}'. Valid: {', '.join(DIAGRAM_TYPES)}"),
+            "error": (
+                f"Invalid diagram_type '{diagram_type}'. "
+                f"Valid: {', '.join(DIAGRAM_TYPES)}"
+            ),
         }
 
     # Check vision availability
@@ -483,13 +449,13 @@ def store_extracted_elements(
     source_image: str,
     db_path: Optional[Path] = None,
 ) -> Dict[str, Any]:
-    """Store vision-extracted elements and relationships in the ICDEV database.
+    """Store vision-extracted elements and relationships in the ICDEV™ database.
 
     For each extracted element, inserts a row into ``sysml_elements``.
     For each extracted relationship, inserts a row into ``sysml_relationships``.
 
     Args:
-        project_id: ICDEV project identifier.
+        project_id: ICDEV™ project identifier.
         extraction_result: Output from :func:`extract_diagram`.
         source_image: Path to the source diagram image.
         db_path: Override database path (default: data/icdev.db).
@@ -538,14 +504,14 @@ def store_extracted_elements(
                     vision_import_id,
                     element_type,
                     elem_name,
-                    elem_name,  # qualified_name = name for vision extractions
-                    None,  # parent_id
+                    elem_name,      # qualified_name = name for vision extractions
+                    None,           # parent_id
                     stereotype,
-                    "",  # description
+                    "",             # description
                     properties,
                     db_diagram_type,
                     Path(source_image).name,
-                    "",  # source_hash (N/A for vision)
+                    "",             # source_hash (N/A for vision)
                     timestamp,
                     timestamp,
                 ),
@@ -563,7 +529,8 @@ def store_extracted_elements(
 
         if not source_elem_id or not target_elem_id:
             errors.append(
-                f"Relationship '{source_name}' -> '{target_name}': source or target element not found in extraction"
+                f"Relationship '{source_name}' -> '{target_name}': "
+                "source or target element not found in extraction"
             )
             continue
 
@@ -589,7 +556,9 @@ def store_extracted_elements(
             )
             rels_stored += 1
         except sqlite3.Error as exc:
-            errors.append(f"Relationship '{source_name}' -> '{target_name}': {exc}")
+            errors.append(
+                f"Relationship '{source_name}' -> '{target_name}': {exc}"
+            )
 
     # Record in model_imports
     status = "completed" if not errors else "partial"
@@ -672,7 +641,7 @@ def validate_against_model(
     names and types with those in the extraction result.
 
     Args:
-        project_id: ICDEV project identifier.
+        project_id: ICDEV™ project identifier.
         extraction_result: Output from :func:`extract_diagram`.
         db_path: Override database path.
 
@@ -687,7 +656,11 @@ def validate_against_model(
     conn.close()
 
     existing_names = {row["name"] for row in rows}
-    extracted_names = {e.get("name", "") for e in extraction_result.get("elements", []) if e.get("name")}
+    extracted_names = {
+        e.get("name", "")
+        for e in extraction_result.get("elements", [])
+        if e.get("name")
+    }
 
     matched = existing_names & extracted_names
     missing_in_model = sorted(extracted_names - existing_names)
@@ -712,42 +685,35 @@ def validate_against_model(
 # ---------------------------------------------------------------------------
 def main() -> None:
     """Command-line interface for SysML diagram extraction."""
-    parser = argparse.ArgumentParser(description="ICDEV Vision-Based SysML Diagram Extractor")
+    parser = argparse.ArgumentParser(
+        description="ICDEV™ Vision-Based SysML Diagram Extractor"
+    )
     parser.add_argument(
-        "--image",
-        required=True,
+        "--image", required=True,
         help="Path to diagram image to analyze (PNG, JPEG, etc.)",
     )
     parser.add_argument(
-        "--diagram-type",
-        default="auto",
-        choices=DIAGRAM_TYPES,
+        "--diagram-type", default="auto", choices=DIAGRAM_TYPES,
         help="Diagram type (default: auto-detect)",
     )
     parser.add_argument(
         "--project-id",
-        help="ICDEV project identifier (required for --store and --validate)",
+        help="ICDEV™ project identifier (required for --store and --validate)",
     )
     parser.add_argument(
-        "--store",
-        action="store_true",
-        help="Store extracted elements in the ICDEV database (requires --project-id)",
+        "--store", action="store_true",
+        help="Store extracted elements in the ICDEV™ database (requires --project-id)",
     )
     parser.add_argument(
-        "--validate",
-        action="store_true",
+        "--validate", action="store_true",
         help="Compare against existing model in DB (requires --project-id)",
     )
     parser.add_argument(
-        "--json",
-        action="store_true",
-        dest="json_output",
+        "--json", action="store_true", dest="json_output",
         help="Output results as JSON",
     )
     parser.add_argument(
-        "--db-path",
-        type=Path,
-        default=None,
+        "--db-path", type=Path, default=None,
         help="Override database path (default: data/icdev.db)",
     )
 

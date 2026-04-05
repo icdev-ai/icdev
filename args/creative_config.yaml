@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Creative Engine Configuration — customer-centric feature discovery
+# ICDEV™ Creative Engine Configuration — customer-centric feature discovery
 # Automates competitor gap analysis, pain point discovery, feature opportunity scouting
 
 # =========================================================================
@@ -30,6 +30,82 @@ blockchain:
     - on-chain analytics
     - crypto compliance
     - digital asset
+
+# AI agent frameworks domain
+ai_agent_frameworks:
+  name: "AI agent frameworks"
+  g2_category_url: "https://www.g2.com/categories/ai-agents"
+  capterra_category_url: "https://www.capterra.com/ai-agent-software/"
+  trustradius_category_url: ""
+  producthunt_topic: "ai-agents"
+  keywords:
+    - AI agent
+    - autonomous agent
+    - self-improving agent
+    - agent framework
+    - tool calling
+    - function calling
+    - MCP
+    - agent protocol
+    - skill learning
+    - memory system
+    - multi-agent
+    - agent orchestration
+    - hermes agent
+    - claude code
+    - openai codex
+
+# Network Canvas domain — network design, diagramming, simulation for architects
+network_canvas:
+  name: "network design"
+  g2_category_url: "https://www.g2.com/categories/network-diagramming"
+  capterra_category_url: "https://www.capterra.com/network-diagram-software/"
+  trustradius_category_url: "https://www.trustradius.com/network-management"
+  producthunt_topic: "network-design"
+  keywords:
+    - network diagram
+    - network topology
+    - network design
+    - network simulation
+    - network canvas
+    - network architect
+    - cloud network
+    - infrastructure diagram
+    - network monitoring
+    - network visualization
+    - VLAN design
+    - subnet planning
+    - firewall rules
+    - load balancer
+    - SDN
+    - network compliance
+    - STIG network
+    - zero trust network
+    - network automation
+    - infrastructure as code
+
+# Knowledge graph tools domain
+knowledge_graph:
+  name: "knowledge graph"
+  g2_category_url: "https://www.g2.com/categories/graph-databases"
+  capterra_category_url: "https://www.capterra.com/graph-database-software/"
+  trustradius_category_url: "https://www.trustradius.com/graph-databases"
+  producthunt_topic: "knowledge-graph"
+  keywords:
+    - knowledge graph
+    - graph database
+    - Neo4j
+    - TigerGraph
+    - Amazon Neptune
+    - property graph
+    - RDF
+    - ontology
+    - graph analytics
+    - graph neural network
+    - linked data
+    - semantic web
+    - entity resolution
+    - relationship extraction
 
 # =========================================================================
 # Source Adapters
@@ -79,6 +155,14 @@ sources:
           - defi
           - solana
           - web3
+          - networking
+          - ccna
+          - netsec
+          - cloudcomputing
+          - aws
+          - azure
+          - devops
+          - NetworkEngineering
         sort: hot
         max_results: 50
         min_upvotes: 10
@@ -92,6 +176,24 @@ sources:
           - nextcloud
           - owncloud
           - seafile
+          - network diagram
+          - network topology
+          - network design tool
+          - network simulation
+          - network canvas
+          - infrastructure diagram
+          - Visio alternative
+          - draw.io network
+          - Lucidchart network
+          - NetBox
+          - SolarWinds
+          - PRTG
+          - Cisco network
+          - network visualization
+          - subnet calculator
+          - VLAN planning
+          - firewall diagram
+          - zero trust architecture
           - dropbox alternative
           - self-hosted sync
           - peer-to-peer sync
@@ -134,7 +236,15 @@ sources:
       - OpenZeppelin/openzeppelin-contracts
       - paradigmxyz/reth
       - foundry-rs/foundry
+      - paperclipai/paperclip
       - crytic/slither
+      - netbox-community/netbox
+      - jgraph/drawio
+      - mininet/mininet
+      - batfish/batfish
+      - nautobot/nautobot
+      - GNS3/gns3-gui
+      - networktocode/ntc-templates
     labels: [enhancement, feature-request, feature, wishlist, "help wanted"]
     max_results: 100
     rate_limit:

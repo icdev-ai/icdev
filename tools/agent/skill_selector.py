@@ -485,7 +485,7 @@ def format_injection_context(selection: Dict[str, Any]) -> str:
     """Format selected items into compact markdown for context injection."""
     lines = [
         "# CUI // SP-CTI",
-        "# Relevant ICDEV Context",
+        "# Relevant ICDEV™ Context",
         "",
     ]
 

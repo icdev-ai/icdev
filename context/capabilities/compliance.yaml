@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-# ICDEV Capability Domain: Compliance & ATO
+# ICDEV™ Capability Domain: Compliance & ATO
 # Auto-generated from icdev_capability_catalog.json + CLAUDE.md
 # Last refreshed: 2026-03-13
 
@@ -15,7 +15,7 @@ capabilities:
       - "python tools/compliance/crosswalk_engine.py --framework cisa_sbd --project-id sparkpilot --coverage"
     related_controls: ["AC-2", "AC-3", "IA-2", "PL-2", "CA-2"]
     article_hooks:
-      - "Most teams implement compliance frameworks one at a time -- ICDEV maps a single control across 9 frameworks simultaneously"
+      - "Most teams implement compliance frameworks one at a time -- ICDEV™ maps a single control across 9 frameworks simultaneously"
       - "The crosswalk engine eliminates redundant compliance work by auto-cascading control implementations across NIST, FedRAMP, CMMC, 800-171, CSSP, SbD, IV&V, and OSCAL"
       - "42 compliance frameworks with dual-hub crosswalk -- implement once, cascade everywhere"
     frameworks: ["NIST 800-53", "FedRAMP", "CMMC", "800-171", "CISA SbD", "CSSP", "IV&V", "ISO 27001"]

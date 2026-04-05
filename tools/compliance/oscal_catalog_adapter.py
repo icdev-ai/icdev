@@ -1,12 +1,12 @@
 # [TEMPLATE: CUI // SP-CTI]
-"""Unified OSCAL catalog adapter — reads both NIST OSCAL and ICDEV formats.
+"""Unified OSCAL catalog adapter — reads both NIST OSCAL and ICDEV™ formats.
 
 Supports two catalog formats:
   1. Official NIST OSCAL (nested groups/controls/params from usnistgov/oscal-content)
-  2. ICDEV custom flat format (context/compliance/nist_800_53.json)
+  2. ICDEV™ custom flat format (context/compliance/nist_800_53.json)
 
 The adapter normalizes both into a common internal format so callers don't need
-to know which catalog is active.  Priority: official OSCAL → ICDEV fallback.
+to know which catalog is active.  Priority: official OSCAL → ICDEV™ fallback.
 
 Architecture Decision D304.
 
@@ -60,7 +60,7 @@ def _is_oscal_format(data):
 
 
 def _is_icdev_format(data):
-    """Check if data is ICDEV custom catalog format."""
+    """Check if data is ICDEV™ custom catalog format."""
     return isinstance(data, dict) and "controls" in data and "metadata" in data
 
 
@@ -156,7 +156,7 @@ def _extract_oscal_control(control, family_id, family_title):
 
 
 def _parse_icdev_catalog(data):
-    """Parse ICDEV custom catalog into normalized control dict."""
+    """Parse ICDEV™ custom catalog into normalized control dict."""
     controls = {}
     for ctrl in data.get("controls", []):
         ctrl_id = _normalize_control_id(ctrl.get("id", ""))
@@ -180,9 +180,9 @@ def _parse_icdev_catalog(data):
 
 
 class OscalCatalogAdapter:
-    """Unified catalog reader supporting both NIST OSCAL and ICDEV formats.
+    """Unified catalog reader supporting both NIST OSCAL and ICDEV™ formats.
 
-    Priority: official NIST OSCAL catalog → ICDEV custom catalog (fallback).
+    Priority: official NIST OSCAL catalog → ICDEV™ custom catalog (fallback).
     """
 
     def __init__(self, catalog_path=None, catalog_sources=None):

@@ -32,7 +32,7 @@ import argparse
 import copy
 import hashlib
 import json
-import sqlite3
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -58,8 +58,7 @@ def _generate_id(prefix="dprof"):
 def _get_connection(db_path=None):
     """Get a DB connection with row factory."""
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(path))
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
@@ -135,7 +134,7 @@ def _log_event(conn, event_type, details, actor="system"):
     """Log to audit trail if table exists."""
     try:
         conn.execute(
-            """INSERT INTO audit_trail (id, timestamp, event_type, actor, action, details, project_id)
+            """INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, project_id)
                VALUES (?, ?, ?, ?, ?, ?, ?)""",
             (
                 _generate_id("audit"),
@@ -154,17 +153,9 @@ def _log_event(conn, event_type, details, actor="system"):
 # ── CRUD Operations ──────────────────────────────────────────────────
 
 
-def create_profile(
-    scope,
-    scope_id,
-    profile_data=None,
-    template_name=None,
-    created_by="system",
-    inherits_from=None,
-    profile_md=None,
-    change_summary="Initial creation",
-    db_path=None,
-):
+def create_profile(scope, scope_id, profile_data=None, template_name=None,
+                   created_by="system", inherits_from=None, profile_md=None,
+                   change_summary="Initial creation", db_path=None):
     """Create a new profile version for a scope.
 
     If template_name is given, loads template defaults and merges profile_data on top.
@@ -222,17 +213,10 @@ def create_profile(
             ),
         )
 
-        _log_event(
-            conn,
-            "dev_profile.create",
-            {
-                "scope": scope,
-                "scope_id": scope_id,
-                "version": next_version,
-                "template": template_name,
-            },
-            actor=created_by,
-        )
+        _log_event(conn, "dev_profile.create", {
+            "scope": scope, "scope_id": scope_id,
+            "version": next_version, "template": template_name,
+        }, actor=created_by)
 
         conn.commit()
         return {
@@ -266,7 +250,8 @@ def get_profile(scope, scope_id, version=None, db_path=None):
             ).fetchone()
 
         if not row:
-            return {"error": f"No profile found for {scope}:{scope_id}" + (f" version {version}" if version else "")}
+            return {"error": f"No profile found for {scope}:{scope_id}" +
+                    (f" version {version}" if version else "")}
 
         return {
             "profile_id": row["id"],
@@ -319,7 +304,8 @@ def get_profile_history(scope, scope_id, db_path=None):
         conn.close()
 
 
-def update_profile(scope, scope_id, changes, change_summary="", updated_by="system", db_path=None):
+def update_profile(scope, scope_id, changes, change_summary="",
+                   updated_by="system", db_path=None):
     """Create new version with changes merged into current. Respects locks."""
     current = get_profile(scope, scope_id, db_path=db_path)
     if "error" in current:
@@ -334,7 +320,7 @@ def update_profile(scope, scope_id, changes, change_summary="", updated_by="syst
         # Verify changes don't violate locks
         for dim_path in changes:
             if dim_path in locked_dims:
-                lock_info = next(l for l in locks if l["dimension_path"] == dim_path)
+                lock_info = next(lk for lk in locks if lk["dimension_path"] == dim_path)
                 return {
                     "error": f"Dimension '{dim_path}' is locked by {lock_info['lock_owner_role']}",
                     "locked_by": lock_info["locked_by"],
@@ -420,7 +406,9 @@ def resolve_profile(scope, scope_id, db_path=None):
                         "enforcement": dim_config.get(dim_name, {}).get("enforcement", "advisory"),
                     }
                 else:
-                    resolved[dim_name] = _merge_dimension(resolved[dim_name], dim_value, cascade)
+                    resolved[dim_name] = _merge_dimension(
+                        resolved[dim_name], dim_value, cascade
+                    )
                     provenance[dim_name] = {
                         "source_scope": anc_scope,
                         "source_id": anc_scope_id,
@@ -595,7 +583,8 @@ def _deep_merge(base, override):
 # ── Locks ────────────────────────────────────────────────────────────
 
 
-def lock_dimension(scope, scope_id, dimension_path, lock_owner_role, locked_by, reason="", db_path=None):
+def lock_dimension(scope, scope_id, dimension_path, lock_owner_role,
+                   locked_by, reason="", db_path=None):
     """Lock a dimension at a scope level."""
     if lock_owner_role not in VALID_LOCK_ROLES:
         return {"error": f"Invalid role: {lock_owner_role}. Must be one of {VALID_LOCK_ROLES}"}
@@ -628,28 +617,14 @@ def lock_dimension(scope, scope_id, dimension_path, lock_owner_role, locked_by, 
             """INSERT INTO dev_profile_locks
                (id, profile_id, dimension_path, lock_owner_role, locked_by, locked_at, reason, is_active)
                VALUES (?, ?, ?, ?, ?, ?, ?, 1)""",
-            (
-                lock_id,
-                profile["id"],
-                dimension_path,
-                lock_owner_role,
-                locked_by,
-                datetime.now(timezone.utc).isoformat(),
-                reason,
-            ),
+            (lock_id, profile["id"], dimension_path, lock_owner_role,
+             locked_by, datetime.now(timezone.utc).isoformat(), reason),
         )
 
-        _log_event(
-            conn,
-            "dev_profile.lock",
-            {
-                "scope": scope,
-                "scope_id": scope_id,
-                "dimension": dimension_path,
-                "role": lock_owner_role,
-            },
-            actor=locked_by,
-        )
+        _log_event(conn, "dev_profile.lock", {
+            "scope": scope, "scope_id": scope_id,
+            "dimension": dimension_path, "role": lock_owner_role,
+        }, actor=locked_by)
 
         conn.commit()
         return {
@@ -663,7 +638,8 @@ def lock_dimension(scope, scope_id, dimension_path, lock_owner_role, locked_by, 
         conn.close()
 
 
-def unlock_dimension(scope, scope_id, dimension_path, unlocked_by, role, db_path=None):
+def unlock_dimension(scope, scope_id, dimension_path, unlocked_by,
+                     role, db_path=None):
     """Unlock a previously locked dimension. Must match lock_owner_role or be admin."""
     conn = _get_connection(db_path)
     try:
@@ -697,17 +673,10 @@ def unlock_dimension(scope, scope_id, dimension_path, unlocked_by, role, db_path
             (lock["id"],),
         )
 
-        _log_event(
-            conn,
-            "dev_profile.unlock",
-            {
-                "scope": scope,
-                "scope_id": scope_id,
-                "dimension": dimension_path,
-                "role": role,
-            },
-            actor=unlocked_by,
-        )
+        _log_event(conn, "dev_profile.unlock", {
+            "scope": scope, "scope_id": scope_id,
+            "dimension": dimension_path, "role": role,
+        }, actor=unlocked_by)
 
         conn.commit()
         return {
@@ -772,7 +741,8 @@ def diff_versions(scope, scope_id, version1, version2, db_path=None):
     }
 
 
-def rollback_to_version(scope, scope_id, target_version, rolled_back_by="system", db_path=None):
+def rollback_to_version(scope, scope_id, target_version,
+                        rolled_back_by="system", db_path=None):
     """Create a new version that copies content from target_version."""
     target = get_profile(scope, scope_id, version=target_version, db_path=db_path)
     if "error" in target:
@@ -819,7 +789,8 @@ def inject_for_task(scope_id, task_type, db_path=None):
             locked = provenance.get(dim, {}).get("locked", False)
 
             lines.append(f"### {dim.replace('_', ' ').title()}")
-            lines.append(f"_Source: {source} | Enforcement: {enforcement}" + (" | LOCKED" if locked else "") + "_\n")
+            lines.append(f"_Source: {source} | Enforcement: {enforcement}"
+                         + (" | LOCKED" if locked else "") + "_\n")
 
             dim_data = resolved[dim]
             if isinstance(dim_data, dict):
@@ -841,7 +812,9 @@ def inject_for_task(scope_id, task_type, db_path=None):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Tenant Development Profile Manager (Phase 34, D183-D188)")
+    parser = argparse.ArgumentParser(
+        description="Tenant Development Profile Manager (Phase 34, D183-D188)"
+    )
     parser.add_argument("--scope", choices=VALID_SCOPES, help="Profile scope")
     parser.add_argument("--scope-id", help="Scope entity ID")
 
@@ -891,17 +864,14 @@ def main():
             for f in sorted(TEMPLATES_DIR.glob("*.yaml")):
                 try:
                     import yaml
-
                     with open(f, "r", encoding="utf-8") as fh:
                         data = yaml.safe_load(fh)
-                        templates.append(
-                            {
-                                "name": data.get("name", f.stem),
-                                "file": f.name,
-                                "description": data.get("description", ""),
-                                "impact_levels": data.get("impact_levels", []),
-                            }
-                        )
+                        templates.append({
+                            "name": data.get("name", f.stem),
+                            "file": f.name,
+                            "description": data.get("description", ""),
+                            "impact_levels": data.get("impact_levels", []),
+                        })
                 except Exception:
                     templates.append({"name": f.stem, "file": f.name})
         result = {"templates": templates, "count": len(templates)}
@@ -909,12 +879,9 @@ def main():
     elif args.create:
         profile_data = json.loads(args.changes) if args.changes else None
         result = create_profile(
-            scope=args.scope,
-            scope_id=args.scope_id,
-            profile_data=profile_data,
-            template_name=args.template,
-            created_by=args.created_by,
-            db_path=db,
+            scope=args.scope, scope_id=args.scope_id,
+            profile_data=profile_data, template_name=args.template,
+            created_by=args.created_by, db_path=db,
         )
 
     elif args.get:
@@ -926,49 +893,34 @@ def main():
     elif args.update:
         changes = json.loads(args.changes) if args.changes else {}
         result = update_profile(
-            scope=args.scope,
-            scope_id=args.scope_id,
-            changes=changes,
-            updated_by=args.updated_by,
-            db_path=db,
+            scope=args.scope, scope_id=args.scope_id,
+            changes=changes, updated_by=args.updated_by, db_path=db,
         )
 
     elif args.lock:
         result = lock_dimension(
-            scope=args.scope,
-            scope_id=args.scope_id,
-            dimension_path=args.dimension,
-            lock_owner_role=args.role,
-            locked_by=args.locked_by,
-            reason=args.reason,
-            db_path=db,
+            scope=args.scope, scope_id=args.scope_id,
+            dimension_path=args.dimension, lock_owner_role=args.role,
+            locked_by=args.locked_by, reason=args.reason, db_path=db,
         )
 
     elif args.unlock:
         result = unlock_dimension(
-            scope=args.scope,
-            scope_id=args.scope_id,
-            dimension_path=args.dimension,
-            unlocked_by=args.unlocked_by,
-            role=args.role,
-            db_path=db,
+            scope=args.scope, scope_id=args.scope_id,
+            dimension_path=args.dimension, unlocked_by=args.unlocked_by,
+            role=args.role, db_path=db,
         )
 
     elif args.diff:
         result = diff_versions(
-            scope=args.scope,
-            scope_id=args.scope_id,
-            version1=args.version1,
-            version2=args.version2,
-            db_path=db,
+            scope=args.scope, scope_id=args.scope_id,
+            version1=args.version1, version2=args.version2, db_path=db,
         )
 
     elif args.rollback:
         result = rollback_to_version(
-            scope=args.scope,
-            scope_id=args.scope_id,
-            target_version=args.to_version,
-            rolled_back_by=args.rolled_back_by,
+            scope=args.scope, scope_id=args.scope_id,
+            target_version=args.to_version, rolled_back_by=args.rolled_back_by,
             db_path=db,
         )
 

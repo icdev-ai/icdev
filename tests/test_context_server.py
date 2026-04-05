@@ -29,7 +29,7 @@ pytest tests/ -v
 
 Some commands here.
 
-## Architecture: GOTCHA Framework
+## Architecture: FORGE Framework
 
 This is a 6-layer agentic system.
 
@@ -60,7 +60,7 @@ Many frameworks here including NIST and FedRAMP.
 
 Python, Java, Go, Rust, C#, TypeScript.
 
-## ICDEV Commands
+## ICDEV™ Commands
 
 Various commands.
 """
@@ -93,7 +93,7 @@ class TestSectionParsing:
     def test_top_level_sections(self, indexer):
         names = indexer.section_names
         assert "Quick Reference" in names
-        assert "Architecture: GOTCHA Framework" in names
+        assert "Architecture: FORGE Framework" in names
         assert "Testing Framework" in names
 
     def test_subsections_found(self, indexer):
@@ -118,7 +118,7 @@ class TestGetSection:
         assert content is not None
 
     def test_partial_match(self, indexer):
-        content = indexer.get_section("GOTCHA")
+        content = indexer.get_section("FORGE")
         assert content is not None
         assert "6-layer" in content
 

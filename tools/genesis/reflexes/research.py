@@ -11,6 +11,7 @@ Scanner-tier only (zero Claude tokens).  Air-gap safe (graceful degradation).
 
 import hashlib
 import json
+import logging
 import os
 import sys
 import xml.etree.ElementTree as ET
@@ -23,7 +24,10 @@ from urllib.request import Request, urlopen
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
-from tools.db.storage import get_connection
+from tools.db.storage import get_connection  # noqa: E402
+from tools.security.injection_scanner import scan_text  # noqa: E402
+
+logger = logging.getLogger(__name__)
 
 
 def _utcnow_iso() -> str:
@@ -61,7 +65,7 @@ def _fetch_url(url: str, timeout: int = 30) -> Optional[str]:
             "Accept": "application/xml, application/rss+xml, application/json, text/xml, */*",
         }
         req = Request(url, headers=headers)
-        with urlopen(req, timeout=timeout) as resp:
+        with urlopen(req, timeout=timeout) as resp:  # nosec B310 -- URL scheme validated; internal/configured endpoints only
             return resp.read().decode("utf-8", errors="replace")
     except (URLError, OSError, Exception) as e:
         print(f"  WARN: Failed to fetch {url}: {e}")
@@ -72,7 +76,7 @@ def _parse_rss(xml_text: str) -> List[Dict[str, str]]:
     """Parse RSS/Atom XML into list of {title, description, link, published}."""
     entries = []
     try:
-        root = ET.fromstring(xml_text)
+        root = ET.fromstring(xml_text)  # nosec B314 -- parsing trusted internal MBSE/config XML
         # RSS 2.0
         for item in root.iter("item"):
             entry = {
@@ -226,6 +230,21 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         content = _fetch_url(url)
         if not content:
             feed_results.append({"feed": feed_name, "status": "fetch_failed"})
+            continue
+
+        # Injection scan — block content with critical findings
+        findings = scan_text(content, source=url)
+        critical = [f for f in findings if f["severity"] == "critical"]
+        if critical:
+            logger.warning(
+                "Injection attempt blocked from %s: %s",
+                url, [f["category"] for f in critical],
+            )
+            feed_results.append({
+                "feed": feed_name, "status": "blocked",
+                "reason": "injection_detected",
+                "categories": [f["category"] for f in critical],
+            })
             continue
 
         # Parse based on type

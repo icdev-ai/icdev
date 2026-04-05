@@ -1,10 +1,10 @@
 # [TEMPLATE: CUI // SP-CTI]
 #!/usr/bin/env python3
-"""SAFe PI-Cadenced Migration Progress Tracker for ICDEV DoD Modernization.
+"""SAFe PI-Cadenced Migration Progress Tracker for ICDEV™ DoD Modernization.
 
 Tracks migration progress across Program Increments (PIs) with velocity
 metrics, burndown projections, compliance gate checks, and detailed PI
-reporting.  Integrates with the ICDEV operational database to snapshot
+reporting.  Integrates with the ICDEV™ operational database to snapshot
 migration state, compute task-completion velocity, project remaining work,
 and enforce ATO compliance gates at PI boundaries.
 

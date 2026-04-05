@@ -138,15 +138,15 @@ SOURCE_REGISTRY: Dict[str, Dict[str, Any]] = {
         "description": "Compliance-related audit trail entries",
         "filter": "event_type LIKE 'ssp_%' OR event_type LIKE 'poam_%' OR event_type LIKE 'stig_%' OR event_type LIKE 'sbom_%' OR event_type LIKE 'compliance_%'",  # noqa: E501
     },
-    "atlas_critique_findings": {
-        "table": "atlas_critique_findings",
+    "anvil_critique_findings": {
+        "table": "anvil_critique_findings",
         "db": "icdev",
         "pk": "id",
         "content_cols": ["title", "description", "evidence", "suggested_fix"],
         "metadata_cols": ["severity", "finding_type", "critic_agent", "nist_controls"],
         "priority": 1,
         "mode": "realtime",
-        "description": "ATLAS-CR adversarial critique findings",
+        "description": "ANVIL-CR adversarial critique findings",
     },
     # --- Memory ---
     "memory_entries": {
@@ -212,6 +212,204 @@ SOURCE_REGISTRY: Dict[str, Dict[str, Any]] = {
         "filter": "status = 'ingested'",
         "description": "PDF documents ingested into RAG",
     },
+    # --- Design Canvases (Task 17: Canvas-to-RAG Indexing) ---
+    # IDC — Infrastructure Design Canvas
+    "idc_designs": {
+        "table": "infra_designs",
+        "db": "infra_canvas",
+        "pk": "id",
+        "content_cols": ["name", "description", "graph_json"],
+        "metadata_cols": ["created_at", "updated_at"],
+        "priority": 2,
+        "mode": "batch",
+        "chunking": "canvas_graph",
+        "canvas_type": "IDC",
+        "description": "Infrastructure Design Canvas graph snapshots (per-node chunked)",
+    },
+    "idc_assessments": {
+        "table": "idc_assessments",
+        "db": "infra_canvas",
+        "pk": "id",
+        "content_cols": ["findings_json", "recommendations_json"],
+        "metadata_cols": ["design_id", "score", "trigger_source", "created_at"],
+        "priority": 2,
+        "mode": "realtime",
+        "chunking": "canvas_assessment",
+        "canvas_type": "IDC",
+        "description": "Infrastructure Design Canvas assessment findings",
+    },
+    # NDC — Network Design Canvas
+    "ndc_designs": {
+        "table": "topologies",
+        "db": "network_canvas",
+        "pk": "id",
+        "content_cols": ["name", "description", "graph_json"],
+        "metadata_cols": ["created_at", "updated_at"],
+        "priority": 2,
+        "mode": "batch",
+        "chunking": "canvas_graph",
+        "canvas_type": "NDC",
+        "description": "Network Design Canvas topology snapshots (per-node chunked)",
+    },
+    "ndc_compliance": {
+        "table": "nc_compliance_findings",
+        "db": "network_canvas",
+        "pk": "id",
+        "content_cols": ["rule_id", "description", "remediation"],
+        "metadata_cols": ["topology_id", "severity", "status", "created_at"],
+        "priority": 2,
+        "mode": "realtime",
+        "chunking": "canvas_assessment",
+        "canvas_type": "NDC",
+        "description": "Network Design Canvas compliance findings",
+    },
+    # SDC — Security Design Canvas
+    "sdc_designs": {
+        "table": "security_designs",
+        "db": "security_canvas",
+        "pk": "id",
+        "content_cols": ["name", "description", "graph_json"],
+        "metadata_cols": ["created_at", "updated_at"],
+        "priority": 1,
+        "mode": "batch",
+        "chunking": "canvas_graph",
+        "canvas_type": "SDC",
+        "description": "Security Design Canvas graph snapshots (per-node chunked)",
+    },
+    "sdc_assessments": {
+        "table": "sc_assessments",
+        "db": "security_canvas",
+        "pk": "id",
+        "content_cols": ["findings_json", "stride_json", "nist_coverage_json"],
+        "metadata_cols": ["design_id", "risk_score", "posture_grade", "trigger_source", "created_at"],
+        "priority": 1,
+        "mode": "realtime",
+        "chunking": "canvas_assessment",
+        "canvas_type": "SDC",
+        "description": "Security Design Canvas assessment findings (STRIDE, NIST, risk score)",
+    },
+    # BDC — Boundary Design Canvas
+    "bdc_designs": {
+        "table": "boundary_designs",
+        "db": "boundary_canvas",
+        "pk": "id",
+        "content_cols": ["name", "description", "graph_json"],
+        "metadata_cols": ["created_at", "updated_at"],
+        "priority": 2,
+        "mode": "batch",
+        "chunking": "canvas_graph",
+        "canvas_type": "BDC",
+        "description": "Boundary Design Canvas graph snapshots (per-node chunked)",
+    },
+    "bdc_assessments": {
+        "table": "bd_assessments",
+        "db": "boundary_canvas",
+        "pk": "id",
+        "content_cols": ["findings_json", "recommendations_json"],
+        "metadata_cols": ["design_id", "score", "grade", "trigger_source", "created_at"],
+        "priority": 2,
+        "mode": "realtime",
+        "chunking": "canvas_assessment",
+        "canvas_type": "BDC",
+        "description": "Boundary Design Canvas assessment findings",
+    },
+    # PDC — Pipeline Design Canvas
+    "pdc_designs": {
+        "table": "pipelines",
+        "db": "pipeline_canvas",
+        "pk": "id",
+        "content_cols": ["name", "description", "graph_json"],
+        "metadata_cols": ["created_at", "updated_at"],
+        "priority": 3,
+        "mode": "batch",
+        "chunking": "canvas_graph",
+        "canvas_type": "PDC",
+        "description": "Pipeline Design Canvas graph snapshots (per-node chunked)",
+    },
+    "pdc_compliance": {
+        "table": "pc_compliance_findings",
+        "db": "pipeline_canvas",
+        "pk": "id",
+        "content_cols": ["rule_id", "description", "remediation"],
+        "metadata_cols": ["pipeline_id", "severity", "status", "created_at"],
+        "priority": 3,
+        "mode": "realtime",
+        "chunking": "canvas_assessment",
+        "canvas_type": "PDC",
+        "description": "Pipeline Design Canvas compliance findings",
+    },
+    # ODC — Observability Design Canvas
+    "odc_designs": {
+        "table": "observability_designs",
+        "db": "observability_canvas",
+        "pk": "id",
+        "content_cols": ["name", "description", "graph_json"],
+        "metadata_cols": ["created_at", "updated_at"],
+        "priority": 2,
+        "mode": "batch",
+        "chunking": "canvas_graph",
+        "canvas_type": "ODC",
+        "description": "Observability Design Canvas graph snapshots (per-node chunked)",
+    },
+    "odc_assessments": {
+        "table": "od_assessments",
+        "db": "observability_canvas",
+        "pk": "id",
+        "content_cols": ["findings_json", "recommendations_json"],
+        "metadata_cols": ["design_id", "score", "trigger_source", "created_at"],
+        "priority": 2,
+        "mode": "realtime",
+        "chunking": "canvas_assessment",
+        "canvas_type": "ODC",
+        "description": "Observability Design Canvas assessment findings",
+    },
+    # DDC — Data Design Canvas
+    "ddc_designs": {
+        "table": "data_designs",
+        "db": "data_canvas",
+        "pk": "id",
+        "content_cols": ["name", "description", "graph_json"],
+        "metadata_cols": ["created_at", "updated_at"],
+        "priority": 2,
+        "mode": "batch",
+        "chunking": "canvas_graph",
+        "canvas_type": "DDC",
+        "description": "Data Design Canvas graph snapshots (per-node chunked)",
+    },
+    "ddc_assessments": {
+        "table": "dd_assessments",
+        "db": "data_canvas",
+        "pk": "id",
+        "content_cols": ["findings_json", "recommendations_json"],
+        "metadata_cols": ["design_id", "score", "trigger_source", "created_at"],
+        "priority": 2,
+        "mode": "realtime",
+        "chunking": "canvas_assessment",
+        "canvas_type": "DDC",
+        "description": "Data Design Canvas assessment findings",
+    },
+    # --- Bayesian Autoresearch (Phase 67, D-AR-1 through D-AR-10) ---
+    "experiment_results": {
+        "table": "experiment_results",
+        "db": "icdev",
+        "pk": "id",
+        "content_cols": ["hypothesis", "decision_rationale"],
+        "metadata_cols": ["domain", "metric_delta", "improvement_pct", "decision", "created_at"],
+        "priority": 1,
+        "mode": "realtime",
+        "description": "Bayesian Autoresearch experiment results and learnings",
+    },
+    "experiment_candidates": {
+        "table": "experiment_candidates",
+        "db": "icdev",
+        "pk": "id",
+        "content_cols": ["hypothesis", "modifications"],
+        "metadata_cols": ["domain", "category", "status", "info_gain_score", "created_at"],
+        "priority": 2,
+        "mode": "batch",
+        "filter": "status IN ('completed', 'discarded')",
+        "description": "Autoresearch experiment candidate hypotheses",
+    },
 }
 
 
@@ -240,6 +438,23 @@ def get_batch_sources() -> List[str]:
 def get_all_sources() -> List[str]:
     """Get all registered source types."""
     return list(SOURCE_REGISTRY.keys())
+
+
+def get_canvas_sources(canvas_type: str = None) -> List[str]:
+    """Get source types for design canvas RAG sources.
+
+    Args:
+        canvas_type: Filter by canvas type (e.g. 'SDC', 'IDC'). None returns all.
+
+    Returns:
+        List of source type keys for canvas sources.
+    """
+    result = []
+    for k, v in SOURCE_REGISTRY.items():
+        if v.get("chunking") in ("canvas_graph", "canvas_assessment"):
+            if canvas_type is None or v.get("canvas_type") == canvas_type:
+                result.append(k)
+    return result
 
 
 def list_sources_summary() -> List[Dict[str, Any]]:

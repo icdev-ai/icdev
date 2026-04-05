@@ -2,16 +2,16 @@
 # Goal: Remote Command Gateway (Phase 28)
 
 ## Purpose
-Enable users to issue ICDEV commands from messaging channels (Telegram, Slack, Teams, Mattermost, internal chat) with full security validation, classification filtering, and audit trail.
+Enable users to issue ICDEV™ commands from messaging channels (Telegram, Slack, Teams, Mattermost, internal chat) with full security validation, classification filtering, and audit trail.
 
 ## When to Use
-- User wants to interact with ICDEV from a messaging platform
+- User wants to interact with ICDEV™ from a messaging platform
 - Field users need lightweight command access without VPN/SSH
 - PMs/ISSOs need quick status checks from mobile devices
 - Air-gapped environments need internal chat command support
 
 ## Prerequisites
-- ICDEV database initialized (`python tools/db/init_icdev_db.py`)
+- ICDEV™ database initialized (`python tools/db/init_icdev_db.py`)
 - Gateway config: `args/remote_gateway_config.yaml`
 - Channel credentials set via environment variables (connected mode)
 - User binding established (via ceremony or admin provisioning)
@@ -32,8 +32,8 @@ python tools/gateway/gateway_agent.py
 **Connected environment:**
 1. User sends `/bind` in messaging channel
 2. Gateway returns one-time challenge code (8-char hex, 10-min TTL)
-3. User enters code in ICDEV dashboard or provides API key
-4. Binding created: channel user ID ↔ ICDEV user
+3. User enters code in ICDEV™ dashboard or provides API key
+4. Binding created: channel user ID ↔ ICDEV™ user
 
 **Air-gapped environment:**
 ```bash
@@ -51,7 +51,7 @@ python tools/gateway/user_binder.py --provision \
 Every command must pass all 8 gates:
 1. **Signature** — HMAC verification of webhook payload
 2. **Bot/Replay** — Reject bots, reject timestamps >5min old
-3. **Identity** — Resolve channel user → ICDEV user binding
+3. **Identity** — Resolve channel user → ICDEV™ user binding
 4. **Authentication** — Validate user is active
 5. **Classification** — Reject commands above channel's max_il
 6. **RBAC** — Check role permissions for command category
@@ -96,7 +96,7 @@ Every command must pass all 8 gates:
 - `tools/gateway/adapters/` — Channel adapters (ABC pattern)
 
 ## Database Tables
-- `remote_user_bindings` — Channel user ↔ ICDEV user mappings
+- `remote_user_bindings` — Channel user ↔ ICDEV™ user mappings
 - `remote_command_log` — Append-only command execution log (NIST AU)
 - `remote_command_allowlist` — Per-channel command permissions
 

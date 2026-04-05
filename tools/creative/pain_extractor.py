@@ -3,8 +3,8 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""Pain Point Extraction for ICDEV Creative Engine — extract pain points from creative signals.
+# POC: ICDEV™ System Administrator
+"""Pain Point Extraction for ICDEV™ Creative Engine — extract pain points from creative signals.
 
 Analyzes creative_signals entries using deterministic keyword matching and sentiment
 analysis to identify, classify, and cluster customer pain points. No LLM required.
@@ -33,11 +33,11 @@ import hashlib
 import json
 import os
 import re
-import sqlite3
 import sys
 import uuid
+from tools.db.storage import get_connection
+from tools.common.helpers import now_iso
 from collections import Counter, defaultdict
-from datetime import datetime, timezone
 from pathlib import Path
 
 # =========================================================================
@@ -578,14 +578,9 @@ def _get_db(db_path=None):
     path = db_path or DB_PATH
     if not Path(path).exists():
         raise FileNotFoundError(f"Database not found: {path}")
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(path))
     return conn
 
-
-def _now():
-    """ISO-8601 timestamp."""
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _pp_id():
@@ -1026,7 +1021,7 @@ def merge_with_existing(new_pain_points, db_path=None):
         return {"new_count": 0, "merged_count": 0, "total_stored": 0}
 
     conn = _get_db(db_path)
-    now = _now()
+    now = now_iso()
     new_count = 0
     merged_count = 0
 
@@ -1040,7 +1035,7 @@ def merge_with_existing(new_pain_points, db_path=None):
                           first_seen, keywords
                    FROM creative_pain_points
                    WHERE keyword_fingerprint = ?
-                   ORDER BY rowid DESC LIMIT 1""",
+                   ORDER BY last_seen DESC LIMIT 1""",
                 (fingerprint,),
             ).fetchone()
 
@@ -1322,11 +1317,11 @@ def list_pain_points(category=None, severity=None, limit=50, db_path=None):
             SELECT cp.*
             FROM creative_pain_points cp
             INNER JOIN (
-                SELECT keyword_fingerprint, MAX(rowid) as max_rowid
+                SELECT keyword_fingerprint, MAX(last_seen) as max_last_seen
                 FROM creative_pain_points
                 GROUP BY keyword_fingerprint
             ) latest ON cp.keyword_fingerprint = latest.keyword_fingerprint
-                     AND cp.rowid = latest.max_rowid
+                     AND cp.last_seen = latest.max_last_seen
         """
         conditions = []
         params = []
@@ -1395,7 +1390,7 @@ def list_pain_points(category=None, severity=None, limit=50, db_path=None):
         severity_dist = {row["severity"]: row["cnt"] for row in sev_rows}
 
         return {
-            "generated_at": _now(),
+            "generated_at": now_iso(),
             "total_unique": total_unique,
             "returned": len(pain_points),
             "filters": {
@@ -1416,7 +1411,7 @@ def list_pain_points(category=None, severity=None, limit=50, db_path=None):
 # =========================================================================
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Pain Point Extractor — extract pain points "
+        description="ICDEV™ Pain Point Extractor — extract pain points "
         "from creative signals using deterministic keyword/sentiment analysis"
     )
     parser.add_argument("--json", action="store_true", help="JSON output")

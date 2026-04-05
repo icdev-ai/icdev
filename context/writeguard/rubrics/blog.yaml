@@ -62,5 +62,5 @@ few_shot_examples:
     excerpt: "In today's fast-paced world, compliance is important. Organizations need to be compliant."
     reasoning: "Generic filler phrase, no concrete details, no examples, no actionable advice."
   - score: 4
-    excerpt: "When a federal agency deployed ICDEV's crosswalk engine, implementing AC-2 automatically populated FedRAMP, CMMC, and 800-171 — cutting their multi-framework assessment from 6 months to 3 weeks."
+    excerpt: "When a federal agency deployed ICDEV™'s crosswalk engine, implementing AC-2 automatically populated FedRAMP, CMMC, and 800-171 — cutting their multi-framework assessment from 6 months to 3 weeks."
     reasoning: "Specific example, named tool, concrete metric (6mo→3wk), addresses real pain point."

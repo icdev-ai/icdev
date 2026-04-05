@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""ICDEV SaaS - PostgreSQL Schema (ported from SQLite).
+"""ICDEV™ SaaS - PostgreSQL Schema (ported from SQLite).
 CUI // SP-CTI
 
-Complete port of all ICDEV tables from SQLite to PostgreSQL DDL.
+Complete port of all ICDEV™ tables from SQLite to PostgreSQL DDL.
 Used by tenant provisioning to create per-tenant databases.
 
 Translation rules applied:
@@ -2430,7 +2430,7 @@ def init_tenant_pg_db(db_url: str) -> None:
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description="Init ICDEV PG DB")
+    parser = argparse.ArgumentParser(description="Init ICDEV™ PG DB")
     parser.add_argument("--db-url", required=True)
     parser.add_argument("--print-schema", action="store_true")
     args = parser.parse_args()

@@ -19,13 +19,14 @@ Enhancements:
   - DB persistence: completed runs written to icdev.db
   - rate limiting: max 3 concurrent + 10/hour per project
 """
+from __future__ import annotations
 
-import sqlite3
 import subprocess
 import sys
 import threading
 import time
 import uuid
+from tools.db.storage import get_connection
 from collections import OrderedDict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -52,8 +53,7 @@ RATE_MAX_PER_HOUR = 10
 
 
 def _get_db():
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(DB_PATH))
     return conn
 
 

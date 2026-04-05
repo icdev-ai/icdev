@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Compliance-First Triage Pipeline — 5-stage safety gate for innovation signals.
 
 Every innovation signal discovered by the web scanner passes through this
@@ -13,7 +13,8 @@ entering the build pipeline.
 
 Pipeline Stages:
     1. Classify Signal     — Map to signal_categories from innovation_config.yaml
-    2. GOTCHA Fit Check    — Signal must map to at least one GOTCHA layer
+    2. FORGE Fit Check    — Signal must map to at least one FORGE layer
+    2.5 Module Impact      — Map to specific ICDEV™ tools/files (Phase 71 enhancement)
     3. Boundary Impact     — Estimate ATO boundary impact (GREEN/YELLOW/ORANGE/RED)
     4. Compliance Pre-Check — Detect compliance-weakening anti-patterns
     5. Duplicate/License   — Content-hash dedup + blocked license detection
@@ -52,6 +53,8 @@ import re
 import sqlite3
 import sys
 import uuid
+from tools.common.helpers import now_iso
+from tools.db.storage import get_connection
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
@@ -70,14 +73,12 @@ CONFIG_PATH = BASE_DIR / "args" / "innovation_config.yaml"
 # =========================================================================
 try:
     import yaml
-
     _HAS_YAML = True
 except ImportError:
     _HAS_YAML = False
 
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
-
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
@@ -89,7 +90,7 @@ except ImportError:
 # =========================================================================
 # CONSTANTS
 # =========================================================================
-GOTCHA_LAYERS = ["goal", "tool", "arg", "context", "hardprompt"]
+FORGE_LAYERS = ["goal", "tool", "arg", "context", "hardprompt"]
 
 BOUNDARY_TIERS = {
     "GREEN": "No ATO boundary change",
@@ -117,44 +118,23 @@ COMPLIANCE_ANTI_PATTERNS = [
 
 # Keywords indicating new external connections (ORANGE+)
 EXTERNAL_CONNECTION_KEYWORDS = [
-    "external api",
-    "third-party",
-    "third party",
-    "new endpoint",
-    "outbound connection",
-    "webhook to external",
-    "saas integration",
-    "public internet",
-    "cross-boundary",
-    "inter-enclave",
+    "external api", "third-party", "third party", "new endpoint",
+    "outbound connection", "webhook to external", "saas integration",
+    "public internet", "cross-boundary", "inter-enclave",
 ]
 
 # Keywords indicating classification changes (RED)
 CLASSIFICATION_CHANGE_KEYWORDS = [
-    "classification change",
-    "upgrade to secret",
-    "downgrade",
-    "reclassify",
-    "il6",
-    "sipr",
-    "secret data",
-    "ts/sci",
-    "boundary expansion",
-    "new enclave",
-    "new authorization boundary",
+    "classification change", "upgrade to secret", "downgrade",
+    "reclassify", "il6", "sipr", "secret data", "ts/sci",
+    "boundary expansion", "new enclave", "new authorization boundary",
 ]
 
 # Keywords indicating new data flows (YELLOW+)
 DATA_FLOW_KEYWORDS = [
-    "new data flow",
-    "data exchange",
-    "new integration",
-    "ingest from",
-    "export to",
-    "data pipeline",
-    "new database",
-    "new storage",
-    "new queue",
+    "new data flow", "data exchange", "new integration",
+    "ingest from", "export to", "data pipeline",
+    "new database", "new storage", "new queue",
 ]
 
 # License patterns for detection in signal text
@@ -174,14 +154,9 @@ def _get_db(db_path=None):
     path = db_path or DB_PATH
     if not Path(path).exists():
         raise FileNotFoundError(f"Database not found: {path}")
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(path))
     return conn
 
-
-def _now():
-    """ISO-8601 UTC timestamp."""
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _audit(event_type, actor, action, details=None, project_id=None):
@@ -228,15 +203,23 @@ def _ensure_triage_tables(conn):
     """)
 
     # Add triage columns to innovation_signals if not present
-    existing_cols = {row[1] for row in conn.execute("PRAGMA table_info(innovation_signals)").fetchall()}
+    existing_cols = {
+        row[1] for row in conn.execute("PRAGMA table_info(innovation_signals)").fetchall()
+    }
 
     alter_stmts = []
     if "triage_result" not in existing_cols:
-        alter_stmts.append("ALTER TABLE innovation_signals ADD COLUMN triage_result TEXT")
+        alter_stmts.append(
+            "ALTER TABLE innovation_signals ADD COLUMN triage_result TEXT"
+        )
     if "gotcha_layer" not in existing_cols:
-        alter_stmts.append("ALTER TABLE innovation_signals ADD COLUMN gotcha_layer TEXT")
+        alter_stmts.append(
+            "ALTER TABLE innovation_signals ADD COLUMN gotcha_layer TEXT"
+        )
     if "boundary_tier" not in existing_cols:
-        alter_stmts.append("ALTER TABLE innovation_signals ADD COLUMN boundary_tier TEXT")
+        alter_stmts.append(
+            "ALTER TABLE innovation_signals ADD COLUMN boundary_tier TEXT"
+        )
 
     for stmt in alter_stmts:
         try:
@@ -261,7 +244,7 @@ def _log_triage_stage(conn, signal_id, stage, stage_name, result, details):
             stage_name,
             result,
             json.dumps(details) if isinstance(details, dict) else details,
-            _now(),
+            now_iso(),
         ),
     )
     return log_id
@@ -321,20 +304,20 @@ def _stage_classify_signal(signal, config):
 
 
 # =========================================================================
-# STAGE 2: GOTCHA FIT CHECK
+# STAGE 2: FORGE FIT CHECK
 # =========================================================================
 def _stage_gotcha_fit(signal, config):
-    """Check whether signal maps to at least one GOTCHA layer.
+    """Check whether signal maps to at least one FORGE layer.
 
     Uses triage.gotcha_fit.layer_mapping from config to match keywords
-    in the signal title + description against each GOTCHA layer.
+    in the signal title + description against each FORGE layer.
 
     Args:
         signal: Dict with at least 'title' and 'description'.
         config: Full innovation config dict.
 
     Returns:
-        Tuple of (result, details). Blocks if no GOTCHA layer matches
+        Tuple of (result, details). Blocks if no FORGE layer matches
         and triage.gotcha_fit.required_layer is true.
     """
     triage_config = config.get("triage", {})
@@ -357,18 +340,164 @@ def _stage_gotcha_fit(signal, config):
         return "block", {
             "matched_layers": [],
             "layer_scores": layer_scores,
-            "reason": "Signal does not map to any GOTCHA layer (goal/tool/arg/context/hardprompt)",
+            "reason": "Signal does not map to any FORGE layer (goal/tool/arg/context/hardprompt)",
         }
 
     # Pick the best-matching layer (most keyword hits)
     best_layer = None
     if matched_layers:
-        best_layer = max(matched_layers, key=lambda l: layer_scores.get(l, 0))
+        best_layer = max(matched_layers, key=lambda layer: layer_scores.get(layer, 0))
 
     return "pass", {
         "matched_layers": matched_layers,
         "best_layer": best_layer,
         "layer_scores": layer_scores,
+    }
+
+
+# =========================================================================
+# STAGE 2.5: MODULE-LEVEL IMPACT MAPPING (Phase 71 enhancement)
+# =========================================================================
+def _map_module_impact(signal, conn, config):
+    """Map signal to specific ICDEV™ modules that would be enhanced (Phase 71 lesson).
+
+    Goes beyond FORGE layer matching to identify exact tools/files that
+    would benefit from this signal's integration.
+
+    Args:
+        signal: Dict with title and description.
+        conn: DB connection (for checking active solutions).
+        config: Innovation config.
+
+    Returns:
+        Dict with:
+          - matched_modules: List of {file, tool_name, description, subsystem, relevance_score}
+          - estimated_new_files: int (how many new files likely needed)
+          - estimated_modified_files: int (how many existing files to modify)
+          - subsystems_affected: List of unique subsystems
+          - parallel_safe: bool (no overlap with in-progress solutions)
+          - conflict_solutions: List of solution IDs with overlapping modules
+    """
+    manifest_path = BASE_DIR / "tools" / "manifest.md"
+
+    # Parse manifest entries: look for markdown table rows with file paths
+    tool_entries = []
+    if manifest_path.exists():
+        try:
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    # Match table rows that contain a tools/ path
+                    if not line.startswith("|"):
+                        continue
+                    cols = [c.strip() for c in line.split("|") if c.strip()]
+                    if len(cols) < 2:
+                        continue
+                    # Find the column that looks like a file path
+                    file_col = None
+                    for col in cols:
+                        if col.startswith("tools/") and col.endswith(".py"):
+                            file_col = col
+                            break
+                    if file_col is None:
+                        continue
+                    # Use remaining cols as name + description
+                    other_cols = [c for c in cols if c != file_col]
+                    tool_name = other_cols[0] if other_cols else Path(file_col).stem
+                    description = " ".join(other_cols[1:]) if len(other_cols) > 1 else ""
+                    # Derive subsystem from path: tools/<subsystem>/...
+                    parts = Path(file_col).parts
+                    subsystem = parts[1] if len(parts) >= 3 else "other"
+                    tool_entries.append({
+                        "file": file_col,
+                        "tool_name": tool_name,
+                        "description": description,
+                        "subsystem": subsystem,
+                    })
+        except Exception:
+            pass  # Manifest unreadable — graceful degradation
+
+    # Extract keywords from signal title + description
+    text = f"{signal.get('title', '')} {signal.get('description', '')}".lower()
+    # Split into tokens, filter short/stop words
+    _stop = {"the", "a", "an", "and", "or", "in", "of", "to", "for", "is",
+             "are", "be", "with", "that", "this", "it", "on", "at", "by",
+             "from", "as", "its", "will", "can", "into", "new", "add",
+             "create", "implement", "update", "improve", "enhance", "support"}
+    tokens = [
+        w for w in re.findall(r"\b[a-z][a-z0-9_]{2,}\b", text)
+        if w not in _stop
+    ]
+    keywords = list(dict.fromkeys(tokens))  # deduplicate, preserve order
+
+    # Score each tool entry against keywords
+    matched_modules = []
+    for entry in tool_entries:
+        haystack = f"{entry['tool_name']} {entry['description']}".lower()
+        hits = sum(1 for kw in keywords if kw in haystack)
+        if hits == 0:
+            continue
+        # Relevance score: hits / total unique keywords (0..1)
+        relevance = round(hits / max(len(keywords), 1), 4)
+        if relevance >= 0.3:
+            matched_modules.append({
+                "file": entry["file"],
+                "tool_name": entry["tool_name"],
+                "description": entry["description"],
+                "subsystem": entry["subsystem"],
+                "relevance_score": relevance,
+            })
+
+    # Sort by relevance descending
+    matched_modules.sort(key=lambda m: m["relevance_score"], reverse=True)
+
+    # Estimate file counts
+    creation_keywords = {"new", "add", "create", "implement", "introduce", "build"}
+    title_lower = signal.get("title", "").lower()
+    likely_new = any(kw in title_lower for kw in creation_keywords)
+    estimated_new_files = 2 if likely_new else 0
+    if likely_new and len(matched_modules) >= 3:
+        estimated_new_files = 3
+    estimated_modified_files = len(matched_modules)
+
+    # Unique subsystems
+    subsystems_affected = list(dict.fromkeys(
+        m["subsystem"] for m in matched_modules
+    ))
+
+    # Check for parallel conflicts: solutions in 'building' status whose
+    # gotcha_layer overlaps with the top matched subsystems
+    conflict_solutions = []
+    parallel_safe = True
+    try:
+        building_rows = conn.execute(
+            """SELECT id, gotcha_layer, category
+               FROM innovation_solutions
+               WHERE status = 'building'"""
+        ).fetchall()
+        # Gather signal category from metadata if available
+        sig_category = signal.get("category", "")
+        for row in building_rows:
+            row_layer = row["gotcha_layer"] or ""
+            row_cat = row["category"] or ""
+            # Conflict if the building solution shares a subsystem keyword
+            # or matches the signal category
+            if row_cat and sig_category and row_cat == sig_category:
+                conflict_solutions.append(row["id"])
+                parallel_safe = False
+            elif any(sub in row_layer for sub in subsystems_affected[:3]):
+                conflict_solutions.append(row["id"])
+                parallel_safe = False
+    except Exception:
+        pass  # innovation_solutions may not exist yet; treat as safe
+
+    return {
+        "matched_modules": matched_modules,
+        "estimated_new_files": estimated_new_files,
+        "estimated_modified_files": estimated_modified_files,
+        "subsystems_affected": subsystems_affected,
+        "parallel_safe": parallel_safe,
+        "conflict_solutions": conflict_solutions,
     }
 
 
@@ -469,12 +598,10 @@ def _stage_compliance_precheck(signal, config):
     for pattern in COMPLIANCE_ANTI_PATTERNS:
         matches = re.findall(pattern, text, re.IGNORECASE)
         if matches:
-            violations.append(
-                {
-                    "pattern": pattern,
-                    "matches": matches,
-                }
-            )
+            violations.append({
+                "pattern": pattern,
+                "matches": matches,
+            })
 
     if violations:
         result = "block" if block_on_weakening else "warn"
@@ -526,7 +653,9 @@ def _stage_duplicate_license(signal, config, conn):
     # --- Duplicate check ---
     if dedup_config.get("enabled", True):
         time_window = dedup_config.get("time_window_days", 90)
-        cutoff = (datetime.now(timezone.utc) - timedelta(days=time_window)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=time_window)).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
         content_hash = signal.get("content_hash", "")
 
         if content_hash:
@@ -542,14 +671,12 @@ def _stage_duplicate_license(signal, config, conn):
             ).fetchone()
 
             if existing:
-                issues.append(
-                    {
-                        "type": "duplicate",
-                        "existing_signal_id": existing["id"],
-                        "existing_title": existing["title"],
-                        "existing_date": existing["discovered_at"],
-                    }
-                )
+                issues.append({
+                    "type": "duplicate",
+                    "existing_signal_id": existing["id"],
+                    "existing_title": existing["title"],
+                    "existing_date": existing["discovered_at"],
+                })
 
         # Also do a title similarity check (simple exact-prefix match)
         title = signal.get("title", "").strip()
@@ -566,13 +693,13 @@ def _stage_duplicate_license(signal, config, conn):
             ).fetchall()
 
             if similar:
-                issues.append(
-                    {
-                        "type": "similar_title",
-                        "similar_count": len(similar),
-                        "similar_signals": [{"id": s["id"], "title": s["title"]} for s in similar],
-                    }
-                )
+                issues.append({
+                    "type": "similar_title",
+                    "similar_count": len(similar),
+                    "similar_signals": [
+                        {"id": s["id"], "title": s["title"]} for s in similar
+                    ],
+                })
 
     # --- License check ---
     if license_config.get("enabled", True):
@@ -582,7 +709,8 @@ def _stage_duplicate_license(signal, config, conn):
         detected_licenses = []
         for license_id, patterns in LICENSE_PATTERNS.items():
             if license_id in blocked_licenses or any(
-                bl.replace("-", "").lower() == license_id.replace("-", "").lower() for bl in blocked_licenses
+                bl.replace("-", "").lower() == license_id.replace("-", "").lower()
+                for bl in blocked_licenses
             ):
                 for pat in patterns:
                     if re.search(pat, text, re.IGNORECASE):
@@ -590,13 +718,11 @@ def _stage_duplicate_license(signal, config, conn):
                         break
 
         if detected_licenses:
-            issues.append(
-                {
-                    "type": "blocked_license",
-                    "licenses": detected_licenses,
-                    "allowed_licenses": license_config.get("allowed_licenses", []),
-                }
-            )
+            issues.append({
+                "type": "blocked_license",
+                "licenses": detected_licenses,
+                "allowed_licenses": license_config.get("allowed_licenses", []),
+            })
 
     # Determine result
     has_duplicate = any(i["type"] == "duplicate" for i in issues)
@@ -607,8 +733,12 @@ def _stage_duplicate_license(signal, config, conn):
         if has_duplicate:
             reasons.append("Duplicate signal detected within time window")
         if has_blocked_license:
-            lics = [i["licenses"] for i in issues if i["type"] == "blocked_license"]
-            flat_lics = [l for sublist in lics for l in sublist]
+            lics = [
+                i["licenses"]
+                for i in issues
+                if i["type"] == "blocked_license"
+            ]
+            flat_lics = [lic for sublist in lics for lic in sublist]
             reasons.append(f"Blocked license(s) detected: {', '.join(flat_lics)}")
         return "block", {
             "issues": issues,
@@ -690,14 +820,12 @@ def triage_signal(signal_id, db_path=None):
 
             _log_triage_stage(conn, signal_id, stage_num, stage_name, result, details)
 
-            stage_results.append(
-                {
-                    "stage": stage_num,
-                    "name": stage_name,
-                    "result": result,
-                    "details": details,
-                }
-            )
+            stage_results.append({
+                "stage": stage_num,
+                "name": stage_name,
+                "result": result,
+                "details": details,
+            })
 
             if result == "block":
                 blocked = True
@@ -714,20 +842,51 @@ def triage_signal(signal_id, db_path=None):
             elif stage_name == "boundary_impact":
                 boundary_tier = details.get("tier", "GREEN")
 
+        # --- Stage 2.5: Module-level impact mapping (Phase 71 enhancement) ---
+        # Non-blocking — informational only; never prevents a signal from passing
+        module_impact = None
+        if not blocked:
+            try:
+                module_impact = _map_module_impact(signal, conn, config)
+                _log_triage_stage(
+                    conn, signal_id, 2, "module_impact_mapping", "pass",
+                    {
+                        "matched_module_count": len(module_impact["matched_modules"]),
+                        "subsystems_affected": module_impact["subsystems_affected"],
+                        "estimated_new_files": module_impact["estimated_new_files"],
+                        "estimated_modified_files": module_impact["estimated_modified_files"],
+                        "parallel_safe": module_impact["parallel_safe"],
+                        "conflict_solutions": module_impact["conflict_solutions"],
+                    },
+                )
+                stage_results.append({
+                    "stage": 2.5,
+                    "name": "module_impact_mapping",
+                    "result": "pass",
+                    "details": module_impact,
+                })
+            except Exception:
+                module_impact = {
+                    "matched_modules": [],
+                    "estimated_new_files": 0,
+                    "estimated_modified_files": 0,
+                    "subsystems_affected": [],
+                    "parallel_safe": True,
+                    "conflict_solutions": [],
+                }
+
         # --- Stage 5 (needs DB for dedup) ---
         if not blocked:
             result, details = _stage_duplicate_license(signal, config, conn)
 
             _log_triage_stage(conn, signal_id, 5, "duplicate_license_check", result, details)
 
-            stage_results.append(
-                {
-                    "stage": 5,
-                    "name": "duplicate_license_check",
-                    "result": result,
-                    "details": details,
-                }
-            )
+            stage_results.append({
+                "stage": 5,
+                "name": "duplicate_license_check",
+                "result": result,
+                "details": details,
+            })
 
             if result == "block":
                 blocked = True
@@ -764,6 +923,27 @@ def triage_signal(signal_id, db_path=None):
                WHERE id = ?""",
             (triage_result, gotcha_layer, boundary_tier, category, signal_id),
         )
+
+        # Merge module_impact into signal metadata (Stage 2.5 persistence)
+        if module_impact is not None:
+            try:
+                meta_row = conn.execute(
+                    "SELECT metadata FROM innovation_signals WHERE id = ?",
+                    (signal_id,),
+                ).fetchone()
+                raw_meta = (meta_row["metadata"] if meta_row else None) or "{}"
+                try:
+                    existing_meta = json.loads(raw_meta)
+                except (json.JSONDecodeError, TypeError):
+                    existing_meta = {}
+                existing_meta["module_impact"] = module_impact
+                conn.execute(
+                    "UPDATE innovation_signals SET metadata = ? WHERE id = ?",
+                    (json.dumps(existing_meta), signal_id),
+                )
+            except Exception:
+                pass  # Non-blocking: metadata update failure must not abort triage
+
         conn.commit()
 
         outcome = {
@@ -778,11 +958,12 @@ def triage_signal(signal_id, db_path=None):
             "block_stage": block_stage,
             "warnings": warnings,
             "stages": stage_results,
+            "module_impact": module_impact,
             "thresholds": {
                 "auto_queue": auto_queue_threshold,
                 "suggest": suggest_threshold,
             },
-            "triaged_at": _now(),
+            "triaged_at": now_iso(),
         }
 
         _audit(
@@ -843,19 +1024,17 @@ def triage_all_scored(db_path=None):
             else:
                 triage_result = outcome.get("triage_result", "logged")
                 counts[triage_result] = counts.get(triage_result, 0) + 1
-                results.append(
-                    {
-                        "signal_id": sid,
-                        "title": outcome.get("title", ""),
-                        "triage_result": triage_result,
-                        "score": outcome.get("score", 0.0),
-                        "category": outcome.get("category"),
-                        "gotcha_layer": outcome.get("gotcha_layer"),
-                        "boundary_tier": outcome.get("boundary_tier"),
-                        "blocked": outcome.get("blocked", False),
-                        "block_stage": outcome.get("block_stage"),
-                    }
-                )
+                results.append({
+                    "signal_id": sid,
+                    "title": outcome.get("title", ""),
+                    "triage_result": triage_result,
+                    "score": outcome.get("score", 0.0),
+                    "category": outcome.get("category"),
+                    "gotcha_layer": outcome.get("gotcha_layer"),
+                    "boundary_tier": outcome.get("boundary_tier"),
+                    "blocked": outcome.get("blocked", False),
+                    "block_stage": outcome.get("block_stage"),
+                })
         except Exception as e:
             counts["error"] += 1
             results.append({"signal_id": sid, "error": str(e)})
@@ -871,14 +1050,14 @@ def triage_all_scored(db_path=None):
         "total_processed": len(signal_ids),
         "counts": counts,
         "results": results,
-        "triaged_at": _now(),
+        "triaged_at": now_iso(),
     }
 
 
 def get_triage_summary(db_path=None):
     """Summarize triage outcomes across all triaged signals.
 
-    Provides aggregate counts by triage result, category, GOTCHA layer,
+    Provides aggregate counts by triage result, category, FORGE layer,
     boundary tier, and recent triage log entries.
 
     Args:
@@ -913,7 +1092,7 @@ def get_triage_summary(db_path=None):
         for row in rows:
             by_category[row["category"] or "uncategorized"] = row["cnt"]
 
-        # Count by GOTCHA layer
+        # Count by FORGE layer
         by_gotcha = {}
         rows = conn.execute(
             """SELECT gotcha_layer, COUNT(*) as cnt
@@ -936,9 +1115,9 @@ def get_triage_summary(db_path=None):
             by_boundary[row["boundary_tier"]] = row["cnt"]
 
         # Pending triage (scored but not yet triaged)
-        pending = conn.execute("SELECT COUNT(*) as cnt FROM innovation_signals WHERE status = 'scored'").fetchone()[
-            "cnt"
-        ]
+        pending = conn.execute(
+            "SELECT COUNT(*) as cnt FROM innovation_signals WHERE status = 'scored'"
+        ).fetchone()["cnt"]
 
         # Recent triage log entries (last 20 blocked)
         recent_blocks = []
@@ -957,18 +1136,18 @@ def get_triage_summary(db_path=None):
                 details = json.loads(details) if details else {}
             except (json.JSONDecodeError, TypeError):
                 details = {"raw": details}
-            recent_blocks.append(
-                {
-                    "signal_id": row["signal_id"],
-                    "title": row["title"],
-                    "blocked_at_stage": row["stage_name"],
-                    "details": details,
-                    "triaged_at": row["triaged_at"],
-                }
-            )
+            recent_blocks.append({
+                "signal_id": row["signal_id"],
+                "title": row["title"],
+                "blocked_at_stage": row["stage_name"],
+                "details": details,
+                "triaged_at": row["triaged_at"],
+            })
 
         # Total triage log entries
-        total_log_entries = conn.execute("SELECT COUNT(*) as cnt FROM innovation_triage_log").fetchone()["cnt"]
+        total_log_entries = conn.execute(
+            "SELECT COUNT(*) as cnt FROM innovation_triage_log"
+        ).fetchone()["cnt"]
 
         # Stage pass/block/warn distribution
         stage_stats = {}
@@ -992,7 +1171,7 @@ def get_triage_summary(db_path=None):
             "total_triage_log_entries": total_log_entries,
             "stage_stats": stage_stats,
             "recent_blocks": recent_blocks,
-            "generated_at": _now(),
+            "generated_at": now_iso(),
         }
 
     finally:
@@ -1004,10 +1183,12 @@ def get_triage_summary(db_path=None):
 # =========================================================================
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Compliance-First Triage Pipeline — 5-stage safety gate for innovation signals"
+        description="ICDEV™ Compliance-First Triage Pipeline — 5-stage safety gate for innovation signals"
     )
     parser.add_argument("--json", action="store_true", help="JSON output")
-    parser.add_argument("--db-path", type=Path, default=None, help="Database path override")
+    parser.add_argument(
+        "--db-path", type=Path, default=None, help="Database path override"
+    )
 
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(
@@ -1026,7 +1207,9 @@ def main():
         help="Show triage outcome summary",
     )
 
-    parser.add_argument("--signal-id", type=str, help="Signal ID to triage (with --triage)")
+    parser.add_argument(
+        "--signal-id", type=str, help="Signal ID to triage (with --triage)"
+    )
 
     args = parser.parse_args()
 
@@ -1082,7 +1265,7 @@ def _print_human(args, result):
         print(f"Signal:        {sig.get('signal_id', '')} — {sig.get('title', '')}")
         print(f"Score:         {sig.get('score', 0.0):.4f}")
         print(f"Category:      {sig.get('category', 'N/A')}")
-        print(f"GOTCHA Layer:  {sig.get('gotcha_layer', 'N/A')}")
+        print(f"FORGE Layer:  {sig.get('gotcha_layer', 'N/A')}")
         print(f"Boundary Tier: {sig.get('boundary_tier', 'N/A')}")
 
         if sig.get("blocked"):
@@ -1093,7 +1276,9 @@ def _print_human(args, result):
 
         print("\nStage Details:")
         for stage in sig.get("stages", []):
-            icon = {"pass": "OK", "block": "BLOCK", "warn": "WARN"}.get(stage["result"], "?")
+            icon = {"pass": "OK", "block": "BLOCK", "warn": "WARN"}.get(
+                stage["result"], "?"
+            )
             print(f"  {stage['stage']}. {stage['name']}: [{icon}]")
             details = stage.get("details", {})
             if isinstance(details, dict):
@@ -1135,7 +1320,7 @@ def _print_human(args, result):
 
         by_gotcha = result.get("by_gotcha_layer", {})
         if by_gotcha:
-            print("\nBy GOTCHA Layer:")
+            print("\nBy FORGE Layer:")
             for layer, count in sorted(by_gotcha.items()):
                 print(f"  {layer:12s}: {count}")
 

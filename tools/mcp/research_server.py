@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Industry Research Engine MCP server exposing research tools.
 
 Tools:
@@ -24,14 +24,14 @@ Runs as MCP server over stdio with Content-Length framing.
 
 import os
 import sys
-import sqlite3
+from tools.db.storage import get_connection
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db")))
 
 sys.path.insert(0, str(BASE_DIR))
-from tools.mcp.base_server import MCPServer
+from tools.mcp.base_server import MCPServer  # noqa: E402
 
 
 def _import_tool(module_path, func_name):
@@ -46,8 +46,7 @@ def _import_tool(module_path, func_name):
 
 
 def _get_db():
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     return conn
 
 

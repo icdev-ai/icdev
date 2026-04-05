@@ -1,0 +1,171 @@
+# [TEMPLATE: CUI // SP-CTI]
+# ICDEV™ LLM Gateway Configuration
+# Controls pre/post-invoke guardrails, rate limits, and audit settings.
+# All detection is regex/local — no external API calls (air-gap safe).
+
+# -----------------------------------------------------------------------
+# Master toggle — disable to bypass all guardrails
+# -----------------------------------------------------------------------
+enabled: true
+
+# -----------------------------------------------------------------------
+# Pre-invoke guardrails (run BEFORE LLM call)
+# -----------------------------------------------------------------------
+pre_invoke:
+  # Prompt injection detection (regex-based, air-gap safe)
+  injection_detection:
+    enabled: true
+    # Score threshold: 0.0–1.0. Requests scoring above this are blocked.
+    block_threshold: 0.7
+    # Patterns that indicate prompt injection attempts.
+    # Each pattern has a weight (0.0–1.0) contributing to the final score.
+    patterns:
+      - pattern: "ignore (all |any )?(previous|prior|above|earlier) (instructions|prompts|rules|directions)"
+        weight: 0.9
+        label: "instruction_override"
+      - pattern: "disregard (all |any )?(previous|prior|above|earlier)"
+        weight: 0.9
+        label: "instruction_override"
+      - pattern: "forget (all |any )?(previous|prior|above|earlier|everything)"
+        weight: 0.8
+        label: "instruction_override"
+      - pattern: "you are now (a |an )?[a-z]+"
+        weight: 0.7
+        label: "persona_hijack"
+      - pattern: "act as (a |an )?(different|new|unrestricted)"
+        weight: 0.7
+        label: "persona_hijack"
+      - pattern: "pretend (you are|to be|you're) (a |an )?"
+        weight: 0.6
+        label: "persona_hijack"
+      - pattern: "(reveal|show|print|output|display|leak) (the |your )?(system prompt|instructions|system message|hidden prompt)"
+        weight: 0.9
+        label: "system_prompt_leak"
+      - pattern: "what (are|is) your (system |initial )?(prompt|instructions|rules)"
+        weight: 0.8
+        label: "system_prompt_leak"
+      - pattern: "repeat (the |your )?(system |initial )?(prompt|instructions) verbatim"
+        weight: 0.9
+        label: "system_prompt_leak"
+      - pattern: "DAN|do anything now|jailbreak|bypass (safety|filter|content|restriction)"
+        weight: 0.9
+        label: "jailbreak"
+      - pattern: "developer mode|god mode|unrestricted mode|no (filter|rules|limits)"
+        weight: 0.8
+        label: "jailbreak"
+      - pattern: "\\[\\s*(SYSTEM|INST|SYS)\\s*\\]"
+        weight: 0.7
+        label: "tag_injection"
+      - pattern: "<\\|?(system|im_start|im_end|endoftext)\\|?>"
+        weight: 0.8
+        label: "tag_injection"
+
+  # PII scrubbing — detects and optionally redacts PII before sending to LLM
+  pii_detection:
+    enabled: true
+    action: warn  # warn | block | redact
+    patterns:
+      - pattern: "\\b\\d{3}-\\d{2}-\\d{4}\\b"
+        label: "ssn"
+        description: "Social Security Number"
+      - pattern: "\\b\\d{9}\\b"
+        label: "ssn_no_dash"
+        description: "SSN without dashes (9 consecutive digits)"
+      - pattern: "[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}"
+        label: "email"
+        description: "Email address"
+      - pattern: "\\b(\\+?1[-.]?)?\\(?\\d{3}\\)?[-.]?\\d{3}[-.]?\\d{4}\\b"
+        label: "phone"
+        description: "US phone number"
+      - pattern: "\\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13}|6(?:011|5[0-9]{2})[0-9]{12})\\b"
+        label: "credit_card"
+        description: "Credit card number (Visa, MC, Amex, Discover)"
+      - pattern: "\\b[A-Z]{1,2}\\d{1,2}\\s?\\d[A-Z]{2}\\b"
+        label: "uk_postcode"
+        description: "UK postcode"
+      - pattern: "\\b\\d{3}-\\d{3}-\\d{3}\\b"
+        label: "sin"
+        description: "Canadian Social Insurance Number"
+
+  # Input length validation
+  input_length:
+    enabled: true
+    max_tokens: 128000  # Maximum input tokens (estimated at 4 chars/token)
+    chars_per_token: 4  # Rough estimate for token counting without tokenizer
+
+  # Rate limiting per agent/function
+  rate_limiting:
+    enabled: true
+    # Default limits (applied when no function-specific override exists)
+    default:
+      per_minute: 30
+      per_hour: 500
+    # Per-function overrides
+    functions:
+      code_generation:
+        per_minute: 20
+        per_hour: 300
+      compliance_export:
+        per_minute: 10
+        per_hour: 100
+      narrative_generation:
+        per_minute: 15
+        per_hour: 200
+      ft_pair_generation:
+        per_minute: 10
+        per_hour: 100
+
+  # Cost cap pre-check — integrates with token_tracker budget system
+  cost_cap:
+    enabled: true
+    # If token_tracker is unavailable, this is ignored gracefully
+
+# -----------------------------------------------------------------------
+# Post-invoke guardrails (run AFTER LLM response)
+# -----------------------------------------------------------------------
+post_invoke:
+  # Output validation — detect refusals or empty responses
+  output_validation:
+    enabled: true
+    refusal_patterns:
+      - "I cannot"
+      - "I'm unable to"
+      - "I apologize, but I cannot"
+      - "As an AI language model, I cannot"
+      - "I'm not able to"
+      - "I must decline"
+      - "I can't assist with"
+    min_response_length: 1  # Minimum chars; 0 to disable
+
+  # Hallucination flag — uses confidence from response metadata if available
+  hallucination_detection:
+    enabled: true
+    confidence_threshold: 0.3  # Flag if confidence below this
+
+  # Sensitive data leak detection on output (same PII patterns)
+  output_pii_detection:
+    enabled: true
+    action: warn  # warn | flag
+
+  # Response length enforcement
+  response_length:
+    enabled: true
+    max_tokens: 32000  # Maximum output tokens (estimated)
+    chars_per_token: 4
+
+# -----------------------------------------------------------------------
+# Audit trail settings
+# -----------------------------------------------------------------------
+audit:
+  enabled: true
+  # Retention in days (0 = keep forever)
+  retention_days: 0
+  # Log full prompt text (WARNING: may contain sensitive data)
+  log_prompt_text: false
+  # Log full response text
+  log_response_text: false
+
+# -----------------------------------------------------------------------
+# Air-gap mode — all detection is local regex, no cloud calls
+# -----------------------------------------------------------------------
+air_gap: true

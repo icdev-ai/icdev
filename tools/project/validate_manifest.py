@@ -18,7 +18,7 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
-from tools.project.manifest_loader import load_manifest
+from tools.project.manifest_loader import load_manifest  # noqa: E402
 
 
 def main():

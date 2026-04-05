@@ -1,9 +1,10 @@
-"""ICDEV Pulse content exporter.
+"""ICDEV™ Pulse content exporter.
 
 Exports blog posts as:
 - MDX with frontmatter (Hugo/Jekyll/Next.js compatible)
 - Standalone HTML with embedded styles and JSON-LD schema
 """
+from __future__ import annotations
 
 import json
 import logging
@@ -98,7 +99,7 @@ def _resolve_video_placeholders(body_html: str, videos: list) -> str:
     for video in videos:
         # Try multiple key names — video_finder returns source_pain_point
         topic = video.get("source_pain_point", "") or video.get("topic", "") or video.get("title", "")
-        placeholder = f"[VIDEO_EMBED:{topic}]"
+        placeholder = f'[VIDEO_EMBED:{topic}]'
         embed_html = video.get("embed_html", "")
         if placeholder in body_html and embed_html:
             body_html = body_html.replace(placeholder, embed_html)
@@ -151,23 +152,16 @@ def _build_ga_snippet(measurement_id: str) -> str:
     </script>"""
 
 
-def _build_html_page(
-    title: str,
-    seo_desc: str,
-    seo_keywords: str,
-    canonical: str,
-    og_image: str,
-    schema: dict,
-    ga_snippet: str,
-    body_html: str,
-) -> str:
+def _build_html_page(title: str, seo_desc: str, seo_keywords: str,
+                     canonical: str, og_image: str, schema: dict,
+                     ga_snippet: str, body_html: str) -> str:
     """Assemble the full HTML page from components."""
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{title} | ICDEV Blog</title>
+    <title>{title} | ICDEV™ Blog</title>
     <meta name="description" content="{seo_desc}">
     <meta name="keywords" content="{seo_keywords}">
     <link rel="canonical" href="{canonical}">
@@ -177,14 +171,14 @@ def _build_html_page(
     <meta property="og:title" content="{title}">
     <meta property="og:description" content="{seo_desc}">
     <meta property="og:url" content="{canonical}">
-    <meta property="og:site_name" content="ICDEV Blog">
-    {f'<meta property="og:image" content="{og_image}">' if og_image else ""}
+    <meta property="og:site_name" content="ICDEV™ Blog">
+    {f'<meta property="og:image" content="{og_image}">' if og_image else ''}
 
     <!-- Twitter Card -->
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="{title}">
     <meta name="twitter:description" content="{seo_desc}">
-    {f'<meta name="twitter:image" content="{og_image}">' if og_image else ""}
+    {f'<meta name="twitter:image" content="{og_image}">' if og_image else ''}
 
     <!-- JSON-LD Schema -->
     <script type="application/ld+json">
@@ -375,7 +369,8 @@ def export_html(post_id: str) -> Path:
     canonical = f"{SITE_URL}/blog/{slug}"
 
     ga_snippet = _build_ga_snippet(GA_MEASUREMENT_ID)
-    html = _build_html_page(title, seo_desc, seo_keywords, canonical, og_image, schema, ga_snippet, body_html)
+    html = _build_html_page(title, seo_desc, seo_keywords, canonical,
+                            og_image, schema, ga_snippet, body_html)
 
     out_path = EXPORTS_DIR / f"{slug}.html"
     out_path.write_text(html, encoding="utf-8")
@@ -417,17 +412,17 @@ def _generate_default_frontmatter(post: dict) -> str:
             tags = [k.strip() for k in keywords.split(",") if k.strip()]
     tags_yaml = "\n".join([f"  - {t}" for t in tags[:8]])
 
-    return f"""title: "{post.get("title", "Untitled")}"
-slug: "{post.get("slug", "")}"
+    return f"""title: "{post.get('title', 'Untitled')}"
+slug: "{post.get('slug', '')}"
 date: "{published}"
 lastmod: "{now}"
-draft: {str(post.get("status", "draft") != "published").lower()}
-author: "ICDEV Team"
-description: "{post.get("seo_description", "")}"
-seo_title: "{post.get("seo_title", post.get("title", ""))}"
-keywords: "{", ".join(tags[:8]) if tags else keywords}"
+draft: {str(post.get('status', 'draft') != 'published').lower()}
+author: "ICDEV™ Team"
+description: "{post.get('seo_description', '')}"
+seo_title: "{post.get('seo_title', post.get('title', ''))}"
+keywords: "{', '.join(tags[:8]) if tags else keywords}"
 tags:
 {tags_yaml}
-image: "{post.get("og_image_url", "")}"
-canonical: "{SITE_URL}/blog/{post.get("slug", "")}"
+image: "{post.get('og_image_url', '')}"
+canonical: "{SITE_URL}/blog/{post.get('slug', '')}"
 """

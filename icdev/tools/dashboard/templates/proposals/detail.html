@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ opp.title }} - Proposals - ICDEV{% endblock %}
+{% block title %}{{ opp.title }} - Proposals - ICDEV™{% endblock %}
 
 {% block content %}
 <div class="breadcrumbs"><a href="/">Home</a><span class="separator">/</span><a href="/proposals">Proposals</a><span class="separator">/</span><span>{{ opp.title }}</span></div>
@@ -52,7 +52,7 @@
         </div>
         <div style="display:flex; gap:6px; flex-wrap:wrap;">
             <button class="btn btn-secondary btn-sm" onclick="govconAction('extract', '{{ opp.id }}')" title="Extract shall/must/will statements from RFP text">Extract Requirements</button>
-            <button class="btn btn-secondary btn-sm" onclick="govconAction('map', '{{ opp.id }}')" title="Map extracted requirements to ICDEV capabilities">Map Capabilities</button>
+            <button class="btn btn-secondary btn-sm" onclick="govconAction('map', '{{ opp.id }}')" title="Map extracted requirements to ICDEV™ capabilities">Map Capabilities</button>
             <button class="btn btn-secondary btn-sm" onclick="govconAction('compliance', '{{ opp.id }}')" title="Auto-populate L/M/N compliance matrix">Auto-Compliance</button>
             <button class="btn btn-primary btn-sm" onclick="govconAction('draft', '{{ opp.id }}')" title="AI-draft responses using two-tier LLM (qwen3 + Claude)">AI Draft All</button>
             <button class="btn btn-secondary btn-sm" onclick="govconAction('bid', '{{ opp.id }}')" title="Get bid/no-bid recommendation based on coverage">Bid Recommendation</button>
@@ -120,7 +120,7 @@
 <!-- ===================== Sections Tab ===================== -->
 <div id="tab-sections" class="tab-content" style="display:none;">
     <div style="margin:16px 0; display:flex; gap:8px;">
-        <button class="btn btn-primary" onclick="ICDEV.proposals.openModal('create-section-modal')">+ Add Section</button>
+        <button class="btn btn-primary" onclick="ICDEV™.proposals.openModal('create-section-modal')">+ Add Section</button>
     </div>
     <div class="table-container">
         <table>
@@ -168,7 +168,7 @@
 <!-- ===================== Compliance Matrix Tab ===================== -->
 <div id="tab-compliance" class="tab-content" style="display:none;">
     <div style="margin:16px 0; display:flex; gap:8px; align-items:center;">
-        <button class="btn btn-primary" onclick="ICDEV.proposals.openModal('create-cm-modal')">+ Add Requirement</button>
+        <button class="btn btn-primary" onclick="ICDEV™.proposals.openModal('create-cm-modal')">+ Add Requirement</button>
         <div id="compliance-bar" style="flex:1; margin-left:16px;"></div>
     </div>
     {% if compliance_stats.total > 0 and compliance_stats.not_addressed > 0 %}
@@ -215,7 +215,7 @@
 <!-- ===================== Reviews Tab ===================== -->
 <div id="tab-reviews" class="tab-content" style="display:none;">
     <div style="margin:16px 0;">
-        <button class="btn btn-primary" onclick="ICDEV.proposals.openModal('create-review-modal')">+ Schedule Review</button>
+        <button class="btn btn-primary" onclick="ICDEV™.proposals.openModal('create-review-modal')">+ Schedule Review</button>
     </div>
     <!-- Review Pipeline -->
     <div id="review-pipeline" style="margin-bottom:20px;"></div>
@@ -302,7 +302,7 @@
     <!-- Actions bar -->
     <div style="margin:16px 0; display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
         <button class="btn btn-primary" onclick="generateQuestions('{{ opp.id }}')">Generate Questions</button>
-        <button class="btn btn-secondary" onclick="ICDEV.proposals.openModal('add-question-modal')">+ Add Question</button>
+        <button class="btn btn-secondary" onclick="ICDEV™.proposals.openModal('add-question-modal')">+ Add Question</button>
         <button class="btn btn-secondary" onclick="exportQuestions('{{ opp.id }}')">Export to HTML</button>
         <button class="btn btn-secondary" onclick="bulkStatusChange('{{ opp.id }}', 'approved')" id="btn-bulk-approve" style="display:none;">Approve Selected</button>
         <button class="btn btn-secondary" onclick="bulkStatusChange('{{ opp.id }}', 'submitted')" id="btn-bulk-submit" style="display:none;">Submit Selected</button>
@@ -410,8 +410,8 @@
 <!-- ===================== Amendments Tab ===================== -->
 <div id="tab-amendments" class="tab-content" style="display:none;">
     <div style="margin:16px 0; display:flex; gap:8px;">
-        <button class="btn btn-primary" onclick="ICDEV.proposals.openModal('upload-amendment-modal')">Upload File</button>
-        <button class="btn btn-secondary" onclick="ICDEV.proposals.openModal('paste-amendment-modal')">Paste Text</button>
+        <button class="btn btn-primary" onclick="ICDEV™.proposals.openModal('upload-amendment-modal')">Upload File</button>
+        <button class="btn btn-secondary" onclick="ICDEV™.proposals.openModal('paste-amendment-modal')">Paste Text</button>
         <span id="amendment-action-status" style="font-size:12px; color:var(--text-secondary); margin-left:8px;"></span>
     </div>
 
@@ -472,7 +472,7 @@
     <div class="modal-content">
         <div class="modal-header">
             <h2>Add Question</h2>
-            <button class="modal-close" onclick="ICDEV.proposals.closeModal('add-question-modal')">&times;</button>
+            <button class="modal-close" onclick="ICDEV™.proposals.closeModal('add-question-modal')">&times;</button>
         </div>
         <form id="add-question-form" onsubmit="return submitQuestion(event, '{{ opp.id }}')">
             <div class="form-grid">
@@ -505,7 +505,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" onclick="ICDEV.proposals.closeModal('add-question-modal')">Cancel</button>
+                <button type="button" class="btn btn-secondary" onclick="ICDEV™.proposals.closeModal('add-question-modal')">Cancel</button>
                 <button type="submit" class="btn btn-primary">Add Question</button>
             </div>
         </form>
@@ -517,7 +517,7 @@
     <div class="modal-content">
         <div class="modal-header">
             <h2>Upload Amendment</h2>
-            <button class="modal-close" onclick="ICDEV.proposals.closeModal('upload-amendment-modal')">&times;</button>
+            <button class="modal-close" onclick="ICDEV™.proposals.closeModal('upload-amendment-modal')">&times;</button>
         </div>
         <form id="upload-amendment-form" onsubmit="return submitAmendment(event, '{{ opp.id }}', 'file')">
             <div class="form-grid">
@@ -539,7 +539,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" onclick="ICDEV.proposals.closeModal('upload-amendment-modal')">Cancel</button>
+                <button type="button" class="btn btn-secondary" onclick="ICDEV™.proposals.closeModal('upload-amendment-modal')">Cancel</button>
                 <button type="submit" class="btn btn-primary">Upload</button>
             </div>
         </form>
@@ -551,7 +551,7 @@
     <div class="modal-content">
         <div class="modal-header">
             <h2>Paste Amendment Text</h2>
-            <button class="modal-close" onclick="ICDEV.proposals.closeModal('paste-amendment-modal')">&times;</button>
+            <button class="modal-close" onclick="ICDEV™.proposals.closeModal('paste-amendment-modal')">&times;</button>
         </div>
         <form id="paste-amendment-form" onsubmit="return submitAmendment(event, '{{ opp.id }}', 'text')">
             <div class="form-grid">
@@ -573,7 +573,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" onclick="ICDEV.proposals.closeModal('paste-amendment-modal')">Cancel</button>
+                <button type="button" class="btn btn-secondary" onclick="ICDEV™.proposals.closeModal('paste-amendment-modal')">Cancel</button>
                 <button type="submit" class="btn btn-primary">Upload</button>
             </div>
         </form>
@@ -585,7 +585,7 @@
     <div class="modal-content">
         <div class="modal-header">
             <h2>Record Government Response</h2>
-            <button class="modal-close" onclick="ICDEV.proposals.closeModal('record-response-modal')">&times;</button>
+            <button class="modal-close" onclick="ICDEV™.proposals.closeModal('record-response-modal')">&times;</button>
         </div>
         <form id="record-response-form" onsubmit="return submitResponse(event)">
             <input type="hidden" name="question_id" id="response-question-id">
@@ -609,7 +609,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" onclick="ICDEV.proposals.closeModal('record-response-modal')">Cancel</button>
+                <button type="button" class="btn btn-secondary" onclick="ICDEV™.proposals.closeModal('record-response-modal')">Cancel</button>
                 <button type="submit" class="btn btn-primary">Record Response</button>
             </div>
         </form>
@@ -621,9 +621,9 @@
     <div class="modal-content">
         <div class="modal-header">
             <h2>Add Section</h2>
-            <button class="modal-close" onclick="ICDEV.proposals.closeModal('create-section-modal')">&times;</button>
+            <button class="modal-close" onclick="ICDEV™.proposals.closeModal('create-section-modal')">&times;</button>
         </div>
-        <form id="create-section-form" onsubmit="return ICDEV.proposals.submitSectionForm(event, '{{ opp.id }}')">
+        <form id="create-section-form" onsubmit="return ICDEV™.proposals.submitSectionForm(event, '{{ opp.id }}')">
             <div class="form-grid">
                 <div class="form-group">
                     <label>Volume *</label>
@@ -672,7 +672,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" onclick="ICDEV.proposals.closeModal('create-section-modal')">Cancel</button>
+                <button type="button" class="btn btn-secondary" onclick="ICDEV™.proposals.closeModal('create-section-modal')">Cancel</button>
                 <button type="submit" class="btn btn-primary">Add Section</button>
             </div>
         </form>
@@ -684,9 +684,9 @@
     <div class="modal-content">
         <div class="modal-header">
             <h2>Add Requirement</h2>
-            <button class="modal-close" onclick="ICDEV.proposals.closeModal('create-cm-modal')">&times;</button>
+            <button class="modal-close" onclick="ICDEV™.proposals.closeModal('create-cm-modal')">&times;</button>
         </div>
-        <form id="create-cm-form" onsubmit="return ICDEV.proposals.submitComplianceForm(event, '{{ opp.id }}')">
+        <form id="create-cm-form" onsubmit="return ICDEV™.proposals.submitComplianceForm(event, '{{ opp.id }}')">
             <div class="form-grid">
                 <div class="form-group">
                     <label>Section Reference *</label>
@@ -725,7 +725,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" onclick="ICDEV.proposals.closeModal('create-cm-modal')">Cancel</button>
+                <button type="button" class="btn btn-secondary" onclick="ICDEV™.proposals.closeModal('create-cm-modal')">Cancel</button>
                 <button type="submit" class="btn btn-primary">Add Requirement</button>
             </div>
         </form>
@@ -737,9 +737,9 @@
     <div class="modal-content">
         <div class="modal-header">
             <h2>Schedule Review</h2>
-            <button class="modal-close" onclick="ICDEV.proposals.closeModal('create-review-modal')">&times;</button>
+            <button class="modal-close" onclick="ICDEV™.proposals.closeModal('create-review-modal')">&times;</button>
         </div>
-        <form id="create-review-form" onsubmit="return ICDEV.proposals.submitReviewForm(event, '{{ opp.id }}')">
+        <form id="create-review-form" onsubmit="return ICDEV™.proposals.submitReviewForm(event, '{{ opp.id }}')">
             <div class="form-grid">
                 <div class="form-group">
                     <label>Review Type *</label>
@@ -765,7 +765,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" onclick="ICDEV.proposals.closeModal('create-review-modal')">Cancel</button>
+                <button type="button" class="btn btn-secondary" onclick="ICDEV™.proposals.closeModal('create-review-modal')">Cancel</button>
                 <button type="submit" class="btn btn-primary">Schedule Review</button>
             </div>
         </form>
@@ -800,57 +800,57 @@ document.addEventListener("DOMContentLoaded", function() {
     });
 
     // Countdown
-    if (window.ICDEV && ICDEV.proposals) {
-        ICDEV.proposals.renderCountdown("countdown-value", "{{ opp.due_date }}");
+    if (window.ICDEV™ && ICDEV™.proposals) {
+        ICDEV™.proposals.renderCountdown("countdown-value", "{{ opp.due_date }}");
     }
 
     // Charts
     var statusDist = {{ stats.section_status_distribution | tojson }};
     var severityDist = {{ stats.finding_severity_distribution | tojson }};
 
-    if (window.ICDEV && ICDEV.donutChart && Object.keys(statusDist).length > 0) {
+    if (window.ICDEV™ && ICDEV™.donutChart && Object.keys(statusDist).length > 0) {
         var series = [];
         var colors = {"not_started":"#6c6c80","outlining":"#4a90d9","drafting":"#ffc107","internal_review":"#ffc107","pink_team_ready":"#e67e22","pink_team_review":"#e67e22","rework_pink":"#dc3545","red_team_ready":"#e67e22","red_team_review":"#e67e22","rework_red":"#dc3545","gold_team_ready":"#f39c12","gold_team_review":"#f39c12","white_glove":"#17a2b8","final":"#28a745","submitted":"#28a745"};
         for (var k in statusDist) {
             series.push({label: k.replace(/_/g, " "), value: statusDist[k], color: colors[k] || "#4a90d9"});
         }
-        ICDEV.donutChart("chart-status-donut", series, {width:280, height:200});
+        ICDEV™.donutChart("chart-status-donut", series, {width:280, height:200});
     }
 
-    if (window.ICDEV && ICDEV.barChart && Object.keys(severityDist).length > 0) {
+    if (window.ICDEV™ && ICDEV™.barChart && Object.keys(severityDist).length > 0) {
         var barData = [];
         var sevColors = {"critical":"#dc3545","major":"#ffc107","minor":"#4a90d9","observation":"#6c6c80"};
         for (var s in severityDist) {
             barData.push({x: s, value: severityDist[s], color: sevColors[s] || "#4a90d9"});
         }
-        ICDEV.barChart("chart-findings-bar", barData, {width:280, height:200});
+        ICDEV™.barChart("chart-findings-bar", barData, {width:280, height:200});
     }
 
     // Compliance bar
     var cmStats = {{ compliance_stats | tojson }};
-    if (window.ICDEV && ICDEV.proposals && cmStats.total > 0) {
-        ICDEV.proposals.renderComplianceBar("compliance-bar", cmStats);
+    if (window.ICDEV™ && ICDEV™.proposals && cmStats.total > 0) {
+        ICDEV™.proposals.renderComplianceBar("compliance-bar", cmStats);
     }
 
     // Review pipeline
     var reviews = {{ reviews_data | tojson }};
-    if (window.ICDEV && ICDEV.proposals) {
-        ICDEV.proposals.renderReviewPipeline("review-pipeline", reviews);
+    if (window.ICDEV™ && ICDEV™.proposals) {
+        ICDEV™.proposals.renderReviewPipeline("review-pipeline", reviews);
     }
 
     // Assignment matrix
-    if (window.ICDEV && ICDEV.proposals) {
-        ICDEV.proposals.loadAssignmentMatrix("assignment-matrix", "{{ opp.id }}");
+    if (window.ICDEV™ && ICDEV™.proposals) {
+        ICDEV™.proposals.loadAssignmentMatrix("assignment-matrix", "{{ opp.id }}");
     }
 
     // Timeline
-    if (window.ICDEV && ICDEV.proposals) {
-        ICDEV.proposals.loadTimeline("timeline-gantt", "{{ opp.id }}", "{{ opp.due_date }}");
+    if (window.ICDEV™ && ICDEV™.proposals) {
+        ICDEV™.proposals.loadTimeline("timeline-gantt", "{{ opp.id }}", "{{ opp.due_date }}");
     }
 
     // Auto-refresh stats every 30s
-    if (window.ICDEV && ICDEV.proposals) {
-        ICDEV.proposals.startAutoRefresh("{{ opp.id }}", 30000);
+    if (window.ICDEV™ && ICDEV™.proposals) {
+        ICDEV™.proposals.startAutoRefresh("{{ opp.id }}", 30000);
     }
 
     // Load drafts when AI Drafts tab clicked
@@ -1143,7 +1143,7 @@ function submitQuestion(e, oppId) {
         body: JSON.stringify(data)
     }).then(function(r) { return r.json(); }).then(function(res) {
         if (res.error) { alert(res.error); } else {
-            ICDEV.proposals.closeModal("add-question-modal");
+            ICDEV™.proposals.closeModal("add-question-modal");
             location.reload();
         }
     });
@@ -1152,7 +1152,7 @@ function submitQuestion(e, oppId) {
 
 function openResponseModal(qId) {
     document.getElementById("response-question-id").value = qId;
-    ICDEV.proposals.openModal("record-response-modal");
+    ICDEV™.proposals.openModal("record-response-modal");
 }
 
 function submitResponse(e) {
@@ -1172,7 +1172,7 @@ function submitResponse(e) {
         body: JSON.stringify(data)
     }).then(function(r) { return r.json(); }).then(function(res) {
         if (res.error) { alert(res.error); } else {
-            ICDEV.proposals.closeModal("record-response-modal");
+            ICDEV™.proposals.closeModal("record-response-modal");
             location.reload();
         }
     });
@@ -1201,7 +1201,7 @@ function submitAmendment(e, oppId, sourceType) {
         if (res.error || res.status === "error") {
             alert(res.error || res.message || "Upload failed");
         } else {
-            ICDEV.proposals.closeModal(modalId);
+            ICDEV™.proposals.closeModal(modalId);
             location.reload();
         }
     });

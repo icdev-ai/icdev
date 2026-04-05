@@ -5,7 +5,7 @@
     "classification": "CUI // SP-CTI",
     "version": "1.0",
     "last_updated": "2026-02-18",
-    "description": "Modular Open Systems Approach (MOSA) requirements catalog covering 6 families: modular architecture design, open standards adoption, open interfaces, data rights and licensing, competitive sourcing, and continuous assessment. MOSA is mandated by 10 U.S.C. Section 4401 for major defense acquisition programs to ensure systems are designed with modular, open architectures that promote competition, innovation, and rapid technology insertion. Each requirement maps to NIST 800-53 Rev 5 controls via crosswalk, enabling integration with the ICDEV dual-hub compliance model (ADR D111)."
+    "description": "Modular Open Systems Approach (MOSA) requirements catalog covering 6 families: modular architecture design, open standards adoption, open interfaces, data rights and licensing, competitive sourcing, and continuous assessment. MOSA is mandated by 10 U.S.C. Section 4401 for major defense acquisition programs to ensure systems are designed with modular, open architectures that promote competition, innovation, and rapid technology insertion. Each requirement maps to NIST 800-53 Rev 5 controls via crosswalk, enabling integration with the ICDEV™ dual-hub compliance model (ADR D111)."
   },
   "families": [
     {

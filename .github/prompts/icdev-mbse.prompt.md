@@ -8,7 +8,7 @@ tools:
 
 # icdev-mbse
 
-Integrates MBSE into the ICDEV SDLC workflow:
+Integrates MBSE into the ICDEV™ SDLC workflow:
 1. **Import SysML models** from Cameo Systems Modeler (XMI format)
 2. **Import requirements** from IBM DOORS NG (ReqIF format)
 3. **Build digital thread** — end-to-end traceability from requirements to NIST controls

@@ -1,6 +1,6 @@
 // CUI // SP-CTI
 // E2E Test: Monitoring Page
-// Verifies the ICDEV dashboard monitoring page loads with status icons and health indicators.
+// Verifies the ICDEV™ dashboard monitoring page loads with status icons and health indicators.
 
 import { test, expect } from '@playwright/test';
 

@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Seed the ICDEV Playground database with sample data."""
-
-import sqlite3
+"""Seed the ICDEV™ Playground database with sample data."""
+from tools.db.storage import get_connection
 
 
 def seed_playground_db(db_path):
-    conn = sqlite3.connect(db_path)
+    conn = get_connection(db_path=str(db_path))
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS projects (
             id TEXT PRIMARY KEY,
@@ -80,8 +79,7 @@ def seed_playground_db(db_path):
     ]
     for p in projects:
         conn.execute(
-            "INSERT OR IGNORE INTO projects (id, name, status, compliance_score, classification, impact_level) VALUES (?, ?, ?, ?, ?, ?)",  # noqa: E501
-            p,
+            "INSERT OR IGNORE INTO projects (id, name, status, compliance_score, classification, impact_level) VALUES (?, ?, ?, ?, ?, ?)", p
         )
 
     # 20 NIST controls for proj-demo-001
@@ -109,7 +107,7 @@ def seed_playground_db(db_path):
     ]
     for i, (cid, title, status, impl) in enumerate(nist_controls):
         conn.execute(
-            "INSERT OR IGNORE INTO nist_controls (id, control_id, project_id, title, status, implementation_status) VALUES (?, ?, ?, ?, ?, ?)",  # noqa: E501
+            "INSERT OR IGNORE INTO nist_controls (id, control_id, project_id, title, status, implementation_status) VALUES (?, ?, ?, ?, ?, ?)",
             (f"ctrl-demo-{i:03d}", cid, "proj-demo-001", title, status, impl),
         )
 
@@ -133,7 +131,7 @@ def seed_playground_db(db_path):
     ]
     for src, fw, tgt, st in crosswalk:
         conn.execute(
-            "INSERT INTO crosswalk_mappings (source_control, target_framework, target_requirement, status) VALUES (?, ?, ?, ?)",  # noqa: E501
+            "INSERT INTO crosswalk_mappings (source_control, target_framework, target_requirement, status) VALUES (?, ?, ?, ?)",
             (src, fw, tgt, st),
         )
 
@@ -173,7 +171,7 @@ def seed_playground_db(db_path):
     ]
     for family, total, sat, partial, not_sat, score in fedramp_families:
         conn.execute(
-            "INSERT INTO fedramp_families (family, total, satisfied, partial, not_satisfied, score) VALUES (?, ?, ?, ?, ?, ?)",  # noqa: E501
+            "INSERT INTO fedramp_families (family, total, satisfied, partial, not_satisfied, score) VALUES (?, ?, ?, ?, ?, ?)",
             (family, total, sat, partial, not_sat, score),
         )
 
@@ -186,44 +184,18 @@ def seed_playground_db(db_path):
     ]
     for s in stigs:
         conn.execute(
-            "INSERT OR IGNORE INTO stig_findings (id, project_id, rule_id, severity, status, title) VALUES (?, ?, ?, ?, ?, ?)",  # noqa: E501
-            s,
+            "INSERT OR IGNORE INTO stig_findings (id, project_id, rule_id, severity, status, title) VALUES (?, ?, ?, ?, ?, ?)", s
         )
 
     # POAM items
     poams = [
-        (
-            "poam-d001",
-            "proj-demo-001",
-            "Continuous monitoring not fully implemented",
-            "open",
-            "high",
-            "Deploy monitoring agents",
-            "2026-04-15",
-        ),
-        (
-            "poam-d002",
-            "proj-demo-001",
-            "Incident response plan incomplete",
-            "open",
-            "medium",
-            "Complete IR tabletop exercise",
-            "2026-05-01",
-        ),
-        (
-            "poam-d003",
-            "proj-demo-001",
-            "Transmission confidentiality partial",
-            "open",
-            "medium",
-            "Implement TLS 1.3 everywhere",
-            "2026-03-30",
-        ),
+        ("poam-d001", "proj-demo-001", "Continuous monitoring not fully implemented", "open", "high", "Deploy monitoring agents", "2026-04-15"),
+        ("poam-d002", "proj-demo-001", "Incident response plan incomplete", "open", "medium", "Complete IR tabletop exercise", "2026-05-01"),
+        ("poam-d003", "proj-demo-001", "Transmission confidentiality partial", "open", "medium", "Implement TLS 1.3 everywhere", "2026-03-30"),
     ]
     for pm in poams:
         conn.execute(
-            "INSERT OR IGNORE INTO poam_items (id, project_id, finding, status, severity, milestone, due_date) VALUES (?, ?, ?, ?, ?, ?, ?)",  # noqa: E501
-            pm,
+            "INSERT OR IGNORE INTO poam_items (id, project_id, finding, status, severity, milestone, due_date) VALUES (?, ?, ?, ?, ?, ?, ?)", pm
         )
 
     conn.commit()
@@ -232,7 +204,6 @@ def seed_playground_db(db_path):
 
 if __name__ == "__main__":
     import sys
-
     path = sys.argv[1] if len(sys.argv) > 1 else "playground.db"
     seed_playground_db(path)
     print(f"Seeded playground DB at {path}")

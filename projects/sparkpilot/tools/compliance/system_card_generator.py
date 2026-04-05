@@ -3,14 +3,14 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """System Card Generator — AI system-level documentation.
 
 Generates system cards per OMB M-26-04. System cards are broader than
 model cards — they cover the entire AI system including all models,
 tools, agents, data flows, human oversight, and compliance status.
 
-ADR D309: System cards are ICDEV-specific (covers full agentic system).
+ADR D309: System cards are ICDEV™-specific (covers full agentic system).
 
 Usage:
     python tools/compliance/system_card_generator.py --project-id proj-123 --json
@@ -117,7 +117,7 @@ def generate_system_card(
             "system_overview": {
                 "name": project.get("name", project_id),
                 "project_id": project_id,
-                "purpose": system_purpose or "ICDEV-generated application with AI-assisted development, compliance automation, and continuous monitoring.",
+                "purpose": system_purpose or "ICDEV™-generated application with AI-assisted development, compliance automation, and continuous monitoring.",
                 "system_type": "Agentic AI Development Platform",
                 "deployment_status": project.get("status", "active"),
             },
@@ -151,7 +151,7 @@ def generate_system_card(
                 ],
                 "processing": [
                     "LLM inference via cloud providers (Bedrock, Azure, GCP, OCI, IBM)",
-                    "Deterministic tool execution (GOTCHA framework)",
+                    "Deterministic tool execution (FORGE framework)",
                     "Compliance assessment via crosswalk engine",
                 ],
                 "outputs": [

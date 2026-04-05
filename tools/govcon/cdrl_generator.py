@@ -1,11 +1,11 @@
 # CUI // SP-CTI
-# ICDEV GovProposal — CDRL Generator (Phase 60, D-CPMP-5)
-# Dispatches CDRL auto-generation to existing ICDEV tools.
+# ICDEV™ GovProposal — CDRL Generator (Phase 60, D-CPMP-5)
+# Dispatches CDRL auto-generation to existing ICDEV™ tools.
 
 """
-CDRL Generator — Maps CDRL types to ICDEV tools for automated deliverable generation.
+CDRL Generator — Maps CDRL types to ICDEV™ tools for automated deliverable generation.
 
-Dispatches generation requests to existing ICDEV platform tools:
+Dispatches generation requests to existing ICDEV™ platform tools:
     ssp → ssp_generator.py
     sbom → sbom_generator.py
     poam → poam_generator.py
@@ -27,10 +27,10 @@ import argparse
 import hashlib
 import json
 import os
-import sqlite3
 import subprocess
 import sys
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -71,8 +71,7 @@ TOOL_MAPPING = _CFG.get(
 
 
 def _get_db():
-    conn = sqlite3.connect(str(_DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
@@ -89,7 +88,7 @@ def _uuid():
 def _audit(conn, action, details="", actor="cdrl_generator"):
     try:
         conn.execute(
-            "INSERT INTO audit_trail (id, timestamp, event_type, actor, action, details, session_id) "
+            "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (_uuid(), _now(), "cpmp.cdrl_generator", actor, action, details, "cpmp"),
         )
@@ -107,7 +106,7 @@ def _file_hash(filepath):
 
 
 def generate_cdrl(deliverable_id, project_id=None):
-    """Generate a CDRL by dispatching to the appropriate ICDEV tool.
+    """Generate a CDRL by dispatching to the appropriate ICDEV™ tool.
 
     Steps:
     1. Look up deliverable and its cdrl_type / deliverable_type
@@ -300,7 +299,7 @@ def get_tool_mapping():
 
 
 def main():
-    parser = argparse.ArgumentParser(description="ICDEV GovProposal CDRL Generator (Phase 60)")
+    parser = argparse.ArgumentParser(description="ICDEV™ GovProposal CDRL Generator (Phase 60)")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--generate", action="store_true", help="Generate CDRL for a deliverable")
     group.add_argument("--generate-due", action="store_true", help="Generate all due CDRLs")

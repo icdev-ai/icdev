@@ -57,7 +57,7 @@ def _audit(conn, action, details="", actor="govcon_api"):
     """Append-only audit trail (NIST AU-2)."""
     try:
         conn.execute(
-            "INSERT INTO audit_trail (id, timestamp, event_type, actor, action, details, session_id) "
+            "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (_uuid(), _now(), "govcon.api", actor, action, details, "govcon"),
         )
@@ -268,7 +268,7 @@ def list_patterns():
 def map_capabilities(opp_id):
     """POST /api/govcon/opportunities/<id>/map-capabilities
 
-    Map ICDEV capabilities against extracted requirements for this opportunity.
+    Map ICDEV™ capabilities against extracted requirements for this opportunity.
     Computes coverage scores and L/M/N grades.
     """
     try:

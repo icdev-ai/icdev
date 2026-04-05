@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-# Pulse Article Templates — GOTCHA Args Layer
+# Pulse Article Templates — FORGE Args Layer
 # Defines article types, structures, SEO patterns, and CTA blocks.
 # Referenced by tools/pulse/engine/drafter.py for template-aware drafting.
 
@@ -7,8 +7,8 @@ templates:
   challenge_solution:
     name: "Challenge-Solution"
     description: >
-      Research challenges that ICDEV can address, write about those challenges,
-      then show the audience how ICDEV handles or resolves them.
+      Research challenges that ICDEV™ can address, write about those challenges,
+      then show the audience how ICDEV™ handles or resolves them.
     word_count_min: 5000
     word_count_max: 6000
     tone: "educational-professional"
@@ -19,7 +19,7 @@ templates:
         word_target: 200
         instructions: >
           Dense summary of key takeaways. What challenges exist, why they
-          matter, and how ICDEV addresses them. No fluff.
+          matter, and how ICDEV™ addresses them. No fluff.
           Do NOT include [HERO_IMAGE] — WordPress theme renders the featured image automatically.
         required: true
 
@@ -42,12 +42,12 @@ templates:
         repeatable: true
 
       - id: solutions
-        heading: "How ICDEV Addresses These Challenges"
+        heading: "How ICDEV™ Addresses These Challenges"
         word_target: 1500
         instructions: >
           For each challenge above, explain how modern teams solve it and
-          how ICDEV's open-source toolchain provides a concrete solution.
-          Reference specific ICDEV capabilities (compliance automation,
+          how ICDEV™'s open-source toolchain provides a concrete solution.
+          Reference specific ICDEV™ capabilities (compliance automation,
           agentic AI, DevSecOps, zero trust, SBOM, cATO). Keep it natural
           — educate, don't pitch. Include [VIDEO_EMBED:topic] where a
           walkthrough would add value.
@@ -73,7 +73,7 @@ templates:
         heading: "Get Started"
         word_target: 150
         instructions: >
-          Call to action. Link to ICDEV GitHub repository.
+          Call to action. Link to ICDEV™ GitHub repository.
           Invite readers to explore and contribute.
         required: true
 
@@ -81,8 +81,8 @@ templates:
       title_format: "{primary_keyword}: {pain_point} — How to Solve It"
       meta_description_format: >
         Learn how to overcome {pain_point} with practical solutions.
-        Discover how ICDEV's open-source platform automates {capability}.
-      keyword_strategy: "pain-point + solution + ICDEV capability"
+        Discover how ICDEV™'s open-source platform automates {capability}.
+      keyword_strategy: "pain-point + solution + ICDEV™ capability"
       schema_type: "Article"
       og_type: "article"
       focus_keyphrase: true
@@ -101,7 +101,7 @@ templates:
         - "Security & Zero Trust" for ZTA, threat modeling, SAST topics
         - "AI & Automation" for agentic AI, LLM security, automation topics
         - "Federal IT" for government IT modernization, acquisition topics
-        - "Agentic Engineering" for agentic coding, autonomous development, systems that build systems, GOTCHA, ATLAS topics
+        - "Agentic Engineering" for agentic coding, autonomous development, systems that build systems, FORGE, ANVIL topics
       secondary_rules: >
         Assign 1-2 secondary categories if the article spans multiple domains.
         Never assign more than 3 categories total.
@@ -123,12 +123,15 @@ templates:
           keywords: ["federal", "government", "DoD", "acquisition", "IL4", "GovCloud", "modernization"]
         - slug: agentic-engineering
           name: "Agentic Engineering"
-          keywords: ["agentic coding", "autonomous development", "systems that build systems", "GOTCHA", "ATLAS", "AI engineering", "self-assembling software", "code generation", "TDD", "architecture"]
+          keywords: ["agentic coding", "autonomous development", "systems that build systems", "FORGE", "ANVIL", "AI engineering", "self-assembling software", "code generation", "TDD", "architecture"]
+        - slug: market-intelligence
+          name: "Market Intelligence"
+          keywords: ["trading", "crypto", "equities", "market analysis", "algorithmic trading", "portfolio", "signals", "alpha", "bull", "bear", "stocks", "forex", "sentiment"]
 
   feature_spotlight:
     name: "Feature Spotlight"
     description: >
-      Write about ICDEV features, functionalities, and capabilities in an
+      Write about ICDEV™ features, functionalities, and capabilities in an
       educational yet professional format.
     word_count_min: 5000
     word_count_max: 6000
@@ -166,7 +169,7 @@ templates:
         heading: "How It Works"
         word_target: 1500
         instructions: >
-          Detailed walkthrough of the ICDEV feature. Include architecture
+          Detailed walkthrough of the ICDEV™ feature. Include architecture
           overview, key capabilities, configuration options, and
           integration points. Use code snippets, CLI examples, or
           configuration excerpts where they add clarity.
@@ -209,14 +212,14 @@ templates:
         heading: "Try It Today"
         word_target: 150
         instructions: >
-          Call to action. Link to ICDEV GitHub repository.
+          Call to action. Link to ICDEV™ GitHub repository.
           Invite readers to explore and contribute.
         required: true
 
     seo:
       title_format: "{feature_name}: {value_proposition}"
       meta_description_format: >
-        Discover how ICDEV's {feature_name} helps teams {benefit}.
+        Discover how ICDEV™'s {feature_name} helps teams {benefit}.
         Learn setup, best practices, and real-world use cases.
       keyword_strategy: "feature name + capability + compliance framework"
       schema_type: "TechArticle"
@@ -260,13 +263,91 @@ templates:
         - slug: engineering
           name: "Engineering"
           keywords: ["architecture", "code quality", "testing", "TDD", "MBSE", "digital thread"]
+        - slug: market-intelligence
+          name: "Market Intelligence"
+          keywords: ["trading", "crypto", "equities", "market analysis", "algorithmic trading", "portfolio", "signals", "alpha", "bull", "bear", "stocks", "forex", "sentiment"]
+
+  market_analysis:
+    name: "Market Analysis Report"
+    description: >
+      AI-generated trading analysis combining fundamental, technical,
+      sentiment, and news analysis with multi-agent bull/bear debate synthesis.
+      Published by AlphaDesk trading intelligence platform.
+    word_count_min: 2000
+    word_count_max: 3000
+    tone: "analytical-professional"
+    youtube_videos: 0
+    sections:
+      - id: executive_summary
+        heading: "Executive Summary"
+        word_target: 200
+        instructions: >
+          Dense summary: ticker, direction, conviction level, key catalysts.
+        required: true
+      - id: market_context
+        heading: "Market Context"
+        word_target: 300
+        instructions: >
+          Current market conditions, sector performance, macro backdrop.
+        required: true
+      - id: analysis_findings
+        heading: "Analysis Findings"
+        word_target: 600
+        instructions: >
+          Fundamental, technical, sentiment, and news analysis results.
+          Include key metrics (P/E, RSI, sentiment score).
+        required: true
+        repeatable: true
+      - id: bull_bear_debate
+        heading: "Bull vs Bear Debate"
+        word_target: 400
+        instructions: >
+          Summarize the multi-agent debate: bull thesis, bear thesis,
+          key counterarguments, and consensus outcome.
+        required: true
+      - id: trade_recommendation
+        heading: "Trade Recommendation"
+        word_target: 200
+        instructions: >
+          Signal direction, entry price, stop loss, target, position sizing.
+        required: true
+      - id: risk_factors
+        heading: "Risk Factors"
+        word_target: 200
+        instructions: >
+          Key risks: earnings, macro events, sector rotation, liquidity.
+        required: true
+      - id: disclaimer
+        heading: "Disclaimer"
+        word_target: 100
+        instructions: >
+          Standard financial disclaimer: not investment advice, paper trading only,
+          past performance does not guarantee future results.
+        required: true
+    seo:
+      title_format: "{ticker} Analysis: {direction} Signal — AlphaDesk"
+      meta_description_format: >
+        Multi-agent AI analysis of {ticker}: fundamental, technical, sentiment
+        analysis with bull/bear debate. Signal: {direction}.
+      keyword_strategy: "ticker + analysis type + signal direction"
+      schema_type: "Article"
+      og_type: "article"
+    categories:
+      primary_rules: >
+        Always assign "Market Intelligence" as primary category.
+      secondary_rules: >
+        Optionally assign "AI & Automation" as secondary.
+      available:
+        - slug: market-intelligence
+          name: "Market Intelligence"
+          keywords: ["trading", "crypto", "equities", "market analysis", "algorithmic trading", "portfolio", "signals"]
 
 # Shared configuration
 defaults:
   github_url: "https://github.com/icdev-ai"
   site_url: "https://icdev.ai"
   site_domain: "icdev.ai"
-  author: "ICDEV Team"
+  author: "ICDEV™ Team"
   cta_links:
     github: "https://github.com/icdev-ai"
 
@@ -319,27 +400,90 @@ sam_bridge:
       - "required to\\b"
       - "contractor will\\b"
       - "vendor shall\\b"
+      - "will provide\\b"
+      - "will deliver\\b"
+      - "will maintain\\b"
+      - "is responsible for\\b"
     challenge_keywords:
+      # Security & compliance
       - "cybersecurity"
       - "compliance"
       - "authorization"
       - "zero trust"
-      - "DevSecOps"
-      - "continuous monitoring"
-      - "supply chain"
-      - "SBOM"
       - "FedRAMP"
       - "CMMC"
       - "ATO"
-      - "AI"
-      - "machine learning"
-      - "cloud migration"
-      - "modernization"
-      - "automation"
-      - "legacy system"
       - "accreditation"
       - "vulnerability"
       - "incident response"
+      - "STIG"
+      - "encryption"
+      - "FIPS"
+      - "PKI"
+      - "CAC"
+      - "penetration testing"
+      - "continuous monitoring"
+      - "supply chain"
+      - "SBOM"
+      - "post quantum"
+      - "cryptography"
+      # DevSecOps & engineering
+      - "DevSecOps"
+      - "DevOps"
+      - "CI/CD"
+      - "pipeline"
+      - "container"
+      - "kubernetes"
+      - "microservice"
+      - "agile"
+      - "software development"
+      - "software engineering"
+      - "code review"
+      - "testing"
+      # AI & data
+      - "artificial intelligence"
+      - "machine learning"
+      - "AI"
+      - "data analytics"
+      - "data integration"
+      - "data lake"
+      - "data warehouse"
+      - "ETL"
+      - "NLP"
+      - "deep learning"
+      # Cloud & infrastructure
+      - "cloud migration"
+      - "cloud"
+      - "AWS"
+      - "Azure"
+      - "GovCloud"
+      - "SaaS"
+      - "IaaS"
+      - "PaaS"
+      - "serverless"
+      - "infrastructure"
+      # Modernization & management
+      - "modernization"
+      - "automation"
+      - "legacy system"
+      - "digital transformation"
+      - "enterprise"
+      - "IT services"
+      - "information technology"
+      - "network"
+      - "system integration"
+      - "EHR"
+      - "health IT"
+      - "logistics"
+      - "surveillance"
+      - "intelligence"
+      - "command and control"
+      - "C2"
+      - "mission critical"
+      - "wayfinding"
+      - "geospatial"
+      - "spectrum"
+      - "airspace"
 
   # Domain classification → evergreen article angle
   domain_angles:
@@ -362,10 +506,10 @@ sam_bridge:
     naics_codes: []
     keywords: []
     agencies: []
-    notice_types: "o,p,r,s"
+    notice_types: "o,p,r,s,k"
 
-# Capability Catalog — injects ICDEV capability context into articles
-# D-PULSE-CAP-1: YAML files in context/capabilities/ (GOTCHA context layer)
+# Capability Catalog — injects ICDEV™ capability context into articles
+# D-PULSE-CAP-1: YAML files in context/capabilities/ (FORGE context layer)
 # D-PULSE-CAP-4: Deterministic keyword matching (zero LLM)
 capability_catalog:
   enabled: true

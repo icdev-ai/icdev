@@ -24,6 +24,7 @@ import sqlite3
 import urllib.error
 import urllib.parse
 import urllib.request
+from tools.db.storage import get_connection
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -51,10 +52,9 @@ DEFAULT_PATTERNS = [
 
 
 def _get_db(db_path: Path = None) -> sqlite3.Connection:
-    """Open a connection to the ICDEV database."""
+    """Open a connection to the ICDEV™ database."""
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -122,7 +122,7 @@ def _query_elk(index: str, query_str: str, time_range: str, elk_url: str = None,
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=30) as resp:  # nosec B310 -- URL scheme validated; internal/configured endpoints only
             result = json.loads(resp.read().decode("utf-8"))
             return {
                 "source": "elk",
@@ -180,7 +180,7 @@ def _query_splunk(
             headers["Authorization"] = f"Bearer {splunk_token}"
 
         req = urllib.request.Request(endpoint, data=data, headers=headers, method="POST")
-        with urllib.request.urlopen(req, timeout=30, context=ctx) as resp:
+        with urllib.request.urlopen(req, timeout=30, context=ctx) as resp:  # nosec B310 -- URL scheme validated; internal/configured endpoints only
             raw = resp.read().decode("utf-8")
             results = []
             for line in raw.strip().split("\n"):

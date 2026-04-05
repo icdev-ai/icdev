@@ -12,7 +12,6 @@ Pattern: tools/creative/creative_engine.py (daemon, CLI, YAML config).
 import argparse
 import json
 import os
-import sqlite3
 import sys
 import time
 import uuid
@@ -27,6 +26,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
+from tools.db.storage import get_connection  # noqa: E402
+
 DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db")))
 CONFIG_PATH = BASE_DIR / "args" / "filesync_config.yaml"
 
@@ -35,28 +36,26 @@ CONFIG_PATH = BASE_DIR / "args" / "filesync_config.yaml"
 # =========================================================================
 try:
     import yaml
-
     _HAS_YAML = True
 except ImportError:
     _HAS_YAML = False
 
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
-
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
 
-from tools.filesync.change_detector import (
+from tools.filesync.change_detector import (  # noqa: E402
     detect_changes_bidirectional,
     detect_changes_push,
     summarize_actions,
 )
-from tools.filesync.conflict_resolver import resolve_conflicts
-from tools.filesync.providers.local import LocalSyncProvider
-from tools.filesync.scanner import compute_file_hash, configure_hash, scan_directory
-from tools.filesync.transfer import execute_actions
-from tools.filesync.versioner import FileVersioner
+from tools.filesync.conflict_resolver import resolve_conflicts  # noqa: E402
+from tools.filesync.providers.local import LocalSyncProvider  # noqa: E402
+from tools.filesync.scanner import compute_file_hash, configure_hash, scan_directory  # noqa: E402
+from tools.filesync.transfer import execute_actions  # noqa: E402
+from tools.filesync.versioner import FileVersioner  # noqa: E402
 
 
 # =========================================================================
@@ -80,8 +79,7 @@ def _gen_id(prefix="fsync"):
 
 def _get_db(db_path=None):
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -113,14 +111,12 @@ def _get_provider(provider_name: str, config: dict = None):
     elif provider_name == "sftp":
         try:
             from tools.filesync.providers.sftp import SFTPSyncProvider
-
             return SFTPSyncProvider(config or {})
         except ImportError:
             raise ValueError("SFTP provider requires paramiko or ssh command")
     elif provider_name in ("s3", "azure", "gcs"):
         try:
             from tools.filesync.providers.cloud import CloudSyncProvider
-
             return CloudSyncProvider(provider_name, config or {})
         except ImportError:
             raise ValueError(f"Cloud provider '{provider_name}' not available")
@@ -141,34 +137,16 @@ def _in_quiet_hours(config):
     return current_time >= start_str or current_time < end_str
 
 
-def _log_sync_event(
-    conn,
-    job_id,
-    action,
-    relative_path=None,
-    source_hash=None,
-    dest_hash=None,
-    bytes_transferred=0,
-    duration_ms=0,
-    resolution=None,
-    error_detail=None,
-):
+def _log_sync_event(conn, job_id, action, relative_path=None,
+                    source_hash=None, dest_hash=None, bytes_transferred=0,
+                    duration_ms=0, resolution=None, error_detail=None):
     """Insert into sync_log (append-only)."""
     conn.execute(
         """INSERT INTO sync_log (job_id, action, relative_path, source_hash,
            dest_hash, bytes_transferred, duration_ms, resolution, error_detail)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (
-            job_id,
-            action,
-            relative_path,
-            source_hash,
-            dest_hash,
-            bytes_transferred,
-            duration_ms,
-            resolution,
-            error_detail,
-        ),
+        (job_id, action, relative_path, source_hash, dest_hash,
+         bytes_transferred, duration_ms, resolution, error_detail),
     )
 
 
@@ -201,7 +179,8 @@ def _save_state(conn, job_id, manifest, side="source"):
                   file_size=excluded.file_size, mtime_epoch=excluded.mtime_epoch,
                   last_synced_at=excluded.last_synced_at,
                   last_synced_hash=excluded.last_synced_hash""",
-            (job_id, rel_path, info["hash"], info["size"], info["mtime_epoch"], side, now, info["hash"]),
+            (job_id, rel_path, info["hash"], info["size"],
+             info["mtime_epoch"], side, now, info["hash"]),
         )
 
 
@@ -259,38 +238,26 @@ def check_fim(job_id: str, db_path=None) -> Dict:
     for rel_path, state in cached.items():
         data = src_provider.read_file(job["source_path"], rel_path)
         if data is None:
-            mismatches.append({"path": rel_path, "issue": "file_missing", "expected_hash": state["hash"]})
+            mismatches.append({"path": rel_path, "issue": "file_missing",
+                               "expected_hash": state["hash"]})
             continue
         current_hash = compute_file_hash(data)
         if current_hash != state["hash"]:
-            mismatches.append(
-                {
-                    "path": rel_path,
-                    "issue": "hash_mismatch",
-                    "expected_hash": state["hash"],
-                    "current_hash": current_hash,
-                }
-            )
+            mismatches.append({"path": rel_path, "issue": "hash_mismatch",
+                               "expected_hash": state["hash"], "current_hash": current_hash})
 
     # Log to audit trail
     if mismatches and fim_cfg.get("alert_on_mismatch", True):
-        _audit(
-            "filesync.fim_mismatch",
-            f"FIM detected {len(mismatches)} unauthorized change(s) in job '{job['name']}'",
-            {"job_id": job_id, "mismatches": mismatches[:10]},
-        )
+        _audit("filesync.fim_mismatch",
+               f"FIM detected {len(mismatches)} unauthorized change(s) in job '{job['name']}'",
+               {"job_id": job_id, "mismatches": mismatches[:10]})
         conn = _get_db(db_path)
         try:
             for m in mismatches:
-                _log_sync_event(
-                    conn,
-                    job_id,
-                    "fim_alert",
-                    m["path"],
-                    source_hash=m.get("expected_hash"),
-                    dest_hash=m.get("current_hash"),
-                    error_detail=m["issue"],
-                )
+                _log_sync_event(conn, job_id, "fim_alert", m["path"],
+                                source_hash=m.get("expected_hash"),
+                                dest_hash=m.get("current_hash"),
+                                error_detail=m["issue"])
             conn.commit()
         finally:
             conn.close()
@@ -307,22 +274,13 @@ def check_fim(job_id: str, db_path=None) -> Dict:
 # =========================================================================
 # JOB MANAGEMENT
 # =========================================================================
-def create_job(
-    name: str,
-    source: str,
-    dest: str,
-    source_provider: str = "local",
-    dest_provider: str = "local",
-    mode: str = "push",
-    conflict_strategy: str = "last_write_wins",
-    schedule_interval: int = 0,
-    bandwidth_limit: int = 0,
-    max_workers: int = 4,
-    delete_orphans: bool = False,
-    project_id: str = None,
-    created_by: str = None,
-    db_path=None,
-) -> Dict:
+def create_job(name: str, source: str, dest: str,
+               source_provider: str = "local", dest_provider: str = "local",
+               mode: str = "push", conflict_strategy: str = "last_write_wins",
+               schedule_interval: int = 0, bandwidth_limit: int = 0,
+               max_workers: int = 4, delete_orphans: bool = False,
+               project_id: str = None, created_by: str = None,
+               db_path=None) -> Dict:
     """Create a new sync job."""
     config = _load_config()
     defaults = config.get("defaults", {})
@@ -336,34 +294,21 @@ def create_job(
                schedule_interval_seconds, bandwidth_limit_kbps, max_workers,
                project_id, created_by, created_at, updated_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                job_id,
-                name,
-                source,
-                source_provider,
-                dest,
-                dest_provider,
-                mode or defaults.get("sync_mode", "push"),
-                conflict_strategy or defaults.get("conflict_strategy", "last_write_wins"),
-                1 if delete_orphans else 0,
-                schedule_interval or defaults.get("schedule_interval_seconds", 0),
-                bandwidth_limit or defaults.get("bandwidth_limit_kbps", 0),
-                max_workers or defaults.get("max_workers", 4),
-                project_id,
-                created_by,
-                _now(),
-                _now(),
-            ),
+            (job_id, name, source, source_provider, dest, dest_provider,
+             mode or defaults.get("sync_mode", "push"),
+             conflict_strategy or defaults.get("conflict_strategy", "last_write_wins"),
+             1 if delete_orphans else 0,
+             schedule_interval or defaults.get("schedule_interval_seconds", 0),
+             bandwidth_limit or defaults.get("bandwidth_limit_kbps", 0),
+             max_workers or defaults.get("max_workers", 4),
+             project_id, created_by, _now(), _now()),
         )
         conn.commit()
     finally:
         conn.close()
 
-    _audit(
-        "filesync.job_created",
-        f"Created sync job '{name}'",
-        {"job_id": job_id, "source": source, "dest": dest, "mode": mode},
-    )
+    _audit("filesync.job_created", f"Created sync job '{name}'",
+           {"job_id": job_id, "source": source, "dest": dest, "mode": mode})
 
     return {"status": "created", "job_id": job_id, "name": name}
 
@@ -372,7 +317,9 @@ def list_jobs(db_path=None) -> Dict:
     """List all sync jobs."""
     conn = _get_db(db_path)
     try:
-        rows = conn.execute("SELECT * FROM sync_jobs ORDER BY created_at DESC").fetchall()
+        rows = conn.execute(
+            "SELECT * FROM sync_jobs ORDER BY created_at DESC"
+        ).fetchall()
         jobs = [dict(r) for r in rows]
     finally:
         conn.close()
@@ -393,7 +340,7 @@ def get_job_status(job_id: str, db_path=None) -> Dict:
             "SELECT * FROM sync_log WHERE job_id=? ORDER BY created_at DESC LIMIT 20",
             (job_id,),
         ).fetchall()
-        job["recent_log"] = [dict(l) for l in logs]
+        job["recent_log"] = [dict(row) for row in logs]
 
         # Pending conflicts
         conflicts = conn.execute(
@@ -458,16 +405,15 @@ def run_sync(job_id: str, dry_run: bool = False, db_path=None) -> Dict:
     if fim_cfg.get("enabled", False):
         fim_result = check_fim(job_id, db_path)
         if fim_result.get("mismatches", 0) > 0:
-            _audit(
-                "filesync.fim_pre_sync_alert",
-                f"FIM: {fim_result['mismatches']} changes detected before sync",
-                {"job_id": job_id},
-            )
+            _audit("filesync.fim_pre_sync_alert",
+                   f"FIM: {fim_result['mismatches']} changes detected before sync",
+                   {"job_id": job_id})
 
     # Update status
     conn = _get_db(db_path)
     try:
-        conn.execute("UPDATE sync_jobs SET status='scanning', updated_at=? WHERE id=?", (_now(), job_id))
+        conn.execute("UPDATE sync_jobs SET status='scanning', updated_at=? WHERE id=?",
+                      (_now(), job_id))
         conn.commit()
         _log_sync_event(conn, job_id, "scan_started")
         conn.commit()
@@ -475,7 +421,8 @@ def run_sync(job_id: str, dry_run: bool = False, db_path=None) -> Dict:
         conn.close()
 
     t0 = time.monotonic()
-    _audit("filesync.sync_started", f"Sync started for '{job['name']}'", {"job_id": job_id, "dry_run": dry_run})
+    _audit("filesync.sync_started", f"Sync started for '{job['name']}'",
+           {"job_id": job_id, "dry_run": dry_run})
 
     try:
         # Get providers
@@ -494,23 +441,22 @@ def run_sync(job_id: str, dry_run: bool = False, db_path=None) -> Dict:
         ignore_file = job.get("ignore_file", ".syncignore")
 
         # Scan source
-        src_manifest = scan_directory(
-            src_provider,
-            job["source_path"],
-            ignore_file=ignore_file,
-            cached_state=src_cached,
-            fast_skip_mtime=fast_skip,
-        )
+        src_manifest = scan_directory(src_provider, job["source_path"],
+                                       ignore_file=ignore_file,
+                                       cached_state=src_cached,
+                                       fast_skip_mtime=fast_skip)
 
         # Scan destination
-        dst_manifest = scan_directory(
-            dst_provider, job["dest_path"], ignore_file=ignore_file, cached_state=dst_cached, fast_skip_mtime=fast_skip
-        )
+        dst_manifest = scan_directory(dst_provider, job["dest_path"],
+                                       ignore_file=ignore_file,
+                                       cached_state=dst_cached,
+                                       fast_skip_mtime=fast_skip)
 
         conn = _get_db(db_path)
         try:
             _log_sync_event(conn, job_id, "scan_completed")
-            conn.execute("UPDATE sync_jobs SET status='syncing', updated_at=? WHERE id=?", (_now(), job_id))
+            conn.execute("UPDATE sync_jobs SET status='syncing', updated_at=? WHERE id=?",
+                          (_now(), job_id))
             conn.commit()
         finally:
             conn.close()
@@ -520,7 +466,9 @@ def run_sync(job_id: str, dry_run: bool = False, db_path=None) -> Dict:
         mode = job["sync_mode"]
 
         if mode == "bidirectional":
-            actions = detect_changes_bidirectional(src_manifest, dst_manifest, src_cached, dst_cached)
+            actions = detect_changes_bidirectional(
+                src_manifest, dst_manifest, src_cached, dst_cached
+            )
         elif mode == "pull":
             actions = detect_changes_push(dst_manifest, src_manifest, delete_orphans)
             # Swap direction for pull
@@ -537,7 +485,8 @@ def run_sync(job_id: str, dry_run: bool = False, db_path=None) -> Dict:
         if dry_run:
             conn = _get_db(db_path)
             try:
-                conn.execute("UPDATE sync_jobs SET status='idle', updated_at=? WHERE id=?", (_now(), job_id))
+                conn.execute("UPDATE sync_jobs SET status='idle', updated_at=? WHERE id=?",
+                              (_now(), job_id))
                 conn.commit()
             finally:
                 conn.close()
@@ -558,13 +507,11 @@ def run_sync(job_id: str, dry_run: bool = False, db_path=None) -> Dict:
                 max_versions=max_versions,
                 versions_dir_name=versioning_cfg.get("versions_dir", ".versions"),
             )
-            update_actions = [
-                a
-                for a in actions
-                if a["action"] == "update" and a.get("direction", "source_to_dest") == "source_to_dest"
-            ]
+            update_actions = [a for a in actions if a["action"] == "update"
+                              and a.get("direction", "source_to_dest") == "source_to_dest"]
             for act in update_actions:
-                versioner.snapshot_before_overwrite(job_id, job["dest_path"], act["relative_path"])
+                versioner.snapshot_before_overwrite(
+                    job_id, job["dest_path"], act["relative_path"])
 
         # Execute transfers
         verify = config.get("transfer", {}).get("verify_after_transfer", True)
@@ -584,20 +531,15 @@ def run_sync(job_id: str, dry_run: bool = False, db_path=None) -> Dict:
             _progress_count[0] += 1
             if progress_enabled and _progress_count[0] % progress_interval == 0:
                 pct = int((_progress_count[0] / max(_total_actions, 1)) * 100)
-                _audit(
-                    "filesync.progress",
-                    f"Sync progress: {_progress_count[0]}/{_total_actions} files ({pct}%)",
-                    {"job_id": job_id, "completed": _progress_count[0], "total": _total_actions, "pct": pct},
-                )
+                _audit("filesync.progress",
+                       f"Sync progress: {_progress_count[0]}/{_total_actions} files ({pct}%)",
+                       {"job_id": job_id, "completed": _progress_count[0],
+                        "total": _total_actions, "pct": pct})
 
         results = execute_actions(
-            actions,
-            src_provider,
-            job["source_path"],
-            dst_provider,
-            job["dest_path"],
-            max_workers=workers,
-            verify=verify,
+            actions, src_provider, job["source_path"],
+            dst_provider, job["dest_path"],
+            max_workers=workers, verify=verify,
             bandwidth_limit_kbps=bw_limit,
             progress_callback=_on_progress if progress_enabled else None,
             compression=compression,
@@ -615,15 +557,10 @@ def run_sync(job_id: str, dry_run: bool = False, db_path=None) -> Dict:
         conn = _get_db(db_path)
         try:
             for r in results:
-                _log_sync_event(
-                    conn,
-                    job_id,
-                    r.action,
-                    r.relative_path,
-                    bytes_transferred=r.bytes_transferred,
-                    duration_ms=r.duration_ms,
-                    error_detail=r.error if not r.success else None,
-                )
+                _log_sync_event(conn, job_id, r.action, r.relative_path,
+                                bytes_transferred=r.bytes_transferred,
+                                duration_ms=r.duration_ms,
+                                error_detail=r.error if not r.success else None)
 
             # Save updated state
             _save_state(conn, job_id, src_manifest, "source")
@@ -635,39 +572,22 @@ def run_sync(job_id: str, dry_run: bool = False, db_path=None) -> Dict:
                 """UPDATE sync_jobs SET status=?, last_run_at=?, files_synced=?,
                    files_skipped=?, bytes_transferred=?, error_message=?, updated_at=?
                    WHERE id=?""",
-                (
-                    status,
-                    _now(),
-                    synced,
-                    skipped,
-                    total_bytes,
-                    f"{errored} errors" if errored else None,
-                    _now(),
-                    job_id,
-                ),
+                (status, _now(), synced, skipped, total_bytes,
+                 f"{errored} errors" if errored else None, _now(), job_id),
             )
             if status == "completed":
                 conn.execute("UPDATE sync_jobs SET last_success_at=? WHERE id=?", (_now(), job_id))
 
-            _log_sync_event(
-                conn, job_id, "sync_completed" if status == "completed" else "sync_failed", duration_ms=elapsed_ms
-            )
+            _log_sync_event(conn, job_id,
+                            "sync_completed" if status == "completed" else "sync_failed",
+                            duration_ms=elapsed_ms)
             conn.commit()
         finally:
             conn.close()
 
-        _audit(
-            "filesync.sync_completed",
-            f"Sync completed for '{job['name']}'",
-            {
-                "job_id": job_id,
-                "synced": synced,
-                "skipped": skipped,
-                "errors": errored,
-                "bytes": total_bytes,
-                "ms": elapsed_ms,
-            },
-        )
+        _audit("filesync.sync_completed", f"Sync completed for '{job['name']}'",
+               {"job_id": job_id, "synced": synced, "skipped": skipped,
+                "errors": errored, "bytes": total_bytes, "ms": elapsed_ms})
 
         return {
             "status": status,
@@ -684,25 +604,28 @@ def run_sync(job_id: str, dry_run: bool = False, db_path=None) -> Dict:
         elapsed_ms = int((time.monotonic() - t0) * 1000)
         conn = _get_db(db_path)
         try:
-            conn.execute(
-                "UPDATE sync_jobs SET status='failed', error_message=?, updated_at=? WHERE id=?",
-                (str(e), _now(), job_id),
-            )
-            _log_sync_event(conn, job_id, "sync_failed", error_detail=str(e), duration_ms=elapsed_ms)
+            conn.execute("UPDATE sync_jobs SET status='failed', error_message=?, updated_at=? WHERE id=?",
+                          (str(e), _now(), job_id))
+            _log_sync_event(conn, job_id, "sync_failed", error_detail=str(e),
+                            duration_ms=elapsed_ms)
             conn.commit()
         finally:
             conn.close()
 
-        _audit("filesync.sync_failed", f"Sync failed for '{job['name']}'", {"job_id": job_id, "error": str(e)})
+        _audit("filesync.sync_failed", f"Sync failed for '{job['name']}'",
+               {"job_id": job_id, "error": str(e)})
 
-        return {"status": "error", "job_id": job_id, "error": str(e), "duration_ms": elapsed_ms}
+        return {"status": "error", "job_id": job_id, "error": str(e),
+                "duration_ms": elapsed_ms}
 
 
 def run_all_jobs(db_path=None) -> Dict:
     """Run all non-paused sync jobs."""
     conn = _get_db(db_path)
     try:
-        rows = conn.execute("SELECT id FROM sync_jobs WHERE status NOT IN ('paused', 'syncing', 'scanning')").fetchall()
+        rows = conn.execute(
+            "SELECT id FROM sync_jobs WHERE status NOT IN ('paused', 'syncing', 'scanning')"
+        ).fetchall()
     finally:
         conn.close()
 
@@ -722,7 +645,8 @@ def pause_job(job_id: str, db_path=None) -> Dict:
     """Pause a sync job."""
     conn = _get_db(db_path)
     try:
-        conn.execute("UPDATE sync_jobs SET status='paused', updated_at=? WHERE id=?", (_now(), job_id))
+        conn.execute("UPDATE sync_jobs SET status='paused', updated_at=? WHERE id=?",
+                      (_now(), job_id))
         conn.commit()
     finally:
         conn.close()
@@ -733,7 +657,8 @@ def resume_job(job_id: str, db_path=None) -> Dict:
     """Resume a paused sync job."""
     conn = _get_db(db_path)
     try:
-        conn.execute("UPDATE sync_jobs SET status='idle', updated_at=? WHERE id=?", (_now(), job_id))
+        conn.execute("UPDATE sync_jobs SET status='idle', updated_at=? WHERE id=?",
+                      (_now(), job_id))
         conn.commit()
     finally:
         conn.close()
@@ -766,7 +691,8 @@ def get_conflicts(job_id: str, db_path=None) -> Dict:
     return {"status": "success", "conflicts": [dict(r) for r in rows], "count": len(rows)}
 
 
-def resolve_conflict(conflict_id: str, resolution: str, resolved_by: str = "user", db_path=None) -> Dict:
+def resolve_conflict(conflict_id: str, resolution: str, resolved_by: str = "user",
+                     db_path=None) -> Dict:
     """Resolve a specific conflict."""
     valid = ("source_wins", "dest_wins", "renamed", "skipped", "manual")
     if resolution not in valid:
@@ -780,11 +706,8 @@ def resolve_conflict(conflict_id: str, resolution: str, resolved_by: str = "user
         conn.commit()
     finally:
         conn.close()
-    _audit(
-        "filesync.conflict_resolved",
-        f"Conflict {conflict_id} resolved: {resolution}",
-        {"conflict_id": conflict_id, "resolution": resolution},
-    )
+    _audit("filesync.conflict_resolved", f"Conflict {conflict_id} resolved: {resolution}",
+           {"conflict_id": conflict_id, "resolution": resolution})
     return {"status": "resolved", "conflict_id": conflict_id, "resolution": resolution}
 
 
@@ -796,7 +719,9 @@ def get_health(db_path=None) -> Dict:
         active = conn.execute(
             "SELECT COUNT(*) as cnt FROM sync_jobs WHERE status IN ('scanning', 'syncing', 'watching')"
         ).fetchone()["cnt"]
-        failed = conn.execute("SELECT COUNT(*) as cnt FROM sync_jobs WHERE status='failed'").fetchone()["cnt"]
+        failed = conn.execute(
+            "SELECT COUNT(*) as cnt FROM sync_jobs WHERE status='failed'"
+        ).fetchone()["cnt"]
         pending_conflicts = conn.execute(
             "SELECT COUNT(*) as cnt FROM sync_conflicts WHERE resolution='pending'"
         ).fetchone()["cnt"]
@@ -878,11 +803,9 @@ def watch_job(job_id: str, db_path=None, blocking: bool = True) -> Dict:
             count = _sync_count[0]
         n = len(changed_paths)
         _safe_print(f"[{_now()}] Watcher detected {n} change(s) -- triggering sync #{count}")
-        _audit(
-            "filesync.watcher_triggered",
-            f"Watcher detected {n} change(s) in job '{job['name']}'",
-            {"job_id": job_id, "changes": n, "sync_number": count},
-        )
+        _audit("filesync.watcher_triggered",
+               f"Watcher detected {n} change(s) in job '{job['name']}'",
+               {"job_id": job_id, "changes": n, "sync_number": count})
         result = run_sync(job_id, db_path=db_path)
         synced = result.get("files_synced", 0)
         status = result.get("status", "unknown")
@@ -890,7 +813,8 @@ def watch_job(job_id: str, db_path=None, blocking: bool = True) -> Dict:
         # Restore status to 'watching' after watcher-triggered sync
         _conn = _get_db(db_path)
         try:
-            _conn.execute("UPDATE sync_jobs SET status='watching', updated_at=? WHERE id=?", (_now(), job_id))
+            _conn.execute("UPDATE sync_jobs SET status='watching', updated_at=? WHERE id=?",
+                          (_now(), job_id))
             _conn.commit()
         finally:
             _conn.close()
@@ -908,7 +832,8 @@ def watch_job(job_id: str, db_path=None, blocking: bool = True) -> Dict:
     # Update job status to 'watching'
     conn = _get_db(db_path)
     try:
-        conn.execute("UPDATE sync_jobs SET status='watching', updated_at=? WHERE id=?", (_now(), job_id))
+        conn.execute("UPDATE sync_jobs SET status='watching', updated_at=? WHERE id=?",
+                      (_now(), job_id))
         conn.commit()
     finally:
         conn.close()
@@ -921,11 +846,9 @@ def watch_job(job_id: str, db_path=None, blocking: bool = True) -> Dict:
     if not blocking:
         _safe_print(f"[{_now()}] Running in background (non-blocking)")
 
-    _audit(
-        "filesync.watcher_started",
-        f"Started watching job '{job['name']}' via {backend}",
-        {"job_id": job_id, "backend": backend, "path": watch_path},
-    )
+    _audit("filesync.watcher_started",
+           f"Started watching job '{job['name']}' via {backend}",
+           {"job_id": job_id, "backend": backend, "path": watch_path})
 
     info = {
         "status": "watching",
@@ -964,13 +887,15 @@ def stop_watching(job_id: str, db_path=None) -> Dict:
         if not row:
             return {"status": "error", "error": f"Job not found: {job_id}"}
         if row["status"] == "watching":
-            conn.execute("UPDATE sync_jobs SET status='idle', updated_at=? WHERE id=?", (_now(), job_id))
+            conn.execute("UPDATE sync_jobs SET status='idle', updated_at=? WHERE id=?",
+                          (_now(), job_id))
             conn.commit()
     finally:
         conn.close()
 
     _safe_print(f"[{_now()}] Stopped watching job {job_id}")
-    _audit("filesync.watcher_stopped", f"Stopped watching job {job_id}", {"job_id": job_id})
+    _audit("filesync.watcher_stopped", f"Stopped watching job {job_id}",
+           {"job_id": job_id})
     return {"status": "stopped", "job_id": job_id}
 
 
@@ -978,20 +903,18 @@ def get_watch_status(db_path=None) -> Dict:
     """Get status of all active watchers."""
     watchers = []
     for job_id, watcher in _active_watchers.items():
-        watchers.append(
-            {
-                "job_id": job_id,
-                "running": watcher.is_running,
-                "backend": "watchdog" if watcher.using_watchdog else "polling",
-            }
-        )
+        watchers.append({
+            "job_id": job_id,
+            "running": watcher.is_running,
+            "backend": "watchdog" if watcher.using_watchdog else "polling",
+        })
     return {"status": "success", "active_watchers": watchers, "count": len(watchers)}
 
 
 # =========================================================================
 # DAEMON MODE (D-SYNC-9 — scheduled + watcher)
 # =========================================================================
-import threading
+import threading  # noqa: E402
 
 
 def run_daemon(db_path=None):
@@ -1009,7 +932,9 @@ def run_daemon(db_path=None):
     if watcher_enabled:
         conn = _get_db(db_path)
         try:
-            rows = conn.execute("SELECT id, name FROM sync_jobs WHERE status NOT IN ('paused')").fetchall()
+            rows = conn.execute(
+                "SELECT id, name FROM sync_jobs WHERE status NOT IN ('paused')"
+            ).fetchall()
         finally:
             conn.close()
 
@@ -1052,14 +977,15 @@ def run_daemon(db_path=None):
 
             _safe_print(f"[{_now()}] Running scheduled sync: {row['name']} ({job_id})")
             result = run_sync(job_id, db_path=db_path)
-            _safe_print(f"[{_now()}] Result: {result.get('status')} ({result.get('files_synced', 0)} files)")
+            _safe_print(f"[{_now()}] Result: {result.get('status')} "
+                        f"({result.get('files_synced', 0)} files)")
 
         # Check for new jobs that need watchers
         if watcher_enabled:
             conn = _get_db(db_path)
             try:
                 new_jobs = conn.execute(
-                    "SELECT id, name FROM sync_jobs WHERE status NOT IN ('paused') AND id NOT IN ({})".format(
+                    "SELECT id, name FROM sync_jobs WHERE status NOT IN ('paused') AND id NOT IN ({})".format(  # nosec B608 -- table/column names are internal constants, not user input
                         ",".join(f"'{jid}'" for jid in _active_watchers) if _active_watchers else "''"
                     )
                 ).fetchall()
@@ -1077,7 +1003,9 @@ def run_daemon(db_path=None):
 # CLI
 # =========================================================================
 def main():
-    parser = argparse.ArgumentParser(description="ICDEV File Sync Engine — Syncthing-inspired file synchronization")
+    parser = argparse.ArgumentParser(
+        description="ICDEV™ File Sync Engine — Syncthing-inspired file synchronization"
+    )
 
     # Command group
     group = parser.add_mutually_exclusive_group(required=True)
@@ -1094,50 +1022,52 @@ def main():
     group.add_argument("--delete", action="store_true", help="Delete a job")
     group.add_argument("--daemon", action="store_true", help="Run daemon mode")
     group.add_argument("--health", action="store_true", help="Health status")
-    group.add_argument(
-        "--quick-setup",
-        action="store_true",
-        help="Quick one-command job creation: --quick-setup --source /src --dest /dst",
-    )
-    group.add_argument("--fim", action="store_true", help="Run File Integrity Monitoring check against baseline")
-    group.add_argument(
-        "--watch", action="store_true", help="Watch job source directory and auto-sync on changes (D-SYNC-8)"
-    )
-    group.add_argument("--stop-watch", action="store_true", help="Stop watching a job")
-    group.add_argument("--versions", action="store_true", help="List file versions for a job (D-SYNC-16)")
-    group.add_argument("--restore-version", action="store_true", help="Restore a specific file version")
-    group.add_argument(
-        "--install-service", action="store_true", help="Register daemon as OS startup service (survives reboot)"
-    )
-    group.add_argument("--uninstall-service", action="store_true", help="Remove daemon from OS startup")
-    group.add_argument("--service-status", action="store_true", help="Check if daemon is registered as OS service")
+    group.add_argument("--quick-setup", action="store_true",
+                        help="Quick one-command job creation: --quick-setup --source /src --dest /dst")
+    group.add_argument("--fim", action="store_true",
+                        help="Run File Integrity Monitoring check against baseline")
+    group.add_argument("--watch", action="store_true",
+                        help="Watch job source directory and auto-sync on changes (D-SYNC-8)")
+    group.add_argument("--stop-watch", action="store_true",
+                        help="Stop watching a job")
+    group.add_argument("--versions", action="store_true",
+                        help="List file versions for a job (D-SYNC-16)")
+    group.add_argument("--restore-version", action="store_true",
+                        help="Restore a specific file version")
+    group.add_argument("--install-service", action="store_true",
+                        help="Register daemon as OS startup service (survives reboot)")
+    group.add_argument("--uninstall-service", action="store_true",
+                        help="Remove daemon from OS startup")
+    group.add_argument("--service-status", action="store_true",
+                        help="Check if daemon is registered as OS service")
 
     # Job parameters
     parser.add_argument("--name", help="Job name")
     parser.add_argument("--source", help="Source path")
     parser.add_argument("--dest", help="Destination path")
-    parser.add_argument("--source-provider", default="local", choices=["local", "sftp", "s3", "azure", "gcs"])
-    parser.add_argument("--dest-provider", default="local", choices=["local", "sftp", "s3", "azure", "gcs"])
+    parser.add_argument("--source-provider", default="local",
+                        choices=["local", "sftp", "s3", "azure", "gcs"])
+    parser.add_argument("--dest-provider", default="local",
+                        choices=["local", "sftp", "s3", "azure", "gcs"])
     parser.add_argument("--mode", default="push", choices=["push", "pull", "bidirectional"])
-    parser.add_argument(
-        "--conflict-strategy",
-        default="last_write_wins",
-        choices=["last_write_wins", "rename_both", "source_wins", "skip"],
-    )
-    parser.add_argument("--schedule-interval", type=int, default=0, help="Daemon interval in seconds (0=one-shot)")
-    parser.add_argument("--bandwidth-limit", type=int, default=0, help="Bandwidth limit in KB/s (0=unlimited)")
+    parser.add_argument("--conflict-strategy", default="last_write_wins",
+                        choices=["last_write_wins", "rename_both", "source_wins", "skip"])
+    parser.add_argument("--schedule-interval", type=int, default=0,
+                        help="Daemon interval in seconds (0=one-shot)")
+    parser.add_argument("--bandwidth-limit", type=int, default=0,
+                        help="Bandwidth limit in KB/s (0=unlimited)")
     parser.add_argument("--max-workers", type=int, default=4)
-    parser.add_argument("--delete-orphans", action="store_true", help="Delete dest files not in source")
+    parser.add_argument("--delete-orphans", action="store_true",
+                        help="Delete dest files not in source")
 
     # Identifiers
     parser.add_argument("--job-id", help="Sync job ID")
     parser.add_argument("--conflict-id", help="Conflict ID to resolve")
     parser.add_argument("--version-id", help="Version ID for restore")
     parser.add_argument("--file-path", help="File path filter for --versions")
-    parser.add_argument(
-        "--resolution", help="Conflict resolution", choices=["source_wins", "dest_wins", "renamed", "skipped", "manual"]
-    )
-    parser.add_argument("--project-id", help="ICDEV project ID")
+    parser.add_argument("--resolution", help="Conflict resolution",
+                        choices=["source_wins", "dest_wins", "renamed", "skipped", "manual"])
+    parser.add_argument("--project-id", help="ICDEV™ project ID")
     parser.add_argument("--limit", type=int, default=50, help="Log entry limit")
 
     # Execution flags
@@ -1155,19 +1085,12 @@ def main():
             if not args.name or not args.source or not args.dest:
                 parser.error("--create requires --name, --source, --dest")
             result = create_job(
-                args.name,
-                args.source,
-                args.dest,
-                args.source_provider,
-                args.dest_provider,
-                args.mode,
-                args.conflict_strategy,
-                args.schedule_interval,
-                args.bandwidth_limit,
-                args.max_workers,
-                args.delete_orphans,
-                args.project_id,
-                db_path=db_path,
+                args.name, args.source, args.dest,
+                args.source_provider, args.dest_provider,
+                args.mode, args.conflict_strategy,
+                args.schedule_interval, args.bandwidth_limit,
+                args.max_workers, args.delete_orphans,
+                args.project_id, db_path=db_path,
             )
         elif args.list:
             result = list_jobs(db_path)
@@ -1215,19 +1138,12 @@ def main():
                 parser.error("--quick-setup requires --source and --dest")
             name = args.name or f"Sync {Path(args.source).name} → {Path(args.dest).name}"
             result = create_job(
-                name,
-                args.source,
-                args.dest,
-                args.source_provider,
-                args.dest_provider,
-                args.mode,
-                args.conflict_strategy,
-                args.schedule_interval,
-                args.bandwidth_limit,
-                args.max_workers,
-                args.delete_orphans,
-                args.project_id,
-                db_path=db_path,
+                name, args.source, args.dest,
+                args.source_provider, args.dest_provider,
+                args.mode, args.conflict_strategy,
+                args.schedule_interval, args.bandwidth_limit,
+                args.max_workers, args.delete_orphans,
+                args.project_id, db_path=db_path,
             )
             if result.get("status") == "created":
                 # Auto-run the first sync immediately
@@ -1251,7 +1167,8 @@ def main():
             versioner = FileVersioner(str(db_path or DB_PATH))
             versions = versioner.list_versions(args.job_id, args.file_path, args.limit)
             stats = versioner.get_version_stats(args.job_id)
-            result = {"status": "success", "versions": versions, "count": len(versions), "stats": stats}
+            result = {"status": "success", "versions": versions,
+                       "count": len(versions), "stats": stats}
         elif args.restore_version:
             if not args.version_id or not args.job_id:
                 parser.error("--restore-version requires --version-id and --job-id")
@@ -1265,15 +1182,12 @@ def main():
                 result = versioner.restore_version(args.version_id, dest_path)
         elif args.install_service:
             from tools.filesync.service_manager import install_service
-
             result = install_service()
         elif args.uninstall_service:
             from tools.filesync.service_manager import uninstall_service
-
             result = uninstall_service()
         elif args.service_status:
             from tools.filesync.service_manager import service_status
-
             result = service_status()
         else:
             parser.print_help()

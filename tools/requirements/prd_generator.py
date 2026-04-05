@@ -8,12 +8,11 @@ document in Markdown.
 Usage:
     python tools/requirements/prd_generator.py --session-id <id> [--json]
 """
-
 from __future__ import annotations
 
 import argparse
 import json
-import sqlite3
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -25,11 +24,9 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 # Helpers
 # ---------------------------------------------------------------------------
 
-
 def _get_connection(db_path=None):
-    p = str(db_path or DB_PATH)
-    conn = sqlite3.connect(p)
-    conn.row_factory = sqlite3.Row
+    str(db_path or DB_PATH)
+    conn = get_connection(db_path=str(db_path))
     return conn
 
 
@@ -53,9 +50,10 @@ def _pct(value: float | None) -> str:
 # Data loaders
 # ---------------------------------------------------------------------------
 
-
 def _load_session(conn, session_id: str) -> dict | None:
-    row = conn.execute("SELECT * FROM intake_sessions WHERE id = ?", (session_id,)).fetchone()
+    row = conn.execute(
+        "SELECT * FROM intake_sessions WHERE id = ?", (session_id,)
+    ).fetchone()
     return dict(row) if row else None
 
 
@@ -174,17 +172,17 @@ def _render_cover(session: dict, readiness: dict | None, req_count: int) -> str:
 
 
 def _render_executive_summary(
-    session: dict,
-    reqs: list[dict],
-    readiness: dict | None,
-    conversation: list[dict],
+    session: dict, reqs: list[dict], readiness: dict | None, conversation: list[dict],
 ) -> str:
     ctx = _safe_json(session.get("context_summary")) or {}
     goal = ctx.get("goal", "build")
     role = ctx.get("role", "developer")
 
     # Extract problem statement from first customer messages
-    problem_turns = [t["content"] for t in conversation if t["role"] == "customer" and t["turn_number"] <= 3]
+    problem_turns = [
+        t["content"] for t in conversation
+        if t["role"] == "customer" and t["turn_number"] <= 3
+    ]
     problem_statement = " ".join(problem_turns)[:500] if problem_turns else "Not captured."
 
     type_counts = {}
@@ -247,16 +245,9 @@ def _render_requirements(reqs: list[dict]) -> str:
 
     # Render in a logical order
     type_order = [
-        "functional",
-        "security",
-        "performance",
-        "interface",
-        "data",
-        "compliance",
-        "non_functional",
-        "constraint",
-        "operational",
-        "transitional",
+        "functional", "security", "performance", "interface",
+        "data", "compliance", "non_functional", "constraint",
+        "operational", "transitional",
     ]
     section_num = 1
     for req_type in type_order:
@@ -281,9 +272,7 @@ def _render_requirements(reqs: list[dict]) -> str:
 
 
 def _render_user_journeys(
-    session: dict,
-    reqs: list[dict],
-    conversation: list[dict],
+    session: dict, reqs: list[dict], conversation: list[dict],
 ) -> str:
     """Synthesize user journeys from conversation context and requirements.
 
@@ -302,35 +291,12 @@ def _render_user_journeys(
         if t["role"] == "customer":
             text = t.get("content", "")
             # Look for workflow/process language
-            if any(
-                kw in text.lower()
-                for kw in [
-                    "workflow",
-                    "process",
-                    "step",
-                    "then",
-                    "after",
-                    "before",
-                    "first",
-                    "next",
-                    "finally",
-                    "need to",
-                    "want to",
-                    "will",
-                    "login",
-                    "log in",
-                    "upload",
-                    "submit",
-                    "review",
-                    "approve",
-                    "search",
-                    "create",
-                    "delete",
-                    "view",
-                    "edit",
-                    "report",
-                ]
-            ):
+            if any(kw in text.lower() for kw in [
+                "workflow", "process", "step", "then", "after", "before",
+                "first", "next", "finally", "need to", "want to", "will",
+                "login", "log in", "upload", "submit", "review", "approve",
+                "search", "create", "delete", "view", "edit", "report",
+            ]):
                 workflow_turns.append(text)
 
     if not reqs and not workflow_turns:
@@ -339,7 +305,8 @@ def _render_user_journeys(
     lines = [
         "## 3. User Journeys",
         "",
-        f"*Derived from {len(conversation)} conversation turns and {len(reqs)} requirements.*",
+        f"*Derived from {len(conversation)} conversation turns and "
+        f"{len(reqs)} requirements.*",
         "",
     ]
 
@@ -367,31 +334,16 @@ def _render_user_journeys(
 
     journey_num = 2 if workflow_turns else 1
     journey_map = {
-        "security": (
-            "Security Administrator",
-            "Secure the system",
-            "configure authentication, manage access controls, and monitor security events",
-        ),
-        "performance": (
-            "Operations Engineer",
-            "Monitor system health",
-            "track SLAs, review performance metrics, and respond to alerts",
-        ),
-        "interface": (
-            "Integration Specialist",
-            "Connect external systems",
-            "configure integrations, map data fields, and verify data flow",
-        ),
-        "data": (
-            "Data Steward",
-            "Manage data lifecycle",
-            "classify data, enforce retention policies, and ensure data quality",
-        ),
-        "compliance": (
-            "ISSO / Compliance Officer",
-            "Maintain compliance posture",
-            "review controls, generate compliance reports, and track remediation",
-        ),
+        "security": ("Security Administrator", "Secure the system",
+                     "configure authentication, manage access controls, and monitor security events"),
+        "performance": ("Operations Engineer", "Monitor system health",
+                        "track SLAs, review performance metrics, and respond to alerts"),
+        "interface": ("Integration Specialist", "Connect external systems",
+                      "configure integrations, map data fields, and verify data flow"),
+        "data": ("Data Steward", "Manage data lifecycle",
+                 "classify data, enforce retention policies, and ensure data quality"),
+        "compliance": ("ISSO / Compliance Officer", "Maintain compliance posture",
+                       "review controls, generate compliance reports, and track remediation"),
     }
 
     for rtype, (persona, goal, narrative) in journey_map.items():
@@ -708,17 +660,19 @@ def _render_coa_comparison(coas: list[dict]) -> str:
     ]
 
     # Type
-    lines.append("| **Type** | " + " | ".join(c.get("coa_type", "—").title() for c in coas) + " |")
+    lines.append("| **Type** | " + " | ".join(
+        c.get("coa_type", "—").title() for c in coas) + " |")
     # Status
-    lines.append("| **Status** | " + " | ".join(c.get("status", "draft").title() for c in coas) + " |")
+    lines.append("| **Status** | " + " | ".join(
+        c.get("status", "draft").title() for c in coas) + " |")
     # Boundary tier
-    lines.append("| **Boundary Tier** | " + " | ".join(c.get("boundary_tier", "—") for c in coas) + " |")
+    lines.append("| **Boundary Tier** | " + " | ".join(
+        c.get("boundary_tier", "—") for c in coas) + " |")
 
     # Timeline PIs
     def _get_pis(c):
         t = _safe_json(c.get("timeline")) or {}
         return str(t.get("timeline_pis", "—"))
-
     lines.append("| **PIs** | " + " | ".join(_get_pis(c) for c in coas) + " |")
 
     # Cost range
@@ -727,22 +681,17 @@ def _render_coa_comparison(coas: list[dict]) -> str:
         if cost.get("low") and cost.get("high"):
             return f"${cost['low']:,.0f}–${cost['high']:,.0f}"
         return "—"
-
     lines.append("| **Cost Range** | " + " | ".join(_get_cost(c) for c in coas) + " |")
 
     # Risk level
     def _get_risk(c):
         r = _safe_json(c.get("risk_profile")) or {}
         return r.get("overall_risk", r.get("risk_level", "—")).title()
-
     lines.append("| **Risk Level** | " + " | ".join(_get_risk(c) for c in coas) + " |")
 
     # Mission fit
-    lines.append(
-        "| **Mission Fit** | "
-        + " | ".join(f"{c['mission_fit_pct']:.0f}%" if c.get("mission_fit_pct") else "—" for c in coas)
-        + " |"
-    )
+    lines.append("| **Mission Fit** | " + " | ".join(
+        f"{c['mission_fit_pct']:.0f}%" if c.get("mission_fit_pct") else "—" for c in coas) + " |")
 
     lines.append("")
 
@@ -797,22 +746,19 @@ def _render_gaps(session: dict) -> str:
 
 def _render_footer() -> str:
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    return "\n".join(
-        [
-            "---",
-            "",
-            f"*Generated by ICDEV PRD Generator on {ts}*",
-            "",
-            "# CUI // SP-CTI",
-            "",
-        ]
-    )
+    return "\n".join([
+        "---",
+        "",
+        f"*Generated by ICDEV™ PRD Generator on {ts}*",
+        "",
+        "# CUI // SP-CTI",
+        "",
+    ])
 
 
 # ---------------------------------------------------------------------------
 # Main generator
 # ---------------------------------------------------------------------------
-
 
 def generate_prd(session_id: str, db_path=None) -> dict:
     """Generate a PRD document for an intake session.
@@ -872,7 +818,6 @@ def generate_prd(session_id: str, db_path=None) -> dict:
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
-
 
 def main():
     parser = argparse.ArgumentParser(description="Generate PRD from intake session")

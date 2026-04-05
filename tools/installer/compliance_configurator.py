@@ -3,11 +3,11 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""ICDEV Compliance Configurator — maps compliance objectives to modules.
+# POC: ICDEV™ System Administrator
+"""ICDEV™ Compliance Configurator — maps compliance objectives to modules.
 
 Given a set of compliance framework identifiers (e.g., fedramp_high, cmmc,
-hipaa), this tool determines which ICDEV modules are required, which DB
+hipaa), this tool determines which ICDEV™ modules are required, which DB
 table groups need to be initialized, and which security gate overrides apply.
 
 It also detects applicable frameworks from data categories (CUI, PHI, PCI,
@@ -79,16 +79,8 @@ DATA_CATEGORY_FRAMEWORK_MAP: Dict[str, List[str]] = {
 # ---------------------------------------------------------------------------
 
 _CUI_FRAMEWORKS = {
-    "fedramp_moderate",
-    "fedramp_high",
-    "cmmc",
-    "cssp",
-    "emass",
-    "cato",
-    "fips_199_200",
-    "oscal",
-    "sbd_ivv",
-    "cjis",
+    "fedramp_moderate", "fedramp_high", "cmmc", "cssp", "emass",
+    "cato", "fips_199_200", "oscal", "sbd_ivv", "cjis",
 }
 
 # ---------------------------------------------------------------------------
@@ -194,13 +186,8 @@ POSTURE_DESCRIPTIONS: Dict[str, Dict[str, str]] = {
 
 _FRAMEWORK_DB_TABLES: Dict[str, List[str]] = {
     "compliance_base": [
-        "compliance_controls",
-        "control_implementations",
-        "ssp_documents",
-        "poam_items",
-        "stig_findings",
-        "sbom_components",
-        "audit_trail",
+        "compliance_controls", "control_implementations", "ssp_documents",
+        "poam_items", "stig_findings", "sbom_components", "audit_trail",
     ],
     "fedramp_moderate": ["fedramp_assessments"],
     "fedramp_high": ["fedramp_assessments"],
@@ -268,9 +255,8 @@ _FRAMEWORK_GATE_OVERRIDES: Dict[str, Dict[str, Any]] = {
 # ComplianceConfigurator
 # ---------------------------------------------------------------------------
 
-
 class ComplianceConfigurator:
-    """Maps compliance objectives to ICDEV module requirements.
+    """Maps compliance objectives to ICDEV™ module requirements.
 
     Args:
         manifest_path: Path to installation manifest YAML.
@@ -371,7 +357,8 @@ class ComplianceConfigurator:
         if unknown_frameworks:
             result["unknown_frameworks"] = unknown_frameworks
             result["warning"] = (
-                f"Unknown framework(s): {', '.join(unknown_frameworks)}. Use --list-postures to see valid options."
+                f"Unknown framework(s): {', '.join(unknown_frameworks)}. "
+                "Use --list-postures to see valid options."
             )
 
         return result
@@ -426,14 +413,19 @@ class ComplianceConfigurator:
 
         config = self.configure_posture(declared_posture)
         required = set(config["required_modules"])
-        installed_set = set(k for k, v in installed_modules.items() if v.get("installed"))
+        installed_set = set(
+            k for k, v in installed_modules.items()
+            if v.get("installed")
+        )
 
         missing = sorted(required - installed_set)
         extra = sorted(installed_set & required)
 
         recommendations: List[str] = []
         if missing:
-            recommendations.append(f"Install missing modules: {', '.join(missing)}")
+            recommendations.append(
+                f"Install missing modules: {', '.join(missing)}"
+            )
         if config.get("cui_enabled") and not self._registry.get("cui_enabled"):
             recommendations.append("Enable CUI markings (cui_enabled: true)")
 
@@ -458,15 +450,13 @@ class ComplianceConfigurator:
         """
         postures: List[Dict[str, str]] = []
         for posture_id, info in sorted(POSTURE_DESCRIPTIONS.items()):
-            postures.append(
-                {
-                    "id": posture_id,
-                    "name": info["name"],
-                    "description": info["description"],
-                    "impact_level": info.get("impact_level", ""),
-                    "sector": info.get("sector", ""),
-                }
-            )
+            postures.append({
+                "id": posture_id,
+                "name": info["name"],
+                "description": info["description"],
+                "impact_level": info.get("impact_level", ""),
+                "sector": info.get("sector", ""),
+            })
         return postures
 
 
@@ -474,12 +464,11 @@ class ComplianceConfigurator:
 # CLI
 # ---------------------------------------------------------------------------
 
-
 def _format_human_postures(postures: List[Dict[str, str]]) -> str:
     """Render posture list as human-readable text."""
     lines = [
         "=" * 70,
-        "  ICDEV Compliance Configurator — Available Postures",
+        "  ICDEV™ Compliance Configurator — Available Postures",
         "=" * 70,
         "",
     ]
@@ -497,7 +486,7 @@ def _format_human_configure(result: Dict[str, Any]) -> str:
     """Render configuration result as human-readable text."""
     lines = [
         "=" * 70,
-        "  ICDEV Compliance Configuration",
+        "  ICDEV™ Compliance Configuration",
         "=" * 70,
         "",
         f"  Frameworks:   {', '.join(result['frameworks'])}",
@@ -528,7 +517,7 @@ def _format_human_validate(result: Dict[str, Any]) -> str:
     """Render validation result as human-readable text."""
     lines = [
         "=" * 70,
-        "  ICDEV Compliance Posture Validation",
+        "  ICDEV™ Compliance Posture Validation",
         "=" * 70,
         "",
         f"  Satisfied:  {'YES' if result['satisfied'] else 'NO'}",
@@ -550,47 +539,39 @@ def _format_human_validate(result: Dict[str, Any]) -> str:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="ICDEV Compliance Configurator — map compliance objectives to modules")
+    parser = argparse.ArgumentParser(
+        description="ICDEV™ Compliance Configurator — map compliance objectives to modules"
+    )
     parser.add_argument(
-        "--list-postures",
-        action="store_true",
+        "--list-postures", action="store_true",
         help="Show all available compliance postures with descriptions",
     )
     parser.add_argument(
-        "--configure",
-        metavar="FRAMEWORKS",
+        "--configure", metavar="FRAMEWORKS",
         help="Comma-separated framework IDs to configure (e.g., fedramp_high,cmmc)",
     )
     parser.add_argument(
-        "--detect-from-data",
-        metavar="CATEGORIES",
+        "--detect-from-data", metavar="CATEGORIES",
         help="Comma-separated data categories to detect frameworks (e.g., CUI,PHI)",
     )
     parser.add_argument(
-        "--validate",
-        action="store_true",
+        "--validate", action="store_true",
         help="Validate installed modules against declared compliance posture",
     )
     parser.add_argument(
-        "--json",
-        action="store_true",
+        "--json", action="store_true",
         help="Output as JSON",
     )
     parser.add_argument(
-        "--human",
-        action="store_true",
+        "--human", action="store_true",
         help="Human-friendly terminal output",
     )
     parser.add_argument(
-        "--manifest-path",
-        type=Path,
-        default=None,
+        "--manifest-path", type=Path, default=None,
         help="Path to installation manifest YAML",
     )
     parser.add_argument(
-        "--registry-path",
-        type=Path,
-        default=None,
+        "--registry-path", type=Path, default=None,
         help="Path to installation registry JSON",
     )
 
@@ -622,18 +603,12 @@ def main() -> None:
             categories = [c.strip() for c in args.detect_from_data.split(",") if c.strip()]
             detected = configurator.detect_from_data_categories(categories)
             if use_json:
-                print(
-                    json.dumps(
-                        {
-                            "data_categories": categories,
-                            "detected_frameworks": detected,
-                            "total": len(detected),
-                            "timestamp": datetime.now(timezone.utc).isoformat(),
-                        },
-                        indent=2,
-                        default=str,
-                    )
-                )
+                print(json.dumps({
+                    "data_categories": categories,
+                    "detected_frameworks": detected,
+                    "total": len(detected),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }, indent=2, default=str))
             else:
                 print(f"Data categories: {', '.join(categories)}")
                 print(f"Detected frameworks ({len(detected)}):")

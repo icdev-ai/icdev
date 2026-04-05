@@ -2,7 +2,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """MOSA (Modular Open Systems Approach) tools package.
 
 Provides ICD/TSP artifact generation, modularity analysis, and code enforcement

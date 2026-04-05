@@ -1,9 +1,9 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV E2E Test Runner — Playwright Native + MCP Integration
+# ICDEV™ E2E Test Runner — Playwright Native + MCP Integration
 # Adapted from ADW E2E test execution patterns
 
 """
-E2E Test Runner for ICDEV — executes browser-based tests via native Playwright
+E2E Test Runner for ICDEV™ — executes browser-based tests via native Playwright
 or Playwright MCP (fallback).
 
 Usage:
@@ -39,8 +39,8 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from tools.testing.data_types import E2ETestResult
-from tools.testing.utils import make_run_id, setup_logger, ensure_run_dir
+from tools.testing.data_types import E2ETestResult  # noqa: E402
+from tools.testing.utils import make_run_id, setup_logger, ensure_run_dir  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -638,7 +638,7 @@ def _run_vision_validation(results: list, logger, assertions=None, strict=False)
 
 def main():
     """Main entry point."""
-    parser = argparse.ArgumentParser(description="ICDEV E2E Test Runner")
+    parser = argparse.ArgumentParser(description="ICDEV™ E2E Test Runner")
     parser.add_argument("--test-file", help="Path to E2E test (.spec.ts or .md)")
     parser.add_argument("--discover", action="store_true", help="List available E2E tests")
     parser.add_argument("--run-all", action="store_true", help="Run all discovered E2E tests")

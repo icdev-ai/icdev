@@ -33,6 +33,7 @@ class TestOpenAIProviderName(unittest.TestCase):
 class TestOpenAICheckAvailability(unittest.TestCase):
     """Test OpenAIFineTuneProvider.check_availability."""
 
+    @patch.dict(os.environ, {}, clear=True)
     def test_no_api_key(self):
         from tools.finetune.openai_provider import OpenAIFineTuneProvider
 

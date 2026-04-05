@@ -54,7 +54,7 @@ Transform vague customer requirements into structured, decomposed, MBSE-traced, 
 ### Stage 6: Export & Handoff
 
 1. Export requirements: `python tools/requirements/intake_engine.py --session-id <id> --export --json`
-2. Decomposed items ready for Architect agent (ATLAS workflow)
+2. Decomposed items ready for Architect agent (ANVIL workflow)
 3. Requirements link to digital thread for MBSE traceability
 4. Audit trail records all intake events
 
@@ -188,9 +188,9 @@ classDiagram
 
 ---
 
-## GOTCHA Layer Mapping
+## FORGE Layer Mapping
 
-| Intake Stage | GOTCHA Layer |
+| Intake Stage | FORGE Layer |
 |--------------|--------------|
 | Session Setup | Goals (define what to capture) |
 | Conversational Intake | Orchestration (AI guides conversation) |
@@ -203,7 +203,7 @@ classDiagram
 
 ## Related Files
 
-- **Goal:** `goals/build_app.md` — ATLAS workflow (receives decomposed requirements)
+- **Goal:** `goals/build_app.md` — ANVIL workflow (receives decomposed requirements)
 - **Goal:** `goals/mbse_integration.md` — MBSE digital thread (links to requirements)
 - **Goal:** `goals/compliance_workflow.md` — Compliance artifacts (informed by gap analysis)
 - **Skill:** `.claude/skills/sparkpilot-intake/SKILL.md` — Claude Code slash command

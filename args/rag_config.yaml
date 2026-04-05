@@ -65,7 +65,7 @@ rag:
       - research_forecasts
       - compliance_artifacts
       - memory_entries
-      - atlas_critique_sessions      # ATLAS-CR critique findings
+      - anvil_critique_sessions      # ANVIL-CR critique findings
     batch_sources:
       - audit_trail
       - ai_telemetry
@@ -95,9 +95,9 @@ rag:
     critique_history_federation: true # Child apps can query parent critique findings
 
   critique_integration:
-    enabled: true                    # RAG-augmented ATLAS-CR critiques
+    enabled: true                    # RAG-augmented ANVIL-CR critiques
     source_types:                    # Source types to search for critique context
-      - atlas_critique_sessions
+      - anvil_critique_sessions
       - compliance_artifacts
       - innovation_signals
     max_critique_context_chars: 3000 # Max RAG context for critique phase
@@ -154,3 +154,28 @@ rag:
       - faithfulness
       - answer_relevancy
     llm_judge_model: qwen3-local     # scanner_function for LLM metrics
+
+    # --- D-RAG-23: CRAG Benchmark Integration ---
+    crag:
+      enabled: true
+      scoring_mode: both             # ragas, crag, or both
+      penalize_hallucination: true
+      abstention_reward: true        # "I don't know" = 0 not -1 for non-false-premise
+      popularity_tiers:
+        head_min_frequency: 100
+        torso_min_frequency: 10
+
+  # --- D-RAG-24: Know Your RAG Per-Label Adaptive Weights ---
+  label_weights:
+    fact_single:
+      bm25_weight: 0.2              # Facts need more semantic, less keyword
+      rrf_k: 60
+    summary:
+      bm25_weight: 0.3              # Summaries benefit from balanced
+      rrf_k: 60
+    reasoning:
+      bm25_weight: 0.15             # Reasoning needs semantic understanding
+      rrf_k: 40
+    unanswerable:
+      bm25_weight: 0.5              # Keywords help confirm non-existence
+      rrf_k: 80

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ICDEV SaaS -- Request Logger.
+"""ICDEV™ SaaS -- Request Logger.
 
 CUI // SP-CTI
 
@@ -15,9 +15,9 @@ Usage:
 import json
 import logging
 import os
-import sqlite3
 import sys
 import time
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -59,7 +59,7 @@ def log_request(
         metadata:    Optional dict of extra context.
     """
     try:
-        conn = sqlite3.connect(str(PLATFORM_DB_PATH))
+        conn = get_connection()
         conn.execute(
             """INSERT INTO usage_records
                (tenant_id, user_id, endpoint, method, tokens_used,

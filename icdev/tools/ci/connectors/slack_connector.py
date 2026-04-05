@@ -1,15 +1,15 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Slack Connector — built-in Slack integration (D136, D137)
+# ICDEV™ Slack Connector — built-in Slack integration (D136, D137)
 
 """
-Built-in Slack connector for ICDEV CI/CD.
+Built-in Slack connector for ICDEV™ CI/CD.
 
 Handles:
 - Inbound: Slack Events API (event_callback, url_verification)
 - Outbound: chat.postMessage with threading (D137)
 - Signature: HMAC-SHA256 request signing verification
 
-Uses only `requests` (existing ICDEV dependency) + stdlib `hmac`/`hashlib`.
+Uses only `requests` (existing ICDEV™ dependency) + stdlib `hmac`/`hashlib`.
 No `slack_sdk` dependency required.
 
 Architecture Decisions:

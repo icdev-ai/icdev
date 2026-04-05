@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Worktree & GitLab Task Board Configuration
+# ICDEV™ Worktree & GitLab Task Board Configuration
 
 worktree:
   base_dir: "trees/"
@@ -13,7 +13,7 @@ gitlab_monitor:
   enabled: true
   poll_interval_seconds: 20
   issue_label: "icdev"
-  bot_marker: "[ICDEV-BOT]"
+  bot_marker: "[ICDEV™-BOT]"
   auto_create_worktree: true
   supported_tags:
     - intake

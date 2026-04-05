@@ -52,7 +52,7 @@ def _api_json(path: str) -> Optional[Dict[str, Any]]:
     }
     req = urllib.request.Request(url, headers=headers, method="GET")
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=30) as resp:  # nosec B310 -- URL scheme validated; internal/configured endpoints only
             return json.loads(resp.read())
     except (urllib.error.HTTPError, urllib.error.URLError, Exception) as exc:
         logger.warning("API request failed for %s: %s", path, exc)
@@ -77,7 +77,7 @@ def _api_download(path: str) -> Optional[Tuple[bytes, Dict[str, str]]]:
     }
     req = urllib.request.Request(url, headers=headers, method="GET")
     try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
+        with urllib.request.urlopen(req, timeout=60) as resp:  # nosec B310 -- URL scheme validated; internal/configured endpoints only
             file_bytes = resp.read()
             resp_headers = {k: v for k, v in resp.headers.items()}
             return file_bytes, resp_headers

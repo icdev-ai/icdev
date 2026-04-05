@@ -34,7 +34,7 @@ class TestGetProjectRoot:
 
 
 class TestGetIcdevDbPath:
-    """Test ICDEV DB path resolution with fallback chain."""
+    """Test ICDEV™ DB path resolution with fallback chain."""
 
     def test_default_path(self):
         with mock.patch.dict(os.environ, {}, clear=False):

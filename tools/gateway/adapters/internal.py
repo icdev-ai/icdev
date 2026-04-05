@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Internal Chat adapter — bridges ICDEV's existing /chat page to the gateway.
+"""Internal Chat adapter — bridges ICDEV™'s existing /chat page to the gateway.
 
 This adapter is always available in both connected and air-gapped
 environments. It normalizes messages from the internal chat system
@@ -11,6 +11,7 @@ Decision D134: Air-gapped environments use internal chat + optional Mattermost.
 
 import logging
 import sys
+from tools.db.storage import get_connection
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -18,14 +19,14 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from tools.gateway.adapters.base import BaseChannelAdapter
-from tools.gateway.event_envelope import CommandEnvelope, parse_command_text
+from tools.gateway.adapters.base import BaseChannelAdapter  # noqa: E402
+from tools.gateway.event_envelope import CommandEnvelope, parse_command_text  # noqa: E402
 
 logger = logging.getLogger("icdev.gateway.adapters.internal")
 
 
 class InternalChatAdapter(BaseChannelAdapter):
-    """Adapter for ICDEV's built-in /chat page.
+    """Adapter for ICDEV™'s built-in /chat page.
 
     Since internal chat is within the same application, signature
     verification is implicit (same-process trust). Identity is
@@ -86,11 +87,10 @@ class InternalChatAdapter(BaseChannelAdapter):
         database and delivered via the existing SSE/polling mechanism.
         This method stores the response for the chat UI to pick up.
         """
-        import sqlite3
 
-        db_path = BASE_DIR / "data" / "icdev.db"
+        BASE_DIR / "data" / "icdev.db"
         try:
-            conn = sqlite3.connect(str(db_path))
+            conn = get_connection()
             # Store as a chat turn in the agent_chat_turns table if it exists
             conn.execute(
                 "INSERT OR IGNORE INTO agent_chat_turns "

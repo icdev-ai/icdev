@@ -1,9 +1,10 @@
-"""ICDEV Pulse web research engine.
+"""ICDEV™ Pulse web research engine.
 
 Scrapes DuckDuckGo HTML search results to find developer pain points
 across Reddit, StackOverflow, HackerNews, LinkedIn, DEV.to, and Medium.
 No API keys required -- uses requests + BeautifulSoup only.
 """
+from __future__ import annotations
 
 import logging
 import os
@@ -18,6 +19,10 @@ from bs4 import BeautifulSoup
 
 from tools.pulse import config
 from tools.pulse.db import insert_row, query_rows
+
+# Configurable project ID — avoids hardcoding "sparkpilot"
+PULSE_PROJECT_ID = os.environ.get("ICDEV_PULSE_PROJECT_ID",
+                                   os.environ.get("ICDEV_PROJECT_ID", "pulse"))
 
 
 def _is_air_gapped() -> bool:
@@ -476,7 +481,7 @@ def _enrich_from_local_rag(topics: list[str]) -> list[dict]:
         try:
             return parallel_retrieve(
                 query=topic,
-                project_id="sparkpilot",
+                project_id=PULSE_PROJECT_ID,
                 top_k=5,
                 aggregate=False,
             )

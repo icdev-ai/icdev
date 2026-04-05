@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Code Quality Analyzer — AST-based self-analysis for ICDEV.
+"""Code Quality Analyzer — AST-based self-analysis for ICDEV™.
 
 Phase 52 (D331-D337). Read-only, advisory-only. Never modifies source files.
 Computes per-function metrics (cyclomatic/cognitive complexity, nesting depth,
@@ -22,7 +22,8 @@ import os
 import re
 import sqlite3
 import uuid
-from datetime import datetime, timezone
+from tools.db.storage import get_connection
+from tools.common.helpers import now_iso
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -130,15 +131,10 @@ def _get_db(db_path: Optional[Path] = None) -> sqlite3.Connection:
     p = db_path or DB_PATH
     if not p.exists():
         raise FileNotFoundError(f"Database not found: {p}")
-    conn = sqlite3.connect(str(p))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(db_path))
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
-
-
-def _now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _uid() -> str:
@@ -631,7 +627,7 @@ class CodeAnalyzer:
             "scan_id": scan_id,
             "project_id": self.project_id,
             "project_dir": str(root),
-            "timestamp": _now(),
+            "timestamp": now_iso(),
             "files_analyzed": file_count,
             "total_functions": total_functions,
             "avg_cyclomatic_complexity": avg_cc,
@@ -744,7 +740,7 @@ def main():
     parser = argparse.ArgumentParser(description="Code Quality Analyzer — AST self-analysis (Phase 52)")
     parser.add_argument("--project-dir", help="Project root to scan")
     parser.add_argument("--file", help="Analyze a single file")
-    parser.add_argument("--project-id", help="ICDEV project ID")
+    parser.add_argument("--project-id", help="ICDEV™ project ID")
     parser.add_argument("--db-path", help="Override DB path")
     parser.add_argument("--store", action="store_true", help="Write results to DB")
     parser.add_argument("--trend", action="store_true", help="Show trend data")

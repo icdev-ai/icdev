@@ -1,5 +1,5 @@
 {
-  "name": "ICDEV Orchestrator",
+  "name": "ICDEV™ Orchestrator",
   "description": "Top-level router. Decomposes tasks, dispatches to specialist agents, aggregates results, and manages end-to-end workflows.",
   "url": "https://localhost:8443",
   "version": "1.0.0",

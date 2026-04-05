@@ -3,8 +3,8 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D -- Authorized DoD Personnel Only
-# POC: ICDEV System Administrator
-"""Type Checker — ICDEV Cross-Language Translation (Phase 43, D253)
+# POC: ICDEV™ System Administrator
+"""Type Checker — ICDEV™ Cross-Language Translation (Phase 43, D253)
 
 Phase 2 of the 5-phase hybrid translation pipeline.
 Validates type-compatibility of function signatures between source/target
@@ -59,13 +59,7 @@ BUILTIN_TYPE_MAPPINGS = {
             "float64": {"python": "float", "java": "double", "rust": "f64", "csharp": "double", "typescript": "number"},
             "string": {"python": "str", "java": "String", "rust": "String", "csharp": "string", "typescript": "string"},
             "bool": {"python": "bool", "java": "boolean", "rust": "bool", "csharp": "bool", "typescript": "boolean"},
-            "error": {
-                "python": "Exception",
-                "java": "Exception",
-                "rust": "Result",
-                "csharp": "Exception",
-                "typescript": "Error",
-            },
+            "error": {"python": "Exception", "java": "Exception", "rust": "Result", "csharp": "Exception", "typescript": "Error"},
         },
         "rust": {
             "i32": {"python": "int", "java": "int", "go": "int32", "csharp": "int", "typescript": "number"},
@@ -222,15 +216,13 @@ def check_signature_compatibility(unit, source_lang, target_lang, mappings=None)
     for param in unit.get("parameters", []):
         param_type = param.get("type")
         mapped = map_type(param_type, source_lang, target_lang, mappings)
-        param_mappings.append(
-            {
-                "param_name": param.get("name", "?"),
-                "source_type": param_type,
-                "target_type": mapped["target_type"],
-                "confidence": mapped["confidence"],
-                "warnings": mapped["warnings"],
-            }
-        )
+        param_mappings.append({
+            "param_name": param.get("name", "?"),
+            "source_type": param_type,
+            "target_type": mapped["target_type"],
+            "confidence": mapped["confidence"],
+            "warnings": mapped["warnings"],
+        })
         if mapped["confidence"] < 0.5:
             issues.append(
                 f"Parameter '{param.get('name', '?')}': low confidence type mapping "
@@ -241,7 +233,9 @@ def check_signature_compatibility(unit, source_lang, target_lang, mappings=None)
     return_type = unit.get("return_type")
     return_mapped = map_type(return_type, source_lang, target_lang, mappings)
     if return_mapped["confidence"] < 0.5 and return_type:
-        issues.append(f"Return type: low confidence mapping ({return_type} -> {return_mapped['target_type']})")
+        issues.append(
+            f"Return type: low confidence mapping ({return_type} -> {return_mapped['target_type']})"
+        )
 
     # Check error handling model differences
     pair_key = f"{source_lang}_to_{target_lang}"
@@ -307,7 +301,10 @@ def check_all_units(units, source_lang, target_lang, mappings=None):
 # ---------------------------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser(
-        description=(f"{CUI_BANNER}\nICDEV Type Checker — Phase 2: Type-Compatibility Pre-Check (D253)"),
+        description=(
+            f"{CUI_BANNER}\n"
+            "ICDEV™ Type Checker — Phase 2: Type-Compatibility Pre-Check (D253)"
+        ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=textwrap.dedent(f"""\
             Examples:
@@ -341,7 +338,6 @@ def main():
         try:
             sys.path.insert(0, str(BASE_DIR))
             from tools.audit.audit_logger import log_event
-
             log_event(
                 event_type="translation.type_check",
                 actor="type-checker",
@@ -361,10 +357,8 @@ def main():
     if args.json_output:
         print(json.dumps(result, indent=2))
     else:
-        print(
-            f"[INFO] Type-check: {result['compatible']}/{result['total_checked']} units compatible "
-            f"({result['compatibility_pct']}%)"
-        )
+        print(f"[INFO] Type-check: {result['compatible']}/{result['total_checked']} units compatible "
+              f"({result['compatibility_pct']}%)")
         if result["incompatible"] > 0:
             print(f"[WARN] {result['incompatible']} units have type compatibility issues")
             for r in result["results"]:

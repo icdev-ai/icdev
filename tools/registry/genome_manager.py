@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Capability Genome Manager -- versioned capability genome with semver + SHA-256.
 
 ADR D209: Genome is versioned with semver + content hash. Children can pin to a
@@ -15,7 +15,7 @@ content (never deletes).
 ADR D215: Genome inheritance at birth is snapshot-based -- child gets current
 genome; does not auto-upgrade.
 
-The Capability Genome is the DNA of the ICDEV ecosystem. It captures the set of
+The Capability Genome is the DNA of the ICDEV™ ecosystem. It captures the set of
 core capabilities (tools, goals, args, context, hardprompts), compliance configs,
 security gate definitions, self-healing patterns, knowledge base patterns, and
 default configurations that every child application inherits at birth.
@@ -38,6 +38,7 @@ import os
 import sqlite3
 import sys
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -145,7 +146,7 @@ def _audit(event_type, action, details=None):
 class GenomeManager:
     """Versioned capability genome with semver + SHA-256 content hash (D209).
 
-    The genome tracks all core capabilities that define the ICDEV ecosystem.
+    The genome tracks all core capabilities that define the ICDEV™ ecosystem.
     Each version is immutable (append-only, D6). Rollback creates a new version
     with the content of the target version.
     """
@@ -161,8 +162,7 @@ class GenomeManager:
 
     def _get_conn(self):
         """Get a database connection with row factory."""
-        conn = sqlite3.connect(str(self.db_path))
-        conn.row_factory = sqlite3.Row
+        conn = get_connection(db_path=str(self.db_path))
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA foreign_keys=ON")
         return conn
@@ -512,7 +512,7 @@ class GenomeManager:
 # =========================================================================
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Capability Genome Manager -- versioned genome with semver + SHA-256"
+        description="ICDEV™ Capability Genome Manager -- versioned genome with semver + SHA-256"
     )
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--db-path", type=Path, default=None, help="Database path override")

@@ -462,7 +462,7 @@ def get_conversation(message_id: str, db_path=None) -> list:
 def main():
     """CLI for agent mailbox operations."""
     parser = argparse.ArgumentParser(
-        description="ICDEV Agent Mailbox — HMAC-signed inter-agent messaging"
+        description="ICDEV™ Agent Mailbox — HMAC-signed inter-agent messaging"
     )
     sub = parser.add_subparsers(dest="command", help="Mailbox command")
 

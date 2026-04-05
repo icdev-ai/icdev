@@ -1,7 +1,7 @@
 # [TEMPLATE: CUI // SP-CTI]
 apiVersion: v2
 name: icdev
-description: ICDEV - Intelligent Certified Development Platform (On-Premises)
+description: ICDEV™ - Intelligent Certified Development Platform (On-Premises)
 type: application
 version: 1.0.0
 appVersion: "21.0.0"
@@ -17,7 +17,7 @@ keywords:
   - nist
   - on-premises
 maintainers:
-  - name: ICDEV Team
+  - name: ICDEV™ Team
 home: https://icdev.example.com
 icon: https://icdev.example.com/logo.png
 sources:

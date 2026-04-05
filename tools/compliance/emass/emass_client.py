@@ -17,8 +17,8 @@ Usage:
 
 import json
 import logging
-import sqlite3
 import time
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -91,8 +91,7 @@ def _get_connection(db_path=None):
     path = db_path or DB_PATH
     if not path.exists():
         raise FileNotFoundError(f"Database not found: {path}")
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -101,7 +100,7 @@ def _log_audit(conn, project_id, action, details=None):
 
     Args:
         conn: Active database connection.
-        project_id: ICDEV project identifier.
+        project_id: ICDEV™ project identifier.
         action: Short action description (e.g., ``push_controls``).
         details: Optional dict of additional context.
     """
@@ -642,7 +641,7 @@ class EMASSClient:
         payload = [
             {
                 "cci": t.get("cci", t.get("control_id", "")),
-                "testedBy": t.get("testedBy", t.get("tested_by", "ICDEV Compliance Engine")),
+                "testedBy": t.get("testedBy", t.get("tested_by", "ICDEV™ Compliance Engine")),
                 "testDate": t.get(
                     "testDate",
                     t.get("test_date", datetime.now(timezone.utc).strftime("%Y-%m-%d")),
@@ -762,13 +761,13 @@ class EMASSClient:
 
 
 def _map_impl_status_to_emass(status):
-    """Map ICDEV implementation status to eMASS-accepted values.
+    """Map ICDEV™ implementation status to eMASS-accepted values.
 
     eMASS accepts: Planned, Implemented, Inherited, Not Applicable,
     Manually Inherited.
 
     Args:
-        status: ICDEV-internal status string.
+        status: ICDEV™-internal status string.
 
     Returns:
         eMASS-compatible implementation status string.
@@ -786,12 +785,12 @@ def _map_impl_status_to_emass(status):
 
 
 def _map_poam_status_to_emass(status):
-    """Map ICDEV POA&M status to eMASS-accepted values.
+    """Map ICDEV™ POA&M status to eMASS-accepted values.
 
     eMASS accepts: Ongoing, Completed, Risk Accepted, Delayed, Cancelled.
 
     Args:
-        status: ICDEV-internal POA&M status string.
+        status: ICDEV™-internal POA&M status string.
 
     Returns:
         eMASS-compatible POA&M status string.
@@ -811,12 +810,12 @@ def _map_poam_status_to_emass(status):
 
 
 def _map_severity_to_emass(severity):
-    """Map ICDEV severity to eMASS-accepted severity values.
+    """Map ICDEV™ severity to eMASS-accepted severity values.
 
     eMASS accepts: Very High, High, Moderate, Low, Very Low.
 
     Args:
-        severity: ICDEV-internal severity string.
+        severity: ICDEV™-internal severity string.
 
     Returns:
         eMASS-compatible severity string.
@@ -841,12 +840,12 @@ def _map_severity_to_emass(severity):
 
 
 def _map_compliance_status_to_emass(status):
-    """Map ICDEV test compliance status to eMASS-accepted values.
+    """Map ICDEV™ test compliance status to eMASS-accepted values.
 
     eMASS accepts: Compliant, Non-Compliant, Not Applicable.
 
     Args:
-        status: ICDEV-internal compliance/test status string.
+        status: ICDEV™-internal compliance/test status string.
 
     Returns:
         eMASS-compatible compliance status string.

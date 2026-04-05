@@ -1,8 +1,8 @@
 # CUI // SP-CTI
 # Genesis v2.0 — Autonomous Research Lab Configuration
 #
-# Controls the always-on Genesis daemon and its 12 Reflexes.
-# This is the ARGS layer (GOTCHA) — change behavior without editing goals/tools.
+# Controls the always-on Genesis daemon and its 14 Reflexes.
+# This is the ARGS layer (FORGE) — change behavior without editing goals/tools.
 #
 # Override any value via environment variable:
 #   ICDEV_GENESIS_ENABLED=true
@@ -16,6 +16,15 @@ classification: "CUI // SP-CTI"
 
 enabled: true  # D-GEN-9: enabled for persistent daemon
 env_override: ICDEV_GENESIS_ENABLED
+
+# ── Active Hours ───────────────────────────────────────────────────────────
+# Reflexes only run within this window. Outside it, is_due() returns false.
+# Interval/continuous reflexes (research, ingest, heal) are also gated.
+active_hours:
+  enabled: true
+  start_hour: 9    # 9 AM local
+  end_hour: 23     # 11 PM local
+  timezone: "America/New_York"
 
 # ── LLM Configuration ───────────────────────────────────────────────────────
 
@@ -113,7 +122,7 @@ paths:
   feedback: data/genesis/feedback
   reports: data/genesis/reports
 
-# ── 12 Reflexes ──────────────────────────────────────────────────────────────
+# ── 14 Reflexes ──────────────────────────────────────────────────────────────
 
 reflexes:
 
@@ -145,7 +154,7 @@ reflexes:
   scout:
     enabled: true
     risk_tier: green
-    schedule: "daily 07:00"
+    schedule: "daily 10:30"
     description: "Monitor competitor/adjacent GitHub repos for intel"
     success_metric:
       name: briefs_generated
@@ -156,7 +165,7 @@ reflexes:
   audit:
     enabled: true
     risk_tier: green
-    schedule: "daily 06:00"
+    schedule: "daily 09:15"
     description: "Self-audit: code quality, security, compliance, STIG, SbD"
     success_metric:
       name: audit_completed
@@ -218,12 +227,25 @@ reflexes:
       - circuit_breaker_status
       - recommendations
 
+  govcon_scan:
+    enabled: true
+    risk_tier: green
+    schedule: "daily 10:00"
+    description: "SAM.gov incremental scan → demand detection → Pulse article bridge"
+    success_metric:
+      name: govcon_new_opportunities
+      target: 0
+    outputs:
+      - sam_scan_results
+      - demand_signals
+      - pulse_articles
+
   # ── YELLOW tier (reversible writes, sandbox + rollback) ──────────────────
 
   publish:
     enabled: true
     risk_tier: yellow
-    schedule: "daily 08:00"
+    schedule: "daily 11:00"
     description: "End-to-end Pulse: demand topic → draft → WriteGuard → staging"
     success_metric:
       name: writeguard_score
@@ -237,7 +259,7 @@ reflexes:
   test:
     enabled: true
     risk_tier: yellow
-    schedule: "nightly 03:00"
+    schedule: "daily 22:00"
     description: "Identify under-tested tools, generate tests, run, commit passing"
     success_metric:
       name: coverage_delta
@@ -249,7 +271,7 @@ reflexes:
   learn:
     enabled: true
     risk_tier: yellow
-    schedule: "nightly 04:00"
+    schedule: "daily 22:30"
     description: "Generate training pairs from approved outputs, fine-tune Ollama"
     success_metric:
       name: validation_loss_delta
@@ -282,12 +304,42 @@ reflexes:
     max_auto_heals_per_hour: 5
     cooldown_minutes: 10
 
+  kanban:
+    enabled: true
+    risk_tier: green
+    schedule: "continuous"
+    interval_seconds: 60  # Check every minute for due tasks + Telegram commands
+    description: "Poll kanban_tasks for scheduled tasks past due, move to in_progress, write prompt files"
+    success_metric:
+      name: tasks_activated
+      threshold: 0
+      operator: gte
+
+  remediation_lens:
+    enabled: true
+    risk_tier: yellow
+    schedule: "every 60m"
+    interval_seconds: 3600
+    description: "Canvas remediation full loop: scan → propose → verify → escalate → archive"
+    success_metric:
+      name: proposals_created
+      threshold: 0
+      operator: gte         # 0 = no low-score canvases (healthy), >0 = proposals generated
+    # Score below which a canvas is flagged for remediation
+    score_threshold: 85.0
+    # Maximum new proposals this reflex may create per hour (self-healing guardrail)
+    max_proposals_per_hour: 5
+    # Maximum auto-executions per hour (applies to Genesis-initiated executions)
+    max_auto_executions_per_hour: 3
+    # Re-notify about pending proposals that have been waiting this long
+    notify_after_minutes: 30
+
   # ── ORANGE tier (code mutation, human review required) ───────────────────
 
   evolve:
     enabled: true
     risk_tier: orange
-    schedule: "nightly 02:00"
+    schedule: "daily 21:30"
     description: "Autoresearch-style: pick worst tool → improve → test → keep/discard"
     success_metric:
       name: test_pass_and_complexity
@@ -312,11 +364,33 @@ reflexes:
       - tools/db/storage.py  # Critical infrastructure, no auto-mutation
       - tools/genesis/daemon.py  # No self-modification of the daemon itself
     require_human_merge: true
+    # ── Feature: Variant Archive (DGM-inspired) ──────────────────────────────
+    # Store accepted AND rejected mutation variants for learning context
+    archive:
+      enabled: true
+      path: data/genesis/evolve_archive
+      max_variants_per_tool: 10
+    # ── Feature: Meta-Evolve (self-modifying selection strategy) ─────────────
+    # Rotates selection strategy when acceptance rate drops below threshold
+    meta_evolve:
+      enabled: false  # Off by default, opt-in
+      evaluate_every_n_cycles: 10
+      strategies:
+        - worst_code_quality
+        - most_failures
+        - highest_churn
+        - lowest_coverage
+      min_acceptance_rate: 0.20
+    # ── Feature: Peer-Review Gate (Hyperagents-inspired) ─────────────────────
+    # Lightweight LLM diff review before running full test suite
+    peer_review:
+      enabled: false  # Off by default
+      reviewer_function: wg_coherence_check  # Scanner tier in LLM router
 
   docs:
     enabled: true
     risk_tier: green
-    schedule: "daily 06:00"
+    schedule: "daily 09:30"
     description: "Documentation drift detection — stale refs, missing docs, manifest drift, route drift"
     success_metric:
       name: docs_drift_count
@@ -329,28 +403,75 @@ reflexes:
       claude_md_route_drift: true
       readme_staleness: true
 
-  quality:
+  # ── Phase 67 — Bayesian Autoresearch (D-AR-9) ──────────────────────────────
+
+  experiment:
+    enabled: false  # Opt-in (requires ICDEV_AUTORESEARCH_ENABLED=true)
+    risk_tier: orange
+    schedule: "daily 21:00"
+    description: "Bayesian Autoresearch — Karpathy-loop autonomous experiments"
+    success_metric:
+      name: experiments_accepted_pct
+      threshold: 0
+      operator: gte
+    signal_score_threshold: 0.70
+    max_experiments_per_run: 3
+    export_gkp: true
+    domains:
+      - compliance
+      - code_quality
+      - security
+
+  # ── Phase 72 — Adaptive Skill Synthesizer (Hermes adaptation) ──────────────
+
+  synthesize:
+    enabled: true
+    risk_tier: yellow
+    schedule: "weekly Wed 12:00"
+    description: "Detect recurring tool patterns, generate FORGE goal workflow drafts"
+    success_metric:
+      name: patterns_detected
+      threshold: 0
+      operator: gte  # 0 = no patterns (healthy), > 0 = new patterns found
+    min_pattern_frequency: 3
+    min_chain_length: 3
+    lookback_days: 7
+    max_goals_per_run: 3
+
+  # ── Goal Learner — Self-Improving Goals from Experience ─────────────────────
+
+  goal_learner:
+    enabled: true
+    risk_tier: yellow
+    schedule: "daily 20:00"
+    description: "Detect novel problem-solving not covered by existing goals, auto-generate FORGE goal files"
+    success_metric:
+      name: goals_generated
+      threshold: 0
+      operator: gte  # 0 = no novel events (healthy), > 0 = new goals learned
+    novelty_threshold: 0.6
+    max_goals_per_run: 3
+
+  # ── Oracle Predictive Intelligence (tools/oracle/) ──────────────────────────
+
+  oracle:
     enabled: true
     risk_tier: green
-    schedule: "every 6h"
-    description: "QDC quality gate execution, regression detection, auto-remediation, Oracle predictions, GKP proposals"
-    module: "tools.genesis.reflexes.quality"
-    entry_point: "run_reflex"
+    schedule: "daily 08:00"
+    description: "Multi-lens predictive intelligence — trends, risks, opportunities, horizon, compliance, knowledge gaps"
     success_metric:
-      name: uqs_score
-      threshold: 70
-      operator: gte
-    oracle_lens: "tools.oracle.lenses.lens_quality.QualityLens"
-    persistence:
-      db: "data/genesis_quality.db"
-      snapshots_table: "quality_snapshots"
-      trends_table: "quality_trends"
-      gkps_table: "quality_gkps"
-    auto_fix:
-      enabled: true
-      gates: ["lint", "deprecation"]
-      confidence_threshold: 0.7
-      max_per_run: 5
+      name: predictions_generated
+      threshold: 0
+      operator: gte  # 0 = no signals to analyze (healthy), > 0 = predictions produced
+    lenses:
+      - trend
+      - risk
+      - opportunity
+      - horizon
+      - compliance
+      - knowledge
+    min_confidence_for_gkp: 0.4   # Only emit GKP for medium/high confidence predictions
+    max_predictions_per_lens: 5
 
 # ── Promoter Configuration ───────────────────────────────────────────────────
 
@@ -371,6 +492,8 @@ promoter:
       min_confidence: 0.85
     - artifact_type: capability_update
       min_confidence: 0.0  # Marketplace capability updates are safe
+    - artifact_type: anticipation_report
+      min_confidence: 0.80  # Only high-confidence regulatory anticipation auto-promotes
     # Reflex-based rules: any GKP from these reflexes auto-promotes
     - reflex: comply
       min_confidence: 0.0  # All compliance outputs are safe
@@ -379,8 +502,10 @@ promoter:
     # Source-based rules: trusted external sources auto-promote
     - source_contains: CISA
       min_confidence: 0.0  # cisa.gov advisories and KEV
+      hide_from_dashboard: true  # CVE/KEV auto-promoted, no review needed
     - source_contains: OWASP
       min_confidence: 0.0  # owasp.org feeds
+      hide_from_dashboard: true  # Auto-promoted, no review needed
     - source_contains: nist
       min_confidence: 0.0  # NIST NVD and standards
 

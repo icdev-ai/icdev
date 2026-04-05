@@ -5,11 +5,12 @@ Uses Amazon Bedrock (Claude) for SQL generation, with strict read-only enforceme
 Decision D30: Bedrock for NLQ→SQL (air-gap safe).
 Decision D34: Read-only SQL enforcement.
 """
+from __future__ import annotations
 
 import json
 import re
-import sqlite3
 import time
+from tools.db.storage import get_connection
 from pathlib import Path
 from typing import Optional
 
@@ -44,8 +45,7 @@ QUERY_TIMEOUT_SECONDS = 10
 def extract_schema(db_path: Path = None) -> dict:
     """Extract database schema: table names, columns, types, row counts."""
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(path))
     schema = {}
 
     tables = conn.execute(
@@ -55,7 +55,7 @@ def extract_schema(db_path: Path = None) -> dict:
     for table_row in tables:
         table_name = table_row["name"]
         columns = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
-        row_count = conn.execute(f"SELECT COUNT(*) as cnt FROM {table_name}").fetchone()["cnt"]
+        row_count = conn.execute(f"SELECT COUNT(*) as cnt FROM {table_name}").fetchone()["cnt"]  # nosec B608 -- table/column names are internal constants, not user input
 
         schema[table_name] = {
             "columns": [
@@ -201,7 +201,7 @@ def _generate_sql_fallback(query: str, schema: dict) -> Optional[str]:
     # Generic: try to find table name in query
     for table_name in schema:
         if table_name.replace("_", " ") in query_lower or table_name in query_lower:
-            return f"SELECT * FROM {table_name} ORDER BY ROWID DESC LIMIT 100"
+            return f"SELECT * FROM {table_name} ORDER BY ROWID DESC LIMIT 100"  # nosec B608 -- table/column names are internal constants, not user input
 
     return None
 
@@ -209,8 +209,7 @@ def _generate_sql_fallback(query: str, schema: dict) -> Optional[str]:
 def execute_safely(sql: str, db_path: Path = None) -> dict:
     """Execute SQL with row limit and timeout. Returns results dict."""
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(path))
 
     # Set timeout
     conn.execute(f"PRAGMA busy_timeout = {QUERY_TIMEOUT_SECONDS * 1000}")
@@ -259,7 +258,7 @@ def log_nlq_query(
 ):
     """Log NLQ query to audit table."""
     try:
-        conn = sqlite3.connect(str(DB_PATH))
+        conn = get_connection(db_path=str(DB_PATH))
         conn.execute(
             """INSERT INTO nlq_queries
                (query_text, generated_sql, result_count, execution_time_ms,

@@ -2,7 +2,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Google Vertex AI LLM Provider.
 
 Supports Google Cloud Vertex AI with Assured Workloads for FedRAMP
@@ -56,7 +56,7 @@ except ImportError:
 def _convert_messages_to_vertex(
     messages: List[Dict[str, Any]],
 ) -> List[Any]:
-    """Convert ICDEV universal messages to Vertex AI Content format.
+    """Convert ICDEV™ universal messages to Vertex AI Content format.
 
     Handles plain strings, Anthropic-style content blocks, and
     OpenAI-style content blocks. Maps 'assistant' role to 'model'.

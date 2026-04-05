@@ -1,9 +1,9 @@
 # CUI // SP-CTI
 # /innovate — Innovation Engine: Comprehensive Analysis & Recommendations
 
-Run the full ICDEV Innovation Engine pipeline to discover capability gaps, competitive threats, compliance changes, code quality trends, and enhancement opportunities across all phases. Produces a prioritized, tenet-aligned recommendation report.
+Run the full ICDEV™ Innovation Engine pipeline to discover capability gaps, competitive threats, compliance changes, code quality trends, and enhancement opportunities across all phases. Produces a prioritized, tenet-aligned recommendation report.
 
-This is a repeatable process. Run periodically (weekly/monthly) to keep ICDEV ahead of the curve.
+This is a repeatable process. Run periodically (weekly/monthly) to keep ICDEV™ ahead of the curve.
 
 ## Variables
 
@@ -80,7 +80,7 @@ SCOPE: Comma-separated analysis scopes to run. Default: `all`. Options: `introsp
    python tools/innovation/triage_engine.py --triage-all --json
    ```
 
-   Gates: classify, GOTCHA fit, boundary impact, compliance pre-check, duplicate/license.
+   Gates: classify, FORGE fit, boundary impact, compliance pre-check, duplicate/license.
 
 ### Phase 4: Synthesis & Recommendations
 
@@ -94,13 +94,13 @@ SCOPE: Comma-separated analysis scopes to run. Default: `all`. Options: `introsp
 
     a. **Executive Summary** — Total signals discovered, scored, triaged. Active trends. Pipeline health.
 
-    b. **Top Signals** — List top 10 signals by score with: title, source, score, dimensions, triage result, GOTCHA layer, boundary tier.
+    b. **Top Signals** — List top 10 signals by score with: title, source, score, dimensions, triage result, FORGE layer, boundary tier.
 
     c. **Active Trends** — Group related signals into themes. Show velocity (accelerating/stable/declining).
 
-    d. **Competitive Gaps** — Features competitors have that ICDEV lacks. Prioritize by feasibility + compliance alignment.
+    d. **Competitive Gaps** — Features competitors have that ICDEV™ lacks. Prioritize by feasibility + compliance alignment.
 
-    e. **Standards Updates** — New/changed compliance requirements with deadline and ICDEV impact assessment.
+    e. **Standards Updates** — New/changed compliance requirements with deadline and ICDEV™ impact assessment.
 
     f. **Code Quality Trends** — Compare current scan to previous: complexity trend, smell density, maintainability direction.
 
@@ -115,11 +115,11 @@ SCOPE: Comma-separated analysis scopes to run. Default: `all`. Options: `introsp
     i. **Tenet Alignment Check** — For each recommendation, verify:
        - Deterministic (no probabilistic business logic)
        - Read-only / advisory-only (no autonomous code modification)
-       - GOTCHA framework fit (maps to Goal/Tool/Arg/Context/HardPrompt)
+       - FORGE framework fit (maps to Goal/Tool/Arg/Context/HardPrompt)
        - Air-gap safe (works without internet)
        - Compliance-first (strengthens, never weakens posture)
 
-    Filter out any recommendation that violates ICDEV tenets.
+    Filter out any recommendation that violates ICDEV™ tenets.
 
 ## Notes
 

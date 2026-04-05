@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Centralized database path resolution and connection helpers for ICDEV.
+"""Centralized database path resolution and connection helpers for ICDEV™.
 
 Provides functions to resolve database paths and create connections with a
 consistent fallback chain: env var > explicit argument > default.
@@ -25,6 +25,7 @@ This module uses only Python stdlib (air-gap safe).
 
 import os
 import sqlite3
+from tools.db.storage import get_connection
 from pathlib import Path
 from typing import Optional, Union
 
@@ -34,18 +35,18 @@ _DEFAULT_DB = _PROJECT_ROOT / "data" / "icdev.db"
 
 
 def get_project_root() -> Path:
-    """Return the ICDEV project root directory."""
+    """Return the ICDEV™ project root directory."""
     return _PROJECT_ROOT
 
 
 def get_icdev_db_path(explicit: Optional[Union[str, Path]] = None) -> Path:
-    """Resolve the ICDEV database path.
+    """Resolve the ICDEV™ database path.
 
     Args:
         explicit: Optional explicit path override (highest priority).
 
     Returns:
-        Resolved Path to the ICDEV database.
+        Resolved Path to the ICDEV™ database.
 
     Fallback chain:
         1. explicit argument
@@ -102,7 +103,7 @@ def get_db_connection(
     validate: bool = False,
     row_factory: bool = True,
 ) -> sqlite3.Connection:
-    """Get a SQLite connection to the ICDEV database.
+    """Get a SQLite connection to the ICDEV™ database.
 
     Centralizes the ``_get_connection()`` pattern duplicated across 87+ files.
 
@@ -119,10 +120,13 @@ def get_db_connection(
     """
     path = get_icdev_db_path(db_path)
     if validate and not path.exists():
-        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
-    conn = sqlite3.connect(str(path))
+        raise FileNotFoundError(
+            f"Database not found: {path}\n"
+            "Run: python tools/db/init_icdev_db.py"
+        )
+    conn = get_connection()
     if row_factory:
-        conn.row_factory = sqlite3.Row
+        pass  # get_connection() handles row_factory internally
     return conn
 
 
@@ -135,9 +139,9 @@ def get_memory_connection(
     path = get_memory_db_path(db_path)
     if validate and not path.exists():
         raise FileNotFoundError(f"Memory database not found: {path}")
-    conn = sqlite3.connect(str(path))
+    conn = get_connection()
     if row_factory:
-        conn.row_factory = sqlite3.Row
+        pass  # get_connection() handles row_factory internally
     return conn
 
 
@@ -150,7 +154,7 @@ def get_platform_connection(
     path = get_platform_db_path(db_path)
     if validate and not path.exists():
         raise FileNotFoundError(f"Platform database not found: {path}")
-    conn = sqlite3.connect(str(path))
+    conn = get_connection()
     if row_factory:
-        conn.row_factory = sqlite3.Row
+        pass  # get_connection() handles row_factory internally
     return conn

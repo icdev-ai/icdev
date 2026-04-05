@@ -57,7 +57,7 @@ ICDEV_TAG_MAP = {
 TAG_PATTERN = re.compile(r"\{\{icdev:\s*(\w+)\}\}", re.IGNORECASE)
 
 # Bot marker to prevent loops
-BOT_MARKER = "[ICDEV-BOT]"
+BOT_MARKER = "[ICDEV™-BOT]"
 
 
 def extract_icdev_tag(text: str) -> Optional[str]:
@@ -308,7 +308,7 @@ def poll_gitlab_tasks(interval: int = 20, dry_run: bool = False):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="ICDEV GitLab Task Board Monitor")
+    parser = argparse.ArgumentParser(description="ICDEV™ GitLab Task Board Monitor")
     parser.add_argument("--interval", type=int, default=20, help="Poll interval in seconds")
     parser.add_argument("--dry-run", action="store_true", help="Don't actually spawn workflows")
     parser.add_argument("--once", action="store_true", help="Poll once and exit")

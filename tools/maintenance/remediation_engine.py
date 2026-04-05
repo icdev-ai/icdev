@@ -15,9 +15,9 @@ CLI: python tools/maintenance/remediation_engine.py --project-id <id> [--vulnera
 import argparse
 import json
 import re
-import sqlite3
 import subprocess
 import sys
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -37,8 +37,7 @@ SEVERITY_RANK = {"low": 1, "medium": 2, "high": 3, "critical": 4}
 def _get_connection(db_path=None):
     """Open a SQLite connection with row_factory set."""
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -876,7 +875,7 @@ def _print_summary(result):
 
     dry_tag = " [DRY RUN]" if result.get("dry_run") else ""
     print(f"\n{'=' * 60}")
-    print(f"  ICDEV REMEDIATION ENGINE{dry_tag}")
+    print(f"  ICDEV™ REMEDIATION ENGINE{dry_tag}")
     print(f"{'=' * 60}")
     print(f"  Project: {result.get('project_name', result['project_id'])}")
     print(f"  Vulnerabilities found: {result['total_vulnerabilities']}")

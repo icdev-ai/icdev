@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ICDEV SaaS — Authentication & Authorization Middleware.
+"""ICDEV™ SaaS — Authentication & Authorization Middleware.
 CUI // SP-CTI
 
 Flask before_request middleware that:
@@ -13,12 +13,12 @@ Usage:
     from tools.saas.auth.middleware import register_auth_middleware
     register_auth_middleware(app)
 """
-
 import json
 import logging
 import os
 import sys
 import time
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -55,7 +55,6 @@ def _get_request_method() -> str:
     """Get current request method safely."""
     try:
         from flask import request
-
         return request.method
     except Exception:
         return "GET"
@@ -104,7 +103,6 @@ def _validate_credentials(creds: dict) -> Optional[dict]:
         # Validate opaque portal session token (Enhancement #1A)
         try:
             from tools.saas.portal.app import validate_portal_session_token
-
             sess = validate_portal_session_token(creds["token"])
             if sess:
                 return {
@@ -120,46 +118,37 @@ def _validate_credentials(creds: dict) -> Optional[dict]:
 
     if method == "api_key":
         from tools.saas.auth.api_key_auth import validate_api_key
-
         return validate_api_key(creds["token"])
 
     elif method == "oauth":
         from tools.saas.auth.oauth_auth import validate_oauth_token
-
         return validate_oauth_token(creds["token"])
 
     elif method == "cac_piv":
         from tools.saas.auth.cac_auth import validate_cac_cert
-
         return validate_cac_cert(creds["cn"], creds.get("serial"))
 
     return None
 
 
-def _log_auth_event(tenant_id: Optional[str], user_id: Optional[str], event_type: str, details: dict, ip_address: str):
+def _log_auth_event(tenant_id: Optional[str], user_id: Optional[str],
+                    event_type: str, details: dict, ip_address: str):
     """Log authentication event to platform audit trail."""
     try:
-        import sqlite3
-
-        platform_db = Path(os.environ.get("PLATFORM_DB_PATH", str(BASE_DIR / "data" / "platform.db")))
+        platform_db = Path(os.environ.get(
+            "PLATFORM_DB_PATH", str(BASE_DIR / "data" / "platform.db")
+        ))
         if not platform_db.exists():
             return
-        conn = sqlite3.connect(str(platform_db))
-        conn.execute(
-            """
+        conn = get_connection()
+        conn.execute("""
             INSERT INTO audit_platform (tenant_id, user_id, event_type, action, details, ip_address, recorded_at)
             VALUES (?, ?, ?, ?, ?, ?, ?)
-        """,
-            (
-                tenant_id,
-                user_id,
-                event_type,
-                details.get("action", event_type),
-                json.dumps(details),
-                ip_address,
-                datetime.now(timezone.utc).isoformat(),
-            ),
-        )
+        """, (
+            tenant_id, user_id, event_type, details.get("action", event_type),
+            json.dumps(details), ip_address,
+            datetime.now(timezone.utc).isoformat()
+        ))
         conn.commit()
         conn.close()
     except Exception as e:
@@ -191,17 +180,11 @@ def register_auth_middleware(app):
         # Extract credentials
         creds = _extract_credentials(request)
         if not creds:
-            _log_auth_event(
-                None,
-                None,
-                "auth.failed",
-                {
-                    "action": "missing_credentials",
-                    "path": path,
-                    "method": request.method,
-                },
-                request.remote_addr or "unknown",
-            )
+            _log_auth_event(None, None, "auth.failed", {
+                "action": "missing_credentials",
+                "path": path,
+                "method": request.method,
+            }, request.remote_addr or "unknown")
             return jsonify({"error": "Authentication required", "code": "AUTH_REQUIRED"}), 401
 
         # Validate credentials
@@ -210,18 +193,12 @@ def register_auth_middleware(app):
         duration_ms = int((time.time() - start) * 1000)
 
         if not auth_info:
-            _log_auth_event(
-                None,
-                None,
-                "auth.failed",
-                {
-                    "action": "invalid_credentials",
-                    "auth_method": creds.get("method"),
-                    "path": path,
-                    "duration_ms": duration_ms,
-                },
-                request.remote_addr or "unknown",
-            )
+            _log_auth_event(None, None, "auth.failed", {
+                "action": "invalid_credentials",
+                "auth_method": creds.get("method"),
+                "path": path,
+                "duration_ms": duration_ms,
+            }, request.remote_addr or "unknown")
             return jsonify({"error": "Invalid credentials", "code": "AUTH_INVALID"}), 401
 
         # Set tenant context on Flask g
@@ -232,43 +209,30 @@ def register_auth_middleware(app):
 
         # Check RBAC
         from tools.saas.auth.rbac import require_permission
-
         if not require_permission(
             role=auth_info["role"],
             path=path,
             method=request.method,
             user_id=auth_info["user_id"],
         ):
-            _log_auth_event(
-                auth_info["tenant_id"],
-                auth_info["user_id"],
-                "auth.forbidden",
-                {
-                    "action": "permission_denied",
-                    "path": path,
-                    "method": request.method,
-                    "role": auth_info["role"],
-                },
-                request.remote_addr or "unknown",
-            )
-            return jsonify(
-                {
-                    "error": "Insufficient permissions",
-                    "code": "FORBIDDEN",
-                    "role": auth_info["role"],
-                    "path": path,
-                }
-            ), 403
+            _log_auth_event(auth_info["tenant_id"], auth_info["user_id"],
+                          "auth.forbidden", {
+                              "action": "permission_denied",
+                              "path": path,
+                              "method": request.method,
+                              "role": auth_info["role"],
+                          }, request.remote_addr or "unknown")
+            return jsonify({
+                "error": "Insufficient permissions",
+                "code": "FORBIDDEN",
+                "role": auth_info["role"],
+                "path": path,
+            }), 403
 
         # Log successful auth (debug level to avoid noise)
-        logger.debug(
-            "Auth OK: tenant=%s user=%s role=%s method=%s path=%s",
-            auth_info["tenant_slug"],
-            auth_info["email"],
-            auth_info["role"],
-            request.method,
-            path,
-        )
+        logger.debug("Auth OK: tenant=%s user=%s role=%s method=%s path=%s",
+                     auth_info["tenant_slug"], auth_info["email"],
+                     auth_info["role"], request.method, path)
 
         return None  # Continue to handler
 

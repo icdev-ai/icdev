@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-"""ICDEV Pulse Demand Signal Detector — identifies unmet capability gaps
+"""ICDEV™ Pulse Demand Signal Detector — identifies unmet capability gaps
 from SAM.gov pain points and builds the capability graph.
 
 Design decisions:
@@ -51,7 +51,6 @@ HIGH_DEMAND_THRESHOLD = 5
 
 # ── Detection ─────────────────────────────────────────────────────────
 
-
 def detect_demand_signals(
     pain_points: list[dict],
     opportunity_id: str = "",
@@ -96,14 +95,12 @@ def detect_demand_signals(
                     "entity_id": opportunity_id,
                     "relationship": "addresses",
                     "confidence": min(cap.get("match_score", 1) / 10, 1.0),
-                    "metadata": json.dumps(
-                        {
-                            "opportunity_title": opportunity_title[:200],
-                            "domain": pp_domain,
-                            "keywords": pp_keywords[:10],
-                            "matched_keywords": cap.get("matched_keywords", []),
-                        }
-                    ),
+                    "metadata": json.dumps({
+                        "opportunity_title": opportunity_title[:200],
+                        "domain": pp_domain,
+                        "keywords": pp_keywords[:10],
+                        "matched_keywords": cap.get("matched_keywords", []),
+                    }),
                     "created_at": now,
                 }
                 edges.append(edge)
@@ -194,7 +191,6 @@ def _insert_graph_edge(edge: dict) -> None:
 
 # ── Aggregation ───────────────────────────────────────────────────────
 
-
 def aggregate_demand_signals() -> dict:
     """Compute frequency and velocity for demand signals.
 
@@ -206,7 +202,9 @@ def aggregate_demand_signals() -> dict:
     """
     try:
         with get_connection() as conn:
-            rows = conn.execute("SELECT * FROM pulse_demand_signals WHERE status != 'dismissed'").fetchall()
+            rows = conn.execute(
+                "SELECT * FROM pulse_demand_signals WHERE status != 'dismissed'"
+            ).fetchall()
 
         if not rows:
             return {"status": "ok", "total": 0, "high_demand_count": 0, "by_domain": {}}
@@ -230,7 +228,8 @@ def aggregate_demand_signals() -> dict:
                 with get_connection() as conn:
                     for item in items:
                         conn.execute(
-                            "UPDATE pulse_demand_signals SET is_high_demand = 1, frequency = ? WHERE id = ?",
+                            "UPDATE pulse_demand_signals SET is_high_demand = 1, "
+                            "frequency = ? WHERE id = ?",
                             (freq, item["id"]),
                         )
                     conn.commit()
@@ -270,7 +269,6 @@ def _extract_top_keywords(items: list[dict], top_n: int = 5) -> list[str]:
 
 
 # ── High-demand queries ──────────────────────────────────────────────
-
 
 def get_high_demand_signals(threshold: int = HIGH_DEMAND_THRESHOLD) -> dict:
     """Return demand signals flagged as high-demand.
@@ -348,23 +346,21 @@ def suggest_positioning_articles(limit: int = 5) -> dict:
             if top_kw:
                 topic += f": {', '.join(kw.title() for kw in top_kw[:3])}"
 
-            suggestions.append(
-                {
-                    "topic": topic,
-                    "domain": domain,
-                    "frequency": freq,
-                    "keywords": top_kw,
-                    "cluster": {
-                        "id": f"demand-{uuid4().hex[:8]}",
-                        "name": topic,
-                        "description": topic,
-                        "pain_points": json.dumps(top_kw),
-                        "research_ids": json.dumps([]),
-                        "priority_score": min(freq / 10, 1.0),
-                        "source": "demand_signal",
-                    },
-                }
-            )
+            suggestions.append({
+                "topic": topic,
+                "domain": domain,
+                "frequency": freq,
+                "keywords": top_kw,
+                "cluster": {
+                    "id": f"demand-{uuid4().hex[:8]}",
+                    "name": topic,
+                    "description": topic,
+                    "pain_points": json.dumps(top_kw),
+                    "research_ids": json.dumps([]),
+                    "priority_score": min(freq / 10, 1.0),
+                    "source": "demand_signal",
+                },
+            })
 
         return {
             "status": "ok",
@@ -389,7 +385,8 @@ def get_capability_graph(capability_slug: str | None = None) -> dict:
         with get_connection() as conn:
             if capability_slug:
                 rows = conn.execute(
-                    "SELECT * FROM pulse_capability_graph WHERE capability_slug = ? ORDER BY created_at DESC LIMIT 100",
+                    "SELECT * FROM pulse_capability_graph "
+                    "WHERE capability_slug = ? ORDER BY created_at DESC LIMIT 100",
                     (capability_slug,),
                 ).fetchall()
             else:
@@ -414,25 +411,29 @@ def get_capability_graph(capability_slug: str | None = None) -> dict:
 
 # ── CLI ───────────────────────────────────────────────────────────────
 
-
 def main():
     """CLI entry point."""
-    parser = argparse.ArgumentParser(description="ICDEV Pulse Demand Signal Detector (CUI // SP-CTI)")
-    group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--detect", action="store_true", help="Detect demand signals from existing SAM data")
-    group.add_argument("--aggregate", action="store_true", help="Aggregate and flag high-demand signals")
-    group.add_argument("--high-demand", action="store_true", help="List high-demand unmet signals")
-    group.add_argument("--suggest-articles", action="store_true", help="Suggest positioning articles")
-    group.add_argument("--graph", action="store_true", help="Query capability graph")
-
-    parser.add_argument("--capability", type=str, help="Filter graph by capability slug")
-    parser.add_argument(
-        "--threshold",
-        type=int,
-        default=HIGH_DEMAND_THRESHOLD,
-        help=f"High-demand threshold (default: {HIGH_DEMAND_THRESHOLD})",
+    parser = argparse.ArgumentParser(
+        description="ICDEV™ Pulse Demand Signal Detector (CUI // SP-CTI)"
     )
-    parser.add_argument("--limit", type=int, default=5, help="Max suggestions (default: 5)")
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--detect", action="store_true",
+                       help="Detect demand signals from existing SAM data")
+    group.add_argument("--aggregate", action="store_true",
+                       help="Aggregate and flag high-demand signals")
+    group.add_argument("--high-demand", action="store_true",
+                       help="List high-demand unmet signals")
+    group.add_argument("--suggest-articles", action="store_true",
+                       help="Suggest positioning articles")
+    group.add_argument("--graph", action="store_true",
+                       help="Query capability graph")
+
+    parser.add_argument("--capability", type=str,
+                        help="Filter graph by capability slug")
+    parser.add_argument("--threshold", type=int, default=HIGH_DEMAND_THRESHOLD,
+                        help=f"High-demand threshold (default: {HIGH_DEMAND_THRESHOLD})")
+    parser.add_argument("--limit", type=int, default=5,
+                        help="Max suggestions (default: 5)")
     parser.add_argument("--json", action="store_true", help="JSON output")
     args = parser.parse_args()
 
@@ -455,10 +456,8 @@ def main():
                 ).fetchall()
 
             total_result = {
-                "status": "ok",
-                "opportunities_scanned": 0,
-                "total_matched": 0,
-                "total_unmatched": 0,
+                "status": "ok", "opportunities_scanned": 0,
+                "total_matched": 0, "total_unmatched": 0,
             }
             for row in rows:
                 r = dict(row)
@@ -471,13 +470,11 @@ def main():
                 if not keywords:
                     continue
 
-                pain_points = [
-                    {
-                        "text": r.get("opportunity_title", ""),
-                        "domain": r.get("domain_category", "general"),
-                        "keywords": keywords if isinstance(keywords, list) else [keywords],
-                    }
-                ]
+                pain_points = [{
+                    "text": r.get("opportunity_title", ""),
+                    "domain": r.get("domain_category", "general"),
+                    "keywords": keywords if isinstance(keywords, list) else [keywords],
+                }]
                 result = detect_demand_signals(
                     pain_points,
                     r.get("sam_opportunity_id", ""),

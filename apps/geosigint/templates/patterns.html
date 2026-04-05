@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% set active = "patterns" %}
+{% block title %}Patterns — GeoSIGINT{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Pattern Analysis</h1>
+    <p class="page-header__sub">Frequency hopping, burst transmissions, spatial clusters, and co-occurrence patterns</p>
+</div>
+
+<div class="stat-grid stat-grid--sm" id="pattern-stats"></div>
+
+<div class="grid-2">
+    <div class="card">
+        <div class="card__header">Detected Patterns</div>
+        <div class="card__body card__body--no-pad">
+            <table class="table table--striped" id="patterns-table">
+                <thead>
+                    <tr><th>Type</th><th>Description</th><th>Confidence</th><th>Detected</th></tr>
+                </thead>
+                <tbody id="patterns-body"></tbody>
+            </table>
+        </div>
+    </div>
+    <div class="card">
+        <div class="card__header">Anomalies</div>
+        <div class="card__body card__body--no-pad">
+            <table class="table table--striped">
+                <thead>
+                    <tr><th>Type</th><th>Severity</th><th>Description</th><th>Score</th></tr>
+                </thead>
+                <tbody id="anomalies-body"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+    // Patterns
+    fetch('/api/patterns').then(r=>r.json()).then(data => {
+        const types = {};
+        data.patterns.forEach(p => { types[p.pattern_type] = (types[p.pattern_type]||0) + 1; });
+
+        document.getElementById('pattern-stats').innerHTML = Object.entries(types).map(([t,c]) => `
+            <div class="stat-card stat-card--sm">
+                <div class="stat-card__value">${c}</div>
+                <div class="stat-card__label">${t.replace(/_/g,' ')}</div>
+            </div>
+        `).join('');
+
+        document.getElementById('patterns-body').innerHTML = data.patterns.map(p => `
+            <tr>
+                <td><span class="badge badge--${p.pattern_type}">${p.pattern_type.replace(/_/g,' ')}</span></td>
+                <td>${p.description || ''}</td>
+                <td>
+                    <div class="confidence-bar">
+                        <div class="confidence-bar__fill" style="width:${(p.confidence*100).toFixed(0)}%"></div>
+                        <span>${(p.confidence*100).toFixed(0)}%</span>
+                    </div>
+                </td>
+                <td class="text-muted">${(p.detected_at||'').slice(0,16)}</td>
+            </tr>
+        `).join('');
+    });
+
+    // Anomalies
+    fetch('/api/anomalies').then(r=>r.json()).then(data => {
+        document.getElementById('anomalies-body').innerHTML = data.anomalies.map(a => `
+            <tr>
+                <td><span class="badge badge--${a.anomaly_type}">${a.anomaly_type.replace(/_/g,' ')}</span></td>
+                <td><span class="severity severity--${a.severity}">${a.severity}</span></td>
+                <td>${(a.description||'').slice(0,80)}</td>
+                <td class="text-mono">${(a.score*100).toFixed(0)}%</td>
+            </tr>
+        `).join('');
+    });
+})();
+</script>
+{% endblock %}

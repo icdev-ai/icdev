@@ -5,6 +5,7 @@
 import os
 import sqlite3
 import sys
+from tools.db.storage import get_connection
 from pathlib import Path
 
 from flask import Blueprint, jsonify, request
@@ -19,18 +20,33 @@ ai_accountability_api = Blueprint("ai_accountability_api", __name__, url_prefix=
 
 
 def _get_db() -> sqlite3.Connection:
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(DB_PATH))
     return conn
+
+
+def _resolve_project_id(explicit: str = None) -> str:
+    """Resolve project ID: explicit > query param > first project in DB > 'icdev-platform'."""
+    pid = explicit or request.args.get("project_id")
+    if pid:
+        return pid
+    try:
+        conn = _get_db()
+        row = conn.execute("SELECT id FROM projects ORDER BY created_at ASC LIMIT 1").fetchone()
+        conn.close()
+        if row:
+            return row["id"]
+    except Exception:
+        pass
+    return "icdev-platform"
 
 
 def _safe_count(conn, table, project_id=None, where_extra=""):
     try:
         if project_id:
-            sql = f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = ? {where_extra}"
+            sql = f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = ? {where_extra}"  # nosec B608 -- table/column names are internal constants, not user input
             row = conn.execute(sql, (project_id,)).fetchone()
         else:
-            sql = f"SELECT COUNT(*) as cnt FROM {table}"
+            sql = f"SELECT COUNT(*) as cnt FROM {table}"  # nosec B608 -- table/column names are internal constants, not user input
             if where_extra:
                 sql += f" WHERE 1=1 {where_extra}"
             row = conn.execute(sql).fetchone()
@@ -48,20 +64,14 @@ def get_stats():
         stats = {
             "oversight_plan_count": _safe_count(conn, "ai_oversight_plans", project_id),
             "appeal_count": _safe_count(conn, "ai_accountability_appeals", project_id),
-            "open_appeals": _safe_count(
-                conn, "ai_accountability_appeals", project_id, "AND appeal_status IN ('submitted', 'under_review')"
-            ),
+            "open_appeals": _safe_count(conn, "ai_accountability_appeals", project_id,
+                                        "AND appeal_status IN ('submitted', 'under_review')"),
             "caio_count": _safe_count(conn, "ai_caio_registry", project_id),
             "incident_count": _safe_count(conn, "ai_incident_log", project_id),
-            "open_incidents": _safe_count(
-                conn, "ai_incident_log", project_id, "AND status IN ('open', 'investigating')"
-            ),
-            "critical_incidents": _safe_count(
-                conn,
-                "ai_incident_log",
-                project_id,
-                "AND severity = 'critical' AND status NOT IN ('resolved', 'closed')",
-            ),
+            "open_incidents": _safe_count(conn, "ai_incident_log", project_id,
+                                          "AND status IN ('open', 'investigating')"),
+            "critical_incidents": _safe_count(conn, "ai_incident_log", project_id,
+                                              "AND severity = 'critical' AND status NOT IN ('resolved', 'closed')"),
             "ethics_review_count": _safe_count(conn, "ai_ethics_reviews", project_id),
             "reassessment_count": _safe_count(conn, "ai_reassessment_schedule", project_id),
             "accountability_score": None,
@@ -71,8 +81,8 @@ def get_stats():
         try:
             sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
             from ai_accountability_audit import run_accountability_audit
-
-            result = run_accountability_audit(project_id or "default", db_path=DB_PATH)
+            resolved_pid = _resolve_project_id(project_id)
+            result = run_accountability_audit(resolved_pid, db_path=DB_PATH)
             stats["accountability_score"] = result.get("accountability_score", 0)
         except Exception:
             pass
@@ -127,7 +137,7 @@ def get_incidents():
             params.append(severity)
         if wheres:
             sql += " WHERE " + " AND ".join(wheres)
-        sql += " ORDER BY CASE severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 ELSE 4 END, created_at DESC LIMIT 100"  # noqa: E501
+        sql += " ORDER BY CASE severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 ELSE 4 END, created_at DESC LIMIT 100"
         rows = conn.execute(sql, params).fetchall()
         conn.close()
         return jsonify({"incidents": [dict(r) for r in rows], "total": len(rows)})
@@ -158,11 +168,10 @@ def get_overdue():
 def run_audit():
     """Run cross-framework accountability audit."""
     data = request.get_json(silent=True) or {}
-    project_id = data.get("project_id", "default")
+    project_id = _resolve_project_id(data.get("project_id"))
     try:
         sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
         from ai_accountability_audit import run_accountability_audit
-
         result = run_accountability_audit(project_id, db_path=DB_PATH)
         return jsonify(result)
     except Exception as e:

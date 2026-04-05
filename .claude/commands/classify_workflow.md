@@ -1,15 +1,15 @@
-# ICDEV Workflow Extraction
+# ICDEV™ Workflow Extraction
 
-Extract ICDEV workflow information from the text below and return a JSON response.
+Extract ICDEV™ workflow information from the text below and return a JSON response.
 
 ## Instructions
 
-- Look for ICDEV workflow commands in the text (e.g., `/icdev_plan`, `/icdev_build`, `/icdev_test`, `/icdev_review`, `/icdev_comply`, `/icdev_secure`, `/icdev_deploy`, `/icdev_plan_build`, `/icdev_plan_build_test`, `/icdev_plan_build_test_review`, `/icdev_sdlc`)
-- Look for ICDEV run IDs (8-character alphanumeric strings, often after "run_id:" or "ICDEV ID:" or similar)
+- Look for ICDEV™ workflow commands in the text (e.g., `/icdev_plan`, `/icdev_build`, `/icdev_test`, `/icdev_review`, `/icdev_comply`, `/icdev_secure`, `/icdev_deploy`, `/icdev_plan_build`, `/icdev_plan_build_test`, `/icdev_plan_build_test_review`, `/icdev_sdlc`)
+- Look for ICDEV™ run IDs (8-character alphanumeric strings, often after "run_id:" or "ICDEV™ ID:" or similar)
 - Return a JSON object with the extracted information
-- If no ICDEV workflow is found, return empty JSON: `{}`
+- If no ICDEV™ workflow is found, return empty JSON: `{}`
 
-## Valid ICDEV Commands
+## Valid ICDEV™ Commands
 
 - `/icdev_plan` — Planning only
 - `/icdev_build` — Building only (requires run_id)
@@ -34,7 +34,7 @@ Respond ONLY with a JSON object in this format:
 ```
 
 Fields:
-- `icdev_slash_command`: The ICDEV command found (include the slash)
+- `icdev_slash_command`: The ICDEV™ command found (include the slash)
 - `run_id`: The 8-character run ID if found
 
 If only one field is found, include only that field.

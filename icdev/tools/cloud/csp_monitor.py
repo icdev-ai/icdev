@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """CSP Service Monitor — track cloud provider service changes automatically.
 
 Scans CSP announcement feeds (RSS, API, HTML), diffs against the local service
