@@ -84,6 +84,7 @@ def _child_env():
 
 def _start_dashboard():
     """Start Dashboard subprocess."""
+    _kill_stale_instances("dashboard/app.py")
     dash_log = open(".tmp/dashboard.log", "a", encoding="utf-8")
     proc = subprocess.Popen(
         [sys.executable, "tools/dashboard/app.py", "--port", str(DASHBOARD_PORT)],
@@ -98,6 +99,7 @@ def _start_dashboard():
 
 def _start_daemon():
     """Start Genesis Daemon subprocess."""
+    _kill_stale_instances("genesis/daemon.py")
     daemon_log = open(".tmp/genesis/daemon.log", "a", encoding="utf-8")
     proc = subprocess.Popen(
         [sys.executable, "tools/genesis/daemon.py"],
@@ -112,6 +114,7 @@ def _start_daemon():
 
 def _start_proposal_genesis():
     """Start Proposal Genesis Daemon subprocess."""
+    _kill_stale_instances("proposal_genesis/daemon.py")
     os.makedirs(".tmp/proposal_genesis", exist_ok=True)
     pg_log = open(".tmp/proposal_genesis/daemon.log", "a", encoding="utf-8")
     env = _child_env()
@@ -127,8 +130,37 @@ def _start_proposal_genesis():
     return proc, pg_log
 
 
+def _kill_stale_instances(script_name: str):
+    """Kill any existing instances of a script before starting a fresh one.
+
+    Prevents duplicate processes from accumulating across launcher restarts.
+    """
+    try:
+        result = subprocess.run(
+            ["powershell", "-Command",
+             f"Get-CimInstance Win32_Process | "
+             f"Where-Object {{ $_.CommandLine -like '*{script_name}*' -and $_.ProcessId -ne $PID }} | "
+             f"Select-Object -ExpandProperty ProcessId"],
+            capture_output=True, text=True, timeout=10,
+        )
+        for line in result.stdout.strip().splitlines():
+            pid = line.strip()
+            if pid.isdigit():
+                try:
+                    subprocess.run(
+                        ["taskkill", "/F", "/PID", pid],
+                        capture_output=True, timeout=5,
+                    )
+                    _log(f"Killed stale {script_name} (PID {pid})")
+                except Exception:
+                    pass
+    except Exception as exc:
+        _log(f"Stale process cleanup failed for {script_name}: {exc}")
+
+
 def _start_kanban_scheduler():
     """Start Kanban Scheduler subprocess."""
+    _kill_stale_instances("kanban_scheduler.py")
     kb_log = open(".tmp/kanban_scheduler.log", "a", encoding="utf-8")
     proc = subprocess.Popen(
         [sys.executable, "tools/genesis/kanban_scheduler.py", "--interval", "60"],
