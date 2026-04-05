@@ -32,6 +32,7 @@ if str(BASE_DIR) not in sys.path:
 
 def _get_pg():
     import psycopg2
+
     conn = psycopg2.connect(
         host=os.environ.get("ICDEV_PG_HOST", "localhost"),
         port=int(os.environ.get("ICDEV_PG_PORT", "5432")),
@@ -53,7 +54,6 @@ INDEXES = [
     ("hook_events", "idx_hook_project_created", "project_id, created_at DESC", None),
     ("agent_token_usage", "idx_token_project_created", "project_id, created_at DESC", None),
     ("innovation_signals", "idx_innosig_created", "created_at DESC", None),
-
     # --- Category 2: Missing FK/filter indexes ---
     ("research_regulatory_map", "idx_res_regmap_challenge", "challenge_id", None),
     ("research_capability_map", "idx_res_capmap_challenge", "challenge_id", None),
@@ -65,23 +65,17 @@ INDEXES = [
     ("project_controls", "idx_projctrl_impl_status", "implementation_status", None),
     ("cpmp_clins", "idx_cpmp_clins_contract", "contract_id", None),
     ("cpmp_deliverables", "idx_cpmp_deliv_contract", "contract_id", None),
-
     # --- Category 3: Partial indexes (hot-path filters) ---
-    ("ai_appeals", "idx_ai_appeals_open", "id",
-     "status IN ('open', 'pending_review')"),
-    ("ai_incident_log", "idx_ai_incidents_critical", "created_at DESC",
-     "severity IN ('critical', 'high')"),
-    ("review_board_findings", "idx_rbf_unfixed", "severity, created_at DESC",
-     "fix_applied = 0"),
-
+    ("ai_appeals", "idx_ai_appeals_open", "id", "status IN ('open', 'pending_review')"),
+    ("ai_incident_log", "idx_ai_incidents_critical", "created_at DESC", "severity IN ('critical', 'high')"),
+    ("review_board_findings", "idx_rbf_unfixed", "severity, created_at DESC", "fix_applied = 0"),
     # --- Category 5: Covering indexes (dashboard queries) ---
     # PG INCLUDE syntax for covering indexes
 ]
 
 # Covering indexes use INCLUDE (PG 11+ only)
 COVERING_INDEXES = [
-    ("projects", "idx_projects_status_cover",
-     "status", "name, created_at, classification"),
+    ("projects", "idx_projects_status_cover", "status", "name, created_at, classification"),
 ]
 
 
@@ -158,8 +152,7 @@ def apply_optimizations() -> dict:
                 continue
             # Check current type
             cur.execute(
-                "SELECT data_type FROM information_schema.columns "
-                "WHERE table_name = %s AND column_name = %s",
+                "SELECT data_type FROM information_schema.columns WHERE table_name = %s AND column_name = %s",
                 (table, column),
             )
             row = cur.fetchone()
@@ -202,17 +195,11 @@ def verify() -> dict:
     cur = conn.cursor()
 
     # Count all custom indexes
-    cur.execute(
-        "SELECT COUNT(*) FROM pg_indexes WHERE schemaname = 'public' "
-        "AND indexname NOT LIKE '%_pkey'"
-    )
+    cur.execute("SELECT COUNT(*) FROM pg_indexes WHERE schemaname = 'public' AND indexname NOT LIKE '%_pkey'")
     total_indexes = cur.fetchone()[0]
 
     # Count JSONB columns
-    cur.execute(
-        "SELECT COUNT(*) FROM information_schema.columns "
-        "WHERE table_schema = 'public' AND data_type = 'jsonb'"
-    )
+    cur.execute("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = 'public' AND data_type = 'jsonb'")
     jsonb_cols = cur.fetchone()[0]
 
     # Check PG settings

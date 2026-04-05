@@ -25,6 +25,7 @@ CLI:
     python tools/redaction/govcon_sanitizer.py --sanitize "text" --show-text --json
     python tools/redaction/govcon_sanitizer.py --health --json
 """
+
 from __future__ import annotations
 
 import argparse
@@ -48,6 +49,7 @@ def _load_govcon_config() -> Dict[str, Any]:
     config_path = BASE_DIR / "args" / "redaction_govcon.yaml"
     try:
         import yaml
+
         with open(config_path, encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
     except Exception:
@@ -58,6 +60,7 @@ def _load_redaction_config() -> Dict[str, Any]:
     config_path = BASE_DIR / "args" / "redaction_config.yaml"
     try:
         import yaml
+
         with open(config_path, encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
     except Exception:
@@ -67,6 +70,7 @@ def _load_redaction_config() -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Past Performance Generalizer
 # ---------------------------------------------------------------------------
+
 
 class PastPerformanceGeneralizer:
     """Generalizes identifiable details in past performance narratives."""
@@ -101,10 +105,11 @@ class PastPerformanceGeneralizer:
 
     def _generalize_amounts(self, text: str) -> str:
         """Replace specific dollar amounts with ranges."""
+
         def _round_amount(match):
             full = match.group(0)
             # Extract numeric value
-            num_str = re.sub(r'[,$]', '', match.group(1))
+            num_str = re.sub(r"[,$]", "", match.group(1))
             suffix = match.group(2) or ""
             try:
                 num = float(num_str)
@@ -129,19 +134,24 @@ class PastPerformanceGeneralizer:
             except (ValueError, TypeError):
                 return full
 
-        result = re.sub(
-            r'\$([0-9,]+(?:\.\d{1,2})?)\s?([MBKmk](?:illion)?)?',
-            _round_amount, text
-        )
+        result = re.sub(r"\$([0-9,]+(?:\.\d{1,2})?)\s?([MBKmk](?:illion)?)?", _round_amount, text)
         return result
 
     def _generalize_dates(self, text: str) -> str:
         """Replace specific dates with quarters/ranges."""
         months = {
-            "january": "Q1", "february": "Q1", "march": "Q1",
-            "april": "Q2", "may": "Q2", "june": "Q2",
-            "july": "Q3", "august": "Q3", "september": "Q3",
-            "october": "Q4", "november": "Q4", "december": "Q4",
+            "january": "Q1",
+            "february": "Q1",
+            "march": "Q1",
+            "april": "Q2",
+            "may": "Q2",
+            "june": "Q2",
+            "july": "Q3",
+            "august": "Q3",
+            "september": "Q3",
+            "october": "Q4",
+            "november": "Q4",
+            "december": "Q4",
         }
 
         def _replace_month_year(match):
@@ -153,14 +163,17 @@ class PastPerformanceGeneralizer:
             return match.group(0)
 
         result = re.sub(
-            r'\b(January|February|March|April|May|June|July|August|'
-            r'September|October|November|December)\s+(\d{4})\b',
-            _replace_month_year, text, flags=re.IGNORECASE
+            r"\b(January|February|March|April|May|June|July|August|"
+            r"September|October|November|December)\s+(\d{4})\b",
+            _replace_month_year,
+            text,
+            flags=re.IGNORECASE,
         )
         return result
 
     def _generalize_counts(self, text: str) -> str:
         """Replace specific personnel/team counts with rounded values."""
+
         def _round_count(match):
             prefix = match.group(1)
             num = int(match.group(2))
@@ -175,9 +188,11 @@ class PastPerformanceGeneralizer:
 
         # "team of 47", "47 engineers", "staff of 123"
         result = re.sub(
-            r'(team of |staff of |group of )?(\d{2,})(\s+(?:engineers|developers|'
-            r'staff|people|members|personnel|specialists|analysts|contractors))',
-            _round_count, text, flags=re.IGNORECASE
+            r"(team of |staff of |group of )?(\d{2,})(\s+(?:engineers|developers|"
+            r"staff|people|members|personnel|specialists|analysts|contractors))",
+            _round_count,
+            text,
+            flags=re.IGNORECASE,
         )
         return result
 
@@ -185,6 +200,7 @@ class PastPerformanceGeneralizer:
 # ---------------------------------------------------------------------------
 # GovCon Sanitizer
 # ---------------------------------------------------------------------------
+
 
 class GovConSanitizer:
     """Pre-LLM sanitizer for government proposal content."""
@@ -204,9 +220,9 @@ class GovConSanitizer:
     def session_id(self) -> str:
         return self._anonymizer.session_id
 
-    def sanitize_for_llm(self, text: str, function_name: str = "",
-                          impact_level: str = "IL4",
-                          is_local_only: bool = False) -> Tuple[str, Dict[str, Any]]:
+    def sanitize_for_llm(
+        self, text: str, function_name: str = "", impact_level: str = "IL4", is_local_only: bool = False
+    ) -> Tuple[str, Dict[str, Any]]:
         """Sanitize text before sending to LLM.
 
         Args:
@@ -277,8 +293,7 @@ class GovConSanitizer:
         """
         return self._anonymizer.de_anonymize(text)
 
-    def sanitize_case_study(self, title: str, body: str,
-                             tags: Optional[List[str]] = None) -> Dict[str, str]:
+    def sanitize_case_study(self, title: str, body: str, tags: Optional[List[str]] = None) -> Dict[str, str]:
         """Sanitize a Pulse case study for publication.
 
         Applies stricter rules than LLM sanitization:
@@ -306,15 +321,10 @@ class GovConSanitizer:
             replacement = pulse_cfg.get("agency_replacement", "a federal agency")
             agency_map = self._govcon_config.get("agency_surrogates", {}) or {}
             for agency_name in agency_map.keys():
-                sanitized_body = re.sub(
-                    re.escape(agency_name), replacement,
-                    sanitized_body, flags=re.IGNORECASE
-                )
+                sanitized_body = re.sub(re.escape(agency_name), replacement, sanitized_body, flags=re.IGNORECASE)
 
         if pulse_cfg.get("strip_naics", True):
-            sanitized_body = re.sub(
-                r'\*\*NAICS:\*\*\s*\d+\s*', '', sanitized_body
-            )
+            sanitized_body = re.sub(r"\*\*NAICS:\*\*\s*\d+\s*", "", sanitized_body)
 
         # Generalize past performance
         sanitized_body = self._pp_generalizer.generalize(sanitized_body)
@@ -327,13 +337,11 @@ class GovConSanitizer:
         # Sanitize tags
         sanitized_tags = tags[:] if tags else []
         if pulse_cfg.get("strip_agency_from_tags", True):
-            agency_names = set(
-                a.lower() for a in (self._govcon_config.get("agency_surrogates", {}) or {}).keys()
-            )
+            agency_names = set(a.lower() for a in (self._govcon_config.get("agency_surrogates", {}) or {}).keys())
             sanitized_tags = [
-                t for t in sanitized_tags
-                if t.lower() not in agency_names
-                and not any(a in t.lower() for a in agency_names)
+                t
+                for t in sanitized_tags
+                if t.lower() not in agency_names and not any(a in t.lower() for a in agency_names)
             ]
         if pulse_cfg.get("strip_naics", True):
             sanitized_tags = [t for t in sanitized_tags if not t.startswith("NAICS-")]
@@ -347,8 +355,8 @@ class GovConSanitizer:
     @staticmethod
     def _strip_solicitation(title: str) -> str:
         """Remove solicitation numbers from title."""
-        title = re.sub(r'\b[A-Z0-9]{2,}-\d{2}-[A-Z]-\d+\b', '', title)
-        title = re.sub(r'\s+', ' ', title).strip()
+        title = re.sub(r"\b[A-Z0-9]{2,}-\d{2}-[A-Z]-\d+\b", "", title)
+        title = re.sub(r"\s+", " ", title).strip()
         if len(title) > 120:
             title = title[:117] + "..."
         return title
@@ -370,18 +378,15 @@ class GovConSanitizer:
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
     parser = argparse.ArgumentParser(description="ICDEV™ GovCon Sanitizer")
     parser.add_argument("--sanitize", type=str, help="Sanitize text for LLM")
     parser.add_argument("--sanitize-file", type=str, help="Sanitize file")
-    parser.add_argument("--function", type=str, default="proposal_drafting",
-                        help="LLM function name")
-    parser.add_argument("--il", type=str, default="IL4",
-                        choices=["IL2", "IL4", "IL5", "IL6"])
-    parser.add_argument("--local-only", action="store_true",
-                        help="Simulate local-only routing")
-    parser.add_argument("--show-text", action="store_true",
-                        help="Show sanitized text")
+    parser.add_argument("--function", type=str, default="proposal_drafting", help="LLM function name")
+    parser.add_argument("--il", type=str, default="IL4", choices=["IL2", "IL4", "IL5", "IL6"])
+    parser.add_argument("--local-only", action="store_true", help="Simulate local-only routing")
+    parser.add_argument("--show-text", action="store_true", help="Show sanitized text")
     parser.add_argument("--health", action="store_true")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--gate", action="store_true")

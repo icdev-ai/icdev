@@ -130,8 +130,10 @@ def generate_model_card(
                 "license": bom_data.get("license", "See provider terms"),
             },
             "intended_use": {
-                "primary_use_cases": intended_use or "AI-assisted software development, compliance assessment, code generation",
-                "out_of_scope_uses": out_of_scope or "Autonomous decision-making without human oversight, safety-critical systems without human review",
+                "primary_use_cases": intended_use
+                or "AI-assisted software development, compliance assessment, code generation",
+                "out_of_scope_uses": out_of_scope
+                or "Autonomous decision-making without human oversight, safety-critical systems without human review",
                 "users": "Federal agency developers, compliance officers, system administrators",
             },
             "factors": {
@@ -165,7 +167,8 @@ def generate_model_card(
                 "data_privacy": "No customer data used for training. All interactions are inference-only.",
             },
             "ethical_considerations": {
-                "description": ethical_considerations or "Model is used within ICDEV™'s compliance framework with human oversight, audit trails, and appeal processes per OMB M-25-21 and M-26-04.",
+                "description": ethical_considerations
+                or "Model is used within ICDEV™'s compliance framework with human oversight, audit trails, and appeal processes per OMB M-25-21 and M-26-04.",
                 "risks": [
                     "Confabulation — mitigated by output validation and human review",
                     "Bias — mitigated by fairness assessments and disparity analysis",
@@ -180,7 +183,8 @@ def generate_model_card(
                 ],
             },
             "caveats_and_limitations": {
-                "description": caveats or "Model outputs require human review for high-impact decisions. Not suitable for autonomous safety-critical operations.",
+                "description": caveats
+                or "Model outputs require human review for high-impact decisions. Not suitable for autonomous safety-critical operations.",
                 "known_limitations": [
                     "May generate plausible but incorrect information (confabulation)",
                     "Performance varies by domain and prompt quality",
@@ -215,7 +219,8 @@ def generate_model_card(
                    (project_id, event_type, actor, action, details, classification)
                    VALUES (?, ?, ?, ?, ?, ?)""",
                 (
-                    project_id, "model_card_generated",
+                    project_id,
+                    "model_card_generated",
                     "icdev-compliance-engine",
                     f"Generated model card for {model_name}",
                     json.dumps({"model_name": model_name, "version": version, "hash": card_hash}),

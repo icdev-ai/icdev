@@ -14,9 +14,7 @@ from tools.db.storage import get_connection  # noqa: E402
 
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
-control_inheritance_api = Blueprint(
-    "control_inheritance_api", __name__, url_prefix="/api/control-inheritance"
-)
+control_inheritance_api = Blueprint("control_inheritance_api", __name__, url_prefix="/api/control-inheritance")
 
 # ---------------------------------------------------------------------------
 # Static inheritance model — FedRAMP typical responsibility by control family
@@ -65,6 +63,7 @@ CSP_PROFILES = {
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_db():
     """Return a sqlite3 connection with Row factory."""
     conn = get_connection(db_path=str(DB_PATH))
@@ -76,8 +75,7 @@ def _table_exists(conn, table_name: str) -> bool:
     try:
         if getattr(conn, "_backend", "sqlite") == "postgresql":
             row = conn.execute(
-                "SELECT 1 FROM information_schema.tables "
-                "WHERE table_schema = 'public' AND table_name = ?",
+                "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = ?",
                 (table_name,),
             ).fetchone()
             return row is not None
@@ -100,6 +98,7 @@ def _resolve_responsibility(family: str, csp: str) -> str:
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
+
 
 @control_inheritance_api.route("/csps", methods=["GET"])
 def list_csps():
@@ -133,18 +132,22 @@ def get_model():
                     (code,),
                 ).fetchone()
                 control_count = row[0] if row else 0
-            families.append({
-                "family": code,
-                "label": info["label"],
-                "responsibility": responsibility,
-                "control_count": control_count,
-            })
+            families.append(
+                {
+                    "family": code,
+                    "label": info["label"],
+                    "responsibility": responsibility,
+                    "control_count": control_count,
+                }
+            )
 
-        return jsonify({
-            "csp": csp,
-            "csp_name": CSP_PROFILES.get(csp, {}).get("name", csp),
-            "families": families,
-        })
+        return jsonify(
+            {
+                "csp": csp,
+                "csp_name": CSP_PROFILES.get(csp, {}).get("name", csp),
+                "families": families,
+            }
+        )
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
     finally:
@@ -175,17 +178,14 @@ def get_summary():
         }
 
         if has_controls:
-            rows = conn.execute(
-                "SELECT id, family FROM compliance_controls"
-            ).fetchall()
+            rows = conn.execute("SELECT id, family FROM compliance_controls").fetchall()
             for row in rows:
                 resp = _resolve_responsibility(row["family"], csp)
                 counts[resp] = counts.get(resp, 0) + 1
 
                 if has_project and project_id:
                     pc = conn.execute(
-                        "SELECT implementation_status FROM project_controls "
-                        "WHERE project_id = ? AND control_id = ?",
+                        "SELECT implementation_status FROM project_controls WHERE project_id = ? AND control_id = ?",
                         (project_id, row["id"]),
                     ).fetchone()
                     if pc:
@@ -212,12 +212,14 @@ def get_summary():
                 "implementation_total": implementation[cat]["total"],
             }
 
-        return jsonify({
-            "csp": csp,
-            "project_id": project_id,
-            "total_controls": total,
-            "summary": summary,
-        })
+        return jsonify(
+            {
+                "csp": csp,
+                "project_id": project_id,
+                "total_controls": total,
+                "summary": summary,
+            }
+        )
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
     finally:
@@ -247,10 +249,7 @@ def list_controls():
         if not has_controls:
             return jsonify({"controls": [], "total": 0})
 
-        query = (
-            "SELECT id, family, title, description, impact_level "
-            "FROM compliance_controls WHERE 1=1"
-        )
+        query = "SELECT id, family, title, description, impact_level FROM compliance_controls WHERE 1=1"
         params = []
 
         if family_filter:
@@ -320,8 +319,7 @@ def gap_analysis():
             return jsonify({"gaps": [], "total": 0})
 
         rows = conn.execute(
-            "SELECT id, family, title, description, impact_level "
-            "FROM compliance_controls ORDER BY family, id"
+            "SELECT id, family, title, description, impact_level FROM compliance_controls ORDER BY family, id"
         ).fetchall()
 
         gaps = []
@@ -347,22 +345,26 @@ def gap_analysis():
             # Gap = not implemented (missing, planned, or partially_implemented)
             if status in (None, "planned", "partially_implemented"):
                 priority = "high" if resp == "customer" else "medium"
-                gaps.append({
-                    "control_id": row["id"],
-                    "family": row["family"],
-                    "title": row["title"],
-                    "responsibility": resp,
-                    "implementation_status": status or "not_started",
-                    "responsible_role": role,
-                    "priority": priority,
-                })
+                gaps.append(
+                    {
+                        "control_id": row["id"],
+                        "family": row["family"],
+                        "title": row["title"],
+                        "responsibility": resp,
+                        "implementation_status": status or "not_started",
+                        "responsible_role": role,
+                        "priority": priority,
+                    }
+                )
 
-        return jsonify({
-            "project_id": project_id,
-            "csp": csp,
-            "gaps": gaps,
-            "total": len(gaps),
-        })
+        return jsonify(
+            {
+                "project_id": project_id,
+                "csp": csp,
+                "gaps": gaps,
+                "total": len(gaps),
+            }
+        )
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
     finally:

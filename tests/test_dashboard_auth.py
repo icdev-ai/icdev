@@ -42,6 +42,7 @@ def tmp_db(tmp_path, monkeypatch):
     # Monkeypatch DB_PATH in both config and auth modules
     import icdev.tools.dashboard.config  # Ensure module is loaded before setattr
     import icdev.tools.dashboard.auth
+
     monkeypatch.setattr(icdev.tools.dashboard.config, "DB_PATH", str(db_file))
     monkeypatch.setattr(icdev.tools.dashboard.auth, "DB_PATH", str(db_file))
 

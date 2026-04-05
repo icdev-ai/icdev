@@ -51,6 +51,7 @@ from tools.db.storage import get_connection  # noqa: E402
 # HELPERS
 # =========================================================================
 
+
 def _now() -> str:
     """ISO-8601 timestamp in UTC."""
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -133,9 +134,7 @@ def _ensure_tables(conn) -> None:
     """)
 
 
-def _resolve_graph_ids(
-    conn, project_ids: Optional[List[str]] = None
-) -> List[Dict[str, Any]]:
+def _resolve_graph_ids(conn, project_ids: Optional[List[str]] = None) -> List[Dict[str, Any]]:
     """Resolve project IDs to graph records.
 
     Args:
@@ -153,9 +152,7 @@ def _resolve_graph_ids(
             project_ids,
         ).fetchall()
     else:
-        rows = conn.execute(
-            "SELECT id, project_id, name, metadata FROM kg_graphs"
-        ).fetchall()
+        rows = conn.execute("SELECT id, project_id, name, metadata FROM kg_graphs").fetchall()
     return [dict(r) for r in rows]
 
 
@@ -170,6 +167,7 @@ def _resolve_source_graph_ids(conn, federated_meta: Dict) -> List[str]:
 # =========================================================================
 # 1. FEDERATED SEARCH
 # =========================================================================
+
 
 def federated_search(
     query: str,
@@ -257,9 +255,7 @@ def federated_search(
                 like_clauses = []
                 like_params: list = []
                 for term in query_terms:
-                    like_clauses.append(
-                        "(LOWER(label) LIKE ? OR LOWER(properties) LIKE ?)"
-                    )
+                    like_clauses.append("(LOWER(label) LIKE ? OR LOWER(properties) LIKE ?)")
                     like_params.extend([f"%{term}%", f"%{term}%"])
                 where_likes = " OR ".join(like_clauses)
                 sql = (
@@ -344,6 +340,7 @@ def federated_search(
 # 2. FIND SHARED ENTITIES
 # =========================================================================
 
+
 def find_shared_entities(
     project_id_a: str,
     project_id_b: str,
@@ -387,10 +384,7 @@ def find_shared_entities(
                 "project_b": project_id_b,
                 "shared_count": 0,
                 "shared_entities": [],
-                "message": (
-                    f"No graphs found for "
-                    f"{'project A' if not gids_a else 'project B'}"
-                ),
+                "message": (f"No graphs found for {'project A' if not gids_a else 'project B'}"),
             }
 
         def _fetch_nodes(gids: List[str]) -> List[Dict[str, Any]]:
@@ -404,8 +398,7 @@ def find_shared_entities(
 
         def _count_edges(node_id: str) -> int:
             row = conn.execute(
-                "SELECT COUNT(*) as cnt FROM kg_edges "
-                "WHERE source_id = ? OR target_id = ?",
+                "SELECT COUNT(*) as cnt FROM kg_edges WHERE source_id = ? OR target_id = ?",
                 (node_id, node_id),
             ).fetchone()
             return row["cnt"] if row else 0
@@ -439,24 +432,22 @@ def find_shared_entities(
                         if pair_key in seen_pairs:
                             continue
                         seen_pairs.add(pair_key)
-                        shared_entities.append({
-                            "label": na.get("label", ""),
-                            "entity_type_a": na.get("entity_type", ""),
-                            "entity_type_b": nb.get("entity_type", ""),
-                            "match_type": "exact",
-                            "node_id_a": na["id"],
-                            "node_id_b": nb["id"],
-                            "centrality_a": round(
-                                float(na.get("centrality", 0)), 4
-                            ),
-                            "centrality_b": round(
-                                float(nb.get("centrality", 0)), 4
-                            ),
-                            "edge_count_a": _count_edges(na["id"]),
-                            "edge_count_b": _count_edges(nb["id"]),
-                            "properties_a": na.get("properties", "{}"),
-                            "properties_b": nb.get("properties", "{}"),
-                        })
+                        shared_entities.append(
+                            {
+                                "label": na.get("label", ""),
+                                "entity_type_a": na.get("entity_type", ""),
+                                "entity_type_b": nb.get("entity_type", ""),
+                                "match_type": "exact",
+                                "node_id_a": na["id"],
+                                "node_id_b": nb["id"],
+                                "centrality_a": round(float(na.get("centrality", 0)), 4),
+                                "centrality_b": round(float(nb.get("centrality", 0)), 4),
+                                "edge_count_a": _count_edges(na["id"]),
+                                "edge_count_b": _count_edges(nb["id"]),
+                                "properties_a": na.get("properties", "{}"),
+                                "properties_b": nb.get("properties", "{}"),
+                            }
+                        )
 
         # Strategy 2: Normalised label match (skip already-found exact)
         for norm_label, a_nodes in norm_a.items():
@@ -470,25 +461,23 @@ def find_shared_entities(
                         if pair_key in seen_pairs:
                             continue
                         seen_pairs.add(pair_key)
-                        shared_entities.append({
-                            "label": na.get("label", ""),
-                            "label_b": nb.get("label", ""),
-                            "entity_type_a": na.get("entity_type", ""),
-                            "entity_type_b": nb.get("entity_type", ""),
-                            "match_type": "normalized",
-                            "node_id_a": na["id"],
-                            "node_id_b": nb["id"],
-                            "centrality_a": round(
-                                float(na.get("centrality", 0)), 4
-                            ),
-                            "centrality_b": round(
-                                float(nb.get("centrality", 0)), 4
-                            ),
-                            "edge_count_a": _count_edges(na["id"]),
-                            "edge_count_b": _count_edges(nb["id"]),
-                            "properties_a": na.get("properties", "{}"),
-                            "properties_b": nb.get("properties", "{}"),
-                        })
+                        shared_entities.append(
+                            {
+                                "label": na.get("label", ""),
+                                "label_b": nb.get("label", ""),
+                                "entity_type_a": na.get("entity_type", ""),
+                                "entity_type_b": nb.get("entity_type", ""),
+                                "match_type": "normalized",
+                                "node_id_a": na["id"],
+                                "node_id_b": nb["id"],
+                                "centrality_a": round(float(na.get("centrality", 0)), 4),
+                                "centrality_b": round(float(nb.get("centrality", 0)), 4),
+                                "edge_count_a": _count_edges(na["id"]),
+                                "edge_count_b": _count_edges(nb["id"]),
+                                "properties_a": na.get("properties", "{}"),
+                                "properties_b": nb.get("properties", "{}"),
+                            }
+                        )
 
         # Sort by combined centrality descending
         shared_entities.sort(
@@ -512,6 +501,7 @@ def find_shared_entities(
 # =========================================================================
 # 3. CREATE FEDERATED VIEW
 # =========================================================================
+
 
 def create_federated_view(
     name: str,
@@ -547,9 +537,7 @@ def create_federated_view(
             }
 
         source_graph_ids = [g["id"] for g in graphs]
-        source_projects = list({
-            g.get("project_id") or g["id"] for g in graphs
-        })
+        source_projects = list({g.get("project_id") or g["id"] for g in graphs})
 
         # Compute combined stats without copying
         total_nodes = 0
@@ -568,17 +556,17 @@ def create_federated_view(
 
         fed_id = _gen_id("fed", name, *sorted(source_graph_ids))
         now = _now()
-        metadata = json.dumps({
-            "graph_type": "federated",
-            "source_graph_ids": source_graph_ids,
-            "source_projects": source_projects,
-            "created_by": "federation.py",
-        })
+        metadata = json.dumps(
+            {
+                "graph_type": "federated",
+                "source_graph_ids": source_graph_ids,
+                "source_projects": source_projects,
+                "created_by": "federation.py",
+            }
+        )
 
         # Upsert: if a view with the same ID already exists, update it
-        existing = conn.execute(
-            "SELECT id FROM kg_graphs WHERE id = ?", (fed_id,)
-        ).fetchone()
+        existing = conn.execute("SELECT id FROM kg_graphs WHERE id = ?", (fed_id,)).fetchone()
 
         if existing:
             conn.execute(
@@ -736,23 +724,17 @@ def cross_project_coverage(
         per_project: Dict[str, Dict[str, Any]] = {}
         unique_to: Dict[str, List[str]] = {}
         for pid, ctrls in project_controls.items():
-            unique = ctrls - set().union(
-                *(
-                    project_controls[p]
-                    for p in project_controls
-                    if p != pid
-                )
-            ) if len(project_controls) > 1 else ctrls
+            unique = (
+                ctrls - set().union(*(project_controls[p] for p in project_controls if p != pid))
+                if len(project_controls) > 1
+                else ctrls
+            )
             per_project[pid] = {
                 "total_controls": len(ctrls),
                 "unique_controls": len(unique),
-                "coverage_pct": round(
-                    len(ctrls) / len(all_controls_set) * 100, 1
-                ) if all_controls_set else 0.0,
+                "coverage_pct": round(len(ctrls) / len(all_controls_set) * 100, 1) if all_controls_set else 0.0,
             }
-            unique_to[pid] = sorted([
-                control_details.get(c, {}).get("label", c) for c in unique
-            ])
+            unique_to[pid] = sorted([control_details.get(c, {}).get("label", c) for c in unique])
 
         return {
             "status": "ok",
@@ -762,10 +744,7 @@ def cross_project_coverage(
             "per_project": per_project,
             "shared_controls": shared,
             "unique_to_project": unique_to,
-            "all_controls": sorted([
-                control_details.get(c, {}).get("label", c)
-                for c in all_controls_set
-            ]),
+            "all_controls": sorted([control_details.get(c, {}).get("label", c) for c in all_controls_set]),
         }
     finally:
         conn.close()
@@ -774,6 +753,7 @@ def cross_project_coverage(
 # =========================================================================
 # CLI
 # =========================================================================
+
 
 def main() -> None:
     """CLI entry point."""
@@ -784,46 +764,52 @@ def main() -> None:
     # Mutually exclusive actions
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(
-        "--search", metavar="QUERY",
+        "--search",
+        metavar="QUERY",
         help="Federated search across project graphs",
     )
     group.add_argument(
-        "--shared", nargs=2, metavar=("PROJ_A", "PROJ_B"),
+        "--shared",
+        nargs=2,
+        metavar=("PROJ_A", "PROJ_B"),
         help="Find shared entities between two projects",
     )
     group.add_argument(
-        "--create-view", metavar="NAME",
+        "--create-view",
+        metavar="NAME",
         help="Create a federated view (virtual graph)",
     )
     group.add_argument(
-        "--coverage", metavar="FRAMEWORK",
+        "--coverage",
+        metavar="FRAMEWORK",
         help="Cross-project compliance coverage (fedramp, cmmc, nist, ...)",
     )
 
     parser.add_argument(
-        "--projects", default=None,
+        "--projects",
+        default=None,
         help="Comma-separated project IDs (default: all)",
     )
     parser.add_argument(
-        "--profile", default=None,
+        "--profile",
+        default=None,
         help="Scoring profile for search (auto-detected if omitted)",
     )
     parser.add_argument(
-        "--top-k", type=int, default=10,
+        "--top-k",
+        type=int,
+        default=10,
         help="Maximum results to return (default: 10)",
     )
     parser.add_argument(
-        "--json", action="store_true",
+        "--json",
+        action="store_true",
         help="Output as JSON",
     )
 
     args = parser.parse_args()
 
-    project_ids = (
-        [p.strip() for p in args.projects.split(",") if p.strip()]
-        if args.projects
-        else None
-    )
+    project_ids = [p.strip() for p in args.projects.split(",") if p.strip()] if args.projects else None
 
     result: Dict[str, Any] = {}
 
@@ -866,7 +852,7 @@ def _print_human_readable(result: Dict[str, Any], args) -> None:
         sys.exit(1)
 
     if args.search:
-        print(f"\n=== Federated Search: \"{args.search}\" ===\n")
+        print(f'\n=== Federated Search: "{args.search}" ===\n')
         print(f"  Projects searched: {result.get('projects_searched', 0)}")
         print(f"  Results returned:  {result.get('nodes_returned', 0)}")
         print(f"  Time:              {result.get('retrieval_ms', 0)} ms\n")
@@ -883,10 +869,7 @@ def _print_human_readable(result: Dict[str, Any], args) -> None:
         if result.get("per_project"):
             print("\n  Per-project breakdown:")
             for pid, stats in result["per_project"].items():
-                print(
-                    f"    {pid}: {stats.get('nodes_matched', 0)} matched, "
-                    f"{stats.get('nodes_returned', 0)} returned"
-                )
+                print(f"    {pid}: {stats.get('nodes_matched', 0)} matched, {stats.get('nodes_returned', 0)} returned")
 
     elif args.shared:
         pa = result.get("project_a", "?")
@@ -900,15 +883,8 @@ def _print_human_readable(result: Dict[str, Any], args) -> None:
             match = e.get("match_type", "?")
             label = e.get("label", "?")
             label_b = e.get("label_b")
-            display = (
-                f"{label} / {label_b}" if label_b and label_b != label
-                else label
-            )
-            print(
-                f"  {i}. [{match}] {display}  "
-                f"(edges: {e.get('edge_count_a', 0)}/"
-                f"{e.get('edge_count_b', 0)})"
-            )
+            display = f"{label} / {label_b}" if label_b and label_b != label else label
+            print(f"  {i}. [{match}] {display}  (edges: {e.get('edge_count_a', 0)}/{e.get('edge_count_b', 0)})")
 
     elif args.create_view:
         print("\n=== Federated View Created ===\n")
@@ -936,10 +912,7 @@ def _print_human_readable(result: Dict[str, Any], args) -> None:
         if shared:
             print(f"\n  Shared controls ({len(shared)}):")
             for s in shared[:15]:
-                print(
-                    f"    - {s.get('control', '?')} "
-                    f"(in: {', '.join(s.get('covered_by', []))})"
-                )
+                print(f"    - {s.get('control', '?')} (in: {', '.join(s.get('covered_by', []))})")
 
         unique = result.get("unique_to_project", {})
         if unique:

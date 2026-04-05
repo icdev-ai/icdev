@@ -48,10 +48,12 @@ MAX_CONCURRENT_PER_USER = 5
 # Extension hook integration (Feature 2)
 # ---------------------------------------------------------------------------
 
+
 def _dispatch_hook(hook_name: str, context: dict) -> dict:
     """Dispatch extension hook if available."""
     try:
         from tools.extensions.extension_manager import extension_manager, ExtensionPoint
+
         ep = ExtensionPoint(hook_name)
         return extension_manager.dispatch(ep, context)
     except (ImportError, ValueError):
@@ -62,6 +64,7 @@ def _mark_dirty(context_id: str, change_type: str, data: Optional[dict] = None):
     """Mark context dirty on state tracker if available (Feature 4)."""
     try:
         from tools.dashboard.state_tracker import state_tracker
+
         state_tracker.mark_dirty(context_id, change_type, data)
     except ImportError:
         pass
@@ -71,6 +74,7 @@ def _mark_dirty(context_id: str, change_type: str, data: Optional[dict] = None):
 # RAG context retrieval (D-RAG-2)
 # ---------------------------------------------------------------------------
 
+
 def _rag_retrieve(query: str, project_id: str = "", tenant_id: str = "") -> list:
     """Retrieve relevant RAG context for a chat message.
 
@@ -79,6 +83,7 @@ def _rag_retrieve(query: str, project_id: str = "", tenant_id: str = "") -> list
     """
     try:
         from tools.rag.retriever import RAGRetriever
+
         retriever = RAGRetriever(tenant_id=tenant_id)
         results = retriever.search(query, top_k=3, project_id=project_id)
         return [
@@ -100,6 +105,7 @@ def _rag_retrieve(query: str, project_id: str = "", tenant_id: str = "") -> list
 # History compression (D271-D274)
 # ---------------------------------------------------------------------------
 
+
 def _compress_history(messages: list, budget_tokens: int = 3000) -> list:
     """Compress conversation history using 3-tier budget if it exceeds budget.
 
@@ -107,6 +113,7 @@ def _compress_history(messages: list, budget_tokens: int = 3000) -> list:
     """
     try:
         from tools.memory.history_compressor import HistoryCompressor
+
         compressor = HistoryCompressor()
         return compressor.compress(messages, budget_tokens=budget_tokens)
     except (ImportError, Exception) as exc:
@@ -120,6 +127,7 @@ def _compress_history(messages: list, budget_tokens: int = 3000) -> list:
 
 _PRESSURE_CHECK_INTERVAL = 10  # turns between pressure checks
 
+
 def _check_context_pressure(session_id: str) -> Optional[dict]:
     """Check context pressure and stuck detection.
 
@@ -127,6 +135,7 @@ def _check_context_pressure(session_id: str) -> Optional[dict]:
     """
     try:
         from tools.agent.context_pressure import health_check
+
         result = health_check(session_id=session_id)
         if not result.get("overall_healthy", True):
             return {
@@ -144,6 +153,7 @@ def _check_context_pressure(session_id: str) -> Optional[dict]:
 # ---------------------------------------------------------------------------
 # ChatContext — per-context state
 # ---------------------------------------------------------------------------
+
 
 class ChatContext:
     """Represents a single chat stream with its own message queue and thread."""
@@ -228,6 +238,7 @@ class ChatContext:
 # ChatManager — singleton managing all chat contexts
 # ---------------------------------------------------------------------------
 
+
 class ChatManager:
     """Manages multi-stream parallel chat contexts.
 
@@ -255,10 +266,7 @@ class ChatManager:
         """Create a new chat context. Returns context dict."""
         with self._lock:
             # Check concurrent limit per user
-            user_contexts = [
-                c for c in self._contexts.values()
-                if c.user_id == user_id and c.status == "active"
-            ]
+            user_contexts = [c for c in self._contexts.values() if c.user_id == user_id and c.status == "active"]
             if len(user_contexts) >= MAX_CONCURRENT_PER_USER:
                 return {
                     "error": f"Max {MAX_CONCURRENT_PER_USER} concurrent contexts per user",
@@ -357,11 +365,14 @@ class ChatManager:
                 return {"error": f"Context is {ctx.status}"}
 
         # Dispatch pre-hook
-        hook_ctx = _dispatch_hook("chat_message_before", {
-            "context_id": context_id,
-            "content": content,
-            "role": role,
-        })
+        hook_ctx = _dispatch_hook(
+            "chat_message_before",
+            {
+                "context_id": context_id,
+                "content": content,
+                "role": role,
+            },
+        )
         content = hook_ctx.get("content", content)
         role = hook_ctx.get("role", role)
 
@@ -371,18 +382,24 @@ class ChatManager:
         self._db_insert_message(context_id, turn, role, content)
 
         # Queue for processing
-        ctx.message_queue.append({
-            "turn_number": turn,
-            "role": role,
-            "content": content,
-        })
+        ctx.message_queue.append(
+            {
+                "turn_number": turn,
+                "role": role,
+                "content": content,
+            }
+        )
         ctx.last_activity_at = datetime.now(timezone.utc).isoformat()
 
-        _mark_dirty(context_id, "new_message", {
-            "turn_number": turn,
-            "role": role,
-            "content": content[:200],
-        })
+        _mark_dirty(
+            context_id,
+            "new_message",
+            {
+                "turn_number": turn,
+                "role": role,
+                "content": content[:200],
+            },
+        )
 
         return {
             "context_id": context_id,
@@ -408,14 +425,21 @@ class ChatManager:
         ctx.turn_number += 1
         turn = ctx.turn_number
         self._db_insert_message(
-            context_id, turn, "intervention", message,
+            context_id,
+            turn,
+            "intervention",
+            message,
             content_type="intervention",
         )
 
-        _mark_dirty(context_id, "intervention", {
-            "turn_number": turn,
-            "message": message[:200],
-        })
+        _mark_dirty(
+            context_id,
+            "intervention",
+            {
+                "turn_number": turn,
+                "message": message[:200],
+            },
+        )
 
         logger.info("Intervention set on context %s", context_id)
         return {
@@ -496,14 +520,21 @@ class ChatManager:
                                 f"Estimated tokens: {pressure.get('tokens_used', 0)}"
                             )
                         self._db_insert_message(
-                            context_id, ctx.turn_number, "system", pressure_msg,
+                            context_id,
+                            ctx.turn_number,
+                            "system",
+                            pressure_msg,
                             content_type="context_health",
                         )
-                        _mark_dirty(context_id, "context_health", {
-                            "severity": severity,
-                            "pressure_level": pressure.get("pressure_level"),
-                            "is_stuck": pressure.get("is_stuck", False),
-                        })
+                        _mark_dirty(
+                            context_id,
+                            "context_health",
+                            {
+                                "severity": severity,
+                                "pressure_level": pressure.get("pressure_level"),
+                                "is_stuck": pressure.get("is_stuck", False),
+                            },
+                        )
 
                 # Intervention check point 2: before LLM call
                 intervention = ctx.check_intervention()
@@ -520,48 +551,63 @@ class ChatManager:
                 intervention = ctx.check_intervention()
                 if intervention:
                     # Save current response as checkpoint
-                    ctx.save_checkpoint({
-                        "interrupted_message": msg,
-                        "partial_response": response,
-                    })
+                    ctx.save_checkpoint(
+                        {
+                            "interrupted_message": msg,
+                            "partial_response": response,
+                        }
+                    )
                     self._handle_intervention(ctx, intervention)
                     continue
 
                 # Record assistant response
                 ctx.turn_number += 1
                 self._db_insert_message(
-                    context_id, ctx.turn_number, "assistant", response,
+                    context_id,
+                    ctx.turn_number,
+                    "assistant",
+                    response,
                 )
 
                 # Dispatch post-hook — check for advisories (D325, D327)
-                hook_result = _dispatch_hook("chat_message_after", {
-                    "context_id": context_id,
-                    "role": "assistant",
-                    "content": response,
-                    "turn_number": ctx.turn_number,
-                    "project_id": getattr(ctx, "project_id", ""),
-                    "user_query": msg.get("content", ""),
-                    "rag_sources": self._last_rag_sources.pop(context_id, []),
-                    "intake_session_id": getattr(ctx, "_intake_session_id", ""),
-                })
+                hook_result = _dispatch_hook(
+                    "chat_message_after",
+                    {
+                        "context_id": context_id,
+                        "role": "assistant",
+                        "content": response,
+                        "turn_number": ctx.turn_number,
+                        "project_id": getattr(ctx, "project_id", ""),
+                        "user_query": msg.get("content", ""),
+                        "rag_sources": self._last_rag_sources.pop(context_id, []),
+                        "intake_session_id": getattr(ctx, "_intake_session_id", ""),
+                    },
+                )
 
                 # Generic advisory injection — handles all extension advisory types
                 if isinstance(hook_result, dict):
                     self._inject_advisories(ctx, context_id, hook_result)
 
                 self._db_complete_task(task_id, response)
-                _mark_dirty(context_id, "new_message", {
-                    "turn_number": ctx.turn_number,
-                    "role": "assistant",
-                    "content": response[:200],
-                })
+                _mark_dirty(
+                    context_id,
+                    "new_message",
+                    {
+                        "turn_number": ctx.turn_number,
+                        "role": "assistant",
+                        "content": response[:200],
+                    },
+                )
 
             except Exception as exc:
                 logger.error("Error processing message in %s: %s", context_id, exc)
                 ctx.turn_number += 1
                 error_msg = f"Error: {type(exc).__name__}: {exc}"
                 self._db_insert_message(
-                    context_id, ctx.turn_number, "system", error_msg,
+                    context_id,
+                    ctx.turn_number,
+                    "system",
+                    error_msg,
                     content_type="error",
                 )
                 self._db_fail_task(task_id, str(exc))
@@ -588,6 +634,7 @@ class ChatManager:
         """
         try:
             from tools.llm.router import LLMRouter
+
             router = LLMRouter()
 
             # Build conversation history for context
@@ -607,10 +654,7 @@ class ChatManager:
                 if rag_results:
                     rag_context = "\n\n[Relevant Knowledge (RAG)]\n"
                     for i, r in enumerate(rag_results, 1):
-                        rag_context += (
-                            f"  [{i}] ({r['source_type']}, score={r['score']}): "
-                            f"{r['content'][:400]}\n"
-                        )
+                        rag_context += f"  [{i}] ({r['source_type']}, score={r['score']}): {r['content'][:400]}\n"
                     system_content += rag_context
 
             if system_content:
@@ -685,15 +729,18 @@ class ChatManager:
             if action:
                 advisory_content += f"\nAction: {action}"
             self._db_insert_message(
-                context_id, ctx.turn_number, "system", advisory_content,
+                context_id,
+                ctx.turn_number,
+                "system",
+                advisory_content,
                 content_type=content_type,
             )
             dirty_data = {}
             if isinstance(advisory, dict):
                 dirty_data = {
-                    k: v for k, v in advisory.items()
-                    if k in ("gap_id", "severity", "total_gaps", "loop_id",
-                             "score", "source_count", "fitness_domain")
+                    k: v
+                    for k, v in advisory.items()
+                    if k in ("gap_id", "severity", "total_gaps", "loop_id", "score", "source_count", "fitness_domain")
                 }
             _mark_dirty(context_id, dirty_type, dirty_data)
 
@@ -702,22 +749,32 @@ class ChatManager:
         logger.info("Processing intervention in context %s", ctx.context_id)
 
         # Process intervention through LLM
-        response = self._process_message(ctx, {
-            "content": f"[INTERVENTION] {message}",
-            "role": "user",
-        })
+        response = self._process_message(
+            ctx,
+            {
+                "content": f"[INTERVENTION] {message}",
+                "role": "user",
+            },
+        )
 
         # Record intervention response
         ctx.turn_number += 1
         self._db_insert_message(
-            ctx.context_id, ctx.turn_number, "assistant", response,
+            ctx.context_id,
+            ctx.turn_number,
+            "assistant",
+            response,
             content_type="text",
         )
 
-        _mark_dirty(ctx.context_id, "intervention_response", {
-            "turn_number": ctx.turn_number,
-            "content": response[:200],
-        })
+        _mark_dirty(
+            ctx.context_id,
+            "intervention_response",
+            {
+                "turn_number": ctx.turn_number,
+                "content": response[:200],
+            },
+        )
 
     # ------------------------------------------------------------------
     # Database operations
@@ -737,10 +794,19 @@ class ChatManager:
                     classification, created_at, updated_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
-                    ctx.context_id, ctx.user_id, ctx.tenant_id, ctx.title,
-                    ctx.status, ctx.project_id, ctx.agent_model,
-                    ctx.system_prompt, 0, 0, DEFAULT_CLASSIFICATION,
-                    ctx.created_at, ctx.created_at,
+                    ctx.context_id,
+                    ctx.user_id,
+                    ctx.tenant_id,
+                    ctx.title,
+                    ctx.status,
+                    ctx.project_id,
+                    ctx.agent_model,
+                    ctx.system_prompt,
+                    0,
+                    0,
+                    DEFAULT_CLASSIFICATION,
+                    ctx.created_at,
+                    ctx.created_at,
                 ),
             )
             conn.commit()
@@ -777,7 +843,11 @@ class ChatManager:
                     metadata, classification, created_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
-                    context_id, turn_number, role, content, content_type,
+                    context_id,
+                    turn_number,
+                    role,
+                    content,
+                    content_type,
                     json.dumps(metadata) if metadata else None,
                     DEFAULT_CLASSIFICATION,
                     datetime.now(timezone.utc).isoformat(),
@@ -792,9 +862,7 @@ class ChatManager:
         except sqlite3.OperationalError as exc:
             logger.debug("DB message insert skipped: %s", exc)
 
-    def _db_create_task(
-        self, task_id: str, context_id: str, task_type: str, input_text: str
-    ) -> None:
+    def _db_create_task(self, task_id: str, context_id: str, task_type: str, input_text: str) -> None:
         try:
             conn = self._get_db()
             conn.execute(
@@ -803,7 +871,10 @@ class ChatManager:
                     classification, created_at)
                    VALUES (?, ?, ?, 'processing', ?, ?, ?)""",
                 (
-                    task_id, context_id, task_type, input_text[:2000],
+                    task_id,
+                    context_id,
+                    task_type,
+                    input_text[:2000],
                     DEFAULT_CLASSIFICATION,
                     datetime.now(timezone.utc).isoformat(),
                 ),
@@ -848,15 +919,9 @@ class ChatManager:
         with self._lock:
             return {
                 "total_contexts": len(self._contexts),
-                "active_contexts": sum(
-                    1 for c in self._contexts.values() if c.status == "active"
-                ),
-                "processing": sum(
-                    1 for c in self._contexts.values() if c.is_processing
-                ),
-                "total_queued": sum(
-                    len(c.message_queue) for c in self._contexts.values()
-                ),
+                "active_contexts": sum(1 for c in self._contexts.values() if c.status == "active"),
+                "processing": sum(1 for c in self._contexts.values() if c.is_processing),
+                "total_queued": sum(len(c.message_queue) for c in self._contexts.values()),
             }
 
 

@@ -140,8 +140,15 @@ class PropagationVerifier:
                 """INSERT INTO propagation_verifications
                    (id, propagation_id, child_id, check_name, check_status, detail, verified_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (str(uuid.uuid4()), propagation_id, check.get("child_id", ""),
-                 check["name"], check["status"], check.get("detail", ""), now),
+                (
+                    str(uuid.uuid4()),
+                    propagation_id,
+                    check.get("child_id", ""),
+                    check["name"],
+                    check["status"],
+                    check.get("detail", ""),
+                    now,
+                ),
             )
         conn.commit()
         conn.close()
@@ -164,10 +171,12 @@ class PropagationVerifier:
         """Verify propagation completed successfully."""
         status = prop["status"]
         if status == "completed":
-            return {"name": "propagation_status", "status": "pass",
-                    "detail": "Propagation completed successfully"}
-        return {"name": "propagation_status", "status": "fail",
-                "detail": f"Propagation status is '{status}', expected 'completed'"}
+            return {"name": "propagation_status", "status": "pass", "detail": "Propagation completed successfully"}
+        return {
+            "name": "propagation_status",
+            "status": "fail",
+            "detail": f"Propagation status is '{status}', expected 'completed'",
+        }
 
     def _check_digest(self, capability_id: str, conn: sqlite3.Connection) -> Dict:
         """Verify blueprint digest exists for capability."""
@@ -180,15 +189,19 @@ class PropagationVerifier:
             ).fetchone()
             if row:
                 if row["verification_result"] == "pass":
-                    return {"name": "digest_verified", "status": "pass",
-                            "detail": f"Digest verified: {row['digest'][:16]}..."}
-                return {"name": "digest_verified", "status": "pass",
-                        "detail": f"Digest exists (unverified): {row['digest'][:16]}..."}
-            return {"name": "digest_verified", "status": "skip",
-                    "detail": "No digest stored for capability"}
+                    return {
+                        "name": "digest_verified",
+                        "status": "pass",
+                        "detail": f"Digest verified: {row['digest'][:16]}...",
+                    }
+                return {
+                    "name": "digest_verified",
+                    "status": "pass",
+                    "detail": f"Digest exists (unverified): {row['digest'][:16]}...",
+                }
+            return {"name": "digest_verified", "status": "skip", "detail": "No digest stored for capability"}
         except Exception:
-            return {"name": "digest_verified", "status": "skip",
-                    "detail": "blueprint_digests table not available"}
+            return {"name": "digest_verified", "status": "skip", "detail": "blueprint_digests table not available"}
 
     def _check_heartbeat(self, child_id: str, conn: sqlite3.Connection) -> Dict:
         """Verify child has recent heartbeat."""
@@ -199,25 +212,36 @@ class PropagationVerifier:
                 (child_id,),
             ).fetchone()
             if row:
-                return {"name": "child_heartbeat", "status": "pass",
-                        "child_id": child_id,
-                        "detail": f"Last heartbeat: {row['collected_at']}"}
-            return {"name": "child_heartbeat", "status": "skip",
+                return {
+                    "name": "child_heartbeat",
+                    "status": "pass",
                     "child_id": child_id,
-                    "detail": "No heartbeat recorded"}
+                    "detail": f"Last heartbeat: {row['collected_at']}",
+                }
+            return {
+                "name": "child_heartbeat",
+                "status": "skip",
+                "child_id": child_id,
+                "detail": "No heartbeat recorded",
+            }
         except Exception:
-            return {"name": "child_heartbeat", "status": "skip",
-                    "child_id": child_id,
-                    "detail": "child_telemetry table not available"}
+            return {
+                "name": "child_heartbeat",
+                "status": "skip",
+                "child_id": child_id,
+                "detail": "child_telemetry table not available",
+            }
 
-    def _check_error_rate(self, child_id: str, completed_at: Optional[str],
-                          conn: sqlite3.Connection) -> Dict:
+    def _check_error_rate(self, child_id: str, completed_at: Optional[str], conn: sqlite3.Connection) -> Dict:
         """Check for error rate spike after propagation."""
         try:
             if not completed_at:
-                return {"name": "error_rate_check", "status": "skip",
-                        "child_id": child_id,
-                        "detail": "No completion timestamp"}
+                return {
+                    "name": "error_rate_check",
+                    "status": "skip",
+                    "child_id": child_id,
+                    "detail": "No completion timestamp",
+                }
 
             # Look for degraded health after propagation
             row = conn.execute(
@@ -228,16 +252,25 @@ class PropagationVerifier:
                 (child_id, completed_at),
             ).fetchone()
             if row:
-                return {"name": "error_rate_check", "status": "fail",
-                        "child_id": child_id,
-                        "detail": f"Health degraded to '{row['health_status']}' after propagation"}
-            return {"name": "error_rate_check", "status": "pass",
+                return {
+                    "name": "error_rate_check",
+                    "status": "fail",
                     "child_id": child_id,
-                    "detail": "No error rate spike detected"}
+                    "detail": f"Health degraded to '{row['health_status']}' after propagation",
+                }
+            return {
+                "name": "error_rate_check",
+                "status": "pass",
+                "child_id": child_id,
+                "detail": "No error rate spike detected",
+            }
         except Exception:
-            return {"name": "error_rate_check", "status": "skip",
-                    "child_id": child_id,
-                    "detail": "child_telemetry table not available"}
+            return {
+                "name": "error_rate_check",
+                "status": "skip",
+                "child_id": child_id,
+                "detail": "child_telemetry table not available",
+            }
 
     def _check_execution_results(self, prop) -> Dict:
         """Check execution results for failures."""
@@ -245,17 +278,18 @@ class PropagationVerifier:
             results = json.loads(prop["execution_results_json"] or "{}")
             fail_count = results.get("fail_count", 0)
             if fail_count > 0:
-                return {"name": "execution_results", "status": "fail",
-                        "detail": f"{fail_count} children failed during execution"}
-            return {"name": "execution_results", "status": "pass",
-                    "detail": "All children succeeded"}
+                return {
+                    "name": "execution_results",
+                    "status": "fail",
+                    "detail": f"{fail_count} children failed during execution",
+                }
+            return {"name": "execution_results", "status": "pass", "detail": "All children succeeded"}
         except (json.JSONDecodeError, TypeError):
-            return {"name": "execution_results", "status": "skip",
-                    "detail": "No execution results available"}
+            return {"name": "execution_results", "status": "skip", "detail": "No execution results available"}
 
-    def get_history(self, child_id: Optional[str] = None,
-                    propagation_id: Optional[str] = None,
-                    limit: int = 50) -> List[Dict]:
+    def get_history(
+        self, child_id: Optional[str] = None, propagation_id: Optional[str] = None, limit: int = 50
+    ) -> List[Dict]:
         """Get verification history."""
         conn = self._get_db()
         if child_id:
@@ -281,8 +315,7 @@ class PropagationVerifier:
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Post-Propagation Verifier — NemoClaw migration verification (D-NC-5)")
+    parser = argparse.ArgumentParser(description="Post-Propagation Verifier — NemoClaw migration verification (D-NC-5)")
     parser.add_argument("--verify", action="store_true", help="Verify a propagation")
     parser.add_argument("--gate", action="store_true", help="Gate evaluation (exit 0=pass, 1=fail)")
     parser.add_argument("--history", action="store_true", help="Show verification history")
@@ -299,9 +332,8 @@ def main():
         result = verifier.verify_propagation(args.propagation_id)
     elif args.history:
         result = verifier.get_history(
-            child_id=args.child_id or None,
-            propagation_id=args.propagation_id or None,
-            limit=args.limit)
+            child_id=args.child_id or None, propagation_id=args.propagation_id or None, limit=args.limit
+        )
     else:
         parser.print_help()
         return

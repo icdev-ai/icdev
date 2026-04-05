@@ -52,6 +52,7 @@ try:
         getCmd,
         nextCmd,
     )
+
     _HAS_PYSNMP = True
 except ImportError:
     pass
@@ -59,6 +60,7 @@ except ImportError:
 _HAS_NETMIKO = False
 try:
     from netmiko import ConnectHandler  # type: ignore[import-untyped]
+
     _HAS_NETMIKO = True
 except ImportError:
     pass
@@ -151,8 +153,8 @@ def _infer_vendor(sys_descr: str) -> str:
 
 # ── SNMP Discovery ────────────────────────────────────────────────────────────
 
-def _snmp_get(target: str, oid: str, community: str = "public",
-              port: int = 161, timeout: float = 2.0) -> str | None:
+
+def _snmp_get(target: str, oid: str, community: str = "public", port: int = 161, timeout: float = 2.0) -> str | None:
     """SNMP GET a single OID.  Returns string value or None."""
     if not _HAS_PYSNMP:
         return None
@@ -174,8 +176,9 @@ def _snmp_get(target: str, oid: str, community: str = "public",
     return None
 
 
-def _snmp_walk(target: str, oid: str, community: str = "public",
-               port: int = 161, timeout: float = 2.0) -> list[tuple[str, str]]:
+def _snmp_walk(
+    target: str, oid: str, community: str = "public", port: int = 161, timeout: float = 2.0
+) -> list[tuple[str, str]]:
     """SNMP WALK (GETNEXT) an OID subtree.  Returns list of (oid, value) tuples."""
     if not _HAS_PYSNMP:
         return []
@@ -198,8 +201,9 @@ def _snmp_walk(target: str, oid: str, community: str = "public",
     return results
 
 
-def discover_snmp(target: str, community: str = "public",
-                  port: int = 161, timeout: float = 2.0) -> dict[str, Any] | None:
+def discover_snmp(
+    target: str, community: str = "public", port: int = 161, timeout: float = 2.0
+) -> dict[str, Any] | None:
     """Discover a single device via SNMP.
 
     Returns a discovery record dict or None on failure.
@@ -224,38 +228,44 @@ def discover_snmp(target: str, community: str = "public",
         idx = oid_str.rsplit(".", 1)[-1]
         speed_oid = f"{OID_IF_SPEED}.{idx}"
         status_oid = f"{OID_IF_OPER_STATUS}.{idx}"
-        interfaces.append({
-            "index": int(idx),
-            "name": if_name,
-            "speed_bps": int(if_speeds.get(speed_oid, 0)),
-            "oper_status": "up" if if_status.get(status_oid) == "1" else "down",
-        })
+        interfaces.append(
+            {
+                "index": int(idx),
+                "name": if_name,
+                "speed_bps": int(if_speeds.get(speed_oid, 0)),
+                "oper_status": "up" if if_status.get(status_oid) == "1" else "down",
+            }
+        )
 
     # Collect LLDP neighbors
     lldp_neighbors: list[dict[str, str]] = []
     lldp_names = _snmp_walk(target, OID_LLDP_REM_SYS_NAME, community, port, timeout)
     lldp_ports = dict(_snmp_walk(target, OID_LLDP_REM_PORT_DESC, community, port, timeout))
     for oid_str, neighbor_name in lldp_names:
-        suffix = oid_str[len(str(OID_LLDP_REM_SYS_NAME)):]
+        suffix = oid_str[len(str(OID_LLDP_REM_SYS_NAME)) :]
         port_oid = f"{OID_LLDP_REM_PORT_DESC}{suffix}"
-        lldp_neighbors.append({
-            "neighbor": neighbor_name,
-            "remote_port": lldp_ports.get(port_oid, ""),
-            "protocol": "lldp",
-        })
+        lldp_neighbors.append(
+            {
+                "neighbor": neighbor_name,
+                "remote_port": lldp_ports.get(port_oid, ""),
+                "protocol": "lldp",
+            }
+        )
 
     # Collect CDP neighbors (Cisco)
     cdp_neighbors: list[dict[str, str]] = []
     cdp_devices = _snmp_walk(target, OID_CDP_CACHE_DEVICE_ID, community, port, timeout)
     cdp_platforms = dict(_snmp_walk(target, OID_CDP_CACHE_PLATFORM, community, port, timeout))
     for oid_str, device_id in cdp_devices:
-        suffix = oid_str[len(str(OID_CDP_CACHE_DEVICE_ID)):]
+        suffix = oid_str[len(str(OID_CDP_CACHE_DEVICE_ID)) :]
         platform_oid = f"{OID_CDP_CACHE_PLATFORM}{suffix}"
-        cdp_neighbors.append({
-            "neighbor": device_id,
-            "platform": cdp_platforms.get(platform_oid, ""),
-            "protocol": "cdp",
-        })
+        cdp_neighbors.append(
+            {
+                "neighbor": device_id,
+                "platform": cdp_platforms.get(platform_oid, ""),
+                "protocol": "cdp",
+            }
+        )
 
     return {
         "ip": target,
@@ -272,6 +282,7 @@ def discover_snmp(target: str, community: str = "public",
 
 
 # ── SSH Discovery (Netmiko) ──────────────────────────────────────────────────
+
 
 def _parse_cdp_detail(output: str) -> list[dict[str, str]]:
     """Parse ``show cdp neighbors detail`` output into neighbor records."""
@@ -325,9 +336,14 @@ def _parse_lldp_detail(output: str) -> list[dict[str, str]]:
     return neighbors
 
 
-def discover_ssh(target: str, username: str, password: str = "",
-                 device_type: str = "cisco_ios",
-                 enable_secret: str = "", port: int = 22) -> dict[str, Any] | None:
+def discover_ssh(
+    target: str,
+    username: str,
+    password: str = "",
+    device_type: str = "cisco_ios",
+    enable_secret: str = "",
+    port: int = 22,
+) -> dict[str, Any] | None:
     """Discover a device and its neighbors via SSH using Netmiko.
 
     Runs ``show cdp neighbors detail`` and ``show lldp neighbors detail``.
@@ -390,11 +406,13 @@ def discover_ssh(target: str, username: str, password: str = "",
             for iline in intf_output.splitlines()[1:]:  # skip header
                 parts = iline.split()
                 if len(parts) >= 6:
-                    interfaces.append({
-                        "name": parts[0],
-                        "ip": parts[1] if parts[1] != "unassigned" else "",
-                        "oper_status": parts[4].lower() if len(parts) > 4 else "unknown",
-                    })
+                    interfaces.append(
+                        {
+                            "name": parts[0],
+                            "ip": parts[1] if parts[1] != "unassigned" else "",
+                            "oper_status": parts[4].lower() if len(parts) > 4 else "unknown",
+                        }
+                    )
         except Exception:
             pass
 
@@ -418,8 +436,8 @@ def discover_ssh(target: str, username: str, password: str = "",
 
 # ── Ping Sweep ────────────────────────────────────────────────────────────────
 
-def ping_sweep(subnet: str, timeout: float = 1.0,
-               max_hosts: int = 256) -> list[str]:
+
+def ping_sweep(subnet: str, timeout: float = 1.0, max_hosts: int = 256) -> list[str]:
     """ICMP ping sweep a subnet.  Returns list of responding IPs.
 
     Uses subprocess ping (no root/raw sockets needed on most platforms).
@@ -443,7 +461,9 @@ def ping_sweep(subnet: str, timeout: float = 1.0,
             else:
                 cmd = ["ping", "-c", "1", "-W", str(int(timeout)), ip]
             result = subprocess.run(
-                cmd, capture_output=True, timeout=timeout + 2,
+                cmd,
+                capture_output=True,
+                timeout=timeout + 2,
             )
             if result.returncode == 0:
                 alive.append(ip)
@@ -455,8 +475,8 @@ def ping_sweep(subnet: str, timeout: float = 1.0,
 
 # ── Topology Builder ──────────────────────────────────────────────────────────
 
-def build_graph_json(devices: list[dict[str, Any]],
-                     layout: str = "grid") -> dict[str, Any]:
+
+def build_graph_json(devices: list[dict[str, Any]], layout: str = "grid") -> dict[str, Any]:
     """Convert discovered device records into JointJS graph JSON.
 
     Args:
@@ -483,6 +503,7 @@ def build_graph_json(devices: list[dict[str, Any]],
         # Grid layout: 4 columns, 200px spacing
         if layout == "radial":
             import math
+
             angle = (2 * math.pi * i) / max(len(devices), 1)
             radius = 250
             x = 500 + radius * math.cos(angle)
@@ -493,21 +514,23 @@ def build_graph_json(devices: list[dict[str, Any]],
             x = 100 + col * 220
             y = 100 + row * 200
 
-        nodes.append({
-            "id": node_id,
-            "type": dev.get("device_type", "server"),
-            "label": dev.get("hostname", dev.get("ip", f"device-{i}")),
-            "x": x,
-            "y": y,
-            "config": {
-                "hostname": dev.get("hostname", ""),
-                "ip_address": dev.get("ip", ""),
-                "vendor": dev.get("vendor", ""),
-                "sys_descr": dev.get("sys_descr", ""),
-                "discovery_method": dev.get("method", ""),
-                "discovered_at": dev.get("discovered_at", ""),
-            },
-        })
+        nodes.append(
+            {
+                "id": node_id,
+                "type": dev.get("device_type", "server"),
+                "label": dev.get("hostname", dev.get("ip", f"device-{i}")),
+                "x": x,
+                "y": y,
+                "config": {
+                    "hostname": dev.get("hostname", ""),
+                    "ip_address": dev.get("ip", ""),
+                    "vendor": dev.get("vendor", ""),
+                    "sys_descr": dev.get("sys_descr", ""),
+                    "discovery_method": dev.get("method", ""),
+                    "discovered_at": dev.get("discovered_at", ""),
+                },
+            }
+        )
 
     # Build edges from neighbor relationships
     seen_edges: set[tuple[str, str]] = set()
@@ -531,6 +554,7 @@ def build_graph_json(devices: list[dict[str, Any]],
                 idx = len(nodes)
                 if layout == "radial":
                     import math
+
                     angle = (2 * math.pi * idx) / max(idx + 1, 1)
                     x = 500 + 350 * math.cos(angle)
                     y = 400 + 350 * math.sin(angle)
@@ -539,40 +563,44 @@ def build_graph_json(devices: list[dict[str, Any]],
                     row = idx // 4
                     x = 100 + col * 220
                     y = 100 + row * 200
-                nodes.append({
-                    "id": dst_id,
-                    "type": dev_type,
-                    "label": neighbor_name or neighbor_ip or f"unknown-{idx}",
-                    "x": x,
-                    "y": y,
-                    "config": {
-                        "hostname": neighbor_name,
-                        "ip_address": neighbor_ip,
-                        "platform": platform,
-                        "discovery_method": "neighbor",
-                        "discovered_via": neighbor.get("protocol", ""),
-                    },
-                })
+                nodes.append(
+                    {
+                        "id": dst_id,
+                        "type": dev_type,
+                        "label": neighbor_name or neighbor_ip or f"unknown-{idx}",
+                        "x": x,
+                        "y": y,
+                        "config": {
+                            "hostname": neighbor_name,
+                            "ip_address": neighbor_ip,
+                            "platform": platform,
+                            "discovery_method": "neighbor",
+                            "discovered_via": neighbor.get("protocol", ""),
+                        },
+                    }
+                )
 
             # Deduplicate edges (undirected)
             edge_key = tuple(sorted([src_id, dst_id]))
             if edge_key not in seen_edges:
                 seen_edges.add(edge_key)
-                edges.append({
-                    "id": str(_uuid.uuid4()),
-                    "source": src_id,
-                    "target": dst_id,
-                    "label": neighbor.get("remote_port", ""),
-                    "protocol": neighbor.get("protocol", ""),
-                })
+                edges.append(
+                    {
+                        "id": str(_uuid.uuid4()),
+                        "source": src_id,
+                        "target": dst_id,
+                        "label": neighbor.get("remote_port", ""),
+                        "protocol": neighbor.get("protocol", ""),
+                    }
+                )
 
     return {"nodes": nodes, "edges": edges}
 
 
 # ── As-Designed vs As-Built Diff ──────────────────────────────────────────────
 
-def diff_topologies(designed: dict[str, Any],
-                    discovered: dict[str, Any]) -> dict[str, Any]:
+
+def diff_topologies(designed: dict[str, Any], discovered: dict[str, Any]) -> dict[str, Any]:
     """Compare designed (canvas) topology against discovered (live) topology.
 
     Matching is by hostname (case-insensitive) or IP address.
@@ -586,6 +614,7 @@ def diff_topologies(designed: dict[str, Any],
             "summary": { ... }
         }
     """
+
     def _node_key(node: dict) -> str:
         """Build lookup key from hostname or IP."""
         hostname = (node.get("label", "") or "").strip().lower()
@@ -606,20 +635,19 @@ def diff_topologies(designed: dict[str, Any],
             diffs: list[str] = []
             # Compare type
             if d_node.get("type") != disc_node.get("type"):
-                diffs.append(
-                    f"type: designed={d_node.get('type')} "
-                    f"discovered={disc_node.get('type')}"
-                )
+                diffs.append(f"type: designed={d_node.get('type')} discovered={disc_node.get('type')}")
             # Compare vendor
             d_vendor = d_node.get("config", {}).get("vendor", "")
             disc_vendor = disc_node.get("config", {}).get("vendor", "")
             if d_vendor and disc_vendor and d_vendor.lower() != disc_vendor.lower():
                 diffs.append(f"vendor: designed={d_vendor} discovered={disc_vendor}")
-            matched.append({
-                "designed": d_node,
-                "discovered": disc_node,
-                "diffs": diffs,
-            })
+            matched.append(
+                {
+                    "designed": d_node,
+                    "discovered": disc_node,
+                    "diffs": diffs,
+                }
+            )
         else:
             designed_only.append(d_node)
 
@@ -663,15 +691,13 @@ def diff_topologies(designed: dict[str, Any],
             "with_drift": drift_count,
             "designed_only": len(designed_only),
             "discovered_only": len(discovered_only),
-            "edge_designed_only": sum(
-                1 for e in edge_mismatches if e["type"] == "designed_only"
-            ),
-            "edge_discovered_only": sum(
-                1 for e in edge_mismatches if e["type"] == "discovered_only"
-            ),
+            "edge_designed_only": sum(1 for e in edge_mismatches if e["type"] == "designed_only"),
+            "edge_discovered_only": sum(1 for e in edge_mismatches if e["type"] == "discovered_only"),
             "drift_score": round(
                 (drift_count + len(designed_only) + len(discovered_only))
-                / max(total_designed + total_discovered, 1) * 100, 1
+                / max(total_designed + total_discovered, 1)
+                * 100,
+                1,
             ),
         },
     }
@@ -679,12 +705,19 @@ def diff_topologies(designed: dict[str, Any],
 
 # ── Full Discovery Orchestrator ───────────────────────────────────────────────
 
-def run_discovery(targets: list[str], method: str = "snmp",
-                  community: str = "public", username: str = "",
-                  password: str = "", device_type: str = "cisco_ios",
-                  port: int = 0, timeout: float = 2.0,
-                  layout: str = "grid",
-                  hop_limit: int = 2) -> dict[str, Any]:
+
+def run_discovery(
+    targets: list[str],
+    method: str = "snmp",
+    community: str = "public",
+    username: str = "",
+    password: str = "",
+    device_type: str = "cisco_ios",
+    port: int = 0,
+    timeout: float = 2.0,
+    layout: str = "grid",
+    hop_limit: int = 2,
+) -> dict[str, Any]:
     """Run full discovery workflow.
 
     1. Expand targets (subnets → individual IPs via ping sweep if needed)
@@ -799,48 +832,33 @@ def run_discovery(targets: list[str], method: str = "snmp",
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
+
 def _cli():
     """CLI entry point for standalone discovery."""
     parser = argparse.ArgumentParser(
         description="ICDEV Network Canvas — Live Auto-Discovery Agent",
     )
-    parser.add_argument("--target", nargs="+",
-                        help="IP addresses or CIDR subnets to scan")
-    parser.add_argument("--method", choices=["snmp", "ssh", "ping"],
-                        default="snmp", help="Discovery method")
-    parser.add_argument("--community", default="public",
-                        help="SNMP community string (v2c)")
-    parser.add_argument("--username", default="",
-                        help="SSH username")
-    parser.add_argument("--password", default="",
-                        help="SSH password")
-    parser.add_argument("--device-type", default="cisco_ios",
-                        help="Netmiko device type for SSH")
-    parser.add_argument("--port", type=int, default=0,
-                        help="Override port (default: 161/SNMP, 22/SSH)")
-    parser.add_argument("--timeout", type=float, default=2.0,
-                        help="Per-host timeout in seconds")
-    parser.add_argument("--hop-limit", type=int, default=2,
-                        help="Max neighbor crawl depth (0=none)")
-    parser.add_argument("--layout", choices=["grid", "radial"],
-                        default="grid", help="Graph layout")
-    parser.add_argument("--diff", action="store_true",
-                        help="Run diff mode (compare discovered vs designed)")
-    parser.add_argument("--discovered",
-                        help="Path to discovered graph JSON (for --diff)")
-    parser.add_argument("--designed",
-                        help="Path to designed graph JSON (for --diff)")
-    parser.add_argument("--json", action="store_true",
-                        help="Output as JSON")
-    parser.add_argument("--gate", action="store_true",
-                        help="Gate mode — exit 1 if drift > 20%%")
+    parser.add_argument("--target", nargs="+", help="IP addresses or CIDR subnets to scan")
+    parser.add_argument("--method", choices=["snmp", "ssh", "ping"], default="snmp", help="Discovery method")
+    parser.add_argument("--community", default="public", help="SNMP community string (v2c)")
+    parser.add_argument("--username", default="", help="SSH username")
+    parser.add_argument("--password", default="", help="SSH password")
+    parser.add_argument("--device-type", default="cisco_ios", help="Netmiko device type for SSH")
+    parser.add_argument("--port", type=int, default=0, help="Override port (default: 161/SNMP, 22/SSH)")
+    parser.add_argument("--timeout", type=float, default=2.0, help="Per-host timeout in seconds")
+    parser.add_argument("--hop-limit", type=int, default=2, help="Max neighbor crawl depth (0=none)")
+    parser.add_argument("--layout", choices=["grid", "radial"], default="grid", help="Graph layout")
+    parser.add_argument("--diff", action="store_true", help="Run diff mode (compare discovered vs designed)")
+    parser.add_argument("--discovered", help="Path to discovered graph JSON (for --diff)")
+    parser.add_argument("--designed", help="Path to designed graph JSON (for --diff)")
+    parser.add_argument("--json", action="store_true", help="Output as JSON")
+    parser.add_argument("--gate", action="store_true", help="Gate mode — exit 1 if drift > 20%%")
 
     args = parser.parse_args()
 
     if args.diff:
         if not args.discovered or not args.designed:
-            print("ERROR: --diff requires --discovered and --designed paths",
-                  file=sys.stderr)
+            print("ERROR: --diff requires --discovered and --designed paths", file=sys.stderr)
             sys.exit(1)
         with open(args.discovered, encoding="utf-8") as f:
             disc = json.load(f)
@@ -854,8 +872,9 @@ def _cli():
             print(f"Designed: {s['total_designed']}  Discovered: {s['total_discovered']}")
             print(f"Matched: {s['matched']}  With drift: {s['with_drift']}")
             print(f"Designed-only: {s['designed_only']}  Discovered-only: {s['discovered_only']}")
-            print(f"Edge mismatches: designed-only={s['edge_designed_only']}, "
-                  f"discovered-only={s['edge_discovered_only']}")
+            print(
+                f"Edge mismatches: designed-only={s['edge_designed_only']}, discovered-only={s['edge_discovered_only']}"
+            )
             print(f"Drift score: {s['drift_score']}%")
         if args.gate and result["summary"]["drift_score"] > 20:
             sys.exit(1)
@@ -873,10 +892,18 @@ def _cli():
             "alive_hosts": alive,
             "count": len(alive),
             "graph_json": build_graph_json(
-                [{"ip": ip, "hostname": ip, "device_type": "server",
-                  "vendor": "Unknown", "neighbors": [], "method": "ping",
-                  "discovered_at": datetime.now(timezone.utc).isoformat()}
-                 for ip in alive],
+                [
+                    {
+                        "ip": ip,
+                        "hostname": ip,
+                        "device_type": "server",
+                        "vendor": "Unknown",
+                        "neighbors": [],
+                        "method": "ping",
+                        "discovered_at": datetime.now(timezone.utc).isoformat(),
+                    }
+                    for ip in alive
+                ],
                 layout=args.layout,
             ),
         }
@@ -903,12 +930,16 @@ def _cli():
     if args.json:
         json.dump(result, sys.stdout, indent=2, default=str)
     else:
-        print(f"Discovered {result['stats']['devices_discovered']} devices, "
-              f"{result['stats']['nodes_generated']} nodes, "
-              f"{result['stats']['edges_generated']} edges")
+        print(
+            f"Discovered {result['stats']['devices_discovered']} devices, "
+            f"{result['stats']['nodes_generated']} nodes, "
+            f"{result['stats']['edges_generated']} edges"
+        )
         for dev in result["devices"]:
-            print(f"  [{dev['device_type']}] {dev['hostname']} ({dev['ip']}) "
-                  f"— {dev['vendor']}, {len(dev.get('neighbors', []))} neighbors")
+            print(
+                f"  [{dev['device_type']}] {dev['hostname']} ({dev['ip']}) "
+                f"— {dev['vendor']}, {len(dev.get('neighbors', []))} neighbors"
+            )
 
 
 if __name__ == "__main__":

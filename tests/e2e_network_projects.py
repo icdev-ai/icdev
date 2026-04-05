@@ -22,8 +22,6 @@ from pathlib import Path
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.support.ui import WebDriverWait
 
 # UTF-8 safe output
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -48,7 +46,7 @@ class TestResult:
 
     def summary(self):
         total = len(self.passed) + len(self.failed)
-        rate = f"{len(self.passed)/total*100:.1f}%" if total else "0%"
+        rate = f"{len(self.passed) / total * 100:.1f}%" if total else "0%"
         return {
             "total": total,
             "passed": len(self.passed),
@@ -83,10 +81,15 @@ def check_js_errors(driver):
         for entry in driver.get_log("browser"):
             if entry.get("level") == "SEVERE":
                 msg = entry.get("message", "")
-                if any(x in msg.lower() for x in [
-                    "favicon", "401", "404",
-                    "failed to load resource",
-                ]):
+                if any(
+                    x in msg.lower()
+                    for x in [
+                        "favicon",
+                        "401",
+                        "404",
+                        "failed to load resource",
+                    ]
+                ):
                     continue
                 errors.append(msg)
     except Exception:

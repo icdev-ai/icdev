@@ -13,7 +13,6 @@ import json
 import os
 import sys
 import time
-from pathlib import Path
 
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -38,10 +37,14 @@ class TestResult:
 
     def summary(self):
         total = len(self.passed) + len(self.failed)
-        rate = f"{len(self.passed)/total*100:.1f}%" if total else "0%"
-        return {"total": total, "passed": len(self.passed),
-                "failed": len(self.failed), "pass_rate": rate,
-                "failures": self.failed}
+        rate = f"{len(self.passed) / total * 100:.1f}%" if total else "0%"
+        return {
+            "total": total,
+            "passed": len(self.passed),
+            "failed": len(self.failed),
+            "pass_rate": rate,
+            "failures": self.failed,
+        }
 
 
 def create_driver():
@@ -97,55 +100,70 @@ def run_tests():
         # ── 1. Seed routing data for simulation ───────────────────────────
         try:
             # Device A: has routes to B and C
-            api(driver, "POST", "/network/api/routing-entries", {
-                "device_ip": "192.168.1.1", "hostname": "core-r1",
-                "entries": [
-                    {"prefix": "10.1.0.0/24", "next_hop": "192.168.1.2",
-                     "protocol": "ospf", "metric": 10},
-                    {"prefix": "10.2.0.0/24", "next_hop": "192.168.1.3",
-                     "protocol": "ospf", "metric": 20},
-                    {"prefix": "10.1.0.0/24", "next_hop": "192.168.1.3",
-                     "protocol": "ospf", "metric": 30},  # alternate path
-                    {"prefix": "192.168.1.0/24", "next_hop": "0.0.0.0",
-                     "protocol": "connected"},
-                ]
-            })
+            api(
+                driver,
+                "POST",
+                "/network/api/routing-entries",
+                {
+                    "device_ip": "192.168.1.1",
+                    "hostname": "core-r1",
+                    "entries": [
+                        {"prefix": "10.1.0.0/24", "next_hop": "192.168.1.2", "protocol": "ospf", "metric": 10},
+                        {"prefix": "10.2.0.0/24", "next_hop": "192.168.1.3", "protocol": "ospf", "metric": 20},
+                        {
+                            "prefix": "10.1.0.0/24",
+                            "next_hop": "192.168.1.3",
+                            "protocol": "ospf",
+                            "metric": 30,
+                        },  # alternate path
+                        {"prefix": "192.168.1.0/24", "next_hop": "0.0.0.0", "protocol": "connected"},
+                    ],
+                },
+            )
             # Device B
-            api(driver, "POST", "/network/api/routing-entries", {
-                "device_ip": "192.168.1.2", "hostname": "dist-sw1",
-                "entries": [
-                    {"prefix": "10.1.0.0/24", "next_hop": "0.0.0.0",
-                     "protocol": "connected"},
-                    {"prefix": "10.2.0.0/24", "next_hop": "192.168.1.1",
-                     "protocol": "ospf", "metric": 20},
-                ]
-            })
+            api(
+                driver,
+                "POST",
+                "/network/api/routing-entries",
+                {
+                    "device_ip": "192.168.1.2",
+                    "hostname": "dist-sw1",
+                    "entries": [
+                        {"prefix": "10.1.0.0/24", "next_hop": "0.0.0.0", "protocol": "connected"},
+                        {"prefix": "10.2.0.0/24", "next_hop": "192.168.1.1", "protocol": "ospf", "metric": 20},
+                    ],
+                },
+            )
             # Device C
-            api(driver, "POST", "/network/api/routing-entries", {
-                "device_ip": "192.168.1.3", "hostname": "dist-sw2",
-                "entries": [
-                    {"prefix": "10.2.0.0/24", "next_hop": "0.0.0.0",
-                     "protocol": "connected"},
-                    {"prefix": "10.1.0.0/24", "next_hop": "192.168.1.2",
-                     "protocol": "ospf", "metric": 15},
-                ]
-            })
+            api(
+                driver,
+                "POST",
+                "/network/api/routing-entries",
+                {
+                    "device_ip": "192.168.1.3",
+                    "hostname": "dist-sw2",
+                    "entries": [
+                        {"prefix": "10.2.0.0/24", "next_hop": "0.0.0.0", "protocol": "connected"},
+                        {"prefix": "10.1.0.0/24", "next_hop": "192.168.1.2", "protocol": "ospf", "metric": 15},
+                    ],
+                },
+            )
             results.ok("seed_routing_data")
         except Exception as e:
             results.fail("seed_routing_data", e)
 
         # ── 2. Link failure: affected prefixes ────────────────────────────
         try:
-            d = api(driver, "POST", "/network/api/what-if/link-failure", {
-                "source_device": "192.168.1.1",
-                "target_device": "192.168.1.2"
-            })
+            d = api(
+                driver,
+                "POST",
+                "/network/api/what-if/link-failure",
+                {"source_device": "192.168.1.1", "target_device": "192.168.1.2"},
+            )
             assert "affected_prefixes" in d
             assert "surviving_prefixes" in d
             # 10.1.0.0/24 goes through 192.168.1.2 but has alt via .3
-            results.ok("link_failure_analysis",
-                        f"affected={d['total_affected']}, "
-                        f"surviving={d['total_surviving']}")
+            results.ok("link_failure_analysis", f"affected={d['total_affected']}, surviving={d['total_surviving']}")
         except Exception as e:
             results.fail("link_failure_analysis", e)
 
@@ -155,41 +173,39 @@ def run_tests():
             if surv:
                 has_alt = any(s["alternate_paths"] > 0 for s in surv)
                 assert has_alt, "No alternates found"
-                results.ok("surviving_with_alternates",
-                            f"{len(surv)} surviving prefixes")
+                results.ok("surviving_with_alternates", f"{len(surv)} surviving prefixes")
             else:
-                results.ok("surviving_with_alternates",
-                            "All affected (no alternates)")
+                results.ok("surviving_with_alternates", "All affected (no alternates)")
         except Exception as e:
             results.fail("surviving_with_alternates", e)
 
         # ── 4. Device failure ─────────────────────────────────────────────
         try:
-            d = api(driver, "POST", "/network/api/what-if/device-failure", {
-                "device_ip": "192.168.1.2"
-            })
+            d = api(driver, "POST", "/network/api/what-if/device-failure", {"device_ip": "192.168.1.2"})
             assert d.get("total_impacted_devices") >= 1
             assert d.get("total_hosted_lost") >= 1
-            results.ok("device_failure",
-                        f"impacted={d['total_impacted_devices']}, "
-                        f"prefixes_lost={d['total_hosted_lost']}")
+            results.ok(
+                "device_failure", f"impacted={d['total_impacted_devices']}, prefixes_lost={d['total_hosted_lost']}"
+            )
         except Exception as e:
             results.fail("device_failure", e)
 
         # ── 5. Add link simulation ────────────────────────────────────────
         try:
-            d = api(driver, "POST", "/network/api/what-if/add-link", {
-                "source_device": "192.168.1.2",
-                "target_device": "192.168.1.3",
-                "protocol": "ospf",
-                "metric": 5
-            })
+            d = api(
+                driver,
+                "POST",
+                "/network/api/what-if/add-link",
+                {"source_device": "192.168.1.2", "target_device": "192.168.1.3", "protocol": "ospf", "metric": 5},
+            )
             assert d.get("total_improvements") >= 1
-            results.ok("add_link_simulation",
-                        f"improvements={d['total_improvements']}, "
-                        f"new={d.get('new_reachability', 0)}, "
-                        f"better={d.get('better_metric', 0)}, "
-                        f"redundant={d.get('redundant_paths', 0)}")
+            results.ok(
+                "add_link_simulation",
+                f"improvements={d['total_improvements']}, "
+                f"new={d.get('new_reachability', 0)}, "
+                f"better={d.get('better_metric', 0)}, "
+                f"redundant={d.get('redundant_paths', 0)}",
+            )
         except Exception as e:
             results.fail("add_link_simulation", e)
 
@@ -206,8 +222,7 @@ if __name__ == "__main__":
     r = run_tests()
     summary = r.summary()
     print()
-    print(f"Results: {summary['passed']}/{summary['total']} passed "
-          f"({summary['pass_rate']})")
+    print(f"Results: {summary['passed']}/{summary['total']} passed ({summary['pass_rate']})")
     if summary["failures"]:
         print("Failures:")
         for f in summary["failures"]:

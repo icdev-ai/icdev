@@ -47,6 +47,7 @@ CDF_POINTS = 100
 # PERT distribution
 # ---------------------------------------------------------------------------
 
+
 def pert_sample(optimistic, most_likely, pessimistic, lambd=4):
     """Sample from PERT distribution using Beta distribution approximation.
 
@@ -75,14 +76,12 @@ def pert_sample(optimistic, most_likely, pessimistic, lambd=4):
 # Database helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_connection(db_path=None):
     """Get a database connection."""
     path = db_path or DB_PATH
     if not Path(path).exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\n"
-            "Run: python tools/db/init_icdev_db.py"
-        )
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
     conn = get_connection(db_path=str(path))
     return conn
 
@@ -120,6 +119,7 @@ def _safe_query(conn, sql, params=()):
 # ---------------------------------------------------------------------------
 # Statistics helpers (stdlib only)
 # ---------------------------------------------------------------------------
+
 
 def _mean(values):
     """Compute arithmetic mean."""
@@ -199,6 +199,7 @@ def _build_cdf(sorted_values, num_points=CDF_POINTS):
 # Dimension-specific input generators
 # ---------------------------------------------------------------------------
 
+
 def _get_schedule_inputs(conn, project_id):
     """Gather SAFe items and build PERT parameters for schedule simulation.
 
@@ -217,8 +218,7 @@ def _get_schedule_inputs(conn, project_id):
         # Fallback: generate synthetic items based on any SAFe decomposition
         items = _safe_query(
             conn,
-            "SELECT id, title, t_shirt_size, story_points, wsjf_score "
-            "FROM safe_decomposition WHERE project_id = ?",
+            "SELECT id, title, t_shirt_size, story_points, wsjf_score FROM safe_decomposition WHERE project_id = ?",
             (project_id,),
         )
 
@@ -226,25 +226,29 @@ def _get_schedule_inputs(conn, project_id):
     for item in items:
         size = item.get("t_shirt_size") or "M"
         base_hours = TSHIRT_HOURS.get(size, 80)
-        inputs.append({
-            "item_id": item["id"],
-            "title": item.get("title", ""),
-            "estimate_hours": base_hours,
-            "optimistic": base_hours * 0.5,
-            "most_likely": float(base_hours),
-            "pessimistic": base_hours * 2.5,
-        })
+        inputs.append(
+            {
+                "item_id": item["id"],
+                "title": item.get("title", ""),
+                "estimate_hours": base_hours,
+                "optimistic": base_hours * 0.5,
+                "most_likely": float(base_hours),
+                "pessimistic": base_hours * 2.5,
+            }
+        )
 
     # If no items at all, provide a synthetic single-item baseline
     if not inputs:
-        inputs.append({
-            "item_id": "synthetic-baseline",
-            "title": "Baseline estimate",
-            "estimate_hours": 80,
-            "optimistic": 40.0,
-            "most_likely": 80.0,
-            "pessimistic": 200.0,
-        })
+        inputs.append(
+            {
+                "item_id": "synthetic-baseline",
+                "title": "Baseline estimate",
+                "estimate_hours": 80,
+                "optimistic": 40.0,
+                "most_likely": 80.0,
+                "pessimistic": 200.0,
+            }
+        )
 
     return inputs
 
@@ -268,25 +272,29 @@ def _get_cost_inputs(conn, project_id):
         size = item.get("t_shirt_size") or "M"
         base_hours = TSHIRT_HOURS.get(size, 80)
         base_cost = base_hours * DEFAULT_HOURLY_RATE
-        inputs.append({
-            "item_id": item["id"],
-            "title": item.get("title", ""),
-            "estimate_cost": base_cost,
-            "optimistic": base_cost * 0.7,
-            "most_likely": float(base_cost),
-            "pessimistic": base_cost * 2.0,
-        })
+        inputs.append(
+            {
+                "item_id": item["id"],
+                "title": item.get("title", ""),
+                "estimate_cost": base_cost,
+                "optimistic": base_cost * 0.7,
+                "most_likely": float(base_cost),
+                "pessimistic": base_cost * 2.0,
+            }
+        )
 
     if not inputs:
         base_cost = 80 * DEFAULT_HOURLY_RATE
-        inputs.append({
-            "item_id": "synthetic-baseline",
-            "title": "Baseline cost",
-            "estimate_cost": base_cost,
-            "optimistic": base_cost * 0.7,
-            "most_likely": float(base_cost),
-            "pessimistic": base_cost * 2.0,
-        })
+        inputs.append(
+            {
+                "item_id": "synthetic-baseline",
+                "title": "Baseline cost",
+                "estimate_cost": base_cost,
+                "optimistic": base_cost * 0.7,
+                "most_likely": float(base_cost),
+                "pessimistic": base_cost * 2.0,
+            }
+        )
 
     return inputs
 
@@ -309,66 +317,73 @@ def _get_risk_inputs(conn, project_id):
         severity = cve.get("severity", "medium")
         prob_map = {"critical": 0.4, "high": 0.3, "medium": 0.2, "low": 0.1}
         impact_map = {"critical": 200, "high": 100, "medium": 50, "low": 20}
-        risk_events.append({
-            "event_id": cve.get("cve_id", "unknown"),
-            "event_type": "cve",
-            "probability": prob_map.get(severity, 0.2),
-            "impact_hours": impact_map.get(severity, 50),
-        })
+        risk_events.append(
+            {
+                "event_id": cve.get("cve_id", "unknown"),
+                "event_type": "cve",
+                "probability": prob_map.get(severity, 0.2),
+                "impact_hours": impact_map.get(severity, 50),
+            }
+        )
 
     # RED boundary impacts
     reds = _safe_query(
         conn,
-        "SELECT id, impact_description FROM boundary_impact_assessments "
-        "WHERE project_id = ? AND impact_tier = 'RED'",
+        "SELECT id, impact_description FROM boundary_impact_assessments WHERE project_id = ? AND impact_tier = 'RED'",
         (project_id,),
     )
     for r in reds:
-        risk_events.append({
-            "event_id": r.get("id", "unknown"),
-            "event_type": "boundary_red",
-            "probability": 0.3,
-            "impact_hours": 160,
-        })
+        risk_events.append(
+            {
+                "event_id": r.get("id", "unknown"),
+                "event_type": "boundary_red",
+                "probability": 0.3,
+                "impact_hours": 160,
+            }
+        )
 
     # Expired ISAs
     isas = _safe_query(
         conn,
-        "SELECT id, partner_system FROM isa_agreements "
-        "WHERE project_id = ? AND status = 'expired'",
+        "SELECT id, partner_system FROM isa_agreements WHERE project_id = ? AND status = 'expired'",
         (project_id,),
     )
     for isa in isas:
-        risk_events.append({
-            "event_id": isa.get("id", "unknown"),
-            "event_type": "expired_isa",
-            "probability": 0.2,
-            "impact_hours": 80,
-        })
+        risk_events.append(
+            {
+                "event_id": isa.get("id", "unknown"),
+                "event_type": "expired_isa",
+                "probability": 0.2,
+                "impact_hours": 80,
+            }
+        )
 
     # CAT1 STIG findings
     cat1s = _safe_query(
         conn,
-        "SELECT stig_id, title FROM stig_findings "
-        "WHERE project_id = ? AND severity = 'CAT1' AND status = 'Open'",
+        "SELECT stig_id, title FROM stig_findings WHERE project_id = ? AND severity = 'CAT1' AND status = 'Open'",
         (project_id,),
     )
     for s in cat1s:
-        risk_events.append({
-            "event_id": s.get("stig_id", "unknown"),
-            "event_type": "cat1_stig",
-            "probability": 0.35,
-            "impact_hours": 120,
-        })
+        risk_events.append(
+            {
+                "event_id": s.get("stig_id", "unknown"),
+                "event_type": "cat1_stig",
+                "probability": 0.35,
+                "impact_hours": 120,
+            }
+        )
 
     # If no risk events, add a baseline low risk
     if not risk_events:
-        risk_events.append({
-            "event_id": "baseline-risk",
-            "event_type": "baseline",
-            "probability": 0.05,
-            "impact_hours": 40,
-        })
+        risk_events.append(
+            {
+                "event_id": "baseline-risk",
+                "event_type": "baseline",
+                "probability": 0.05,
+                "impact_hours": 40,
+            }
+        )
 
     return risk_events
 
@@ -376,6 +391,7 @@ def _get_risk_inputs(conn, project_id):
 # ---------------------------------------------------------------------------
 # Monte Carlo runners
 # ---------------------------------------------------------------------------
+
 
 def _run_schedule_mc(inputs, iterations):
     """Run Monte Carlo for schedule dimension.
@@ -386,9 +402,7 @@ def _run_schedule_mc(inputs, iterations):
     for _ in range(iterations):
         total = 0.0
         for item in inputs:
-            sampled = pert_sample(
-                item["optimistic"], item["most_likely"], item["pessimistic"]
-            )
+            sampled = pert_sample(item["optimistic"], item["most_likely"], item["pessimistic"])
             total += sampled
         results.append(total)
     return results
@@ -403,9 +417,7 @@ def _run_cost_mc(inputs, iterations):
     for _ in range(iterations):
         total = 0.0
         for item in inputs:
-            sampled = pert_sample(
-                item["optimistic"], item["most_likely"], item["pessimistic"]
-            )
+            sampled = pert_sample(item["optimistic"], item["most_likely"], item["pessimistic"])
             total += sampled
         results.append(total)
     return results
@@ -482,7 +494,7 @@ def _cholesky_decompose(matrix):
             if i == j:
                 val = matrix[i][i] - s
                 # Ensure positive (numerical stability)
-                L[i][j] = val ** 0.5 if val > 1e-10 else 1e-5
+                L[i][j] = val**0.5 if val > 1e-10 else 1e-5
             else:
                 denom = L[j][j] if L[j][j] != 0 else 1e-10
                 L[i][j] = (matrix[i][j] - s) / denom
@@ -500,6 +512,7 @@ def _run_correlated_risk_mc(inputs, iterations, corr_matrix):
     4. Compare uniform < probability to determine if risk fires
     """
     import math
+
     n = len(inputs)
     L = _cholesky_decompose(corr_matrix)
 
@@ -513,15 +526,11 @@ def _run_correlated_risk_mc(inputs, iterations, corr_matrix):
             z1 = math.sqrt(-2.0 * math.log(u1)) * math.cos(2 * math.pi * u2)
             z.append(z1)
             if i + 1 < n:
-                z2 = math.sqrt(-2.0 * math.log(u1)) * math.sin(
-                    2 * math.pi * u2)
+                z2 = math.sqrt(-2.0 * math.log(u1)) * math.sin(2 * math.pi * u2)
                 z.append(z2)
 
         # Step 2: correlated normals = L @ z
-        corr_z = [
-            sum(L[i][j] * z[j] for j in range(n))
-            for i in range(n)
-        ]
+        corr_z = [sum(L[i][j] * z[j] for j in range(n)) for i in range(n)]
 
         # Step 3: normal CDF → uniform [0,1]
         uniforms = [_phi(x) for x in corr_z]
@@ -539,8 +548,8 @@ def _run_correlated_risk_mc(inputs, iterations, corr_matrix):
 def _phi(x):
     """Standard normal CDF approximation (Abramowitz & Stegun)."""
     import math
-    a1, a2, a3, a4, a5 = (
-        0.254829592, -0.284496736, 1.421413741, -1.453152027, 1.061405429)
+
+    a1, a2, a3, a4, a5 = (0.254829592, -0.284496736, 1.421413741, -1.453152027, 1.061405429)
     p = 0.3275911
     sign = 1.0 if x >= 0 else -1.0
     x = abs(x) / math.sqrt(2.0)
@@ -553,8 +562,8 @@ def _phi(x):
 # Public API
 # ---------------------------------------------------------------------------
 
-def run_monte_carlo(scenario_id, dimension, iterations=DEFAULT_ITERATIONS,
-                    confidence_levels=None, db_path=None):
+
+def run_monte_carlo(scenario_id, dimension, iterations=DEFAULT_ITERATIONS, confidence_levels=None, db_path=None):
     """Execute Monte Carlo simulation for a scenario dimension.
 
     Args:
@@ -578,7 +587,8 @@ def run_monte_carlo(scenario_id, dimension, iterations=DEFAULT_ITERATIONS,
     try:
         # Load scenario
         row = conn.execute(
-            "SELECT * FROM simulation_scenarios WHERE id = ?", (scenario_id,),
+            "SELECT * FROM simulation_scenarios WHERE id = ?",
+            (scenario_id,),
         ).fetchone()
         if not row:
             raise ValueError(f"Scenario not found: {scenario_id}")
@@ -663,11 +673,19 @@ def run_monte_carlo(scenario_id, dimension, iterations=DEFAULT_ITERATIONS,
         )
         conn.commit()
 
-        _log_audit(conn, project_id,
-                   f"Monte Carlo ({dimension}) completed: {iterations} iterations",
-                   {"run_id": run_id, "scenario_id": scenario_id,
-                    "dimension": dimension, "iterations": iterations,
-                    "mean": round(mean_val, 2), "duration_ms": duration_ms})
+        _log_audit(
+            conn,
+            project_id,
+            f"Monte Carlo ({dimension}) completed: {iterations} iterations",
+            {
+                "run_id": run_id,
+                "scenario_id": scenario_id,
+                "dimension": dimension,
+                "iterations": iterations,
+                "mean": round(mean_val, 2),
+                "duration_ms": duration_ms,
+            },
+        )
 
         return {
             "run_id": run_id,
@@ -699,7 +717,8 @@ def get_run(run_id, db_path=None):
     conn = _get_connection(db_path)
     try:
         row = conn.execute(
-            "SELECT * FROM monte_carlo_runs WHERE id = ?", (run_id,),
+            "SELECT * FROM monte_carlo_runs WHERE id = ?",
+            (run_id,),
         ).fetchone()
         if not row:
             raise ValueError(f"Monte Carlo run not found: {run_id}")
@@ -746,6 +765,7 @@ def list_runs(scenario_id, db_path=None):
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
     parser = argparse.ArgumentParser(
         description="RICOAS Digital Program Twin — Monte Carlo simulation (PERT distribution)"
@@ -755,12 +775,14 @@ def main():
     parser.add_argument("--json", action="store_true", help="Output as JSON")
 
     # Run args
-    parser.add_argument("--dimension", choices=["schedule", "cost", "risk"],
-                        help="Dimension to simulate")
-    parser.add_argument("--iterations", type=int, default=DEFAULT_ITERATIONS,
-                        help=f"Number of iterations (default {DEFAULT_ITERATIONS})")
-    parser.add_argument("--confidence-levels",
-                        help="Comma-separated confidence levels (e.g. 0.10,0.50,0.80,0.90,0.95)")
+    parser.add_argument("--dimension", choices=["schedule", "cost", "risk"], help="Dimension to simulate")
+    parser.add_argument(
+        "--iterations",
+        type=int,
+        default=DEFAULT_ITERATIONS,
+        help=f"Number of iterations (default {DEFAULT_ITERATIONS})",
+    )
+    parser.add_argument("--confidence-levels", help="Comma-separated confidence levels (e.g. 0.10,0.50,0.80,0.90,0.95)")
 
     # Query args
     parser.add_argument("--get", action="store_true", help="Get run details")

@@ -22,19 +22,14 @@ def _get_connection(db_path=None):
     """Get a database connection."""
     path = db_path or DB_PATH
     if not path.exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\n"
-            "Run: python tools/db/init_icdev_db.py"
-        )
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
     conn = get_connection(db_path=str(path))
     return conn
 
 
 def _verify_project(conn, project_id):
     """Verify project exists."""
-    row = conn.execute(
-        "SELECT * FROM projects WHERE id = ?", (project_id,)
-    ).fetchone()
+    row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
     if not row:
         raise ValueError(f"Project '{project_id}' not found.")
     return dict(row)
@@ -218,10 +213,7 @@ def get_control_mapping_status(conn, project_id):
         with open(CONTROLS_PATH, "r", encoding="utf-8") as f:
             data = json.load(f)
         all_controls = data.get("controls", [])
-        required_control_ids = {
-            c["id"] for c in all_controls
-            if c["family"] in REQUIRED_FAMILIES
-        }
+        required_control_ids = {c["id"] for c in all_controls if c["family"] in REQUIRED_FAMILIES}
         total_required = len(required_control_ids)
     else:
         required_control_ids = set()
@@ -293,32 +285,37 @@ def _get_cssp_status(conn, project_id):
     na = sum(1 for r in rows if r["status"] == "not_applicable")
 
     assessable = total - na if total > na else total
-    score = (
-        100 * (satisfied + partial * 0.5 + risk_acc * 0.75) / assessable
-        if assessable > 0
-        else 0
-    )
+    score = 100 * (satisfied + partial * 0.5 + risk_acc * 0.75) / assessable if assessable > 0 else 0
 
     # Count critical requirements not satisfied
     critical_not_sat = sum(
-        1 for r in rows
+        1
+        for r in rows
         if r["status"] == "not_satisfied"
-        and r["requirement_id"] in (
-            "ID-3", "ID-4", "ID-6", "PR-1", "PR-2", "PR-3", "PR-5",
-            "DE-1", "DE-2", "DE-3", "DE-7", "RS-1", "RS-2", "RS-3",
-            "SU-1", "SU-6",
+        and r["requirement_id"]
+        in (
+            "ID-3",
+            "ID-4",
+            "ID-6",
+            "PR-1",
+            "PR-2",
+            "PR-3",
+            "PR-5",
+            "DE-1",
+            "DE-2",
+            "DE-3",
+            "DE-7",
+            "RS-1",
+            "RS-2",
+            "RS-3",
+            "SU-1",
+            "SU-6",
         )
     )
 
     # Check IR plan and SIEM
-    ir_plan = any(
-        r["status"] in ("satisfied", "partially_satisfied")
-        for r in rows if r["requirement_id"] == "RS-1"
-    )
-    siem = any(
-        r["status"] in ("satisfied", "partially_satisfied")
-        for r in rows if r["requirement_id"] == "DE-2"
-    )
+    ir_plan = any(r["status"] in ("satisfied", "partially_satisfied") for r in rows if r["requirement_id"] == "RS-1")
+    siem = any(r["status"] in ("satisfied", "partially_satisfied") for r in rows if r["requirement_id"] == "DE-2")
 
     # By functional area
     areas = {}
@@ -381,18 +378,24 @@ def _get_sbd_status(conn, project_id):
     na = sum(1 for r in rows if r["status"] == "not_applicable")
 
     assessable = total - na if total > na else total
-    score = (
-        100 * (satisfied + partial * 0.5 + risk_acc * 0.75) / assessable
-        if assessable > 0 else 0
-    )
+    score = 100 * (satisfied + partial * 0.5 + risk_acc * 0.75) / assessable if assessable > 0 else 0
 
     # Count critical not satisfied (requirements with cisa_commitment mapped to critical)
     critical_not_sat = sum(
-        1 for r in rows
+        1
+        for r in rows
         if r["status"] == "not_satisfied"
-        and r["requirement_id"] in (
-            "SBD-01", "SBD-02", "SBD-08", "SBD-11", "SBD-14",
-            "SBD-16", "SBD-22", "SBD-28", "SBD-31",
+        and r["requirement_id"]
+        in (
+            "SBD-01",
+            "SBD-02",
+            "SBD-08",
+            "SBD-11",
+            "SBD-14",
+            "SBD-16",
+            "SBD-22",
+            "SBD-28",
+            "SBD-31",
         )
     )
 
@@ -434,16 +437,24 @@ def _get_ivv_status(conn, project_id):
         ).fetchall()
     except Exception:
         return {
-            "assessed": False, "total": 0, "verification_score": 0,
-            "validation_score": 0, "overall_score": 0,
-            "critical_findings": 0, "certification_status": None,
+            "assessed": False,
+            "total": 0,
+            "verification_score": 0,
+            "validation_score": 0,
+            "overall_score": 0,
+            "critical_findings": 0,
+            "certification_status": None,
         }
 
     if not rows:
         return {
-            "assessed": False, "total": 0, "verification_score": 0,
-            "validation_score": 0, "overall_score": 0,
-            "critical_findings": 0, "certification_status": None,
+            "assessed": False,
+            "total": 0,
+            "verification_score": 0,
+            "validation_score": 0,
+            "overall_score": 0,
+            "critical_findings": 0,
+            "certification_status": None,
         }
 
     total = len(rows)
@@ -453,10 +464,7 @@ def _get_ivv_status(conn, project_id):
     na = sum(1 for r in rows if r["status"] == "not_applicable")
 
     assessable = total - na if total > na else total
-    score = (
-        100 * (passed + partial * 0.5) / assessable
-        if assessable > 0 else 0
-    )
+    score = 100 * (passed + partial * 0.5) / assessable if assessable > 0 else 0
 
     # Critical findings
     try:
@@ -558,9 +566,7 @@ def get_compliance_status(project_id, db_path=None):
 
         # STIG: 15%
         if stig["total"] > 0:
-            stig_score = 0 if stig["cat1_open"] > 0 else max(
-                0, 100 - (stig["cat2_open"] * 5) - (stig["cat3_open"] * 2)
-            )
+            stig_score = 0 if stig["cat1_open"] > 0 else max(0, 100 - (stig["cat2_open"] * 5) - (stig["cat3_open"] * 2))
         else:
             stig_score = 0  # No assessment done
         scores.append(("STIG", stig_score, 0.15))
@@ -702,7 +708,9 @@ def _format_status_report(status):
         for sev in ["critical", "high", "moderate", "low"]:
             if sev in poam["by_severity"]:
                 d = poam["by_severity"][sev]
-                lines.append(f"      {sev}: open={d.get('open',0)} ip={d.get('in_progress',0)} done={d.get('completed',0)}")
+                lines.append(
+                    f"      {sev}: open={d.get('open', 0)} ip={d.get('in_progress', 0)} done={d.get('completed', 0)}"
+                )
     lines.append("")
 
     # STIG
@@ -769,7 +777,7 @@ def _format_status_report(status):
             for area in ["Identify", "Protect", "Detect", "Respond", "Sustain"]:
                 a = cssp["by_area"].get(area, {})
                 if a:
-                    lines.append(f"      {area}: {a.get('satisfied',0)}/{a.get('total',0)} satisfied")
+                    lines.append(f"      {area}: {a.get('satisfied', 0)}/{a.get('total', 0)} satisfied")
         if cssp.get("xacta_sync"):
             lines.append(f"    Last Xacta Sync:   {cssp['xacta_sync'].get('last_xacta_sync', 'Never')}")
     else:
@@ -782,18 +790,12 @@ def _format_status_report(status):
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Compliance status dashboard"
-    )
+    parser = argparse.ArgumentParser(description="Compliance status dashboard")
     parser.add_argument("--project-id", "--project", required=True, help="Project ID", dest="project_id")
     parser.add_argument("--db", help="Database path")
+    parser.add_argument("--json", action="store_true", help="Output as JSON")
     parser.add_argument(
-        "--json", action="store_true",
-        help="Output as JSON"
-    )
-    parser.add_argument(
-        "--section", choices=["ssp", "poam", "stig", "sbom", "controls", "cssp"],
-        help="Show only a specific section"
+        "--section", choices=["ssp", "poam", "stig", "sbom", "controls", "cssp"], help="Show only a specific section"
     )
     args = parser.parse_args()
 

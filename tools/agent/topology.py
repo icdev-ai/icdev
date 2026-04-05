@@ -40,6 +40,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 # YAML loader (pyyaml preferred, fallback to basic parsing)
 # ---------------------------------------------------------------------------
 
+
 def _load_yaml(path: Path) -> dict:
     """Load a YAML file, falling back to empty dict on failure."""
     if not path.exists():
@@ -48,6 +49,7 @@ def _load_yaml(path: Path) -> dict:
     text = path.read_text(encoding="utf-8")
     try:
         import yaml
+
         return yaml.safe_load(text) or {}
     except ImportError:
         logger.warning("pyyaml not installed — cannot parse %s", path)
@@ -58,9 +60,11 @@ def _load_yaml(path: Path) -> dict:
 # DB helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_connection():
     """Get DB connection via storage abstraction."""
     from tools.db.storage import get_connection
+
     return get_connection()
 
 
@@ -109,6 +113,7 @@ def _is_air_gap_provider(provider_type: str, provider_name: str = "") -> bool:
 # Graph building
 # ---------------------------------------------------------------------------
 
+
 def build_topology() -> dict:
     """Scan configs and build full dependency graph.
 
@@ -134,47 +139,57 @@ def build_topology() -> dict:
     providers_cfg = llm_cfg.get("providers", {})
     for pname, pdata in providers_cfg.items():
         ptype = pdata.get("type", pname)
-        _add_node({
-            "id": f"provider:{pname}",
-            "type": "provider",
-            "provider_type": ptype,
-            "air_gap": _is_air_gap_provider(ptype, pname),
-        })
+        _add_node(
+            {
+                "id": f"provider:{pname}",
+                "type": "provider",
+                "provider_type": ptype,
+                "air_gap": _is_air_gap_provider(ptype, pname),
+            }
+        )
 
     # -- 2. Models --
     models_cfg = llm_cfg.get("models", {})
     for mname, mdata in models_cfg.items():
         provider = mdata.get("provider", "unknown")
         ptype = providers_cfg.get(provider, {}).get("type", provider)
-        _add_node({
-            "id": f"model:{mname}",
-            "type": "model",
-            "provider": provider,
-            "model_id": mdata.get("model_id", ""),
-            "air_gap": _is_air_gap_provider(ptype, provider),
-        })
-        _add_edge({
-            "from": f"model:{mname}",
-            "to": f"provider:{provider}",
-            "type": "hosted_by",
-        })
+        _add_node(
+            {
+                "id": f"model:{mname}",
+                "type": "model",
+                "provider": provider,
+                "model_id": mdata.get("model_id", ""),
+                "air_gap": _is_air_gap_provider(ptype, provider),
+            }
+        )
+        _add_edge(
+            {
+                "from": f"model:{mname}",
+                "to": f"provider:{provider}",
+                "type": "hosted_by",
+            }
+        )
 
     # -- 3. Functions (routing) --
     routing_cfg = llm_cfg.get("routing", {})
     for fname, fdata in routing_cfg.items():
-        _add_node({
-            "id": f"function:{fname}",
-            "type": "function",
-            "effort": fdata.get("effort", "medium"),
-        })
+        _add_node(
+            {
+                "id": f"function:{fname}",
+                "type": "function",
+                "effort": fdata.get("effort", "medium"),
+            }
+        )
         chain = fdata.get("chain", [])
         for priority, model_name in enumerate(chain, start=1):
-            _add_edge({
-                "from": f"function:{fname}",
-                "to": f"model:{model_name}",
-                "type": "routes_to",
-                "priority": priority,
-            })
+            _add_edge(
+                {
+                    "from": f"function:{fname}",
+                    "to": f"model:{model_name}",
+                    "type": "routes_to",
+                    "priority": priority,
+                }
+            )
 
     # -- 4. Two-tier routing overlay --
     two_tier = llm_cfg.get("two_tier", {})
@@ -187,11 +202,13 @@ def build_topology() -> dict:
                 fid = f"function:{fname}"
                 if fid not in seen_nodes:
                     _add_node({"id": fid, "type": "function", "effort": "medium"})
-                _add_edge({
-                    "from": fid,
-                    "to": f"model:{tier2}" if tier_type == "planner" else f"model:{tier1}",
-                    "type": f"two_tier_{tier_type}",
-                })
+                _add_edge(
+                    {
+                        "from": fid,
+                        "to": f"model:{tier2}" if tier_type == "planner" else f"model:{tier1}",
+                        "type": f"two_tier_{tier_type}",
+                    }
+                )
 
         # Function model overrides
         overrides = two_tier.get("function_model_overrides", {})
@@ -199,69 +216,83 @@ def build_topology() -> dict:
             fid = f"function:{fname}"
             if fid not in seen_nodes:
                 _add_node({"id": fid, "type": "function", "effort": "medium"})
-            _add_edge({
-                "from": fid,
-                "to": f"model:{model_name}",
-                "type": "two_tier_override",
-            })
+            _add_edge(
+                {
+                    "from": fid,
+                    "to": f"model:{model_name}",
+                    "type": "two_tier_override",
+                }
+            )
 
     # -- 5. Agents --
     agents_cfg = agent_cfg.get("agents", {})
     for aname, adata in agents_cfg.items():
         agent_id = adata.get("id", aname)
         port = adata.get("port", 0)
-        _add_node({
-            "id": f"agent:{aname}",
-            "type": "agent",
-            "agent_id": agent_id,
-            "port": port,
-            "name": adata.get("name", aname),
-            "description": adata.get("description", ""),
-            "status": "configured",
-        })
+        _add_node(
+            {
+                "id": f"agent:{aname}",
+                "type": "agent",
+                "agent_id": agent_id,
+                "port": port,
+                "name": adata.get("name", aname),
+                "description": adata.get("description", ""),
+                "status": "configured",
+            }
+        )
 
         # Link agent to its routing function if one exists
         routing_key = f"agent_{aname}"
         if f"function:{routing_key}" in seen_nodes:
-            _add_edge({
-                "from": f"agent:{aname}",
-                "to": f"function:{routing_key}",
-                "type": "uses",
-            })
+            _add_edge(
+                {
+                    "from": f"agent:{aname}",
+                    "to": f"function:{routing_key}",
+                    "type": "uses",
+                }
+            )
 
     # -- 6. Skills (scan .claude/commands/) --
     commands_dir = BASE_DIR / ".claude" / "commands"
     if commands_dir.exists():
         for skill_path in sorted(commands_dir.glob("*.md")):
             skill_name = skill_path.stem
-            _add_node({
-                "id": f"skill:{skill_name}",
-                "type": "skill",
-                "file": str(skill_path.relative_to(BASE_DIR)),
-            })
+            _add_node(
+                {
+                    "id": f"skill:{skill_name}",
+                    "type": "skill",
+                    "file": str(skill_path.relative_to(BASE_DIR)),
+                }
+            )
             # Skills are invoked by the orchestrator
             if "agent:orchestrator" in seen_nodes:
-                _add_edge({
-                    "from": "agent:orchestrator",
-                    "to": f"skill:{skill_name}",
-                    "type": "invokes",
-                })
+                _add_edge(
+                    {
+                        "from": "agent:orchestrator",
+                        "to": f"skill:{skill_name}",
+                        "type": "invokes",
+                    }
+                )
         # Scan subdirectories (e.g. e2e/)
         for subdir in sorted(commands_dir.iterdir()):
             if subdir.is_dir():
                 for skill_path in sorted(subdir.glob("*.md")):
                     skill_name = f"{subdir.name}/{skill_path.stem}"
-                    _add_node({
-                        "id": f"skill:{skill_name}",
-                        "type": "skill",
-                        "file": str(skill_path.relative_to(BASE_DIR)),
-                    })
+                    _add_node(
+                        {
+                            "id": f"skill:{skill_name}",
+                            "type": "skill",
+                            "file": str(skill_path.relative_to(BASE_DIR)),
+                        }
+                    )
                     if "agent:orchestrator" in seen_nodes:
-                        _add_edge({
-                            "from": "agent:orchestrator",
-                            "to": f"skill:{skill_name}",
-                            "type": "invokes",
-                        })
+                        _add_edge(
+                            {
+                                "from": "agent:orchestrator",
+                                "to": f"skill:{skill_name}",
+                                "type": "invokes",
+                            }
+                        )
 
     # -- 7. Agent tool implementations (scan tools/agent/) --
     agent_tools_dir = BASE_DIR / "tools" / "agent"
@@ -272,11 +303,13 @@ def build_topology() -> dict:
             tool_name = py_file.stem
             tid = f"tool:{tool_name}"
             if tid not in seen_nodes:
-                _add_node({
-                    "id": tid,
-                    "type": "tool",
-                    "file": str(py_file.relative_to(BASE_DIR)),
-                })
+                _add_node(
+                    {
+                        "id": tid,
+                        "type": "tool",
+                        "file": str(py_file.relative_to(BASE_DIR)),
+                    }
+                )
 
     # -- 8. Token usage statistics from DB --
     _enrich_with_usage(nodes, seen_nodes)
@@ -305,13 +338,15 @@ def _enrich_with_usage(nodes: List[dict], seen_nodes: Set[str]):
                 total_input = row[3] if isinstance(row, (list, tuple)) else row["total_input"]
                 total_output = row[4] if isinstance(row, (list, tuple)) else row["total_output"]
                 total_cost = row[5] if isinstance(row, (list, tuple)) else row["total_cost"]
-                usage_map[agent_id].append({
-                    "model_id": model_id,
-                    "call_count": call_count,
-                    "total_input_tokens": total_input or 0,
-                    "total_output_tokens": total_output or 0,
-                    "total_cost_usd": round(total_cost or 0.0, 4),
-                })
+                usage_map[agent_id].append(
+                    {
+                        "model_id": model_id,
+                        "call_count": call_count,
+                        "total_input_tokens": total_input or 0,
+                        "total_output_tokens": total_output or 0,
+                        "total_cost_usd": round(total_cost or 0.0, 4),
+                    }
+                )
             # Attach to agent nodes
             for node in nodes:
                 if node["type"] == "agent":
@@ -327,6 +362,7 @@ def _enrich_with_usage(nodes: List[dict], seen_nodes: Set[str]):
 # ---------------------------------------------------------------------------
 # Graph analysis
 # ---------------------------------------------------------------------------
+
 
 def _build_adjacency(graph: dict) -> Dict[str, Set[str]]:
     """Build undirected adjacency map from graph edges."""
@@ -417,8 +453,13 @@ def find_air_gap_paths(graph: Optional[dict] = None) -> dict:
     # Build function -> model edges
     func_models: Dict[str, List[Tuple[str, int]]] = defaultdict(list)
     for edge in graph["edges"]:
-        if edge["type"] in ("routes_to", "two_tier_scanner", "two_tier_worker",
-                            "two_tier_planner", "two_tier_override"):
+        if edge["type"] in (
+            "routes_to",
+            "two_tier_scanner",
+            "two_tier_worker",
+            "two_tier_planner",
+            "two_tier_override",
+        ):
             if edge["from"].startswith("function:"):
                 priority = edge.get("priority", 99)
                 func_models[edge["from"]].append((edge["to"], priority))
@@ -491,9 +532,7 @@ def get_provider_dependency_report(graph: Optional[dict] = None) -> dict:
             continue
         fname = node["id"].replace("function:", "")
         providers = by_function.get(fname, set())
-        has_local = any(
-            _is_air_gap_provider(p) for p in providers
-        )
+        has_local = any(_is_air_gap_provider(p) for p in providers)
         if has_local:
             fully_local.append(fname)
         elif providers:
@@ -538,6 +577,7 @@ def get_topology_stats(graph: Optional[dict] = None) -> dict:
 # ---------------------------------------------------------------------------
 # Snapshots
 # ---------------------------------------------------------------------------
+
 
 def snapshot_topology(graph: Optional[dict] = None) -> dict:
     """Save current topology to DB and return snapshot metadata."""
@@ -602,13 +642,11 @@ def compare_snapshots(snap_id_1: str, snap_id_2: str) -> dict:
     conn = _get_connection()
     try:
         row1 = conn.execute(
-            "SELECT graph_json, snapshot_at, node_count, edge_count "
-            "FROM agent_topology_snapshots WHERE id = ?",
+            "SELECT graph_json, snapshot_at, node_count, edge_count FROM agent_topology_snapshots WHERE id = ?",
             (snap_id_1,),
         ).fetchone()
         row2 = conn.execute(
-            "SELECT graph_json, snapshot_at, node_count, edge_count "
-            "FROM agent_topology_snapshots WHERE id = ?",
+            "SELECT graph_json, snapshot_at, node_count, edge_count FROM agent_topology_snapshots WHERE id = ?",
             (snap_id_2,),
         ).fetchone()
     finally:
@@ -652,6 +690,7 @@ def compare_snapshots(snap_id_1: str, snap_id_2: str) -> dict:
 # Gate check
 # ---------------------------------------------------------------------------
 
+
 def gate_check() -> Tuple[bool, dict]:
     """Gate: passes if every function has at least one air-gapped path.
 
@@ -686,38 +725,27 @@ def gate_check() -> Tuple[bool, dict]:
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
-    parser = argparse.ArgumentParser(
-        description="Agent Topology & Dependency Graph"
-    )
-    parser.add_argument("--build", action="store_true",
-                        help="Build and display the full topology graph")
-    parser.add_argument("--spof", action="store_true",
-                        help="Find single points of failure")
-    parser.add_argument("--air-gap-check", action="store_true",
-                        help="Check air-gap paths for all functions")
-    parser.add_argument("--providers", action="store_true",
-                        help="Provider dependency report")
-    parser.add_argument("--snapshot", action="store_true",
-                        help="Save current topology snapshot to DB")
-    parser.add_argument("--compare", action="store_true",
-                        help="Compare two topology snapshots")
-    parser.add_argument("--snap1", type=str, default="",
-                        help="First snapshot ID for comparison")
-    parser.add_argument("--snap2", type=str, default="",
-                        help="Second snapshot ID for comparison")
-    parser.add_argument("--stats", action="store_true",
-                        help="Show topology statistics")
-    parser.add_argument("--json", action="store_true",
-                        help="Output in JSON format")
-    parser.add_argument("--gate", action="store_true",
-                        help="Gate check — exit 1 if any function has no air-gap path")
+    parser = argparse.ArgumentParser(description="Agent Topology & Dependency Graph")
+    parser.add_argument("--build", action="store_true", help="Build and display the full topology graph")
+    parser.add_argument("--spof", action="store_true", help="Find single points of failure")
+    parser.add_argument("--air-gap-check", action="store_true", help="Check air-gap paths for all functions")
+    parser.add_argument("--providers", action="store_true", help="Provider dependency report")
+    parser.add_argument("--snapshot", action="store_true", help="Save current topology snapshot to DB")
+    parser.add_argument("--compare", action="store_true", help="Compare two topology snapshots")
+    parser.add_argument("--snap1", type=str, default="", help="First snapshot ID for comparison")
+    parser.add_argument("--snap2", type=str, default="", help="Second snapshot ID for comparison")
+    parser.add_argument("--stats", action="store_true", help="Show topology statistics")
+    parser.add_argument("--json", action="store_true", help="Output in JSON format")
+    parser.add_argument("--gate", action="store_true", help="Gate check — exit 1 if any function has no air-gap path")
 
     args = parser.parse_args()
 
     # Default to --build if no action specified
-    if not any([args.build, args.spof, args.air_gap_check, args.providers,
-                args.snapshot, args.compare, args.stats, args.gate]):
+    if not any(
+        [args.build, args.spof, args.air_gap_check, args.providers, args.snapshot, args.compare, args.stats, args.gate]
+    ):
         args.build = True
 
     try:

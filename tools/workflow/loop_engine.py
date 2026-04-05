@@ -74,12 +74,12 @@ def _gen_id(prefix: str) -> str:
     return f"{prefix}-{h}"
 
 
-def _audit(event_type: str, action: str, details: Optional[Dict] = None,
-           project_id: str = "") -> None:
+def _audit(event_type: str, action: str, details: Optional[Dict] = None, project_id: str = "") -> None:
     if _HAS_AUDIT:
         try:
             audit_log_event(
-                event_type=event_type, actor="workflow-engine",
+                event_type=event_type,
+                actor="workflow-engine",
                 action=action,
                 details=json.dumps(details) if details else None,
                 project_id=project_id,
@@ -102,6 +102,7 @@ def _load_config() -> Dict[str, Any]:
 # Loop lifecycle operations
 # ---------------------------------------------------------------------------
 
+
 def create_loop(
     project_id: str,
     phase_name: str,
@@ -121,12 +122,19 @@ def create_loop(
             (loop_id, project_id, phase_name, loop_type, created_by, now),
         )
         conn.commit()
-        _audit("workflow.loop_created", f"Created loop {loop_id} for {phase_name}",
-               {"loop_id": loop_id, "phase_name": phase_name}, project_id)
+        _audit(
+            "workflow.loop_created",
+            f"Created loop {loop_id} for {phase_name}",
+            {"loop_id": loop_id, "phase_name": phase_name},
+            project_id,
+        )
         return {
-            "loop_id": loop_id, "project_id": project_id,
-            "phase_name": phase_name, "loop_type": loop_type,
-            "status": "planning", "created_at": now,
+            "loop_id": loop_id,
+            "project_id": project_id,
+            "phase_name": phase_name,
+            "loop_type": loop_type,
+            "status": "planning",
+            "created_at": now,
         }
     finally:
         conn.close()
@@ -172,10 +180,19 @@ def finalize_plan(
             (summary, task_count, json.dumps(boundaries or []), ac_count, now, loop_id),
         )
         conn.commit()
-        _audit("workflow.plan_finalized", f"Plan finalized for loop {loop_id}",
-               {"loop_id": loop_id, "task_count": task_count}, row["project_id"])
-        return {"loop_id": loop_id, "status": "planned", "task_count": task_count,
-                "acceptance_criteria_count": ac_count, "planned_at": now}
+        _audit(
+            "workflow.plan_finalized",
+            f"Plan finalized for loop {loop_id}",
+            {"loop_id": loop_id, "task_count": task_count},
+            row["project_id"],
+        )
+        return {
+            "loop_id": loop_id,
+            "status": "planned",
+            "task_count": task_count,
+            "acceptance_criteria_count": ac_count,
+            "planned_at": now,
+        }
     finally:
         conn.close()
 
@@ -214,13 +231,16 @@ def add_acceptance_criterion(
                (id, loop_id, criterion_number, given_text, when_text, then_text,
                 bdd_story_id, status, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)""",
-            (crit_id, loop_id, max_num + 1, given_text, when_text, then_text,
-             bdd_story_id or None, now),
+            (crit_id, loop_id, max_num + 1, given_text, when_text, then_text, bdd_story_id or None, now),
         )
         conn.commit()
-        return {"criterion_id": crit_id, "loop_id": loop_id,
-                "criterion_number": max_num + 1, "status": "pending",
-                "bdd_story_id": bdd_story_id or None}
+        return {
+            "criterion_id": crit_id,
+            "loop_id": loop_id,
+            "criterion_number": max_num + 1,
+            "status": "pending",
+            "bdd_story_id": bdd_story_id or None,
+        }
     finally:
         conn.close()
 
@@ -241,8 +261,7 @@ def start_apply(loop_id: str, db_path: Optional[Path] = None) -> Dict[str, Any]:
             (now, loop_id),
         )
         conn.commit()
-        _audit("workflow.apply_started", f"Apply started for loop {loop_id}",
-               {"loop_id": loop_id}, row["project_id"])
+        _audit("workflow.apply_started", f"Apply started for loop {loop_id}", {"loop_id": loop_id}, row["project_id"])
         return {"loop_id": loop_id, "status": "applying", "apply_started_at": now}
     finally:
         conn.close()
@@ -269,8 +288,7 @@ def complete_task(loop_id: str, db_path: Optional[Path] = None) -> Dict[str, Any
             (new_count, status, now if status == "applied" else row["apply_completed_at"], loop_id),
         )
         conn.commit()
-        return {"loop_id": loop_id, "tasks_completed": new_count,
-                "task_count": row["task_count"], "status": status}
+        return {"loop_id": loop_id, "tasks_completed": new_count, "task_count": row["task_count"], "status": status}
     finally:
         conn.close()
 
@@ -288,7 +306,8 @@ def verify_criterion(
     conn = _get_db(db_path)
     try:
         row = conn.execute(
-            "SELECT * FROM workflow_acceptance_criteria WHERE id = ?", (criterion_id,),
+            "SELECT * FROM workflow_acceptance_criteria WHERE id = ?",
+            (criterion_id,),
         ).fetchone()
         if not row:
             return {"error": f"Criterion {criterion_id} not found"}
@@ -315,8 +334,7 @@ def verify_criterion(
             (counts["pass_ct"] or 0, counts["fail_ct"] or 0, counts["skip_ct"] or 0, loop_id),
         )
         conn.commit()
-        return {"criterion_id": criterion_id, "status": status,
-                "loop_id": loop_id, "verified_at": now}
+        return {"criterion_id": criterion_id, "status": status, "loop_id": loop_id, "verified_at": now}
     finally:
         conn.close()
 
@@ -356,7 +374,8 @@ def close_loop(loop_id: str, db_path: Optional[Path] = None) -> Dict[str, Any]:
         config = _load_config()
         require_unify = config.get("reconciliation", {}).get("require_unify", True)
         recon = conn.execute(
-            "SELECT * FROM workflow_reconciliations WHERE loop_id = ?", (loop_id,),
+            "SELECT * FROM workflow_reconciliations WHERE loop_id = ?",
+            (loop_id,),
         ).fetchone()
         if require_unify and not recon:
             return {"error": "Reconciliation required before closing. Run reconciler first."}
@@ -367,9 +386,12 @@ def close_loop(loop_id: str, db_path: Optional[Path] = None) -> Dict[str, Any]:
             (now, loop_id),
         )
         conn.commit()
-        _audit("workflow.loop_closed", f"Loop {loop_id} closed",
-               {"loop_id": loop_id, "result": recon["overall_result"] if recon else "unknown"},
-               row["project_id"])
+        _audit(
+            "workflow.loop_closed",
+            f"Loop {loop_id} closed",
+            {"loop_id": loop_id, "result": recon["overall_result"] if recon else "unknown"},
+            row["project_id"],
+        )
         return {"loop_id": loop_id, "status": "closed", "closed_at": now}
     finally:
         conn.close()
@@ -391,8 +413,12 @@ def abandon_loop(loop_id: str, reason: str = "", db_path: Optional[Path] = None)
             (now, loop_id),
         )
         conn.commit()
-        _audit("workflow.loop_abandoned", f"Loop {loop_id} abandoned: {reason}",
-               {"loop_id": loop_id, "reason": reason}, row["project_id"])
+        _audit(
+            "workflow.loop_abandoned",
+            f"Loop {loop_id} abandoned: {reason}",
+            {"loop_id": loop_id, "reason": reason},
+            row["project_id"],
+        )
         return {"loop_id": loop_id, "status": "abandoned", "reason": reason}
     finally:
         conn.close()
@@ -427,9 +453,12 @@ def get_loop_status(loop_id: str, db_path: Optional[Path] = None) -> Dict[str, A
             "tasks": {"total": row["task_count"], "completed": row["tasks_completed"]},
             "acceptance_criteria": [
                 {
-                    "id": c["id"], "number": c["criterion_number"],
-                    "given": c["given_text"], "when": c["when_text"],
-                    "then": c["then_text"], "status": c["status"],
+                    "id": c["id"],
+                    "number": c["criterion_number"],
+                    "given": c["given_text"],
+                    "when": c["when_text"],
+                    "then": c["then_text"],
+                    "status": c["status"],
                     "evidence": c["evidence"],
                     "bdd_story_id": c["bdd_story_id"] if "bdd_story_id" in c.keys() else None,
                 }
@@ -443,7 +472,8 @@ def get_loop_status(loop_id: str, db_path: Optional[Path] = None) -> Dict[str, A
             },
             "reconciliation": dict(recon) if recon else None,
             "timestamps": {
-                "created": row["created_at"], "planned": row["planned_at"],
+                "created": row["created_at"],
+                "planned": row["planned_at"],
                 "apply_started": row["apply_started_at"],
                 "apply_completed": row["apply_completed_at"],
                 "unify_started": row["unify_started_at"],
@@ -475,8 +505,10 @@ def list_loops(
             "total_loops": len(rows),
             "loops": [
                 {
-                    "id": r["id"], "phase_name": r["phase_name"],
-                    "loop_type": r["loop_type"], "status": r["status"],
+                    "id": r["id"],
+                    "phase_name": r["phase_name"],
+                    "loop_type": r["loop_type"],
+                    "status": r["status"],
                     "tasks": f"{r['tasks_completed']}/{r['task_count']}",
                     "ac": f"{r['acceptance_pass_count']}P/{r['acceptance_fail_count']}F/{r['acceptance_skip_count']}S",
                     "created_at": r["created_at"],
@@ -491,6 +523,7 @@ def list_loops(
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Workflow Loop Engine — PLAN→APPLY→UNIFY lifecycle")
@@ -532,22 +565,20 @@ def main() -> None:
 
     try:
         if args.create:
-            result = create_loop(args.project_id, args.phase, args.loop_type,
-                                 args.created_by, args.db_path)
+            result = create_loop(args.project_id, args.phase, args.loop_type, args.created_by, args.db_path)
         elif args.plan:
             boundaries = json.loads(args.boundaries) if args.boundaries else None
-            result = finalize_plan(args.loop_id, args.summary, args.task_count,
-                                   boundaries, args.db_path)
+            result = finalize_plan(args.loop_id, args.summary, args.task_count, boundaries, args.db_path)
         elif args.add_criteria:
-            result = add_acceptance_criterion(args.loop_id, args.given, args.when,
-                                              args.then, args.bdd_story_id, args.db_path)
+            result = add_acceptance_criterion(
+                args.loop_id, args.given, args.when, args.then, args.bdd_story_id, args.db_path
+            )
         elif args.start_apply:
             result = start_apply(args.loop_id, args.db_path)
         elif args.complete_task:
             result = complete_task(args.loop_id, args.db_path)
         elif args.verify_criterion:
-            result = verify_criterion(args.criterion_id, args.criterion_status,
-                                      args.evidence, args.db_path)
+            result = verify_criterion(args.criterion_id, args.criterion_status, args.evidence, args.db_path)
         elif args.start_unify:
             result = start_unify(args.loop_id, args.db_path)
         elif args.close:

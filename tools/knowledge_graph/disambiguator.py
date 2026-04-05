@@ -46,9 +46,11 @@ logger = logging.getLogger("icdev.knowledge_graph.disambiguator")
 # Database helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_db(db_path: Optional[str] = None):
     """Get a connection to icdev.db."""
     from tools.db.storage import get_connection
+
     conn = get_connection(db_path=db_path)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=5000")
@@ -67,6 +69,7 @@ def _gen_id(prefix: str = "kg") -> str:
 # ---------------------------------------------------------------------------
 # Embedding cosine similarity (same struct.unpack pattern as graph_rag.py)
 # ---------------------------------------------------------------------------
+
 
 def _cosine_similarity(a: bytes, b: bytes) -> float:
     """Compute cosine similarity between two embedding BLOBs.
@@ -102,6 +105,7 @@ def _cosine_similarity(a: bytes, b: bytes) -> float:
 # Label normalization
 # ---------------------------------------------------------------------------
 
+
 def _normalize_label(label: str) -> str:
     """Normalize a label for comparison.
 
@@ -117,6 +121,7 @@ def _normalize_label(label: str) -> str:
 # ---------------------------------------------------------------------------
 # find_duplicates
 # ---------------------------------------------------------------------------
+
 
 def find_duplicates(
     graph_id: Optional[str] = None,
@@ -143,14 +148,12 @@ def find_duplicates(
         # Fetch nodes
         if graph_id:
             rows = conn.execute(
-                "SELECT id, graph_id, label, entity_type, properties, embedding "
-                "FROM kg_nodes WHERE graph_id = ?",
+                "SELECT id, graph_id, label, entity_type, properties, embedding FROM kg_nodes WHERE graph_id = ?",
                 (graph_id,),
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT id, graph_id, label, entity_type, properties, embedding "
-                "FROM kg_nodes"
+                "SELECT id, graph_id, label, entity_type, properties, embedding FROM kg_nodes"
             ).fetchall()
 
         nodes = [dict(r) for r in rows]
@@ -188,20 +191,22 @@ def find_duplicates(
                 pair_key = tuple(sorted(n["id"] for n in group))
                 if pair_key not in seen_pairs:
                     seen_pairs.add(pair_key)
-                    duplicate_groups.append({
-                        "signal": "exact_label_different_type",
-                        "similarity": 1.0,
-                        "suggested_action": "review",
-                        "entities": [
-                            {
-                                "id": n["id"],
-                                "graph_id": n["graph_id"],
-                                "label": n["label"],
-                                "entity_type": n["entity_type"],
-                            }
-                            for n in group
-                        ],
-                    })
+                    duplicate_groups.append(
+                        {
+                            "signal": "exact_label_different_type",
+                            "similarity": 1.0,
+                            "suggested_action": "review",
+                            "entities": [
+                                {
+                                    "id": n["id"],
+                                    "graph_id": n["graph_id"],
+                                    "label": n["label"],
+                                    "entity_type": n["entity_type"],
+                                }
+                                for n in group
+                            ],
+                        }
+                    )
 
         # Also flag exact label + same type across different graphs
         for label, group in exact_groups.items():
@@ -213,20 +218,22 @@ def find_duplicates(
                 pair_key = tuple(sorted(n["id"] for n in group))
                 if pair_key not in seen_pairs:
                     seen_pairs.add(pair_key)
-                    duplicate_groups.append({
-                        "signal": "exact_label_cross_graph",
-                        "similarity": 1.0,
-                        "suggested_action": "merge",
-                        "entities": [
-                            {
-                                "id": n["id"],
-                                "graph_id": n["graph_id"],
-                                "label": n["label"],
-                                "entity_type": n["entity_type"],
-                            }
-                            for n in group
-                        ],
-                    })
+                    duplicate_groups.append(
+                        {
+                            "signal": "exact_label_cross_graph",
+                            "similarity": 1.0,
+                            "suggested_action": "merge",
+                            "entities": [
+                                {
+                                    "id": n["id"],
+                                    "graph_id": n["graph_id"],
+                                    "label": n["label"],
+                                    "entity_type": n["entity_type"],
+                                }
+                                for n in group
+                            ],
+                        }
+                    )
 
         # (b) Normalized label match (only those not already caught by exact)
         for norm_key, group in norm_groups.items():
@@ -239,26 +246,26 @@ def find_duplicates(
             labels = {n["label"] for n in group}
             if len(labels) > 1:
                 seen_pairs.add(pair_key)
-                duplicate_groups.append({
-                    "signal": "normalized_label_match",
-                    "similarity": 0.95,
-                    "suggested_action": "merge",
-                    "entities": [
-                        {
-                            "id": n["id"],
-                            "graph_id": n["graph_id"],
-                            "label": n["label"],
-                            "entity_type": n["entity_type"],
-                        }
-                        for n in group
-                    ],
-                })
+                duplicate_groups.append(
+                    {
+                        "signal": "normalized_label_match",
+                        "similarity": 0.95,
+                        "suggested_action": "merge",
+                        "entities": [
+                            {
+                                "id": n["id"],
+                                "graph_id": n["graph_id"],
+                                "label": n["label"],
+                                "entity_type": n["entity_type"],
+                            }
+                            for n in group
+                        ],
+                    }
+                )
 
         # (c) Embedding cosine similarity above threshold
         # Only compare nodes that have embeddings
-        embedded_nodes = [
-            n for n in nodes if n.get("embedding") is not None
-        ]
+        embedded_nodes = [n for n in nodes if n.get("embedding") is not None]
         if len(embedded_nodes) >= 2:
             for i in range(len(embedded_nodes)):
                 for j in range(i + 1, len(embedded_nodes)):
@@ -272,25 +279,27 @@ def find_duplicates(
                         seen_pairs.add(pair_key)
                         # Same type = merge candidate, different type = review
                         same_type = n_i["entity_type"] == n_j["entity_type"]
-                        duplicate_groups.append({
-                            "signal": "embedding_similarity",
-                            "similarity": round(sim, 4),
-                            "suggested_action": "merge" if same_type else "review",
-                            "entities": [
-                                {
-                                    "id": n_i["id"],
-                                    "graph_id": n_i["graph_id"],
-                                    "label": n_i["label"],
-                                    "entity_type": n_i["entity_type"],
-                                },
-                                {
-                                    "id": n_j["id"],
-                                    "graph_id": n_j["graph_id"],
-                                    "label": n_j["label"],
-                                    "entity_type": n_j["entity_type"],
-                                },
-                            ],
-                        })
+                        duplicate_groups.append(
+                            {
+                                "signal": "embedding_similarity",
+                                "similarity": round(sim, 4),
+                                "suggested_action": "merge" if same_type else "review",
+                                "entities": [
+                                    {
+                                        "id": n_i["id"],
+                                        "graph_id": n_i["graph_id"],
+                                        "label": n_i["label"],
+                                        "entity_type": n_i["entity_type"],
+                                    },
+                                    {
+                                        "id": n_j["id"],
+                                        "graph_id": n_j["graph_id"],
+                                        "label": n_j["label"],
+                                        "entity_type": n_j["entity_type"],
+                                    },
+                                ],
+                            }
+                        )
 
         # Sort by similarity descending
         duplicate_groups.sort(key=lambda g: g["similarity"], reverse=True)
@@ -314,6 +323,7 @@ def find_duplicates(
 # ---------------------------------------------------------------------------
 # merge_entities
 # ---------------------------------------------------------------------------
+
 
 def merge_entities(
     source_id: str,
@@ -358,11 +368,19 @@ def merge_entities(
 
         # Parse properties
         try:
-            source_props = json.loads(source["properties"]) if isinstance(source["properties"], str) else (source["properties"] or {})
+            source_props = (
+                json.loads(source["properties"])
+                if isinstance(source["properties"], str)
+                else (source["properties"] or {})
+            )
         except (json.JSONDecodeError, TypeError):
             source_props = {}
         try:
-            target_props = json.loads(target["properties"]) if isinstance(target["properties"], str) else (target["properties"] or {})
+            target_props = (
+                json.loads(target["properties"])
+                if isinstance(target["properties"], str)
+                else (target["properties"] or {})
+            )
         except (json.JSONDecodeError, TypeError):
             target_props = {}
 
@@ -428,8 +446,7 @@ def merge_entities(
         # Update graph entity_count
         source_graph_id = source["graph_id"]
         conn.execute(
-            "UPDATE kg_graphs SET entity_count = entity_count - 1, "
-            "updated_at = ? WHERE id = ?",
+            "UPDATE kg_graphs SET entity_count = entity_count - 1, updated_at = ? WHERE id = ?",
             (_now(), source_graph_id),
         )
 
@@ -458,6 +475,7 @@ def merge_entities(
 # ---------------------------------------------------------------------------
 # add_alias
 # ---------------------------------------------------------------------------
+
 
 def add_alias(
     node_id: str,
@@ -491,7 +509,9 @@ def add_alias(
 
         # Parse properties
         try:
-            props = json.loads(node["properties"]) if isinstance(node["properties"], str) else (node["properties"] or {})
+            props = (
+                json.loads(node["properties"]) if isinstance(node["properties"], str) else (node["properties"] or {})
+            )
         except (json.JSONDecodeError, TypeError):
             props = {}
 
@@ -533,6 +553,7 @@ def add_alias(
 # resolve_ambiguous
 # ---------------------------------------------------------------------------
 
+
 def resolve_ambiguous(
     label: str,
     context: Optional[str] = None,
@@ -566,15 +587,11 @@ def resolve_ambiguous(
         # Fetch candidate nodes
         if graph_id:
             rows = conn.execute(
-                "SELECT id, graph_id, label, entity_type, properties "
-                "FROM kg_nodes WHERE graph_id = ?",
+                "SELECT id, graph_id, label, entity_type, properties FROM kg_nodes WHERE graph_id = ?",
                 (graph_id,),
             ).fetchall()
         else:
-            rows = conn.execute(
-                "SELECT id, graph_id, label, entity_type, properties "
-                "FROM kg_nodes"
-            ).fetchall()
+            rows = conn.execute("SELECT id, graph_id, label, entity_type, properties FROM kg_nodes").fetchall()
 
         candidates: List[Dict[str, Any]] = []
         for row in rows:
@@ -584,7 +601,11 @@ def resolve_ambiguous(
 
             # Parse properties for alias check
             try:
-                props = json.loads(node["properties"]) if isinstance(node["properties"], str) else (node["properties"] or {})
+                props = (
+                    json.loads(node["properties"])
+                    if isinstance(node["properties"], str)
+                    else (node["properties"] or {})
+                )
             except (json.JSONDecodeError, TypeError):
                 props = {}
 
@@ -602,15 +623,17 @@ def resolve_ambiguous(
                 match_type = "alias"
 
             if match_type:
-                candidates.append({
-                    "id": node["id"],
-                    "graph_id": node["graph_id"],
-                    "label": node_label,
-                    "entity_type": node["entity_type"],
-                    "aliases": aliases,
-                    "match_type": match_type,
-                    "properties": props,
-                })
+                candidates.append(
+                    {
+                        "id": node["id"],
+                        "graph_id": node["graph_id"],
+                        "label": node_label,
+                        "entity_type": node["entity_type"],
+                        "aliases": aliases,
+                        "match_type": match_type,
+                        "properties": props,
+                    }
+                )
 
         if not candidates:
             return {
@@ -644,8 +667,7 @@ def resolve_ambiguous(
 
                 # Fetch connected edges for additional context
                 edge_rows = conn.execute(
-                    "SELECT relationship, properties FROM kg_edges "
-                    "WHERE source_id = ? OR target_id = ?",
+                    "SELECT relationship, properties FROM kg_edges WHERE source_id = ? OR target_id = ?",
                     (cand["id"], cand["id"]),
                 ).fetchall()
                 for edge_row in edge_rows:
@@ -667,15 +689,17 @@ def resolve_ambiguous(
         # Clean up output -- remove full properties dict, keep aliases
         output_candidates = []
         for cand in candidates:
-            output_candidates.append({
-                "id": cand["id"],
-                "graph_id": cand["graph_id"],
-                "label": cand["label"],
-                "entity_type": cand["entity_type"],
-                "aliases": cand["aliases"],
-                "match_type": cand["match_type"],
-                "confidence": cand["confidence"],
-            })
+            output_candidates.append(
+                {
+                    "id": cand["id"],
+                    "graph_id": cand["graph_id"],
+                    "label": cand["label"],
+                    "entity_type": cand["entity_type"],
+                    "aliases": cand["aliases"],
+                    "match_type": cand["match_type"],
+                    "confidence": cand["confidence"],
+                }
+            )
 
         return {
             "status": "ok",
@@ -696,6 +720,7 @@ def resolve_ambiguous(
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main() -> None:
     """CLI entry point."""
     parser = argparse.ArgumentParser(
@@ -705,19 +730,25 @@ def main() -> None:
     # Modes (mutually exclusive)
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(
-        "--find-duplicates", action="store_true",
+        "--find-duplicates",
+        action="store_true",
         help="Find potential duplicate entities",
     )
     group.add_argument(
-        "--merge", action="store_true",
+        "--merge",
+        action="store_true",
         help="Merge source entity into target entity",
     )
     group.add_argument(
-        "--add-alias", action="store_true",
+        "--add-alias",
+        action="store_true",
         help="Add an alias to a node",
     )
     group.add_argument(
-        "--resolve", type=str, default=None, metavar="LABEL",
+        "--resolve",
+        type=str,
+        default=None,
+        metavar="LABEL",
         help="Resolve an ambiguous label to candidate nodes",
     )
 
@@ -776,12 +807,13 @@ def main() -> None:
             print(f"Duplicate groups found: {result.get('total_groups', 0)}")
             print(f"Threshold: {result.get('threshold', 0.85)}")
             for i, grp in enumerate(groups, 1):
-                print(f"\n  Group {i} [{grp['signal']}] "
-                      f"(similarity: {grp['similarity']}, "
-                      f"action: {grp['suggested_action']}):")
+                print(
+                    f"\n  Group {i} [{grp['signal']}] "
+                    f"(similarity: {grp['similarity']}, "
+                    f"action: {grp['suggested_action']}):"
+                )
                 for ent in grp["entities"]:
-                    print(f"    - {ent['label']} [{ent['entity_type']}] "
-                          f"(id: {ent['id']}, graph: {ent['graph_id']})")
+                    print(f"    - {ent['label']} [{ent['entity_type']}] (id: {ent['id']}, graph: {ent['graph_id']})")
 
         elif args.merge:
             merged = result.get("merged", {})
@@ -800,9 +832,11 @@ def main() -> None:
             print(f"Context: {result.get('context', 'none')}")
             print(f"Candidates: {result.get('total_candidates', 0)}")
             for i, cand in enumerate(candidates, 1):
-                print(f"\n  {i}. {cand['label']} [{cand['entity_type']}] "
-                      f"(confidence: {cand['confidence']}, "
-                      f"match: {cand['match_type']})")
+                print(
+                    f"\n  {i}. {cand['label']} [{cand['entity_type']}] "
+                    f"(confidence: {cand['confidence']}, "
+                    f"match: {cand['match_type']})"
+                )
                 if cand.get("aliases"):
                     print(f"     aliases: {cand['aliases']}")
 

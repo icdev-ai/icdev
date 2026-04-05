@@ -61,8 +61,8 @@ def kg_db():
     ]
     for nid, gid, label, etype, cent in nodes:
         conn.execute(
-            "INSERT INTO kg_nodes (id, graph_id, label, entity_type, centrality) "
-            "VALUES (?, ?, ?, ?, ?)", (nid, gid, label, etype, cent),
+            "INSERT INTO kg_nodes (id, graph_id, label, entity_type, centrality) VALUES (?, ?, ?, ?, ?)",
+            (nid, gid, label, etype, cent),
         )
     edges = [
         ("e1", "kg-test1", "n2", "n1", "SATISFIES", 1.0),
@@ -71,8 +71,8 @@ def kg_db():
     ]
     for eid, gid, src, tgt, rel, w in edges:
         conn.execute(
-            "INSERT INTO kg_edges (id, graph_id, source_id, target_id, relationship, weight) "
-            "VALUES (?, ?, ?, ?, ?, ?)", (eid, gid, src, tgt, rel, w),
+            "INSERT INTO kg_edges (id, graph_id, source_id, target_id, relationship, weight) VALUES (?, ?, ?, ?, ?, ?)",
+            (eid, gid, src, tgt, rel, w),
         )
     conn.commit()
     return conn
@@ -81,6 +81,7 @@ def kg_db():
 class TestEntityRelationshipPairs:
     def test_generates_pairs_from_edges(self, kg_db):
         from tools.finetune.kg_pair_generator import _load_graph, _generate_entity_relationship_pairs
+
         graph_data = _load_graph(kg_db, "kg-test1")
         pairs = _generate_entity_relationship_pairs(graph_data)
         assert len(pairs) == 3  # 3 edges → 3 pairs
@@ -89,6 +90,7 @@ class TestEntityRelationshipPairs:
 
     def test_uses_relationship_templates(self, kg_db):
         from tools.finetune.kg_pair_generator import _load_graph, _generate_entity_relationship_pairs
+
         graph_data = _load_graph(kg_db, "kg-test1")
         pairs = _generate_entity_relationship_pairs(graph_data)
         satisfies_pairs = [p for p in pairs if "satisfy" in p["user_input"].lower()]
@@ -96,6 +98,7 @@ class TestEntityRelationshipPairs:
 
     def test_max_pairs_limit(self, kg_db):
         from tools.finetune.kg_pair_generator import _load_graph, _generate_entity_relationship_pairs
+
         graph_data = _load_graph(kg_db, "kg-test1")
         pairs = _generate_entity_relationship_pairs(graph_data, max_pairs=1)
         assert len(pairs) == 1
@@ -104,6 +107,7 @@ class TestEntityRelationshipPairs:
 class TestCommunityClusterPairs:
     def test_generates_pairs_from_communities(self, kg_db):
         from tools.finetune.kg_pair_generator import _load_graph, _generate_community_cluster_pairs
+
         graph_data = _load_graph(kg_db, "kg-test1")
         # All 5 nodes are connected (4 through edges, 1 may be isolated)
         pairs = _generate_community_cluster_pairs(graph_data, min_size=3)
@@ -114,6 +118,7 @@ class TestCommunityClusterPairs:
 
     def test_min_size_filter(self, kg_db):
         from tools.finetune.kg_pair_generator import _load_graph, _generate_community_cluster_pairs
+
         graph_data = _load_graph(kg_db, "kg-test1")
         # Min size 100 → no communities qualify
         pairs = _generate_community_cluster_pairs(graph_data, min_size=100)
@@ -123,6 +128,7 @@ class TestCommunityClusterPairs:
 class TestComplianceCrosswalkPairs:
     def test_generates_crosswalk_pairs(self, kg_db):
         from tools.finetune.kg_pair_generator import _load_graph, _generate_compliance_crosswalk_pairs
+
         graph_data = _load_graph(kg_db, "kg-test1")
         pairs = _generate_compliance_crosswalk_pairs(graph_data)
         # AC-2 and SC-13 both SATISFY NIST 800-53
@@ -137,6 +143,7 @@ class TestComplianceCrosswalkPairs:
 class TestFullPipeline:
     def test_generate_pairs_from_graph(self, kg_db):
         from tools.finetune.kg_pair_generator import generate_pairs_from_graph
+
         with patch("tools.finetune.kg_pair_generator._get_db", return_value=kg_db):
             result = generate_pairs_from_graph("kg-test1", store=False)
             assert result["status"] == "ok"
@@ -145,12 +152,14 @@ class TestFullPipeline:
 
     def test_graph_not_found(self, kg_db):
         from tools.finetune.kg_pair_generator import generate_pairs_from_graph
+
         with patch("tools.finetune.kg_pair_generator._get_db", return_value=kg_db):
             result = generate_pairs_from_graph("nonexistent")
             assert result["status"] == "error"
 
     def test_store_pairs(self, kg_db):
         from tools.finetune.kg_pair_generator import _load_graph, _generate_entity_relationship_pairs, _content_hash
+
         graph_data = _load_graph(kg_db, "kg-test1")
         pairs = _generate_entity_relationship_pairs(graph_data)
         assert len(pairs) > 0
@@ -161,7 +170,14 @@ class TestFullPipeline:
             kg_db.execute(
                 "INSERT INTO ft_dataset_examples (dataset_id, system_prompt, user_input, expected_output, source, quality_score, content_hash, classification) "
                 "VALUES (?, ?, ?, ?, ?, 0.7, ?, 'CUI')",
-                ("ds-test", pair.get("system_prompt", ""), pair["user_input"], pair["expected_output"], pair.get("source", ""), ch),
+                (
+                    "ds-test",
+                    pair.get("system_prompt", ""),
+                    pair["user_input"],
+                    pair["expected_output"],
+                    pair.get("source", ""),
+                    ch,
+                ),
             )
             stored += 1
         kg_db.commit()
@@ -170,6 +186,7 @@ class TestFullPipeline:
 
     def test_deduplication(self, kg_db):
         from tools.finetune.kg_pair_generator import _load_graph, _generate_entity_relationship_pairs, _content_hash
+
         graph_data = _load_graph(kg_db, "kg-test1")
         pairs = _generate_entity_relationship_pairs(graph_data)
         # Store first time
@@ -178,7 +195,14 @@ class TestFullPipeline:
             kg_db.execute(
                 "INSERT INTO ft_dataset_examples (dataset_id, system_prompt, user_input, expected_output, source, content_hash) "
                 "VALUES (?, ?, ?, ?, ?, ?)",
-                ("ds-dup", pair.get("system_prompt", ""), pair["user_input"], pair["expected_output"], pair.get("source", ""), ch),
+                (
+                    "ds-dup",
+                    pair.get("system_prompt", ""),
+                    pair["user_input"],
+                    pair["expected_output"],
+                    pair.get("source", ""),
+                    ch,
+                ),
             )
         kg_db.commit()
         # Try to store again — check dedup by content_hash
@@ -186,7 +210,8 @@ class TestFullPipeline:
         for pair in pairs:
             ch = _content_hash(pair.get("system_prompt", "") + pair["user_input"] + pair["expected_output"])
             existing = kg_db.execute(
-                "SELECT id FROM ft_dataset_examples WHERE content_hash = ? AND dataset_id = ?", (ch, "ds-dup"),
+                "SELECT id FROM ft_dataset_examples WHERE content_hash = ? AND dataset_id = ?",
+                (ch, "ds-dup"),
             ).fetchone()
             if existing:
                 dupes += 1

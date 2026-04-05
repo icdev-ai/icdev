@@ -12,6 +12,7 @@ def _ollama_reachable() -> bool:
     """Return True if Ollama HTTP API is reachable on localhost:11434."""
     try:
         import urllib.request
+
         req = urllib.request.Request(
             "http://localhost:11434/api/tags",
             headers={"Connection": "close"},
@@ -197,7 +198,8 @@ class TestBayesianSelector:
         }
         r1 = score_experiment_candidate(candidate, "compliance", selected_so_far=[])
         r2 = score_experiment_candidate(
-            candidate, "compliance",
+            candidate,
+            "compliance",
             selected_so_far=[{"hypothesis": "Improve NIST control mapping accuracy"}],
         )
         assert r2["dimensions"]["diversity"] <= r1["dimensions"]["diversity"]
@@ -222,8 +224,7 @@ class TestBayesianSelector:
             {"id": "c1", "hypothesis": "Test hypothesis", "content_hash": "abc123"},
         ]
         recent = [{"hypothesis": "Test hypothesis", "content_hash": "abc123"}]
-        result = select_next_experiment(candidates, "compliance",
-                                         recent_experiments=recent)
+        result = select_next_experiment(candidates, "compliance", recent_experiments=recent)
         assert result["selected"] is None
         assert result["reason"] == "all_deduped"
 
@@ -416,9 +417,7 @@ class TestAppendOnly:
             ("bes-test", "exp-test", "compliance", 0.85, now),
         )
         mock_db.commit()
-        row = mock_db.execute(
-            "SELECT * FROM bayesian_experiment_scores WHERE id = 'bes-test'"
-        ).fetchone()
+        row = mock_db.execute("SELECT * FROM bayesian_experiment_scores WHERE id = 'bes-test'").fetchone()
         assert row["info_gain_score"] == 0.85
 
 
@@ -429,13 +428,11 @@ class TestLandscape:
     def test_landscape_created_on_decide(self, mock_db):
         from tools.autoresearch.experiment_engine import create_experiment, decide
 
-        exp = create_experiment(domain="compliance", hypothesis="Landscape test",
-                                category="gate_configuration")
+        exp = create_experiment(domain="compliance", hypothesis="Landscape test", category="gate_configuration")
         decide(exp["experiment_id"], pre_metric=0.5, post_metric=0.6)
 
         row = mock_db.execute(
-            "SELECT * FROM experiment_landscapes "
-            "WHERE domain = 'compliance' AND category = 'gate_configuration'"
+            "SELECT * FROM experiment_landscapes WHERE domain = 'compliance' AND category = 'gate_configuration'"
         ).fetchone()
         assert row is not None
         assert row["total_experiments"] == 1
@@ -443,13 +440,11 @@ class TestLandscape:
     def test_landscape_alpha_increases_on_keep(self, mock_db):
         from tools.autoresearch.experiment_engine import create_experiment, decide
 
-        exp = create_experiment(domain="security", hypothesis="Alpha test",
-                                category="sast_findings")
+        exp = create_experiment(domain="security", hypothesis="Alpha test", category="sast_findings")
         decide(exp["experiment_id"], pre_metric=0.5, post_metric=0.6)
 
         row = mock_db.execute(
-            "SELECT * FROM experiment_landscapes "
-            "WHERE domain = 'security' AND category = 'sast_findings'"
+            "SELECT * FROM experiment_landscapes WHERE domain = 'security' AND category = 'sast_findings'"
         ).fetchone()
         assert row["alpha"] == 3.0  # Initial alpha on keep
         assert row["total_kept"] == 1

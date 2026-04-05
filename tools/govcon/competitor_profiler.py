@@ -31,6 +31,7 @@ _DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(_ROOT / "data" / "icdev.db")
 
 # ── helpers ───────────────────────────────────────────────────────────
 
+
 def _get_db():
     conn = get_connection()
     conn.execute("PRAGMA journal_mode=WAL")
@@ -38,6 +39,7 @@ def _get_db():
 
 
 # ── profiling ─────────────────────────────────────────────────────────
+
 
 def profile_vendor(vendor_name):
     """Build comprehensive profile for a vendor."""
@@ -131,17 +133,19 @@ def get_leaderboard(naics=None, agency=None, limit=20):
 
     leaderboard = []
     for i, row in enumerate(rows, 1):
-        leaderboard.append({
-            "rank": i,
-            "vendor": row["awardee_name"],
-            "awards": row["award_count"],
-            "total_value": row["total_value"],
-            "avg_value": row["total_value"] / row["award_count"] if row["award_count"] > 0 else 0,
-            "naics_diversity": row["naics_diversity"],
-            "agency_diversity": row["agency_diversity"],
-            "first_award": row["first_award"],
-            "latest_award": row["latest_award"],
-        })
+        leaderboard.append(
+            {
+                "rank": i,
+                "vendor": row["awardee_name"],
+                "awards": row["award_count"],
+                "total_value": row["total_value"],
+                "avg_value": row["total_value"] / row["award_count"] if row["award_count"] > 0 else 0,
+                "naics_diversity": row["naics_diversity"],
+                "agency_diversity": row["agency_diversity"],
+                "first_award": row["first_award"],
+                "latest_award": row["latest_award"],
+            }
+        )
 
     return {
         "status": "ok",
@@ -165,6 +169,7 @@ def compare_vendors(vendor_names):
 
 
 # ── CLI ───────────────────────────────────────────────────────────────
+
 
 def main():
     parser = argparse.ArgumentParser(description="ICDEV™ GovCon Competitor Profiler (D367)")

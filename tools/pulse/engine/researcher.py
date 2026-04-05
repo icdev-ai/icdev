@@ -4,6 +4,7 @@ Scrapes DuckDuckGo HTML search results to find developer pain points
 across Reddit, StackOverflow, HackerNews, LinkedIn, DEV.to, and Medium.
 No API keys required -- uses requests + BeautifulSoup only.
 """
+
 from __future__ import annotations
 
 import logging
@@ -21,8 +22,7 @@ from tools.pulse import config
 from tools.pulse.db import insert_row, query_rows
 
 # Configurable project ID — avoids hardcoding "sparkpilot"
-PULSE_PROJECT_ID = os.environ.get("ICDEV_PULSE_PROJECT_ID",
-                                   os.environ.get("ICDEV_PROJECT_ID", "pulse"))
+PULSE_PROJECT_ID = os.environ.get("ICDEV_PULSE_PROJECT_ID", os.environ.get("ICDEV_PROJECT_ID", "pulse"))
 
 
 def _is_air_gapped() -> bool:

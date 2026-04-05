@@ -145,6 +145,7 @@ def is_excluded_file(file_path: Path) -> bool:
         else:
             # Simple glob: *prefix or suffix*
             import fnmatch
+
             if fnmatch.fnmatch(name, pattern.lower()):
                 return True
 
@@ -155,6 +156,7 @@ def is_excluded_file(file_path: Path) -> bool:
         for excl in EXCLUDED_DIRS:
             if "*" in excl:
                 import fnmatch
+
                 if fnmatch.fnmatch(part.lower(), excl.lower()):
                     return True
 
@@ -170,11 +172,16 @@ if __name__ == "__main__":
     import sys
 
     if "--json" in sys.argv:
-        print(json.dumps({
-            "route_module_map": ROUTE_MODULE_MAP,
-            "security_exclusions": SECURITY_EXCLUSIONS,
-            "excluded_dirs": sorted(EXCLUDED_DIRS),
-        }, indent=2))
+        print(
+            json.dumps(
+                {
+                    "route_module_map": ROUTE_MODULE_MAP,
+                    "security_exclusions": SECURITY_EXCLUSIONS,
+                    "excluded_dirs": sorted(EXCLUDED_DIRS),
+                },
+                indent=2,
+            )
+        )
     else:
         print("ROUTE_MODULE_MAP:")
         for route, module in sorted(ROUTE_MODULE_MAP.items()):

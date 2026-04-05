@@ -74,9 +74,7 @@ def _get_model_cards(conn: sqlite3.Connection, project_id: str) -> List[Dict]:
 
 def _get_agent_info(conn: sqlite3.Connection) -> List[Dict]:
     try:
-        rows = conn.execute(
-            "SELECT agent_id, agent_type, status FROM agents LIMIT 20"
-        ).fetchall()
+        rows = conn.execute("SELECT agent_id, agent_type, status FROM agents LIMIT 20").fetchall()
         return [dict(r) for r in rows]
     except Exception:
         return []
@@ -117,7 +115,8 @@ def generate_system_card(
             "system_overview": {
                 "name": project.get("name", project_id),
                 "project_id": project_id,
-                "purpose": system_purpose or "ICDEV™-generated application with AI-assisted development, compliance automation, and continuous monitoring.",
+                "purpose": system_purpose
+                or "ICDEV™-generated application with AI-assisted development, compliance automation, and continuous monitoring.",
                 "system_type": "Agentic AI Development Platform",
                 "deployment_status": project.get("status", "active"),
             },
@@ -234,7 +233,8 @@ def generate_system_card(
                    (project_id, event_type, actor, action, details, classification)
                    VALUES (?, ?, ?, ?, ?, ?)""",
                 (
-                    project_id, "system_card_generated",
+                    project_id,
+                    "system_card_generated",
                     "icdev-compliance-engine",
                     "Generated system card",
                     json.dumps({"version": version, "hash": card_hash}),

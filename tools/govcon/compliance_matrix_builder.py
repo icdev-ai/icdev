@@ -67,6 +67,7 @@ DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db
 # =========================================================================
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
@@ -81,9 +82,7 @@ except ImportError:
 
 # ---------- Section L regex patterns ----------
 
-_RE_L_HEADER = re.compile(
-    r"(?:section\s+)?[Ll]\s*[-\u2013\u2014.:]\s*(.+?)(?:\n|$)", re.IGNORECASE
-)
+_RE_L_HEADER = re.compile(r"(?:section\s+)?[Ll]\s*[-\u2013\u2014.:]\s*(.+?)(?:\n|$)", re.IGNORECASE)
 _RE_PAGE_LIMIT = re.compile(
     r"(?:page\s+limit|not\s+to?\s+exceed|maximum\s+of|limited\s+to|no\s+more\s+than)"
     r"\s*[:.]?\s*(\d+)\s*pages?",
@@ -127,9 +126,7 @@ _RE_M_FACTOR = re.compile(
     r"(?:factor|criterion|criteria)\s*(\d+)\s*[-\u2013\u2014.:]\s*(.+?)(?:\n|$)",
     re.IGNORECASE,
 )
-_RE_M_WEIGHT = re.compile(
-    r"(?:weight|importance|worth)\s*[:.]?\s*(\d+)\s*%", re.IGNORECASE
-)
+_RE_M_WEIGHT = re.compile(r"(?:weight|importance|worth)\s*[:.]?\s*(\d+)\s*%", re.IGNORECASE)
 _RE_M_SUBFACTOR = re.compile(
     r"(?:subfactor|sub-factor|sub\s+factor)\s*(\d+[.\d]*)\s*[-\u2013\u2014.:]\s*(.+?)(?:\n|$)",
     re.IGNORECASE,
@@ -165,9 +162,7 @@ _RE_C_DELIVERABLE = re.compile(
     r"|technical\s+report|plan|SOPs?|SOP|procedures?)\b",
     re.IGNORECASE,
 )
-_RE_C_SECTION_HEADER = re.compile(
-    r"^(?:C\.|PWS\s+)?(\d+(?:\.\d+)*)\s+(.+?)$", re.MULTILINE
-)
+_RE_C_SECTION_HEADER = re.compile(r"^(?:C\.|PWS\s+)?(\d+(?:\.\d+)*)\s+(.+?)$", re.MULTILINE)
 
 # ---------- Sentence splitting ----------
 
@@ -177,6 +172,7 @@ _RE_SENTENCE_SPLIT = re.compile(r"(?<=[.!?;])\s+|\n{2,}")
 # =========================================================================
 # DATABASE HELPERS
 # =========================================================================
+
 
 def _get_db():
     """Return a database connection."""
@@ -210,8 +206,7 @@ def _audit(conn, action, details="", actor="compliance_matrix_builder"):
             "INSERT INTO audit_trail "
             "(id, created_at, event_type, actor, action, details, session_id) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (str(uuid.uuid4()), _now(), "govcon.compliance_matrix",
-             actor, action, details, "govcon"),
+            (str(uuid.uuid4()), _now(), "govcon.compliance_matrix", actor, action, details, "govcon"),
         )
     except Exception:
         pass
@@ -220,6 +215,7 @@ def _audit(conn, action, details="", actor="compliance_matrix_builder"):
 # =========================================================================
 # SECTION L PARSER
 # =========================================================================
+
 
 def parse_section_l(text: str, opportunity_id: str) -> List[Dict]:
     """Extract formatting instructions, page limits, volume structure from Section L.
@@ -247,11 +243,16 @@ def parse_section_l(text: str, opportunity_id: str) -> List[Dict]:
         h = _content_hash(req_text)
         if h not in seen_hashes:
             seen_hashes.add(h)
-            results.append(_make_requirement(
-                opportunity_id, req_text, "L", now,
-                evaluation_factor="formatting",
-                notes=f"page_limit={match.group(1)}",
-            ))
+            results.append(
+                _make_requirement(
+                    opportunity_id,
+                    req_text,
+                    "L",
+                    now,
+                    evaluation_factor="formatting",
+                    notes=f"page_limit={match.group(1)}",
+                )
+            )
 
     # --- Word limits ---
     for match in _RE_WORD_LIMIT.finditer(text):
@@ -263,11 +264,16 @@ def parse_section_l(text: str, opportunity_id: str) -> List[Dict]:
         h = _content_hash(req_text)
         if h not in seen_hashes:
             seen_hashes.add(h)
-            results.append(_make_requirement(
-                opportunity_id, req_text, "L", now,
-                evaluation_factor="formatting",
-                notes=f"word_limit={word_count}",
-            ))
+            results.append(
+                _make_requirement(
+                    opportunity_id,
+                    req_text,
+                    "L",
+                    now,
+                    evaluation_factor="formatting",
+                    notes=f"word_limit={word_count}",
+                )
+            )
 
     # --- Font requirements ---
     for match in _RE_FONT_SIZE.finditer(text):
@@ -278,22 +284,32 @@ def parse_section_l(text: str, opportunity_id: str) -> List[Dict]:
         h = _content_hash(req_text)
         if h not in seen_hashes:
             seen_hashes.add(h)
-            results.append(_make_requirement(
-                opportunity_id, req_text, "L", now,
-                evaluation_factor="formatting",
-                notes=f"font_size={match.group(1)}",
-            ))
+            results.append(
+                _make_requirement(
+                    opportunity_id,
+                    req_text,
+                    "L",
+                    now,
+                    evaluation_factor="formatting",
+                    notes=f"font_size={match.group(1)}",
+                )
+            )
 
     for match in _RE_FONT_FAMILY.finditer(text):
         req_text = f"Font family: {match.group(1)}"
         h = _content_hash(req_text)
         if h not in seen_hashes:
             seen_hashes.add(h)
-            results.append(_make_requirement(
-                opportunity_id, req_text, "L", now,
-                evaluation_factor="formatting",
-                notes=f"font_family={match.group(1)}",
-            ))
+            results.append(
+                _make_requirement(
+                    opportunity_id,
+                    req_text,
+                    "L",
+                    now,
+                    evaluation_factor="formatting",
+                    notes=f"font_family={match.group(1)}",
+                )
+            )
 
     # --- Margins ---
     for match in _RE_MARGIN.finditer(text):
@@ -301,11 +317,16 @@ def parse_section_l(text: str, opportunity_id: str) -> List[Dict]:
         h = _content_hash(req_text)
         if h not in seen_hashes:
             seen_hashes.add(h)
-            results.append(_make_requirement(
-                opportunity_id, req_text, "L", now,
-                evaluation_factor="formatting",
-                notes=f"margin_inches={match.group(1)}",
-            ))
+            results.append(
+                _make_requirement(
+                    opportunity_id,
+                    req_text,
+                    "L",
+                    now,
+                    evaluation_factor="formatting",
+                    notes=f"margin_inches={match.group(1)}",
+                )
+            )
 
     # --- Line spacing ---
     for match in _RE_LINE_SPACING.finditer(text):
@@ -313,27 +334,37 @@ def parse_section_l(text: str, opportunity_id: str) -> List[Dict]:
         h = _content_hash(req_text)
         if h not in seen_hashes:
             seen_hashes.add(h)
-            results.append(_make_requirement(
-                opportunity_id, req_text, "L", now,
-                evaluation_factor="formatting",
-                notes=f"line_spacing={match.group(1)}",
-            ))
+            results.append(
+                _make_requirement(
+                    opportunity_id,
+                    req_text,
+                    "L",
+                    now,
+                    evaluation_factor="formatting",
+                    notes=f"line_spacing={match.group(1)}",
+                )
+            )
 
     # --- Volume structure ---
     for match in _RE_VOLUME_STRUCTURE.finditer(text):
         vol_name = match.group(1).strip()
         # Grab 200 chars after the header for context
         _end = min(len(text), match.end() + 200)
-        context = text[match.start():_end].strip()
+        context = text[match.start() : _end].strip()
         req_text = f"Volume: {vol_name}. {context}"
         h = _content_hash(req_text)
         if h not in seen_hashes:
             seen_hashes.add(h)
-            results.append(_make_requirement(
-                opportunity_id, req_text, "L", now,
-                evaluation_factor="volume_structure",
-                assigned_volume=vol_name,
-            ))
+            results.append(
+                _make_requirement(
+                    opportunity_id,
+                    req_text,
+                    "L",
+                    now,
+                    evaluation_factor="volume_structure",
+                    assigned_volume=vol_name,
+                )
+            )
 
     # --- Submission requirements ---
     for match in _RE_SUBMISSION_REQ.finditer(text):
@@ -346,10 +377,15 @@ def parse_section_l(text: str, opportunity_id: str) -> List[Dict]:
         h = _content_hash(req_text)
         if h not in seen_hashes:
             seen_hashes.add(h)
-            results.append(_make_requirement(
-                opportunity_id, req_text, "L", now,
-                evaluation_factor="submission",
-            ))
+            results.append(
+                _make_requirement(
+                    opportunity_id,
+                    req_text,
+                    "L",
+                    now,
+                    evaluation_factor="submission",
+                )
+            )
 
     # --- General L section headers for anything not caught above ---
     for match in _RE_L_HEADER.finditer(text):
@@ -360,10 +396,15 @@ def parse_section_l(text: str, opportunity_id: str) -> List[Dict]:
         h = _content_hash(req_text)
         if h not in seen_hashes:
             seen_hashes.add(h)
-            results.append(_make_requirement(
-                opportunity_id, req_text, "L", now,
-                evaluation_factor="instruction",
-            ))
+            results.append(
+                _make_requirement(
+                    opportunity_id,
+                    req_text,
+                    "L",
+                    now,
+                    evaluation_factor="instruction",
+                )
+            )
 
     return results
 
@@ -371,6 +412,7 @@ def parse_section_l(text: str, opportunity_id: str) -> List[Dict]:
 # =========================================================================
 # SECTION M PARSER
 # =========================================================================
+
 
 def parse_section_m(text: str, opportunity_id: str) -> List[Dict]:
     """Extract evaluation factors, subfactors, weights, rating scales from Section M.
@@ -397,11 +439,16 @@ def parse_section_m(text: str, opportunity_id: str) -> List[Dict]:
         h = _content_hash(req_text)
         if h not in seen_hashes:
             seen_hashes.add(h)
-            results.append(_make_requirement(
-                opportunity_id, req_text, "M", now,
-                evaluation_factor="evaluation_methodology",
-                notes=f"method={method}",
-            ))
+            results.append(
+                _make_requirement(
+                    opportunity_id,
+                    req_text,
+                    "M",
+                    now,
+                    evaluation_factor="evaluation_methodology",
+                    notes=f"method={method}",
+                )
+            )
 
     # --- Evaluation factors ---
     for match in _RE_M_FACTOR.finditer(text):
@@ -409,7 +456,7 @@ def parse_section_m(text: str, opportunity_id: str) -> List[Dict]:
         factor_name = match.group(2).strip()
         # Look for weight near the factor definition (within 200 chars)
         _end = min(len(text), match.end() + 200)
-        nearby = text[match.start():_end]
+        nearby = text[match.start() : _end]
         weight_match = _RE_M_WEIGHT.search(nearby)
         weight = float(weight_match.group(1)) if weight_match else None
 
@@ -417,19 +464,24 @@ def parse_section_m(text: str, opportunity_id: str) -> List[Dict]:
         h = _content_hash(req_text)
         if h not in seen_hashes:
             seen_hashes.add(h)
-            results.append(_make_requirement(
-                opportunity_id, req_text, "M", now,
-                evaluation_factor=f"Factor {factor_num}: {factor_name}",
-                evaluation_weight=weight,
-                notes=f"factor_number={factor_num}",
-            ))
+            results.append(
+                _make_requirement(
+                    opportunity_id,
+                    req_text,
+                    "M",
+                    now,
+                    evaluation_factor=f"Factor {factor_num}: {factor_name}",
+                    evaluation_weight=weight,
+                    notes=f"factor_number={factor_num}",
+                )
+            )
 
     # --- Subfactors ---
     for match in _RE_M_SUBFACTOR.finditer(text):
         sub_num = match.group(1).strip()
         sub_name = match.group(2).strip()
         _end = min(len(text), match.end() + 200)
-        nearby = text[match.start():_end]
+        nearby = text[match.start() : _end]
         weight_match = _RE_M_WEIGHT.search(nearby)
         weight = float(weight_match.group(1)) if weight_match else None
 
@@ -437,12 +489,17 @@ def parse_section_m(text: str, opportunity_id: str) -> List[Dict]:
         h = _content_hash(req_text)
         if h not in seen_hashes:
             seen_hashes.add(h)
-            results.append(_make_requirement(
-                opportunity_id, req_text, "M", now,
-                evaluation_factor=f"Subfactor {sub_num}: {sub_name}",
-                evaluation_weight=weight,
-                notes=f"subfactor_number={sub_num}",
-            ))
+            results.append(
+                _make_requirement(
+                    opportunity_id,
+                    req_text,
+                    "M",
+                    now,
+                    evaluation_factor=f"Subfactor {sub_num}: {sub_name}",
+                    evaluation_weight=weight,
+                    notes=f"subfactor_number={sub_num}",
+                )
+            )
 
     # --- Rating scale detection ---
     rating_terms = set()
@@ -454,11 +511,16 @@ def parse_section_m(text: str, opportunity_id: str) -> List[Dict]:
         h = _content_hash(req_text)
         if h not in seen_hashes:
             seen_hashes.add(h)
-            results.append(_make_requirement(
-                opportunity_id, req_text, "M", now,
-                evaluation_factor="rating_scale",
-                notes=f"scales={json.dumps(sorted_ratings)}",
-            ))
+            results.append(
+                _make_requirement(
+                    opportunity_id,
+                    req_text,
+                    "M",
+                    now,
+                    evaluation_factor="rating_scale",
+                    notes=f"scales={json.dumps(sorted_ratings)}",
+                )
+            )
 
     # --- Relative importance statements ---
     for match in _RE_M_RELATIVE_IMPORTANCE.finditer(text):
@@ -469,10 +531,15 @@ def parse_section_m(text: str, opportunity_id: str) -> List[Dict]:
         h = _content_hash(req_text)
         if h not in seen_hashes:
             seen_hashes.add(h)
-            results.append(_make_requirement(
-                opportunity_id, req_text, "M", now,
-                evaluation_factor="relative_importance",
-            ))
+            results.append(
+                _make_requirement(
+                    opportunity_id,
+                    req_text,
+                    "M",
+                    now,
+                    evaluation_factor="relative_importance",
+                )
+            )
 
     return results
 
@@ -480,6 +547,7 @@ def parse_section_m(text: str, opportunity_id: str) -> List[Dict]:
 # =========================================================================
 # SECTION C / PWS PARSER
 # =========================================================================
+
 
 def parse_section_c(text: str, opportunity_id: str) -> List[Dict]:
     """Extract deliverable requirements from Section C / PWS.
@@ -553,11 +621,16 @@ def parse_section_c(text: str, opportunity_id: str) -> List[Dict]:
         if section_ref:
             notes_parts.append(f"section={section_ref}")
 
-        results.append(_make_requirement(
-            opportunity_id, sentence, "C", now,
-            evaluation_factor="deliverable" if is_deliverable else "performance",
-            notes="; ".join(notes_parts) if notes_parts else None,
-        ))
+        results.append(
+            _make_requirement(
+                opportunity_id,
+                sentence,
+                "C",
+                now,
+                evaluation_factor="deliverable" if is_deliverable else "performance",
+                notes="; ".join(notes_parts) if notes_parts else None,
+            )
+        )
 
     return results
 
@@ -565,6 +638,7 @@ def parse_section_c(text: str, opportunity_id: str) -> List[Dict]:
 # =========================================================================
 # REQUIREMENT DICT BUILDER
 # =========================================================================
+
 
 def _make_requirement(
     opportunity_id: str,
@@ -603,6 +677,7 @@ def _make_requirement(
 # STORE PARSED REQUIREMENTS
 # =========================================================================
 
+
 def _store_requirements(requirements: List[Dict], conn=None) -> Dict:
     """Store parsed requirements into pg_compliance_matrix.
 
@@ -624,8 +699,7 @@ def _store_requirements(requirements: List[Dict], conn=None) -> Dict:
 
         # Dedup check: same text for same opportunity
         existing = conn.execute(
-            "SELECT id FROM pg_compliance_matrix "
-            "WHERE opportunity_id = ? AND requirement_text = ?",
+            "SELECT id FROM pg_compliance_matrix WHERE opportunity_id = ? AND requirement_text = ?",
             (opp_id, req["requirement_text"][:2000]),
         ).fetchone()
 
@@ -640,14 +714,20 @@ def _store_requirements(requirements: List[Dict], conn=None) -> Dict:
             "compliance_status, amendment_version, notes, created_at, updated_at) "
             "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
-                req["id"], req["opportunity_id"], req["requirement_id"],
-                req["requirement_text"], req["source_section"],
-                req.get("evaluation_factor"), req.get("evaluation_weight"),
-                req.get("assigned_volume"), req.get("assigned_section"),
+                req["id"],
+                req["opportunity_id"],
+                req["requirement_id"],
+                req["requirement_text"],
+                req["source_section"],
+                req.get("evaluation_factor"),
+                req.get("evaluation_weight"),
+                req.get("assigned_volume"),
+                req.get("assigned_section"),
                 req.get("compliance_status", "gap"),
                 req.get("amendment_version", 0),
                 req.get("notes"),
-                req["created_at"], req["updated_at"],
+                req["created_at"],
+                req["updated_at"],
             ),
         )
         stored += 1
@@ -663,6 +743,7 @@ def _store_requirements(requirements: List[Dict], conn=None) -> Dict:
 # MATRIX BUILDER
 # =========================================================================
 
+
 def build_matrix(opportunity_id: str) -> Dict:
     """Assemble the full compliance matrix from all stored L/M/C requirements.
 
@@ -675,8 +756,7 @@ def build_matrix(opportunity_id: str) -> Dict:
     conn = _get_db()
 
     rows = conn.execute(
-        "SELECT * FROM pg_compliance_matrix WHERE opportunity_id = ? "
-        "ORDER BY source_section, created_at",
+        "SELECT * FROM pg_compliance_matrix WHERE opportunity_id = ? ORDER BY source_section, created_at",
         (opportunity_id,),
     ).fetchall()
 
@@ -703,8 +783,7 @@ def build_matrix(opportunity_id: str) -> Dict:
         if status in by_status:
             by_status[status] += 1
 
-    _audit(conn, "build_matrix",
-           f"Built matrix for {opportunity_id}: {len(matrix)} requirements")
+    _audit(conn, "build_matrix", f"Built matrix for {opportunity_id}: {len(matrix)} requirements")
     conn.close()
 
     return {
@@ -724,29 +803,88 @@ def build_matrix(opportunity_id: str) -> Dict:
 # Keyword-to-volume mapping heuristics
 _VOLUME_KEYWORDS = {
     "technical": [
-        "technical", "approach", "architecture", "system", "design", "solution",
-        "methodology", "technology", "engineering", "implementation", "integration",
-        "software", "hardware", "infrastructure", "cloud", "devops", "devsecops",
-        "cyber", "security", "zero trust", "agile", "development",
+        "technical",
+        "approach",
+        "architecture",
+        "system",
+        "design",
+        "solution",
+        "methodology",
+        "technology",
+        "engineering",
+        "implementation",
+        "integration",
+        "software",
+        "hardware",
+        "infrastructure",
+        "cloud",
+        "devops",
+        "devsecops",
+        "cyber",
+        "security",
+        "zero trust",
+        "agile",
+        "development",
     ],
     "management": [
-        "management", "staffing", "personnel", "key personnel", "organization",
-        "transition", "phase-in", "quality", "risk", "schedule", "plan",
-        "project management", "program management", "governance", "oversight",
-        "communication", "subcontract", "small business",
+        "management",
+        "staffing",
+        "personnel",
+        "key personnel",
+        "organization",
+        "transition",
+        "phase-in",
+        "quality",
+        "risk",
+        "schedule",
+        "plan",
+        "project management",
+        "program management",
+        "governance",
+        "oversight",
+        "communication",
+        "subcontract",
+        "small business",
     ],
     "past_performance": [
-        "past performance", "experience", "relevant experience", "similar",
-        "reference", "contract", "previous", "prior work", "demonstrated",
+        "past performance",
+        "experience",
+        "relevant experience",
+        "similar",
+        "reference",
+        "contract",
+        "previous",
+        "prior work",
+        "demonstrated",
     ],
     "cost": [
-        "cost", "price", "pricing", "budget", "labor", "rate", "ODC",
-        "other direct cost", "travel", "materials", "CLIN", "line item",
-        "fixed price", "time and materials", "cost plus",
+        "cost",
+        "price",
+        "pricing",
+        "budget",
+        "labor",
+        "rate",
+        "ODC",
+        "other direct cost",
+        "travel",
+        "materials",
+        "CLIN",
+        "line item",
+        "fixed price",
+        "time and materials",
+        "cost plus",
     ],
     "staffing": [
-        "staffing", "resume", "personnel", "qualifications", "labor category",
-        "key personnel", "certification", "clearance", "education", "experience",
+        "staffing",
+        "resume",
+        "personnel",
+        "qualifications",
+        "labor category",
+        "key personnel",
+        "certification",
+        "clearance",
+        "education",
+        "experience",
     ],
 }
 
@@ -773,8 +911,7 @@ def auto_map_sections(opportunity_id: str) -> Dict:
 
     # Also load existing proposal volumes for the opportunity
     volumes = conn.execute(
-        "SELECT id, volume_type, title FROM proposal_volumes "
-        "WHERE opportunity_id = ?",
+        "SELECT id, volume_type, title FROM proposal_volumes WHERE opportunity_id = ?",
         (opportunity_id,),
     ).fetchall()
     volume_map = {v["volume_type"]: v for v in volumes if v.get("volume_type")}
@@ -815,8 +952,7 @@ def auto_map_sections(opportunity_id: str) -> Dict:
             unmapped += 1
 
     conn.commit()
-    _audit(conn, "auto_map",
-           f"Auto-mapped {mapped} requirements for {opportunity_id}")
+    _audit(conn, "auto_map", f"Auto-mapped {mapped} requirements for {opportunity_id}")
     conn.close()
 
     return {
@@ -832,6 +968,7 @@ def auto_map_sections(opportunity_id: str) -> Dict:
 # COVERAGE TRACKER
 # =========================================================================
 
+
 def get_coverage(opportunity_id: str) -> Dict:
     """Calculate % of requirements addressed per volume.
 
@@ -844,8 +981,7 @@ def get_coverage(opportunity_id: str) -> Dict:
     conn = _get_db()
 
     rows = conn.execute(
-        "SELECT source_section, assigned_volume, compliance_status "
-        "FROM pg_compliance_matrix WHERE opportunity_id = ?",
+        "SELECT source_section, assigned_volume, compliance_status FROM pg_compliance_matrix WHERE opportunity_id = ?",
         (opportunity_id,),
     ).fetchall()
 
@@ -901,8 +1037,7 @@ def get_coverage(opportunity_id: str) -> Dict:
 
     # Overall
     total_all = len(rows)
-    addressed_all = sum(1 for r in rows
-                        if r["compliance_status"] in ("addressed", "partial"))
+    addressed_all = sum(1 for r in rows if r["compliance_status"] in ("addressed", "partial"))
     overall_pct = round((addressed_all / total_all) * 100, 1) if total_all > 0 else 0.0
 
     return {
@@ -919,6 +1054,7 @@ def get_coverage(opportunity_id: str) -> Dict:
 # =========================================================================
 # AMENDMENT DETECTOR
 # =========================================================================
+
 
 def detect_amendments(
     opportunity_id: str,
@@ -975,11 +1111,13 @@ def detect_amendments(
             # Requirements removed in amendment
             for i in range(i1, i2):
                 row = existing_rows[i]
-                removed_reqs.append({
-                    "id": row["id"],
-                    "requirement_text": row["requirement_text"],
-                    "source_section": row["source_section"],
-                })
+                removed_reqs.append(
+                    {
+                        "id": row["id"],
+                        "requirement_text": row["requirement_text"],
+                        "source_section": row["source_section"],
+                    }
+                )
         elif tag == "replace":
             # Changed requirements
             for i in range(i1, i2):
@@ -988,17 +1126,23 @@ def detect_amendments(
                 new_idx = j1 + (i - i1)
                 new_t = new_texts[new_idx] if new_idx < j2 else ""
                 if old_text != new_t:
-                    diff_lines = list(difflib.unified_diff(
-                        old_text.splitlines(), new_t.splitlines(),
-                        fromfile="original", tofile=f"amendment_v{amendment_version}",
-                        lineterm="",
-                    ))
-                    changed_reqs.append({
-                        "original_id": existing_rows[i]["id"] if i < len(existing_rows) else None,
-                        "original_text": old_text[:500],
-                        "new_text": new_t[:500],
-                        "diff": "\n".join(diff_lines[:50]),
-                    })
+                    diff_lines = list(
+                        difflib.unified_diff(
+                            old_text.splitlines(),
+                            new_t.splitlines(),
+                            fromfile="original",
+                            tofile=f"amendment_v{amendment_version}",
+                            lineterm="",
+                        )
+                    )
+                    changed_reqs.append(
+                        {
+                            "original_id": existing_rows[i]["id"] if i < len(existing_rows) else None,
+                            "original_text": old_text[:500],
+                            "new_text": new_t[:500],
+                            "diff": "\n".join(diff_lines[:50]),
+                        }
+                    )
 
     # Store new requirements
     if new_reqs:
@@ -1006,9 +1150,12 @@ def detect_amendments(
     else:
         store_result = {"stored_count": 0, "duplicate_count": 0}
 
-    _audit(conn, "detect_amendment",
-           f"Amendment v{amendment_version} for {opportunity_id}: "
-           f"{len(new_reqs)} new, {len(changed_reqs)} changed, {len(removed_reqs)} removed")
+    _audit(
+        conn,
+        "detect_amendment",
+        f"Amendment v{amendment_version} for {opportunity_id}: "
+        f"{len(new_reqs)} new, {len(changed_reqs)} changed, {len(removed_reqs)} removed",
+    )
     conn.commit()
     conn.close()
 
@@ -1029,6 +1176,7 @@ def detect_amendments(
 # EXPORT
 # =========================================================================
 
+
 def export_matrix(opportunity_id: str, fmt: str = "json") -> str:
     """Export compliance matrix as JSON, markdown table, or CSV.
 
@@ -1048,24 +1196,35 @@ def export_matrix(opportunity_id: str, fmt: str = "json") -> str:
     if fmt == "csv":
         output = io.StringIO()
         writer = csv.writer(output)
-        writer.writerow([
-            "ID", "Source Section", "Requirement", "Evaluation Factor",
-            "Weight", "Assigned Volume", "Assigned Section",
-            "Compliance Status", "Amendment", "Notes",
-        ])
+        writer.writerow(
+            [
+                "ID",
+                "Source Section",
+                "Requirement",
+                "Evaluation Factor",
+                "Weight",
+                "Assigned Volume",
+                "Assigned Section",
+                "Compliance Status",
+                "Amendment",
+                "Notes",
+            ]
+        )
         for item in items:
-            writer.writerow([
-                item.get("id", ""),
-                item.get("source_section", ""),
-                item.get("requirement_text", "")[:200],
-                item.get("evaluation_factor", ""),
-                item.get("evaluation_weight", ""),
-                item.get("assigned_volume", ""),
-                item.get("assigned_section", ""),
-                item.get("compliance_status", ""),
-                item.get("amendment_version", 0),
-                item.get("notes", ""),
-            ])
+            writer.writerow(
+                [
+                    item.get("id", ""),
+                    item.get("source_section", ""),
+                    item.get("requirement_text", "")[:200],
+                    item.get("evaluation_factor", ""),
+                    item.get("evaluation_weight", ""),
+                    item.get("assigned_volume", ""),
+                    item.get("assigned_section", ""),
+                    item.get("compliance_status", ""),
+                    item.get("amendment_version", 0),
+                    item.get("notes", ""),
+                ]
+            )
         return output.getvalue()
 
     elif fmt == "markdown":
@@ -1101,6 +1260,7 @@ def export_matrix(opportunity_id: str, fmt: str = "json") -> str:
 # GATE EVALUATION
 # =========================================================================
 
+
 def evaluate_gate(opportunity_id: str) -> Dict:
     """Evaluate compliance matrix gate.
 
@@ -1127,8 +1287,7 @@ def evaluate_gate(opportunity_id: str) -> Dict:
 
     # Count all partials (WARN condition)
     partials = conn.execute(
-        "SELECT COUNT(*) as c FROM pg_compliance_matrix "
-        "WHERE opportunity_id = ? AND compliance_status = 'partial'",
+        "SELECT COUNT(*) as c FROM pg_compliance_matrix WHERE opportunity_id = ? AND compliance_status = 'partial'",
         (opportunity_id,),
     ).fetchone()
     partial_count = partials["c"] if partials else 0
@@ -1159,8 +1318,7 @@ def evaluate_gate(opportunity_id: str) -> Dict:
     elif partial_count > 0:
         gate_result = "warn"
         findings.append(
-            f"WARNING: {partial_count} requirements have status='partial'. "
-            f"Review and address before submission."
+            f"WARNING: {partial_count} requirements have status='partial'. Review and address before submission."
         )
     elif total_count == 0:
         gate_result = "warn"
@@ -1186,46 +1344,32 @@ def evaluate_gate(opportunity_id: str) -> Dict:
 # CLI
 # =========================================================================
 
+
 def main():
     parser = argparse.ArgumentParser(
         description="Compliance Matrix Builder -- parse RFP L/M/C and build cross-reference matrix"
     )
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--parse-l", metavar="TEXT",
-                       help="Parse Section L text and store requirements")
-    group.add_argument("--parse-l-file", metavar="FILE",
-                       help="Parse Section L from a file")
-    group.add_argument("--parse-m", metavar="TEXT",
-                       help="Parse Section M text and store requirements")
-    group.add_argument("--parse-m-file", metavar="FILE",
-                       help="Parse Section M from a file")
-    group.add_argument("--parse-c", metavar="TEXT",
-                       help="Parse Section C/PWS text and store requirements")
-    group.add_argument("--parse-c-file", metavar="FILE",
-                       help="Parse Section C/PWS from a file")
-    group.add_argument("--build", action="store_true",
-                       help="Build full compliance matrix from stored requirements")
-    group.add_argument("--auto-map", action="store_true",
-                       help="Auto-map requirements to proposal volumes/sections")
-    group.add_argument("--coverage", action="store_true",
-                       help="Show coverage percentage per volume and section")
-    group.add_argument("--detect-amendment", action="store_true",
-                       help="Diff new text against existing matrix")
-    group.add_argument("--export", action="store_true",
-                       help="Export compliance matrix")
-    group.add_argument("--gate", action="store_true",
-                       help="Evaluate compliance matrix gate")
+    group.add_argument("--parse-l", metavar="TEXT", help="Parse Section L text and store requirements")
+    group.add_argument("--parse-l-file", metavar="FILE", help="Parse Section L from a file")
+    group.add_argument("--parse-m", metavar="TEXT", help="Parse Section M text and store requirements")
+    group.add_argument("--parse-m-file", metavar="FILE", help="Parse Section M from a file")
+    group.add_argument("--parse-c", metavar="TEXT", help="Parse Section C/PWS text and store requirements")
+    group.add_argument("--parse-c-file", metavar="FILE", help="Parse Section C/PWS from a file")
+    group.add_argument("--build", action="store_true", help="Build full compliance matrix from stored requirements")
+    group.add_argument("--auto-map", action="store_true", help="Auto-map requirements to proposal volumes/sections")
+    group.add_argument("--coverage", action="store_true", help="Show coverage percentage per volume and section")
+    group.add_argument("--detect-amendment", action="store_true", help="Diff new text against existing matrix")
+    group.add_argument("--export", action="store_true", help="Export compliance matrix")
+    group.add_argument("--gate", action="store_true", help="Evaluate compliance matrix gate")
 
-    parser.add_argument("--opportunity-id", required=True,
-                        help="Opportunity ID (required)")
-    parser.add_argument("--new-text", metavar="TEXT",
-                        help="New RFP text for amendment detection")
-    parser.add_argument("--new-text-file", metavar="FILE",
-                        help="New RFP text file for amendment detection")
-    parser.add_argument("--amendment-version", type=int, default=1,
-                        help="Amendment version number (default: 1)")
-    parser.add_argument("--format", choices=["json", "markdown", "csv"],
-                        default="json", help="Export format (default: json)")
+    parser.add_argument("--opportunity-id", required=True, help="Opportunity ID (required)")
+    parser.add_argument("--new-text", metavar="TEXT", help="New RFP text for amendment detection")
+    parser.add_argument("--new-text-file", metavar="FILE", help="New RFP text file for amendment detection")
+    parser.add_argument("--amendment-version", type=int, default=1, help="Amendment version number (default: 1)")
+    parser.add_argument(
+        "--format", choices=["json", "markdown", "csv"], default="json", help="Export format (default: json)"
+    )
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--human", action="store_true", help="Human-readable output")
 
@@ -1357,9 +1501,11 @@ def _print_human(result):
         by_sec = result.get("by_section", {})
         print(f"  By Section:  L={by_sec.get('L', 0)}  M={by_sec.get('M', 0)}  C={by_sec.get('C', 0)}")
         by_st = result.get("by_status", {})
-        print(f"  By Status:   Addressed={by_st.get('addressed', 0)}  "
-              f"Partial={by_st.get('partial', 0)}  "
-              f"Gap={by_st.get('gap', 0)}  N/A={by_st.get('na', 0)}")
+        print(
+            f"  By Status:   Addressed={by_st.get('addressed', 0)}  "
+            f"Partial={by_st.get('partial', 0)}  "
+            f"Gap={by_st.get('gap', 0)}  N/A={by_st.get('na', 0)}"
+        )
 
     elif "overall_coverage" in result:
         print(f"  Coverage Report -- {result.get('opportunity_id', '')}")
@@ -1370,14 +1516,14 @@ def _print_human(result):
         for vol, data in result.get("by_volume", {}).items():
             bar_len = int(data["coverage_pct"] / 5)
             bar = "=" * bar_len
-            print(f"    {vol:20s} [{bar:<20s}] {data['coverage_pct']:.1f}% "
-                  f"({data['addressed']}/{data['total']})")
+            print(f"    {vol:20s} [{bar:<20s}] {data['coverage_pct']:.1f}% ({data['addressed']}/{data['total']})")
         print("\n  By Section:")
         for sec, data in result.get("by_section", {}).items():
             bar_len = int(data["coverage_pct"] / 5)
             bar = "=" * bar_len
-            print(f"    Section {sec:10s} [{bar:<20s}] {data['coverage_pct']:.1f}% "
-                  f"({data['addressed']}/{data['total']})")
+            print(
+                f"    Section {sec:10s} [{bar:<20s}] {data['coverage_pct']:.1f}% ({data['addressed']}/{data['total']})"
+            )
 
     elif "gate_result" in result:
         gate = result["gate_result"].upper()

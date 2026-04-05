@@ -87,10 +87,7 @@ def _already_discovered(title: str) -> bool:
     """Check if a similar challenge was already discovered."""
     conn = get_connection()
     try:
-        row = conn.execute(
-            "SELECT COUNT(*) c FROM appforge_challenges WHERE title = ?",
-            (title,)
-        ).fetchone()
+        row = conn.execute("SELECT COUNT(*) c FROM appforge_challenges WHERE title = ?", (title,)).fetchone()
         return row["c"] > 0
     except Exception:
         return False
@@ -117,14 +114,16 @@ def _synthesize_challenges(
         if not title or _already_discovered(title):
             continue
         vertical = _classify_vertical(title + " " + desc)
-        challenges.append({
-            "title": title,
-            "description": desc,
-            "vertical": vertical,
-            "source": "innovation_engine",
-            "pain_points": json.dumps([desc[:200]]),
-            "score": float(sig.get("score", sig.get("relevance_score", 0.5))),
-        })
+        challenges.append(
+            {
+                "title": title,
+                "description": desc,
+                "vertical": vertical,
+                "source": "innovation_engine",
+                "pain_points": json.dumps([desc[:200]]),
+                "score": float(sig.get("score", sig.get("relevance_score", 0.5))),
+            }
+        )
 
     # From creative gaps — customer pain points
     for gap in gaps:
@@ -133,14 +132,16 @@ def _synthesize_challenges(
         if not title or _already_discovered(title):
             continue
         vertical = _classify_vertical(title + " " + desc)
-        challenges.append({
-            "title": title,
-            "description": desc,
-            "vertical": vertical,
-            "source": "creative_engine",
-            "pain_points": gap.get("pain_points", "[]"),
-            "score": float(gap.get("composite_score", 0.5)),
-        })
+        challenges.append(
+            {
+                "title": title,
+                "description": desc,
+                "vertical": vertical,
+                "source": "creative_engine",
+                "pain_points": gap.get("pain_points", "[]"),
+                "score": float(gap.get("composite_score", 0.5)),
+            }
+        )
 
     # From research challenges
     for res in research:
@@ -149,14 +150,16 @@ def _synthesize_challenges(
         if not title or _already_discovered(title):
             continue
         vertical = _classify_vertical(title + " " + desc)
-        challenges.append({
-            "title": title,
-            "description": desc,
-            "vertical": vertical,
-            "source": "research_engine",
-            "pain_points": json.dumps([desc[:200]]),
-            "score": float(res.get("score", 0.5)),
-        })
+        challenges.append(
+            {
+                "title": title,
+                "description": desc,
+                "vertical": vertical,
+                "source": "research_engine",
+                "pain_points": json.dumps([desc[:200]]),
+                "score": float(res.get("score", 0.5)),
+            }
+        )
 
     # If no engine data available, generate seed challenges from vertical catalog
     if not challenges:
@@ -208,7 +211,9 @@ def _generate_seed_challenges() -> list[dict]:
             "description": "Track multi-tier supplier networks with geospatial mapping, disruption detection, and alternative sourcing recommendations",
             "vertical": "Transportation & Logistics",
             "source": "appforge_seed",
-            "pain_points": json.dumps(["No visibility past tier-1 suppliers", "Disruption detected too late", "Manual risk assessment"]),
+            "pain_points": json.dumps(
+                ["No visibility past tier-1 suppliers", "Disruption detected too late", "Manual risk assessment"]
+            ),
             "score": 0.89,
         },
         {
@@ -216,7 +221,9 @@ def _generate_seed_challenges() -> list[dict]:
             "description": "Visualize patient enrollment pipelines, site performance, and protocol deviations with predictive analytics",
             "vertical": "Healthcare & Life Sciences",
             "source": "appforge_seed",
-            "pain_points": json.dumps(["Slow patient enrollment", "Site underperformance", "Protocol deviation detection lag"]),
+            "pain_points": json.dumps(
+                ["Slow patient enrollment", "Site underperformance", "Protocol deviation detection lag"]
+            ),
             "score": 0.87,
         },
         {
@@ -232,7 +239,9 @@ def _generate_seed_challenges() -> list[dict]:
             "description": "Track satellite positions, health telemetry, ground station contacts, and collision avoidance with orbital visualization",
             "vertical": "Space & Aerospace",
             "source": "appforge_seed",
-            "pain_points": json.dumps(["Manual conjunction screening", "Fragmented telemetry tools", "No fleet-wide health view"]),
+            "pain_points": json.dumps(
+                ["Manual conjunction screening", "Fragmented telemetry tools", "No fleet-wide health view"]
+            ),
             "score": 0.83,
         },
         {
@@ -240,7 +249,9 @@ def _generate_seed_challenges() -> list[dict]:
             "description": "Integrate soil sensors, drone imagery, weather data, and crop models for field-level prescriptive analytics",
             "vertical": "Agriculture & Environment",
             "source": "appforge_seed",
-            "pain_points": json.dumps(["Over-application of inputs", "No field-level visibility", "Weather surprise losses"]),
+            "pain_points": json.dumps(
+                ["Over-application of inputs", "No field-level visibility", "Weather surprise losses"]
+            ),
             "score": 0.81,
         },
         {
@@ -275,9 +286,16 @@ def run(config: Dict[str, Any], trust) -> Dict[str, Any]:
                 "INSERT OR IGNORE INTO appforge_challenges "
                 "(challenge_id, vertical, title, description, pain_points, source, score, status, discovered_at) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, 'discovered', ?)",
-                (cid, ch["vertical"], ch["title"], ch["description"],
-                 ch.get("pain_points", "[]"), ch["source"], ch["score"],
-                 utcnow_iso()),
+                (
+                    cid,
+                    ch["vertical"],
+                    ch["title"],
+                    ch["description"],
+                    ch.get("pain_points", "[]"),
+                    ch["source"],
+                    ch["score"],
+                    utcnow_iso(),
+                ),
             )
             stored += 1
         conn.commit()

@@ -5,6 +5,7 @@ Uses Amazon Bedrock (Claude) for SQL generation, with strict read-only enforceme
 Decision D30: Bedrock for NLQ→SQL (air-gap safe).
 Decision D34: Read-only SQL enforcement.
 """
+
 from __future__ import annotations
 
 import json

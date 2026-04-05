@@ -26,12 +26,37 @@ if str(BASE_DIR) not in sys.path:
 
 # ICDEV™ relevance keywords for scoring
 RELEVANCE_KEYWORDS = [
-    "agent", "autonomous", "llm", "multi-agent", "mcp", "compliance",
-    "devsecops", "code generation", "self-healing", "local model", "ollama",
-    "tool use", "function calling", "rag", "fine-tuning", "sbom",
-    "fedramp", "nist", "zero trust", "govcloud", "orchestrat",
-    "workflow", "pipeline", "terraform", "kubernetes", "security",
-    "testing", "ci/cd", "automation", "framework", "sdk",
+    "agent",
+    "autonomous",
+    "llm",
+    "multi-agent",
+    "mcp",
+    "compliance",
+    "devsecops",
+    "code generation",
+    "self-healing",
+    "local model",
+    "ollama",
+    "tool use",
+    "function calling",
+    "rag",
+    "fine-tuning",
+    "sbom",
+    "fedramp",
+    "nist",
+    "zero trust",
+    "govcloud",
+    "orchestrat",
+    "workflow",
+    "pipeline",
+    "terraform",
+    "kubernetes",
+    "security",
+    "testing",
+    "ci/cd",
+    "automation",
+    "framework",
+    "sdk",
 ]
 
 
@@ -39,9 +64,16 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _finding(category: str, title: str, description: str,
-             url: str = "", severity: str = "medium",
-             action: str = "", score: float = 0.5, meta: dict = None) -> dict:
+def _finding(
+    category: str,
+    title: str,
+    description: str,
+    url: str = "",
+    severity: str = "medium",
+    action: str = "",
+    score: float = 0.5,
+    meta: dict = None,
+) -> dict:
     return {
         "id": f"scout-trend-{uuid.uuid4().hex[:12]}",
         "pillar": "trending",
@@ -86,6 +118,7 @@ def _scan_github_trending(config: dict) -> List[dict]:
     findings = []
     try:
         from tools.innovation.web_scanner import scan_github
+
         results = scan_github()
         if isinstance(results, dict):
             signals = results.get("signals", results.get("results", []))
@@ -97,24 +130,28 @@ def _scan_github_trending(config: dict) -> List[dict]:
                     combined = f"{title} {desc}"
                     score = _score_relevance(combined)
                     stars = sig.get("stars", sig.get("stargazers_count", 0))
-                    findings.append(_finding(
-                        category="github_trending",
-                        title=title,
-                        description=desc[:300] if desc else "",
-                        url=url,
-                        score=score,
-                        severity="high" if score >= 0.8 else "medium" if score >= 0.5 else "low",
-                        action="Evaluate for ICDEV™ integration" if score >= 0.6 else "",
-                        meta={"stars": stars, "source_type": "github"},
-                    ))
+                    findings.append(
+                        _finding(
+                            category="github_trending",
+                            title=title,
+                            description=desc[:300] if desc else "",
+                            url=url,
+                            score=score,
+                            severity="high" if score >= 0.8 else "medium" if score >= 0.5 else "low",
+                            action="Evaluate for ICDEV™ integration" if score >= 0.6 else "",
+                            meta={"stars": stars, "source_type": "github"},
+                        )
+                    )
     except Exception as exc:
-        findings.append(_finding(
-            category="github_trending",
-            title="GitHub trending scan failed",
-            description=str(exc),
-            severity="low",
-            score=0.0,
-        ))
+        findings.append(
+            _finding(
+                category="github_trending",
+                title="GitHub trending scan failed",
+                description=str(exc),
+                severity="low",
+                score=0.0,
+            )
+        )
     return findings
 
 
@@ -123,6 +160,7 @@ def _scan_hackernews(config: dict) -> List[dict]:
     findings = []
     try:
         from tools.innovation.web_scanner import scan_hackernews
+
         results = scan_hackernews()
         if isinstance(results, dict):
             signals = results.get("signals", results.get("results", []))
@@ -132,24 +170,28 @@ def _scan_hackernews(config: dict) -> List[dict]:
                     url = sig.get("url", "")
                     score = _score_relevance(title)
                     hn_score = sig.get("score", sig.get("points", 0))
-                    findings.append(_finding(
-                        category="hackernews",
-                        title=title,
-                        description=f"HN score: {hn_score}",
-                        url=url,
-                        score=score,
-                        severity="medium" if score >= 0.5 else "low",
-                        action="Read and evaluate for ICDEV™ relevance" if score >= 0.6 else "",
-                        meta={"hn_score": hn_score, "source_type": "hackernews"},
-                    ))
+                    findings.append(
+                        _finding(
+                            category="hackernews",
+                            title=title,
+                            description=f"HN score: {hn_score}",
+                            url=url,
+                            score=score,
+                            severity="medium" if score >= 0.5 else "low",
+                            action="Read and evaluate for ICDEV™ relevance" if score >= 0.6 else "",
+                            meta={"hn_score": hn_score, "source_type": "hackernews"},
+                        )
+                    )
     except Exception as exc:
-        findings.append(_finding(
-            category="hackernews",
-            title="HackerNews scan failed",
-            description=str(exc),
-            severity="low",
-            score=0.0,
-        ))
+        findings.append(
+            _finding(
+                category="hackernews",
+                title="HackerNews scan failed",
+                description=str(exc),
+                severity="low",
+                score=0.0,
+            )
+        )
     return findings
 
 
@@ -184,16 +226,18 @@ def _scan_reddit(config: dict) -> List[dict]:
             if score < 0.3:
                 continue
 
-            findings.append(_finding(
-                category="reddit",
-                title=f"[r/{sub}] {title}",
-                description=selftext[:200] if selftext else f"Upvotes: {ups}",
-                url=f"https://reddit.com{permalink}" if permalink else "",
-                score=score,
-                severity="medium" if score >= 0.6 else "low",
-                action="Review discussion for ICDEV™ feature ideas" if score >= 0.6 else "",
-                meta={"subreddit": sub, "upvotes": ups, "source_type": "reddit"},
-            ))
+            findings.append(
+                _finding(
+                    category="reddit",
+                    title=f"[r/{sub}] {title}",
+                    description=selftext[:200] if selftext else f"Upvotes: {ups}",
+                    url=f"https://reddit.com{permalink}" if permalink else "",
+                    score=score,
+                    severity="medium" if score >= 0.6 else "low",
+                    action="Review discussion for ICDEV™ feature ideas" if score >= 0.6 else "",
+                    meta={"subreddit": sub, "upvotes": ups, "source_type": "reddit"},
+                )
+            )
 
         if len(findings) >= max_results:
             break
@@ -210,10 +254,16 @@ def _scan_arxiv(config: dict) -> List[dict]:
 
     categories = arxiv_cfg.get("categories", ["cs.AI", "cs.SE", "cs.MA", "cs.CL"])
     max_results = arxiv_cfg.get("max_results", 15)
-    keywords = arxiv_cfg.get("relevance_keywords", [
-        "autonomous agent", "code generation", "self-improving",
-        "tool use", "multi-agent",
-    ])
+    keywords = arxiv_cfg.get(
+        "relevance_keywords",
+        [
+            "autonomous agent",
+            "code generation",
+            "self-improving",
+            "tool use",
+            "multi-agent",
+        ],
+    )
 
     cat_query = "+OR+".join(f"cat:{c}" for c in categories)
     kw_query = "+OR+".join(f'all:"{k}"' for k in keywords[:5])
@@ -226,18 +276,16 @@ def _scan_arxiv(config: dict) -> List[dict]:
     )
 
     try:
-        req = urllib.request.Request(url, headers={
-            "User-Agent": "ICDEV-Scout/1.0 (autonomous research scanner)"
-        })
+        req = urllib.request.Request(url, headers={"User-Agent": "ICDEV-Scout/1.0 (autonomous research scanner)"})
         with urllib.request.urlopen(req, timeout=20) as resp:  # nosec B310 — arXiv API
             xml_text = resp.read().decode("utf-8")
 
         # Simple XML parsing (no external dependency)
-        entries = re.findall(r'<entry>(.*?)</entry>', xml_text, re.DOTALL)
+        entries = re.findall(r"<entry>(.*?)</entry>", xml_text, re.DOTALL)
         for entry in entries[:max_results]:
-            title_m = re.search(r'<title>(.*?)</title>', entry, re.DOTALL)
-            summary_m = re.search(r'<summary>(.*?)</summary>', entry, re.DOTALL)
-            link_m = re.search(r'<id>(.*?)</id>', entry)
+            title_m = re.search(r"<title>(.*?)</title>", entry, re.DOTALL)
+            summary_m = re.search(r"<summary>(.*?)</summary>", entry, re.DOTALL)
+            link_m = re.search(r"<id>(.*?)</id>", entry)
 
             title = title_m.group(1).strip().replace("\n", " ") if title_m else ""
             summary = summary_m.group(1).strip().replace("\n", " ")[:300] if summary_m else ""
@@ -247,24 +295,28 @@ def _scan_arxiv(config: dict) -> List[dict]:
             if score < 0.3:
                 continue
 
-            findings.append(_finding(
-                category="arxiv",
-                title=title,
-                description=summary,
-                url=link,
-                score=score,
-                severity="medium" if score >= 0.6 else "low",
-                action="Review paper for applicable techniques" if score >= 0.7 else "",
-                meta={"source_type": "arxiv"},
-            ))
+            findings.append(
+                _finding(
+                    category="arxiv",
+                    title=title,
+                    description=summary,
+                    url=link,
+                    score=score,
+                    severity="medium" if score >= 0.6 else "low",
+                    action="Review paper for applicable techniques" if score >= 0.7 else "",
+                    meta={"source_type": "arxiv"},
+                )
+            )
     except Exception as exc:
-        findings.append(_finding(
-            category="arxiv",
-            title="arXiv scan failed",
-            description=str(exc),
-            severity="low",
-            score=0.0,
-        ))
+        findings.append(
+            _finding(
+                category="arxiv",
+                title="arXiv scan failed",
+                description=str(exc),
+                severity="low",
+                score=0.0,
+            )
+        )
 
     return findings
 
@@ -310,6 +362,7 @@ def main() -> None:
 
     try:
         import yaml
+
         cfg_path = BASE_DIR / "args" / "scout_config.yaml"
         with open(cfg_path, "r", encoding="utf-8") as f:
             config = yaml.safe_load(f) or {}

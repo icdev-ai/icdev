@@ -147,21 +147,18 @@ def ft_db_with_chunks(ft_db_with_dataset):
 # _classify_statement_type unit tests
 # ---------------------------------------------------------------------------
 
+
 class TestClassifyStatementType:
     def test_factual_simple_declaration(self):
         result = _classify_statement_type("AC-2 is the Account Management control.")
         assert result == "factual"
 
     def test_reasoning_because(self):
-        result = _classify_statement_type(
-            "Organizations must implement MFA because it prevents unauthorized access."
-        )
+        result = _classify_statement_type("Organizations must implement MFA because it prevents unauthorized access.")
         assert result == "reasoning"
 
     def test_reasoning_requires(self):
-        result = _classify_statement_type(
-            "FedRAMP requires all cloud providers to undergo security assessments."
-        )
+        result = _classify_statement_type("FedRAMP requires all cloud providers to undergo security assessments.")
         assert result == "reasoning"
 
     def test_summary_including(self):
@@ -171,9 +168,7 @@ class TestClassifyStatementType:
         assert result == "summary"
 
     def test_summary_multiple_commas(self):
-        result = _classify_statement_type(
-            "NIST 800-53 covers AC, AU, CA, CM, CP, IA, IR, MA, MP, PE controls."
-        )
+        result = _classify_statement_type("NIST 800-53 covers AC, AU, CA, CM, CP, IA, IR, MA, MP, PE controls.")
         assert result == "summary"
 
 
@@ -194,6 +189,7 @@ class TestMapTypeToTaxonomy:
 # ---------------------------------------------------------------------------
 # extract_statements tests
 # ---------------------------------------------------------------------------
+
 
 class TestExtractStatements:
     def test_extract_statements_basic(self):
@@ -260,6 +256,7 @@ class TestExtractStatements:
 # ---------------------------------------------------------------------------
 # statements_to_pairs tests
 # ---------------------------------------------------------------------------
+
 
 class TestStatementsToPairs:
     @pytest.fixture
@@ -360,11 +357,14 @@ class TestStatementsToPairs:
 # extract_and_generate end-to-end tests
 # ---------------------------------------------------------------------------
 
+
 class TestExtractAndGenerate:
     def test_extract_and_generate(self):
         """End-to-end: text → Q&A pairs with valid structure."""
-        with patch("tools.finetune.statement_extractor._extract_statements_llm", return_value=None), \
-             patch("tools.finetune.statement_extractor._statement_to_pair_llm", return_value=None):
+        with (
+            patch("tools.finetune.statement_extractor._extract_statements_llm", return_value=None),
+            patch("tools.finetune.statement_extractor._statement_to_pair_llm", return_value=None),
+        ):
             result = extract_and_generate(SAMPLE_PARAGRAPH)
         assert isinstance(result, list)
         assert len(result) > 0
@@ -381,8 +381,10 @@ class TestExtractAndGenerate:
 
     def test_extract_and_generate_with_purpose(self):
         """Purpose parameter should affect system_prompt content."""
-        with patch("tools.finetune.statement_extractor._extract_statements_llm", return_value=None), \
-             patch("tools.finetune.statement_extractor._statement_to_pair_llm", return_value=None):
+        with (
+            patch("tools.finetune.statement_extractor._extract_statements_llm", return_value=None),
+            patch("tools.finetune.statement_extractor._statement_to_pair_llm", return_value=None),
+        ):
             result_compliance = extract_and_generate(SAMPLE_PARAGRAPH, purpose="compliance_export")
             result_general = extract_and_generate(SAMPLE_PARAGRAPH, purpose="general")
 
@@ -394,8 +396,10 @@ class TestExtractAndGenerate:
         """All generated pairs must have a taxonomy_label."""
         from tools.rag.query_classifier import TAXONOMY_LABELS
 
-        with patch("tools.finetune.statement_extractor._extract_statements_llm", return_value=None), \
-             patch("tools.finetune.statement_extractor._statement_to_pair_llm", return_value=None):
+        with (
+            patch("tools.finetune.statement_extractor._extract_statements_llm", return_value=None),
+            patch("tools.finetune.statement_extractor._statement_to_pair_llm", return_value=None),
+        ):
             result = extract_and_generate(SAMPLE_PARAGRAPH)
 
         for pair in result:
@@ -403,8 +407,10 @@ class TestExtractAndGenerate:
 
     def test_extract_and_generate_all_pairs_have_source_statement(self):
         """All generated pairs must have a non-empty source_statement."""
-        with patch("tools.finetune.statement_extractor._extract_statements_llm", return_value=None), \
-             patch("tools.finetune.statement_extractor._statement_to_pair_llm", return_value=None):
+        with (
+            patch("tools.finetune.statement_extractor._extract_statements_llm", return_value=None),
+            patch("tools.finetune.statement_extractor._statement_to_pair_llm", return_value=None),
+        ):
             result = extract_and_generate(SAMPLE_PARAGRAPH)
 
         for pair in result:
@@ -416,6 +422,7 @@ class TestExtractAndGenerate:
 # ---------------------------------------------------------------------------
 # template-based fallback tests
 # ---------------------------------------------------------------------------
+
 
 class TestStatementToPairTemplate:
     def test_template_returns_question_and_answer(self):
@@ -443,11 +450,14 @@ class TestStatementToPairTemplate:
 # generate_from_rag_source integration tests
 # ---------------------------------------------------------------------------
 
+
 class TestGenerateFromRagSource:
     def test_generate_from_rag_source_returns_summary(self, ft_db_with_chunks):
         """generate_from_rag_source should return a summary dict with expected keys."""
-        with patch("tools.finetune.statement_extractor._extract_statements_llm", return_value=None), \
-             patch("tools.finetune.statement_extractor._statement_to_pair_llm", return_value=None):
+        with (
+            patch("tools.finetune.statement_extractor._extract_statements_llm", return_value=None),
+            patch("tools.finetune.statement_extractor._statement_to_pair_llm", return_value=None),
+        ):
             result = generate_from_rag_source(
                 dataset_id="ds-test-001",
                 source_table="innovation_signals",
@@ -464,8 +474,10 @@ class TestGenerateFromRagSource:
 
     def test_generate_from_rag_source_skips_empty_chunks(self, ft_db_with_chunks):
         """Empty chunks should not be processed."""
-        with patch("tools.finetune.statement_extractor._extract_statements_llm", return_value=None), \
-             patch("tools.finetune.statement_extractor._statement_to_pair_llm", return_value=None):
+        with (
+            patch("tools.finetune.statement_extractor._extract_statements_llm", return_value=None),
+            patch("tools.finetune.statement_extractor._statement_to_pair_llm", return_value=None),
+        ):
             result = generate_from_rag_source(
                 dataset_id="ds-test-001",
                 source_table="innovation_signals",
@@ -477,8 +489,10 @@ class TestGenerateFromRagSource:
 
     def test_generate_from_rag_source_stores_pairs(self, ft_db_with_chunks):
         """Generated pairs should be stored in the dataset."""
-        with patch("tools.finetune.statement_extractor._extract_statements_llm", return_value=None), \
-             patch("tools.finetune.statement_extractor._statement_to_pair_llm", return_value=None):
+        with (
+            patch("tools.finetune.statement_extractor._extract_statements_llm", return_value=None),
+            patch("tools.finetune.statement_extractor._statement_to_pair_llm", return_value=None),
+        ):
             result = generate_from_rag_source(
                 dataset_id="ds-test-001",
                 source_table="innovation_signals",
@@ -491,6 +505,7 @@ class TestGenerateFromRagSource:
 # ---------------------------------------------------------------------------
 # get_statement_stats tests
 # ---------------------------------------------------------------------------
+
 
 class TestGetStatementStats:
     def test_stats_empty_dataset(self, ft_db_with_dataset):

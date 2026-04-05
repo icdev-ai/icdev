@@ -17,7 +17,6 @@ import json
 import os
 import sys
 import time
-from pathlib import Path
 
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -42,10 +41,14 @@ class TestResult:
 
     def summary(self):
         total = len(self.passed) + len(self.failed)
-        rate = f"{len(self.passed)/total*100:.1f}%" if total else "0%"
-        return {"total": total, "passed": len(self.passed),
-                "failed": len(self.failed), "pass_rate": rate,
-                "failures": self.failed}
+        rate = f"{len(self.passed) / total * 100:.1f}%" if total else "0%"
+        return {
+            "total": total,
+            "passed": len(self.passed),
+            "failed": len(self.failed),
+            "pass_rate": rate,
+            "failures": self.failed,
+        }
 
 
 def create_driver():
@@ -95,9 +98,7 @@ def check_js_errors(driver):
         for entry in driver.get_log("browser"):
             if entry.get("level") == "SEVERE":
                 msg = entry.get("message", "")
-                if any(x in msg.lower() for x in [
-                    "favicon", "401", "404", "failed to load resource"
-                ]):
+                if any(x in msg.lower() for x in ["favicon", "401", "404", "failed to load resource"]):
                     continue
                 errors.append(msg)
     except Exception:
@@ -116,26 +117,41 @@ def run_tests():
         time.sleep(2)
 
         # Create a topology for geo
-        t = api(driver, "POST", "/network/api/topologies", {
-            "name": "Geo Test Topo",
-            "graph_json": {"nodes": [
-                {"id": "r1", "label": "DC-East-R1", "type": "router",
-                 "x": 100, "y": 100},
-                {"id": "r2", "label": "DC-West-R1", "type": "router",
-                 "x": 300, "y": 100},
-            ], "edges": []}
-        })
+        t = api(
+            driver,
+            "POST",
+            "/network/api/topologies",
+            {
+                "name": "Geo Test Topo",
+                "graph_json": {
+                    "nodes": [
+                        {"id": "r1", "label": "DC-East-R1", "type": "router", "x": 100, "y": 100},
+                        {"id": "r2", "label": "DC-West-R1", "type": "router", "x": 300, "y": 100},
+                    ],
+                    "edges": [],
+                },
+            },
+        )
         topo_id = t.get("id")
 
         # ── 1. Set device geo ─────────────────────────────────────────────
         try:
-            d = api(driver, "POST", "/network/api/device-geo", {
-                "topology_id": topo_id, "node_id": "r1",
-                "label": "DC-East-R1", "site_name": "DC-East",
-                "latitude": 38.9072, "longitude": -77.0369,
-                "city": "Washington", "state": "DC",
-                "facility": "Equinix DC6"
-            })
+            d = api(
+                driver,
+                "POST",
+                "/network/api/device-geo",
+                {
+                    "topology_id": topo_id,
+                    "node_id": "r1",
+                    "label": "DC-East-R1",
+                    "site_name": "DC-East",
+                    "latitude": 38.9072,
+                    "longitude": -77.0369,
+                    "city": "Washington",
+                    "state": "DC",
+                    "facility": "Equinix DC6",
+                },
+            )
             assert d.get("id")
             geo_ids.append(d["id"])
             results.ok("set_device_geo", f"id={d['id']}")
@@ -144,8 +160,7 @@ def run_tests():
 
         # ── 2. List geolocations ──────────────────────────────────────────
         try:
-            d = api(driver, "GET",
-                    f"/network/api/device-geo?topology_id={topo_id}")
+            d = api(driver, "GET", f"/network/api/device-geo?topology_id={topo_id}")
             assert len(d) >= 1
             assert d[0]["site_name"] == "DC-East"
             results.ok("list_device_geo", f"{len(d)} entries")
@@ -154,15 +169,26 @@ def run_tests():
 
         # ── 3. Bulk set geo ───────────────────────────────────────────────
         try:
-            d = api(driver, "POST", "/network/api/device-geo/bulk", {
-                "devices": [
-                    {"topology_id": topo_id, "node_id": "r2",
-                     "label": "DC-West-R1", "site_name": "DC-West",
-                     "latitude": 37.3382, "longitude": -121.8863,
-                     "city": "San Jose", "state": "CA",
-                     "facility": "Equinix SV5"},
-                ]
-            })
+            d = api(
+                driver,
+                "POST",
+                "/network/api/device-geo/bulk",
+                {
+                    "devices": [
+                        {
+                            "topology_id": topo_id,
+                            "node_id": "r2",
+                            "label": "DC-West-R1",
+                            "site_name": "DC-West",
+                            "latitude": 37.3382,
+                            "longitude": -121.8863,
+                            "city": "San Jose",
+                            "state": "CA",
+                            "facility": "Equinix SV5",
+                        },
+                    ]
+                },
+            )
             assert d.get("set") >= 1
             results.ok("bulk_set_geo", f"set={d['set']}")
         except Exception as e:
@@ -175,8 +201,7 @@ def run_tests():
             sites = {s["site_name"] for s in d}
             assert "DC-East" in sites
             assert "DC-West" in sites
-            results.ok("geo_sites_aggregation",
-                        f"{len(d)} sites: {sites}")
+            results.ok("geo_sites_aggregation", f"{len(d)} sites: {sites}")
         except Exception as e:
             results.fail("geo_sites_aggregation", e)
 
@@ -211,8 +236,7 @@ def run_tests():
         # ── 8. Delete geo ─────────────────────────────────────────────────
         if geo_ids:
             try:
-                d = api(driver, "DELETE",
-                        f"/network/api/device-geo/{geo_ids[0]}")
+                d = api(driver, "DELETE", f"/network/api/device-geo/{geo_ids[0]}")
                 assert d.get("ok")
                 results.ok("delete_device_geo")
             except Exception as e:
@@ -220,8 +244,7 @@ def run_tests():
 
         # ── 9. Clear All regression ───────────────────────────────────────
         try:
-            d = api(driver, "DELETE",
-                    "/network/api/topologies/clear-all")
+            d = api(driver, "DELETE", "/network/api/topologies/clear-all")
             assert d.get("cleared") == "topologies"
             results.ok("clear_all_regression")
         except Exception as e:
@@ -229,13 +252,18 @@ def run_tests():
 
         # Restore
         try:
-            api(driver, "POST", "/network/api/topologies", {
-                "name": "Restored After Geo Test",
-                "graph_json": {"nodes": [
-                    {"id": "r1", "label": "R1", "type": "router",
-                     "x": 100, "y": 100}
-                ], "edges": []}
-            })
+            api(
+                driver,
+                "POST",
+                "/network/api/topologies",
+                {
+                    "name": "Restored After Geo Test",
+                    "graph_json": {
+                        "nodes": [{"id": "r1", "label": "R1", "type": "router", "x": 100, "y": 100}],
+                        "edges": [],
+                    },
+                },
+            )
         except Exception:
             pass
 
@@ -252,8 +280,7 @@ if __name__ == "__main__":
     r = run_tests()
     summary = r.summary()
     print()
-    print(f"Results: {summary['passed']}/{summary['total']} passed "
-          f"({summary['pass_rate']})")
+    print(f"Results: {summary['passed']}/{summary['total']} passed ({summary['pass_rate']})")
     if summary["failures"]:
         print("Failures:")
         for f in summary["failures"]:

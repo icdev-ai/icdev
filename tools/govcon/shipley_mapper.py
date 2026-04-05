@@ -117,12 +117,22 @@ CEREMONY_LEVELS = {
             "compliance": "Automated compliance matrix; no manual traceability",
         },
         "recommended_reflexes": [
-            "R1 discover", "R5 extract", "R6 map", "R7 draft",
-            "R8 polish", "R15 review", "R9 decide",
+            "R1 discover",
+            "R5 extract",
+            "R6 map",
+            "R7 draft",
+            "R8 polish",
+            "R15 review",
+            "R9 decide",
         ],
         "skippable_reflexes": [
-            "R3 shape", "R4 engage", "R23 team", "R22 trace",
-            "R16 regulate", "R19 vehicle", "R20 talent",
+            "R3 shape",
+            "R4 engage",
+            "R23 team",
+            "R22 trace",
+            "R16 regulate",
+            "R19 vehicle",
+            "R20 talent",
         ],
     },
     2: {
@@ -135,12 +145,22 @@ CEREMONY_LEVELS = {
             "compliance": "Automated compliance matrix + L/M/C traceability",
         },
         "recommended_reflexes": [
-            "R1 discover", "R2 scout", "R5 extract", "R6 map",
-            "R7 draft", "R8 polish", "R9 decide", "R15 review",
-            "R17 price", "R22 trace",
+            "R1 discover",
+            "R2 scout",
+            "R5 extract",
+            "R6 map",
+            "R7 draft",
+            "R8 polish",
+            "R9 decide",
+            "R15 review",
+            "R17 price",
+            "R22 trace",
         ],
         "skippable_reflexes": [
-            "R4 engage", "R16 regulate", "R19 vehicle", "R20 talent",
+            "R4 engage",
+            "R16 regulate",
+            "R19 vehicle",
+            "R20 talent",
         ],
     },
     3: {
@@ -153,10 +173,21 @@ CEREMONY_LEVELS = {
             "compliance": "Full L/M/C traceability + amendment tracking + CMMC flow-down",
         },
         "recommended_reflexes": [
-            "R1 discover", "R2 scout", "R3 shape", "R4 engage",
-            "R5 extract", "R6 map", "R7 draft", "R8 polish",
-            "R9 decide", "R15 review", "R16 regulate", "R17 price",
-            "R18 comply_cmmc", "R22 trace", "R23 team",
+            "R1 discover",
+            "R2 scout",
+            "R3 shape",
+            "R4 engage",
+            "R5 extract",
+            "R6 map",
+            "R7 draft",
+            "R8 polish",
+            "R9 decide",
+            "R15 review",
+            "R16 regulate",
+            "R17 price",
+            "R18 comply_cmmc",
+            "R22 trace",
+            "R23 team",
         ],
         "skippable_reflexes": ["R19 vehicle", "R20 talent"],
     },
@@ -170,12 +201,26 @@ CEREMONY_LEVELS = {
             "compliance": "Full traceability + CMMC + FAR/DFARS monitoring + audit-ready",
         },
         "recommended_reflexes": [
-            "R1 discover", "R2 scout", "R3 shape", "R4 engage",
-            "R5 extract", "R6 map", "R7 draft", "R8 polish",
-            "R9 decide", "R10 monitor", "R11 fulfill",
-            "R15 review", "R16 regulate", "R17 price",
-            "R18 comply_cmmc", "R19 vehicle", "R20 talent",
-            "R22 trace", "R23 team", "R24 bridge",
+            "R1 discover",
+            "R2 scout",
+            "R3 shape",
+            "R4 engage",
+            "R5 extract",
+            "R6 map",
+            "R7 draft",
+            "R8 polish",
+            "R9 decide",
+            "R10 monitor",
+            "R11 fulfill",
+            "R15 review",
+            "R16 regulate",
+            "R17 price",
+            "R18 comply_cmmc",
+            "R19 vehicle",
+            "R20 talent",
+            "R22 trace",
+            "R23 team",
+            "R24 bridge",
         ],
         "skippable_reflexes": [],
     },
@@ -308,6 +353,7 @@ APMP_ALIGNMENT = {
 
 # ── Helpers ───────────────────────────────────────────────────────────
 
+
 def _now():
     return datetime.now(timezone.utc).isoformat()
 
@@ -327,8 +373,7 @@ def _audit(conn, event_type, action, details):
             "INSERT INTO audit_trail "
             "(id, timestamp, event_type, actor, action, details, project_id, session_id) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (_gen_id("aud"), _now(), event_type, "shipley_mapper",
-             action, det, None, None),
+            (_gen_id("aud"), _now(), event_type, "shipley_mapper", action, det, None, None),
         )
     except Exception:
         try:
@@ -379,14 +424,11 @@ def get_shipley_mapping():
         "status": "ok",
         "phases": SHIPLEY_PHASES,
         "total_phases": len(SHIPLEY_PHASES),
-        "total_reflexes_mapped": sum(
-            len(p["reflexes"]) for p in SHIPLEY_PHASES
-        ),
+        "total_reflexes_mapped": sum(len(p["reflexes"]) for p in SHIPLEY_PHASES),
     }
 
 
-def recommend_process_level(team_size, annual_proposals=None,
-                            avg_contract_value=None):
+def recommend_process_level(team_size, annual_proposals=None, avg_contract_value=None):
     """Recommend Shipley ceremony level based on team parameters."""
     # Determine base level from team size
     if team_size <= 3:
@@ -558,9 +600,7 @@ def generate_process_guide(level, opportunity_title=None):
 def get_apmp_alignment():
     """Map ICDEV™ features to APMP Body of Knowledge competencies."""
     total_competencies = (
-        len(APMP_ALIGNMENT["foundation"])
-        + len(APMP_ALIGNMENT["practitioner"])
-        + len(APMP_ALIGNMENT["professional"])
+        len(APMP_ALIGNMENT["foundation"]) + len(APMP_ALIGNMENT["practitioner"]) + len(APMP_ALIGNMENT["professional"])
     )
 
     all_coverages = []
@@ -662,9 +702,7 @@ def assess_maturity(project_id=None):
 
     # Check for experiment results (Level 5: data-driven improvement)
     if _safe_table_exists(conn, "autoresearch_experiments"):
-        exp_count = _safe_count(
-            conn, "SELECT COUNT(*) FROM autoresearch_experiments"
-        )
+        exp_count = _safe_count(conn, "SELECT COUNT(*) FROM autoresearch_experiments")
         if exp_count > 0:
             evidence.append(f"Found {exp_count} experiment results (continuous improvement)")
             score += 1
@@ -703,11 +741,16 @@ def assess_maturity(project_id=None):
 
     # Audit
     try:
-        _audit(conn, "proposal.maturity_assessed", "assess_maturity", {
-            "maturity_level": maturity_level,
-            "score": score,
-            "project_id": project_id,
-        })
+        _audit(
+            conn,
+            "proposal.maturity_assessed",
+            "assess_maturity",
+            {
+                "maturity_level": maturity_level,
+                "score": score,
+                "project_id": project_id,
+            },
+        )
         conn.commit()
     except Exception:
         pass
@@ -727,36 +770,23 @@ def assess_maturity(project_id=None):
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Shipley Process Adaptation + ICDEV™-to-Shipley mapping"
-    )
+    parser = argparse.ArgumentParser(description="Shipley Process Adaptation + ICDEV™-to-Shipley mapping")
 
     group = parser.add_mutually_exclusive_group()
-    group.add_argument("--shipley-mapping", action="store_true",
-                       help="Show ICDEV™-to-Shipley phase mapping")
-    group.add_argument("--recommend", action="store_true",
-                       help="Recommend ceremony level")
-    group.add_argument("--process-guide", action="store_true",
-                       help="Generate process guide for a level")
-    group.add_argument("--apmp-alignment", action="store_true",
-                       help="Show APMP Body of Knowledge alignment")
-    group.add_argument("--maturity", action="store_true",
-                       help="Assess proposal process maturity")
+    group.add_argument("--shipley-mapping", action="store_true", help="Show ICDEV™-to-Shipley phase mapping")
+    group.add_argument("--recommend", action="store_true", help="Recommend ceremony level")
+    group.add_argument("--process-guide", action="store_true", help="Generate process guide for a level")
+    group.add_argument("--apmp-alignment", action="store_true", help="Show APMP Body of Knowledge alignment")
+    group.add_argument("--maturity", action="store_true", help="Assess proposal process maturity")
 
-    parser.add_argument("--team-size", type=int,
-                        help="Team size for --recommend")
-    parser.add_argument("--annual-proposals", type=int,
-                        help="Annual proposal count for --recommend")
-    parser.add_argument("--avg-contract-value", type=float,
-                        help="Average contract value for --recommend")
-    parser.add_argument("--level", type=int, choices=[1, 2, 3, 4],
-                        help="Ceremony level for --process-guide")
-    parser.add_argument("--opportunity-title",
-                        help="Title for --process-guide header")
+    parser.add_argument("--team-size", type=int, help="Team size for --recommend")
+    parser.add_argument("--annual-proposals", type=int, help="Annual proposal count for --recommend")
+    parser.add_argument("--avg-contract-value", type=float, help="Average contract value for --recommend")
+    parser.add_argument("--level", type=int, choices=[1, 2, 3, 4], help="Ceremony level for --process-guide")
+    parser.add_argument("--opportunity-title", help="Title for --process-guide header")
     parser.add_argument("--project-id", help="Project ID for --maturity")
     parser.add_argument("--json", action="store_true", help="JSON output")
-    parser.add_argument("--human", action="store_true",
-                        help="Human-readable output")
+    parser.add_argument("--human", action="store_true", help="Human-readable output")
     args = parser.parse_args()
 
     result = {}

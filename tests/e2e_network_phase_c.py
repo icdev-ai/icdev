@@ -47,10 +47,12 @@ class TestResult:
 
     def summary(self):
         total = len(self.passed) + len(self.failed)
-        rate = f"{len(self.passed)/total*100:.1f}%" if total else "0%"
+        rate = f"{len(self.passed) / total * 100:.1f}%" if total else "0%"
         return {
-            "total": total, "passed": len(self.passed),
-            "failed": len(self.failed), "pass_rate": rate,
+            "total": total,
+            "passed": len(self.passed),
+            "failed": len(self.failed),
+            "pass_rate": rate,
             "failures": self.failed,
         }
 
@@ -79,9 +81,7 @@ def check_js_errors(driver):
         for entry in driver.get_log("browser"):
             if entry.get("level") == "SEVERE":
                 msg = entry.get("message", "")
-                if any(x in msg.lower() for x in [
-                    "favicon", "401", "404", "failed to load resource"
-                ]):
+                if any(x in msg.lower() for x in ["favicon", "401", "404", "failed to load resource"]):
                     continue
                 errors.append(msg)
     except Exception:
@@ -136,59 +136,64 @@ def run_tests():
             ("E2E PhaseC Proj-B", "deployed"),
             ("E2E PhaseC Proj-C", "approved"),
         ]:
-            d = api(driver, "POST", "/network/api/projects",
-                    {"name": name, "status": status, "owner": "e2e"})
+            d = api(driver, "POST", "/network/api/projects", {"name": name, "status": status, "owner": "e2e"})
             pids.append(d.get("id"))
 
         # Link topologies
         topos = api(driver, "GET", "/network/api/topologies")
         for i, pid in enumerate(pids):
             if i < len(topos):
-                api(driver, "POST",
-                    f"/network/api/projects/{pid}/topologies",
-                    {"topology_id": topos[i]["id"]})
+                api(driver, "POST", f"/network/api/projects/{pid}/topologies", {"topology_id": topos[i]["id"]})
 
         # ── 1. Impact: no interconnects ───────────────────────────────────
         try:
-            r = api(driver, "GET",
-                    f"/network/api/projects/{pids[0]}/impact")
+            r = api(driver, "GET", f"/network/api/projects/{pids[0]}/impact")
             assert r.get("total_affected") == 0
             assert r.get("interconnect_count") == 0
-            results.ok("impact_no_interconnects",
-                        f"affected={r['total_affected']}")
+            results.ok("impact_no_interconnects", f"affected={r['total_affected']}")
         except Exception as e:
             results.fail("impact_no_interconnects", e)
 
         # Create chain: A -> B -> C
-        api(driver, "POST", "/network/api/interconnects", {
-            "src_project_id": pids[0],
-            "dst_project_id": pids[1],
-            "circuit_id": "IC-AB-001",
-            "protocol": "BGP", "bandwidth": "10G"
-        })
-        api(driver, "POST", "/network/api/interconnects", {
-            "src_project_id": pids[1],
-            "dst_project_id": pids[2],
-            "circuit_id": "IC-BC-001",
-            "protocol": "OSPF", "bandwidth": "1G"
-        })
+        api(
+            driver,
+            "POST",
+            "/network/api/interconnects",
+            {
+                "src_project_id": pids[0],
+                "dst_project_id": pids[1],
+                "circuit_id": "IC-AB-001",
+                "protocol": "BGP",
+                "bandwidth": "10G",
+            },
+        )
+        api(
+            driver,
+            "POST",
+            "/network/api/interconnects",
+            {
+                "src_project_id": pids[1],
+                "dst_project_id": pids[2],
+                "circuit_id": "IC-BC-001",
+                "protocol": "OSPF",
+                "bandwidth": "1G",
+            },
+        )
 
         # ── 2. Impact: with interconnects ─────────────────────────────────
         try:
-            r = api(driver, "GET",
-                    f"/network/api/projects/{pids[0]}/impact")
-            assert r.get("total_affected") >= 2, \
-                f"Expected 2+ affected, got {r.get('total_affected')}"
-            results.ok("impact_with_interconnects",
-                        f"affected={r['total_affected']}, "
-                        f"direct={r['direct']}, indirect={r['indirect']}")
+            r = api(driver, "GET", f"/network/api/projects/{pids[0]}/impact")
+            assert r.get("total_affected") >= 2, f"Expected 2+ affected, got {r.get('total_affected')}"
+            results.ok(
+                "impact_with_interconnects",
+                f"affected={r['total_affected']}, direct={r['direct']}, indirect={r['indirect']}",
+            )
         except Exception as e:
             results.fail("impact_with_interconnects", e)
 
         # ── 3. Impact: hop distance ───────────────────────────────────────
         try:
-            r = api(driver, "GET",
-                    f"/network/api/projects/{pids[0]}/impact")
+            r = api(driver, "GET", f"/network/api/projects/{pids[0]}/impact")
             affected = r.get("affected_projects", [])
             direct = [a for a in affected if a["impact"] == "direct"]
             indirect = [a for a in affected if a["impact"] == "indirect"]
@@ -196,9 +201,10 @@ def run_tests():
             assert len(indirect) >= 1, "No indirect impacts"
             assert direct[0]["hop_distance"] == 1
             assert indirect[0]["hop_distance"] == 2
-            results.ok("impact_hop_distance",
-                        f"direct[0]={direct[0]['project_name']}, "
-                        f"indirect[0]={indirect[0]['project_name']}")
+            results.ok(
+                "impact_hop_distance",
+                f"direct[0]={direct[0]['project_name']}, indirect[0]={indirect[0]['project_name']}",
+            )
         except Exception as e:
             results.fail("impact_hop_distance", e)
 
@@ -211,10 +217,10 @@ def run_tests():
             assert "compliance_pct" in es
             assert "board_reviews" in es
             assert "total_interconnects" in es
-            results.ok("enterprise_summary_api",
-                        f"projects={es['total_projects']}, "
-                        f"devices={es['total_devices']}, "
-                        f"ics={es['total_interconnects']}")
+            results.ok(
+                "enterprise_summary_api",
+                f"projects={es['total_projects']}, devices={es['total_devices']}, ics={es['total_interconnects']}",
+            )
         except Exception as e:
             results.fail("enterprise_summary_api", e)
 
@@ -234,8 +240,7 @@ def run_tests():
 
         # ── 6. Enterprise: status cards ───────────────────────────────────
         try:
-            cards = driver.find_elements(
-                By.CSS_SELECTOR, ".ent-status-card")
+            cards = driver.find_elements(By.CSS_SELECTOR, ".ent-status-card")
             assert len(cards) >= 3, f"Expected 3+ cards, got {len(cards)}"
             results.ok("enterprise_status_cards", f"{len(cards)} cards")
         except Exception as e:
@@ -261,11 +266,9 @@ def run_tests():
         time.sleep(2)
 
         try:
-            btns = driver.find_elements(
-                By.CSS_SELECTOR, "#pipeline-section button")
+            btns = driver.find_elements(By.CSS_SELECTOR, "#pipeline-section button")
             btn_texts = [b.text for b in btns]
-            assert "Impact Analysis" in btn_texts, \
-                f"No Impact Analysis button: {btn_texts}"
+            assert "Impact Analysis" in btn_texts, f"No Impact Analysis button: {btn_texts}"
             results.ok("impact_button_on_detail")
         except Exception as e:
             results.fail("impact_button_on_detail", e)
@@ -273,8 +276,7 @@ def run_tests():
         # ── 10. Impact results render ─────────────────────────────────────
         try:
             # Click the impact analysis button
-            for b in driver.find_elements(
-                By.CSS_SELECTOR, "#pipeline-section button"):
+            for b in driver.find_elements(By.CSS_SELECTOR, "#pipeline-section button"):
                 if "Impact" in b.text:
                     b.click()
                     break
@@ -296,8 +298,7 @@ def run_tests():
             time.sleep(3)
             errs = check_js_errors(driver)
             if errs:
-                results.fail(f"js_errors_{name}",
-                              f"{len(errs)}: {errs[0][:80]}")
+                results.fail(f"js_errors_{name}", f"{len(errs)}: {errs[0][:80]}")
             else:
                 results.ok(f"js_errors_{name}", "No SEVERE JS errors")
 
@@ -318,14 +319,12 @@ def run_tests():
 
 if __name__ == "__main__":
     print("=" * 60)
-    print("E2E: Network Canvas — Phase C "
-          "(Impact Analysis + Enterprise Summary)")
+    print("E2E: Network Canvas — Phase C (Impact Analysis + Enterprise Summary)")
     print("=" * 60)
     r = run_tests()
     summary = r.summary()
     print()
-    print(f"Results: {summary['passed']}/{summary['total']} passed "
-          f"({summary['pass_rate']})")
+    print(f"Results: {summary['passed']}/{summary['total']} passed ({summary['pass_rate']})")
     if summary["failures"]:
         print("Failures:")
         for f in summary["failures"]:

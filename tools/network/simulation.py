@@ -17,6 +17,7 @@ from typing import Any
 # Helper utilities
 # ---------------------------------------------------------------------------
 
+
 def _get_node_config(node: dict) -> dict:
     return node.get("config", {})
 
@@ -44,6 +45,7 @@ def _infer_ospf_cost(edge: dict, ref_bw: int) -> int:
 # ---------------------------------------------------------------------------
 # Graph traversal helpers
 # ---------------------------------------------------------------------------
+
 
 def _find_all_paths(nodes, edges, src, dst, max_paths=8):
     """DFS to find multiple paths (up to max_paths)."""
@@ -86,9 +88,15 @@ def _bfs_path(nodes, edges, src_id, dst_id):
 
 
 CLOUD_HA_TYPES = {
-    "aws-tgw", "aws-dx-gw", "aws-nlb", "aws-gwlb", "aws-cloudwan",
-    "az-vwan", "az-crosslb",
-    "gcp-ncc", "gcp-gfe",
+    "aws-tgw",
+    "aws-dx-gw",
+    "aws-nlb",
+    "aws-gwlb",
+    "aws-cloudwan",
+    "az-vwan",
+    "az-crosslb",
+    "gcp-ncc",
+    "gcp-gfe",
     "oci-drg",
     "ibm-tg",
 }
@@ -113,6 +121,7 @@ def _find_spof(nodes, edges):
 # ---------------------------------------------------------------------------
 # Protocol simulations
 # ---------------------------------------------------------------------------
+
 
 def _sim_bgp_bestpath(nodes, edges, params) -> dict:
     """BGP best path selection following Cisco decision process:
@@ -139,8 +148,12 @@ def _sim_bgp_bestpath(nodes, edges, params) -> dict:
                     bgp_speakers.append(nid)
 
     if len(bgp_speakers) < 2:
-        return {"sim_type": "bgp_bestpath", "summary": "Need at least 2 BGP speakers (set ASN in node config)",
-                "paths": [], "best_path": None}
+        return {
+            "sim_type": "bgp_bestpath",
+            "summary": "Need at least 2 BGP speakers (set ASN in node config)",
+            "paths": [],
+            "best_path": None,
+        }
 
     # Find all paths between first and last BGP speaker
     src = bgp_speakers[0]
@@ -173,28 +186,32 @@ def _sim_bgp_bestpath(nodes, edges, params) -> dict:
             if asn and asn not in seen_asns:
                 as_path_len += 1
                 seen_asns.add(asn)
-            hop_details.append({
-                "node": label_map.get(nid, nid),
-                "asn": asn or "\u2014",
-                "local_pref": lp,
-                "med": m,
-                "weight": w,
-            })
+            hop_details.append(
+                {
+                    "node": label_map.get(nid, nid),
+                    "asn": asn or "\u2014",
+                    "local_pref": lp,
+                    "med": m,
+                    "weight": w,
+                }
+            )
 
         # BGP decision score (higher = better)
         # Weight (higher wins), LOCAL_PREF (higher wins), AS_PATH (shorter wins), MED (lower wins)
         score = weight * 100000 + local_pref * 1000 - as_path_len * 100 - med
 
-        scored_paths.append({
-            "path": path_labels,
-            "path_ids": path_ids,
-            "weight": weight,
-            "local_pref": local_pref,
-            "med": med,
-            "as_path_length": as_path_len,
-            "score": score,
-            "hop_details": hop_details,
-        })
+        scored_paths.append(
+            {
+                "path": path_labels,
+                "path_ids": path_ids,
+                "weight": weight,
+                "local_pref": local_pref,
+                "med": med,
+                "as_path_length": as_path_len,
+                "score": score,
+                "hop_details": hop_details,
+            }
+        )
 
     # Sort by score descending (best first)
     scored_paths.sort(key=lambda p: p["score"], reverse=True)
@@ -221,7 +238,9 @@ def _sim_bgp_bestpath(nodes, edges, params) -> dict:
         "paths": [{k: v for k, v in p.items() if k != "path_ids"} for p in scored_paths],
         "best_path": best["path"] if best else [],
         "decision_reason": decision_reason,
-        "summary": ("Best path: " + " \u2192 ".join(best["path"]) + f" ({decision_reason})") if best else "No paths found",
+        "summary": ("Best path: " + " \u2192 ".join(best["path"]) + f" ({decision_reason})")
+        if best
+        else "No paths found",
     }
 
 
@@ -249,9 +268,11 @@ def _sim_bgp_propagation(nodes, edges, params) -> dict:
         originator = next(iter(bgp_adj), nodes[0]["id"] if nodes else None)
 
     if not originator or not bgp_adj:
-        return {"sim_type": "bgp_propagation",
-                "summary": "No BGP sessions found. Set ASN on nodes and BGP protocol on links.",
-                "waves": []}
+        return {
+            "sim_type": "bgp_propagation",
+            "summary": "No BGP sessions found. Set ASN on nodes and BGP protocol on links.",
+            "waves": [],
+        }
 
     # BFS propagation waves
     waves = []
@@ -343,18 +364,21 @@ def _sim_ospf_spf(nodes, edges, params) -> dict:
         while cur is not None:
             path.insert(0, label_map.get(cur, cur))
             cur = prev.get(cur)
-        spf_tree.append({
-            "node": label_map.get(nid, nid),
-            "cost": dist[nid],
-            "path": path,
-            "hops": len(path) - 1,
-        })
+        spf_tree.append(
+            {
+                "node": label_map.get(nid, nid),
+                "cost": dist[nid],
+                "path": path,
+                "hops": len(path) - 1,
+            }
+        )
 
     # ECMP detection (equal cost paths)
     ecmp_pairs = []
     for nid in dist:
-        ecmp_count = sum(1 for v, w, _ in adj.get(nid, [])
-                         if dist.get(v, float("inf")) + w == dist.get(nid, float("inf")))
+        ecmp_count = sum(
+            1 for v, w, _ in adj.get(nid, []) if dist.get(v, float("inf")) + w == dist.get(nid, float("inf"))
+        )
         if ecmp_count > 1:
             ecmp_pairs.append(label_map.get(nid, nid))
 
@@ -387,14 +411,16 @@ def _sim_ospf_cost(nodes, edges, params) -> dict:
         area_tgt = tgt_cfg.get("ospf_area", "0")
         is_abr = area_src != area_tgt
 
-        link_costs.append({
-            "link": f"{label_map.get(e['source'], '?')} \u2014 {label_map.get(e['target'], '?')}",
-            "label": e.get("label", ""),
-            "cost": cost,
-            "protocol": proto,
-            "area": area_src if area_src == area_tgt else f"{area_src}/{area_tgt} (ABR)",
-            "is_abr_boundary": is_abr,
-        })
+        link_costs.append(
+            {
+                "link": f"{label_map.get(e['source'], '?')} \u2014 {label_map.get(e['target'], '?')}",
+                "label": e.get("label", ""),
+                "cost": cost,
+                "protocol": proto,
+                "area": area_src if area_src == area_tgt else f"{area_src}/{area_tgt} (ABR)",
+                "is_abr_boundary": is_abr,
+            }
+        )
 
     link_costs.sort(key=lambda x: x["cost"])
 
@@ -410,7 +436,7 @@ def _sim_ospf_cost(nodes, edges, params) -> dict:
         "load_balance_groups": lb_groups,
         "abr_boundaries": [lc["link"] for lc in link_costs if lc["is_abr_boundary"]],
         "summary": f"{len(link_costs)} links analyzed, {len(lb_groups)} equal-cost load-balance groups, "
-                   f"{sum(1 for lc in link_costs if lc['is_abr_boundary'])} ABR boundaries",
+        f"{sum(1 for lc in link_costs if lc['is_abr_boundary'])} ABR boundaries",
     }
 
 
@@ -430,13 +456,15 @@ def _sim_jumbo_mtu(nodes, edges, params) -> dict:
     for n in nodes:
         cfg = _get_node_config(n)
         mtu = int(cfg.get("mtu") or 1500)
-        node_mtus.append({
-            "node": label_map.get(n["id"], n["id"]),
-            "node_id": n["id"],
-            "mtu": mtu,
-            "supports_jumbo": mtu >= desired_mtu,
-            "status": "ok" if mtu >= desired_mtu else "fragmentation" if mtu >= 1500 else "drop",
-        })
+        node_mtus.append(
+            {
+                "node": label_map.get(n["id"], n["id"]),
+                "node_id": n["id"],
+                "mtu": mtu,
+                "supports_jumbo": mtu >= desired_mtu,
+                "status": "ok" if mtu >= desired_mtu else "fragmentation" if mtu >= 1500 else "drop",
+            }
+        )
 
     # Walk the default path (BFS from first to last)
     src = node_ids[0]
@@ -469,11 +497,13 @@ def _sim_jumbo_mtu(nodes, edges, params) -> dict:
         if mtu < min_mtu:
             min_mtu = mtu
             bottleneck = label_map.get(nid, nid)
-        path_mtu_detail.append({
-            "node": label_map.get(nid, nid),
-            "mtu": mtu,
-            "status": "ok" if mtu >= desired_mtu else "BOTTLENECK",
-        })
+        path_mtu_detail.append(
+            {
+                "node": label_map.get(nid, nid),
+                "mtu": mtu,
+                "status": "ok" if mtu >= desired_mtu else "BOTTLENECK",
+            }
+        )
 
     jumbo_ready = min_mtu >= desired_mtu
     frag_nodes = [nm for nm in node_mtus if not nm["supports_jumbo"]]
@@ -487,8 +517,10 @@ def _sim_jumbo_mtu(nodes, edges, params) -> dict:
         "path_detail": path_mtu_detail,
         "node_audit": node_mtus,
         "fragmentation_points": [f["node"] for f in frag_nodes],
-        "summary": (f"Path MTU: {min_mtu} \u2014 {'Jumbo OK' if jumbo_ready else f'FRAGMENTATION at {bottleneck} (MTU {min_mtu})'}"
-                    f" | {len(frag_nodes)}/{len(nodes)} nodes below {desired_mtu}"),
+        "summary": (
+            f"Path MTU: {min_mtu} \u2014 {'Jumbo OK' if jumbo_ready else f'FRAGMENTATION at {bottleneck} (MTU {min_mtu})'}"
+            f" | {len(frag_nodes)}/{len(nodes)} nodes below {desired_mtu}"
+        ),
     }
 
 
@@ -498,15 +530,27 @@ def _sim_dwdm_optical(nodes, edges, params) -> dict:
     node_map = {n["id"]: n for n in nodes}
 
     # Optical node types
-    OPTICAL_TYPES = {"roadm", "oadm", "edfa", "transponder", "olt", "odf",
-                     "media-optical", "media-fiber", "patch-panel-fiber", "sonet-adm"}
+    OPTICAL_TYPES = {
+        "roadm",
+        "oadm",
+        "edfa",
+        "transponder",
+        "olt",
+        "odf",
+        "media-optical",
+        "media-fiber",
+        "patch-panel-fiber",
+        "sonet-adm",
+    }
 
     # Walk optical path (find connected optical nodes)
     optical_nodes = [n for n in nodes if n.get("type") in OPTICAL_TYPES]
     if not optical_nodes:
-        return {"sim_type": "dwdm_optical",
-                "summary": "No optical nodes found. Add ROADM, OADM, EDFA, or Transponder nodes.",
-                "spans": []}
+        return {
+            "sim_type": "dwdm_optical",
+            "summary": "No optical nodes found. Add ROADM, OADM, EDFA, or Transponder nodes.",
+            "spans": [],
+        }
 
     # Build spans from edges between optical nodes
     optical_ids = {n["id"] for n in optical_nodes}
@@ -540,7 +584,7 @@ def _sim_dwdm_optical(nodes, edges, params) -> dict:
             # Chromatic dispersion: 17 ps/(nm*km) for G.652
             cd_ps_nm = round(distance_km * 17, 1)
             # PMD: 0.1 ps/sqrt(km)
-            pmd_ps = round(0.1 * (distance_km ** 0.5), 2)
+            pmd_ps = round(0.1 * (distance_km**0.5), 2)
 
             span_quality = "good"
             if total_loss > 20:
@@ -548,19 +592,21 @@ def _sim_dwdm_optical(nodes, edges, params) -> dict:
             elif total_loss > 12:
                 span_quality = "warning"
 
-            spans.append({
-                "span": f"{label_map.get(e['source'], '?')} \u2192 {label_map.get(e['target'], '?')}",
-                "distance_km": distance_km,
-                "attenuation_db": attenuation_db,
-                "connector_loss_db": connector_loss * 2,
-                "total_loss_db": total_loss,
-                "edfa_gain_db": edfa_gain,
-                "net_loss_db": round(total_loss - edfa_gain, 2),
-                "chromatic_dispersion_ps_nm": cd_ps_nm,
-                "pmd_ps": pmd_ps,
-                "quality": span_quality,
-                "protocol": e.get("protocol", ""),
-            })
+            spans.append(
+                {
+                    "span": f"{label_map.get(e['source'], '?')} \u2192 {label_map.get(e['target'], '?')}",
+                    "distance_km": distance_km,
+                    "attenuation_db": attenuation_db,
+                    "connector_loss_db": connector_loss * 2,
+                    "total_loss_db": total_loss,
+                    "edfa_gain_db": edfa_gain,
+                    "net_loss_db": round(total_loss - edfa_gain, 2),
+                    "chromatic_dispersion_ps_nm": cd_ps_nm,
+                    "pmd_ps": pmd_ps,
+                    "quality": span_quality,
+                    "protocol": e.get("protocol", ""),
+                }
+            )
 
     # System-level OSNR calculation
     total_spans = len(spans)
@@ -572,7 +618,9 @@ def _sim_dwdm_optical(nodes, edges, params) -> dict:
     edfa_count = sum(1 for n in optical_nodes if n.get("type") == "edfa")
     osnr_db = round(40 - total_spans * 3 + edfa_count * 2.5, 1)
 
-    system_status = "excellent" if osnr_db > 25 else "good" if osnr_db > 18 else "warning" if osnr_db > 12 else "critical"
+    system_status = (
+        "excellent" if osnr_db > 25 else "good" if osnr_db > 18 else "warning" if osnr_db > 12 else "critical"
+    )
 
     return {
         "sim_type": "dwdm_optical",
@@ -588,7 +636,7 @@ def _sim_dwdm_optical(nodes, edges, params) -> dict:
             "status": system_status,
         },
         "summary": f"{total_spans} spans, {total_distance}km, OSNR={osnr_db}dB ({system_status}), "
-                   f"{edfa_count} EDFAs, CD={total_cd} ps/nm, PMD={total_pmd} ps",
+        f"{edfa_count} EDFAs, CD={total_cd} ps/nm, PMD={total_pmd} ps",
     }
 
 
@@ -597,16 +645,33 @@ def _sim_fiber_budget(nodes, edges, params) -> dict:
     label_map = {n["id"]: n.get("label", n["id"]) for n in nodes}
     node_map = {n["id"]: n for n in nodes}
 
-    OPTICAL_TYPES = {"roadm", "oadm", "edfa", "transponder", "olt", "odf",
-                     "media-optical", "media-fiber", "patch-panel-fiber", "sonet-adm"}
+    OPTICAL_TYPES = {
+        "roadm",
+        "oadm",
+        "edfa",
+        "transponder",
+        "olt",
+        "odf",
+        "media-optical",
+        "media-fiber",
+        "patch-panel-fiber",
+        "sonet-adm",
+    }
     optical_ids = {n["id"] for n in nodes if n.get("type") in OPTICAL_TYPES}
 
     # TX power (dBm) and RX sensitivity by node type
     TX_POWER = {"transponder": 1.0, "roadm": 0.0, "oadm": -2.0, "olt": 5.0, "sonet-adm": 0.0}
     RX_SENS = {"transponder": -28.0, "roadm": -25.0, "oadm": -25.0, "olt": -28.0, "sonet-adm": -25.0}
     # Insertion loss by node type
-    INSERT_LOSS = {"oadm": 5.0, "roadm": 7.0, "odf": 0.5, "patch-panel-fiber": 0.5,
-                   "edfa": -20.0, "media-fiber": 0.3, "media-optical": 0.5}  # EDFA is negative = gain
+    INSERT_LOSS = {
+        "oadm": 5.0,
+        "roadm": 7.0,
+        "odf": 0.5,
+        "patch-panel-fiber": 0.5,
+        "edfa": -20.0,
+        "media-fiber": 0.3,
+        "media-optical": 0.5,
+    }  # EDFA is negative = gain
 
     # Build optical path
     adj: dict[str, list] = {}
@@ -630,8 +695,7 @@ def _sim_fiber_budget(nodes, edges, params) -> dict:
         rx_node = list(optical_ids)[-1]
 
     if not tx_node or not rx_node:
-        return {"sim_type": "fiber_budget", "summary": "Need at least 2 optical nodes",
-                "budget": []}
+        return {"sim_type": "fiber_budget", "summary": "Need at least 2 optical nodes", "budget": []}
 
     # BFS path
     q: deque[list[str]] = deque([[tx_node]])
@@ -648,8 +712,7 @@ def _sim_fiber_budget(nodes, edges, params) -> dict:
                 q.append(p + [nb])
 
     if not path:
-        return {"sim_type": "fiber_budget", "summary": "No optical path found between endpoints",
-                "budget": []}
+        return {"sim_type": "fiber_budget", "summary": "No optical path found between endpoints", "budget": []}
 
     # Walk path and compute budget
     tx_type = node_map.get(tx_node, {}).get("type", "transponder")
@@ -661,26 +724,30 @@ def _sim_fiber_budget(nodes, edges, params) -> dict:
     cumulative_loss = 0.0
     power_level = tx_power
 
-    budget_detail.append({
-        "node": label_map.get(tx_node, "?"),
-        "type": tx_type,
-        "action": "TX Launch",
-        "loss_db": 0.0,
-        "power_dbm": round(power_level, 2),
-    })
+    budget_detail.append(
+        {
+            "node": label_map.get(tx_node, "?"),
+            "type": tx_type,
+            "action": "TX Launch",
+            "loss_db": 0.0,
+            "power_dbm": round(power_level, 2),
+        }
+    )
 
     for nid in path[1:]:
         ntype = node_map.get(nid, {}).get("type", "")
         loss = INSERT_LOSS.get(ntype, 1.0)
         power_level -= loss  # negative loss = gain (EDFA)
         cumulative_loss += loss
-        budget_detail.append({
-            "node": label_map.get(nid, "?"),
-            "type": ntype,
-            "action": "Gain" if loss < 0 else "Loss",
-            "loss_db": round(loss, 2),
-            "power_dbm": round(power_level, 2),
-        })
+        budget_detail.append(
+            {
+                "node": label_map.get(nid, "?"),
+                "type": ntype,
+                "action": "Gain" if loss < 0 else "Loss",
+                "loss_db": round(loss, 2),
+                "power_dbm": round(power_level, 2),
+            }
+        )
 
     margin = round(power_level - rx_sensitivity, 2)
     status = "ok" if margin > 3 else "warning" if margin > 0 else "fail"
@@ -696,9 +763,9 @@ def _sim_fiber_budget(nodes, edges, params) -> dict:
         "margin_db": margin,
         "status": status,
         "budget_detail": budget_detail,
-        "summary": f"TX={tx_power}dBm \u2192 RX={round(power_level,2)}dBm, "
-                   f"Margin={margin}dB ({status.upper()}), "
-                   f"Sensitivity={rx_sensitivity}dBm",
+        "summary": f"TX={tx_power}dBm \u2192 RX={round(power_level, 2)}dBm, "
+        f"Margin={margin}dB ({status.upper()}), "
+        f"Sensitivity={rx_sensitivity}dBm",
     }
 
 
@@ -707,15 +774,26 @@ def _sim_fiber_budget(nodes, edges, params) -> dict:
 # ---------------------------------------------------------------------------
 
 # Device types that act as security boundaries (block lateral movement)
-FIREWALL_TYPES = frozenset({
-    "firewall", "aws-nfw", "az-fw", "gcp-armor", "oci-waf", "aws-waf",
-    "az-nsg", "oci-nsg",
-})
+FIREWALL_TYPES = frozenset(
+    {
+        "firewall",
+        "aws-nfw",
+        "az-fw",
+        "gcp-armor",
+        "oci-waf",
+        "aws-waf",
+        "az-nsg",
+        "oci-nsg",
+    }
+)
 
 # Inline security appliances that segment but don't fully block
-SECURITY_ZONE_TYPES = frozenset({
-    "security-zone", "sase-pop",
-})
+SECURITY_ZONE_TYPES = frozenset(
+    {
+        "security-zone",
+        "sase-pop",
+    }
+)
 
 
 def _sim_blast_radius(nodes: list, edges: list, params: dict) -> dict:
@@ -752,9 +830,9 @@ def _sim_blast_radius(nodes: list, edges: list, params: dict) -> dict:
 
     # BFS with hop tracking, stopping at firewalls
     visited: dict[str, int] = {source: 0}  # node_id -> hop distance
-    boundary_nodes: set[str] = set()        # firewalls that blocked expansion
+    boundary_nodes: set[str] = set()  # firewalls that blocked expansion
     frontier = [source]
-    hop_layers: list[list[dict]] = []       # per-hop detail
+    hop_layers: list[list[dict]] = []  # per-hop detail
 
     for hop in range(1, max_hops + 1):
         next_frontier: list[str] = []
@@ -770,32 +848,38 @@ def _sim_blast_radius(nodes: list, edges: list, params: dict) -> dict:
                 if ntype in FIREWALL_TYPES:
                     # Attacker reaches the firewall but cannot pass through
                     boundary_nodes.add(neighbor)
-                    layer_devices.append({
-                        "id": neighbor,
-                        "label": label_map.get(neighbor, neighbor),
-                        "type": ntype,
-                        "hop": hop,
-                        "status": "blocked",
-                    })
+                    layer_devices.append(
+                        {
+                            "id": neighbor,
+                            "label": label_map.get(neighbor, neighbor),
+                            "type": ntype,
+                            "hop": hop,
+                            "status": "blocked",
+                        }
+                    )
                     # Do NOT add to next_frontier — traversal stops here
                 elif ntype in SECURITY_ZONE_TYPES:
                     # Security zone boundary — mark but still traversable
-                    layer_devices.append({
-                        "id": neighbor,
-                        "label": label_map.get(neighbor, neighbor),
-                        "type": ntype,
-                        "hop": hop,
-                        "status": "zone_boundary",
-                    })
+                    layer_devices.append(
+                        {
+                            "id": neighbor,
+                            "label": label_map.get(neighbor, neighbor),
+                            "type": ntype,
+                            "hop": hop,
+                            "status": "zone_boundary",
+                        }
+                    )
                     next_frontier.append(neighbor)
                 else:
-                    layer_devices.append({
-                        "id": neighbor,
-                        "label": label_map.get(neighbor, neighbor),
-                        "type": ntype,
-                        "hop": hop,
-                        "status": "compromised",
-                    })
+                    layer_devices.append(
+                        {
+                            "id": neighbor,
+                            "label": label_map.get(neighbor, neighbor),
+                            "type": ntype,
+                            "hop": hop,
+                            "status": "compromised",
+                        }
+                    )
                     next_frontier.append(neighbor)
 
         if layer_devices:
@@ -805,18 +889,9 @@ def _sim_blast_radius(nodes: list, edges: list, params: dict) -> dict:
             break
 
     # Collect all reachable (compromised) node labels
-    compromised = [
-        d for layer in hop_layers for d in layer["devices"]
-        if d["status"] == "compromised"
-    ]
-    blocked = [
-        d for layer in hop_layers for d in layer["devices"]
-        if d["status"] == "blocked"
-    ]
-    zone_boundaries = [
-        d for layer in hop_layers for d in layer["devices"]
-        if d["status"] == "zone_boundary"
-    ]
+    compromised = [d for layer in hop_layers for d in layer["devices"] if d["status"] == "compromised"]
+    blocked = [d for layer in hop_layers for d in layer["devices"] if d["status"] == "blocked"]
+    zone_boundaries = [d for layer in hop_layers for d in layer["devices"] if d["status"] == "zone_boundary"]
 
     total_nodes = len(nodes)
     total_compromised = len(compromised) + 1  # +1 for the source
@@ -838,8 +913,7 @@ def _sim_blast_radius(nodes: list, edges: list, params: dict) -> dict:
         blocked_ratio = len(blocked) / max(len(adj.get(source, set())), 1)
         unreachable = total_nodes - len(visited)
         zt_score = round(
-            min(100, (unreachable / max(total_nodes - 1, 1)) * 60
-                + blocked_ratio * 40),
+            min(100, (unreachable / max(total_nodes - 1, 1)) * 60 + blocked_ratio * 40),
             1,
         )
 
@@ -871,6 +945,7 @@ def _sim_blast_radius(nodes: list, edges: list, params: dict) -> dict:
 # Main dispatcher
 # ---------------------------------------------------------------------------
 
+
 def _run_simulation(graph: dict, sim_type: str, params: dict) -> dict:
     """Pure-Python deterministic simulation engine."""
     nodes = graph.get("nodes", [])
@@ -889,7 +964,9 @@ def _run_simulation(graph: dict, sim_type: str, params: dict) -> dict:
             "hops": hops,
             "latency_ms": round(latency, 2) if latency else None,
             "reachable": latency is not None,
-            "summary": f"{'Reachable' if latency else 'Unreachable'} \u2014 {round(latency,1)}ms via {len(hops)} hops" if latency else "Unreachable",
+            "summary": f"{'Reachable' if latency else 'Unreachable'} \u2014 {round(latency, 1)}ms via {len(hops)} hops"
+            if latency
+            else "Unreachable",
         }
 
     if sim_type == "traceroute":
@@ -934,16 +1011,21 @@ def _run_simulation(graph: dict, sim_type: str, params: dict) -> dict:
             "resilience_score": max(0, 100 - len(spof_nodes) * 15),
             "bfd_detected": bfd_detected,
             "failover_estimate": failover_est,
-            "summary": f"Resilience score: {max(0, 100 - len(spof_nodes)*15)}%",
+            "summary": f"Resilience score: {max(0, 100 - len(spof_nodes) * 15)}%",
         }
 
     if sim_type == "load":
         utilization = []
         for e in edges:
             util = round(20 + hash(e.get("id", "")) % 60, 1)
-            utilization.append({"edge": e.get("id", ""), "label": e.get("label", ""),
-                                 "utilization_pct": util,
-                                 "status": "critical" if util > 75 else "warning" if util > 50 else "ok"})
+            utilization.append(
+                {
+                    "edge": e.get("id", ""),
+                    "label": e.get("label", ""),
+                    "utilization_pct": util,
+                    "status": "critical" if util > 75 else "warning" if util > 50 else "ok",
+                }
+            )
         avg = round(sum(u["utilization_pct"] for u in utilization) / max(len(utilization), 1), 1)
         return {
             "sim_type": "load",
@@ -987,7 +1069,9 @@ def _add_narrative(result: dict) -> dict:
     if st == "ping":
         if result.get("reachable"):
             lines.append("The ping test shows that traffic CAN reach the destination from the source.")
-            lines.append(f"The packet traverses {len(result.get('hops', []))} hops with an estimated latency of {result.get('latency_ms')}ms.")
+            lines.append(
+                f"The packet traverses {len(result.get('hops', []))} hops with an estimated latency of {result.get('latency_ms')}ms."
+            )
             lines.append("This indicates a valid forwarding path exists in the current topology.")
         else:
             lines.append("The ping test FAILED \u2014 no reachable path exists between source and destination.")
@@ -1007,7 +1091,9 @@ def _add_narrative(result: dict) -> dict:
             lines.append(f"WARNING: {len(spofs)} single point(s) of failure detected: {', '.join(spofs[:5])}.")
             lines.append("If any of these nodes fail, part of the network becomes unreachable.")
             lines.append("Recommendation: Add redundant links or a standby device for each SPOF.")
-            lines.append("Note: Cloud-managed HA services (TGW, DXGW, NLB, VWAN, NCC, DRG) are excluded — their distributed backends (Hyperplane) provide built-in redundancy.")
+            lines.append(
+                "Note: Cloud-managed HA services (TGW, DXGW, NLB, VWAN, NCC, DRG) are excluded — their distributed backends (Hyperplane) provide built-in redundancy."
+            )
         else:
             lines.append("No single points of failure detected. The topology has good redundancy.")
 
@@ -1016,7 +1102,9 @@ def _add_narrative(result: dict) -> dict:
         risks = result.get("risks", [])
         bfd = result.get("bfd_detected", False)
         fo_est = result.get("failover_estimate", "unknown")
-        lines.append(f"Resilience score: {score}% \u2014 {'Excellent' if score >= 90 else 'Good' if score >= 70 else 'Needs improvement' if score >= 50 else 'Critical risk'}.")
+        lines.append(
+            f"Resilience score: {score}% \u2014 {'Excellent' if score >= 90 else 'Good' if score >= 70 else 'Needs improvement' if score >= 50 else 'Critical risk'}."
+        )
         lines.append(f"Estimated failover time: {fo_est}.")
         if bfd:
             lines.append("BFD (Bidirectional Forwarding Detection) is active, enabling sub-second failure detection.")
@@ -1026,7 +1114,9 @@ def _add_narrative(result: dict) -> dict:
             lines.append(f"{len(risks)} high-impact risk(s) identified.")
             for r in risks[:3]:
                 lines.append(f"  - {r.get('node', '?')}: {r.get('recommendation', '')}")
-        lines.append("Note: Cloud-managed HA services (TGW, DXGW, NLB, VWAN, NCC, DRG) are not flagged as SPOFs due to distributed backend redundancy.")
+        lines.append(
+            "Note: Cloud-managed HA services (TGW, DXGW, NLB, VWAN, NCC, DRG) are not flagged as SPOFs due to distributed backend redundancy."
+        )
 
     elif st == "load":
         avg = result.get("avg_utilization_pct", 0)
@@ -1048,7 +1138,9 @@ def _add_narrative(result: dict) -> dict:
             lines.append(f"Decision criteria: {reason}.")
             paths = result.get("paths", [])
             if len(paths) > 1:
-                lines.append(f"{len(paths)} candidate paths were evaluated using the Cisco BGP decision process (Weight > LOCAL_PREF > AS_PATH > MED).")
+                lines.append(
+                    f"{len(paths)} candidate paths were evaluated using the Cisco BGP decision process (Weight > LOCAL_PREF > AS_PATH > MED)."
+                )
         else:
             lines.append("No BGP paths found. Ensure nodes have ASN configured and links use BGP protocol.")
 
@@ -1058,28 +1150,44 @@ def _add_narrative(result: dict) -> dict:
         lines.append(f"OSPF Shortest Path First (Dijkstra) computed from {result.get('root', '?')}.")
         lines.append(f"{len(tree)} nodes reachable in the SPF tree.")
         if ecmp:
-            lines.append(f"Equal-Cost Multi-Path (ECMP) candidates: {', '.join(ecmp[:5])} \u2014 these can load-balance traffic.")
+            lines.append(
+                f"Equal-Cost Multi-Path (ECMP) candidates: {', '.join(ecmp[:5])} \u2014 these can load-balance traffic."
+            )
 
     elif st == "dwdm_optical":
         sys_data = result.get("system", {})
-        lines.append(f"Optical path analysis: {sys_data.get('total_spans', 0)} spans over {sys_data.get('total_distance_km', 0)}km.")
+        lines.append(
+            f"Optical path analysis: {sys_data.get('total_spans', 0)} spans over {sys_data.get('total_distance_km', 0)}km."
+        )
         lines.append(f"OSNR: {sys_data.get('osnr_db', 0)}dB ({sys_data.get('status', 'unknown')}).")
         if sys_data.get("status") in ("warning", "critical"):
-            lines.append("The optical signal quality is degraded. Consider adding EDFA amplifiers or reducing span distances.")
-        lines.append(f"Chromatic dispersion: {sys_data.get('total_cd_ps_nm', 0)} ps/nm, PMD: {sys_data.get('total_pmd_ps', 0)} ps.")
+            lines.append(
+                "The optical signal quality is degraded. Consider adding EDFA amplifiers or reducing span distances."
+            )
+        lines.append(
+            f"Chromatic dispersion: {sys_data.get('total_cd_ps_nm', 0)} ps/nm, PMD: {sys_data.get('total_pmd_ps', 0)} ps."
+        )
 
     elif st == "fiber_budget":
         margin = result.get("margin_db", 0)
         result.get("status", "")
-        lines.append(f"Optical power budget: TX={result.get('tx_power_dbm', 0)}dBm, RX={result.get('rx_power_dbm', 0)}dBm.")
-        margin_desc = "Sufficient (>3dB recommended)" if margin > 3 else ("Marginal \u2014 risk of signal loss" if margin > 0 else "INSUFFICIENT \u2014 link will not work")
+        lines.append(
+            f"Optical power budget: TX={result.get('tx_power_dbm', 0)}dBm, RX={result.get('rx_power_dbm', 0)}dBm."
+        )
+        margin_desc = (
+            "Sufficient (>3dB recommended)"
+            if margin > 3
+            else ("Marginal \u2014 risk of signal loss" if margin > 0 else "INSUFFICIENT \u2014 link will not work")
+        )
         lines.append(f"Link margin: {margin}dB \u2014 {margin_desc}.")
 
     elif st == "jumbo_mtu":
         if result.get("jumbo_ready"):
             lines.append(f"Jumbo frames ({result.get('desired_mtu', 9000)} bytes) are supported end-to-end.")
         else:
-            lines.append(f"Jumbo frames BLOCKED at {result.get('bottleneck', '?')} (MTU={result.get('path_mtu', 1500)}).")
+            lines.append(
+                f"Jumbo frames BLOCKED at {result.get('bottleneck', '?')} (MTU={result.get('path_mtu', 1500)})."
+            )
             lines.append("Packets larger than the path MTU will be fragmented or dropped.")
             frag = result.get("fragmentation_points", [])
             if frag:
@@ -1093,17 +1201,23 @@ def _add_narrative(result: dict) -> dict:
         total = result.get("total_nodes", 0)
         blocked = result.get("blocked_count", 0)
         zt = result.get("zero_trust_score", 0)
-        lines.append(f"If '{src}' is compromised, an attacker can reach "
-                     f"{compromised} of {total} devices ({blast_pct}%) "
-                     f"within {result.get('max_hops', 3)} hops.")
+        lines.append(
+            f"If '{src}' is compromised, an attacker can reach "
+            f"{compromised} of {total} devices ({blast_pct}%) "
+            f"within {result.get('max_hops', 3)} hops."
+        )
         if blocked:
             lines.append(f"{blocked} firewall(s) blocked further lateral movement.")
         if risk in ("CRITICAL", "HIGH"):
-            lines.append("This indicates insufficient network segmentation. "
-                         "Add firewalls or security zones between segments to reduce blast radius.")
+            lines.append(
+                "This indicates insufficient network segmentation. "
+                "Add firewalls or security zones between segments to reduce blast radius."
+            )
         elif risk == "MEDIUM":
-            lines.append("Some segmentation exists but could be improved. "
-                         "Consider adding micro-segmentation per Zero Trust principles.")
+            lines.append(
+                "Some segmentation exists but could be improved. "
+                "Consider adding micro-segmentation per Zero Trust principles."
+            )
         else:
             lines.append("Good segmentation \u2014 the blast radius is well contained.")
         lines.append(f"Zero Trust segmentation score: {zt}/100.")

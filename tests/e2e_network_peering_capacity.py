@@ -21,7 +21,6 @@ import json
 import os
 import sys
 import time
-from pathlib import Path
 
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -46,10 +45,14 @@ class TestResult:
 
     def summary(self):
         total = len(self.passed) + len(self.failed)
-        rate = f"{len(self.passed)/total*100:.1f}%" if total else "0%"
-        return {"total": total, "passed": len(self.passed),
-                "failed": len(self.failed), "pass_rate": rate,
-                "failures": self.failed}
+        rate = f"{len(self.passed) / total * 100:.1f}%" if total else "0%"
+        return {
+            "total": total,
+            "passed": len(self.passed),
+            "failed": len(self.failed),
+            "pass_rate": rate,
+            "failures": self.failed,
+        }
 
 
 def create_driver():
@@ -104,24 +107,29 @@ def run_tests():
         time.sleep(2)
 
         # Setup project
-        d = api(driver, "POST", "/network/api/projects",
-                {"name": "E2E Peering Test", "status": "draft"})
+        d = api(driver, "POST", "/network/api/projects", {"name": "E2E Peering Test", "status": "draft"})
         pid = d.get("id")
 
         # ── 1. Create peering agreement ───────────────────────────────────
         try:
-            d = api(driver, "POST", "/network/api/peering-agreements", {
-                "peer_name": "CloudFlare",
-                "peer_asn": "13335", "our_asn": "64512",
-                "peering_type": "settlement_free",
-                "routing_method": "bgp",
-                "purpose": "Reduce latency for CDN traffic",
-                "purpose_category": "content_delivery",
-                "business_justification": "Save $5K/mo transit cost",
-                "port_speed": "10G",
-                "monthly_cost": 0,
-                "project_id": pid,
-            })
+            d = api(
+                driver,
+                "POST",
+                "/network/api/peering-agreements",
+                {
+                    "peer_name": "CloudFlare",
+                    "peer_asn": "13335",
+                    "our_asn": "64512",
+                    "peering_type": "settlement_free",
+                    "routing_method": "bgp",
+                    "purpose": "Reduce latency for CDN traffic",
+                    "purpose_category": "content_delivery",
+                    "business_justification": "Save $5K/mo transit cost",
+                    "port_speed": "10G",
+                    "monthly_cost": 0,
+                    "project_id": pid,
+                },
+            )
             peer_id = d.get("id")
             assert peer_id
             results.ok("create_peering", f"id={peer_id}")
@@ -130,14 +138,19 @@ def run_tests():
 
         # Also create static route peering
         try:
-            d = api(driver, "POST", "/network/api/peering-agreements", {
-                "peer_name": "Enterprise Customer",
-                "routing_method": "static",
-                "peering_type": "paid",
-                "purpose": "Dedicated customer link",
-                "purpose_category": "customer",
-                "monthly_cost": 2000,
-            })
+            d = api(
+                driver,
+                "POST",
+                "/network/api/peering-agreements",
+                {
+                    "peer_name": "Enterprise Customer",
+                    "routing_method": "static",
+                    "peering_type": "paid",
+                    "purpose": "Dedicated customer link",
+                    "purpose_category": "customer",
+                    "monthly_cost": 2000,
+                },
+            )
             assert d.get("id")
             results.ok("create_static_peering")
         except Exception as e:
@@ -145,32 +158,34 @@ def run_tests():
 
         # ── 2. Peer evaluation ────────────────────────────────────────────
         try:
-            d = api(driver, "POST", "/network/api/peering-evaluations", {
-                "peer_name": "Akamai",
-                "peer_asn": "20940",
-                "traffic_volume": 5000,
-                "geographic_overlap": "high",
-                "noc_quality": "excellent",
-                "prefix_count": 500,
-            })
+            d = api(
+                driver,
+                "POST",
+                "/network/api/peering-evaluations",
+                {
+                    "peer_name": "Akamai",
+                    "peer_asn": "20940",
+                    "traffic_volume": 5000,
+                    "geographic_overlap": "high",
+                    "noc_quality": "excellent",
+                    "prefix_count": 500,
+                },
+            )
             assert d.get("id")
             evals = api(driver, "GET", "/network/api/peering-evaluations")
             our = next(e for e in evals if e.get("peer_name") == "Akamai")
             assert float(our["score"]) > 0
-            results.ok("peer_evaluation",
-                        f"score={our['score']}, rec={our['recommendation']}")
+            results.ok("peer_evaluation", f"score={our['score']}, rec={our['recommendation']}")
         except Exception as e:
             results.fail("peer_evaluation", e)
 
         # ── 3. Cost-benefit ───────────────────────────────────────────────
         if peer_id:
             try:
-                d = api(driver, "GET",
-                        f"/network/api/peering-cost-benefit/{peer_id}")
+                d = api(driver, "GET", f"/network/api/peering-cost-benefit/{peer_id}")
                 assert "peering_cost_monthly" in d
                 assert "transit_equivalent_monthly" in d
-                results.ok("peering_cost_benefit",
-                            f"savings=${d.get('monthly_savings', 0)}/mo")
+                results.ok("peering_cost_benefit", f"savings=${d.get('monthly_savings', 0)}/mo")
             except Exception as e:
                 results.fail("peering_cost_benefit", e)
 
@@ -186,45 +201,67 @@ def run_tests():
 
         # ── 5. Port inventory ─────────────────────────────────────────────
         try:
-            d = api(driver, "POST", "/network/api/port-inventory", {
-                "device_label": "Core-R1",
-                "total_ports": 48, "used_ports": 36,
-            })
+            d = api(
+                driver,
+                "POST",
+                "/network/api/port-inventory",
+                {
+                    "device_label": "Core-R1",
+                    "total_ports": 48,
+                    "used_ports": 36,
+                },
+            )
             assert d.get("id")
             ports = api(driver, "GET", "/network/api/port-inventory")
             assert len(ports) >= 1
-            results.ok("port_inventory",
-                        f"avail={ports[0]['total_ports'] - ports[0]['used_ports']}")
+            results.ok("port_inventory", f"avail={ports[0]['total_ports'] - ports[0]['used_ports']}")
         except Exception as e:
             results.fail("port_inventory", e)
 
         # ── 6. Fiber inventory ────────────────────────────────────────────
         try:
-            d = api(driver, "POST", "/network/api/fiber-inventory", {
-                "path_name": "DC-East to DC-West",
-                "path_a": "DC-East", "path_z": "DC-West",
-                "total_strands": 48, "lit_strands": 12,
-                "total_lambdas": 80, "active_lambdas": 24,
-                "conduit_ducts": 4, "conduit_used": 2,
-            })
+            d = api(
+                driver,
+                "POST",
+                "/network/api/fiber-inventory",
+                {
+                    "path_name": "DC-East to DC-West",
+                    "path_a": "DC-East",
+                    "path_z": "DC-West",
+                    "total_strands": 48,
+                    "lit_strands": 12,
+                    "total_lambdas": 80,
+                    "active_lambdas": 24,
+                    "conduit_ducts": 4,
+                    "conduit_used": 2,
+                },
+            )
             assert d.get("id")
             fibers = api(driver, "GET", "/network/api/fiber-inventory")
             assert len(fibers) >= 1
             assert int(fibers[0]["available_strands"]) == 36
-            results.ok("fiber_inventory",
-                        f"avail_strands={fibers[0]['available_strands']}, "
-                        f"avail_lambdas={fibers[0]['available_lambdas']}")
+            results.ok(
+                "fiber_inventory",
+                f"avail_strands={fibers[0]['available_strands']}, avail_lambdas={fibers[0]['available_lambdas']}",
+            )
         except Exception as e:
             results.fail("fiber_inventory", e)
 
         # ── 7. Carrier availability ───────────────────────────────────────
         try:
-            d = api(driver, "POST", "/network/api/carrier-availability", {
-                "carrier": "Lumen", "path_name": "DC-East to DC-West",
-                "service_type": "wavelength",
-                "available_bandwidth": "up to 100G",
-                "lead_time_days": 45, "monthly_cost_est": 8000,
-            })
+            d = api(
+                driver,
+                "POST",
+                "/network/api/carrier-availability",
+                {
+                    "carrier": "Lumen",
+                    "path_name": "DC-East to DC-West",
+                    "service_type": "wavelength",
+                    "available_bandwidth": "up to 100G",
+                    "lead_time_days": 45,
+                    "monthly_cost_est": 8000,
+                },
+            )
             assert d.get("id")
             results.ok("carrier_availability")
         except Exception as e:
@@ -242,15 +279,27 @@ def run_tests():
 
         # ── 9. Create facility ────────────────────────────────────────────
         try:
-            d = api(driver, "POST", "/network/api/facilities", {
-                "name": "DC-East-1", "facility_type": "colo",
-                "operator": "Equinix", "city": "Ashburn", "state": "VA",
-                "total_racks": 10, "used_racks": 7,
-                "total_power_kw": 50, "used_power_kw": 35,
-                "total_cooling_tons": 15, "used_cooling_tons": 10,
-                "ups_capacity_kva": 60, "ups_load_kva": 40,
-                "ups_runtime_min": 15,
-            })
+            d = api(
+                driver,
+                "POST",
+                "/network/api/facilities",
+                {
+                    "name": "DC-East-1",
+                    "facility_type": "colo",
+                    "operator": "Equinix",
+                    "city": "Ashburn",
+                    "state": "VA",
+                    "total_racks": 10,
+                    "used_racks": 7,
+                    "total_power_kw": 50,
+                    "used_power_kw": 35,
+                    "total_cooling_tons": 15,
+                    "used_cooling_tons": 10,
+                    "ups_capacity_kva": 60,
+                    "ups_load_kva": 40,
+                    "ups_runtime_min": 15,
+                },
+            )
             fac_id = d.get("id")
             assert fac_id
             results.ok("create_facility", f"id={fac_id}")
@@ -260,20 +309,25 @@ def run_tests():
         # ── 10. Create rack ───────────────────────────────────────────────
         if fac_id:
             try:
-                d = api(driver, "POST", "/network/api/racks", {
-                    "facility_id": fac_id,
-                    "rack_name": "Row-A Rack-1",
-                    "total_ru": 42, "used_ru": 28,
-                    "max_power_kw": 5.0, "current_power_kw": 3.2,
-                    "power_circuit_a": "PDU-A-01",
-                    "power_circuit_b": "PDU-B-01",
-                })
+                d = api(
+                    driver,
+                    "POST",
+                    "/network/api/racks",
+                    {
+                        "facility_id": fac_id,
+                        "rack_name": "Row-A Rack-1",
+                        "total_ru": 42,
+                        "used_ru": 28,
+                        "max_power_kw": 5.0,
+                        "current_power_kw": 3.2,
+                        "power_circuit_a": "PDU-A-01",
+                        "power_circuit_b": "PDU-B-01",
+                    },
+                )
                 assert d.get("id")
-                racks = api(driver, "GET",
-                            f"/network/api/racks?facility_id={fac_id}")
+                racks = api(driver, "GET", f"/network/api/racks?facility_id={fac_id}")
                 assert len(racks) >= 1
-                results.ok("create_rack",
-                            f"avail_ru={racks[0]['total_ru'] - racks[0]['used_ru']}")
+                results.ok("create_rack", f"avail_ru={racks[0]['total_ru'] - racks[0]['used_ru']}")
             except Exception as e:
                 results.fail("create_rack", e)
 
@@ -290,22 +344,20 @@ def run_tests():
         # ── 12. Readiness checker ─────────────────────────────────────────
         if pid:
             try:
-                d = api(driver, "GET",
-                        f"/network/api/readiness-check/{pid}")
+                d = api(driver, "GET", f"/network/api/readiness-check/{pid}")
                 assert "checks" in d
                 assert "readiness_pct" in d
                 assert d.get("total") >= 1
-                results.ok("readiness_checker",
-                            f"ready={d.get('ready')}, "
-                            f"pct={d.get('readiness_pct')}%, "
-                            f"checks={d.get('total')}")
+                results.ok(
+                    "readiness_checker",
+                    f"ready={d.get('ready')}, pct={d.get('readiness_pct')}%, checks={d.get('total')}",
+                )
             except Exception as e:
                 results.fail("readiness_checker", e)
 
         # ── 13. Clear All ─────────────────────────────────────────────────
         try:
-            d = api(driver, "DELETE",
-                    "/network/api/topologies/clear-all")
+            d = api(driver, "DELETE", "/network/api/topologies/clear-all")
             assert d.get("cleared") == "topologies"
             results.ok("clear_all_regression")
         except Exception as e:
@@ -313,12 +365,18 @@ def run_tests():
 
         # Restore + cleanup
         try:
-            api(driver, "POST", "/network/api/topologies", {
-                "name": "Restored",
-                "graph_json": {"nodes": [
-                    {"id": "r1", "label": "R1", "type": "router",
-                     "x": 100, "y": 100}
-                ], "edges": []}})
+            api(
+                driver,
+                "POST",
+                "/network/api/topologies",
+                {
+                    "name": "Restored",
+                    "graph_json": {
+                        "nodes": [{"id": "r1", "label": "R1", "type": "router", "x": 100, "y": 100}],
+                        "edges": [],
+                    },
+                },
+            )
         except Exception:
             pass
         if pid:
@@ -345,8 +403,7 @@ if __name__ == "__main__":
     r = run_tests()
     summary = r.summary()
     print()
-    print(f"Results: {summary['passed']}/{summary['total']} passed "
-          f"({summary['pass_rate']})")
+    print(f"Results: {summary['passed']}/{summary['total']} passed ({summary['pass_rate']})")
     if summary["failures"]:
         print("Failures:")
         for f in summary["failures"]:

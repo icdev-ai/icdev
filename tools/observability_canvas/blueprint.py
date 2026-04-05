@@ -21,8 +21,12 @@ from functools import wraps
 from pathlib import Path
 
 from flask import (
-    Blueprint, jsonify, redirect, render_template,
-    request, session,
+    Blueprint,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    session,
 )
 
 logger = logging.getLogger("icdev.observability_canvas")
@@ -35,6 +39,7 @@ _CONFIG_PATH = _ICDEV_ROOT / "args" / "observability_canvas_config.yaml"
 
 try:
     import yaml as _yaml
+
     _HAS_YAML = True
 except ImportError:
     _HAS_YAML = False
@@ -76,6 +81,7 @@ def create_observability_blueprint():
     # Initialize DB
     try:
         from tools.observability_canvas.db.init_db import init_db
+
         init_db()
     except Exception as exc:
         logger.warning("Observability Canvas DB init failed: %s", exc)
@@ -91,12 +97,15 @@ def create_observability_blueprint():
         @wraps(f)
         def decorated(*args, **kwargs):
             if not session.get("user_id"):
-                if (request.is_json
-                        or request.path.startswith("/observability/api/")
-                        or request.method in ("DELETE", "POST", "PUT")):
+                if (
+                    request.is_json
+                    or request.path.startswith("/observability/api/")
+                    or request.method in ("DELETE", "POST", "PUT")
+                ):
                     return jsonify({"error": "Authentication required"}), 401
                 return redirect("/login")
             return f(*args, **kwargs)
+
         return decorated
 
     # ── DB helpers ─────────────────────────────────────────────────────────
@@ -114,8 +123,7 @@ def create_observability_blueprint():
         try:
             with get_connection() as conn:
                 conn.execute(
-                    "INSERT INTO od_audit (design_id, user, action, detail, created_at) "
-                    "VALUES (?,?,?,?,?)",
+                    "INSERT INTO od_audit (design_id, user, action, detail, created_at) VALUES (?,?,?,?,?)",
                     (design_id, user_id, action, details, _now()),
                 )
         except Exception:
@@ -133,22 +141,30 @@ def create_observability_blueprint():
     def oc_index():
         """Observability Design Canvas dashboard — list designs + recent assessments."""
         with get_connection() as conn:
-            designs = [_row_to_dict(r) for r in conn.execute(
-                "SELECT id, name, description, classification, "
-                "created_at, updated_at "
-                "FROM observability_designs ORDER BY updated_at DESC"
-            ).fetchall()]
-            recent_assessments = [_row_to_dict(r) for r in conn.execute(
-                "SELECT a.id, a.design_id, a.assessment_type, a.score, "
-                "a.grade, a.created_at, d.name AS design_name "
-                "FROM od_assessments a "
-                "JOIN observability_designs d ON a.design_id = d.id "
-                "ORDER BY a.created_at DESC LIMIT 10"
-            ).fetchall()]
-            templates = [_row_to_dict(r) for r in conn.execute(
-                "SELECT id, name, category, description, tags "
-                "FROM od_templates ORDER BY category, name"
-            ).fetchall()]
+            designs = [
+                _row_to_dict(r)
+                for r in conn.execute(
+                    "SELECT id, name, description, classification, "
+                    "created_at, updated_at "
+                    "FROM observability_designs ORDER BY updated_at DESC"
+                ).fetchall()
+            ]
+            recent_assessments = [
+                _row_to_dict(r)
+                for r in conn.execute(
+                    "SELECT a.id, a.design_id, a.assessment_type, a.score, "
+                    "a.grade, a.created_at, d.name AS design_name "
+                    "FROM od_assessments a "
+                    "JOIN observability_designs d ON a.design_id = d.id "
+                    "ORDER BY a.created_at DESC LIMIT 10"
+                ).fetchall()
+            ]
+            templates = [
+                _row_to_dict(r)
+                for r in conn.execute(
+                    "SELECT id, name, category, description, tags FROM od_templates ORDER BY category, name"
+                ).fetchall()
+            ]
         return render_template(
             "observability_canvas/index.html",
             designs=designs,
@@ -188,9 +204,7 @@ def create_observability_blueprint():
     def oc_canvas(design_id):
         """Canvas editor for a specific observability design."""
         with get_connection() as conn:
-            row = conn.execute(
-                "SELECT * FROM observability_designs WHERE id=?", (design_id,)
-            ).fetchone()
+            row = conn.execute("SELECT * FROM observability_designs WHERE id=?", (design_id,)).fetchone()
         if not row:
             return redirect("/observability/")
         design = _row_to_dict(row)
@@ -208,10 +222,12 @@ def create_observability_blueprint():
     def oc_templates():
         """Template gallery page."""
         with get_connection() as conn:
-            templates = [_row_to_dict(r) for r in conn.execute(
-                "SELECT id, name, category, description, tags "
-                "FROM od_templates ORDER BY category, name"
-            ).fetchall()]
+            templates = [
+                _row_to_dict(r)
+                for r in conn.execute(
+                    "SELECT id, name, category, description, tags FROM od_templates ORDER BY category, name"
+                ).fetchall()
+            ]
         return render_template("observability_canvas/templates.html", templates=templates)
 
     @bp.route("/assessments")
@@ -237,9 +253,9 @@ def create_observability_blueprint():
     def oc_coverage_page(design_id):
         """Detection coverage page for a specific observability design."""
         with get_connection() as conn:
-            design = _row_to_dict(conn.execute(
-                "SELECT id, name FROM observability_designs WHERE id=?", (design_id,)
-            ).fetchone())
+            design = _row_to_dict(
+                conn.execute("SELECT id, name FROM observability_designs WHERE id=?", (design_id,)).fetchone()
+            )
         if not design:
             return redirect("/observability/")
         return render_template("observability_canvas/coverage.html", design=design)
@@ -249,9 +265,9 @@ def create_observability_blueprint():
     def oc_remediation_page(design_id):
         """Remediation page — gap analysis with recommended fixes."""
         with get_connection() as conn:
-            design = _row_to_dict(conn.execute(
-                "SELECT id, name FROM observability_designs WHERE id=?", (design_id,)
-            ).fetchone())
+            design = _row_to_dict(
+                conn.execute("SELECT id, name FROM observability_designs WHERE id=?", (design_id,)).fetchone()
+            )
         if not design:
             return redirect("/observability/")
         return render_template("observability_canvas/remediation.html", design=design)
@@ -280,9 +296,7 @@ def create_observability_blueprint():
         if template_id and graph_json == '{"nodes":[],"edges":[]}':
             try:
                 with get_connection() as conn:
-                    tpl = conn.execute(
-                        "SELECT graph_json FROM od_templates WHERE id=?", (template_id,)
-                    ).fetchone()
+                    tpl = conn.execute("SELECT graph_json FROM od_templates WHERE id=?", (template_id,)).fetchone()
                     if tpl:
                         graph_json = tpl["graph_json"]
             except Exception:
@@ -295,9 +309,16 @@ def create_observability_blueprint():
                 "INSERT INTO observability_designs "
                 "(id, name, description, graph_json, template_id, classification, "
                 "created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)",
-                (design_id, name, data.get("description", ""),
-                 graph_json, template_id,
-                 data.get("classification", "CUI"), _now(), _now()),
+                (
+                    design_id,
+                    name,
+                    data.get("description", ""),
+                    graph_json,
+                    template_id,
+                    data.get("classification", "CUI"),
+                    _now(),
+                    _now(),
+                ),
             )
             conn.commit()
         finally:
@@ -325,9 +346,7 @@ def create_observability_blueprint():
         """Get a specific observability design."""
         conn = get_connection()
         try:
-            row = conn.execute(
-                "SELECT * FROM observability_designs WHERE id=?", (design_id,)
-            ).fetchone()
+            row = conn.execute("SELECT * FROM observability_designs WHERE id=?", (design_id,)).fetchone()
         finally:
             conn.close()
         if not row:
@@ -347,9 +366,14 @@ def create_observability_blueprint():
             conn.execute(
                 "UPDATE observability_designs SET name=?, description=?, "
                 "graph_json=?, classification=?, updated_at=? WHERE id=?",
-                (data.get("name", ""), data.get("description", ""),
-                 data.get("graph_json", "{}"),
-                 data.get("classification", "CUI"), _now(), design_id),
+                (
+                    data.get("name", ""),
+                    data.get("description", ""),
+                    data.get("graph_json", "{}"),
+                    data.get("classification", "CUI"),
+                    _now(),
+                    design_id,
+                ),
             )
             conn.commit()
         finally:
@@ -359,6 +383,7 @@ def create_observability_blueprint():
         # Cross-canvas trigger: verify SIEM/logging controls match SDC requirements
         try:
             from tools.security_canvas.agent import on_odc_design_saved
+
             on_odc_design_saved(design_id)
         except Exception:
             pass
@@ -366,6 +391,7 @@ def create_observability_blueprint():
         # Incremental KG update: re-extract only if graph_json changed
         try:
             from tools.canvas.kg_builder import rebuild_canvas_kg
+
             rebuild_canvas_kg("odc", design_id)
         except Exception:
             pass
@@ -398,9 +424,7 @@ def create_observability_blueprint():
         """Run observability compliance assessment on a design."""
         conn = get_connection()
         try:
-            row = conn.execute(
-                "SELECT graph_json FROM observability_designs WHERE id=?", (design_id,)
-            ).fetchone()
+            row = conn.execute("SELECT graph_json FROM observability_designs WHERE id=?", (design_id,)).fetchone()
         finally:
             conn.close()
         if not row:
@@ -426,9 +450,15 @@ def create_observability_blueprint():
                 "INSERT INTO od_assessments "
                 "(id, design_id, assessment_type, findings_json, score, grade, created_at) "
                 "VALUES (?,?,?,?,?,?,?)",
-                (assessment_id, design_id, assessment["assessment_type"],
-                 json.dumps(assessment["findings"]),
-                 assessment["score"], assessment["grade"], _now()),
+                (
+                    assessment_id,
+                    design_id,
+                    assessment["assessment_type"],
+                    json.dumps(assessment["findings"]),
+                    assessment["score"],
+                    assessment["grade"],
+                    _now(),
+                ),
             )
             conn.commit()
         finally:
@@ -436,12 +466,14 @@ def create_observability_blueprint():
 
         _audit("ASSESS", design_id, f"Score: {assessment['score']}, Grade: {assessment['grade']}")
 
-        return jsonify({
-            "assessment": assessment,
-            "coverage": coverage,
-            "mitre_detection": mitre,
-            "gaps": gaps,
-        })
+        return jsonify(
+            {
+                "assessment": assessment,
+                "coverage": coverage,
+                "mitre_detection": mitre,
+                "gaps": gaps,
+            }
+        )
 
     # ====================================================================
     # API — AUTO-FIX
@@ -456,11 +488,10 @@ def create_observability_blueprint():
         graph, re-assesses, returns {fixes_applied, old_score, new_score}.
         """
         from tools.canvas.auto_remediate import auto_remediate_odc
+
         conn = get_connection()
         try:
-            row = conn.execute(
-                "SELECT graph_json FROM observability_designs WHERE id=?", (design_id,)
-            ).fetchone()
+            row = conn.execute("SELECT graph_json FROM observability_designs WHERE id=?", (design_id,)).fetchone()
         finally:
             conn.close()
         if not row:
@@ -494,19 +525,19 @@ def create_observability_blueprint():
         new_assessment = assess_observability_design(graph_data)
         new_score = new_assessment["score"]
 
-        _audit("AUTO_FIX", design_id,
-               f"Fixes: {fix_result['fixes_applied']}, "
-               f"Score: {old_score} -> {new_score}")
+        _audit("AUTO_FIX", design_id, f"Fixes: {fix_result['fixes_applied']}, Score: {old_score} -> {new_score}")
 
-        return jsonify({
-            "status": "ok",
-            "design_id": design_id,
-            "fixes_applied": fix_result["fixes_applied"],
-            "old_score": old_score,
-            "new_score": new_score,
-            "nodes_added": fix_result["nodes_added"],
-            "edges_added": fix_result["edges_added"],
-        })
+        return jsonify(
+            {
+                "status": "ok",
+                "design_id": design_id,
+                "fixes_applied": fix_result["fixes_applied"],
+                "old_score": old_score,
+                "new_score": new_score,
+                "nodes_added": fix_result["nodes_added"],
+                "edges_added": fix_result["edges_added"],
+            }
+        )
 
     # ====================================================================
     # API — TEMPLATES
@@ -519,8 +550,7 @@ def create_observability_blueprint():
         conn = get_connection()
         try:
             rows = conn.execute(
-                "SELECT id, name, category, description, tags "
-                "FROM od_templates ORDER BY category, name"
+                "SELECT id, name, category, description, tags FROM od_templates ORDER BY category, name"
             ).fetchall()
         finally:
             conn.close()
@@ -533,8 +563,7 @@ def create_observability_blueprint():
         conn = get_connection()
         try:
             rows = conn.execute(
-                "SELECT id, name, category, description, graph_json, tags "
-                "FROM od_snippets ORDER BY category, name"
+                "SELECT id, name, category, description, graph_json, tags FROM od_snippets ORDER BY category, name"
             ).fetchall()
         finally:
             conn.close()
@@ -546,9 +575,7 @@ def create_observability_blueprint():
         """Get a specific template with full graph_json."""
         conn = get_connection()
         try:
-            row = conn.execute(
-                "SELECT * FROM od_templates WHERE id=?", (template_id,)
-            ).fetchone()
+            row = conn.execute("SELECT * FROM od_templates WHERE id=?", (template_id,)).fetchone()
         finally:
             conn.close()
         if not row:
@@ -599,7 +626,8 @@ def create_observability_blueprint():
         data = request.get_json(force=True, silent=True) or {}
         with get_connection() as conn:
             row = conn.execute(
-                "SELECT graph_json FROM observability_designs WHERE id=?", (design_id,),
+                "SELECT graph_json FROM observability_designs WHERE id=?",
+                (design_id,),
             ).fetchone()
             if not row:
                 return jsonify({"error": "Design not found"}), 404
@@ -629,12 +657,20 @@ def create_observability_blueprint():
             conn.execute(
                 "INSERT INTO od_versions (id, design_id, version_number, graph_json, change_summary, user_id, created_at) "
                 "VALUES (?,?,?,?,?,?,?)",
-                (ver_id, design_id, ver_num,
-                 json.dumps(current_graph) if isinstance(current_graph, dict) else str(raw),
-                 change_summary, session.get("user_id", ""), now),
+                (
+                    ver_id,
+                    design_id,
+                    ver_num,
+                    json.dumps(current_graph) if isinstance(current_graph, dict) else str(raw),
+                    change_summary,
+                    session.get("user_id", ""),
+                    now,
+                ),
             )
         _audit("VERSION_CREATE", design_id, f"v{ver_num}")
-        return jsonify({"id": ver_id, "version_number": ver_num, "change_summary": change_summary, "created_at": now}), 201
+        return jsonify(
+            {"id": ver_id, "version_number": ver_num, "change_summary": change_summary, "created_at": now}
+        ), 201
 
     @bp.route("/api/versions/<design_id>/restore/<version_id>", methods=["POST"])
     @oc_login_required
@@ -653,8 +689,7 @@ def create_observability_blueprint():
                 (ver[0], now, design_id),
             )
         _audit("VERSION_RESTORE", design_id, f"restored to v{ver[1]}")
-        return jsonify({"id": design_id, "restored_version": version_id,
-                        "version_number": ver[1], "updated_at": now})
+        return jsonify({"id": design_id, "restored_version": version_id, "version_number": ver[1], "updated_at": now})
 
     @bp.route("/api/versions/<design_id>/diff", methods=["POST"])
     @oc_login_required
@@ -682,11 +717,13 @@ def create_observability_blueprint():
         except Exception:
             return jsonify({"error": "Failed to parse graph data"}), 500
         summary = _odc_diff_graph(graph_a, graph_b)
-        return jsonify({
-            "version_a": {"id": ver_a_id, "version_number": ver_a[1]},
-            "version_b": {"id": ver_b_id, "version_number": ver_b[1]},
-            "summary": summary,
-        })
+        return jsonify(
+            {
+                "version_a": {"id": ver_a_id, "version_number": ver_a[1]},
+                "version_b": {"id": ver_b_id, "version_number": ver_b[1]},
+                "summary": summary,
+            }
+        )
 
     # ====================================================================
     # API — OBJECTS PALETTE
@@ -707,6 +744,7 @@ def create_observability_blueprint():
     def oc_api_export_vsdx(design_id):
         """Export observability design as Visio .vsdx file."""
         import base64
+
         with get_connection() as conn:
             row = conn.execute(
                 "SELECT name, graph_json FROM observability_designs WHERE id=?",
@@ -718,18 +756,19 @@ def create_observability_blueprint():
         gj = d["graph_json"]
         graph_data = json.loads(gj) if isinstance(gj, str) else gj
         from tools.network.visio_export import export_vsdx
+
         vsdx_bytes = export_vsdx(d["name"], graph_data)
-        return jsonify({
-            "format": "vsdx",
-            "filename": d["name"].replace(" ", "_"),
-            "data": base64.b64encode(vsdx_bytes).decode("ascii"),
-        })
+        return jsonify(
+            {
+                "format": "vsdx",
+                "filename": d["name"].replace(" ", "_"),
+                "data": base64.b64encode(vsdx_bytes).decode("ascii"),
+            }
+        )
 
     def _odc_fetch(design_id):
         with get_connection() as conn:
-            row = conn.execute(
-                "SELECT name, graph_json FROM observability_designs WHERE id=?", (design_id,)
-            ).fetchone()
+            row = conn.execute("SELECT name, graph_json FROM observability_designs WHERE id=?", (design_id,)).fetchone()
         if not row:
             return None, None
         d = _row_to_dict(row)
@@ -742,10 +781,12 @@ def create_observability_blueprint():
     def oc_api_export_json(design_id):
         """Export observability design as JSON."""
         import base64
+
         name, graph = _odc_fetch(design_id)
         if name is None:
             return jsonify({"error": "Not found"}), 404
         from tools.canvas.export_utils import export_json
+
         data = base64.b64encode(export_json(name, graph, "ODC")).decode("ascii")
         return jsonify({"format": "json", "filename": f"{name.replace(' ', '_')}.json", "data": data})
 
@@ -754,10 +795,12 @@ def create_observability_blueprint():
     def oc_api_export_markdown(design_id):
         """Export observability design as Markdown."""
         import base64
+
         name, graph = _odc_fetch(design_id)
         if name is None:
             return jsonify({"error": "Not found"}), 404
         from tools.canvas.export_utils import export_markdown
+
         data = base64.b64encode(export_markdown(name, graph, "ODC")).decode("ascii")
         return jsonify({"format": "markdown", "filename": f"{name.replace(' ', '_')}.md", "data": data})
 
@@ -766,10 +809,12 @@ def create_observability_blueprint():
     def oc_api_export_csv(design_id):
         """Export observability design node inventory as CSV."""
         import base64
+
         name, graph = _odc_fetch(design_id)
         if name is None:
             return jsonify({"error": "Not found"}), 404
         from tools.canvas.export_utils import export_csv
+
         data = base64.b64encode(export_csv(name, graph, "ODC")).decode("ascii")
         return jsonify({"format": "csv", "filename": f"{name.replace(' ', '_')}.csv", "data": data})
 
@@ -778,10 +823,12 @@ def create_observability_blueprint():
     def oc_api_export_drawio(design_id):
         """Export observability design as DrawIO XML."""
         import base64
+
         name, graph = _odc_fetch(design_id)
         if name is None:
             return jsonify({"error": "Not found"}), 404
         from tools.canvas.export_utils import export_drawio
+
         data = base64.b64encode(export_drawio(name, graph, "ODC")).decode("ascii")
         return jsonify({"format": "drawio", "filename": f"{name.replace(' ', '_')}.drawio", "data": data})
 
@@ -790,16 +837,19 @@ def create_observability_blueprint():
     def oc_api_export_svg(design_id):
         """Export observability design as SVG vector graphic."""
         import base64
+
         name, graph = _odc_fetch(design_id)
         if name is None:
             return jsonify({"error": "Not found"}), 404
         from tools.canvas.export_utils import export_svg
+
         data = base64.b64encode(export_svg(name, graph, "ODC")).decode("ascii")
         return jsonify({"format": "svg", "filename": f"{name.replace(' ', '_')}.svg", "data": data})
 
     # ── Collaboration (Task 18) ───────────────────────────────────────────────
     import uuid as _uuid_mod
     from tools.canvas.collaboration import CanvasCollabManager as _ODCCollabMgr
+
     _odc_collab = _ODCCollabMgr("od")
 
     @bp.route("/api/collab/<design_id>/join", methods=["POST"])
@@ -893,6 +943,7 @@ def create_observability_blueprint():
         # Override volume estimate retention_days if specified
         if retention_days != 90:
             from tools.observability_canvas.sigma_generator import estimate_log_volume
+
             result["volume_estimate"] = estimate_log_volume(graph.get("nodes", []), retention_days)
 
         _audit("export_sigma", design_id, f"rules={result['rule_count']} format={fmt}")
@@ -911,22 +962,26 @@ def create_observability_blueprint():
             encoded = base64.b64encode(content.encode("utf-8")).decode("ascii")
             ext_map = {"sigma_yaml": "yml", "splunk_spl": "spl", "elastic_kql": "kql", "sentinel_kql": "kql"}
             filename = f"{row_d['name'].replace(' ', '_')}_sigma.{ext_map.get(key, 'txt')}"
-            return jsonify({
+            return jsonify(
+                {
+                    "rule_count": result["rule_count"],
+                    "format": fmt,
+                    "filename": filename,
+                    "data": encoded,
+                    "volume_estimate": result["volume_estimate"],
+                    "generated_at": result["generated_at"],
+                }
+            )
+
+        return jsonify(
+            {
                 "rule_count": result["rule_count"],
-                "format": fmt,
-                "filename": filename,
-                "data": encoded,
+                "rules": result["rules"],
+                "exports": exports,
                 "volume_estimate": result["volume_estimate"],
                 "generated_at": result["generated_at"],
-            })
-
-        return jsonify({
-            "rule_count": result["rule_count"],
-            "rules": result["rules"],
-            "exports": exports,
-            "volume_estimate": result["volume_estimate"],
-            "generated_at": result["generated_at"],
-        })
+            }
+        )
 
     @bp.route("/api/designs/<design_id>/volume-estimate", methods=["GET"])
     @oc_login_required

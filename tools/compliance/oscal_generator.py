@@ -81,14 +81,10 @@ CONTROL_FAMILIES = {
 }
 
 # UUID pattern for validation
-UUID_PATTERN = re.compile(
-    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
-)
+UUID_PATTERN = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 
 # ISO 8601 timestamp pattern for validation
-ISO_TIMESTAMP_PATTERN = re.compile(
-    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$"
-)
+ISO_TIMESTAMP_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$")
 
 # OSCAL control-id pattern (lowercase, hyphenated)
 CONTROL_ID_PATTERN = re.compile(r"^[a-z]{2}-\d+(\.\d+)?$")
@@ -97,6 +93,7 @@ CONTROL_ID_PATTERN = re.compile(r"^[a-z]{2}-\d+(\.\d+)?$")
 # ---------------------------------------------------------------------------
 # Helper functions
 # ---------------------------------------------------------------------------
+
 
 def _generate_uuid():
     """Generate a UUID4 string for OSCAL identifiers."""
@@ -141,23 +138,19 @@ def _compute_file_hash(file_path):
 # Database helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_connection(db_path=None):
     """Get a database connection with Row factory."""
     path = db_path or DB_PATH
     if not path.exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\n"
-            "Run: python tools/db/init_icdev_db.py"
-        )
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
     conn = get_connection(db_path=str(path))
     return conn
 
 
 def _get_project(conn, project_id):
     """Load project record from the projects table."""
-    row = conn.execute(
-        "SELECT * FROM projects WHERE id = ?", (project_id,)
-    ).fetchone()
+    row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
     if not row:
         raise ValueError(f"Project '{project_id}' not found in database.")
     return dict(row)
@@ -293,8 +286,7 @@ def _get_sbom_records(conn, project_id):
     return [dict(r) for r in rows]
 
 
-def _store_oscal_artifact(conn, project_id, artifact_type, file_path,
-                          file_hash, schema_valid, validation_errors=None):
+def _store_oscal_artifact(conn, project_id, artifact_type, file_path, file_hash, schema_valid, validation_errors=None):
     """Insert or update an OSCAL artifact record in the oscal_artifacts table.
 
     Uses INSERT OR REPLACE on UNIQUE(project_id, artifact_type, format).
@@ -322,8 +314,7 @@ def _store_oscal_artifact(conn, project_id, artifact_type, file_path,
         )
         conn.commit()
     except Exception as e:
-        print(f"Warning: Could not store OSCAL artifact record: {e}",
-              file=sys.stderr)
+        print(f"Warning: Could not store OSCAL artifact record: {e}", file=sys.stderr)
 
 
 def _log_audit(conn, project_id, action, details):
@@ -542,10 +533,7 @@ def _build_system_implementation(project, controls):
             "uuid": _generate_uuid(),
             "role-ids": ["isso"],
             "title": "ISSO",
-            "description": (
-                "Ensures system security controls are implemented "
-                "and operating effectively."
-            ),
+            "description": ("Ensures system security controls are implemented and operating effectively."),
         },
     ]
 
@@ -565,46 +553,53 @@ def _build_system_implementation(project, controls):
     # Add tech stack components if available
     backend = project.get("tech_stack_backend")
     if backend:
-        components.append({
-            "uuid": _generate_uuid(),
-            "type": "software",
-            "title": f"Backend: {backend}",
-            "description": f"Backend technology stack: {backend}",
-            "status": {"state": "operational"},
-        })
+        components.append(
+            {
+                "uuid": _generate_uuid(),
+                "type": "software",
+                "title": f"Backend: {backend}",
+                "description": f"Backend technology stack: {backend}",
+                "status": {"state": "operational"},
+            }
+        )
 
     frontend = project.get("tech_stack_frontend")
     if frontend:
-        components.append({
-            "uuid": _generate_uuid(),
-            "type": "software",
-            "title": f"Frontend: {frontend}",
-            "description": f"Frontend technology stack: {frontend}",
-            "status": {"state": "operational"},
-        })
+        components.append(
+            {
+                "uuid": _generate_uuid(),
+                "type": "software",
+                "title": f"Frontend: {frontend}",
+                "description": f"Frontend technology stack: {frontend}",
+                "status": {"state": "operational"},
+            }
+        )
 
     database = project.get("tech_stack_database")
     if database:
-        components.append({
-            "uuid": _generate_uuid(),
-            "type": "software",
-            "title": f"Database: {database}",
-            "description": f"Database technology: {database}",
-            "status": {"state": "operational"},
-        })
+        components.append(
+            {
+                "uuid": _generate_uuid(),
+                "type": "software",
+                "title": f"Database: {database}",
+                "description": f"Database technology: {database}",
+                "status": {"state": "operational"},
+            }
+        )
 
     # Cloud infrastructure component
     cloud_env = project.get("cloud_environment", "aws-govcloud")
-    components.append({
-        "uuid": _generate_uuid(),
-        "type": "leveraged-system",
-        "title": f"Cloud Infrastructure: {cloud_env}",
-        "description": (
-            f"Cloud infrastructure provided by {cloud_env}. "
-            f"FedRAMP authorized cloud service provider."
-        ),
-        "status": {"state": "operational"},
-    })
+    components.append(
+        {
+            "uuid": _generate_uuid(),
+            "type": "leveraged-system",
+            "title": f"Cloud Infrastructure: {cloud_env}",
+            "description": (
+                f"Cloud infrastructure provided by {cloud_env}. FedRAMP authorized cloud service provider."
+            ),
+            "status": {"state": "operational"},
+        }
+    )
 
     return {
         "users": users,
@@ -626,8 +621,7 @@ def _build_control_implementation(controls, system_component_uuid=None):
 
         # Build statement description from implementation details
         description = ctrl.get("implementation_description") or (
-            f"Control {oscal_cid} implementation is "
-            f"{ctrl.get('implementation_status', 'planned')}."
+            f"Control {oscal_cid} implementation is {ctrl.get('implementation_status', 'planned')}."
         )
 
         req = {
@@ -651,21 +645,20 @@ def _build_control_implementation(controls, system_component_uuid=None):
             },
         ]
         if ctrl.get("responsible_role"):
-            props.append({
-                "name": "responsible-role",
-                "ns": OSCAL_NS,
-                "value": ctrl["responsible_role"],
-            })
+            props.append(
+                {
+                    "name": "responsible-role",
+                    "ns": OSCAL_NS,
+                    "value": ctrl["responsible_role"],
+                }
+            )
         req["props"] = props
 
         # Add responsible-roles if available
         if ctrl.get("responsible_role"):
             req["responsible-roles"] = [
                 {
-                    "role-id": ctrl["responsible_role"]
-                    .lower()
-                    .replace(" ", "-")
-                    .replace("_", "-"),
+                    "role-id": ctrl["responsible_role"].lower().replace(" ", "-").replace("_", "-"),
                 }
             ]
 
@@ -684,6 +677,7 @@ def _build_control_implementation(controls, system_component_uuid=None):
 # ---------------------------------------------------------------------------
 # Core generation functions
 # ---------------------------------------------------------------------------
+
 
 def generate_oscal_ssp(project_id, output_dir=None, db_path=None):
     """Generate an OSCAL SSP JSON artifact.
@@ -711,11 +705,7 @@ def generate_oscal_ssp(project_id, output_dir=None, db_path=None):
 
         # Build system-implementation first to get component UUIDs
         sys_impl = _build_system_implementation(project, controls)
-        primary_component_uuid = (
-            sys_impl["components"][0]["uuid"]
-            if sys_impl["components"]
-            else None
-        )
+        primary_component_uuid = sys_impl["components"][0]["uuid"] if sys_impl["components"] else None
 
         ssp = {
             "system-security-plan": {
@@ -726,17 +716,13 @@ def generate_oscal_ssp(project_id, output_dir=None, db_path=None):
                 },
                 "system-characteristics": _build_system_characteristics(project),
                 "system-implementation": sys_impl,
-                "control-implementation": _build_control_implementation(
-                    controls, primary_component_uuid
-                ),
+                "control-implementation": _build_control_implementation(controls, primary_component_uuid),
                 "back-matter": {
                     "resources": [
                         {
                             "uuid": _generate_uuid(),
                             "title": "FedRAMP Profile",
-                            "description": (
-                                f"FedRAMP {baseline.capitalize()} baseline profile."
-                            ),
+                            "description": (f"FedRAMP {baseline.capitalize()} baseline profile."),
                             "rlinks": [
                                 {"href": profile_href},
                             ],
@@ -744,10 +730,7 @@ def generate_oscal_ssp(project_id, output_dir=None, db_path=None):
                         {
                             "uuid": _generate_uuid(),
                             "title": "NIST SP 800-53 Rev 5",
-                            "description": (
-                                "Security and Privacy Controls for Information "
-                                "Systems and Organizations."
-                            ),
+                            "description": ("Security and Privacy Controls for Information Systems and Organizations."),
                             "rlinks": [
                                 {
                                     "href": "https://doi.org/10.6028/NIST.SP.800-53r5",
@@ -773,22 +756,24 @@ def generate_oscal_ssp(project_id, output_dir=None, db_path=None):
         schema_valid = validation["valid"]
 
         # Store artifact record
-        _store_oscal_artifact(
-            conn, project_id, "ssp", str(out_file),
-            file_hash, schema_valid, validation.get("errors")
-        )
+        _store_oscal_artifact(conn, project_id, "ssp", str(out_file), file_hash, schema_valid, validation.get("errors"))
 
         # Audit
-        _log_audit(conn, project_id, "OSCAL SSP generated", {
-            "artifact_type": "ssp",
-            "oscal_version": OSCAL_VERSION,
-            "uuid": ssp_uuid,
-            "controls_count": len(controls),
-            "baseline": baseline,
-            "file_hash": file_hash,
-            "schema_valid": schema_valid,
-            "affected_files": [str(out_file)],
-        })
+        _log_audit(
+            conn,
+            project_id,
+            "OSCAL SSP generated",
+            {
+                "artifact_type": "ssp",
+                "oscal_version": OSCAL_VERSION,
+                "uuid": ssp_uuid,
+                "controls_count": len(controls),
+                "baseline": baseline,
+                "file_hash": file_hash,
+                "schema_valid": schema_valid,
+                "affected_files": [str(out_file)],
+            },
+        )
 
         print("OSCAL SSP generated:")
         print(f"  File: {out_file}")
@@ -943,31 +928,39 @@ def generate_oscal_poam(project_id, output_dir=None, db_path=None):
                 },
             ]
             if item.get("status"):
-                props.append({
-                    "name": "status",
-                    "ns": OSCAL_NS,
-                    "value": item["status"],
-                })
+                props.append(
+                    {
+                        "name": "status",
+                        "ns": OSCAL_NS,
+                        "value": item["status"],
+                    }
+                )
             if item.get("milestone_date"):
-                props.append({
-                    "name": "milestone-date",
-                    "ns": OSCAL_NS,
-                    "value": item["milestone_date"],
-                })
+                props.append(
+                    {
+                        "name": "milestone-date",
+                        "ns": OSCAL_NS,
+                        "value": item["milestone_date"],
+                    }
+                )
             if item.get("responsible_party"):
-                props.append({
-                    "name": "responsible-party",
-                    "ns": OSCAL_NS,
-                    "value": item["responsible_party"],
-                })
+                props.append(
+                    {
+                        "name": "responsible-party",
+                        "ns": OSCAL_NS,
+                        "value": item["responsible_party"],
+                    }
+                )
             if item.get("control_id"):
                 oscal_cid = _control_id_to_oscal(item["control_id"])
                 if oscal_cid:
-                    props.append({
-                        "name": "related-control",
-                        "ns": OSCAL_NS,
-                        "value": oscal_cid,
-                    })
+                    props.append(
+                        {
+                            "name": "related-control",
+                            "ns": OSCAL_NS,
+                            "value": oscal_cid,
+                        }
+                    )
             poam_entry["props"] = props
 
             oscal_poam_items.append(poam_entry)
@@ -976,9 +969,7 @@ def generate_oscal_poam(project_id, output_dir=None, db_path=None):
         poam_doc = {
             "plan-of-action-and-milestones": {
                 "uuid": poam_uuid,
-                "metadata": _build_metadata(
-                    project, "Plan of Action and Milestones"
-                ),
+                "metadata": _build_metadata(project, "Plan of Action and Milestones"),
                 "import-ssp": {
                     "href": "./ssp.oscal.json",
                 },
@@ -1006,20 +997,24 @@ def generate_oscal_poam(project_id, output_dir=None, db_path=None):
 
         # Store record
         _store_oscal_artifact(
-            conn, project_id, "poam", str(out_file),
-            file_hash, schema_valid, validation.get("errors")
+            conn, project_id, "poam", str(out_file), file_hash, schema_valid, validation.get("errors")
         )
 
         # Audit
-        _log_audit(conn, project_id, "OSCAL POA&M generated", {
-            "artifact_type": "poam",
-            "oscal_version": OSCAL_VERSION,
-            "uuid": poam_uuid,
-            "items_count": len(poam_items),
-            "file_hash": file_hash,
-            "schema_valid": schema_valid,
-            "affected_files": [str(out_file)],
-        })
+        _log_audit(
+            conn,
+            project_id,
+            "OSCAL POA&M generated",
+            {
+                "artifact_type": "poam",
+                "oscal_version": OSCAL_VERSION,
+                "uuid": poam_uuid,
+                "items_count": len(poam_items),
+                "file_hash": file_hash,
+                "schema_valid": schema_valid,
+                "affected_files": [str(out_file)],
+            },
+        )
 
         print("OSCAL POA&M generated:")
         print(f"  File: {out_file}")
@@ -1088,32 +1083,33 @@ def generate_oscal_assessment_results(project_id, output_dir=None, db_path=None)
             oscal_cid = _control_id_to_oscal(item.get("control_id", ""))
             status = _assessment_status_to_oscal(item.get("status", "not_assessed"))
 
-            observations.append({
-                "uuid": obs_uuid,
-                "title": f"FedRAMP: {item.get('control_id', 'Unknown')}",
-                "description": item.get("evidence_description", "No evidence description."),
-                "methods": ["EXAMINE", "INTERVIEW", "TEST"],
-                "collected": item.get("assessment_date", now),
-                "props": [
-                    {
-                        "name": "framework",
-                        "ns": OSCAL_NS,
-                        "value": "FedRAMP",
-                    },
-                    {
-                        "name": "baseline",
-                        "ns": OSCAL_NS,
-                        "value": item.get("baseline", "moderate"),
-                    },
-                ],
-            })
+            observations.append(
+                {
+                    "uuid": obs_uuid,
+                    "title": f"FedRAMP: {item.get('control_id', 'Unknown')}",
+                    "description": item.get("evidence_description", "No evidence description."),
+                    "methods": ["EXAMINE", "INTERVIEW", "TEST"],
+                    "collected": item.get("assessment_date", now),
+                    "props": [
+                        {
+                            "name": "framework",
+                            "ns": OSCAL_NS,
+                            "value": "FedRAMP",
+                        },
+                        {
+                            "name": "baseline",
+                            "ns": OSCAL_NS,
+                            "value": item.get("baseline", "moderate"),
+                        },
+                    ],
+                }
+            )
 
             finding_entry = {
                 "uuid": finding_uuid,
                 "title": f"FedRAMP Finding: {item.get('control_id', '')}",
                 "description": (
-                    f"FedRAMP {item.get('baseline', 'moderate')} assessment "
-                    f"for control {item.get('control_id', '')}."
+                    f"FedRAMP {item.get('baseline', 'moderate')} assessment for control {item.get('control_id', '')}."
                 ),
                 "target": {
                     "type": "objective-id",
@@ -1138,50 +1134,54 @@ def generate_oscal_assessment_results(project_id, output_dir=None, db_path=None)
 
             status = _cmmc_status_to_oscal(item.get("status", "not_assessed"))
 
-            observations.append({
-                "uuid": obs_uuid,
-                "title": f"CMMC: {item.get('practice_id', 'Unknown')}",
-                "description": item.get("evidence_description", "No evidence description."),
-                "methods": ["EXAMINE", "TEST"],
-                "collected": item.get("assessment_date", now),
-                "props": [
-                    {
-                        "name": "framework",
-                        "ns": OSCAL_NS,
-                        "value": "CMMC",
-                    },
-                    {
-                        "name": "level",
-                        "ns": OSCAL_NS,
-                        "value": str(item.get("level", 2)),
-                    },
-                    {
-                        "name": "domain",
-                        "ns": OSCAL_NS,
-                        "value": item.get("domain", ""),
-                    },
-                ],
-            })
+            observations.append(
+                {
+                    "uuid": obs_uuid,
+                    "title": f"CMMC: {item.get('practice_id', 'Unknown')}",
+                    "description": item.get("evidence_description", "No evidence description."),
+                    "methods": ["EXAMINE", "TEST"],
+                    "collected": item.get("assessment_date", now),
+                    "props": [
+                        {
+                            "name": "framework",
+                            "ns": OSCAL_NS,
+                            "value": "CMMC",
+                        },
+                        {
+                            "name": "level",
+                            "ns": OSCAL_NS,
+                            "value": str(item.get("level", 2)),
+                        },
+                        {
+                            "name": "domain",
+                            "ns": OSCAL_NS,
+                            "value": item.get("domain", ""),
+                        },
+                    ],
+                }
+            )
 
-            findings.append({
-                "uuid": finding_uuid,
-                "title": f"CMMC Finding: {item.get('practice_id', '')}",
-                "description": (
-                    f"CMMC Level {item.get('level', 2)} assessment for "
-                    f"practice {item.get('practice_id', '')} "
-                    f"(domain: {item.get('domain', '')})."
-                ),
-                "target": {
-                    "type": "objective-id",
-                    "target-id": item.get("practice_id", "unknown").lower(),
-                    "status": {
-                        "state": status,
+            findings.append(
+                {
+                    "uuid": finding_uuid,
+                    "title": f"CMMC Finding: {item.get('practice_id', '')}",
+                    "description": (
+                        f"CMMC Level {item.get('level', 2)} assessment for "
+                        f"practice {item.get('practice_id', '')} "
+                        f"(domain: {item.get('domain', '')})."
+                    ),
+                    "target": {
+                        "type": "objective-id",
+                        "target-id": item.get("practice_id", "unknown").lower(),
+                        "status": {
+                            "state": status,
+                        },
                     },
-                },
-                "related-observations": [
-                    {"observation-uuid": obs_uuid},
-                ],
-            })
+                    "related-observations": [
+                        {"observation-uuid": obs_uuid},
+                    ],
+                }
+            )
 
         # Process STIG findings
         for item in all_findings.get("stig", []):
@@ -1191,30 +1191,32 @@ def generate_oscal_assessment_results(project_id, output_dir=None, db_path=None)
 
             status = _stig_status_to_oscal(item.get("status", "Open"))
 
-            observations.append({
-                "uuid": obs_uuid,
-                "title": f"STIG: {item.get('stig_id', '')} - {item.get('finding_id', '')}",
-                "description": item.get("description", item.get("title", "No description.")),
-                "methods": ["TEST"],
-                "collected": item.get("assessed_at", now),
-                "props": [
-                    {
-                        "name": "framework",
-                        "ns": OSCAL_NS,
-                        "value": "DISA-STIG",
-                    },
-                    {
-                        "name": "severity",
-                        "ns": OSCAL_NS,
-                        "value": item.get("severity", "CAT2"),
-                    },
-                    {
-                        "name": "rule-id",
-                        "ns": OSCAL_NS,
-                        "value": item.get("rule_id", ""),
-                    },
-                ],
-            })
+            observations.append(
+                {
+                    "uuid": obs_uuid,
+                    "title": f"STIG: {item.get('stig_id', '')} - {item.get('finding_id', '')}",
+                    "description": item.get("description", item.get("title", "No description.")),
+                    "methods": ["TEST"],
+                    "collected": item.get("assessed_at", now),
+                    "props": [
+                        {
+                            "name": "framework",
+                            "ns": OSCAL_NS,
+                            "value": "DISA-STIG",
+                        },
+                        {
+                            "name": "severity",
+                            "ns": OSCAL_NS,
+                            "value": item.get("severity", "CAT2"),
+                        },
+                        {
+                            "name": "rule-id",
+                            "ns": OSCAL_NS,
+                            "value": item.get("rule_id", ""),
+                        },
+                    ],
+                }
+            )
 
             finding_entry = {
                 "uuid": finding_uuid,
@@ -1243,45 +1245,49 @@ def generate_oscal_assessment_results(project_id, output_dir=None, db_path=None)
 
             status = _assessment_status_to_oscal(item.get("status", "not_assessed"))
 
-            observations.append({
-                "uuid": obs_uuid,
-                "title": f"CSSP: {item.get('requirement_id', 'Unknown')}",
-                "description": item.get("evidence_description", "No evidence description."),
-                "methods": ["EXAMINE"],
-                "collected": item.get("assessment_date", now),
-                "props": [
-                    {
-                        "name": "framework",
-                        "ns": OSCAL_NS,
-                        "value": "DoDI-8530.01-CSSP",
-                    },
-                    {
-                        "name": "functional-area",
-                        "ns": OSCAL_NS,
-                        "value": item.get("functional_area", ""),
-                    },
-                ],
-            })
+            observations.append(
+                {
+                    "uuid": obs_uuid,
+                    "title": f"CSSP: {item.get('requirement_id', 'Unknown')}",
+                    "description": item.get("evidence_description", "No evidence description."),
+                    "methods": ["EXAMINE"],
+                    "collected": item.get("assessment_date", now),
+                    "props": [
+                        {
+                            "name": "framework",
+                            "ns": OSCAL_NS,
+                            "value": "DoDI-8530.01-CSSP",
+                        },
+                        {
+                            "name": "functional-area",
+                            "ns": OSCAL_NS,
+                            "value": item.get("functional_area", ""),
+                        },
+                    ],
+                }
+            )
 
-            findings.append({
-                "uuid": finding_uuid,
-                "title": f"CSSP Finding: {item.get('requirement_id', '')}",
-                "description": (
-                    f"CSSP assessment for requirement "
-                    f"{item.get('requirement_id', '')} "
-                    f"(area: {item.get('functional_area', '')})."
-                ),
-                "target": {
-                    "type": "objective-id",
-                    "target-id": item.get("requirement_id", "unknown").lower(),
-                    "status": {
-                        "state": status,
+            findings.append(
+                {
+                    "uuid": finding_uuid,
+                    "title": f"CSSP Finding: {item.get('requirement_id', '')}",
+                    "description": (
+                        f"CSSP assessment for requirement "
+                        f"{item.get('requirement_id', '')} "
+                        f"(area: {item.get('functional_area', '')})."
+                    ),
+                    "target": {
+                        "type": "objective-id",
+                        "target-id": item.get("requirement_id", "unknown").lower(),
+                        "status": {
+                            "state": status,
+                        },
                     },
-                },
-                "related-observations": [
-                    {"observation-uuid": obs_uuid},
-                ],
-            })
+                    "related-observations": [
+                        {"observation-uuid": obs_uuid},
+                    ],
+                }
+            )
 
         # Process SbD assessments
         for item in all_findings.get("sbd", []):
@@ -1291,45 +1297,49 @@ def generate_oscal_assessment_results(project_id, output_dir=None, db_path=None)
 
             status = _assessment_status_to_oscal(item.get("status", "not_assessed"))
 
-            observations.append({
-                "uuid": obs_uuid,
-                "title": f"SbD: {item.get('requirement_id', 'Unknown')}",
-                "description": item.get("evidence_description", "No evidence description."),
-                "methods": ["EXAMINE", "TEST"],
-                "collected": item.get("assessment_date", now),
-                "props": [
-                    {
-                        "name": "framework",
-                        "ns": OSCAL_NS,
-                        "value": "CISA-SbD",
-                    },
-                    {
-                        "name": "domain",
-                        "ns": OSCAL_NS,
-                        "value": item.get("domain", ""),
-                    },
-                ],
-            })
+            observations.append(
+                {
+                    "uuid": obs_uuid,
+                    "title": f"SbD: {item.get('requirement_id', 'Unknown')}",
+                    "description": item.get("evidence_description", "No evidence description."),
+                    "methods": ["EXAMINE", "TEST"],
+                    "collected": item.get("assessment_date", now),
+                    "props": [
+                        {
+                            "name": "framework",
+                            "ns": OSCAL_NS,
+                            "value": "CISA-SbD",
+                        },
+                        {
+                            "name": "domain",
+                            "ns": OSCAL_NS,
+                            "value": item.get("domain", ""),
+                        },
+                    ],
+                }
+            )
 
-            findings.append({
-                "uuid": finding_uuid,
-                "title": f"SbD Finding: {item.get('requirement_id', '')}",
-                "description": (
-                    f"CISA Secure by Design assessment for requirement "
-                    f"{item.get('requirement_id', '')} "
-                    f"(domain: {item.get('domain', '')})."
-                ),
-                "target": {
-                    "type": "objective-id",
-                    "target-id": item.get("requirement_id", "unknown").lower(),
-                    "status": {
-                        "state": status,
+            findings.append(
+                {
+                    "uuid": finding_uuid,
+                    "title": f"SbD Finding: {item.get('requirement_id', '')}",
+                    "description": (
+                        f"CISA Secure by Design assessment for requirement "
+                        f"{item.get('requirement_id', '')} "
+                        f"(domain: {item.get('domain', '')})."
+                    ),
+                    "target": {
+                        "type": "objective-id",
+                        "target-id": item.get("requirement_id", "unknown").lower(),
+                        "status": {
+                            "state": status,
+                        },
                     },
-                },
-                "related-observations": [
-                    {"observation-uuid": obs_uuid},
-                ],
-            })
+                    "related-observations": [
+                        {"observation-uuid": obs_uuid},
+                    ],
+                }
+            )
 
         # Assemble assessment results document
         ar_doc = {
@@ -1347,10 +1357,7 @@ def generate_oscal_assessment_results(project_id, output_dir=None, db_path=None)
                 ),
                 "import-ap": {
                     "href": "#assessment-plan-placeholder",
-                    "remarks": (
-                        "Assessment plan reference. Replace with actual "
-                        "assessment plan OSCAL artifact URI."
-                    ),
+                    "remarks": ("Assessment plan reference. Replace with actual assessment plan OSCAL artifact URI."),
                 },
                 "results": [
                     {
@@ -1419,23 +1426,25 @@ def generate_oscal_assessment_results(project_id, output_dir=None, db_path=None)
 
         # Store record
         _store_oscal_artifact(
-            conn, project_id, "assessment_results", str(out_file),
-            file_hash, schema_valid, validation.get("errors")
+            conn, project_id, "assessment_results", str(out_file), file_hash, schema_valid, validation.get("errors")
         )
 
         # Audit
-        _log_audit(conn, project_id, "OSCAL Assessment Results generated", {
-            "artifact_type": "assessment_results",
-            "oscal_version": OSCAL_VERSION,
-            "uuid": ar_uuid,
-            "total_findings": total_finding_count,
-            "frameworks": {
-                k: len(v) for k, v in all_findings.items()
+        _log_audit(
+            conn,
+            project_id,
+            "OSCAL Assessment Results generated",
+            {
+                "artifact_type": "assessment_results",
+                "oscal_version": OSCAL_VERSION,
+                "uuid": ar_uuid,
+                "total_findings": total_finding_count,
+                "frameworks": {k: len(v) for k, v in all_findings.items()},
+                "file_hash": file_hash,
+                "schema_valid": schema_valid,
+                "affected_files": [str(out_file)],
             },
-            "file_hash": file_hash,
-            "schema_valid": schema_valid,
-            "affected_files": [str(out_file)],
-        })
+        )
 
         print("OSCAL Assessment Results generated:")
         print(f"  File: {out_file}")
@@ -1551,9 +1560,7 @@ def generate_oscal_component_definition(project_id, output_dir=None, db_path=Non
 
         # Build control implementation for this component
         if controls:
-            profile_href = FEDRAMP_PROFILE_URIS.get(
-                baseline, FEDRAMP_PROFILE_URIS["moderate"]
-            )
+            profile_href = FEDRAMP_PROFILE_URIS.get(baseline, FEDRAMP_PROFILE_URIS["moderate"])
             impl_reqs = []
             for ctrl in controls:
                 oscal_cid = _control_id_to_oscal(ctrl["control_id"])
@@ -1561,33 +1568,36 @@ def generate_oscal_component_definition(project_id, output_dir=None, db_path=Non
                     continue
 
                 description = ctrl.get("implementation_description") or (
-                    f"Control {oscal_cid} implementation: "
-                    f"{ctrl.get('implementation_status', 'planned')}."
+                    f"Control {oscal_cid} implementation: {ctrl.get('implementation_status', 'planned')}."
                 )
 
-                impl_reqs.append({
-                    "uuid": _generate_uuid(),
-                    "control-id": oscal_cid,
-                    "description": description,
-                    "props": [
-                        {
-                            "name": "implementation-status",
-                            "ns": OSCAL_NS,
-                            "value": ctrl.get("implementation_status", "planned"),
-                        },
-                    ],
-                })
+                impl_reqs.append(
+                    {
+                        "uuid": _generate_uuid(),
+                        "control-id": oscal_cid,
+                        "description": description,
+                        "props": [
+                            {
+                                "name": "implementation-status",
+                                "ns": OSCAL_NS,
+                                "value": ctrl.get("implementation_status", "planned"),
+                            },
+                        ],
+                    }
+                )
 
-            app_component["control-implementations"].append({
-                "uuid": _generate_uuid(),
-                "source": profile_href,
-                "description": (
-                    f"Control implementations for "
-                    f"{project.get('name', 'application')} aligned to "
-                    f"FedRAMP {baseline.capitalize()} baseline."
-                ),
-                "implemented-requirements": impl_reqs,
-            })
+            app_component["control-implementations"].append(
+                {
+                    "uuid": _generate_uuid(),
+                    "source": profile_href,
+                    "description": (
+                        f"Control implementations for "
+                        f"{project.get('name', 'application')} aligned to "
+                        f"FedRAMP {baseline.capitalize()} baseline."
+                    ),
+                    "implemented-requirements": impl_reqs,
+                }
+            )
 
         components.append(app_component)
 
@@ -1599,57 +1609,59 @@ def generate_oscal_component_definition(project_id, output_dir=None, db_path=Non
         ]:
             value = project.get(stack_key)
             if value:
-                components.append({
-                    "uuid": _generate_uuid(),
-                    "type": "software",
-                    "title": f"{stack_type}: {value}",
-                    "description": f"{stack_type} component: {value}",
-                    "props": [
-                        {
-                            "name": "stack-layer",
-                            "ns": OSCAL_NS,
-                            "value": stack_key.replace("tech_stack_", ""),
-                        },
-                    ],
-                })
+                components.append(
+                    {
+                        "uuid": _generate_uuid(),
+                        "type": "software",
+                        "title": f"{stack_type}: {value}",
+                        "description": f"{stack_type} component: {value}",
+                        "props": [
+                            {
+                                "name": "stack-layer",
+                                "ns": OSCAL_NS,
+                                "value": stack_key.replace("tech_stack_", ""),
+                            },
+                        ],
+                    }
+                )
 
         # Add SBOM-derived components
         for sbom in sbom_records:
-            components.append({
-                "uuid": _generate_uuid(),
-                "type": "software",
-                "title": f"SBOM: {sbom.get('format', 'cyclonedx')} v{sbom.get('version', '1.0')}",
-                "description": (
-                    f"Software Bill of Materials ({sbom.get('format', 'CycloneDX')}) "
-                    f"with {sbom.get('component_count', 0)} components, "
-                    f"{sbom.get('vulnerability_count', 0)} known vulnerabilities."
-                ),
-                "props": [
-                    {
-                        "name": "sbom-format",
-                        "ns": OSCAL_NS,
-                        "value": sbom.get("format", "cyclonedx"),
-                    },
-                    {
-                        "name": "component-count",
-                        "ns": OSCAL_NS,
-                        "value": str(sbom.get("component_count", 0)),
-                    },
-                    {
-                        "name": "vulnerability-count",
-                        "ns": OSCAL_NS,
-                        "value": str(sbom.get("vulnerability_count", 0)),
-                    },
-                ],
-            })
+            components.append(
+                {
+                    "uuid": _generate_uuid(),
+                    "type": "software",
+                    "title": f"SBOM: {sbom.get('format', 'cyclonedx')} v{sbom.get('version', '1.0')}",
+                    "description": (
+                        f"Software Bill of Materials ({sbom.get('format', 'CycloneDX')}) "
+                        f"with {sbom.get('component_count', 0)} components, "
+                        f"{sbom.get('vulnerability_count', 0)} known vulnerabilities."
+                    ),
+                    "props": [
+                        {
+                            "name": "sbom-format",
+                            "ns": OSCAL_NS,
+                            "value": sbom.get("format", "cyclonedx"),
+                        },
+                        {
+                            "name": "component-count",
+                            "ns": OSCAL_NS,
+                            "value": str(sbom.get("component_count", 0)),
+                        },
+                        {
+                            "name": "vulnerability-count",
+                            "ns": OSCAL_NS,
+                            "value": str(sbom.get("vulnerability_count", 0)),
+                        },
+                    ],
+                }
+            )
 
         # Assemble component definition document
         cd_doc = {
             "component-definition": {
                 "uuid": cd_uuid,
-                "metadata": _build_metadata(
-                    project, "Component Definition"
-                ),
+                "metadata": _build_metadata(project, "Component Definition"),
                 "components": components,
                 "back-matter": {
                     "resources": [],
@@ -1672,22 +1684,26 @@ def generate_oscal_component_definition(project_id, output_dir=None, db_path=Non
 
         # Store record
         _store_oscal_artifact(
-            conn, project_id, "component_definition", str(out_file),
-            file_hash, schema_valid, validation.get("errors")
+            conn, project_id, "component_definition", str(out_file), file_hash, schema_valid, validation.get("errors")
         )
 
         # Audit
-        _log_audit(conn, project_id, "OSCAL Component Definition generated", {
-            "artifact_type": "component_definition",
-            "oscal_version": OSCAL_VERSION,
-            "uuid": cd_uuid,
-            "components_count": len(components),
-            "controls_count": len(controls),
-            "sbom_records": len(sbom_records),
-            "file_hash": file_hash,
-            "schema_valid": schema_valid,
-            "affected_files": [str(out_file)],
-        })
+        _log_audit(
+            conn,
+            project_id,
+            "OSCAL Component Definition generated",
+            {
+                "artifact_type": "component_definition",
+                "oscal_version": OSCAL_VERSION,
+                "uuid": cd_uuid,
+                "components_count": len(components),
+                "controls_count": len(controls),
+                "sbom_records": len(sbom_records),
+                "file_hash": file_hash,
+                "schema_valid": schema_valid,
+                "affected_files": [str(out_file)],
+            },
+        )
 
         print("OSCAL Component Definition generated:")
         print(f"  File: {out_file}")
@@ -1712,6 +1728,7 @@ def generate_oscal_component_definition(project_id, output_dir=None, db_path=Non
 # ---------------------------------------------------------------------------
 # Validation
 # ---------------------------------------------------------------------------
+
 
 def validate_oscal(file_path, artifact_type=None):
     """Validate an OSCAL JSON file for structural correctness.
@@ -1766,16 +1783,13 @@ def validate_oscal(file_path, artifact_type=None):
             return {
                 "valid": False,
                 "errors": [
-                    f"No recognized OSCAL top-level key found. "
-                    f"Expected one of: {list(top_level_keys.values())}"
+                    f"No recognized OSCAL top-level key found. Expected one of: {list(top_level_keys.values())}"
                 ],
             }
 
     expected_key = top_level_keys.get(artifact_type)
     if expected_key and expected_key not in data:
-        errors.append(
-            f"Missing required top-level key: '{expected_key}'"
-        )
+        errors.append(f"Missing required top-level key: '{expected_key}'")
 
     if expected_key and expected_key in data:
         doc = data[expected_key]
@@ -1783,10 +1797,7 @@ def validate_oscal(file_path, artifact_type=None):
         # Check UUID at document level
         if "uuid" in doc:
             if not UUID_PATTERN.match(str(doc["uuid"])):
-                errors.append(
-                    f"Document UUID format invalid: '{doc['uuid']}'. "
-                    f"Expected RFC 4122 lowercase UUID."
-                )
+                errors.append(f"Document UUID format invalid: '{doc['uuid']}'. Expected RFC 4122 lowercase UUID.")
 
         # Check metadata
         metadata = doc.get("metadata", {})
@@ -1797,17 +1808,13 @@ def validate_oscal(file_path, artifact_type=None):
             last_mod = metadata.get("last-modified", "")
             if last_mod and not ISO_TIMESTAMP_PATTERN.match(last_mod):
                 errors.append(
-                    f"Metadata 'last-modified' timestamp format invalid: "
-                    f"'{last_mod}'. Expected ISO 8601 with Z suffix."
+                    f"Metadata 'last-modified' timestamp format invalid: '{last_mod}'. Expected ISO 8601 with Z suffix."
                 )
 
             # Check oscal-version
             oscal_ver = metadata.get("oscal-version", "")
             if oscal_ver and oscal_ver != OSCAL_VERSION:
-                errors.append(
-                    f"OSCAL version mismatch: '{oscal_ver}' "
-                    f"(expected '{OSCAL_VERSION}')."
-                )
+                errors.append(f"OSCAL version mismatch: '{oscal_ver}' (expected '{OSCAL_VERSION}').")
 
             # Check required metadata fields
             for field in ["title", "last-modified", "version", "oscal-version"]:
@@ -1846,13 +1853,15 @@ def _validate_ssp(doc, errors):
     else:
         sc = doc["system-characteristics"]
         for field in [
-            "system-name", "description", "security-sensitivity-level",
-            "security-impact-level", "status", "authorization-boundary",
+            "system-name",
+            "description",
+            "security-sensitivity-level",
+            "security-impact-level",
+            "status",
+            "authorization-boundary",
         ]:
             if field not in sc:
-                errors.append(
-                    f"SSP 'system-characteristics' missing '{field}'."
-                )
+                errors.append(f"SSP 'system-characteristics' missing '{field}'.")
 
     if "system-implementation" not in doc:
         errors.append("SSP missing 'system-implementation' block.")
@@ -1862,10 +1871,7 @@ def _validate_ssp(doc, errors):
     else:
         ci = doc["control-implementation"]
         if "implemented-requirements" not in ci:
-            errors.append(
-                "SSP 'control-implementation' missing "
-                "'implemented-requirements'."
-            )
+            errors.append("SSP 'control-implementation' missing 'implemented-requirements'.")
 
 
 def _validate_poam(doc, errors):
@@ -1906,28 +1912,19 @@ def _validate_uuids_recursive(obj, errors, path="", max_errors=20):
             current_path = f"{path}.{key}" if path else key
             if key == "uuid" and isinstance(value, str):
                 if not UUID_PATTERN.match(value):
-                    errors.append(
-                        f"Invalid UUID at '{current_path}': '{value}'."
-                    )
+                    errors.append(f"Invalid UUID at '{current_path}': '{value}'.")
                     if len(errors) >= max_errors:
                         return
             elif key.endswith("-uuid") and isinstance(value, str):
                 if not UUID_PATTERN.match(value):
-                    errors.append(
-                        f"Invalid UUID reference at '{current_path}': "
-                        f"'{value}'."
-                    )
+                    errors.append(f"Invalid UUID reference at '{current_path}': '{value}'.")
                     if len(errors) >= max_errors:
                         return
             else:
-                _validate_uuids_recursive(
-                    value, errors, current_path, max_errors
-                )
+                _validate_uuids_recursive(value, errors, current_path, max_errors)
     elif isinstance(obj, list):
         for i, item in enumerate(obj):
-            _validate_uuids_recursive(
-                item, errors, f"{path}[{i}]", max_errors
-            )
+            _validate_uuids_recursive(item, errors, f"{path}[{i}]", max_errors)
 
 
 def _validate_control_ids_recursive(obj, errors, path="", max_errors=20):
@@ -1940,26 +1937,20 @@ def _validate_control_ids_recursive(obj, errors, path="", max_errors=20):
             current_path = f"{path}.{key}" if path else key
             if key == "control-id" and isinstance(value, str):
                 if value != value.lower():
-                    errors.append(
-                        f"Control ID not lowercase at '{current_path}': "
-                        f"'{value}'. OSCAL requires lowercase."
-                    )
+                    errors.append(f"Control ID not lowercase at '{current_path}': '{value}'. OSCAL requires lowercase.")
                     if len(errors) >= max_errors:
                         return
             else:
-                _validate_control_ids_recursive(
-                    value, errors, current_path, max_errors
-                )
+                _validate_control_ids_recursive(value, errors, current_path, max_errors)
     elif isinstance(obj, list):
         for i, item in enumerate(obj):
-            _validate_control_ids_recursive(
-                item, errors, f"{path}[{i}]", max_errors
-            )
+            _validate_control_ids_recursive(item, errors, f"{path}[{i}]", max_errors)
 
 
 # ---------------------------------------------------------------------------
 # Aggregate generation
 # ---------------------------------------------------------------------------
+
 
 def generate_all_oscal(project_id, output_dir=None, db_path=None):
     """Generate all four OSCAL artifact types for a project.
@@ -1988,9 +1979,7 @@ def generate_all_oscal(project_id, output_dir=None, db_path=None):
 
     for artifact_name, generator_fn in artifact_types:
         try:
-            result = generator_fn(
-                project_id, output_dir=output_dir, db_path=db_path
-            )
+            result = generator_fn(project_id, output_dir=output_dir, db_path=db_path)
             results[artifact_name] = {
                 "status": "success",
                 "result": result,
@@ -2033,6 +2022,7 @@ def generate_all_oscal(project_id, output_dir=None, db_path=None):
 # CLI entrypoint
 # ---------------------------------------------------------------------------
 
+
 def main():
     parser = argparse.ArgumentParser(
         description=(
@@ -2049,8 +2039,11 @@ def main():
     parser.add_argument(
         "--artifact",
         choices=[
-            "ssp", "poam", "assessment_results",
-            "component_definition", "all",
+            "ssp",
+            "poam",
+            "assessment_results",
+            "component_definition",
+            "all",
         ],
         default="all",
         help="Artifact type to generate (default: all)",
@@ -2110,6 +2103,7 @@ def main():
     if args.deep_validate:
         try:
             from tools.compliance.oscal_tools import validate_oscal_deep
+
             result = validate_oscal_deep(
                 args.deep_validate,
                 project_id=args.project_id,

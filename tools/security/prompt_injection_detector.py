@@ -17,6 +17,7 @@ CLI:
     python tools/security/prompt_injection_detector.py --file /path/to/file.md --json
     python tools/security/prompt_injection_detector.py --project-dir /path --gate --json
 """
+
 from __future__ import annotations
 
 import argparse

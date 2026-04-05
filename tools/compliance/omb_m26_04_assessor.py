@@ -39,7 +39,9 @@ class OMBM2604Assessor(BaseAssessor):
     CATALOG_FILENAME = "omb_m26_04_unbiased_ai.json"
 
     def get_automated_checks(
-        self, project: Dict, project_dir: Optional[str] = None,
+        self,
+        project: Dict,
+        project_dir: Optional[str] = None,
     ) -> Dict[str, str]:
         """OMB M-26-04 automated checks.
 

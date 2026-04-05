@@ -68,11 +68,11 @@ CATEGORIES = ("compliance", "persuasion", "readability", "formatting", "pricing"
 
 # Which critics run for each review type
 REVIEW_CRITICS: Dict[str, List[str]] = {
-    "blue":  ["strategy"],
-    "pink":  ["compliance", "persuasiveness", "readability"],
-    "red":   ["compliance", "persuasiveness", "readability"],
+    "blue": ["strategy"],
+    "pink": ["compliance", "persuasiveness", "readability"],
+    "red": ["compliance", "persuasiveness", "readability"],
     "green": ["pricing"],
-    "gold":  ["compliance", "persuasiveness", "readability", "pricing"],
+    "gold": ["compliance", "persuasiveness", "readability", "pricing"],
 }
 
 # Vague / weak language patterns (D354 — deterministic keyword matching)
@@ -81,7 +81,10 @@ VAGUE_PATTERNS = [
     re.compile(r"\b(?:as\s+(?:needed|required|appropriate|necessary))\b", re.IGNORECASE),
     re.compile(r"\b(?:etc|and\s+so\s+on|and\s+more)\b", re.IGNORECASE),
     re.compile(r"\b(?:leverage|utilize|synergize|optimize)\b", re.IGNORECASE),
-    re.compile(r"\b(?:world[\s-]?class|best[\s-]?in[\s-]?class|cutting[\s-]?edge|state[\s-]?of[\s-]?the[\s-]?art)\b", re.IGNORECASE),
+    re.compile(
+        r"\b(?:world[\s-]?class|best[\s-]?in[\s-]?class|cutting[\s-]?edge|state[\s-]?of[\s-]?the[\s-]?art)\b",
+        re.IGNORECASE,
+    ),
     re.compile(r"\b(?:robust|scalable|innovative|holistic|comprehensive)\b", re.IGNORECASE),
 ]
 
@@ -94,6 +97,7 @@ PASSIVE_PATTERNS = re.compile(
 
 
 # ── Helpers ───────────────────────────────────────────────────────────
+
 
 def _get_db():
     """Get a DB connection with WAL mode enabled."""
@@ -207,9 +211,8 @@ def _get_next_iteration(conn, opportunity_id: str, review_type: str) -> int:
 
 # ── Compliance Critic ─────────────────────────────────────────────────
 
-def _run_compliance_critic(
-    opportunity_id: str, sections: List[Dict], review_type: str
-) -> List[Dict]:
+
+def _run_compliance_critic(opportunity_id: str, sections: List[Dict], review_type: str) -> List[Dict]:
     """Check Section M requirement coverage and shall statement gaps.
 
     For each requirement in pg_compliance_matrix with source_section='M':
@@ -237,66 +240,73 @@ def _run_compliance_critic(
         addressed = [r for r in matrix_rows if r["compliance_status"] == "addressed"]
 
         for gap_req in gaps:
-            findings.append({
-                "severity": "critical",
-                "category": "compliance",
-                "finding_text": (
-                    f"Section M requirement '{gap_req['requirement_text'][:120]}' "
-                    f"(eval factor: {gap_req['evaluation_factor'] or 'unspecified'}) "
-                    f"has NO corresponding proposal section. This is an evaluation gap."
-                ),
-                "recommendation": (
-                    f"Create or assign a proposal section addressing requirement "
-                    f"'{gap_req['requirement_id']}'. Map to Section M evaluation criteria."
-                ),
-                "section_id": gap_req["assigned_section"],
-            })
+            findings.append(
+                {
+                    "severity": "critical",
+                    "category": "compliance",
+                    "finding_text": (
+                        f"Section M requirement '{gap_req['requirement_text'][:120]}' "
+                        f"(eval factor: {gap_req['evaluation_factor'] or 'unspecified'}) "
+                        f"has NO corresponding proposal section. This is an evaluation gap."
+                    ),
+                    "recommendation": (
+                        f"Create or assign a proposal section addressing requirement "
+                        f"'{gap_req['requirement_id']}'. Map to Section M evaluation criteria."
+                    ),
+                    "section_id": gap_req["assigned_section"],
+                }
+            )
 
         for part_req in partials:
-            findings.append({
-                "severity": "major",
-                "category": "compliance",
-                "finding_text": (
-                    f"Section M requirement '{part_req['requirement_text'][:120]}' "
-                    f"is only PARTIALLY addressed. Government evaluators may score this "
-                    f"as a weakness."
-                ),
-                "recommendation": (
-                    f"Expand response for requirement '{part_req['requirement_id']}' "
-                    f"to fully address all evaluation sub-criteria."
-                ),
-                "section_id": part_req["assigned_section"],
-            })
+            findings.append(
+                {
+                    "severity": "major",
+                    "category": "compliance",
+                    "finding_text": (
+                        f"Section M requirement '{part_req['requirement_text'][:120]}' "
+                        f"is only PARTIALLY addressed. Government evaluators may score this "
+                        f"as a weakness."
+                    ),
+                    "recommendation": (
+                        f"Expand response for requirement '{part_req['requirement_id']}' "
+                        f"to fully address all evaluation sub-criteria."
+                    ),
+                    "section_id": part_req["assigned_section"],
+                }
+            )
 
         # Summary observation if coverage is incomplete
         if total_reqs > 0:
             coverage_pct = len(addressed) / total_reqs
             if coverage_pct < 1.0:
-                findings.append({
-                    "severity": "observation",
-                    "category": "compliance",
-                    "finding_text": (
-                        f"Section M compliance coverage: {coverage_pct:.0%} "
-                        f"({len(addressed)}/{total_reqs} addressed, "
-                        f"{len(gaps)} gaps, {len(partials)} partial)."
-                    ),
-                    "recommendation": "Resolve all gaps before submission.",
-                    "section_id": None,
-                })
+                findings.append(
+                    {
+                        "severity": "observation",
+                        "category": "compliance",
+                        "finding_text": (
+                            f"Section M compliance coverage: {coverage_pct:.0%} "
+                            f"({len(addressed)}/{total_reqs} addressed, "
+                            f"{len(gaps)} gaps, {len(partials)} partial)."
+                        ),
+                        "recommendation": "Resolve all gaps before submission.",
+                        "section_id": None,
+                    }
+                )
     else:
-        findings.append({
-            "severity": "minor",
-            "category": "compliance",
-            "finding_text": (
-                "Compliance matrix (pg_compliance_matrix) not populated. "
-                "Cannot verify Section M requirement coverage."
-            ),
-            "recommendation": (
-                "Run: python tools/govcon/compliance_populator.py "
-                f"--populate --opp-id {opportunity_id} --json"
-            ),
-            "section_id": None,
-        })
+        findings.append(
+            {
+                "severity": "minor",
+                "category": "compliance",
+                "finding_text": (
+                    "Compliance matrix (pg_compliance_matrix) not populated. "
+                    "Cannot verify Section M requirement coverage."
+                ),
+                "recommendation": (
+                    f"Run: python tools/govcon/compliance_populator.py --populate --opp-id {opportunity_id} --json"
+                ),
+                "section_id": None,
+            }
+        )
 
     # ── Formatting compliance (page/word limits) ──────────────────────
     for section in sections:
@@ -308,37 +318,40 @@ def _run_compliance_critic(
         if word_limit and word_count > word_limit:
             over_pct = (word_count - word_limit) / word_limit * 100
             severity = "critical" if over_pct > 10 else "major"
-            findings.append({
-                "severity": severity,
-                "category": "formatting",
-                "finding_text": (
-                    f"Section '{section.get('title', section.get('section_number', '?'))}' "
-                    f"exceeds word limit: {word_count:,} words vs {word_limit:,} limit "
-                    f"({over_pct:.0f}% over)."
-                ),
-                "recommendation": (
-                    f"Reduce by {word_count - word_limit:,} words. "
-                    f"Focus on removing redundancies and tightening language."
-                ),
-                "section_id": section.get("id"),
-            })
+            findings.append(
+                {
+                    "severity": severity,
+                    "category": "formatting",
+                    "finding_text": (
+                        f"Section '{section.get('title', section.get('section_number', '?'))}' "
+                        f"exceeds word limit: {word_count:,} words vs {word_limit:,} limit "
+                        f"({over_pct:.0f}% over)."
+                    ),
+                    "recommendation": (
+                        f"Reduce by {word_count - word_limit:,} words. "
+                        f"Focus on removing redundancies and tightening language."
+                    ),
+                    "section_id": section.get("id"),
+                }
+            )
 
         if page_limit and section.get("current_page_count"):
             page_count = section["current_page_count"]
             if page_count > page_limit:
-                findings.append({
-                    "severity": "critical",
-                    "category": "formatting",
-                    "finding_text": (
-                        f"Section '{section.get('title', '?')}' exceeds page limit: "
-                        f"{page_count} pages vs {page_limit} limit."
-                    ),
-                    "recommendation": (
-                        f"Reduce by {page_count - page_limit} page(s). "
-                        f"Pages over the limit may not be evaluated."
-                    ),
-                    "section_id": section.get("id"),
-                })
+                findings.append(
+                    {
+                        "severity": "critical",
+                        "category": "formatting",
+                        "finding_text": (
+                            f"Section '{section.get('title', '?')}' exceeds page limit: "
+                            f"{page_count} pages vs {page_limit} limit."
+                        ),
+                        "recommendation": (
+                            f"Reduce by {page_count - page_limit} page(s). Pages over the limit may not be evaluated."
+                        ),
+                        "section_id": section.get("id"),
+                    }
+                )
 
     conn.close()
     return findings
@@ -346,9 +359,8 @@ def _run_compliance_critic(
 
 # ── Persuasiveness Critic ─────────────────────────────────────────────
 
-def _run_persuasiveness_critic(
-    opportunity_id: str, sections: List[Dict]
-) -> List[Dict]:
+
+def _run_persuasiveness_critic(opportunity_id: str, sections: List[Dict]) -> List[Dict]:
     """Evaluate win theme density, discriminator mentions, and specificity.
 
     Checks:
@@ -383,19 +395,21 @@ def _run_persuasiveness_critic(
                 ghosts.append(entry)
 
     if not win_themes and not discriminators:
-        findings.append({
-            "severity": "major",
-            "category": "strategy",
-            "finding_text": (
-                "No win themes or discriminators defined for this opportunity. "
-                "Proposal lacks strategic positioning framework."
-            ),
-            "recommendation": (
-                "Define at least 3 win themes and 2 discriminators in the "
-                "Win Theme Registry before proceeding with content."
-            ),
-            "section_id": None,
-        })
+        findings.append(
+            {
+                "severity": "major",
+                "category": "strategy",
+                "finding_text": (
+                    "No win themes or discriminators defined for this opportunity. "
+                    "Proposal lacks strategic positioning framework."
+                ),
+                "recommendation": (
+                    "Define at least 3 win themes and 2 discriminators in the "
+                    "Win Theme Registry before proceeding with content."
+                ),
+                "section_id": None,
+            }
+        )
         conn.close()
         return findings
 
@@ -403,13 +417,15 @@ def _run_persuasiveness_critic(
     sections_with_content = [s for s in sections if s.get("content", "").strip()]
 
     if not sections_with_content:
-        findings.append({
-            "severity": "major",
-            "category": "persuasion",
-            "finding_text": "No sections have content to evaluate.",
-            "recommendation": "Draft section content before running persuasiveness review.",
-            "section_id": None,
-        })
+        findings.append(
+            {
+                "severity": "major",
+                "category": "persuasion",
+                "finding_text": "No sections have content to evaluate.",
+                "recommendation": "Draft section content before running persuasiveness review.",
+                "section_id": None,
+            }
+        )
         conn.close()
         return findings
 
@@ -429,9 +445,10 @@ def _run_persuasiveness_critic(
             statement = theme.get("theme_statement", "")
             # Extract keywords from theme (words > 4 chars)
             keywords = [
-                w.lower() for w in re.findall(r"\b\w{5,}\b", statement)
-                if w.lower() not in {"their", "there", "these", "those", "which",
-                                      "about", "would", "should", "could", "while"}
+                w.lower()
+                for w in re.findall(r"\b\w{5,}\b", statement)
+                if w.lower()
+                not in {"their", "there", "these", "those", "which", "about", "would", "should", "could", "while"}
             ]
             matched = sum(1 for kw in keywords if kw in content_lower)
             if keywords and matched >= max(1, len(keywords) // 3):
@@ -439,29 +456,32 @@ def _run_persuasiveness_critic(
 
         total_theme_hits += section_theme_hits
         if section_theme_hits == 0 and win_themes:
-            findings.append({
-                "severity": "major",
-                "category": "persuasion",
-                "finding_text": (
-                    f"Section '{section_title}' does not reflect any of the "
-                    f"{len(win_themes)} defined win themes. Evaluators may not "
-                    f"see strategic differentiation."
-                ),
-                "recommendation": (
-                    "Weave at least one win theme into this section. "
-                    "Connect your approach to the customer's stated objectives."
-                ),
-                "section_id": section_id,
-            })
+            findings.append(
+                {
+                    "severity": "major",
+                    "category": "persuasion",
+                    "finding_text": (
+                        f"Section '{section_title}' does not reflect any of the "
+                        f"{len(win_themes)} defined win themes. Evaluators may not "
+                        f"see strategic differentiation."
+                    ),
+                    "recommendation": (
+                        "Weave at least one win theme into this section. "
+                        "Connect your approach to the customer's stated objectives."
+                    ),
+                    "section_id": section_id,
+                }
+            )
 
         # ── Discriminator mentions ────────────────────────────────────
         section_disc_hits = 0
         for disc in discriminators:
             statement = disc.get("theme_statement", "")
             keywords = [
-                w.lower() for w in re.findall(r"\b\w{5,}\b", statement)
-                if w.lower() not in {"their", "there", "these", "those", "which",
-                                      "about", "would", "should", "could", "while"}
+                w.lower()
+                for w in re.findall(r"\b\w{5,}\b", statement)
+                if w.lower()
+                not in {"their", "there", "these", "those", "which", "about", "would", "should", "could", "while"}
             ]
             matched = sum(1 for kw in keywords if kw in content_lower)
             if keywords and matched >= max(1, len(keywords) // 3):
@@ -479,21 +499,23 @@ def _run_persuasiveness_critic(
         total_vague_hits += section_vague_count
         if section_vague_count >= 5:
             severity = "major" if section_vague_count >= 10 else "minor"
-            findings.append({
-                "severity": severity,
-                "category": "persuasion",
-                "finding_text": (
-                    f"Section '{section_title}' contains {section_vague_count} "
-                    f"instances of vague/buzzword language "
-                    f"(e.g., {', '.join(set(vague_examples[:4]))}). "
-                    f"Government evaluators want specifics, not buzzwords."
-                ),
-                "recommendation": (
-                    "Replace vague language with specific quantities, names, "
-                    "tools, timelines, or measurable outcomes."
-                ),
-                "section_id": section_id,
-            })
+            findings.append(
+                {
+                    "severity": severity,
+                    "category": "persuasion",
+                    "finding_text": (
+                        f"Section '{section_title}' contains {section_vague_count} "
+                        f"instances of vague/buzzword language "
+                        f"(e.g., {', '.join(set(vague_examples[:4]))}). "
+                        f"Government evaluators want specifics, not buzzwords."
+                    ),
+                    "recommendation": (
+                        "Replace vague language with specific quantities, names, "
+                        "tools, timelines, or measurable outcomes."
+                    ),
+                    "section_id": section_id,
+                }
+            )
 
         # ── "So what" factor ──────────────────────────────────────────
         # Sections that describe capability without stating customer benefit
@@ -508,20 +530,22 @@ def _run_persuasiveness_critic(
             benefit_matches = len(benefit_patterns.findall(content))
             benefit_density = benefit_matches / (word_count / 100)
             if benefit_density < 1.0:
-                findings.append({
-                    "severity": "minor",
-                    "category": "persuasion",
-                    "finding_text": (
-                        f"Section '{section_title}' has low benefit language density "
-                        f"({benefit_density:.1f} per 100 words). Content describes "
-                        f"capabilities without explaining customer benefits."
-                    ),
-                    "recommendation": (
-                        "After each capability statement, add a 'so what' sentence: "
-                        "'This results in...' or 'This enables the Government to...'"
-                    ),
-                    "section_id": section_id,
-                })
+                findings.append(
+                    {
+                        "severity": "minor",
+                        "category": "persuasion",
+                        "finding_text": (
+                            f"Section '{section_title}' has low benefit language density "
+                            f"({benefit_density:.1f} per 100 words). Content describes "
+                            f"capabilities without explaining customer benefits."
+                        ),
+                        "recommendation": (
+                            "After each capability statement, add a 'so what' sentence: "
+                            "'This results in...' or 'This enables the Government to...'"
+                        ),
+                        "section_id": section_id,
+                    }
+                )
 
     # ── Ghost competitor references ───────────────────────────────────
     if ghosts:
@@ -529,45 +553,49 @@ def _run_persuasiveness_critic(
         for ghost in ghosts:
             competitor_name = ghost.get("ghost_competitor", "")
             if competitor_name and competitor_name.lower() in all_content:
-                findings.append({
-                    "severity": "critical",
-                    "category": "persuasion",
-                    "finding_text": (
-                        f"DIRECT COMPETITOR REFERENCE: '{competitor_name}' mentioned "
-                        f"in proposal text. Government proposals must ghost competitors "
-                        f"indirectly — never name them."
-                    ),
-                    "recommendation": (
-                        f"Remove all direct references to '{competitor_name}'. "
-                        f"Use indirect ghosting: 'unlike approaches that rely on...' "
-                        f"or 'other providers may...'"
-                    ),
-                    "section_id": None,
-                })
+                findings.append(
+                    {
+                        "severity": "critical",
+                        "category": "persuasion",
+                        "finding_text": (
+                            f"DIRECT COMPETITOR REFERENCE: '{competitor_name}' mentioned "
+                            f"in proposal text. Government proposals must ghost competitors "
+                            f"indirectly — never name them."
+                        ),
+                        "recommendation": (
+                            f"Remove all direct references to '{competitor_name}'. "
+                            f"Use indirect ghosting: 'unlike approaches that rely on...' "
+                            f"or 'other providers may...'"
+                        ),
+                        "section_id": None,
+                    }
+                )
 
     # ── Summary observation ───────────────────────────────────────────
-    theme_coverage = total_theme_hits / (len(sections_with_content) * len(win_themes)) if win_themes and sections_with_content else 0
-    findings.append({
-        "severity": "observation",
-        "category": "persuasion",
-        "finding_text": (
-            f"Persuasiveness summary: {total_theme_hits} theme hits across "
-            f"{len(sections_with_content)} sections ({theme_coverage:.0%} coverage), "
-            f"{total_disc_hits} discriminator mentions, "
-            f"{total_vague_hits} vague language instances."
-        ),
-        "recommendation": (
-            "Target: every section references at least 1 win theme, "
-            "0 vague language instances."
-        ),
-        "section_id": None,
-    })
+    theme_coverage = (
+        total_theme_hits / (len(sections_with_content) * len(win_themes)) if win_themes and sections_with_content else 0
+    )
+    findings.append(
+        {
+            "severity": "observation",
+            "category": "persuasion",
+            "finding_text": (
+                f"Persuasiveness summary: {total_theme_hits} theme hits across "
+                f"{len(sections_with_content)} sections ({theme_coverage:.0%} coverage), "
+                f"{total_disc_hits} discriminator mentions, "
+                f"{total_vague_hits} vague language instances."
+            ),
+            "recommendation": ("Target: every section references at least 1 win theme, 0 vague language instances."),
+            "section_id": None,
+        }
+    )
 
     conn.close()
     return findings
 
 
 # ── Readability Critic ────────────────────────────────────────────────
+
 
 def _run_readability_critic(sections: List[Dict]) -> List[Dict]:
     """Evaluate readability metrics for proposal sections.
@@ -599,33 +627,37 @@ def _run_readability_critic(sections: List[Dict]) -> List[Dict]:
         all_grade_levels.append(grade)
 
         if grade > 16:
-            findings.append({
-                "severity": "major",
-                "category": "readability",
-                "finding_text": (
-                    f"Section '{section_title}' has Flesch-Kincaid grade level {grade:.1f} "
-                    f"(target: 10-12). Content is too complex for rapid government evaluation."
-                ),
-                "recommendation": (
-                    "Simplify sentence structure. Break complex sentences into shorter ones. "
-                    "Replace multi-syllable words with simpler alternatives where possible."
-                ),
-                "section_id": section_id,
-            })
+            findings.append(
+                {
+                    "severity": "major",
+                    "category": "readability",
+                    "finding_text": (
+                        f"Section '{section_title}' has Flesch-Kincaid grade level {grade:.1f} "
+                        f"(target: 10-12). Content is too complex for rapid government evaluation."
+                    ),
+                    "recommendation": (
+                        "Simplify sentence structure. Break complex sentences into shorter ones. "
+                        "Replace multi-syllable words with simpler alternatives where possible."
+                    ),
+                    "section_id": section_id,
+                }
+            )
         elif grade < 8:
-            findings.append({
-                "severity": "minor",
-                "category": "readability",
-                "finding_text": (
-                    f"Section '{section_title}' has Flesch-Kincaid grade level {grade:.1f} "
-                    f"(target: 10-12). Content may be perceived as too simplistic."
-                ),
-                "recommendation": (
-                    "Increase technical depth. Add domain-specific terminology "
-                    "to demonstrate subject matter expertise."
-                ),
-                "section_id": section_id,
-            })
+            findings.append(
+                {
+                    "severity": "minor",
+                    "category": "readability",
+                    "finding_text": (
+                        f"Section '{section_title}' has Flesch-Kincaid grade level {grade:.1f} "
+                        f"(target: 10-12). Content may be perceived as too simplistic."
+                    ),
+                    "recommendation": (
+                        "Increase technical depth. Add domain-specific terminology "
+                        "to demonstrate subject matter expertise."
+                    ),
+                    "section_id": section_id,
+                }
+            )
 
         # ── Average sentence length ───────────────────────────────────
         sentences = [s.strip() for s in re.split(r"[.!?]+", content) if s.strip()]
@@ -634,62 +666,67 @@ def _run_readability_critic(sections: List[Dict]) -> List[Dict]:
         all_avg_sentence_lengths.append(avg_sent_len)
 
         if avg_sent_len > 30:
-            findings.append({
-                "severity": "major",
-                "category": "readability",
-                "finding_text": (
-                    f"Section '{section_title}' has average sentence length of "
-                    f"{avg_sent_len:.0f} words (target: < 25). Long sentences lose "
-                    f"evaluators."
-                ),
-                "recommendation": (
-                    "Break sentences longer than 25 words. Use bullet points for "
-                    "lists of capabilities or requirements."
-                ),
-                "section_id": section_id,
-            })
+            findings.append(
+                {
+                    "severity": "major",
+                    "category": "readability",
+                    "finding_text": (
+                        f"Section '{section_title}' has average sentence length of "
+                        f"{avg_sent_len:.0f} words (target: < 25). Long sentences lose "
+                        f"evaluators."
+                    ),
+                    "recommendation": (
+                        "Break sentences longer than 25 words. Use bullet points for "
+                        "lists of capabilities or requirements."
+                    ),
+                    "section_id": section_id,
+                }
+            )
         elif avg_sent_len > 25:
-            findings.append({
-                "severity": "minor",
-                "category": "readability",
-                "finding_text": (
-                    f"Section '{section_title}' average sentence length "
-                    f"({avg_sent_len:.0f} words) slightly above target of 25."
-                ),
-                "recommendation": "Consider splitting longest sentences.",
-                "section_id": section_id,
-            })
+            findings.append(
+                {
+                    "severity": "minor",
+                    "category": "readability",
+                    "finding_text": (
+                        f"Section '{section_title}' average sentence length "
+                        f"({avg_sent_len:.0f} words) slightly above target of 25."
+                    ),
+                    "recommendation": "Consider splitting longest sentences.",
+                    "section_id": section_id,
+                }
+            )
 
         # ── Passive voice percentage ──────────────────────────────────
         passive_matches = PASSIVE_PATTERNS.findall(content)
         passive_pct = (len(passive_matches) / len(sentences) * 100) if sentences else 0
 
         if passive_pct > 30:
-            findings.append({
-                "severity": "major",
-                "category": "readability",
-                "finding_text": (
-                    f"Section '{section_title}' has {passive_pct:.0f}% passive voice "
-                    f"(target: < 20%). Passive voice weakens assertions and "
-                    f"obscures accountability."
-                ),
-                "recommendation": (
-                    "Convert passive to active: 'The system was designed by our team' "
-                    "-> 'Our team designed the system'. Active voice shows ownership."
-                ),
-                "section_id": section_id,
-            })
+            findings.append(
+                {
+                    "severity": "major",
+                    "category": "readability",
+                    "finding_text": (
+                        f"Section '{section_title}' has {passive_pct:.0f}% passive voice "
+                        f"(target: < 20%). Passive voice weakens assertions and "
+                        f"obscures accountability."
+                    ),
+                    "recommendation": (
+                        "Convert passive to active: 'The system was designed by our team' "
+                        "-> 'Our team designed the system'. Active voice shows ownership."
+                    ),
+                    "section_id": section_id,
+                }
+            )
         elif passive_pct > 20:
-            findings.append({
-                "severity": "minor",
-                "category": "readability",
-                "finding_text": (
-                    f"Section '{section_title}' passive voice at {passive_pct:.0f}% "
-                    f"(target: < 20%)."
-                ),
-                "recommendation": "Reduce passive constructions for stronger tone.",
-                "section_id": section_id,
-            })
+            findings.append(
+                {
+                    "severity": "minor",
+                    "category": "readability",
+                    "finding_text": (f"Section '{section_title}' passive voice at {passive_pct:.0f}% (target: < 20%)."),
+                    "recommendation": "Reduce passive constructions for stronger tone.",
+                    "section_id": section_id,
+                }
+            )
 
         # ── Acronym-at-first-use check ────────────────────────────────
         # Find all uppercase acronyms (2+ caps)
@@ -708,19 +745,20 @@ def _run_readability_critic(sections: List[Dict]) -> List[Dict]:
                 # First time seeing this acronym
                 global_acronyms[acr] = section_title
                 if not defined_here and len(acr) >= 3:
-                    findings.append({
-                        "severity": "minor",
-                        "category": "readability",
-                        "finding_text": (
-                            f"Acronym '{acr}' first appears in section '{section_title}' "
-                            f"without definition."
-                        ),
-                        "recommendation": (
-                            f"Define '{acr}' at first use: 'Full Name ({acr})'. "
-                            f"Include in acronym list if provided."
-                        ),
-                        "section_id": section_id,
-                    })
+                    findings.append(
+                        {
+                            "severity": "minor",
+                            "category": "readability",
+                            "finding_text": (
+                                f"Acronym '{acr}' first appears in section '{section_title}' without definition."
+                            ),
+                            "recommendation": (
+                                f"Define '{acr}' at first use: 'Full Name ({acr})'. "
+                                f"Include in acronym list if provided."
+                            ),
+                            "section_id": section_id,
+                        }
+                    )
 
     # ── Multi-author tone consistency ─────────────────────────────────
     if len(sections_with_content) >= 3:
@@ -735,42 +773,47 @@ def _run_readability_critic(sections: List[Dict]) -> List[Dict]:
         if len(ttrs) >= 3:
             ttr_range = max(ttrs) - min(ttrs)
             if ttr_range > 0.15:
-                findings.append({
-                    "severity": "minor",
-                    "category": "readability",
-                    "finding_text": (
-                        f"Tone inconsistency detected across sections. "
-                        f"Vocabulary diversity ranges from {min(ttrs):.2f} to "
-                        f"{max(ttrs):.2f} (spread: {ttr_range:.2f}). "
-                        f"This suggests multiple authors with different writing styles."
-                    ),
-                    "recommendation": (
-                        "Perform a 'white glove' pass for consistent voice. "
-                        "Normalize sentence structure, formality level, and "
-                        "transition language across all sections."
-                    ),
-                    "section_id": None,
-                })
+                findings.append(
+                    {
+                        "severity": "minor",
+                        "category": "readability",
+                        "finding_text": (
+                            f"Tone inconsistency detected across sections. "
+                            f"Vocabulary diversity ranges from {min(ttrs):.2f} to "
+                            f"{max(ttrs):.2f} (spread: {ttr_range:.2f}). "
+                            f"This suggests multiple authors with different writing styles."
+                        ),
+                        "recommendation": (
+                            "Perform a 'white glove' pass for consistent voice. "
+                            "Normalize sentence structure, formality level, and "
+                            "transition language across all sections."
+                        ),
+                        "section_id": None,
+                    }
+                )
 
     # ── Summary observation ───────────────────────────────────────────
     avg_grade = sum(all_grade_levels) / len(all_grade_levels) if all_grade_levels else 0
     avg_sent = sum(all_avg_sentence_lengths) / len(all_avg_sentence_lengths) if all_avg_sentence_lengths else 0
-    findings.append({
-        "severity": "observation",
-        "category": "readability",
-        "finding_text": (
-            f"Readability summary: avg grade level {avg_grade:.1f} (target: 10-12), "
-            f"avg sentence length {avg_sent:.0f} words (target: < 25), "
-            f"{len(global_acronyms)} unique acronyms found."
-        ),
-        "recommendation": "Target: grade level 10-12, sentence length < 25 words, < 20% passive voice.",
-        "section_id": None,
-    })
+    findings.append(
+        {
+            "severity": "observation",
+            "category": "readability",
+            "finding_text": (
+                f"Readability summary: avg grade level {avg_grade:.1f} (target: 10-12), "
+                f"avg sentence length {avg_sent:.0f} words (target: < 25), "
+                f"{len(global_acronyms)} unique acronyms found."
+            ),
+            "recommendation": "Target: grade level 10-12, sentence length < 25 words, < 20% passive voice.",
+            "section_id": None,
+        }
+    )
 
     return findings
 
 
 # ── Strategy Critic (Blue team only) ──────────────────────────────────
+
 
 def _run_strategy_critic(opportunity_id: str, sections: List[Dict]) -> List[Dict]:
     """Evaluate capture strategy alignment for Blue team reviews.
@@ -788,28 +831,31 @@ def _run_strategy_critic(opportunity_id: str, sections: List[Dict]) -> List[Dict
     theme_count = 0
     if _table_exists(conn, "pg_win_themes"):
         row = conn.execute(
-            "SELECT COUNT(*) AS cnt FROM pg_win_themes "
-            "WHERE opportunity_id = ? AND status = 'active'",
+            "SELECT COUNT(*) AS cnt FROM pg_win_themes WHERE opportunity_id = ? AND status = 'active'",
             (opportunity_id,),
         ).fetchone()
         theme_count = row["cnt"] if row else 0
 
     if theme_count == 0:
-        findings.append({
-            "severity": "critical",
-            "category": "strategy",
-            "finding_text": "No win themes defined. Proposal lacks strategic differentiation.",
-            "recommendation": "Define at least 3 win themes aligned to Section M evaluation criteria.",
-            "section_id": None,
-        })
+        findings.append(
+            {
+                "severity": "critical",
+                "category": "strategy",
+                "finding_text": "No win themes defined. Proposal lacks strategic differentiation.",
+                "recommendation": "Define at least 3 win themes aligned to Section M evaluation criteria.",
+                "section_id": None,
+            }
+        )
     elif theme_count < 3:
-        findings.append({
-            "severity": "major",
-            "category": "strategy",
-            "finding_text": f"Only {theme_count} win theme(s) defined. Best practice is 3-5.",
-            "recommendation": "Add win themes that map directly to Section M evaluation factors.",
-            "section_id": None,
-        })
+        findings.append(
+            {
+                "severity": "major",
+                "category": "strategy",
+                "finding_text": f"Only {theme_count} win theme(s) defined. Best practice is 3-5.",
+                "recommendation": "Add win themes that map directly to Section M evaluation factors.",
+                "section_id": None,
+            }
+        )
 
     # ── Competitive analysis ──────────────────────────────────────────
     ghost_count = 0
@@ -822,38 +868,42 @@ def _run_strategy_critic(opportunity_id: str, sections: List[Dict]) -> List[Dict
         ghost_count = row["cnt"] if row else 0
 
     if ghost_count == 0:
-        findings.append({
-            "severity": "major",
-            "category": "strategy",
-            "finding_text": "No ghost competitor strategies defined. Cannot differentiate against competition.",
-            "recommendation": "Identify top 2-3 competitors and create ghosting strategies.",
-            "section_id": None,
-        })
+        findings.append(
+            {
+                "severity": "major",
+                "category": "strategy",
+                "finding_text": "No ghost competitor strategies defined. Cannot differentiate against competition.",
+                "recommendation": "Identify top 2-3 competitors and create ghosting strategies.",
+                "section_id": None,
+            }
+        )
 
     # ── Teaming strategy ──────────────────────────────────────────────
     teaming_count = 0
     if _table_exists(conn, "pg_teaming_workshare"):
         row = conn.execute(
-            "SELECT COUNT(*) AS cnt FROM pg_teaming_workshare "
-            "WHERE opportunity_id = ?",
+            "SELECT COUNT(*) AS cnt FROM pg_teaming_workshare WHERE opportunity_id = ?",
             (opportunity_id,),
         ).fetchone()
         teaming_count = row["cnt"] if row else 0
 
     if teaming_count == 0:
-        findings.append({
-            "severity": "minor",
-            "category": "strategy",
-            "finding_text": "No teaming partners / workshare defined. Verify if sole-source or teaming needed.",
-            "recommendation": "If teaming is planned, define workshare allocations and TA agreements.",
-            "section_id": None,
-        })
+        findings.append(
+            {
+                "severity": "minor",
+                "category": "strategy",
+                "finding_text": "No teaming partners / workshare defined. Verify if sole-source or teaming needed.",
+                "recommendation": "If teaming is planned, define workshare allocations and TA agreements.",
+                "section_id": None,
+            }
+        )
 
     conn.close()
     return findings
 
 
 # ── Pricing Critic (Green team) ───────────────────────────────────────
+
 
 def _run_pricing_critic(opportunity_id: str, sections: List[Dict]) -> List[Dict]:
     """Evaluate cost volume for Green team reviews.
@@ -871,19 +921,20 @@ def _run_pricing_critic(opportunity_id: str, sections: List[Dict]) -> List[Dict]
     cost_volume = None
     if _table_exists(conn, "pg_cost_volumes"):
         cost_volume = conn.execute(
-            "SELECT * FROM pg_cost_volumes WHERE opportunity_id = ? "
-            "ORDER BY updated_at DESC LIMIT 1",
+            "SELECT * FROM pg_cost_volumes WHERE opportunity_id = ? ORDER BY updated_at DESC LIMIT 1",
             (opportunity_id,),
         ).fetchone()
 
     if not cost_volume:
-        findings.append({
-            "severity": "critical",
-            "category": "pricing",
-            "finding_text": "No cost volume defined for this opportunity.",
-            "recommendation": "Create cost volume with labor categories, rates, and pricing strategy.",
-            "section_id": None,
-        })
+        findings.append(
+            {
+                "severity": "critical",
+                "category": "pricing",
+                "finding_text": "No cost volume defined for this opportunity.",
+                "recommendation": "Create cost volume with labor categories, rates, and pricing strategy.",
+                "section_id": None,
+            }
+        )
         conn.close()
         return findings
 
@@ -892,65 +943,72 @@ def _run_pricing_critic(opportunity_id: str, sections: List[Dict]) -> List[Dict]
     # ── Total evaluated price ─────────────────────────────────────────
     tep = cost_volume.get("total_evaluated_price")
     if not tep or tep <= 0:
-        findings.append({
-            "severity": "critical",
-            "category": "pricing",
-            "finding_text": "Total Evaluated Price is not set or is zero.",
-            "recommendation": "Calculate TEP from labor, ODC, subcontractor, and fee components.",
-            "section_id": None,
-        })
+        findings.append(
+            {
+                "severity": "critical",
+                "category": "pricing",
+                "finding_text": "Total Evaluated Price is not set or is zero.",
+                "recommendation": "Calculate TEP from labor, ODC, subcontractor, and fee components.",
+                "section_id": None,
+            }
+        )
 
     # ── PTW (Price to Win) comparison ─────────────────────────────────
     ptw_low = cost_volume.get("ptw_estimate_low")
     ptw_high = cost_volume.get("ptw_estimate_high")
     if tep and ptw_low and ptw_high:
         if tep > ptw_high:
-            findings.append({
-                "severity": "critical",
-                "category": "pricing",
-                "finding_text": (
-                    f"TEP (${tep:,.0f}) exceeds PTW high estimate (${ptw_high:,.0f}). "
-                    f"Price is likely not competitive."
-                ),
-                "recommendation": (
-                    "Identify cost reduction opportunities: reduce FTEs, negotiate "
-                    "sub rates, lower fee percentage, or adjust labor mix."
-                ),
-                "section_id": None,
-            })
+            findings.append(
+                {
+                    "severity": "critical",
+                    "category": "pricing",
+                    "finding_text": (
+                        f"TEP (${tep:,.0f}) exceeds PTW high estimate (${ptw_high:,.0f}). "
+                        f"Price is likely not competitive."
+                    ),
+                    "recommendation": (
+                        "Identify cost reduction opportunities: reduce FTEs, negotiate "
+                        "sub rates, lower fee percentage, or adjust labor mix."
+                    ),
+                    "section_id": None,
+                }
+            )
         elif tep < ptw_low:
-            findings.append({
-                "severity": "major",
-                "category": "pricing",
-                "finding_text": (
-                    f"TEP (${tep:,.0f}) is below PTW low estimate (${ptw_low:,.0f}). "
-                    f"Government may question realism of pricing."
-                ),
-                "recommendation": (
-                    "Review pricing for realism. Ensure rates meet FAR cost "
-                    "adequacy requirements and support the proposed technical approach."
-                ),
-                "section_id": None,
-            })
+            findings.append(
+                {
+                    "severity": "major",
+                    "category": "pricing",
+                    "finding_text": (
+                        f"TEP (${tep:,.0f}) is below PTW low estimate (${ptw_low:,.0f}). "
+                        f"Government may question realism of pricing."
+                    ),
+                    "recommendation": (
+                        "Review pricing for realism. Ensure rates meet FAR cost "
+                        "adequacy requirements and support the proposed technical approach."
+                    ),
+                    "section_id": None,
+                }
+            )
 
     # ── Labor category coverage ───────────────────────────────────────
     lcat_count = 0
     if _table_exists(conn, "pg_lcat_allocations"):
         row = conn.execute(
-            "SELECT COUNT(*) AS cnt FROM pg_lcat_allocations "
-            "WHERE cost_volume_id = ?",
+            "SELECT COUNT(*) AS cnt FROM pg_lcat_allocations WHERE cost_volume_id = ?",
             (cost_volume.get("id", ""),),
         ).fetchone()
         lcat_count = row["cnt"] if row else 0
 
     if lcat_count == 0:
-        findings.append({
-            "severity": "major",
-            "category": "pricing",
-            "finding_text": "No labor categories allocated in cost volume.",
-            "recommendation": "Allocate LCATs with BLS SOC codes, FTE counts, and hourly rates.",
-            "section_id": None,
-        })
+        findings.append(
+            {
+                "severity": "major",
+                "category": "pricing",
+                "finding_text": "No labor categories allocated in cost volume.",
+                "recommendation": "Allocate LCATs with BLS SOC codes, FTE counts, and hourly rates.",
+                "section_id": None,
+            }
+        )
 
     # ── Rate components ───────────────────────────────────────────────
     for component, label in [
@@ -960,19 +1018,22 @@ def _run_pricing_critic(opportunity_id: str, sections: List[Dict]) -> List[Dict]
     ]:
         value = cost_volume.get(component)
         if value is None:
-            findings.append({
-                "severity": "minor",
-                "category": "pricing",
-                "finding_text": f"{label} is not set in cost volume.",
-                "recommendation": f"Set {label} based on approved indirect rate structure.",
-                "section_id": None,
-            })
+            findings.append(
+                {
+                    "severity": "minor",
+                    "category": "pricing",
+                    "finding_text": f"{label} is not set in cost volume.",
+                    "recommendation": f"Set {label} based on approved indirect rate structure.",
+                    "section_id": None,
+                }
+            )
 
     conn.close()
     return findings
 
 
 # ── Consensus Engine ──────────────────────────────────────────────────
+
 
 def _compute_consensus(findings: List[Dict]) -> str:
     """Compute review consensus from findings.
@@ -993,6 +1054,7 @@ def _compute_consensus(findings: List[Dict]) -> str:
 
 
 # ── Main Entry Point ──────────────────────────────────────────────────
+
 
 def simulate_review(
     opportunity_id: str,
@@ -1114,14 +1176,16 @@ def simulate_review(
         _audit(
             conn,
             f"simulate_{review_type}",
-            json.dumps({
-                "opportunity_id": opportunity_id,
-                "iteration": iteration,
-                "consensus": consensus,
-                "total_findings": len(all_findings),
-                "critical": severity_counts["critical"],
-                "major": severity_counts["major"],
-            }),
+            json.dumps(
+                {
+                    "opportunity_id": opportunity_id,
+                    "iteration": iteration,
+                    "consensus": consensus,
+                    "total_findings": len(all_findings),
+                    "critical": severity_counts["critical"],
+                    "major": severity_counts["major"],
+                }
+            ),
         )
         conn.commit()
 
@@ -1144,6 +1208,7 @@ def simulate_review(
 
 
 # ── History & Trends ──────────────────────────────────────────────────
+
 
 def get_review_history(opportunity_id: str) -> Dict[str, Any]:
     """Get all review findings grouped by review type and iteration.
@@ -1192,17 +1257,19 @@ def get_review_history(opportunity_id: str) -> Dict[str, Any]:
             resolved = sum(1 for f in findings if f["resolution_status"] != "open")
             consensus = _compute_consensus(findings)
 
-            review_list.append({
-                "review_type": rt,
-                "iteration": it,
-                "consensus": consensus,
-                "total_findings": len(findings),
-                "severity_counts": severity_counts,
-                "resolved": resolved,
-                "open": len(findings) - resolved,
-                "created_at": findings[0]["created_at"] if findings else None,
-                "findings": findings,
-            })
+            review_list.append(
+                {
+                    "review_type": rt,
+                    "iteration": it,
+                    "consensus": consensus,
+                    "total_findings": len(findings),
+                    "severity_counts": severity_counts,
+                    "resolved": resolved,
+                    "open": len(findings) - resolved,
+                    "created_at": findings[0]["created_at"] if findings else None,
+                    "findings": findings,
+                }
+            )
 
     return {
         "status": "ok",
@@ -1298,6 +1365,7 @@ def get_finding_trends(opportunity_id: str) -> Dict[str, Any]:
 
 # ── Finding Resolution ────────────────────────────────────────────────
 
+
 def resolve_finding(
     finding_id: str,
     status: str,
@@ -1326,9 +1394,7 @@ def resolve_finding(
         conn.close()
         return {"status": "error", "error": "pg_review_findings table does not exist."}
 
-    existing = conn.execute(
-        "SELECT * FROM pg_review_findings WHERE id = ?", (finding_id,)
-    ).fetchone()
+    existing = conn.execute("SELECT * FROM pg_review_findings WHERE id = ?", (finding_id,)).fetchone()
 
     if not existing:
         conn.close()
@@ -1336,26 +1402,25 @@ def resolve_finding(
 
     now = _now()
     conn.execute(
-        "UPDATE pg_review_findings SET resolution_status = ?, resolution_notes = ?, resolved_at = ? "
-        "WHERE id = ?",
+        "UPDATE pg_review_findings SET resolution_status = ?, resolution_notes = ?, resolved_at = ? WHERE id = ?",
         (status, notes or "", now, finding_id),
     )
 
     _audit(
         conn,
         "resolve_finding",
-        json.dumps({
-            "finding_id": finding_id,
-            "old_status": existing["resolution_status"],
-            "new_status": status,
-            "notes": notes or "",
-        }),
+        json.dumps(
+            {
+                "finding_id": finding_id,
+                "old_status": existing["resolution_status"],
+                "new_status": status,
+                "notes": notes or "",
+            }
+        ),
     )
     conn.commit()
 
-    updated = conn.execute(
-        "SELECT * FROM pg_review_findings WHERE id = ?", (finding_id,)
-    ).fetchone()
+    updated = conn.execute("SELECT * FROM pg_review_findings WHERE id = ?", (finding_id,)).fetchone()
     conn.close()
 
     return {
@@ -1366,6 +1431,7 @@ def resolve_finding(
 
 
 # ── Export ────────────────────────────────────────────────────────────
+
 
 def export_review(
     opportunity_id: str,
@@ -1498,6 +1564,7 @@ def export_review(
 
 # ── CLI ───────────────────────────────────────────────────────────────
 
+
 def _print_human(result: Dict, action: str) -> None:
     """Human-readable output for terminal display."""
     status = result.get("status", "unknown")
@@ -1516,9 +1583,9 @@ def _print_human(result: Dict, action: str) -> None:
         composite = result.get("composite_score", 0)
 
         consensus_color = {
-            "GO": "\033[92m",        # green
-            "CONDITIONAL": "\033[93m", # yellow
-            "NOGO": "\033[91m",      # red
+            "GO": "\033[92m",  # green
+            "CONDITIONAL": "\033[93m",  # yellow
+            "NOGO": "\033[91m",  # red
         }.get(consensus, "")
         reset = "\033[0m"
 
@@ -1589,9 +1656,7 @@ def _print_human(result: Dict, action: str) -> None:
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="ICDEV™ AI Color Team Review Simulator (§3.12)"
-    )
+    parser = argparse.ArgumentParser(description="ICDEV™ AI Color Team Review Simulator (§3.12)")
 
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(

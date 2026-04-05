@@ -71,16 +71,28 @@ DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db
 # Graceful import of audit logger
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
+
     def audit_log_event(**kwargs):
         return -1
+
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-VALID_ASSET_TYPES = {"skill", "goal", "hardprompt", "context", "args", "compliance", "lora_adapter", "experiment_program"}
+VALID_ASSET_TYPES = {
+    "skill",
+    "goal",
+    "hardprompt",
+    "context",
+    "args",
+    "compliance",
+    "lora_adapter",
+    "experiment_program",
+}
 VALID_IMPACT_LEVELS = {"IL2", "IL4", "IL5", "IL6"}
 VALID_STATUSES = {"draft", "scanning", "review", "published", "deprecated", "revoked"}
 VALID_CATALOG_TIERS = {"tenant_local", "central_vetted"}
@@ -93,9 +105,7 @@ def _get_db(db_path=None):
     """Get database connection with dict-like row access."""
     path = db_path or DB_PATH
     if not path.exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py"
-        )
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
     conn = get_connection(db_path=str(path))
     return conn
 
@@ -152,12 +162,24 @@ def _audit(event_type, actor, action, project_id=None, details=None):
 # Core operations
 # ---------------------------------------------------------------------------
 
-def register_asset(name, asset_type, description, version, impact_level,
-                   classification="CUI // SP-CTI", tenant_id=None,
-                   publisher_org=None, publisher_user=None,
-                   license_id="USG-INTERNAL", tags=None,
-                   compliance_controls=None, supported_languages=None,
-                   dependencies=None, db_path=None):
+
+def register_asset(
+    name,
+    asset_type,
+    description,
+    version,
+    impact_level,
+    classification="CUI // SP-CTI",
+    tenant_id=None,
+    publisher_org=None,
+    publisher_user=None,
+    license_id="USG-INTERNAL",
+    tags=None,
+    compliance_controls=None,
+    supported_languages=None,
+    dependencies=None,
+    db_path=None,
+):
     """Register a new marketplace asset.
 
     Returns dict with asset_id, slug, and metadata.
@@ -183,9 +205,17 @@ def register_asset(name, asset_type, description, version, impact_level,
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'tenant_local', 'draft',
                        ?, ?, ?, ?)""",
             (
-                asset_id, slug, name, asset_type, description, version,
-                classification, impact_level, tenant_id,
-                publisher_org, publisher_user,
+                asset_id,
+                slug,
+                name,
+                asset_type,
+                description,
+                version,
+                classification,
+                impact_level,
+                tenant_id,
+                publisher_org,
+                publisher_user,
                 license_id,
                 json.dumps(tags) if tags else None,
                 json.dumps(compliance_controls) if compliance_controls else None,
@@ -215,8 +245,7 @@ def register_asset(name, asset_type, description, version, impact_level,
     }
 
 
-def add_version(asset_id, version, changelog=None, file_path=None,
-                published_by=None, metadata=None, db_path=None):
+def add_version(asset_id, version, changelog=None, file_path=None, published_by=None, metadata=None, db_path=None):
     """Add a new version to an existing asset.
 
     Computes SHA-256 hash of the file/directory at file_path.
@@ -247,8 +276,12 @@ def add_version(asset_id, version, changelog=None, file_path=None,
                 file_path, file_size_bytes, metadata, published_by, status)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft')""",
             (
-                version_id, asset_id, version, changelog,
-                sha256_hash, str(file_path) if file_path else None,
+                version_id,
+                asset_id,
+                version,
+                changelog,
+                sha256_hash,
+                str(file_path) if file_path else None,
                 file_size,
                 json.dumps(metadata) if metadata else None,
                 published_by,
@@ -296,9 +329,7 @@ def promote_to_central(asset_id, db_path=None):
     """Promote an asset from tenant_local to central_vetted catalog."""
     conn = _get_db(db_path)
     try:
-        row = conn.execute(
-            "SELECT status FROM marketplace_assets WHERE id = ?", (asset_id,)
-        ).fetchone()
+        row = conn.execute("SELECT status FROM marketplace_assets WHERE id = ?", (asset_id,)).fetchone()
         if not row:
             raise ValueError(f"Asset not found: {asset_id}")
         if row["status"] != "published":
@@ -350,13 +381,9 @@ def get_asset(slug=None, asset_id=None, db_path=None):
     conn = _get_db(db_path)
     try:
         if slug:
-            row = conn.execute(
-                "SELECT * FROM marketplace_assets WHERE slug = ?", (slug,)
-            ).fetchone()
+            row = conn.execute("SELECT * FROM marketplace_assets WHERE slug = ?", (slug,)).fetchone()
         elif asset_id:
-            row = conn.execute(
-                "SELECT * FROM marketplace_assets WHERE id = ?", (asset_id,)
-            ).fetchone()
+            row = conn.execute("SELECT * FROM marketplace_assets WHERE id = ?", (asset_id,)).fetchone()
         else:
             raise ValueError("Either 'slug' or 'asset_id' is required")
 
@@ -393,9 +420,9 @@ def get_asset(slug=None, asset_id=None, db_path=None):
         conn.close()
 
 
-def list_assets(asset_type=None, tenant_id=None, catalog_tier=None,
-                status=None, impact_level=None, limit=50, offset=0,
-                db_path=None):
+def list_assets(
+    asset_type=None, tenant_id=None, catalog_tier=None, status=None, impact_level=None, limit=50, offset=0, db_path=None
+):
     """List assets with optional filters."""
     conn = _get_db(db_path)
     try:
@@ -529,19 +556,30 @@ def main():
             tags = args.tags.split(",") if args.tags else None
             controls = args.compliance_controls.split(",") if args.compliance_controls else None
             result = register_asset(
-                name=args.name, asset_type=args.asset_type,
-                description=args.description, version=args.version,
-                impact_level=args.impact_level, classification=args.classification,
-                tenant_id=args.tenant_id, publisher_org=args.publisher_org,
-                publisher_user=args.publisher_user, license_id=args.license,
-                tags=tags, compliance_controls=controls, db_path=db_path,
+                name=args.name,
+                asset_type=args.asset_type,
+                description=args.description,
+                version=args.version,
+                impact_level=args.impact_level,
+                classification=args.classification,
+                tenant_id=args.tenant_id,
+                publisher_org=args.publisher_org,
+                publisher_user=args.publisher_user,
+                license_id=args.license,
+                tags=tags,
+                compliance_controls=controls,
+                db_path=db_path,
             )
         elif args.list:
             result = list_assets(
-                asset_type=args.asset_type, tenant_id=args.tenant_id,
-                catalog_tier=args.catalog_tier, status=args.status,
-                impact_level=args.impact_level, limit=args.limit,
-                offset=args.offset, db_path=db_path,
+                asset_type=args.asset_type,
+                tenant_id=args.tenant_id,
+                catalog_tier=args.catalog_tier,
+                status=args.status,
+                impact_level=args.impact_level,
+                limit=args.limit,
+                offset=args.offset,
+                db_path=db_path,
             )
         elif args.get:
             if not (args.slug or args.asset_id):
@@ -553,9 +591,12 @@ def main():
             if not all([args.asset_id, args.version]):
                 parser.error("--add-version requires --asset-id, --version")
             result = add_version(
-                asset_id=args.asset_id, version=args.version,
-                changelog=args.changelog, file_path=args.file_path,
-                published_by=args.publisher_user, db_path=db_path,
+                asset_id=args.asset_id,
+                version=args.version,
+                changelog=args.changelog,
+                file_path=args.file_path,
+                published_by=args.publisher_user,
+                db_path=db_path,
             )
         elif args.update_status:
             if not all([args.asset_id, args.status]):
@@ -565,7 +606,9 @@ def main():
             if not args.asset_id:
                 parser.error("--deprecate requires --asset-id")
             result = deprecate_asset(
-                asset_id=args.asset_id, replacement_slug=args.replacement_slug, db_path=db_path,
+                asset_id=args.asset_id,
+                replacement_slug=args.replacement_slug,
+                db_path=db_path,
             )
         elif args.promote:
             if not args.asset_id:

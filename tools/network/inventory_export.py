@@ -9,6 +9,7 @@ Exported artefacts:
   - Terraform HCL skeleton          — VPCs, subnets, security-groups derived
                                       from the diagram's logical structure
 """
+
 from __future__ import annotations
 
 import re
@@ -20,108 +21,124 @@ from datetime import datetime, timezone
 # ---------------------------------------------------------------------------
 
 # Node types that represent addressable hosts (ansible targets)
-_HOST_TYPES: frozenset[str] = frozenset({
-    "server", "router", "firewall", "switch-l3", "switch-l2",
-    "wap", "wlc", "siem", "network-tap",
-    "endpoint-pc", "endpoint-phone", "endpoint-iot", "endpoint-camera",
-    "aws-alb", "aws-nlb", "aws-r53",
-    "az-bastion", "az-appgw",
-    "gcp-lb", "gcp-router",
-    "oci-lb",
-    "ibm-lb",
-})
+_HOST_TYPES: frozenset[str] = frozenset(
+    {
+        "server",
+        "router",
+        "firewall",
+        "switch-l3",
+        "switch-l2",
+        "wap",
+        "wlc",
+        "siem",
+        "network-tap",
+        "endpoint-pc",
+        "endpoint-phone",
+        "endpoint-iot",
+        "endpoint-camera",
+        "aws-alb",
+        "aws-nlb",
+        "aws-r53",
+        "az-bastion",
+        "az-appgw",
+        "gcp-lb",
+        "gcp-router",
+        "oci-lb",
+        "ibm-lb",
+    }
+)
 
 # Node types that represent network infrastructure (terraform resources)
 _CLOUD_NODE_ROLES: dict[str, str] = {
     # AWS
-    "aws-vpc":       "vpc",
-    "aws-subnet":    "subnet",
-    "aws-tgw":       "transit_gateway",
-    "aws-alb":       "lb",
-    "aws-nlb":       "lb",
-    "aws-nfw":       "firewall",
-    "aws-waf":       "waf",
-    "aws-cloudfront":"cdn",
-    "aws-r53":       "dns",
-    "aws-dx":        "direct_connect",
-    "aws-vpn":       "vpn_gateway",
-    "aws-gw-ep":     "vpc_endpoint",
-    "aws-dx-gw":     "dx_gateway",
+    "aws-vpc": "vpc",
+    "aws-subnet": "subnet",
+    "aws-tgw": "transit_gateway",
+    "aws-alb": "lb",
+    "aws-nlb": "lb",
+    "aws-nfw": "firewall",
+    "aws-waf": "waf",
+    "aws-cloudfront": "cdn",
+    "aws-r53": "dns",
+    "aws-dx": "direct_connect",
+    "aws-vpn": "vpn_gateway",
+    "aws-gw-ep": "vpc_endpoint",
+    "aws-dx-gw": "dx_gateway",
     "aws-privatelink": "vpc_endpoint",
-    "aws-shield":    "shield_protection",
-    "aws-cloudwan":  "networkmanager_core_network",
-    "aws-ga":        "globalaccelerator_accelerator",
-    "aws-gwlb":      "lb",
-    "aws-netmgr":    "networkmanager_global_network",
-    "aws-flowlogs":  "flow_log",
-    "aws-reach":     "ec2_network_insights_path",
+    "aws-shield": "shield_protection",
+    "aws-cloudwan": "networkmanager_core_network",
+    "aws-ga": "globalaccelerator_accelerator",
+    "aws-gwlb": "lb",
+    "aws-netmgr": "networkmanager_global_network",
+    "aws-flowlogs": "flow_log",
+    "aws-reach": "ec2_network_insights_path",
     "aws-localzone": "subnet",
-    "aws-outpost":   "outposts_outpost",
+    "aws-outpost": "outposts_outpost",
     # Azure
-    "az-vnet":       "virtual_network",
-    "az-subnet":     "subnet",
-    "az-vwan":       "virtual_wan",
-    "az-er":         "express_route_circuit",
-    "az-vpn-gw":     "vpn_gateway",
-    "az-fw":         "firewall",
-    "az-appgw":      "application_gateway",
-    "az-front":      "frontdoor",
-    "az-dns":        "dns_zone",
-    "az-bastion":    "bastion_host",
-    "az-nsg":        "network_security_group",
-    "az-er-global":  "express_route_circuit",
+    "az-vnet": "virtual_network",
+    "az-subnet": "subnet",
+    "az-vwan": "virtual_wan",
+    "az-er": "express_route_circuit",
+    "az-vpn-gw": "vpn_gateway",
+    "az-fw": "firewall",
+    "az-appgw": "application_gateway",
+    "az-front": "frontdoor",
+    "az-dns": "dns_zone",
+    "az-bastion": "bastion_host",
+    "az-nsg": "network_security_group",
+    "az-er-global": "express_route_circuit",
     "az-privatelink": "private_endpoint",
-    "az-ddos":       "network_ddos_protection_plan",
+    "az-ddos": "network_ddos_protection_plan",
     "az-netwatcher": "network_watcher",
-    "az-flowlogs":   "network_watcher_flow_log",
-    "az-stack":      "stack_hci_cluster",
-    "az-crosslb":    "lb",
+    "az-flowlogs": "network_watcher_flow_log",
+    "az-stack": "stack_hci_cluster",
+    "az-crosslb": "lb",
     # GCP
-    "gcp-vpc":       "compute_network",
-    "gcp-subnet":    "compute_subnetwork",
-    "gcp-lb":        "compute_global_forwarding_rule",
-    "gcp-nat":       "compute_router_nat",
-    "gcp-vpn":       "compute_ha_vpn_gateway",
-    "gcp-armor":     "compute_security_policy",
-    "gcp-cdn":       "compute_backend_bucket",
-    "gcp-dns":       "dns_managed_zone",
-    "gcp-ic":        "compute_interconnect_attachment",
-    "gcp-router":    "compute_router",
-    "gcp-psc":       "compute_service_attachment",
-    "gcp-ncc":       "network_connectivity_hub",
-    "gcp-nic":       "network_management_connectivity_test",
-    "gcp-gfe":       "compute_global_forwarding_rule",
-    "gcp-gdc":       "compute_network",
-    "gcp-flowlogs":  "compute_subnetwork",
+    "gcp-vpc": "compute_network",
+    "gcp-subnet": "compute_subnetwork",
+    "gcp-lb": "compute_global_forwarding_rule",
+    "gcp-nat": "compute_router_nat",
+    "gcp-vpn": "compute_ha_vpn_gateway",
+    "gcp-armor": "compute_security_policy",
+    "gcp-cdn": "compute_backend_bucket",
+    "gcp-dns": "dns_managed_zone",
+    "gcp-ic": "compute_interconnect_attachment",
+    "gcp-router": "compute_router",
+    "gcp-psc": "compute_service_attachment",
+    "gcp-ncc": "network_connectivity_hub",
+    "gcp-nic": "network_management_connectivity_test",
+    "gcp-gfe": "compute_global_forwarding_rule",
+    "gcp-gdc": "compute_network",
+    "gcp-flowlogs": "compute_subnetwork",
     # OCI
-    "oci-vcn":       "core_vcn",
-    "oci-subnet":    "core_subnet",
-    "oci-drg":       "core_drg",
-    "oci-fc":        "fastconnect_virtual_circuit",
-    "oci-lb":        "load_balancer",
-    "oci-waf":       "waf_policy",
-    "oci-nsg":       "core_network_security_group",
-    "oci-ddos":      "waf_web_app_firewall",
+    "oci-vcn": "core_vcn",
+    "oci-subnet": "core_subnet",
+    "oci-drg": "core_drg",
+    "oci-fc": "fastconnect_virtual_circuit",
+    "oci-lb": "load_balancer",
+    "oci-waf": "waf_policy",
+    "oci-nsg": "core_network_security_group",
+    "oci-ddos": "waf_web_app_firewall",
     "oci-pathanalyzer": "vn_monitoring_path_analyzer_test",
-    "oci-flowlogs":  "core_vcn",
+    "oci-flowlogs": "core_vcn",
     "oci-dedicated": "core_dedicated_vm_host",
-    "oci-fd":        "core_instance",
+    "oci-fd": "core_instance",
     # IBM
-    "ibm-vpc":       "is_vpc",
-    "ibm-subnet":    "is_subnet",
-    "ibm-dl":        "dl_gateway",
-    "ibm-vpn":       "is_vpn_gateway",
-    "ibm-lb":        "is_lb",
-    "ibm-tg":        "tg_gateway",
+    "ibm-vpc": "is_vpc",
+    "ibm-subnet": "is_subnet",
+    "ibm-dl": "dl_gateway",
+    "ibm-vpn": "is_vpn_gateway",
+    "ibm-lb": "is_lb",
+    "ibm-tg": "tg_gateway",
     "ibm-satellite": "satellite_location",
-    "ibm-cis":       "cis_domain",
-    "ibm-flowlogs":  "is_flow_log_collector",
+    "ibm-cis": "cis_domain",
+    "ibm-flowlogs": "is_flow_log_collector",
 }
 
 _CLOUD_PREFIXES: tuple[str, ...] = ("aws-", "az-", "gcp-", "oci-", "ibm-")
 _PROVIDER_MAP: dict[str, str] = {
     "aws-": "aws",
-    "az-":  "azurerm",
+    "az-": "azurerm",
     "gcp-": "google",
     "oci-": "oci",
     "ibm-": "ibm",
@@ -194,6 +211,7 @@ def _detect_providers(nodes: list[dict]) -> list[str]:
 # 1. Ansible Inventory (INI format)
 # ---------------------------------------------------------------------------
 
+
 def _build_enclave_map(boundaries: list[dict]) -> dict[str, str]:
     """Return {node_id: enclave_group_name} from nc_boundaries rows.
 
@@ -265,10 +283,9 @@ def to_ansible_inventory(graph: dict, name: str, boundaries: list[dict] | None =
         groups.setdefault(group, []).append(n)
 
     # Collect enclave metadata for header
-    enclave_names: list[str] = sorted({
-        enclave_map[nid] for nid in enclave_map
-        if any(n.get("id") == nid for n in host_nodes)
-    })
+    enclave_names: list[str] = sorted(
+        {enclave_map[nid] for nid in enclave_map if any(n.get("id") == nid for n in host_nodes)}
+    )
 
     lines: list[str] = []
     lines.append(f"# Ansible Inventory — {name}")
@@ -295,8 +312,10 @@ def to_ansible_inventory(graph: dict, name: str, boundaries: list[dict] | None =
                 for b in (boundaries or [])
                 if _safe_id(
                     f"{b.get('label', '')}_{b.get('classification', '')}"
-                    if b.get("classification") else b.get("label", "")
-                ) == group_name
+                    if b.get("classification")
+                    else b.get("label", "")
+                )
+                == group_name
             ),
             None,
         )
@@ -330,9 +349,7 @@ def to_ansible_inventory(graph: dict, name: str, boundaries: list[dict] | None =
 
     # Cloud infrastructure reference (non-host nodes)
     if infra_nodes:
-        lines.append(
-            "# ── Cloud / Network Infrastructure (not Ansible-managed) ──────────────"
-        )
+        lines.append("# ── Cloud / Network Infrastructure (not Ansible-managed) ──────────────")
         lines.append("# These nodes exist in the topology but are not SSH-addressable hosts.")
         lines.append("# Configure them via cloud-provider modules or Terraform (see HCL export).")
         lines.append("#")
@@ -351,7 +368,7 @@ def to_ansible_inventory(graph: dict, name: str, boundaries: list[dict] | None =
 
 _SCCA_CSP_PREFIXES: dict[str, str] = {
     "aws-": "aws",
-    "az-":  "azure",
+    "az-": "azure",
     "gcp-": "gcp",
     "oci-": "oci",
     "ibm-": "ibm",
@@ -997,10 +1014,10 @@ _ENCLAVE_SG_TEMPLATES: dict[str, str] = {
 
 # Classification → ingress restriction hint
 _CLS_NOTES: dict[str, str] = {
-    "PUBLIC":       "Public zone — review egress rules, restrict ingress",
-    "CUI":          "CUI enclave — restrict ingress to authorised CUI systems only",
-    "SECRET":       "SECRET enclave — no internet egress; IL5/IL6 VPC only",
-    "TOP SECRET":   "TOP SECRET enclave — air-gap required; no cloud egress",
+    "PUBLIC": "Public zone — review egress rules, restrict ingress",
+    "CUI": "CUI enclave — restrict ingress to authorised CUI systems only",
+    "SECRET": "SECRET enclave — no internet egress; IL5/IL6 VPC only",
+    "TOP SECRET": "TOP SECRET enclave — air-gap required; no cloud egress",
 }
 
 
@@ -1015,12 +1032,8 @@ def _generate_enclave_sgs(boundaries: list[dict], providers: list[str], lines: l
     if not boundaries:
         return
 
-    lines.append(
-        "# ── Enclave-derived Security Groups / Firewall Rules ─────────────────"
-    )
-    lines.append(
-        "# Each security enclave boundary from the canvas maps to one SG/NSG/firewall resource."
-    )
+    lines.append("# ── Enclave-derived Security Groups / Firewall Rules ─────────────────")
+    lines.append("# Each security enclave boundary from the canvas maps to one SG/NSG/firewall resource.")
     lines.append("")
 
     cloud_providers = [p for p in providers if p in _ENCLAVE_SG_TEMPLATES]
@@ -1038,8 +1051,10 @@ def _generate_enclave_sgs(boundaries: list[dict], providers: list[str], lines: l
             contained_ids = []
 
         lines.append(f"# Enclave: {enc_label} | Classification: {cls} | {note}")
-        lines.append(f"# Contains {len(contained_ids)} node(s): {', '.join(contained_ids[:5])}"
-                     + (" …" if len(contained_ids) > 5 else ""))
+        lines.append(
+            f"# Contains {len(contained_ids)} node(s): {', '.join(contained_ids[:5])}"
+            + (" …" if len(contained_ids) > 5 else "")
+        )
 
         if not cloud_providers:
             lines.append(f"# No cloud provider detected — configure on-prem ACLs for enclave '{enc_label}' manually.")
@@ -1085,8 +1100,10 @@ def to_terraform_hcl(graph: dict, name: str, boundaries: list[dict] | None = Non
     lines: list[str] = []
     lines.append(f"# Terraform HCL Skeleton — {name}")
     lines.append(f"# Generated: {_now_utc()} by ICDEV™ Network Canvas")
-    lines.append(f"# Topology: {len(nodes)} nodes, {len(edges)} edges"
-                 + (f", {len(boundaries)} enclave(s)" if boundaries else ""))
+    lines.append(
+        f"# Topology: {len(nodes)} nodes, {len(edges)} edges"
+        + (f", {len(boundaries)} enclave(s)" if boundaries else "")
+    )
     lines.append("#")
     lines.append("# IMPORTANT: This is a skeleton — review all TODO comments before applying.")
     lines.append("# Run: terraform init && terraform plan")
@@ -1094,24 +1111,24 @@ def to_terraform_hcl(graph: dict, name: str, boundaries: list[dict] | None = Non
 
     # terraform {} block
     if providers:
-        lines.append('terraform {')
-        lines.append('  required_providers {')
+        lines.append("terraform {")
+        lines.append("  required_providers {")
         provider_sources = {
-            "aws":      "hashicorp/aws",
-            "azurerm":  "hashicorp/azurerm",
-            "google":   "hashicorp/google",
-            "oci":      "oracle/oci",
-            "ibm":      "IBM-Cloud/ibm",
+            "aws": "hashicorp/aws",
+            "azurerm": "hashicorp/azurerm",
+            "google": "hashicorp/google",
+            "oci": "oracle/oci",
+            "ibm": "IBM-Cloud/ibm",
         }
         for prov in providers:
             src = provider_sources.get(prov, f"hashicorp/{prov}")
-            lines.append(f'    {prov} = {{')
+            lines.append(f"    {prov} = {{")
             lines.append(f'      source  = "{src}"')
             lines.append('      version = ">= 5.0"')
-            lines.append('    }')
-        lines.append('  }')
-        lines.append('}')
-        lines.append('')
+            lines.append("    }")
+        lines.append("  }")
+        lines.append("}")
+        lines.append("")
 
     # Provider configuration blocks
     for prov in providers:
@@ -1161,10 +1178,7 @@ def to_terraform_hcl(graph: dict, name: str, boundaries: list[dict] | None = Non
         src_label = src.get("label", e.get("source", "?"))
         dst_label = dst.get("label", e.get("target", "?"))
         proto = (e.get("protocol") or e.get("label") or "any").lower()
-        sg_rules.append(
-            f'    {{ src = "{_safe_id(src_label)}", dst = "{_safe_id(dst_label)}", '
-            f'proto = "{proto}" }}'
-        )
+        sg_rules.append(f'    {{ src = "{_safe_id(src_label)}", dst = "{_safe_id(dst_label)}", proto = "{proto}" }}')
 
     if sg_rules:
         lines.append("locals {")
@@ -1180,13 +1194,9 @@ def to_terraform_hcl(graph: dict, name: str, boundaries: list[dict] | None = Non
 
     # Unknown node types — reference comment
     if unknown_nodes:
-        lines.append(
-            "# ── Unrecognised node types (no Terraform resource template) ──────────"
-        )
+        lines.append("# ── Unrecognised node types (no Terraform resource template) ──────────")
         for n in unknown_nodes:
-            lines.append(
-                f"# [{n.get('type', 'unknown')}] {n.get('label', n['id'])}"
-            )
+            lines.append(f"# [{n.get('type', 'unknown')}] {n.get('label', n['id'])}")
         lines.append("")
 
     return "\n".join(lines)

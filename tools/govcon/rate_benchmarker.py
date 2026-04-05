@@ -62,8 +62,16 @@ def _audit(conn, event_type, action, details, opportunity_id=None):
     conn.execute(
         "INSERT INTO audit_trail (id, timestamp, event_type, actor, action, details, project_id, session_id) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (_gen_id("aud"), _now(), event_type, "rate_benchmarker", action,
-         json.dumps(details) if isinstance(details, dict) else str(details), opportunity_id, None),
+        (
+            _gen_id("aud"),
+            _now(),
+            event_type,
+            "rate_benchmarker",
+            action,
+            json.dumps(details) if isinstance(details, dict) else str(details),
+            opportunity_id,
+            None,
+        ),
     )
 
 
@@ -102,6 +110,7 @@ def _ensure_tables(conn):
 # ---------------------------------------------------------------------------
 # Core functions
 # ---------------------------------------------------------------------------
+
 
 def calculate_wrap_rates(direct_rate, fringe_pct=None, overhead_pct=None, ga_pct=None, fee_pct=None):
     """Calculate fully-loaded labor rate from components."""
@@ -153,7 +162,10 @@ def benchmark_rates(labor_category, soc_code=None):
             "status": "ok",
             "labor_category": labor_category,
             "message": "No benchmark data found. Use --store-benchmark to add rates.",
-            "median": None, "p25": None, "p75": None, "sample_size": 0,
+            "median": None,
+            "p25": None,
+            "p75": None,
+            "sample_size": 0,
         }
 
     rates = sorted([r[0] if isinstance(r, (tuple, list)) else r["hourly_rate"] for r in rows])
@@ -205,15 +217,26 @@ def ptw_analysis(opportunity_id):
 
     if not rows:
         return {
-            "status": "ok", "opportunity_id": opportunity_id,
+            "status": "ok",
+            "opportunity_id": opportunity_id,
             "message": "No competitor award data available for PTW analysis",
             "recommendation": "competitive",
             "confidence": 0.1,
         }
 
-    amounts = [r[1] if isinstance(r, (tuple, list)) else r["award_amount"] for r in rows if (r[1] if isinstance(r, (tuple, list)) else r.get("award_amount"))]
+    amounts = [
+        r[1] if isinstance(r, (tuple, list)) else r["award_amount"]
+        for r in rows
+        if (r[1] if isinstance(r, (tuple, list)) else r.get("award_amount"))
+    ]
     if not amounts:
-        return {"status": "ok", "opportunity_id": opportunity_id, "message": "No award amounts in competitor data", "recommendation": "competitive", "confidence": 0.1}
+        return {
+            "status": "ok",
+            "opportunity_id": opportunity_id,
+            "message": "No award amounts in competitor data",
+            "recommendation": "competitive",
+            "confidence": 0.1,
+        }
 
     amounts.sort()
     n = len(amounts)
@@ -250,14 +273,17 @@ def generate_cost_volume(opportunity_id, contract_type="ffp"):
 
     # Get LCAT allocations
     allocs = conn.execute(
-        "SELECT labor_category, bls_soc_code, fte_count, hourly_rate "
-        "FROM pg_lcat_allocations WHERE cost_volume_id = ?",
+        "SELECT labor_category, bls_soc_code, fte_count, hourly_rate FROM pg_lcat_allocations WHERE cost_volume_id = ?",
         (opportunity_id,),
     ).fetchall()
     conn.close()
 
     if not allocs:
-        return {"status": "ok", "opportunity_id": opportunity_id, "message": "No LCAT allocations found. Run lcat_mapper.py first."}
+        return {
+            "status": "ok",
+            "opportunity_id": opportunity_id,
+            "message": "No LCAT allocations found. Run lcat_mapper.py first.",
+        }
 
     # Calculate costs per LCAT
     line_items = []
@@ -271,13 +297,15 @@ def generate_cost_volume(opportunity_id, contract_type="ffp"):
         annual_hours = (fte or 0) * 2080
         annual_cost = annual_hours * rate
         total_direct += annual_cost
-        line_items.append({
-            "labor_category": lc,
-            "fte": fte,
-            "hourly_rate": rate,
-            "annual_hours": round(annual_hours),
-            "annual_cost": round(annual_cost, 2),
-        })
+        line_items.append(
+            {
+                "labor_category": lc,
+                "fte": fte,
+                "hourly_rate": rate,
+                "annual_hours": round(annual_hours),
+                "annual_cost": round(annual_cost, 2),
+            }
+        )
 
     # Apply wrap rates
     wrap = calculate_wrap_rates(total_direct)
@@ -292,12 +320,34 @@ def generate_cost_volume(opportunity_id, contract_type="ffp"):
         "total_evaluated_price, direct_labor_cost, fringe_rate, overhead_rate, g_and_a_rate, fee_rate, "
         "subcontractor_cost, odc_cost, ptw_estimate_low, ptw_estimate_high, calc_benchmark_median, "
         "status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (cv_id, opportunity_id, contract_type, "best_value",
-         total_loaded, total_direct, DEFAULT_RATES["fringe_pct"], DEFAULT_RATES["overhead_pct"],
-         DEFAULT_RATES["ga_pct"], DEFAULT_RATES["fee_pct"], 0, 0, None, None, None,
-         "draft", _now(), _now()),
+        (
+            cv_id,
+            opportunity_id,
+            contract_type,
+            "best_value",
+            total_loaded,
+            total_direct,
+            DEFAULT_RATES["fringe_pct"],
+            DEFAULT_RATES["overhead_pct"],
+            DEFAULT_RATES["ga_pct"],
+            DEFAULT_RATES["fee_pct"],
+            0,
+            0,
+            None,
+            None,
+            None,
+            "draft",
+            _now(),
+            _now(),
+        ),
     )
-    _audit(conn2, "cost_volume.generate", f"Generated {contract_type} cost volume", {"id": cv_id, "total": total_loaded}, opportunity_id)
+    _audit(
+        conn2,
+        "cost_volume.generate",
+        f"Generated {contract_type} cost volume",
+        {"id": cv_id, "total": total_loaded},
+        opportunity_id,
+    )
     conn2.commit()
     conn2.close()
 
@@ -324,7 +374,11 @@ def sensitivity_analysis(opportunity_id):
     conn.close()
 
     if not row:
-        return {"status": "ok", "opportunity_id": opportunity_id, "message": "No cost volume found. Run --generate first."}
+        return {
+            "status": "ok",
+            "opportunity_id": opportunity_id,
+            "message": "No cost volume found. Run --generate first.",
+        }
 
     base_total = row["total_evaluated_price"] if isinstance(row, dict) else row[5]
 
@@ -340,13 +394,15 @@ def sensitivity_analysis(opportunity_id):
                 delta = rate_contribution * (mult - 1.0)
                 new_total = base_total + delta
 
-            scenarios.append({
-                "variable": var_name,
-                "change": direction,
-                "new_total": round(new_total, 2),
-                "delta": round(new_total - base_total, 2),
-                "delta_pct": round((new_total - base_total) / base_total * 100, 1) if base_total else 0,
-            })
+            scenarios.append(
+                {
+                    "variable": var_name,
+                    "change": direction,
+                    "new_total": round(new_total, 2),
+                    "delta": round(new_total - base_total, 2),
+                    "delta_pct": round((new_total - base_total) / base_total * 100, 1) if base_total else 0,
+                }
+            )
 
     return {
         "status": "ok",
@@ -373,7 +429,13 @@ def gate_evaluate(opportunity_id):
     conn.close()
 
     if not row:
-        return {"status": "ok", "gate": "fail", "opportunity_id": opportunity_id, "message": "No cost volume exists", "blocking_issues": ["cost_volume_missing"]}
+        return {
+            "status": "ok",
+            "gate": "fail",
+            "opportunity_id": opportunity_id,
+            "message": "No cost volume exists",
+            "blocking_issues": ["cost_volume_missing"],
+        }
 
     cv_status = row["status"] if isinstance(row, dict) else row[0]
     total = row["total_evaluated_price"] if isinstance(row, dict) else row[1]
@@ -389,12 +451,19 @@ def gate_evaluate(opportunity_id):
         blocking.append("no_lcat_allocations")
 
     gate = "fail" if blocking else ("warn" if warnings else "pass")
-    return {"status": "ok", "gate": gate, "opportunity_id": opportunity_id, "blocking_issues": blocking, "warnings": warnings}
+    return {
+        "status": "ok",
+        "gate": gate,
+        "opportunity_id": opportunity_id,
+        "blocking_issues": blocking,
+        "warnings": warnings,
+    }
 
 
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+
 
 def main():
     parser = argparse.ArgumentParser(description="Rate Benchmarker — wrap rates, CALC+ benchmarking, PTW analysis")
@@ -430,7 +499,9 @@ def main():
         if not args.direct_rate:
             result = {"status": "error", "message": "Provide --direct-rate"}
         else:
-            result = calculate_wrap_rates(args.direct_rate, args.fringe_pct, args.overhead_pct, args.ga_pct, args.fee_pct)
+            result = calculate_wrap_rates(
+                args.direct_rate, args.fringe_pct, args.overhead_pct, args.ga_pct, args.fee_pct
+            )
 
     elif args.benchmark:
         if not args.labor_category:

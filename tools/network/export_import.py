@@ -9,12 +9,14 @@ Pure functions for converting network topologies between formats:
 No Flask dependency — takes graph dicts and returns strings,
 or takes XML/SVG strings and returns graph dicts.
 """
+
 import re
 import uuid
 import xml.etree.ElementTree as ET
 
 
 # ── Export Functions ───────────────────────────────────────────────────────────
+
 
 def to_drawio(graph: dict, name: str) -> str:
     """Generate Draw.io XML from a graph dict.
@@ -38,15 +40,15 @@ def to_drawio(graph: dict, name: str) -> str:
         )
     for e in edges:
         cells.append(
-            f'<mxCell id="{e.get("id","e")}" value="{e.get("label","")}" style="edgeStyle=orthogonalEdgeStyle;" '
+            f'<mxCell id="{e.get("id", "e")}" value="{e.get("label", "")}" style="edgeStyle=orthogonalEdgeStyle;" '
             f'edge="1" source="{e["source"]}" target="{e["target"]}" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>'
         )
     cells_xml = "\n    ".join(cells)
     return (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
         '<mxfile><diagram name="' + name + '">\n'
-        '<mxGraphModel><root>\n    ' + cells_xml + '\n</root></mxGraphModel>\n'
-        '</diagram></mxfile>'
+        "<mxGraphModel><root>\n    " + cells_xml + "\n</root></mxGraphModel>\n"
+        "</diagram></mxfile>"
     )
 
 
@@ -64,19 +66,21 @@ def to_svg(graph: dict, name: str) -> str:
     edges = graph.get("edges", [])
     width = max((n.get("x", 0) for n in nodes), default=400) + 200
     height = max((n.get("y", 0) for n in nodes), default=400) + 200
-    parts = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}">',
-             f'<title>{name}</title>',
-             '<style>rect{{fill:#16213e;stroke:#e94560;stroke-width:2}} text{{fill:#eaeaea;font-size:12px;font-family:monospace}} line{{stroke:#0f3460;stroke-width:2}}</style>']
+    parts = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}">',
+        f"<title>{name}</title>",
+        "<style>rect{{fill:#16213e;stroke:#e94560;stroke-width:2}} text{{fill:#eaeaea;font-size:12px;font-family:monospace}} line{{stroke:#0f3460;stroke-width:2}}</style>",
+    ]
     pos = {n["id"]: (n.get("x", 0), n.get("y", 0)) for n in nodes}
     for e in edges:
         sx, sy = pos.get(e["source"], (0, 0))
         tx, ty = pos.get(e["target"], (0, 0))
-        parts.append(f'<line x1="{sx+60}" y1="{sy+30}" x2="{tx+60}" y2="{ty+30}"/>')
+        parts.append(f'<line x1="{sx + 60}" y1="{sy + 30}" x2="{tx + 60}" y2="{ty + 30}"/>')
     for n in nodes:
         x, y = n.get("x", 0), n.get("y", 0)
         label = n.get("label", n["id"])
         parts.append(f'<rect x="{x}" y="{y}" width="120" height="60" rx="6"/>')
-        parts.append(f'<text x="{x+60}" y="{y+35}" text-anchor="middle">{label}</text>')
+        parts.append(f'<text x="{x + 60}" y="{y + 35}" text-anchor="middle">{label}</text>')
     parts.append("</svg>")
     return "\n".join(parts)
 
@@ -100,34 +104,33 @@ def to_vdx(graph: dict, name: str) -> str:
         y_in = round(n.get("y", 0) / 96, 3)
         label = n.get("label", n["id"])
         shapes_xml.append(
-            f'<Shape ID="{i+1}" Type="Shape" NameU="{label}">'
-            f'<XForm><PinX>{x_in+0.75}</PinX><PinY>{10-y_in}</PinY>'
-            f'<Width>1.5</Width><Height>0.75</Height></XForm>'
-            f'<Text>{label}</Text></Shape>'
+            f'<Shape ID="{i + 1}" Type="Shape" NameU="{label}">'
+            f"<XForm><PinX>{x_in + 0.75}</PinX><PinY>{10 - y_in}</PinY>"
+            f"<Width>1.5</Width><Height>0.75</Height></XForm>"
+            f"<Text>{label}</Text></Shape>"
         )
 
     for j, e in enumerate(edges):
-        src_idx = next((i+1 for i, n in enumerate(nodes) if n["id"] == e["source"]), 0)
-        dst_idx = next((i+1 for i, n in enumerate(nodes) if n["id"] == e["target"]), 0)
+        src_idx = next((i + 1 for i, n in enumerate(nodes) if n["id"] == e["source"]), 0)
+        dst_idx = next((i + 1 for i, n in enumerate(nodes) if n["id"] == e["target"]), 0)
         shapes_xml.append(
-            f'<Shape ID="{len(nodes)+j+1}" Type="Shape">'
-            f'<XForm1D><BeginX>0</BeginX><BeginY>0</BeginY><EndX>1</EndX><EndY>1</EndY></XForm1D>'
+            f'<Shape ID="{len(nodes) + j + 1}" Type="Shape">'
+            f"<XForm1D><BeginX>0</BeginX><BeginY>0</BeginY><EndX>1</EndX><EndY>1</EndY></XForm1D>"
             f'<Connection FromSheet="{src_idx}" ToSheet="{dst_idx}"/>'
-            f'<Text>{e.get("label", "")}</Text></Shape>'
+            f"<Text>{e.get('label', '')}</Text></Shape>"
         )
 
     return (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
         '<VisioDocument xmlns="http://schemas.microsoft.com/visio/2003/core">\n'
-        f'<DocumentProperties><Title>{name}</Title></DocumentProperties>\n'
-        '<Pages><Page><Shapes>\n'
-        + '\n'.join(shapes_xml)
-        + '\n</Shapes></Page></Pages>\n'
-        '</VisioDocument>'
+        f"<DocumentProperties><Title>{name}</Title></DocumentProperties>\n"
+        "<Pages><Page><Shapes>\n" + "\n".join(shapes_xml) + "\n</Shapes></Page></Pages>\n"
+        "</VisioDocument>"
     )
 
 
 # ── Import Functions ──────────────────────────────────────────────────────────
+
 
 def _sanitize_xml(xml_str: str) -> str:
     """NC-GAP-006: Strip DOCTYPE and ENTITY declarations to prevent XXE attacks.
@@ -138,8 +141,8 @@ def _sanitize_xml(xml_str: str) -> str:
     Returns:
         Sanitized XML string.
     """
-    xml_str = re.sub(r'<!DOCTYPE[^>]*>', '', xml_str)
-    xml_str = re.sub(r'<!ENTITY[^>]*>', '', xml_str)
+    xml_str = re.sub(r"<!DOCTYPE[^>]*>", "", xml_str)
+    xml_str = re.sub(r"<!ENTITY[^>]*>", "", xml_str)
     return xml_str
 
 
@@ -165,8 +168,9 @@ def import_drawio(xml_str: str) -> dict:
                 y = float(geo.get("y", 0)) if geo is not None else 0
                 nodes.append({"id": cid, "label": value, "type": "imported", "x": x, "y": y})
             elif cell.get("edge") == "1":
-                edges.append({"id": cid, "source": cell.get("source", ""), "target": cell.get("target", ""),
-                              "label": value})
+                edges.append(
+                    {"id": cid, "source": cell.get("source", ""), "target": cell.get("target", ""), "label": value}
+                )
     except Exception:
         pass
     return {"nodes": nodes, "edges": edges}
@@ -185,7 +189,7 @@ def import_vdx(xml_str: str) -> dict:
     nodes, edges = [], []
     try:
         # Strip namespace for easier parsing
-        xml_str = xml_str.replace('xmlns="http://schemas.microsoft.com/visio/2003/core"', '')
+        xml_str = xml_str.replace('xmlns="http://schemas.microsoft.com/visio/2003/core"', "")
         root = ET.fromstring(xml_str)  # nosec B314 -- parsing trusted internal MBSE/config XML
         for shape in root.iter("Shape"):
             sid = shape.get("ID", str(uuid.uuid4())[:8])
@@ -198,8 +202,9 @@ def import_vdx(xml_str: str) -> dict:
                 nodes.append({"id": sid, "label": label, "type": "imported", "x": pin_x, "y": 960 - pin_y})
             conn = shape.find("Connection")
             if conn is not None:
-                edges.append({"id": sid, "source": conn.get("FromSheet", ""), "target": conn.get("ToSheet", ""),
-                              "label": label})
+                edges.append(
+                    {"id": sid, "source": conn.get("FromSheet", ""), "target": conn.get("ToSheet", ""), "label": label}
+                )
     except Exception:
         pass
     return {"nodes": nodes, "edges": edges}

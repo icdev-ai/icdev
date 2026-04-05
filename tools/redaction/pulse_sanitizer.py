@@ -42,9 +42,9 @@ class PulseSanitizer:
     def __init__(self, session_id: Optional[str] = None):
         self._sanitizer = GovConSanitizer(session_id=session_id)
 
-    def sanitize_article(self, title: str, body: str,
-                          tags: Optional[List[str]] = None,
-                          domain: str = "") -> Dict[str, Any]:
+    def sanitize_article(
+        self, title: str, body: str, tags: Optional[List[str]] = None, domain: str = ""
+    ) -> Dict[str, Any]:
         """Sanitize a case study article for Pulse publication.
 
         Args:
@@ -86,10 +86,10 @@ class PulseSanitizer:
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
     parser = argparse.ArgumentParser(description="ICDEV™ Pulse Sanitizer")
-    parser.add_argument("--sanitize-article", action="store_true",
-                        help="Sanitize a case study article")
+    parser.add_argument("--sanitize-article", action="store_true", help="Sanitize a case study article")
     parser.add_argument("--title", type=str, default="", help="Article title")
     parser.add_argument("--body", type=str, default="", help="Article body")
     parser.add_argument("--tags", type=str, default="", help="Comma-separated tags")

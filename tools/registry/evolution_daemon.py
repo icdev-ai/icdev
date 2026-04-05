@@ -80,6 +80,7 @@ REFLEX_NAMES = [
 # ---------------------------------------------------------------------------
 class EvolutionReflexState(ReflexStateBase):
     """DB-backed state for evolution reflexes."""
+
     state_table = "evolution_reflex_state"
 
 
@@ -94,8 +95,7 @@ class EvolutionTrustKernel(TrustKernelBase):
         if self.allowed_actions:
             allowed = self.allowed_actions.get(risk_tier, [])
             if action not in allowed:
-                return False, (f"Action '{action}' not in allowlist "
-                               f"for tier '{risk_tier}'")
+                return False, (f"Action '{action}' not in allowlist for tier '{risk_tier}'")
         return True, "approved"
 
 
@@ -161,33 +161,48 @@ class EvolutionDaemon(DaemonBase):
         finally:
             conn.close()
 
-    def log_audit(self, event_type: str, reflex_name: str = None,
-                  risk_tier: str = None, details: Dict = None,
-                  success: bool = None, duration_ms: int = None,
-                  metric_name: str = None, metric_value: float = None,
-                  **kwargs) -> str:
+    def log_audit(
+        self,
+        event_type: str,
+        reflex_name: str = None,
+        risk_tier: str = None,
+        details: Dict = None,
+        success: bool = None,
+        duration_ms: int = None,
+        metric_name: str = None,
+        metric_value: float = None,
+        **kwargs,
+    ) -> str:
         """Append audit event (append-only, NIST AU, D6)."""
         audit_id = generate_id("aud")
         conn = get_connection()
         try:
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT INTO evolution_audit
                     (id, event_type, reflex_name, risk_tier, details, success,
                      duration_ms, metric_name, metric_value, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                audit_id, event_type, reflex_name, risk_tier,
-                json.dumps(details) if details else None,
-                1 if success else (0 if success is False else None),
-                duration_ms, metric_name, metric_value, utcnow_iso(),
-            ))
+            """,
+                (
+                    audit_id,
+                    event_type,
+                    reflex_name,
+                    risk_tier,
+                    json.dumps(details) if details else None,
+                    1 if success else (0 if success is False else None),
+                    duration_ms,
+                    metric_name,
+                    metric_value,
+                    utcnow_iso(),
+                ),
+            )
             conn.commit()
         finally:
             conn.close()
         return audit_id
 
-    def create_reflex_state(self, name: str,
-                            config: Dict[str, Any]) -> ReflexStateBase:
+    def create_reflex_state(self, name: str, config: Dict[str, Any]) -> ReflexStateBase:
         """Factory: create EvolutionReflexState."""
         return EvolutionReflexState(name, config)
 
@@ -201,8 +216,7 @@ class EvolutionDaemon(DaemonBase):
     # -----------------------------------------------------------------------
     # Reflex dispatch (inline — calls Phase 36 tools directly)
     # -----------------------------------------------------------------------
-    def run_reflex_impl(self, name: str, config: Dict[str, Any],
-                        trust: TrustKernelBase) -> Tuple[bool, float, Dict]:
+    def run_reflex_impl(self, name: str, config: Dict[str, Any], trust: TrustKernelBase) -> Tuple[bool, float, Dict]:
         """Execute a single evolution reflex."""
         risk_tier = config.get("risk_tier", RISK_GREEN)
 
@@ -234,8 +248,7 @@ class EvolutionDaemon(DaemonBase):
     # Reflex: DISCOVER (GREEN)
     # Query child_learned_behaviors WHERE evaluated=0
     # -----------------------------------------------------------------------
-    def _reflex_discover(self, config: Dict, trust: TrustKernelBase
-                         ) -> Tuple[bool, float, Dict]:
+    def _reflex_discover(self, config: Dict, trust: TrustKernelBase) -> Tuple[bool, float, Dict]:
         """Find unevaluated child-learned behaviors."""
         conn = get_connection()
         try:
@@ -258,10 +271,14 @@ class EvolutionDaemon(DaemonBase):
         if count > 0:
             self._chain_evaluate(behavior_ids)
 
-        return True, float(count), {
-            "behaviors_discovered": count,
-            "behavior_ids": behavior_ids[:10],
-        }
+        return (
+            True,
+            float(count),
+            {
+                "behaviors_discovered": count,
+                "behavior_ids": behavior_ids[:10],
+            },
+        )
 
     def _chain_evaluate(self, behavior_ids: List[str]) -> None:
         """Trigger evaluation for discovered behaviors (pipeline chain)."""
@@ -273,11 +290,14 @@ class EvolutionDaemon(DaemonBase):
             conn = get_connection()
             try:
                 for bid in behavior_ids:
-                    row = conn.execute("""
+                    row = conn.execute(
+                        """
                         SELECT id, child_id, behavior_type, description,
                                evidence_json, confidence
                         FROM child_learned_behaviors WHERE id = ?
-                    """, (bid,)).fetchone()
+                    """,
+                        (bid,),
+                    ).fetchone()
                     if not row:
                         continue
 
@@ -311,11 +331,14 @@ class EvolutionDaemon(DaemonBase):
                     evaluator.evaluate(capability_data)
 
                     # Mark as evaluated
-                    conn.execute("""
+                    conn.execute(
+                        """
                         UPDATE child_learned_behaviors
                         SET evaluated = 1
                         WHERE id = ?
-                    """, (bid,))
+                    """,
+                        (bid,),
+                    )
 
                 conn.commit()
             finally:
@@ -323,14 +346,12 @@ class EvolutionDaemon(DaemonBase):
         except ImportError:
             pass
         except Exception as e:
-            self.log_audit("evolution.chain_evaluate.error",
-                           details={"error": str(e)})
+            self.log_audit("evolution.chain_evaluate.error", details={"error": str(e)})
 
     # -----------------------------------------------------------------------
     # Reflex: EVALUATE (GREEN, on_demand — chained from discover)
     # -----------------------------------------------------------------------
-    def _reflex_evaluate(self, config: Dict, trust: TrustKernelBase
-                         ) -> Tuple[bool, float, Dict]:
+    def _reflex_evaluate(self, config: Dict, trust: TrustKernelBase) -> Tuple[bool, float, Dict]:
         """Run 7-dimension evaluation on pending behaviors (standalone trigger)."""
         conn = get_connection()
         try:
@@ -348,16 +369,19 @@ class EvolutionDaemon(DaemonBase):
         if ids:
             self._chain_evaluate(ids)
 
-        return True, float(len(ids)), {
-            "evaluations_completed": len(ids),
-        }
+        return (
+            True,
+            float(len(ids)),
+            {
+                "evaluations_completed": len(ids),
+            },
+        )
 
     # -----------------------------------------------------------------------
     # Reflex: STAGE (YELLOW)
     # Find auto_queue evaluations not yet staged, create staging envs
     # -----------------------------------------------------------------------
-    def _reflex_stage(self, config: Dict, trust: TrustKernelBase
-                      ) -> Tuple[bool, float, Dict]:
+    def _reflex_stage(self, config: Dict, trust: TrustKernelBase) -> Tuple[bool, float, Dict]:
         """Create staging environments for auto_queue capabilities."""
         conn = get_connection()
         staged = 0
@@ -383,6 +407,7 @@ class EvolutionDaemon(DaemonBase):
         if rows:
             try:
                 from tools.registry.staging_manager import StagingManager
+
                 sm = StagingManager()
                 for row in rows:
                     r = dict(row)
@@ -393,22 +418,24 @@ class EvolutionDaemon(DaemonBase):
                         )
                         staged += 1
                     except Exception as e:
-                        errors.append({"capability": r["capability_id"],
-                                       "error": str(e)})
+                        errors.append({"capability": r["capability_id"], "error": str(e)})
             except ImportError:
                 errors.append({"error": "StagingManager not available"})
 
-        return True, float(staged), {
-            "stages_created": staged,
-            "errors": errors[:5] if errors else [],
-        }
+        return (
+            True,
+            float(staged),
+            {
+                "stages_created": staged,
+                "errors": errors[:5] if errors else [],
+            },
+        )
 
     # -----------------------------------------------------------------------
     # Reflex: TEST (YELLOW, continuous)
     # Run test pipeline on active staging environments
     # -----------------------------------------------------------------------
-    def _reflex_test(self, config: Dict, trust: TrustKernelBase
-                     ) -> Tuple[bool, float, Dict]:
+    def _reflex_test(self, config: Dict, trust: TrustKernelBase) -> Tuple[bool, float, Dict]:
         """Run full test pipeline on active staging environments."""
         tested = 0
         results = []
@@ -428,35 +455,43 @@ class EvolutionDaemon(DaemonBase):
         if rows:
             try:
                 from tools.registry.staging_manager import StagingManager
+
                 sm = StagingManager()
                 for row in rows:
                     r = dict(row)
                     try:
                         test_result = sm.run_tests(r["id"])
                         tested += 1
-                        results.append({
-                            "staging_id": r["id"],
-                            "status": test_result.get("status", "unknown"),
-                        })
+                        results.append(
+                            {
+                                "staging_id": r["id"],
+                                "status": test_result.get("status", "unknown"),
+                            }
+                        )
                     except Exception as e:
-                        results.append({
-                            "staging_id": r["id"],
-                            "error": str(e),
-                        })
+                        results.append(
+                            {
+                                "staging_id": r["id"],
+                                "error": str(e),
+                            }
+                        )
             except ImportError:
                 pass
 
-        return True, float(tested), {
-            "stages_tested": tested,
-            "results": results[:5],
-        }
+        return (
+            True,
+            float(tested),
+            {
+                "stages_tested": tested,
+                "results": results[:5],
+            },
+        )
 
     # -----------------------------------------------------------------------
     # Reflex: APPROVE (ORANGE — HITL gate)
     # Prepare propagation records for capabilities that passed staging
     # -----------------------------------------------------------------------
-    def _reflex_approve(self, config: Dict, trust: TrustKernelBase
-                        ) -> Tuple[bool, float, Dict]:
+    def _reflex_approve(self, config: Dict, trust: TrustKernelBase) -> Tuple[bool, float, Dict]:
         """Prepare propagation records for HITL approval."""
         prepared = 0
         conn = get_connection()
@@ -480,6 +515,7 @@ class EvolutionDaemon(DaemonBase):
         if rows:
             try:
                 from tools.registry.propagation_manager import PropagationManager
+
                 pm = PropagationManager()
 
                 # Get all active children as default targets
@@ -499,17 +535,20 @@ class EvolutionDaemon(DaemonBase):
             except ImportError:
                 pass
 
-        return True, float(prepared), {
-            "propagations_prepared": prepared,
-            "awaiting_hitl": prepared > 0,
-        }
+        return (
+            True,
+            float(prepared),
+            {
+                "propagations_prepared": prepared,
+                "awaiting_hitl": prepared > 0,
+            },
+        )
 
     # -----------------------------------------------------------------------
     # Reflex: VERIFY (GREEN, continuous)
     # Check 72h stability window on propagated capabilities
     # -----------------------------------------------------------------------
-    def _reflex_verify(self, config: Dict, trust: TrustKernelBase
-                       ) -> Tuple[bool, float, Dict]:
+    def _reflex_verify(self, config: Dict, trust: TrustKernelBase) -> Tuple[bool, float, Dict]:
         """Check stability window on propagated capabilities."""
         verified = 0
         stable = 0
@@ -517,6 +556,7 @@ class EvolutionDaemon(DaemonBase):
 
         try:
             from tools.registry.absorption_engine import AbsorptionEngine
+
             ae = AbsorptionEngine()
             candidates = ae.get_absorption_candidates()
 
@@ -541,24 +581,28 @@ class EvolutionDaemon(DaemonBase):
         except ImportError:
             pass
 
-        return True, float(verified), {
-            "verifications_completed": verified,
-            "stable": stable,
-            "unstable": unstable,
-        }
+        return (
+            True,
+            float(verified),
+            {
+                "verifications_completed": verified,
+                "stable": stable,
+                "unstable": unstable,
+            },
+        )
 
     # -----------------------------------------------------------------------
     # Reflex: ABSORB (ORANGE — HITL gate)
     # Merge stable capabilities into genome (always requires HITL)
     # -----------------------------------------------------------------------
-    def _reflex_absorb(self, config: Dict, trust: TrustKernelBase
-                       ) -> Tuple[bool, float, Dict]:
+    def _reflex_absorb(self, config: Dict, trust: TrustKernelBase) -> Tuple[bool, float, Dict]:
         """Report absorption-ready capabilities (HITL required for actual merge)."""
         ready = 0
         candidates = []
 
         try:
             from tools.registry.absorption_engine import AbsorptionEngine
+
             ae = AbsorptionEngine()
             result = ae.get_absorption_candidates()
 
@@ -575,30 +619,37 @@ class EvolutionDaemon(DaemonBase):
                     stability = ae.check_stability(cid)
                     if stability.get("stable"):
                         ready += 1
-                        candidates.append({
-                            "capability_id": cid,
-                            "stable": True,
-                            "message": "Ready for HITL absorption approval",
-                        })
+                        candidates.append(
+                            {
+                                "capability_id": cid,
+                                "stable": True,
+                                "message": "Ready for HITL absorption approval",
+                            }
+                        )
                 except Exception:
                     pass
         except ImportError:
             pass
 
-        return True, float(ready), {
-            "absorptions_ready": ready,
-            "candidates": candidates[:10],
-            "hitl_required": True,
-            "message": (f"{ready} capabilities ready for absorption — "
-                        f"use absorption_engine.py --absorb to merge"
-                        if ready > 0 else "No capabilities ready"),
-        }
+        return (
+            True,
+            float(ready),
+            {
+                "absorptions_ready": ready,
+                "candidates": candidates[:10],
+                "hitl_required": True,
+                "message": (
+                    f"{ready} capabilities ready for absorption — use absorption_engine.py --absorb to merge"
+                    if ready > 0
+                    else "No capabilities ready"
+                ),
+            },
+        )
 
     # -----------------------------------------------------------------------
     # Pipeline chain hook
     # -----------------------------------------------------------------------
-    def on_reflex_completed(self, name: str,
-                            result: Dict[str, Any]) -> None:
+    def on_reflex_completed(self, name: str, result: Dict[str, Any]) -> None:
         """Chain reflexes: discover triggers evaluate, stage triggers test."""
         if result.get("status") != "success":
             return
@@ -607,13 +658,11 @@ class EvolutionDaemon(DaemonBase):
 
         # discover -> evaluate (auto-chain)
         if name == "discover" and details.get("behaviors_discovered", 0) > 0:
-            self.log_audit("evolution.chain.discover_to_evaluate",
-                           details={"triggered_by": "discover"})
+            self.log_audit("evolution.chain.discover_to_evaluate", details={"triggered_by": "discover"})
 
         # stage -> test (auto-chain)
         if name == "stage" and details.get("stages_created", 0) > 0:
-            self.log_audit("evolution.chain.stage_to_test",
-                           details={"triggered_by": "stage"})
+            self.log_audit("evolution.chain.stage_to_test", details={"triggered_by": "stage"})
 
     # -----------------------------------------------------------------------
     # Helpers

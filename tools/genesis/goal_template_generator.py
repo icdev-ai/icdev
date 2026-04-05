@@ -130,9 +130,7 @@ def generate_goal_from_pattern(pattern: Dict[str, Any], lookback_days: int = 7) 
     title = _tool_name_to_title(tool_chain)
 
     # Build tool sequence as numbered list
-    tool_sequence = "\n".join(
-        f"{i}. `{tool}`" for i, tool in enumerate(tool_chain, 1)
-    )
+    tool_sequence = "\n".join(f"{i}. `{tool}`" for i, tool in enumerate(tool_chain, 1))
 
     # Build inputs/outputs (generic — LLM polish can improve these)
     inputs = "- Project context (from session)\n- Tool-specific arguments per step"
@@ -146,8 +144,8 @@ def generate_goal_from_pattern(pattern: Dict[str, Any], lookback_days: int = 7) 
     goal_md = GOAL_TEMPLATE.format(
         title=title,
         description=f"Automated workflow combining {len(tool_chain)} tools in a "
-                    f"recurring sequence. Detected {frequency} times across "
-                    f"{diversity} sessions.",
+        f"recurring sequence. Detected {frequency} times across "
+        f"{diversity} sessions.",
         frequency=frequency,
         diversity=diversity,
         lookback_days=lookback_days,
@@ -193,6 +191,7 @@ def polish_with_llm(goal_data: Dict[str, Any]) -> Dict[str, Any]:
         # Try LLM router (scanner tier — zero Claude cost)
         from tools.llm.router import LLMRouter
         from tools.llm.provider import LLMRequest
+
         router = LLMRouter()
         request = LLMRequest(
             messages=[{"role": "user", "content": prompt}],
@@ -215,6 +214,7 @@ def polish_with_llm(goal_data: Dict[str, Any]) -> Dict[str, Any]:
 # Batch generation from stored patterns
 # ---------------------------------------------------------------------------
 
+
 def generate_from_stored_patterns(
     max_goals: int = 3,
     min_score: float = 0.0,
@@ -225,14 +225,17 @@ def generate_from_stored_patterns(
     """
     conn = get_connection()
     try:
-        rows = conn.execute("""
+        rows = conn.execute(
+            """
             SELECT id, tool_chain, frequency, caller_diversity,
                    chain_length, composite_score, sessions
             FROM genesis_tool_patterns
             WHERE status = 'detected' AND composite_score >= %s
             ORDER BY composite_score DESC
             LIMIT %s
-        """, (min_score, max_goals)).fetchall()
+        """,
+            (min_score, max_goals),
+        ).fetchall()
 
         goals = []
         for row in rows:
@@ -248,10 +251,7 @@ def generate_from_stored_patterns(
 
             # Mark pattern as processed
             pid = row["id"] if isinstance(row, dict) else row[0]
-            conn.execute(
-                "UPDATE genesis_tool_patterns SET status = 'goal_generated' WHERE id = %s",
-                (pid,)
-            )
+            conn.execute("UPDATE genesis_tool_patterns SET status = 'goal_generated' WHERE id = %s", (pid,))
 
         conn.commit()
         return goals
@@ -266,18 +266,16 @@ def generate_from_stored_patterns(
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
-    parser = argparse.ArgumentParser(
-        description="Genesis Goal Template Generator"
+    parser = argparse.ArgumentParser(description="Genesis Goal Template Generator")
+    parser.add_argument("--pattern-id", type=str, help="Generate goal from specific stored pattern")
+    parser.add_argument(
+        "--from-detection", action="store_true", help="Generate goals from all unprocessed detected patterns"
     )
-    parser.add_argument("--pattern-id", type=str,
-                        help="Generate goal from specific stored pattern")
-    parser.add_argument("--from-detection", action="store_true",
-                        help="Generate goals from all unprocessed detected patterns")
     parser.add_argument("--max-goals", type=int, default=3)
     parser.add_argument("--min-score", type=float, default=0.0)
-    parser.add_argument("--no-llm", action="store_true",
-                        help="Skip LLM polishing")
+    parser.add_argument("--no-llm", action="store_true", help="Skip LLM polishing")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
 
@@ -300,7 +298,7 @@ def main():
             row = conn.execute(
                 "SELECT tool_chain, frequency, caller_diversity, composite_score "
                 "FROM genesis_tool_patterns WHERE id = %s",
-                (args.pattern_id,)
+                (args.pattern_id,),
             ).fetchone()
             if not row:
                 result = {"error": f"Pattern {args.pattern_id} not found"}

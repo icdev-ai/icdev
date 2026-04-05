@@ -94,16 +94,19 @@ def create_task():
         )
         conn.commit()
         try:
-            sse_manager.broadcast({
-                "action": "task_created",
-                "task": {
-                    "id": task_id,
-                    "title": data["title"],
-                    "status": data.get("status", "backlog"),
-                    "priority": data.get("priority", "medium"),
-                    "executor_type": data.get("executor_type", "claude_cli"),
+            sse_manager.broadcast(
+                {
+                    "action": "task_created",
+                    "task": {
+                        "id": task_id,
+                        "title": data["title"],
+                        "status": data.get("status", "backlog"),
+                        "priority": data.get("priority", "medium"),
+                        "executor_type": data.get("executor_type", "claude_cli"),
+                    },
                 },
-            }, "kanban")
+                "kanban",
+            )
         except Exception:
             pass  # SSE is best-effort
         return jsonify({"status": "created", "id": task_id}), 201
@@ -117,15 +120,18 @@ def update_task(task_id):
     data = request.get_json(force=True)
     conn = get_connection()
     try:
-        existing = conn.execute(
-            "SELECT * FROM kanban_tasks WHERE id = ?", (task_id,)
-        ).fetchone()
+        existing = conn.execute("SELECT * FROM kanban_tasks WHERE id = ?", (task_id,)).fetchone()
         if not existing:
             return jsonify({"error": "Task not found"}), 404
 
         allowed = (
-            "title", "description", "task_type",
-            "priority", "status", "scheduled_at", "executor_type",
+            "title",
+            "description",
+            "task_type",
+            "priority",
+            "status",
+            "scheduled_at",
+            "executor_type",
         )
         sets = []
         vals = []
@@ -142,8 +148,7 @@ def update_task(task_id):
             sets.append("completed_at = ?")
             vals.append(_utcnow())
         # Clear completed_at if moving out of done
-        elif (data.get("status") and data["status"] != "done"
-              and existing["status"] == "done"):
+        elif data.get("status") and data["status"] != "done" and existing["status"] == "done":
             sets.append("completed_at = NULL")
 
         sets.append("updated_at = ?")
@@ -156,11 +161,14 @@ def update_task(task_id):
         )
         conn.commit()
         try:
-            sse_manager.broadcast({
-                "action": "task_updated",
-                "task_id": task_id,
-                "changes": data,
-            }, "kanban")
+            sse_manager.broadcast(
+                {
+                    "action": "task_updated",
+                    "task_id": task_id,
+                    "changes": data,
+                },
+                "kanban",
+            )
         except Exception:
             pass  # SSE is best-effort
         return jsonify({"status": "updated", "id": task_id})
@@ -173,18 +181,19 @@ def delete_task(task_id):
     """Delete a kanban task."""
     conn = get_connection()
     try:
-        existing = conn.execute(
-            "SELECT id FROM kanban_tasks WHERE id = ?", (task_id,)
-        ).fetchone()
+        existing = conn.execute("SELECT id FROM kanban_tasks WHERE id = ?", (task_id,)).fetchone()
         if not existing:
             return jsonify({"error": "Task not found"}), 404
         conn.execute("DELETE FROM kanban_tasks WHERE id = ?", (task_id,))
         conn.commit()
         try:
-            sse_manager.broadcast({
-                "action": "task_deleted",
-                "task_id": task_id,
-            }, "kanban")
+            sse_manager.broadcast(
+                {
+                    "action": "task_deleted",
+                    "task_id": task_id,
+                },
+                "kanban",
+            )
         except Exception:
             pass  # SSE is best-effort
         return jsonify({"status": "deleted", "id": task_id})
@@ -204,9 +213,7 @@ def move_task(task_id):
     now = _utcnow()
     conn = get_connection()
     try:
-        existing = conn.execute(
-            "SELECT status FROM kanban_tasks WHERE id = ?", (task_id,)
-        ).fetchone()
+        existing = conn.execute("SELECT status FROM kanban_tasks WHERE id = ?", (task_id,)).fetchone()
         if not existing:
             return jsonify({"error": "Task not found"}), 404
 
@@ -223,11 +230,14 @@ def move_task(task_id):
         conn.execute(sql, tuple(vals))
         conn.commit()
         try:
-            sse_manager.broadcast({
-                "action": "task_updated",
-                "task_id": task_id,
-                "changes": {"status": new_status},
-            }, "kanban")
+            sse_manager.broadcast(
+                {
+                    "action": "task_updated",
+                    "task_id": task_id,
+                    "changes": {"status": new_status},
+                },
+                "kanban",
+            )
         except Exception:
             pass  # SSE is best-effort
         return jsonify({"status": "moved", "id": task_id, "new_status": new_status})

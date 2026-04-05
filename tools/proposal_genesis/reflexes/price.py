@@ -35,6 +35,7 @@ def _generate_id(prefix: str = "pgprc") -> str:
 # Cost volume status checking
 # ---------------------------------------------------------------------------
 
+
 def _get_volumes_needing_update() -> List[Dict]:
     """Find cost volumes in draft status that need pricing updates."""
     conn = get_connection()
@@ -81,8 +82,7 @@ def _check_line_item_coverage(volume_id: str) -> Dict[str, Any]:
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT COUNT(*) as cnt FROM pg_cost_line_items "
-            "WHERE cost_volume_id = ?",
+            "SELECT COUNT(*) as cnt FROM pg_cost_line_items WHERE cost_volume_id = ?",
             (volume_id,),
         ).fetchone()
         count = row["cnt"] if row else 0
@@ -96,6 +96,7 @@ def _check_line_item_coverage(volume_id: str) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
+
 
 def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     """Execute the Price Reflex (R17).
@@ -118,13 +119,15 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         coverage = _check_line_item_coverage(vol["id"])
         volumes_checked += 1
         if not coverage["has_items"]:
-            incomplete_volumes.append({
-                "volume_id": vol["id"],
-                "opportunity_id": vol["opportunity_id"],
-                "title": vol.get("title", ""),
-                "status": vol["status"],
-                "line_items": coverage["line_items"],
-            })
+            incomplete_volumes.append(
+                {
+                    "volume_id": vol["id"],
+                    "opportunity_id": vol["opportunity_id"],
+                    "title": vol.get("title", ""),
+                    "status": vol["status"],
+                    "line_items": coverage["line_items"],
+                }
+            )
 
     # Check for opportunities without any cost volume
     missing_pricing = _get_opportunities_without_pricing()
@@ -141,11 +144,13 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                 "price_check",
                 "price",
                 "green",
-                json.dumps({
-                    "volumes_checked": volumes_checked,
-                    "incomplete": len(incomplete_volumes),
-                    "missing_pricing": len(missing_pricing),
-                }),
+                json.dumps(
+                    {
+                        "volumes_checked": volumes_checked,
+                        "incomplete": len(incomplete_volumes),
+                        "missing_pricing": len(missing_pricing),
+                    }
+                ),
                 1,
                 _utcnow_iso(),
             ),
@@ -167,10 +172,9 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             "opportunities_missing_pricing": len(missing_pricing),
             "total_pricing_issues": total_issues,
             "incomplete_details": incomplete_volumes[:10],
-            "missing_pricing_details": [
-                {"opportunity_id": m["id"], "title": m["title"]}
-                for m in missing_pricing[:10]
-            ],
+            "missing_pricing_details": [{"opportunity_id": m["id"], "title": m["title"]} for m in missing_pricing[:10]],
         },
     }
+
+
 # CUI // SP-CTI

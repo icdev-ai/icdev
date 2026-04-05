@@ -57,6 +57,7 @@ def _load_config() -> dict:
         return {}
     try:
         import yaml
+
         with open(config_path, encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
         return data.get("outcome_verification", {})
@@ -80,6 +81,7 @@ def _now() -> str:
 
 def _generate_id(prefix: str = "ov") -> str:
     import uuid
+
     return f"{prefix}-{uuid.uuid4().hex[:8]}"
 
 
@@ -128,9 +130,7 @@ def _detect_vcs_cli() -> Optional[str]:
     """Detect whether gh (GitHub) or glab (GitLab) CLI is available."""
     for cli in ("gh", "glab"):
         try:
-            subprocess.run(
-                [cli, "--version"],
-                capture_output=True, timeout=10, stdin=subprocess.DEVNULL)
+            subprocess.run([cli, "--version"], capture_output=True, timeout=10, stdin=subprocess.DEVNULL)
             return cli
         except (FileNotFoundError, subprocess.TimeoutExpired):
             continue
@@ -147,8 +147,11 @@ def _check_pr_status(pr_url: str, cli: str) -> Optional[str]:
             # gh pr view <url> --json state
             result = subprocess.run(
                 [cli, "pr", "view", pr_url, "--json", "state"],
-                capture_output=True, text=True, timeout=30,
-                stdin=subprocess.DEVNULL)
+                capture_output=True,
+                text=True,
+                timeout=30,
+                stdin=subprocess.DEVNULL,
+            )
             if result.returncode == 0:
                 data = json.loads(result.stdout)
                 state = data.get("state", "").upper()
@@ -162,8 +165,11 @@ def _check_pr_status(pr_url: str, cli: str) -> Optional[str]:
             # glab mr view <url> --json state (gitlab)
             result = subprocess.run(
                 [cli, "mr", "view", pr_url, "--output", "json"],
-                capture_output=True, text=True, timeout=30,
-                stdin=subprocess.DEVNULL)
+                capture_output=True,
+                text=True,
+                timeout=30,
+                stdin=subprocess.DEVNULL,
+            )
             if result.returncode == 0:
                 data = json.loads(result.stdout)
                 state = data.get("state", "").lower()
@@ -193,11 +199,10 @@ def check_pending_prs(db_path: Optional[Path] = None) -> dict:
     conn = _get_conn(db_path)
     try:
         # Find PRs needing verification
-        cutoff = (
-            datetime.now(timezone.utc) - timedelta(days=PR_MAX_POLL_DAYS)
-        ).strftime("%Y-%m-%dT%H:%M:%SZ")
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=PR_MAX_POLL_DAYS)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-        rows = conn.execute("""
+        rows = conn.execute(
+            """
             SELECT ar.id, ar.pr_url, ar.confidence, ar.created_at
             FROM auto_resolution_log ar
             WHERE ar.pr_url IS NOT NULL
@@ -209,13 +214,20 @@ def check_pending_prs(db_path: Optional[Path] = None) -> dict:
               )
             ORDER BY ar.created_at ASC
             LIMIT 20
-        """, (cutoff,)).fetchall()
+        """,
+            (cutoff,),
+        ).fetchall()
     finally:
         conn.close()
 
     results = {
-        "checked": 0, "merged": 0, "closed": 0, "open": 0,
-        "timeout": 0, "cli_unavailable": 0, "details": [],
+        "checked": 0,
+        "merged": 0,
+        "closed": 0,
+        "open": 0,
+        "timeout": 0,
+        "cli_unavailable": 0,
+        "details": [],
     }
 
     if not cli:
@@ -225,18 +237,20 @@ def check_pending_prs(db_path: Optional[Path] = None) -> dict:
             ov_id = _generate_id("ov")
             conn = _get_conn(db_path)
             try:
-                conn.execute("""
+                conn.execute(
+                    """
                     INSERT INTO outcome_verification_log
                         (id, resolution_id, pr_url, verification_type, result,
                          checked_at, created_at)
                     VALUES (?, ?, ?, 'pr_merge_check', 'cli_unavailable', ?, ?)
-                """, (ov_id, r["id"], r["pr_url"], _now(), _now()))
+                """,
+                    (ov_id, r["id"], r["pr_url"], _now(), _now()),
+                )
                 conn.commit()
             finally:
                 conn.close()
             results["cli_unavailable"] += 1
-            results["details"].append({
-                "resolution_id": r["id"], "result": "cli_unavailable"})
+            results["details"].append({"resolution_id": r["id"], "result": "cli_unavailable"})
         return results
 
     for row in rows:
@@ -249,8 +263,7 @@ def check_pending_prs(db_path: Optional[Path] = None) -> dict:
         is_expired = False
         if created:
             try:
-                created_dt = datetime.fromisoformat(
-                    created.replace("Z", "+00:00"))
+                created_dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
                 age_days = (datetime.now(timezone.utc) - created_dt).days
                 is_expired = age_days > PR_MAX_POLL_DAYS
             except (ValueError, TypeError):
@@ -278,37 +291,44 @@ def check_pending_prs(db_path: Optional[Path] = None) -> dict:
         ov_id = _generate_id("ov")
         conn = _get_conn(db_path)
         try:
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT INTO outcome_verification_log
                     (id, resolution_id, pr_url, verification_type, result,
                      checked_at, created_at)
                 VALUES (?, ?, ?, 'pr_merge_check', ?, ?, ?)
-            """, (ov_id, r["id"], r["pr_url"], ov_result, _now(), _now()))
+            """,
+                (ov_id, r["id"], r["pr_url"], ov_result, _now(), _now()),
+            )
             conn.commit()
         finally:
             conn.close()
 
-        results["details"].append({
-            "resolution_id": r["id"],
-            "pr_url": r["pr_url"],
-            "result": ov_result,
-        })
+        results["details"].append(
+            {
+                "resolution_id": r["id"],
+                "pr_url": r["pr_url"],
+                "result": ov_result,
+            }
+        )
 
     return results
 
 
-def _schedule_recurrence_check(resolution_id: str, pr_url: str,
-                               db_path: Optional[Path] = None) -> None:
+def _schedule_recurrence_check(resolution_id: str, pr_url: str, db_path: Optional[Path] = None) -> None:
     """Record that a merged PR needs recurrence monitoring."""
     ov_id = _generate_id("ov")
     conn = _get_conn(db_path)
     try:
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO outcome_verification_log
                 (id, resolution_id, pr_url, verification_type, result,
                  checked_at, created_at)
             VALUES (?, ?, ?, 'recurrence_check', 'pending', NULL, ?)
-        """, (ov_id, resolution_id, pr_url, _now()))
+        """,
+            (ov_id, resolution_id, pr_url, _now()),
+        )
         conn.commit()
     finally:
         conn.close()
@@ -331,7 +351,10 @@ def check_recurrence(db_path: Optional[Path] = None) -> dict:
     conn = _get_conn(db_path)
 
     results = {
-        "checked": 0, "recurred": 0, "resolved": 0, "pending": 0,
+        "checked": 0,
+        "recurred": 0,
+        "resolved": 0,
+        "pending": 0,
         "details": [],
     }
 
@@ -356,8 +379,8 @@ def check_recurrence(db_path: Optional[Path] = None) -> dict:
         conn = _get_conn(db_path)
         try:
             orig = conn.execute(
-                "SELECT alert_type, created_at FROM auto_resolution_log WHERE id = ?",
-                (res_id,)).fetchone()
+                "SELECT alert_type, created_at FROM auto_resolution_log WHERE id = ?", (res_id,)
+            ).fetchone()
         finally:
             conn.close()
 
@@ -371,8 +394,7 @@ def check_recurrence(db_path: Optional[Path] = None) -> dict:
         elapsed_days = 0
         if merge_created:
             try:
-                merge_dt = datetime.fromisoformat(
-                    merge_created.replace("Z", "+00:00"))
+                merge_dt = datetime.fromisoformat(merge_created.replace("Z", "+00:00"))
                 elapsed_days = (datetime.now(timezone.utc) - merge_dt).days
             except (ValueError, TypeError):
                 pass
@@ -386,13 +408,16 @@ def check_recurrence(db_path: Optional[Path] = None) -> dict:
         # Check if same alert_type appeared in auto_resolution_log after merge
         conn = _get_conn(db_path)
         try:
-            recurrence = conn.execute("""
+            recurrence = conn.execute(
+                """
                 SELECT COUNT(*) as cnt
                 FROM auto_resolution_log
                 WHERE alert_type = ?
                   AND created_at > ?
                   AND id != ?
-            """, (orig_data["alert_type"], merge_created, res_id)).fetchone()
+            """,
+                (orig_data["alert_type"], merge_created, res_id),
+            ).fetchone()
         finally:
             conn.close()
 
@@ -411,11 +436,14 @@ def check_recurrence(db_path: Optional[Path] = None) -> dict:
         # Update the verification record
         conn = _get_conn(db_path)
         try:
-            conn.execute("""
+            conn.execute(
+                """
                 UPDATE outcome_verification_log
                 SET result = ?, checked_at = ?, confidence_delta = ?
                 WHERE id = ?
-            """, (ov_result, _now(), delta, r["id"]))
+            """,
+                (ov_result, _now(), delta, r["id"]),
+            )
             conn.commit()
         finally:
             conn.close()
@@ -423,12 +451,14 @@ def check_recurrence(db_path: Optional[Path] = None) -> dict:
         # Apply confidence delta to the original pattern
         _apply_confidence_delta(res_id, delta, db_path)
 
-        results["details"].append({
-            "resolution_id": res_id,
-            "result": ov_result,
-            "recurrence_count": recurrence_count,
-            "confidence_delta": delta,
-        })
+        results["details"].append(
+            {
+                "resolution_id": res_id,
+                "result": ov_result,
+                "recurrence_count": recurrence_count,
+                "confidence_delta": delta,
+            }
+        )
 
     return results
 
@@ -436,15 +466,12 @@ def check_recurrence(db_path: Optional[Path] = None) -> dict:
 # ---------------------------------------------------------------------------
 # Confidence Feedback
 # ---------------------------------------------------------------------------
-def _apply_confidence_delta(resolution_id: str, delta: float,
-                            db_path: Optional[Path] = None) -> None:
+def _apply_confidence_delta(resolution_id: str, delta: float, db_path: Optional[Path] = None) -> None:
     """Apply confidence adjustment to the pattern that matched the original alert."""
     conn = _get_conn(db_path)
     try:
         # Get the matched pattern from the resolution details
-        row = conn.execute(
-            "SELECT details FROM auto_resolution_log WHERE id = ?",
-            (resolution_id,)).fetchone()
+        row = conn.execute("SELECT details FROM auto_resolution_log WHERE id = ?", (resolution_id,)).fetchone()
         if not row:
             return
 
@@ -470,6 +497,7 @@ def _apply_confidence_delta(resolution_id: str, delta: float,
         # Update pattern confidence via existing mechanism
         try:
             from tools.knowledge.pattern_detector import update_pattern_confidence
+
             outcome = "success" if delta > 0 else "failure"
             update_pattern_confidence(pattern_id, outcome, db_path)
         except ImportError:
@@ -487,9 +515,7 @@ def get_status(db_path: Optional[Path] = None) -> dict:
     _ensure_table(db_path)
     conn = _get_conn(db_path)
     try:
-        total = conn.execute(
-            "SELECT COUNT(*) as cnt FROM outcome_verification_log"
-        ).fetchone()
+        total = conn.execute("SELECT COUNT(*) as cnt FROM outcome_verification_log").fetchone()
         by_result = conn.execute("""
             SELECT result, COUNT(*) as cnt
             FROM outcome_verification_log
@@ -521,18 +547,14 @@ def get_status(db_path: Optional[Path] = None) -> dict:
 # CLI
 # ---------------------------------------------------------------------------
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Outcome Verifier — track auto-resolution PR outcomes (D-EVO-6)")
-    parser.add_argument("--check-pending", action="store_true",
-                        help="Check merge status of pending PRs")
-    parser.add_argument("--check-recurrence", action="store_true",
-                        help="Check for failure recurrence after merged fixes")
-    parser.add_argument("--run-all", action="store_true",
-                        help="Run both PR merge check and recurrence check")
-    parser.add_argument("--status", action="store_true",
-                        help="Show verification status summary")
-    parser.add_argument("--json", action="store_true", dest="json_output",
-                        help="JSON output")
+    parser = argparse.ArgumentParser(description="Outcome Verifier — track auto-resolution PR outcomes (D-EVO-6)")
+    parser.add_argument("--check-pending", action="store_true", help="Check merge status of pending PRs")
+    parser.add_argument(
+        "--check-recurrence", action="store_true", help="Check for failure recurrence after merged fixes"
+    )
+    parser.add_argument("--run-all", action="store_true", help="Run both PR merge check and recurrence check")
+    parser.add_argument("--status", action="store_true", help="Show verification status summary")
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     parser.add_argument("--db-path", help="Database path override")
     args = parser.parse_args()
 

@@ -49,6 +49,7 @@ _CONFIG_PATH = _ROOT / "args" / "govcon_config.yaml"
 
 # ── Config ───────────────────────────────────────────────────────────
 
+
 def _load_config():
     if _CONFIG_PATH.exists():
         with open(_CONFIG_PATH) as f:
@@ -70,6 +71,7 @@ _ISR_SSR_MAX_AGE_DAYS = 180
 
 
 # ── Helpers ──────────────────────────────────────────────────────────
+
 
 def _get_db():
     conn = get_connection()
@@ -107,6 +109,7 @@ def _record_status_change(conn, entity_type, entity_id, old_status, new_status, 
 
 
 # ── Subcontractor CRUD ──────────────────────────────────────────────
+
 
 def create_subcontractor(contract_id, data):
     """Add a subcontractor to cpmp_subcontractors.
@@ -150,10 +153,14 @@ def create_subcontractor(contract_id, data):
             _now(),
         ),
     )
-    _record_status_change(conn, "subcontractor", sub_id, None, data.get("status", "active"),
-                          "system", "Subcontractor created")
-    _audit(conn, "create_subcontractor",
-           f"Created subcontractor {data.get('company_name', sub_id)} on contract {contract_id}")
+    _record_status_change(
+        conn, "subcontractor", sub_id, None, data.get("status", "active"), "system", "Subcontractor created"
+    )
+    _audit(
+        conn,
+        "create_subcontractor",
+        f"Created subcontractor {data.get('company_name', sub_id)} on contract {contract_id}",
+    )
     conn.commit()
     conn.close()
     return {"status": "ok", "sub_id": sub_id}
@@ -178,10 +185,18 @@ def update_subcontractor(sub_id, data):
     old_status = row["status"]
 
     updatable = [
-        "company_name", "cage_code", "uei", "business_size",
-        "subcontract_value", "performance_rating",
-        "flow_down_complete", "cybersecurity_compliant", "cmmc_level", "isr_ssr_current",
-        "status", "notes",
+        "company_name",
+        "cage_code",
+        "uei",
+        "business_size",
+        "subcontract_value",
+        "performance_rating",
+        "flow_down_complete",
+        "cybersecurity_compliant",
+        "cmmc_level",
+        "isr_ssr_current",
+        "status",
+        "notes",
     ]
     sets = []
     params = []
@@ -202,8 +217,9 @@ def update_subcontractor(sub_id, data):
 
     # Record status change if status was modified
     if "status" in data and data["status"] != old_status:
-        _record_status_change(conn, "subcontractor", sub_id, old_status, data["status"],
-                              data.get("changed_by"), data.get("reason"))
+        _record_status_change(
+            conn, "subcontractor", sub_id, old_status, data["status"], data.get("changed_by"), data.get("reason")
+        )
 
     _audit(conn, "update_subcontractor", f"Updated subcontractor {sub_id}: {list(data.keys())}")
     conn.commit()
@@ -245,6 +261,7 @@ def list_subcontractors(contract_id, business_size=None):
 
 # ── Small Business Compliance ────────────────────────────────────────
 
+
 def compute_sb_compliance(contract_id):
     """Calculate small business subcontracting compliance per FAR 52.219-9.
 
@@ -262,8 +279,7 @@ def compute_sb_compliance(contract_id):
 
     # Get all active subcontractors for this contract
     rows = conn.execute(
-        "SELECT business_size, subcontract_value FROM cpmp_subcontractors "
-        "WHERE contract_id = ? AND status = 'active'",
+        "SELECT business_size, subcontract_value FROM cpmp_subcontractors WHERE contract_id = ? AND status = 'active'",
         (contract_id,),
     ).fetchall()
 
@@ -346,6 +362,7 @@ def compute_sb_compliance(contract_id):
 
 # ── Flow-Down Verification ──────────────────────────────────────────
 
+
 def check_flowdown(contract_id):
     """Check which subcontractors have incomplete flow-down clauses.
 
@@ -380,6 +397,7 @@ def check_flowdown(contract_id):
 
 # ── Cybersecurity Compliance ────────────────────────────────────────
 
+
 def check_cybersecurity(contract_id):
     """Check cybersecurity compliance for subcontractors with value > threshold.
 
@@ -392,9 +410,7 @@ def check_cybersecurity(contract_id):
     Returns:
         Dict with non-compliant subcontractor list.
     """
-    _CFG.get("negative_events", {}).get("auto_detect", {}).get(
-        "flowdown_failure", {}
-    )
+    _CFG.get("negative_events", {}).get("auto_detect", {}).get("flowdown_failure", {})
     # Extract numeric threshold from trigger string if available, else use default
     cyber_threshold = _CYBER_THRESHOLD
 
@@ -423,6 +439,7 @@ def check_cybersecurity(contract_id):
 
 # ── ISR/SSR Report Generation ───────────────────────────────────────
 
+
 def create_sb_report(contract_id, reporting_period, report_type="isr"):
     """Create an ISR (Individual Subcontracting Report) or SSR (Summary Subcontracting Report).
 
@@ -446,8 +463,7 @@ def create_sb_report(contract_id, reporting_period, report_type="isr"):
 
     # Compute current actuals from subcontractor data
     rows = conn.execute(
-        "SELECT business_size, subcontract_value FROM cpmp_subcontractors "
-        "WHERE contract_id = ? AND status = 'active'",
+        "SELECT business_size, subcontract_value FROM cpmp_subcontractors WHERE contract_id = ? AND status = 'active'",
         (contract_id,),
     ).fetchall()
 
@@ -505,19 +521,41 @@ def create_sb_report(contract_id, reporting_period, report_type="isr"):
         "compliant, status, notes, metadata, created_at, updated_at, classification) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
-            report_id, contract_id, reporting_period, report_type, total_dollars,
-            sb_goal, _pct(sb_dollars), sb_dollars,
-            sdb_goal, _pct(sdb_dollars), sdb_dollars,
-            wosb_goal, _pct(wosb_dollars), wosb_dollars,
-            hubzone_goal, _pct(hubzone_dollars), hubzone_dollars,
-            sdvosb_goal, _pct(sdvosb_dollars), sdvosb_dollars,
-            compliant, "draft", None, "{}",
-            _now(), _now(), "CUI // SP-CTI",
+            report_id,
+            contract_id,
+            reporting_period,
+            report_type,
+            total_dollars,
+            sb_goal,
+            _pct(sb_dollars),
+            sb_dollars,
+            sdb_goal,
+            _pct(sdb_dollars),
+            sdb_dollars,
+            wosb_goal,
+            _pct(wosb_dollars),
+            wosb_dollars,
+            hubzone_goal,
+            _pct(hubzone_dollars),
+            hubzone_dollars,
+            sdvosb_goal,
+            _pct(sdvosb_dollars),
+            sdvosb_dollars,
+            compliant,
+            "draft",
+            None,
+            "{}",
+            _now(),
+            _now(),
+            "CUI // SP-CTI",
         ),
     )
 
-    _audit(conn, "create_sb_report",
-           f"Created {report_type.upper()} report for contract {contract_id}, period {reporting_period}")
+    _audit(
+        conn,
+        "create_sb_report",
+        f"Created {report_type.upper()} report for contract {contract_id}, period {reporting_period}",
+    )
     conn.commit()
     conn.close()
 
@@ -550,8 +588,7 @@ def list_sb_reports(contract_id):
         ).fetchall()
     except Exception:
         rows = conn.execute(
-            "SELECT * FROM cpmp_small_business_plan WHERE contract_id = ? "
-            "ORDER BY period_start DESC, created_at DESC",
+            "SELECT * FROM cpmp_small_business_plan WHERE contract_id = ? ORDER BY period_start DESC, created_at DESC",
             (contract_id,),
         ).fetchall()
     conn.close()
@@ -559,6 +596,7 @@ def list_sb_reports(contract_id):
 
 
 # ── Noncompliance Detection ─────────────────────────────────────────
+
 
 def detect_noncompliance(contract_id):
     """Detect all types of noncompliance for a contract's subcontractors.
@@ -580,27 +618,31 @@ def detect_noncompliance(contract_id):
     # 1. Flow-down noncompliance
     flowdown = check_flowdown(contract_id)
     for sub in flowdown.get("non_compliant", []):
-        findings.append({
-            "category": "flowdown",
-            "severity": "high" if (sub.get("subcontract_value") or 0) > _CYBER_THRESHOLD else "medium",
-            "sub_id": sub["id"],
-            "company_name": sub["company_name"],
-            "description": f"Flow-down clauses incomplete for {sub['company_name']}",
-            "subcontract_value": sub.get("subcontract_value", 0.0),
-        })
+        findings.append(
+            {
+                "category": "flowdown",
+                "severity": "high" if (sub.get("subcontract_value") or 0) > _CYBER_THRESHOLD else "medium",
+                "sub_id": sub["id"],
+                "company_name": sub["company_name"],
+                "description": f"Flow-down clauses incomplete for {sub['company_name']}",
+                "subcontract_value": sub.get("subcontract_value", 0.0),
+            }
+        )
 
     # 2. Cybersecurity noncompliance
     cyber = check_cybersecurity(contract_id)
     for sub in cyber.get("non_compliant", []):
-        findings.append({
-            "category": "cybersecurity",
-            "severity": "critical",
-            "sub_id": sub["id"],
-            "company_name": sub["company_name"],
-            "description": f"Cybersecurity non-compliant: {sub['company_name']} "
-                           f"(value: ${sub.get('subcontract_value', 0):,.2f})",
-            "subcontract_value": sub.get("subcontract_value", 0.0),
-        })
+        findings.append(
+            {
+                "category": "cybersecurity",
+                "severity": "critical",
+                "sub_id": sub["id"],
+                "company_name": sub["company_name"],
+                "description": f"Cybersecurity non-compliant: {sub['company_name']} "
+                f"(value: ${sub.get('subcontract_value', 0):,.2f})",
+                "subcontract_value": sub.get("subcontract_value", 0.0),
+            }
+        )
 
     # 3. CMMC noncompliance — subs without CMMC level
     conn = _get_db()
@@ -613,14 +655,16 @@ def detect_noncompliance(contract_id):
         (contract_id, _CYBER_THRESHOLD),
     ).fetchall()
     for row in cmmc_rows:
-        findings.append({
-            "category": "cmmc",
-            "severity": "high",
-            "sub_id": row["id"],
-            "company_name": row["company_name"],
-            "description": f"CMMC level not established for {row['company_name']}",
-            "subcontract_value": row["subcontract_value"] or 0.0,
-        })
+        findings.append(
+            {
+                "category": "cmmc",
+                "severity": "high",
+                "sub_id": row["id"],
+                "company_name": row["company_name"],
+                "description": f"CMMC level not established for {row['company_name']}",
+                "subcontract_value": row["subcontract_value"] or 0.0,
+            }
+        )
 
     # 4. ISR/SSR currency — check if there is a recent report
     # Note: DB may have reporting_period+report_type or period_start+period_end depending on init version
@@ -640,14 +684,16 @@ def detect_noncompliance(contract_id):
     conn.close()
 
     if not latest_report:
-        findings.append({
-            "category": "isr_ssr",
-            "severity": "high",
-            "sub_id": None,
-            "company_name": None,
-            "description": "No ISR/SSR report has been filed for this contract",
-            "subcontract_value": None,
-        })
+        findings.append(
+            {
+                "category": "isr_ssr",
+                "severity": "high",
+                "sub_id": None,
+                "company_name": None,
+                "description": "No ISR/SSR report has been filed for this contract",
+                "subcontract_value": None,
+            }
+        )
     else:
         try:
             created = datetime.fromisoformat(latest_report["created_at"].replace("Z", "+00:00"))
@@ -655,17 +701,19 @@ def detect_noncompliance(contract_id):
             if age_days > _ISR_SSR_MAX_AGE_DAYS:
                 period = latest_report["reporting_period"] if "reporting_period" in latest_report.keys() else "N/A"
                 report_type = dict(latest_report).get("report_type", "ISR/SSR")
-                findings.append({
-                    "category": "isr_ssr",
-                    "severity": "medium",
-                    "sub_id": None,
-                    "company_name": None,
-                    "description": f"Latest ISR/SSR report is {age_days} days old "
-                                   f"(threshold: {_ISR_SSR_MAX_AGE_DAYS} days). "
-                                   f"Period: {period}, "
-                                   f"type: {report_type.upper() if report_type else 'ISR/SSR'}",
-                    "subcontract_value": None,
-                })
+                findings.append(
+                    {
+                        "category": "isr_ssr",
+                        "severity": "medium",
+                        "sub_id": None,
+                        "company_name": None,
+                        "description": f"Latest ISR/SSR report is {age_days} days old "
+                        f"(threshold: {_ISR_SSR_MAX_AGE_DAYS} days). "
+                        f"Period: {period}, "
+                        f"type: {report_type.upper() if report_type else 'ISR/SSR'}",
+                        "subcontract_value": None,
+                    }
+                )
         except (ValueError, TypeError):
             pass
 
@@ -693,10 +741,9 @@ def detect_noncompliance(contract_id):
 
 # ── CLI ──────────────────────────────────────────────────────────────
 
+
 def main():
-    parser = argparse.ArgumentParser(
-        description="ICDEV™ GovProposal Subcontractor Tracker (Phase 60, FAR 52.219-9)"
-    )
+    parser = argparse.ArgumentParser(description="ICDEV™ GovProposal Subcontractor Tracker (Phase 60, FAR 52.219-9)")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--create", action="store_true", help="Create a subcontractor")
     group.add_argument("--update", action="store_true", help="Update a subcontractor")

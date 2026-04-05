@@ -15,7 +15,6 @@ import json
 import os
 import sys
 import time
-from pathlib import Path
 
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -40,10 +39,14 @@ class TestResult:
 
     def summary(self):
         total = len(self.passed) + len(self.failed)
-        rate = f"{len(self.passed)/total*100:.1f}%" if total else "0%"
-        return {"total": total, "passed": len(self.passed),
-                "failed": len(self.failed), "pass_rate": rate,
-                "failures": self.failed}
+        rate = f"{len(self.passed) / total * 100:.1f}%" if total else "0%"
+        return {
+            "total": total,
+            "passed": len(self.passed),
+            "failed": len(self.failed),
+            "pass_rate": rate,
+            "failures": self.failed,
+        }
 
 
 def create_driver():
@@ -98,33 +101,48 @@ def run_tests():
         time.sleep(2)
 
         # Setup project + topology with EOL device
-        d = api(driver, "POST", "/network/api/projects", {
-            "name": "E2E Refresh Test", "status": "draft"
-        })
+        d = api(driver, "POST", "/network/api/projects", {"name": "E2E Refresh Test", "status": "draft"})
         pid = d.get("id")
-        t = api(driver, "POST", "/network/api/topologies", {
-            "name": "Refresh Topo",
-            "graph_json": {"nodes": [
-                {"id": "r1", "label": "Old-Router",
-                 "type": "router", "x": 100, "y": 100,
-                 "config": {"model": "ASR1001-X",
-                            "eol_date": "2025-06-30"}},
-            ], "edges": []}
-        })
+        t = api(
+            driver,
+            "POST",
+            "/network/api/topologies",
+            {
+                "name": "Refresh Topo",
+                "graph_json": {
+                    "nodes": [
+                        {
+                            "id": "r1",
+                            "label": "Old-Router",
+                            "type": "router",
+                            "x": 100,
+                            "y": 100,
+                            "config": {"model": "ASR1001-X", "eol_date": "2025-06-30"},
+                        },
+                    ],
+                    "edges": [],
+                },
+            },
+        )
         topo_id = t.get("id")
         if topo_id and pid:
-            api(driver, "POST",
-                f"/network/api/projects/{pid}/topologies",
-                {"topology_id": topo_id})
+            api(driver, "POST", f"/network/api/projects/{pid}/topologies", {"topology_id": topo_id})
 
         # ── 1. Add replacement mapping ────────────────────────────────────
         try:
-            d = api(driver, "POST", "/network/api/replacement-map", {
-                "old_vendor": "Cisco", "old_model": "ASR1001-X",
-                "new_vendor": "Cisco", "new_model": "C8300-2N2S-4T2X",
-                "new_cost": 18000,
-                "migration_effort": "medium"
-            })
+            d = api(
+                driver,
+                "POST",
+                "/network/api/replacement-map",
+                {
+                    "old_vendor": "Cisco",
+                    "old_model": "ASR1001-X",
+                    "new_vendor": "Cisco",
+                    "new_model": "C8300-2N2S-4T2X",
+                    "new_cost": 18000,
+                    "migration_effort": "medium",
+                },
+            )
             rep_id = d.get("id")
             assert rep_id
             results.ok("add_replacement", f"id={rep_id}")
@@ -141,16 +159,20 @@ def run_tests():
 
         # ── 3. Add refresh plan item ──────────────────────────────────────
         try:
-            d = api(driver, "POST",
-                    f"/network/api/projects/{pid}/refresh-plan", {
-                        "device_label": "Core-R1",
-                        "old_model": "ASR1001-X",
-                        "eol_date": "2025-06-30",
-                        "priority": "critical",
-                        "replacement_model": "C8300-2N2S-4T2X",
-                        "replacement_cost": 18000,
-                        "target_year": 2026,
-                    })
+            d = api(
+                driver,
+                "POST",
+                f"/network/api/projects/{pid}/refresh-plan",
+                {
+                    "device_label": "Core-R1",
+                    "old_model": "ASR1001-X",
+                    "eol_date": "2025-06-30",
+                    "priority": "critical",
+                    "replacement_model": "C8300-2N2S-4T2X",
+                    "replacement_cost": 18000,
+                    "target_year": 2026,
+                },
+            )
             ref_id = d.get("id")
             assert ref_id
             results.ok("add_refresh_item", f"id={ref_id}")
@@ -159,24 +181,19 @@ def run_tests():
 
         # ── 4. Budget by year ─────────────────────────────────────────────
         try:
-            d = api(driver, "GET",
-                    f"/network/api/projects/{pid}/refresh-plan")
+            d = api(driver, "GET", f"/network/api/projects/{pid}/refresh-plan")
             assert d.get("total_cost") >= 18000
             by_yr = d.get("budget_by_year") or {}
             assert "2026" in by_yr or 2026 in by_yr, f"No 2026: {by_yr}"
-            results.ok("budget_by_year",
-                        f"total=${d['total_cost']}, "
-                        f"years={list(d.get('budget_by_year', {}).keys())}")
+            results.ok("budget_by_year", f"total=${d['total_cost']}, years={list(d.get('budget_by_year', {}).keys())}")
         except Exception as e:
             results.fail("budget_by_year", e)
 
         # ── 5. Auto-generate refresh plan ─────────────────────────────────
         try:
-            d = api(driver, "POST",
-                    f"/network/api/projects/{pid}/auto-refresh-plan")
+            d = api(driver, "POST", f"/network/api/projects/{pid}/auto-refresh-plan")
             assert d.get("items_created") >= 1
-            results.ok("auto_refresh_plan",
-                        f"created={d['items_created']}")
+            results.ok("auto_refresh_plan", f"created={d['items_created']}")
         except Exception as e:
             results.fail("auto_refresh_plan", e)
 
@@ -185,20 +202,16 @@ def run_tests():
             d = api(driver, "GET", "/network/api/budget-forecast")
             assert "forecast" in d
             assert d.get("grand_total") >= 18000
-            results.ok("budget_forecast",
-                        f"grand_total=${d['grand_total']}, "
-                        f"years={len(d['forecast'])}")
+            results.ok("budget_forecast", f"grand_total=${d['grand_total']}, years={len(d['forecast'])}")
         except Exception as e:
             results.fail("budget_forecast", e)
 
         # ── 7. Delete ─────────────────────────────────────────────────────
         try:
             if rep_id:
-                api(driver, "DELETE",
-                    f"/network/api/replacement-map/{rep_id}")
+                api(driver, "DELETE", f"/network/api/replacement-map/{rep_id}")
             if ref_id:
-                api(driver, "DELETE",
-                    f"/network/api/refresh-plan/{ref_id}")
+                api(driver, "DELETE", f"/network/api/refresh-plan/{ref_id}")
             results.ok("delete_items")
         except Exception as e:
             results.fail("delete_items", e)
@@ -223,8 +236,7 @@ if __name__ == "__main__":
     r = run_tests()
     summary = r.summary()
     print()
-    print(f"Results: {summary['passed']}/{summary['total']} passed "
-          f"({summary['pass_rate']})")
+    print(f"Results: {summary['passed']}/{summary['total']} passed ({summary['pass_rate']})")
     if summary["failures"]:
         print("Failures:")
         for f in summary["failures"]:

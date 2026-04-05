@@ -38,7 +38,7 @@ class TestResult:
 
     def summary(self):
         total = len(self.passed) + len(self.failed)
-        rate = f"{len(self.passed)/total*100:.1f}%" if total else "0%"
+        rate = f"{len(self.passed) / total * 100:.1f}%" if total else "0%"
         return {
             "total": total,
             "passed": len(self.passed),
@@ -138,7 +138,8 @@ def test_drag_drop_palette(driver, results):
             driver.find_element(By.CSS_SELECTOR, f'.palette-item[data-type="{dtype}"]')
 
             # Create via JS — headless Chrome can't reliably do HTML5 drag-drop
-            created = driver.execute_script("""
+            created = driver.execute_script(
+                """
                 var dtype = arguments[0], x = arguments[1], y = arguments[2];
                 if (typeof createNode === 'function' && typeof getStyle === 'function') {
                     try { pushUndo(); } catch(e) {}
@@ -148,7 +149,11 @@ def test_drag_drop_palette(driver, results):
                     return true;
                 }
                 return false;
-            """, dtype, x, y)
+            """,
+                dtype,
+                x,
+                y,
+            )
             time.sleep(0.3)
 
             if created:
@@ -269,9 +274,7 @@ def test_auto_layout(driver, results):
     """Click auto-layout TB and LR buttons."""
     for direction, label in [("TB", "Top-to-Bottom"), ("LR", "Left-to-Right")]:
         try:
-            btn = driver.find_element(
-                By.CSS_SELECTOR, f"button[onclick=\"autoLayout('{direction}')\"]"
-            )
+            btn = driver.find_element(By.CSS_SELECTOR, f"button[onclick=\"autoLayout('{direction}')\"]")
             js_click(driver, btn)
             time.sleep(0.5)
             screenshot(driver, f"05-layout-{direction.lower()}")
@@ -286,9 +289,7 @@ def test_auto_layout(driver, results):
 def test_template_gallery(driver, results):
     """Open template panel, verify content, then close."""
     try:
-        tpl_btn = driver.find_element(
-            By.CSS_SELECTOR, "button[onclick='openTemplatesPanel()']"
-        )
+        tpl_btn = driver.find_element(By.CSS_SELECTOR, "button[onclick='openTemplatesPanel()']")
         js_click(driver, tpl_btn)
         time.sleep(1)
 
@@ -371,9 +372,7 @@ def test_save_load(driver, results):
     # Return to canvas
     try:
         driver.get(f"{BASE_URL}/network/canvas/new")
-        WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, ".canvas-toolbar"))
-        )
+        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, ".canvas-toolbar")))
         time.sleep(1)
         results.ok("canvas_reload", "Returned to canvas")
     except Exception as exc:
@@ -503,16 +502,19 @@ def test_change_request_markup(driver, results):
         return
 
     # ── 2. Navigate to change-request page ────────────────────────────────
-    target_url = f"{BASE_URL}/network/change-request/{topo_id}" if topo_id else \
-                 f"{BASE_URL}/network/"
+    target_url = f"{BASE_URL}/network/change-request/{topo_id}" if topo_id else f"{BASE_URL}/network/"
     try:
         driver.get(target_url)
         time.sleep(1.5)
         body_text = driver.find_element(By.TAG_NAME, "body").text
         # Accept redirect to index or the actual CR page
-        if "Change Request" in body_text or "change request" in body_text.lower() \
-                or "Network Design" in body_text or "Topology" in body_text \
-                or "Markup" in body_text:
+        if (
+            "Change Request" in body_text
+            or "change request" in body_text.lower()
+            or "Network Design" in body_text
+            or "Topology" in body_text
+            or "Markup" in body_text
+        ):
             results.ok("cr_page_load", f"url={target_url}")
         else:
             results.fail("cr_page_load", f"Unexpected page content at {target_url}")
@@ -537,9 +539,7 @@ def test_change_request_markup(driver, results):
 
     try:
         # Create CR button
-        new_cr_btn = driver.find_element(
-            By.XPATH, "//button[contains(text(),'New CR') or contains(text(),'New CR')]"
-        )
+        new_cr_btn = driver.find_element(By.XPATH, "//button[contains(text(),'New CR') or contains(text(),'New CR')]")
         assert new_cr_btn.is_displayed()
         results.ok("cr_new_button_visible")
     except Exception as exc:
@@ -547,18 +547,14 @@ def test_change_request_markup(driver, results):
 
     # ── 4. Create a new CR via the form ───────────────────────────────────
     try:
-        new_cr_btn = driver.find_element(
-            By.XPATH, "//button[contains(text(),'New CR')]"
-        )
+        new_cr_btn = driver.find_element(By.XPATH, "//button[contains(text(),'New CR')]")
         new_cr_btn.click()
         time.sleep(0.4)
         title_input = driver.find_element(By.ID, "new-cr-title")
         title_input.send_keys("E2E Test Change Request")
         desc_input = driver.find_element(By.ID, "new-cr-desc")
         desc_input.send_keys("Automated E2E test CR for markup validation.")
-        create_btn = driver.find_element(
-            By.XPATH, "//button[contains(text(),'Create Change Request')]"
-        )
+        create_btn = driver.find_element(By.XPATH, "//button[contains(text(),'Create Change Request')]")
         create_btn.click()
         time.sleep(1)
         results.ok("cr_create_form")

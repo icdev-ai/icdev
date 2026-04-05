@@ -190,9 +190,13 @@ def _generate_case_study(draft: Dict, kb_blocks: List[Dict]) -> Dict[str, str]:
     # past performance details before staging as Pulse draft.
     try:
         from tools.redaction.pulse_sanitizer import PulseSanitizer
+
         ps = PulseSanitizer()
         sanitized = ps.sanitize_article(
-            title=raw_title, body=body, tags=tags, domain=domain,
+            title=raw_title,
+            body=body,
+            tags=tags,
+            domain=domain,
         )
         return {
             "title": sanitized["title"],

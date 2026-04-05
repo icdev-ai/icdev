@@ -93,10 +93,28 @@ try:
 
     palette_count = js("return document.querySelectorAll('.palette-item').length")
     check("Palette: 221 items", palette_count == 221, f"{palette_count} items")
-    check("Palette collapsed by default", js("var v=0;document.querySelectorAll('.palette-items').forEach(function(e){if(e.style.display!=='none')v++});return v") == 0)
+    check(
+        "Palette collapsed by default",
+        js(
+            "var v=0;document.querySelectorAll('.palette-items').forEach(function(e){if(e.style.display!=='none')v++});return v"
+        )
+        == 0,
+    )
 
     btns = [b.text.strip() for b in driver.find_elements(By.CSS_SELECTOR, ".tb-btn") if b.text.strip()]
-    for label in ["Dashboard", "Deploy", "CFN", "Bicep", "Legend", "Boundaries", "Scorecard", "OWASP", "SLSA", "Compliance", "Cost"]:
+    for label in [
+        "Dashboard",
+        "Deploy",
+        "CFN",
+        "Bicep",
+        "Legend",
+        "Boundaries",
+        "Scorecard",
+        "OWASP",
+        "SLSA",
+        "Compliance",
+        "Cost",
+    ]:
         check(f"Toolbar has '{label}'", any(label in b for b in btns))
     screenshot("03-canvas-empty")
 
@@ -173,7 +191,7 @@ try:
     time.sleep(3)
     js('createNode("ndc-topology", 100, 200, "NDC Topology")')
     time.sleep(1)
-    js('var els=graph.getElements(); if(els.length) selectCell(els[0])')
+    js("var els=graph.getElements(); if(els.length) selectCell(els[0])")
     time.sleep(2)
 
     ndc_header = js('var h=document.querySelector(".pc-config-header span"); return h ? h.textContent : ""')
@@ -201,7 +219,10 @@ try:
     js("toggleLegend()")
     time.sleep(0.5)
     check("Legend visible", js('var l=document.getElementById("pc-legend"); return l && l.style.display !== "none"'))
-    check("Legend has Infrastructure entry", js('var l=document.getElementById("pc-legend"); return l && l.textContent.includes("Infrastructure")'))
+    check(
+        "Legend has Infrastructure entry",
+        js('var l=document.getElementById("pc-legend"); return l && l.textContent.includes("Infrastructure")'),
+    )
     screenshot("10-legend")
 
     # ── Phase 10: Save + All Analysis Types ───────────────────────────
@@ -223,7 +244,7 @@ try:
             time.sleep(2)
             h = js('var h=document.querySelector(".pc-config-header span"); return h ? h.textContent : ""')
             blen = js('var b=document.querySelector(".pc-config-body"); return b ? b.textContent.length : 0')
-            check(f"{title} renders", h == title and blen > 50, f"header=\"{h}\", {blen} chars")
+            check(f"{title} renders", h == title and blen > 50, f'header="{h}", {blen} chars')
         screenshot("11-analysis")
 
     # ── Phase 11: Deploy IaC Bundle ───────────────────────────────────
@@ -243,10 +264,32 @@ try:
     # ── Phase 12: Export Formats ──────────────────────────────────────
     print("\n--- Phase 12: Export Formats ---")
     if pid and pid != "new":
-        for fmt in ["gitlab_ci", "github_actions", "jenkinsfile", "tekton", "azure_pipelines", "drawio", "svg", "cloudformation", "bicep"]:
-            js(f'window._exp_{fmt}=null; fetch("/devops/api/export/{pid}",{{method:"POST",headers:{{"Content-Type":"application/json"}},body:JSON.stringify({{format:"{fmt}"}})}}).then(r=>r.json()).then(d=>{{window._exp_{fmt}=d}})')
+        for fmt in [
+            "gitlab_ci",
+            "github_actions",
+            "jenkinsfile",
+            "tekton",
+            "azure_pipelines",
+            "drawio",
+            "svg",
+            "cloudformation",
+            "bicep",
+        ]:
+            js(
+                f'window._exp_{fmt}=null; fetch("/devops/api/export/{pid}",{{method:"POST",headers:{{"Content-Type":"application/json"}},body:JSON.stringify({{format:"{fmt}"}})}}).then(r=>r.json()).then(d=>{{window._exp_{fmt}=d}})'
+            )
         time.sleep(3)
-        for fmt in ["gitlab_ci", "github_actions", "jenkinsfile", "tekton", "azure_pipelines", "drawio", "svg", "cloudformation", "bicep"]:
+        for fmt in [
+            "gitlab_ci",
+            "github_actions",
+            "jenkinsfile",
+            "tekton",
+            "azure_pipelines",
+            "drawio",
+            "svg",
+            "cloudformation",
+            "bicep",
+        ]:
             exp = js(f"return window._exp_{fmt} || null")
             ok = exp and exp.get("content") and len(exp.get("content", "")) > 20
             check(f"Export: {fmt}", ok, f"{len(exp.get('content', '')) if exp else 0} bytes")
@@ -283,7 +326,9 @@ try:
     if pid and pid != "new":
         js(f'fetch("/devops/api/pipelines/{pid}",{{method:"DELETE"}})')
         time.sleep(1)
-        js(f'window._delCheck=null; fetch("/devops/api/pipelines/{pid}").then(r=>r.json()).then(d=>{{window._delCheck=d}})')
+        js(
+            f'window._delCheck=null; fetch("/devops/api/pipelines/{pid}").then(r=>r.json()).then(d=>{{window._delCheck=d}})'
+        )
         time.sleep(1)
         del_r = js("return window._delCheck || {}")
         check("Pipeline deleted (404)", del_r.get("error") == "Not found")
@@ -292,9 +337,13 @@ try:
     print("\n--- Phase 16: Final JS Error Check ---")
     all_logs = driver.get_log("browser")
     # Exclude: favicon 404, and deleted-pipeline autosave 404 (expected after Phase 15)
-    all_severe = [entry for entry in all_logs if entry["level"] == "SEVERE"
-                  and "favicon" not in entry.get("message", "")
-                  and "Failed to load resource" not in entry.get("message", "")]
+    all_severe = [
+        entry
+        for entry in all_logs
+        if entry["level"] == "SEVERE"
+        and "favicon" not in entry.get("message", "")
+        and "Failed to load resource" not in entry.get("message", "")
+    ]
     check("Total JS errors = 0", len(all_severe) == 0, f"{len(all_severe)} errors")
     for entry in all_severe[:5]:
         print(f"    ERROR: {entry['message'][:120]}")
@@ -303,6 +352,7 @@ try:
 except Exception as e:
     print(f"\nFATAL ERROR: {e}")
     import traceback
+
     traceback.print_exc()
     driver.save_screenshot("playwright/screenshots/e2e-fatal-error.png")
     FAIL += 1

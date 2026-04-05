@@ -75,6 +75,7 @@ class TelegramConnector(SaaSBaseConnector):
         """Connect using bot token from config or env."""
         try:
             from dotenv import load_dotenv
+
             load_dotenv(BASE_DIR / ".env")
         except ImportError:
             pass
@@ -88,9 +89,7 @@ class TelegramConnector(SaaSBaseConnector):
             return False
 
         # Telegram embeds token in URL path, not headers
-        config["base_url"] = (
-            f"https://api.telegram.org/bot{token}"
-        )
+        config["base_url"] = f"https://api.telegram.org/bot{token}"
         config["api_key"] = token
         self._chat_id = config.get(
             "chat_id",
@@ -98,9 +97,7 @@ class TelegramConnector(SaaSBaseConnector):
         )
         return super().connect(config)
 
-    def _build_auth_headers(
-        self, config: Dict[str, Any]
-    ) -> Dict[str, str]:
+    def _build_auth_headers(self, config: Dict[str, Any]) -> Dict[str, str]:
         # Telegram uses URL-embedded token, no auth headers
         return {}
 
@@ -114,9 +111,7 @@ class TelegramConnector(SaaSBaseConnector):
             supported_formats=["json"],
         )
 
-    def read(
-        self, request: ConnectorRequest
-    ) -> ConnectorResponse:
+    def read(self, request: ConnectorRequest) -> ConnectorResponse:
         """Read from Telegram API.
 
         Tables:
@@ -124,28 +119,23 @@ class TelegramConnector(SaaSBaseConnector):
             updates — Poll for new messages (tracks offset)
         """
         import time
+
         start = time.time()
         table = request.table_name
 
         if table == "me":
-            data = self._http_get(
-                f"{self._base_url}/getMe"
-            )
+            data = self._http_get(f"{self._base_url}/getMe")
             if data and data.get("ok"):
                 return ConnectorResponse(
                     status="success",
                     data=[data["result"]],
                     row_count=1,
-                    duration_ms=int(
-                        (time.time() - start) * 1000
-                    ),
+                    duration_ms=int((time.time() - start) * 1000),
                 )
             return ConnectorResponse(
                 status="error",
                 errors=[str(data)],
-                duration_ms=int(
-                    (time.time() - start) * 1000
-                ),
+                duration_ms=int((time.time() - start) * 1000),
             )
 
         if table == "updates":
@@ -159,16 +149,12 @@ class TelegramConnector(SaaSBaseConnector):
             if request.limit:
                 params["limit"] = request.limit
 
-            data = self._http_post(
-                f"{self._base_url}/getUpdates", params
-            )
+            data = self._http_post(f"{self._base_url}/getUpdates", params)
             if not data or not data.get("ok"):
                 return ConnectorResponse(
                     status="error",
                     errors=[str(data)],
-                    duration_ms=int(
-                        (time.time() - start) * 1000
-                    ),
+                    duration_ms=int((time.time() - start) * 1000),
                 )
 
             results = data.get("result", [])
@@ -177,26 +163,22 @@ class TelegramConnector(SaaSBaseConnector):
                 uid = update.get("update_id", 0)
                 msg = update.get("message", {})
                 if msg:
-                    messages.append({
-                        "update_id": uid,
-                        "chat_id": msg.get(
-                            "chat", {}
-                        ).get("id"),
-                        "text": msg.get("text", ""),
-                        "from": msg.get(
-                            "from", {}
-                        ).get("first_name", ""),
-                        "date": msg.get("date"),
-                    })
+                    messages.append(
+                        {
+                            "update_id": uid,
+                            "chat_id": msg.get("chat", {}).get("id"),
+                            "text": msg.get("text", ""),
+                            "from": msg.get("from", {}).get("first_name", ""),
+                            "date": msg.get("date"),
+                        }
+                    )
                 _save_offset(uid)
 
             return ConnectorResponse(
                 status="success",
                 data=messages,
                 row_count=len(messages),
-                duration_ms=int(
-                    (time.time() - start) * 1000
-                ),
+                duration_ms=int((time.time() - start) * 1000),
             )
 
         return ConnectorResponse(
@@ -217,6 +199,7 @@ class TelegramConnector(SaaSBaseConnector):
             parse_mode — HTML or Markdown (default: HTML)
         """
         import time
+
         start = time.time()
 
         if not isinstance(data, dict):
@@ -246,48 +229,42 @@ class TelegramConnector(SaaSBaseConnector):
             "disable_web_page_preview": True,
         }
 
-        resp = self._http_post(
-            f"{self._base_url}/sendMessage", payload
-        )
+        resp = self._http_post(f"{self._base_url}/sendMessage", payload)
         if resp and resp.get("ok"):
-            msg_id = resp.get("result", {}).get(
-                "message_id"
-            )
+            msg_id = resp.get("result", {}).get("message_id")
             return ConnectorResponse(
                 status="success",
                 data=[{"message_id": msg_id}],
                 row_count=1,
-                duration_ms=int(
-                    (time.time() - start) * 1000
-                ),
+                duration_ms=int((time.time() - start) * 1000),
             )
 
         return ConnectorResponse(
             status="error",
             errors=[str(resp)],
-            duration_ms=int(
-                (time.time() - start) * 1000
-            ),
+            duration_ms=int((time.time() - start) * 1000),
         )
 
-    def infer_schema(
-        self, table_name: str
-    ) -> SchemaDefinition:
+    def infer_schema(self, table_name: str) -> SchemaDefinition:
         if table_name == "updates":
-            return SchemaDefinition(fields=[
-                SchemaField("update_id", "integer"),
-                SchemaField("chat_id", "integer"),
-                SchemaField("text", "string"),
-                SchemaField("from", "string"),
-                SchemaField("date", "integer"),
-            ])
+            return SchemaDefinition(
+                fields=[
+                    SchemaField("update_id", "integer"),
+                    SchemaField("chat_id", "integer"),
+                    SchemaField("text", "string"),
+                    SchemaField("from", "string"),
+                    SchemaField("date", "integer"),
+                ]
+            )
         if table_name == "messages":
-            return SchemaDefinition(fields=[
-                SchemaField("chat_id", "integer"),
-                SchemaField("text", "string"),
-                SchemaField("parse_mode", "string"),
-                SchemaField("message_id", "integer"),
-            ])
+            return SchemaDefinition(
+                fields=[
+                    SchemaField("chat_id", "integer"),
+                    SchemaField("text", "string"),
+                    SchemaField("parse_mode", "string"),
+                    SchemaField("message_id", "integer"),
+                ]
+            )
         return SchemaDefinition(fields=[])
 
     def list_tables(self) -> List[str]:
@@ -299,23 +276,26 @@ class TelegramConnector(SaaSBaseConnector):
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(
-        description="Telegram DataBridge Connector"
-    )
+    parser = argparse.ArgumentParser(description="Telegram DataBridge Connector")
     parser.add_argument(
-        "--health", action="store_true",
+        "--health",
+        action="store_true",
         help="Check bot connection",
     )
     parser.add_argument(
-        "--read", metavar="TABLE",
+        "--read",
+        metavar="TABLE",
         help="Read from table (me, updates)",
     )
     parser.add_argument(
-        "--send", metavar="TEXT",
+        "--send",
+        metavar="TEXT",
         help="Send a message",
     )
     parser.add_argument(
-        "--limit", type=int, default=10,
+        "--limit",
+        type=int,
+        default=10,
     )
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
@@ -328,22 +308,24 @@ if __name__ == "__main__":
         if args.json:
             print(json.dumps(health, indent=2))
         else:
-            print(
-                f"Status: {health.get('status', '?')}"
-            )
+            print(f"Status: {health.get('status', '?')}")
 
     elif args.read:
-        req = ConnectorRequest(
-            table_name=args.read, limit=args.limit
-        )
+        req = ConnectorRequest(table_name=args.read, limit=args.limit)
         resp = conn.read(req)
         if args.json:
-            print(json.dumps({
-                "status": resp.status,
-                "data": resp.data,
-                "row_count": resp.row_count,
-                "duration_ms": resp.duration_ms,
-            }, indent=2, default=str))
+            print(
+                json.dumps(
+                    {
+                        "status": resp.status,
+                        "data": resp.data,
+                        "row_count": resp.row_count,
+                        "duration_ms": resp.duration_ms,
+                    },
+                    indent=2,
+                    default=str,
+                )
+            )
         else:
             for row in resp.data:
                 print(row)
@@ -352,9 +334,14 @@ if __name__ == "__main__":
         req = ConnectorRequest(table_name="messages")
         resp = conn.write(req, {"text": args.send})
         if args.json:
-            print(json.dumps({
-                "status": resp.status,
-                "data": resp.data,
-            }, indent=2))
+            print(
+                json.dumps(
+                    {
+                        "status": resp.status,
+                        "data": resp.data,
+                    },
+                    indent=2,
+                )
+            )
         else:
             print(f"Sent: {resp.status}")

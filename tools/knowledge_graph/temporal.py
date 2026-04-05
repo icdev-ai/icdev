@@ -54,9 +54,7 @@ def _get_db(db_path=None):
     """Get database connection with dict-like row access."""
     path = Path(db_path) if db_path else DB_PATH
     if not path.exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py"
-        )
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
     conn = get_connection(db_path=str(path))
     return conn
 
@@ -155,6 +153,7 @@ def _date_key(ts_val, interval: str) -> str:
 # CORE FUNCTIONS
 # =========================================================================
 
+
 def query_time_range(
     graph_id: str = None,
     start_date: str = None,
@@ -215,30 +214,32 @@ def query_time_range(
         ).fetchall()
 
     # Group by date (YYYY-MM-DD)
-    by_date: Dict[str, Dict[str, Any]] = defaultdict(
-        lambda: {"nodes": [], "edges": []}
-    )
+    by_date: Dict[str, Dict[str, Any]] = defaultdict(lambda: {"nodes": [], "edges": []})
     for n in nodes:
         day = _ts_to_str(n["created_at"])[:10] or "unknown"
-        by_date[day]["nodes"].append({
-            "id": n["id"],
-            "graph_id": n["graph_id"],
-            "label": n["label"],
-            "entity_type": n["entity_type"],
-            "centrality": n["centrality"],
-            "created_at": _to_iso(n["created_at"]),
-        })
+        by_date[day]["nodes"].append(
+            {
+                "id": n["id"],
+                "graph_id": n["graph_id"],
+                "label": n["label"],
+                "entity_type": n["entity_type"],
+                "centrality": n["centrality"],
+                "created_at": _to_iso(n["created_at"]),
+            }
+        )
     for e in edges:
         day = _ts_to_str(e["created_at"])[:10] or "unknown"
-        by_date[day]["edges"].append({
-            "id": e["id"],
-            "graph_id": e["graph_id"],
-            "source_id": e["source_id"],
-            "target_id": e["target_id"],
-            "relationship": e["relationship"],
-            "weight": e["weight"],
-            "created_at": _to_iso(e["created_at"]),
-        })
+        by_date[day]["edges"].append(
+            {
+                "id": e["id"],
+                "graph_id": e["graph_id"],
+                "source_id": e["source_id"],
+                "target_id": e["target_id"],
+                "relationship": e["relationship"],
+                "weight": e["weight"],
+                "created_at": _to_iso(e["created_at"]),
+            }
+        )
 
     conn.close()
 
@@ -328,13 +329,15 @@ def graph_evolution(
         ea = edge_counts.get(key, 0)
         cum_nodes += na
         cum_edges += ea
-        time_series.append({
-            "date": key,
-            "nodes_added": na,
-            "edges_added": ea,
-            "cumulative_nodes": cum_nodes,
-            "cumulative_edges": cum_edges,
-        })
+        time_series.append(
+            {
+                "date": key,
+                "nodes_added": na,
+                "edges_added": ea,
+                "cumulative_nodes": cum_nodes,
+                "cumulative_edges": cum_edges,
+            }
+        )
 
     return {
         "status": "ok",
@@ -363,9 +366,7 @@ def recent_changes(
     conn = _get_db(db_path)
     _ensure_tables(conn)
 
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime(
-        "%Y-%m-%d %H:%M:%S"
-    )
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
 
     # Nodes
     node_where = "n.created_at >= ?"
@@ -457,9 +458,7 @@ def find_stale_entities(
     conn = _get_db(db_path)
     _ensure_tables(conn)
 
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=stale_days)).strftime(
-        "%Y-%m-%d %H:%M:%S"
-    )
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=stale_days)).strftime("%Y-%m-%d %H:%M:%S")
 
     where = "n.created_at < ?"
     params: List[Any] = [cutoff]
@@ -481,21 +480,21 @@ def find_stale_entities(
     for n in nodes:
         ts_str = _ts_to_str(n["created_at"]).strip().replace("T", " ")
         try:
-            created = datetime.strptime(ts_str[:19], "%Y-%m-%d %H:%M:%S").replace(
-                tzinfo=timezone.utc
-            )
+            created = datetime.strptime(ts_str[:19], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
         except (ValueError, TypeError):
             created = now  # skip unparseable
         age = (now - created).days
-        stale_nodes.append({
-            "id": n["id"],
-            "graph_id": n["graph_id"],
-            "label": n["label"],
-            "entity_type": n["entity_type"],
-            "centrality": n["centrality"],
-            "created_at": _to_iso(n["created_at"]),
-            "age_days": age,
-        })
+        stale_nodes.append(
+            {
+                "id": n["id"],
+                "graph_id": n["graph_id"],
+                "label": n["label"],
+                "entity_type": n["entity_type"],
+                "centrality": n["centrality"],
+                "created_at": _to_iso(n["created_at"]),
+                "age_days": age,
+            }
+        )
         by_type[n["entity_type"]] += 1
 
     return {
@@ -609,9 +608,7 @@ def temporal_diff(
 # CLI
 # =========================================================================
 def main():
-    parser = argparse.ArgumentParser(
-        description="Knowledge Graph Temporal Reasoning"
-    )
+    parser = argparse.ArgumentParser(description="Knowledge Graph Temporal Reasoning")
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--db-path", help="Override database path")
 
@@ -627,15 +624,12 @@ def main():
     parser.add_argument("--start", help="Start date (ISO-8601)")
     parser.add_argument("--end", help="End date (ISO-8601)")
     parser.add_argument("--entity-type", help="Entity type filter")
-    parser.add_argument("--interval", default="day",
-                        choices=["day", "week", "month"],
-                        help="Grouping interval for evolution")
-    parser.add_argument("--limit", type=int, default=30,
-                        help="Max intervals for evolution")
-    parser.add_argument("--days", type=int, default=7,
-                        help="Look-back days for recent changes")
-    parser.add_argument("--stale-days", type=int, default=90,
-                        help="Staleness threshold in days")
+    parser.add_argument(
+        "--interval", default="day", choices=["day", "week", "month"], help="Grouping interval for evolution"
+    )
+    parser.add_argument("--limit", type=int, default=30, help="Max intervals for evolution")
+    parser.add_argument("--days", type=int, default=7, help="Look-back days for recent changes")
+    parser.add_argument("--stale-days", type=int, default=90, help="Staleness threshold in days")
     parser.add_argument("--date-a", help="Earlier date for diff")
     parser.add_argument("--date-b", help="Later date for diff")
 
@@ -704,8 +698,10 @@ def main():
         elif args.evolution:
             print(f"Graph {result['graph_id']} — {result['total_intervals']} intervals ({result['interval']})")
             for ts in result.get("time_series", []):
-                print(f"  {ts['date']}: +{ts['nodes_added']}N +{ts['edges_added']}E "
-                      f"(cum {ts['cumulative_nodes']}N {ts['cumulative_edges']}E)")
+                print(
+                    f"  {ts['date']}: +{ts['nodes_added']}N +{ts['edges_added']}E "
+                    f"(cum {ts['cumulative_nodes']}N {ts['cumulative_edges']}E)"
+                )
         elif args.recent:
             print(f"Recent {result['days']}d: {result['total_nodes_added']} nodes, {result['total_edges_added']} edges")
             for etype, cnt in sorted(result.get("nodes_by_entity_type", {}).items()):

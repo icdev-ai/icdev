@@ -46,10 +46,7 @@ def _count_in_progress() -> int:
     """Count how many tasks are currently in_progress."""
     conn = get_connection()
     try:
-        row = conn.execute(
-            "SELECT COUNT(*) AS cnt FROM kanban_tasks "
-            "WHERE status = 'in_progress'"
-        ).fetchone()
+        row = conn.execute("SELECT COUNT(*) AS cnt FROM kanban_tasks WHERE status = 'in_progress'").fetchone()
         return dict(row).get("cnt", 0)
     finally:
         conn.close()
@@ -72,13 +69,10 @@ def _count_pending_prompts() -> int:
         count = 0
         for pf in prompt_files:
             task_id = pf.stem  # e.g. "task-abc123"
-            row = conn.execute(
-                "SELECT status FROM kanban_tasks WHERE id = ?", (task_id,)
-            ).fetchone()
+            row = conn.execute("SELECT status FROM kanban_tasks WHERE id = ?", (task_id,)).fetchone()
             if row and dict(row)["status"] == "in_progress":
                 count += 1
-            elif row and dict(row)["status"] in ("backlog", "scheduled",
-                                                  "token_exhausted"):
+            elif row and dict(row)["status"] in ("backlog", "scheduled", "token_exhausted"):
                 # Task exists and may be retried — don't count but don't delete
                 pass
             else:
@@ -121,19 +115,15 @@ TOKEN_EXHAUSTION_PATTERNS = [
     r"hit\s*your\s*limit",
     r"you'?ve\s*hit\s*your\s*limit",
 ]
-_TOKEN_RE = re.compile(
-    "|".join(TOKEN_EXHAUSTION_PATTERNS), re.IGNORECASE
-)
+_TOKEN_RE = re.compile("|".join(TOKEN_EXHAUSTION_PATTERNS), re.IGNORECASE)
 
 # How long to wait before retrying a token-exhausted task (seconds).
 # Claude Max resets at the top of each 5-hour window.
 TOKEN_RETRY_DELAY_SECONDS = 300  # 5 minutes between checks
-TOKEN_MAX_RETRY_COUNT = 60       # Give up after ~5 hours of retries
+TOKEN_MAX_RETRY_COUNT = 60  # Give up after ~5 hours of retries
 
 
-def _detect_token_exhaustion(
-    exit_code: int, output: str
-) -> Tuple[bool, Optional[str]]:
+def _detect_token_exhaustion(exit_code: int, output: str) -> Tuple[bool, Optional[str]]:
     """Check if Claude CLI output indicates token/rate-limit exhaustion.
 
     Returns (is_exhausted, estimated_reset_info).
@@ -149,7 +139,8 @@ def _detect_token_exhaustion(
         reset_match = re.search(
             r"(?:reset|try again|available)\s*(?:at|in)\s*"
             r"(\d[\d:hm \-]+)",
-            tail, re.IGNORECASE,
+            tail,
+            re.IGNORECASE,
         )
         reset_hint = reset_match.group(1).strip() if reset_match else None
         return True, reset_hint
@@ -225,12 +216,12 @@ def _create_worktree(task_id: str) -> Optional[str]:
         _sp.run(
             ["git", "worktree", "add", "-b", branch_name, str(worktree_path)],
             cwd=str(BASE_DIR),
-            capture_output=True, text=True, timeout=30,
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         if worktree_path.exists():
-            logger.info(
-                "Created worktree for %s at %s", task_id, worktree_path
-            )
+            logger.info("Created worktree for %s at %s", task_id, worktree_path)
             return str(worktree_path)
     except Exception as exc:
         logger.warning("Worktree creation failed for %s: %s", task_id, exc)
@@ -250,13 +241,17 @@ def _cleanup_worktree(task_id: str):
             _sp.run(
                 ["git", "worktree", "remove", str(worktree_path), "--force"],
                 cwd=str(BASE_DIR),
-                capture_output=True, text=True, timeout=30,
+                capture_output=True,
+                text=True,
+                timeout=30,
             )
         # Delete the branch too
         _sp.run(
             ["git", "branch", "-D", branch_name],
             cwd=str(BASE_DIR),
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         logger.info("Cleaned up worktree for %s", task_id)
     except Exception as exc:
@@ -272,13 +267,16 @@ def _check_worktree_commits(task_id: str) -> bool:
         result = _sp.run(
             ["git", "log", "HEAD.." + branch_name, "--oneline"],
             cwd=str(BASE_DIR),
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         commits = result.stdout.strip()
         if commits:
             logger.info(
                 "Worktree branch %s has new commits:\n%s",
-                branch_name, commits,
+                branch_name,
+                commits,
             )
             return True
     except Exception as exc:
@@ -363,10 +361,7 @@ def _move_task(task_id: str, new_status: str):
     conn = get_connection()
     try:
         now = _utcnow_iso()
-        sql = (
-            "UPDATE kanban_tasks SET status = ?, "
-            "updated_at = ?"
-        )
+        sql = "UPDATE kanban_tasks SET status = ?, updated_at = ?"
         vals = [new_status, now]
         if new_status == "done":
             sql += ", completed_at = ?"
@@ -380,11 +375,15 @@ def _move_task(task_id: str, new_status: str):
     # Broadcast SSE event for real-time dashboard updates
     try:
         from tools.dashboard.sse_manager import sse_manager
-        sse_manager.broadcast({
-            "action": "task_updated",
-            "task_id": task_id,
-            "changes": {"status": new_status},
-        }, "kanban")
+
+        sse_manager.broadcast(
+            {
+                "action": "task_updated",
+                "task_id": task_id,
+                "changes": {"status": new_status},
+            },
+            "kanban",
+        )
     except Exception:
         pass  # SSE is best-effort
 
@@ -402,7 +401,7 @@ def _write_prompt_file(task: dict):
 - **ID:** {task_id}
 - **Type:** {task_type}
 - **Priority:** {priority}
-- **Scheduled:** {task.get('scheduled_at', 'now')}
+- **Scheduled:** {task.get("scheduled_at", "now")}
 
 ## Description
 {desc}
@@ -434,9 +433,7 @@ def _send_notification(task: dict, event: str = "in_progress"):
     label = event_labels.get(event, event)
     title = f"Task {event}: {task['title']}"
     body = (
-        f"Kanban task '{task['title']}' "
-        f"({task.get('task_type', 'build')}/{task.get('priority', 'medium')}) "
-        f"is {label}."
+        f"Kanban task '{task['title']}' ({task.get('task_type', 'build')}/{task.get('priority', 'medium')}) is {label}."
     )
 
     # Dashboard notification
@@ -466,12 +463,14 @@ def _send_notification(task: dict, event: str = "in_progress"):
     # Telegram notification — load .env for bot token
     try:
         from dotenv import load_dotenv
+
         load_dotenv(BASE_DIR / ".env")
     except ImportError:
         pass
 
     try:
         from tools.notifications.adapters.telegram import send
+
         severity = "success" if event == "done" else "info"
         result = send(title, body, severity=severity)
         if result.get("status") != "sent":
@@ -489,6 +488,7 @@ def _poll_telegram():
         from tools.notifications.adapters.telegram_listener import (
             poll_updates,
         )
+
         return poll_updates()
     except Exception:
         return []
@@ -497,9 +497,7 @@ def _poll_telegram():
 # ---------------------------------------------------------------------------
 # Claude CLI executor
 # ---------------------------------------------------------------------------
-CLAUDE_CLI = shutil.which("claude") or str(
-    Path.home() / ".local" / "bin" / "claude"
-)
+CLAUDE_CLI = shutil.which("claude") or str(Path.home() / ".local" / "bin" / "claude")
 
 # Track running subprocesses: {task_id: subprocess.Popen}
 _running: Dict[str, subprocess.Popen] = {}
@@ -530,8 +528,8 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
         f"{prompt_text}\n\n"
         f"When complete:\n"
         f"1. Move to done: POST http://localhost:5050/api/kanban/"
-        f"tasks/{task_id}/move with {{\"status\": \"done\"}}\n"
-        f"2. Notify: python -c \"from tools.notifications.adapters."
+        f'tasks/{task_id}/move with {{"status": "done"}}\n'
+        f'2. Notify: python -c "from tools.notifications.adapters.'
         f"telegram import send; send('Task Completed', "
         f"'{title} — done', severity='success')\"\n"
         f"3. Delete prompt file: {prompt_path}\n"
@@ -546,9 +544,12 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
             [
                 CLAUDE_CLI,
                 "--dangerously-skip-permissions",
-                "--max-turns", "50",
-                "--output-format", "text",
-                "-p", instruction,
+                "--max-turns",
+                "50",
+                "--output-format",
+                "text",
+                "-p",
+                instruction,
             ],
             cwd=work_dir,
             stdout=log_fh,
@@ -580,11 +581,21 @@ def _verify_task_completed(task_id, claude_output):
 
     # Check 2: Look for failure indicators (scan full output, not just first 500)
     fail_markers = [
-        "I cannot", "I'm unable", "I don't have access",
-        "Permission denied", "No such file", "FileNotFoundError",
-        "I was unable to", "Error:", "failed to",
-        "ModuleNotFoundError", "ImportError", "SyntaxError",
-        "there is nothing to", "no changes", "already up to date",
+        "I cannot",
+        "I'm unable",
+        "I don't have access",
+        "Permission denied",
+        "No such file",
+        "FileNotFoundError",
+        "I was unable to",
+        "Error:",
+        "failed to",
+        "ModuleNotFoundError",
+        "ImportError",
+        "SyntaxError",
+        "there is nothing to",
+        "no changes",
+        "already up to date",
     ]
     output_lower = claude_output.lower()
     for marker in fail_markers:
@@ -593,9 +604,20 @@ def _verify_task_completed(task_id, claude_output):
 
     # Check 3: Evidence of file changes in output
     file_change_markers = [
-        "created", "modified", "updated", "wrote", "edited",
-        "added", "fixed", "refactored", "generated",
-        "tools/", "tests/", "args/", "goals/", "docs/",
+        "created",
+        "modified",
+        "updated",
+        "wrote",
+        "edited",
+        "added",
+        "fixed",
+        "refactored",
+        "generated",
+        "tools/",
+        "tests/",
+        "args/",
+        "goals/",
+        "docs/",
     ]
     has_file_evidence = any(m in output_lower for m in file_change_markers)
     if not has_file_evidence:
@@ -604,12 +626,17 @@ def _verify_task_completed(task_id, claude_output):
     # Check 4: Git commit check on the WORKTREE branch (not main)
     try:
         import subprocess as _sp
+
         branch_name = f"kanban/{task_id}"
         # Check if the worktree branch has commits ahead of HEAD
         result = _sp.run(
             ["git", "log", f"HEAD..{branch_name}", "--oneline"],
-            capture_output=True, text=True, encoding="utf-8",
-            errors="replace", cwd=str(BASE_DIR), timeout=10,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            cwd=str(BASE_DIR),
+            timeout=10,
         )
         worktree_commits = result.stdout.strip()
         if worktree_commits:
@@ -618,10 +645,13 @@ def _verify_task_completed(task_id, claude_output):
         # Fallback: if no worktree branch (ran in BASE_DIR), check for
         # commits mentioning this task ID or title
         result = _sp.run(
-            ["git", "log", "--oneline", "--since=30 minutes ago",
-             "--all", "--grep", task_id[:12]],
-            capture_output=True, text=True, encoding="utf-8",
-            errors="replace", cwd=str(BASE_DIR), timeout=10,
+            ["git", "log", "--oneline", "--since=30 minutes ago", "--all", "--grep", task_id[:12]],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            cwd=str(BASE_DIR),
+            timeout=10,
         )
         if result.stdout.strip():
             return True, "Verified: found commits referencing task"
@@ -686,6 +716,7 @@ def _check_completed():
                     from tools.notifications.adapters.telegram import (
                         send as tg_send,
                     )
+
                     tg_send(
                         f"TIMEOUT: {task_dict.get('title', task_id)[:60]}",
                         f"Task killed after {int(elapsed)}s — returned to backlog",
@@ -713,9 +744,7 @@ def _check_completed():
             task_log = PROMPT_DIR / f"{task_id}.log"
             try:
                 if task_log.exists():
-                    claude_output = task_log.read_text(
-                        encoding="utf-8", errors="replace"
-                    ).strip()
+                    claude_output = task_log.read_text(encoding="utf-8", errors="replace").strip()
             except Exception:
                 pass
 
@@ -739,9 +768,7 @@ def _check_completed():
                 pass
 
             # ── TOKEN EXHAUSTION CHECK (runs for ANY exit code) ───────
-            is_exhausted, reset_hint = _detect_token_exhaustion(
-                ret, claude_output
-            )
+            is_exhausted, reset_hint = _detect_token_exhaustion(ret, claude_output)
             if is_exhausted:
                 retry_count = _increment_retry_count(task_id)
                 if retry_count >= TOKEN_MAX_RETRY_COUNT:
@@ -757,10 +784,7 @@ def _check_completed():
                 else:
                     # Park in token_exhausted — scheduler will retry later
                     _move_task(task_id, "token_exhausted")
-                    reset_msg = (
-                        f" (reset hint: {reset_hint})"
-                        if reset_hint else ""
-                    )
+                    reset_msg = f" (reset hint: {reset_hint})" if reset_hint else ""
                     print(
                         f"  Kanban: {task_id} TOKEN EXHAUSTED"
                         f"{reset_msg} — retry {retry_count}/"
@@ -772,6 +796,7 @@ def _check_completed():
                         from tools.notifications.adapters.telegram import (
                             send as tg_send,
                         )
+
                         eta_minutes = TOKEN_RETRY_DELAY_SECONDS // 60
                         tg_send(
                             f"Token limit: {task_dict.get('title', task_id)[:50]}",
@@ -794,9 +819,7 @@ def _check_completed():
             # ── NORMAL SUCCESS PATH ───────────────────────────────────
             if ret == 0:
                 # VERIFICATION GATE — prevent false positives
-                verified, reason = _verify_task_completed(
-                    task_id, claude_output
-                )
+                verified, reason = _verify_task_completed(task_id, claude_output)
 
                 if verified:
                     try:
@@ -813,15 +836,14 @@ def _check_completed():
 
                 if verified:
                     _send_notification(task_dict, event="done")
-                    print(
-                        f"  Kanban: {task_id} VERIFIED done (exit {ret})"
-                    )
+                    print(f"  Kanban: {task_id} VERIFIED done (exit {ret})")
                 else:
                     _send_notification(task_dict, event="failed")
                     try:
                         from tools.notifications.adapters.telegram import (
                             send as tg_send,
                         )
+
                         tg_send(
                             f"UNVERIFIED: {task_dict.get('title', task_id)[:60]}",
                             f"Task returned to backlog. Reason: {reason}",
@@ -829,10 +851,7 @@ def _check_completed():
                         )
                     except Exception:
                         pass
-                    print(
-                        f"  Kanban: {task_id} returned to backlog: "
-                        f"{reason}"
-                    )
+                    print(f"  Kanban: {task_id} returned to backlog: {reason}")
 
                 # Send Claude's actual answer back via Telegram
                 if claude_output and verified:
@@ -840,6 +859,7 @@ def _check_completed():
                         from tools.notifications.adapters.telegram import (
                             send as tg_send,
                         )
+
                         answer = claude_output[:3800]
                         tg_send(
                             f"Answer: {task_dict.get('title', task_id)[:60]}",
@@ -854,27 +874,18 @@ def _check_completed():
                 if prompt_path.exists():
                     prompt_path.unlink()
                 _clear_retry_count(task_id)
-                print(
-                    f"  Kanban: {task_id} completed "
-                    f"(exit {ret}, verified={verified})"
-                )
+                print(f"  Kanban: {task_id} completed (exit {ret}, verified={verified})")
 
                 # ── WORKTREE CLEANUP (only on verified done) ─────────
                 if verified and task_id in _worktrees:
                     has_commits = _check_worktree_commits(task_id)
                     if has_commits:
-                        print(
-                            f"  Kanban: worktree kanban/{task_id} has "
-                            f"new commits (review before merging)"
-                        )
+                        print(f"  Kanban: worktree kanban/{task_id} has new commits (review before merging)")
                     _cleanup_worktree(task_id)
                     del _worktrees[task_id]
                 elif not verified and task_id in _worktrees:
                     # Preserve worktree for debugging/retry
-                    print(
-                        f"  Kanban: preserving worktree for "
-                        f"unverified task {task_id}"
-                    )
+                    print(f"  Kanban: preserving worktree for unverified task {task_id}")
             else:
                 # ── NON-ZERO EXIT (not token exhaustion) ──────────────
                 error_tail = ""
@@ -884,16 +895,10 @@ def _check_completed():
                         error_tail = "\n".join(lines[-5:])
                 except Exception:
                     pass
-                print(
-                    f"  Kanban: {task_id} failed (exit {ret})"
-                    f"{': ' + error_tail[:200] if error_tail else ''}"
-                )
+                print(f"  Kanban: {task_id} failed (exit {ret}){': ' + error_tail[:200] if error_tail else ''}")
                 # Preserve worktree for debugging/retry — do NOT clean up
                 if task_id in _worktrees:
-                    print(
-                        f"  Kanban: preserving worktree for "
-                        f"failed task {task_id}"
-                    )
+                    print(f"  Kanban: preserving worktree for failed task {task_id}")
                 try:
                     _move_task(task_id, "backlog")
                     _send_notification(task_dict, event="failed")
@@ -915,15 +920,12 @@ def _check_token_exhausted_tasks() -> list:
     # Log count for visibility but don't auto-retry
     conn = get_connection()
     try:
-        row = conn.execute(
-            "SELECT COUNT(*) AS cnt FROM kanban_tasks "
-            "WHERE status = 'token_exhausted'"
-        ).fetchone()
+        row = conn.execute("SELECT COUNT(*) AS cnt FROM kanban_tasks WHERE status = 'token_exhausted'").fetchone()
         count = dict(row).get("cnt", 0)
         if count:
             logger.info(
-                "%d task(s) paused (token_exhausted) — "
-                "move to backlog via dashboard to resume", count,
+                "%d task(s) paused (token_exhausted) — move to backlog via dashboard to resume",
+                count,
             )
         return []
     finally:
@@ -950,9 +952,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         for tid, proc in list(_running.items()):
             try:
                 task_conn = get_connection()
-                row = task_conn.execute(
-                    "SELECT status FROM kanban_tasks WHERE id = ?", (tid,)
-                ).fetchone()
+                row = task_conn.execute("SELECT status FROM kanban_tasks WHERE id = ?", (tid,)).fetchone()
                 task_conn.close()
                 if row and dict(row)["status"] not in ("in_progress", "scheduled"):
                     # Task was completed/moved externally — clean up
@@ -973,10 +973,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                 del _worktrees[tid]
 
     if _running:
-        print(
-            f"  Kanban: {len(_running)} task(s) executing in claude, "
-            f"waiting..."
-        )
+        print(f"  Kanban: {len(_running)} task(s) executing in claude, waiting...")
         return {
             "success": True,
             "metric_value": len(completed),
@@ -1053,15 +1050,14 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         # Dispatch to claude CLI
         _dispatch_to_claude(task, prompt_path)
 
-        processed.append({
-            "id": task["id"],
-            "title": task["title"],
-            "prompt_file": prompt_path,
-        })
-        print(
-            f"  Kanban: {task['id']} "
-            f"'{task['title']}' -> in_progress -> dispatched"
+        processed.append(
+            {
+                "id": task["id"],
+                "title": task["title"],
+                "prompt_file": prompt_path,
+            }
         )
+        print(f"  Kanban: {task['id']} '{task['title']}' -> in_progress -> dispatched")
     except Exception as e:
         errors += 1
         print(f"  Kanban error: {task['id']}: {e}")

@@ -37,23 +37,19 @@ CATEGORY_ORDER = [
 # Helper functions
 # ---------------------------------------------------------------------------
 
+
 def _get_connection(db_path=None):
     """Get a database connection with Row factory."""
     path = db_path or DB_PATH
     if not path.exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\n"
-            "Run: python tools/db/init_icdev_db.py"
-        )
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
     conn = get_connection(db_path=str(path))
     return conn
 
 
 def _get_project_data(conn, project_id):
     """Load project record from database."""
-    row = conn.execute(
-        "SELECT * FROM projects WHERE id = ?", (project_id,)
-    ).fetchone()
+    row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
     if not row:
         raise ValueError(f"Project '{project_id}' not found in database.")
     return dict(row)
@@ -125,6 +121,7 @@ def _load_cui_config():
     try:
         sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
         from cui_marker import load_cui_config
+
         return load_cui_config()
     except ImportError:
         return {
@@ -167,6 +164,7 @@ def _substitute_variables(template, variables):
     Also handles {%...%} Jinja-style blocks by replacing them with
     pre-rendered content from variables.
     """
+
     def replacer(match):
         key = match.group(1).strip()
         return str(variables.get(key, match.group(0)))
@@ -212,6 +210,7 @@ def _log_audit_event(conn, project_id, action, details, file_path):
 # Data retrieval
 # ---------------------------------------------------------------------------
 
+
 def _get_des_assessments(conn, project_id):
     """Retrieve all DES compliance results for a project."""
     rows = conn.execute(
@@ -226,6 +225,7 @@ def _get_des_assessments(conn, project_id):
 # ---------------------------------------------------------------------------
 # Score calculation
 # ---------------------------------------------------------------------------
+
 
 def _calculate_category_scores(assessments):
     """Calculate compliance score for each DES category.
@@ -290,6 +290,7 @@ def _calculate_overall(category_scores):
 # ---------------------------------------------------------------------------
 # Section builders
 # ---------------------------------------------------------------------------
+
 
 def _build_assessment_summary_table(assessments):
     """Build a markdown summary table of status counts."""
@@ -369,10 +370,7 @@ def _build_category_details(assessments, category_scores, requirements):
 
 def _build_gap_analysis(assessments, requirements):
     """Build gap analysis section for non-compliant and partial items."""
-    gaps = [
-        a for a in assessments
-        if a.get("status") in ("non_compliant", "partially_compliant")
-    ]
+    gaps = [a for a in assessments if a.get("status") in ("non_compliant", "partially_compliant")]
 
     if not gaps:
         return "*No gaps identified. All assessed requirements are compliant.*"
@@ -409,14 +407,14 @@ def _build_gate_evaluation(assessments, requirements, overall_score, gate_status
     """Build gate evaluation section."""
     # Compute individual gate checks
     critical_nc = sum(
-        1 for a in assessments
+        1
+        for a in assessments
         if a.get("status") == "non_compliant"
         and requirements.get(a.get("requirement_id", ""), {}).get("priority") == "critical"
     )
 
     model_auth_nc = sum(
-        1 for a in assessments
-        if a.get("category") == "model_authority" and a.get("status") == "non_compliant"
+        1 for a in assessments if a.get("category") == "model_authority" and a.get("status") == "non_compliant"
     )
 
     # Digital thread coverage check
@@ -447,23 +445,20 @@ def _build_gate_evaluation(assessments, requirements, overall_score, gate_status
     return "\n".join(lines)
 
 
-def _build_executive_summary(overall_score, gate_status, assessments,
-                             category_scores, requirements):
+def _build_executive_summary(overall_score, gate_status, assessments, category_scores, requirements):
     """Build executive summary paragraph."""
     total = len(assessments)
     compliant = sum(1 for a in assessments if a["status"] == "compliant")
     partial = sum(1 for a in assessments if a["status"] == "partially_compliant")
     non_compliant = sum(1 for a in assessments if a["status"] == "non_compliant")
     not_assessed = sum(1 for a in assessments if a["status"] == "not_assessed")
-    categories_with_data = sum(
-        1 for v in category_scores.values() if v.get("total", 0) > 0
-    )
+    categories_with_data = sum(1 for v in category_scores.values() if v.get("total", 0) > 0)
 
     # Find weakest category
     scored_cats = {
-        k: v for k, v in category_scores.items()
-        if v.get("total", 0) > 0
-        and v.get("total", 0) != v.get("not_applicable", 0)
+        k: v
+        for k, v in category_scores.items()
+        if v.get("total", 0) > 0 and v.get("total", 0) != v.get("not_applicable", 0)
     }
     weakest_cat = ""
     weakest_score = 100.0
@@ -473,7 +468,8 @@ def _build_executive_summary(overall_score, gate_status, assessments,
             weakest_cat = v.get("name", k)
 
     critical_nc = sum(
-        1 for a in assessments
+        1
+        for a in assessments
         if a.get("status") == "non_compliant"
         and requirements.get(a.get("requirement_id", ""), {}).get("priority") == "critical"
     )
@@ -495,13 +491,10 @@ def _build_executive_summary(overall_score, gate_status, assessments,
     ]
     if critical_nc > 0:
         lines.append(
-            f"- **{critical_nc} critical-priority requirement(s) non-compliant** "
-            f"-- immediate remediation required."
+            f"- **{critical_nc} critical-priority requirement(s) non-compliant** -- immediate remediation required."
         )
     if weakest_cat:
-        lines.append(
-            f"- Weakest category: **{weakest_cat}** ({weakest_score:.1f}%)."
-        )
+        lines.append(f"- Weakest category: **{weakest_cat}** ({weakest_score:.1f}%).")
 
     return "\n".join(lines)
 
@@ -509,6 +502,7 @@ def _build_executive_summary(overall_score, gate_status, assessments,
 # ---------------------------------------------------------------------------
 # Main generator
 # ---------------------------------------------------------------------------
+
 
 def generate_des_report(project_id, output_path=None, db_path=None):
     """Generate CUI-marked DES compliance report.
@@ -549,12 +543,14 @@ def generate_des_report(project_id, output_path=None, db_path=None):
 
         # Gate status
         critical_nc = sum(
-            1 for a in assessments
+            1
+            for a in assessments
             if a.get("status") == "non_compliant"
             and requirements.get(a.get("requirement_id", ""), {}).get("priority") == "critical"
         )
         critical_partial = sum(
-            1 for a in assessments
+            1
+            for a in assessments
             if a.get("status") == "partially_compliant"
             and requirements.get(a.get("requirement_id", ""), {}).get("priority") == "critical"
         )
@@ -573,9 +569,7 @@ def generate_des_report(project_id, output_path=None, db_path=None):
         non_compliant = sum(1 for a in assessments if a["status"] == "non_compliant")
         not_applicable = sum(1 for a in assessments if a["status"] == "not_applicable")
         not_assessed = sum(1 for a in assessments if a["status"] == "not_assessed")
-        categories_assessed = sum(
-            1 for v in category_scores.values() if v.get("total", 0) > 0
-        )
+        categories_assessed = sum(1 for v in category_scores.values() if v.get("total", 0) > 0)
 
         def pct(n):
             return f"{100.0 * n / total:.1f}" if total > 0 else "0.0"
@@ -584,9 +578,7 @@ def generate_des_report(project_id, output_path=None, db_path=None):
         assessment_summary_table = _build_assessment_summary_table(assessments)
         category_details = _build_category_details(assessments, category_scores, requirements)
         gap_analysis = _build_gap_analysis(assessments, requirements)
-        gate_evaluation = _build_gate_evaluation(
-            assessments, requirements, overall_score, gate_status
-        )
+        gate_evaluation = _build_gate_evaluation(assessments, requirements, overall_score, gate_status)
         executive_summary = _build_executive_summary(
             overall_score, gate_status, assessments, category_scores, requirements
         )
@@ -616,23 +608,19 @@ def generate_des_report(project_id, output_path=None, db_path=None):
             "version": new_version,
             "assessment_date": now.strftime("%Y-%m-%d"),
             "assessor": "icdev-compliance-engine",
-
             "overall_score": f"{overall_score:.1f}",
             "gate_status": gate_status,
             "categories_assessed": str(categories_assessed),
-
             "requirements_total": str(total),
             "requirements_compliant": str(compliant),
             "requirements_partial": str(partial),
             "requirements_non_compliant": str(non_compliant),
             "requirements_na": str(not_applicable),
             "requirements_not_assessed": str(not_assessed),
-
             "pct_compliant": pct(compliant),
             "pct_partial": pct(partial),
             "pct_non_compliant": pct(non_compliant),
             "pct_na": pct(not_applicable),
-
             "executive_summary": executive_summary,
             "assessment_summary_table": assessment_summary_table,
             "category_details": category_details,
@@ -640,46 +628,36 @@ def generate_des_report(project_id, output_path=None, db_path=None):
             "gate_evaluation": gate_evaluation,
             "total_gaps": str(non_compliant + partial),
             "remediation_effort": "See gap analysis above",
-
             # Digital thread coverage variables for template
             "models_registered": str(total),
             "models_with_traceability": str(compliant + partial),
             "digital_thread_coverage": f"{overall_score:.1f}",
             "data_exchange_standards_met": str(compliant),
             "data_exchange_standards_total": str(total),
-            "authoritative_source_defined": "Yes" if any(
-                a.get("requirement_id") == "DES-1.1" and a.get("status") == "compliant"
-                for a in assessments
-            ) else "No",
-
+            "authoritative_source_defined": "Yes"
+            if any(a.get("requirement_id") == "DES-1.1" and a.get("status") == "compliant" for a in assessments)
+            else "No",
             # Gate sub-checks
-            "model_authority_gate": "PASS" if not any(
-                a.get("category") == "model_authority" and a.get("status") == "non_compliant"
-                for a in assessments
-            ) else "FAIL",
+            "model_authority_gate": "PASS"
+            if not any(
+                a.get("category") == "model_authority" and a.get("status") == "non_compliant" for a in assessments
+            )
+            else "FAIL",
             "score_gate": "PASS" if overall_score >= 70.0 else "FAIL",
-            "thread_gate": "PASS" if any(
-                a.get("requirement_id") in ("DES-2.4", "DES-6.4")
-                and a.get("status") == "compliant"
+            "thread_gate": "PASS"
+            if any(
+                a.get("requirement_id") in ("DES-2.4", "DES-6.4") and a.get("status") == "compliant"
                 for a in assessments
-            ) else "FAIL",
-
+            )
+            else "FAIL",
             # CUI banners
-            "cui_banner_top": cui_config.get(
-                "document_header",
-                "CUI // SP-CTI"
-            ),
-            "cui_banner_bottom": cui_config.get(
-                "document_footer",
-                "CUI // SP-CTI"
-            ),
-
+            "cui_banner_top": cui_config.get("document_header", "CUI // SP-CTI"),
+            "cui_banner_bottom": cui_config.get("document_footer", "CUI // SP-CTI"),
             # Pre-rendered Jinja-style blocks
             "categories_rendered": category_details,
             "gaps_rendered": gap_analysis,
             "recommendations_rendered": (
-                "See gap analysis and gate evaluation sections for "
-                "specific remediation recommendations."
+                "See gap analysis and gate evaluation sections for specific remediation recommendations."
             ),
         }
 
@@ -730,7 +708,8 @@ def generate_des_report(project_id, output_path=None, db_path=None):
             "output_file": str(out_file),
         }
         _log_audit_event(
-            conn, project_id,
+            conn,
+            project_id,
             f"DES report v{new_version} generated",
             audit_details,
             out_file,
@@ -763,23 +742,11 @@ def generate_des_report(project_id, output_path=None, db_path=None):
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Generate DES compliance report"
-    )
-    parser.add_argument(
-        "--project-id", required=True, help="Project ID"
-    )
-    parser.add_argument(
-        "--output", help="Output file path"
-    )
-    parser.add_argument(
-        "--json", action="store_true",
-        help="Output result metadata as JSON"
-    )
-    parser.add_argument(
-        "--db-path", type=Path, default=DB_PATH,
-        help="Override database path"
-    )
+    parser = argparse.ArgumentParser(description="Generate DES compliance report")
+    parser.add_argument("--project-id", required=True, help="Project ID")
+    parser.add_argument("--output", help="Output file path")
+    parser.add_argument("--json", action="store_true", help="Output result metadata as JSON")
+    parser.add_argument("--db-path", type=Path, default=DB_PATH, help="Override database path")
     args = parser.parse_args()
 
     try:

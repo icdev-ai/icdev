@@ -64,12 +64,12 @@ def _gen_id(prefix: str) -> str:
     return f"{prefix}-{h}"
 
 
-def _audit(event_type: str, action: str, details: Optional[Dict] = None,
-           project_id: str = "") -> None:
+def _audit(event_type: str, action: str, details: Optional[Dict] = None, project_id: str = "") -> None:
     if _HAS_AUDIT:
         try:
             audit_log_event(
-                event_type=event_type, actor="workflow-engine",
+                event_type=event_type,
+                actor="workflow-engine",
                 action=action,
                 details=json.dumps(details) if details else None,
                 project_id=project_id,
@@ -113,7 +113,8 @@ def reconcile(loop_id: str, lessons: str = "", db_path: Optional[Path] = None) -
 
         # 2. Acceptance criteria
         criteria = conn.execute(
-            "SELECT * FROM workflow_acceptance_criteria WHERE loop_id = ?", (loop_id,),
+            "SELECT * FROM workflow_acceptance_criteria WHERE loop_id = ?",
+            (loop_id,),
         ).fetchall()
         ac_total = len(criteria)
         ac_pass = sum(1 for c in criteria if c["status"] == "pass")
@@ -123,9 +124,7 @@ def reconcile(loop_id: str, lessons: str = "", db_path: Optional[Path] = None) -
         # 3. Process verification — check audit trail for required processes
         config = _load_config()
         loop_type = loop["loop_type"] or "build"
-        required = config.get("process_verification", {}).get(
-            "required_processes", {}
-        ).get(loop_type, [])
+        required = config.get("process_verification", {}).get("required_processes", {}).get(loop_type, [])
         invoked_processes: List[str] = []
         missing_processes: List[str] = []
         for proc in required:
@@ -147,44 +146,55 @@ def reconcile(loop_id: str, lessons: str = "", db_path: Optional[Path] = None) -
         # 4. Deviations
         deviations: List[Dict[str, str]] = []
         if completed_tasks > planned_tasks:
-            deviations.append({
-                "type": "scope_expansion",
-                "detail": f"Completed {completed_tasks} tasks but only {planned_tasks} were planned",
-            })
+            deviations.append(
+                {
+                    "type": "scope_expansion",
+                    "detail": f"Completed {completed_tasks} tasks but only {planned_tasks} were planned",
+                }
+            )
         if completed_tasks < planned_tasks:
-            deviations.append({
-                "type": "incomplete",
-                "detail": f"Completed {completed_tasks}/{planned_tasks} planned tasks",
-            })
+            deviations.append(
+                {
+                    "type": "incomplete",
+                    "detail": f"Completed {completed_tasks}/{planned_tasks} planned tasks",
+                }
+            )
         if ac_fail > 0:
-            deviations.append({
-                "type": "acceptance_failure",
-                "detail": f"{ac_fail} acceptance criteria failed",
-            })
+            deviations.append(
+                {
+                    "type": "acceptance_failure",
+                    "detail": f"{ac_fail} acceptance criteria failed",
+                }
+            )
         if ac_pending > 0:
-            deviations.append({
-                "type": "unverified_criteria",
-                "detail": f"{ac_pending} acceptance criteria not yet verified",
-            })
+            deviations.append(
+                {
+                    "type": "unverified_criteria",
+                    "detail": f"{ac_pending} acceptance criteria not yet verified",
+                }
+            )
         if missing_processes:
-            deviations.append({
-                "type": "missing_process",
-                "detail": f"Required processes not invoked: {', '.join(missing_processes)}",
-            })
+            deviations.append(
+                {
+                    "type": "missing_process",
+                    "detail": f"Required processes not invoked: {', '.join(missing_processes)}",
+                }
+            )
 
         # 5. Coherence check (D-WF-8) — run if available
         coherence_summary: Optional[Dict] = None
         try:
             from tools.workflow.coherence_checker import run_checks as run_coherence
+
             coherence_report = run_coherence()
             if not coherence_report.overall_pass:
-                failed_names = [
-                    c.check_name for c in coherence_report.checks if c.status == "fail"
-                ]
-                deviations.append({
-                    "type": "coherence_failure",
-                    "detail": f"Coherence checks failed: {', '.join(failed_names)}",
-                })
+                failed_names = [c.check_name for c in coherence_report.checks if c.status == "fail"]
+                deviations.append(
+                    {
+                        "type": "coherence_failure",
+                        "detail": f"Coherence checks failed: {', '.join(failed_names)}",
+                    }
+                )
             coherence_summary = {
                 "pass": coherence_report.overall_pass,
                 "total": coherence_report.total_checks,
@@ -208,31 +218,33 @@ def reconcile(loop_id: str, lessons: str = "", db_path: Optional[Path] = None) -
                 if any(
                     kw in desc
                     for kw in (
-                        "create ", "generate ", "write ",
-                        "build ", "implement ",
+                        "create ",
+                        "generate ",
+                        "write ",
+                        "build ",
+                        "implement ",
                     )
                 ):
                     # Extract potential file paths from description
                     import re as _re
+
                     paths = _re.findall(
-                        r'[\w/\\]+\.(?:py|yaml|json|md|html|ts|js)',
+                        r"[\w/\\]+\.(?:py|yaml|json|md|html|ts|js)",
                         task["description"] or "",
                     )
                     for p in paths:
                         full = project_dir / p
                         if not full.exists():
-                            artifact_missing.append(
-                                f"{task['id']}: {p} not found"
-                            )
+                            artifact_missing.append(f"{task['id']}: {p} not found")
             if artifact_missing:
-                deviations.append({
-                    "type": "missing_artifact",
-                    "detail": (
-                        f"{len(artifact_missing)} planned file(s) "
-                        f"not created: "
-                        + "; ".join(artifact_missing[:5])
-                    ),
-                })
+                deviations.append(
+                    {
+                        "type": "missing_artifact",
+                        "detail": (
+                            f"{len(artifact_missing)} planned file(s) not created: " + "; ".join(artifact_missing[:5])
+                        ),
+                    }
+                )
         except Exception:
             pass  # Graceful — tasks table may not exist
 
@@ -262,25 +274,41 @@ def reconcile(loop_id: str, lessons: str = "", db_path: Optional[Path] = None) -
                 lessons_learned, process_checks, required_processes_invoked,
                 required_processes_total, overall_result, reconciled_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (recon_id, loop_id, planned_tasks, completed_tasks,
-             json.dumps(deviations), lessons, json.dumps(process_checks),
-             len(invoked_processes), len(required), overall, now),
+            (
+                recon_id,
+                loop_id,
+                planned_tasks,
+                completed_tasks,
+                json.dumps(deviations),
+                lessons,
+                json.dumps(process_checks),
+                len(invoked_processes),
+                len(required),
+                overall,
+                now,
+            ),
         )
         conn.commit()
 
-        _audit("workflow.reconciled", f"Reconciled loop {loop_id}: {overall}",
-               {"loop_id": loop_id, "overall_result": overall,
-                "pass_rate": round(pass_rate, 2)}, loop["project_id"])
+        _audit(
+            "workflow.reconciled",
+            f"Reconciled loop {loop_id}: {overall}",
+            {"loop_id": loop_id, "overall_result": overall, "pass_rate": round(pass_rate, 2)},
+            loop["project_id"],
+        )
 
         return {
             "reconciliation_id": recon_id,
             "loop_id": loop_id,
             "overall_result": overall,
-            "tasks": {"planned": planned_tasks, "completed": completed_tasks,
-                      "completion_rate": round(task_rate, 2)},
-            "acceptance_criteria": {"total": ac_total, "pass": ac_pass,
-                                    "fail": ac_fail, "pending": ac_pending,
-                                    "pass_rate": round(pass_rate, 2)},
+            "tasks": {"planned": planned_tasks, "completed": completed_tasks, "completion_rate": round(task_rate, 2)},
+            "acceptance_criteria": {
+                "total": ac_total,
+                "pass": ac_pass,
+                "fail": ac_fail,
+                "pending": ac_pending,
+                "pass_rate": round(pass_rate, 2),
+            },
             "process_verification": process_checks,
             "coherence": coherence_summary,
             "deviations": deviations,

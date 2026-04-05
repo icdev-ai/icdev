@@ -136,9 +136,7 @@ HTML_PATTERNS = [
 ]
 
 
-def scan_text(
-    text: str, source: str = ""
-) -> List[Dict[str, Any]]:
+def scan_text(text: str, source: str = "") -> List[Dict[str, Any]]:
     """Scan text for injection threats.
 
     Returns list of findings, each with:
@@ -151,73 +149,81 @@ def scan_text(
         if ch in INVISIBLE_CHARS:
             # Find line number
             line_num = text[:i].count("\n") + 1
-            context = text[max(0, i - 20):i + 20]
-            findings.append({
-                "category": "invisible_unicode",
-                "pattern": INVISIBLE_CHARS[ch],
-                "line": line_num,
-                "char_pos": i,
-                "snippet": repr(context),
-                "source": source,
-                "severity": "high",
-            })
+            context = text[max(0, i - 20) : i + 20]
+            findings.append(
+                {
+                    "category": "invisible_unicode",
+                    "pattern": INVISIBLE_CHARS[ch],
+                    "line": line_num,
+                    "char_pos": i,
+                    "snippet": repr(context),
+                    "source": source,
+                    "severity": "high",
+                }
+            )
 
     # 2. Instruction override
     for pattern, category in OVERRIDE_PATTERNS:
         for m in re.finditer(pattern, text, re.IGNORECASE):
-            line_num = text[:m.start()].count("\n") + 1
-            findings.append({
-                "category": category,
-                "pattern": pattern,
-                "line": line_num,
-                "char_pos": m.start(),
-                "snippet": m.group()[:80],
-                "source": source,
-                "severity": "critical",
-            })
+            line_num = text[: m.start()].count("\n") + 1
+            findings.append(
+                {
+                    "category": category,
+                    "pattern": pattern,
+                    "line": line_num,
+                    "char_pos": m.start(),
+                    "snippet": m.group()[:80],
+                    "source": source,
+                    "severity": "critical",
+                }
+            )
 
     # 3. Exfiltration
     for pattern, category in EXFIL_PATTERNS:
         for m in re.finditer(pattern, text, re.IGNORECASE):
-            line_num = text[:m.start()].count("\n") + 1
-            findings.append({
-                "category": category,
-                "pattern": pattern,
-                "line": line_num,
-                "char_pos": m.start(),
-                "snippet": m.group()[:80],
-                "source": source,
-                "severity": "critical",
-            })
+            line_num = text[: m.start()].count("\n") + 1
+            findings.append(
+                {
+                    "category": category,
+                    "pattern": pattern,
+                    "line": line_num,
+                    "char_pos": m.start(),
+                    "snippet": m.group()[:80],
+                    "source": source,
+                    "severity": "critical",
+                }
+            )
 
     # 4. HTML/CSS injection
     for pattern, category in HTML_PATTERNS:
         for m in re.finditer(pattern, text, re.IGNORECASE):
-            line_num = text[:m.start()].count("\n") + 1
-            findings.append({
-                "category": category,
-                "pattern": pattern,
-                "line": line_num,
-                "char_pos": m.start(),
-                "snippet": m.group()[:80],
-                "source": source,
-                "severity": "medium",
-            })
+            line_num = text[: m.start()].count("\n") + 1
+            findings.append(
+                {
+                    "category": category,
+                    "pattern": pattern,
+                    "line": line_num,
+                    "char_pos": m.start(),
+                    "snippet": m.group()[:80],
+                    "source": source,
+                    "severity": "medium",
+                }
+            )
 
     # 5. Base64 payloads (suspiciously long)
-    for m in re.finditer(
-        r"[A-Za-z0-9+/]{100,}={0,2}", text
-    ):
-        line_num = text[:m.start()].count("\n") + 1
-        findings.append({
-            "category": "base64_payload",
-            "pattern": "long_base64_string",
-            "line": line_num,
-            "char_pos": m.start(),
-            "snippet": m.group()[:40] + "...",
-            "source": source,
-            "severity": "medium",
-        })
+    for m in re.finditer(r"[A-Za-z0-9+/]{100,}={0,2}", text):
+        line_num = text[: m.start()].count("\n") + 1
+        findings.append(
+            {
+                "category": "base64_payload",
+                "pattern": "long_base64_string",
+                "line": line_num,
+                "char_pos": m.start(),
+                "snippet": m.group()[:40] + "...",
+                "source": source,
+                "severity": "medium",
+            }
+        )
 
     return findings
 
@@ -231,14 +237,17 @@ def scan_file(filepath: Path) -> List[Dict[str, Any]]:
     return scan_text(text, source=str(filepath))
 
 
-def scan_directory(
-    dirpath: Path, extensions: set = None
-) -> List[Dict[str, Any]]:
+def scan_directory(dirpath: Path, extensions: set = None) -> List[Dict[str, Any]]:
     """Scan all files in a directory."""
     if extensions is None:
         extensions = {
-            ".md", ".yaml", ".yml", ".json", ".txt",
-            ".html", ".py",
+            ".md",
+            ".yaml",
+            ".yml",
+            ".json",
+            ".txt",
+            ".html",
+            ".py",
         }
 
     findings = []
@@ -273,30 +282,27 @@ def scan_icdev_context() -> Dict[str, Any]:
         "medium": len(by_severity.get("medium", [])),
         "findings": all_findings,
         "scanned_dirs": [str(d) for d in dirs_to_scan],
-        "status": (
-            "clean"
-            if len(all_findings) == 0
-            else "threats_found"
-        ),
+        "status": ("clean" if len(all_findings) == 0 else "threats_found"),
     }
 
 
 # ── CLI ──────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Prompt Injection Scanner (CUI // SP-CTI)"
-    )
+    parser = argparse.ArgumentParser(description="Prompt Injection Scanner (CUI // SP-CTI)")
     parser.add_argument(
-        "--scan-file", metavar="PATH",
+        "--scan-file",
+        metavar="PATH",
         help="Scan a single file",
     )
     parser.add_argument(
-        "--scan-dir", metavar="DIR",
+        "--scan-dir",
+        metavar="DIR",
         help="Scan a directory",
     )
     parser.add_argument(
-        "--scan-all", action="store_true",
+        "--scan-all",
+        action="store_true",
         help="Scan all context/hardprompts/args",
     )
     parser.add_argument("--json", action="store_true")
@@ -311,9 +317,7 @@ if __name__ == "__main__":
         if args.json:
             print(json.dumps(result, indent=2))
         else:
-            print(
-                f"Scanned: {', '.join(result['scanned_dirs'])}"
-            )
+            print(f"Scanned: {', '.join(result['scanned_dirs'])}")
             print(
                 f"Findings: {result['total_findings']} "
                 f"(critical={result['critical']}, "
@@ -321,11 +325,7 @@ if __name__ == "__main__":
                 f"medium={result['medium']})"
             )
             for f in result["findings"]:
-                print(
-                    f"  [{f['severity']:8}] {f['source']}:"
-                    f"{f['line']} — {f['category']}: "
-                    f"{f['snippet'][:60]}"
-                )
+                print(f"  [{f['severity']:8}] {f['source']}:{f['line']} — {f['category']}: {f['snippet'][:60]}")
         sys.exit(0)
     else:
         parser.print_help()
@@ -335,9 +335,5 @@ if __name__ == "__main__":
         print(json.dumps(findings, indent=2))
     else:
         for f in findings:
-            print(
-                f"  [{f['severity']:8}] {f.get('source', '?')}:"
-                f"{f['line']} — {f['category']}: "
-                f"{f['snippet'][:60]}"
-            )
+            print(f"  [{f['severity']:8}] {f.get('source', '?')}:{f['line']} — {f['category']}: {f['snippet'][:60]}")
         print(f"\nTotal: {len(findings)} findings")

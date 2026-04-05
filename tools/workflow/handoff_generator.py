@@ -109,14 +109,16 @@ def generate_handoff(
 
         loop_summaries = []
         for lp in loops:
-            loop_summaries.append({
-                "id": lp["id"],
-                "phase": lp["phase_name"],
-                "status": lp["status"],
-                "tasks": f"{lp['tasks_completed']}/{lp['task_count']}",
-                "ac_pass": lp["acceptance_pass_count"],
-                "ac_fail": lp["acceptance_fail_count"],
-            })
+            loop_summaries.append(
+                {
+                    "id": lp["id"],
+                    "phase": lp["phase_name"],
+                    "status": lp["status"],
+                    "tasks": f"{lp['tasks_completed']}/{lp['task_count']}",
+                    "ac_pass": lp["acceptance_pass_count"],
+                    "ac_fail": lp["acceptance_fail_count"],
+                }
+            )
 
         # 2. Recent decisions from audit trail
         decisions: List[str] = []
@@ -197,8 +199,7 @@ def generate_handoff(
         ]
         for ls in loop_summaries:
             md_lines.append(
-                f"- **{ls['phase']}** ({ls['status']}) — "
-                f"Tasks: {ls['tasks']}, AC: {ls['ac_pass']}P/{ls['ac_fail']}F"
+                f"- **{ls['phase']}** ({ls['status']}) — Tasks: {ls['tasks']}, AC: {ls['ac_pass']}P/{ls['ac_fail']}F"
             )
         md_lines.extend(["", "## Priority Actions"])
         for i, a in enumerate(next_actions, 1):
@@ -224,11 +225,20 @@ def generate_handoff(
                 decisions_made, blockers, next_actions, context_summary,
                 handoff_to, created_by, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (handoff_id, project_id, loop_id, loop_status,
-             chat_context_id or None,
-             json.dumps(decisions[:max_decisions]),
-             json.dumps(blockers), json.dumps(next_actions),
-             context_summary, handoff_to, created_by, now),
+            (
+                handoff_id,
+                project_id,
+                loop_id,
+                loop_status,
+                chat_context_id or None,
+                json.dumps(decisions[:max_decisions]),
+                json.dumps(blockers),
+                json.dumps(next_actions),
+                context_summary,
+                handoff_to,
+                created_by,
+                now,
+            ),
         )
         conn.commit()
 
@@ -271,7 +281,8 @@ def list_handoffs(project_id: str, db_path: Optional[Path] = None) -> Dict[str, 
             "total": len(rows),
             "handoffs": [
                 {
-                    "id": r["id"], "loop_id": r["loop_id"],
+                    "id": r["id"],
+                    "loop_id": r["loop_id"],
                     "loop_status": r["loop_status"],
                     "context_summary": r["context_summary"],
                     "handoff_to": r["handoff_to"],
@@ -289,7 +300,8 @@ def get_handoff(handoff_id: str, db_path: Optional[Path] = None) -> Dict[str, An
     conn = _get_db(db_path)
     try:
         row = conn.execute(
-            "SELECT * FROM workflow_handoffs WHERE id = ?", (handoff_id,),
+            "SELECT * FROM workflow_handoffs WHERE id = ?",
+            (handoff_id,),
         ).fetchone()
         if not row:
             return {"error": f"Handoff {handoff_id} not found"}
@@ -331,9 +343,9 @@ def main() -> None:
 
     try:
         if args.generate:
-            result = generate_handoff(args.project_id, args.created_by,
-                                      args.handoff_to, args.chat_context_id,
-                                      args.db_path)
+            result = generate_handoff(
+                args.project_id, args.created_by, args.handoff_to, args.chat_context_id, args.db_path
+            )
         elif args.list:
             result = list_handoffs(args.project_id, args.db_path)
         else:

@@ -147,8 +147,7 @@ def evaluate_fitness(experiment_id: Optional[str] = None) -> Dict[str, Any]:
             # ── Previous quality scores (30-60 days ago) ──────────────
             previous_rows = _safe_query(
                 conn,
-                "SELECT composite_score FROM pg_proposal_quality_scores "
-                "WHERE created_at >= ? AND created_at < ?",
+                "SELECT composite_score FROM pg_proposal_quality_scores WHERE created_at >= ? AND created_at < ?",
                 (previous_cutoff, recent_cutoff),
             )
 
@@ -161,18 +160,13 @@ def evaluate_fitness(experiment_id: Optional[str] = None) -> Dict[str, Any]:
             # ── Win/loss correlation ──────────────────────────────────
             win_rows = _safe_query(
                 conn,
-                "SELECT outcome FROM pg_win_loss_records "
-                "WHERE created_at >= ?",
+                "SELECT outcome FROM pg_win_loss_records WHERE created_at >= ?",
                 (previous_cutoff,),
             )
 
             win_correlation: Optional[float] = None
             if win_rows:
-                wins = sum(
-                    1
-                    for r in win_rows
-                    if str(r["outcome"]).lower() in ("won", "win", "1", "true")
-                )
+                wins = sum(1 for r in win_rows if str(r["outcome"]).lower() in ("won", "win", "1", "true"))
                 total = len(win_rows)
                 win_rate = wins / max(total, 1)
                 win_correlation = win_rate
@@ -195,9 +189,7 @@ def evaluate_fitness(experiment_id: Optional[str] = None) -> Dict[str, Any]:
             "domain": "proposal_quality",
             "fitness_score": fitness,
             "quality_delta": round(quality_delta, 4),
-            "win_correlation": (
-                round(win_correlation, 4) if win_correlation is not None else None
-            ),
+            "win_correlation": (round(win_correlation, 4) if win_correlation is not None else None),
             "sample_sizes": {
                 "recent_quality": len(recent_rows),
                 "previous_quality": len(previous_rows),
@@ -265,22 +257,16 @@ def get_quality_trends(days: int = 90) -> Dict[str, Any]:
         trend_data: List[Dict[str, Any]] = []
         for wk in sorted(weeks.keys()):
             wk_rows = weeks[wk]
-            trend_data.append({
-                "week": wk,
-                "composite_avg": round(
-                    _compute_avg(wk_rows, "composite_score"), 4
-                ),
-                "grammar_avg": round(
-                    _compute_avg(wk_rows, "grammar_score"), 4
-                ),
-                "readability_avg": round(
-                    _compute_avg(wk_rows, "readability_score"), 4
-                ),
-                "tone_avg": round(
-                    _compute_avg(wk_rows, "tone_score"), 4
-                ),
-                "sample_count": len(wk_rows),
-            })
+            trend_data.append(
+                {
+                    "week": wk,
+                    "composite_avg": round(_compute_avg(wk_rows, "composite_score"), 4),
+                    "grammar_avg": round(_compute_avg(wk_rows, "grammar_score"), 4),
+                    "readability_avg": round(_compute_avg(wk_rows, "readability_score"), 4),
+                    "tone_avg": round(_compute_avg(wk_rows, "tone_score"), 4),
+                    "sample_count": len(wk_rows),
+                }
+            )
 
         # Direction
         direction = "stable"
@@ -377,13 +363,15 @@ def suggest_experiments(max_suggestions: int = 5) -> Dict[str, Any]:
         for dim, avg_score in sorted_dims[:max_suggestions]:
             cat_key = dimension_category_map.get(dim, "template_structure")
             hypothesis = _pick_hypothesis(cat_key)
-            suggestions.append({
-                "dimension": dim,
-                "gap": round(1.0 - avg_score, 4),
-                "current_avg": round(avg_score, 4),
-                "category": cat_key,
-                "hypothesis": hypothesis,
-            })
+            suggestions.append(
+                {
+                    "dimension": dim,
+                    "gap": round(1.0 - avg_score, 4),
+                    "current_avg": round(avg_score, 4),
+                    "category": cat_key,
+                    "hypothesis": hypothesis,
+                }
+            )
 
         return {
             "success": True,
@@ -493,20 +481,10 @@ def _pick_hypothesis(category_key: str) -> str:
             return hyps[0]
     # Fallback
     fallbacks = {
-        "template_structure": (
-            "Proposals with executive summary under 500 words win more often"
-        ),
-        "readability_targets": (
-            "Flesch-Kincaid grade 10-12 outperforms grade 14+ in "
-            "competitive evaluations"
-        ),
-        "section_ordering": (
-            "Leading with discriminators before compliance claims "
-            "improves persuasiveness"
-        ),
-        "emphasis_areas": (
-            "Three discriminators per section outperforms five"
-        ),
+        "template_structure": ("Proposals with executive summary under 500 words win more often"),
+        "readability_targets": ("Flesch-Kincaid grade 10-12 outperforms grade 14+ in competitive evaluations"),
+        "section_ordering": ("Leading with discriminators before compliance claims improves persuasiveness"),
+        "emphasis_areas": ("Three discriminators per section outperforms five"),
     }
     return fallbacks.get(category_key, "Quality improvement hypothesis")
 
@@ -515,9 +493,7 @@ def _pick_hypothesis(category_key: str) -> str:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Proposal Quality Evaluator — Bayesian Autoresearch"
-    )
+    parser = argparse.ArgumentParser(description="Proposal Quality Evaluator — Bayesian Autoresearch")
     parser.add_argument(
         "--evaluate",
         action="store_true",

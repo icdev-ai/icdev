@@ -57,23 +57,28 @@ CONFIG_PATH = BASE_DIR / "args" / "creative_config.yaml"
 # =========================================================================
 try:
     import yaml
+
     _HAS_YAML = True
 except ImportError:
     _HAS_YAML = False
 
 try:
     import requests as _requests
+
     _HAS_REQUESTS = True
 except ImportError:
     _HAS_REQUESTS = False
 
 try:
     from tools.audit.audit_logger import log_event as _audit_log
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
+
     def _audit_log(**kw):  # noqa: E302
         return -1
+
 
 # =========================================================================
 # HELPERS
@@ -85,7 +90,6 @@ def _get_db(db_path=None):
         raise FileNotFoundError(f"Database not found: {path}")
     conn = get_connection(db_path=str(path))
     return conn
-
 
 
 def _comp_id():
@@ -102,10 +106,13 @@ def _audit(event_type, action, details=None):
     """Write audit trail entry."""
     if _HAS_AUDIT:
         try:
-            _audit_log(event_type=event_type, actor="creative-engine",
-                       action=action,
-                       details=json.dumps(details) if details else None,
-                       project_id="creative-engine")
+            _audit_log(
+                event_type=event_type,
+                actor="creative-engine",
+                action=action,
+                details=json.dumps(details) if details else None,
+                project_id="creative-engine",
+            )
         except Exception:
             pass
 
@@ -127,8 +134,7 @@ def _safe_get(url, headers=None, params=None, as_text=False):
         return None, "requests library not installed"
     try:
         hdrs = headers or {}
-        hdrs.setdefault("User-Agent",
-                        "Mozilla/5.0 (compatible; ICDEVBot/1.0; +https://icdev.local)")
+        hdrs.setdefault("User-Agent", "Mozilla/5.0 (compatible; ICDEVBot/1.0; +https://icdev.local)")
         resp = _requests.get(url, headers=hdrs, params=params, timeout=30)
         if resp.status_code in (403, 429):
             return None, "rate_limited" if resp.status_code == 429 else "forbidden"
@@ -155,8 +161,8 @@ _RE_META_NAME = re.compile(
     r'<meta\s[^>]*?content=["\']([^"\']+)["\'][^>]*/?>',
     re.IGNORECASE,
 )
-_RE_RATING = re.compile(r'(\d+(?:\.\d+)?)\s*/?\s*(?:out of\s*)?5(?:\.0)?', re.IGNORECASE)
-_RE_REVIEW_COUNT = re.compile(r'(\d[\d,]*)\s*(?:reviews?|ratings?|verified)', re.IGNORECASE)
+_RE_RATING = re.compile(r"(\d+(?:\.\d+)?)\s*/?\s*(?:out of\s*)?5(?:\.0)?", re.IGNORECASE)
+_RE_REVIEW_COUNT = re.compile(r"(\d[\d,]*)\s*(?:reviews?|ratings?|verified)", re.IGNORECASE)
 
 
 def _extract_jsonld_products(html):
@@ -175,22 +181,26 @@ def _extract_jsonld_products(html):
                 if not name:
                     continue
                 rating_obj = item.get("aggregateRating", {})
-                results.append({
-                    "name": name,
-                    "rating": _safe_float(rating_obj.get("ratingValue")),
-                    "review_count": _safe_int(rating_obj.get("reviewCount")),
-                })
+                results.append(
+                    {
+                        "name": name,
+                        "rating": _safe_float(rating_obj.get("ratingValue")),
+                        "review_count": _safe_int(rating_obj.get("reviewCount")),
+                    }
+                )
             elif kind == "ItemList":
                 for elem in item.get("itemListElement", []):
                     inner = elem.get("item", elem)
                     nm = inner.get("name", "").strip()
                     if nm:
                         ar = inner.get("aggregateRating", {})
-                        results.append({
-                            "name": nm,
-                            "rating": _safe_float(ar.get("ratingValue")),
-                            "review_count": _safe_int(ar.get("reviewCount")),
-                        })
+                        results.append(
+                            {
+                                "name": nm,
+                                "rating": _safe_float(ar.get("ratingValue")),
+                                "review_count": _safe_int(ar.get("reviewCount")),
+                            }
+                        )
     return results
 
 
@@ -241,7 +251,7 @@ def _enrich_with_page_ratings(products, html):
             continue
         # Look for rating near the product name in the HTML
         escaped = re.escape(prod["name"])
-        ctx_pat = re.compile(escaped + r'.{0,500}', re.DOTALL | re.IGNORECASE)
+        ctx_pat = re.compile(escaped + r".{0,500}", re.DOTALL | re.IGNORECASE)
         ctx = ctx_pat.search(html)
         if ctx:
             snippet = ctx.group(0)
@@ -260,7 +270,7 @@ def _enrich_with_page_ratings(products, html):
 _G2_PRODUCT_PATTERNS = [
     re.compile(
         r'<div[^>]*class="[^"]*product-card[^"]*"[^>]*>.*?'
-        r'<a[^>]*>([^<]{2,80})</a>',
+        r"<a[^>]*>([^<]{2,80})</a>",
         re.DOTALL | re.IGNORECASE,
     ),
     re.compile(
@@ -335,8 +345,7 @@ def discover_from_g2(category_url, max_competitors=20):
         return []
     html, err = _safe_get(category_url, as_text=True)
     if err or not html:
-        _audit("creative.discover.g2", f"G2 fetch failed: {err}",
-               {"url": category_url, "error": err})
+        _audit("creative.discover.g2", f"G2 fetch failed: {err}", {"url": category_url, "error": err})
         return []
     # Attempt 1: JSON-LD structured data
     products = _extract_jsonld_products(html)
@@ -353,16 +362,18 @@ def discover_from_g2(category_url, max_competitors=20):
         if key in seen:
             continue
         seen.add(key)
-        results.append({
-            "name": p["name"],
-            "source": "g2",
-            "source_url": category_url,
-            "rating": p.get("rating"),
-            "review_count": p.get("review_count", 0),
-            "features": [],
-            "pricing_tier": None,
-            "metadata": {"extraction_method": "jsonld" if p.get("rating") is not None else "html_pattern"},
-        })
+        results.append(
+            {
+                "name": p["name"],
+                "source": "g2",
+                "source_url": category_url,
+                "rating": p.get("rating"),
+                "review_count": p.get("review_count", 0),
+                "features": [],
+                "pricing_tier": None,
+                "metadata": {"extraction_method": "jsonld" if p.get("rating") is not None else "html_pattern"},
+            }
+        )
     return results
 
 
@@ -376,8 +387,7 @@ def discover_from_capterra(category_url, max_competitors=20):
         return []
     html, err = _safe_get(category_url, as_text=True)
     if err or not html:
-        _audit("creative.discover.capterra", f"Capterra fetch failed: {err}",
-               {"url": category_url, "error": err})
+        _audit("creative.discover.capterra", f"Capterra fetch failed: {err}", {"url": category_url, "error": err})
         return []
     products = _extract_jsonld_products(html)
     if not products:
@@ -390,16 +400,18 @@ def discover_from_capterra(category_url, max_competitors=20):
         if key in seen:
             continue
         seen.add(key)
-        results.append({
-            "name": p["name"],
-            "source": "capterra",
-            "source_url": category_url,
-            "rating": p.get("rating"),
-            "review_count": p.get("review_count", 0),
-            "features": [],
-            "pricing_tier": None,
-            "metadata": {"extraction_method": "jsonld" if p.get("rating") is not None else "html_pattern"},
-        })
+        results.append(
+            {
+                "name": p["name"],
+                "source": "capterra",
+                "source_url": category_url,
+                "rating": p.get("rating"),
+                "review_count": p.get("review_count", 0),
+                "features": [],
+                "pricing_tier": None,
+                "metadata": {"extraction_method": "jsonld" if p.get("rating") is not None else "html_pattern"},
+            }
+        )
     return results
 
 
@@ -413,8 +425,7 @@ def discover_from_trustradius(category_url, max_competitors=20):
         return []
     html, err = _safe_get(category_url, as_text=True)
     if err or not html:
-        _audit("creative.discover.trustradius", f"TrustRadius fetch failed: {err}",
-               {"url": category_url, "error": err})
+        _audit("creative.discover.trustradius", f"TrustRadius fetch failed: {err}", {"url": category_url, "error": err})
         return []
     products = _extract_jsonld_products(html)
     if not products:
@@ -427,16 +438,18 @@ def discover_from_trustradius(category_url, max_competitors=20):
         if key in seen:
             continue
         seen.add(key)
-        results.append({
-            "name": p["name"],
-            "source": "trustradius",
-            "source_url": category_url,
-            "rating": p.get("rating"),
-            "review_count": p.get("review_count", 0),
-            "features": [],
-            "pricing_tier": None,
-            "metadata": {"extraction_method": "jsonld" if p.get("rating") is not None else "html_pattern"},
-        })
+        results.append(
+            {
+                "name": p["name"],
+                "source": "trustradius",
+                "source_url": category_url,
+                "rating": p.get("rating"),
+                "review_count": p.get("review_count", 0),
+                "features": [],
+                "pricing_tier": None,
+                "metadata": {"extraction_method": "jsonld" if p.get("rating") is not None else "html_pattern"},
+            }
+        )
     return results
 
 
@@ -460,8 +473,7 @@ def store_competitors(competitors, domain, db_path=None):
                 continue
             # Dedup check
             existing = conn.execute(
-                "SELECT id FROM creative_competitors WHERE name=? AND source=?",
-                (name, source)
+                "SELECT id FROM creative_competitors WHERE name=? AND source=?", (name, source)
             ).fetchone()
             if existing:
                 duplicates += 1
@@ -502,10 +514,7 @@ def confirm_competitor(competitor_id, confirmed_by, db_path=None):
     """
     conn = _get_db(db_path)
     try:
-        row = conn.execute(
-            "SELECT id, status FROM creative_competitors WHERE id=?",
-            (competitor_id,)
-        ).fetchone()
+        row = conn.execute("SELECT id, status FROM creative_competitors WHERE id=?", (competitor_id,)).fetchone()
         if not row:
             return {"error": f"Competitor not found: {competitor_id}"}
         if row["status"] == "confirmed":
@@ -513,16 +522,17 @@ def confirm_competitor(competitor_id, confirmed_by, db_path=None):
         if row["status"] == "archived":
             return {"error": f"Cannot confirm archived competitor: {competitor_id}"}
         conn.execute(
-            "UPDATE creative_competitors SET status='confirmed', confirmed_at=?, "
-            "confirmed_by=? WHERE id=?",
+            "UPDATE creative_competitors SET status='confirmed', confirmed_at=?, confirmed_by=? WHERE id=?",
             (now_iso(), confirmed_by, competitor_id),
         )
         conn.commit()
     finally:
         conn.close()
-    _audit("creative.competitor.confirm",
-           f"Confirmed competitor {competitor_id}",
-           {"competitor_id": competitor_id, "confirmed_by": confirmed_by})
+    _audit(
+        "creative.competitor.confirm",
+        f"Confirmed competitor {competitor_id}",
+        {"competitor_id": competitor_id, "confirmed_by": confirmed_by},
+    )
     return {"confirmed": True, "competitor_id": competitor_id}
 
 
@@ -533,10 +543,7 @@ def archive_competitor(competitor_id, db_path=None):
     """
     conn = _get_db(db_path)
     try:
-        row = conn.execute(
-            "SELECT id, status FROM creative_competitors WHERE id=?",
-            (competitor_id,)
-        ).fetchone()
+        row = conn.execute("SELECT id, status FROM creative_competitors WHERE id=?", (competitor_id,)).fetchone()
         if not row:
             return {"error": f"Competitor not found: {competitor_id}"}
         if row["status"] == "archived":
@@ -548,9 +555,7 @@ def archive_competitor(competitor_id, db_path=None):
         conn.commit()
     finally:
         conn.close()
-    _audit("creative.competitor.archive",
-           f"Archived competitor {competitor_id}",
-           {"competitor_id": competitor_id})
+    _audit("creative.competitor.archive", f"Archived competitor {competitor_id}", {"competitor_id": competitor_id})
     return {"archived": True, "competitor_id": competitor_id}
 
 
@@ -573,22 +578,24 @@ def get_competitors(domain=None, status=None, db_path=None):
         rows = conn.execute(query, params).fetchall()
         results = []
         for row in rows:
-            results.append({
-                "id": row["id"],
-                "name": row["name"],
-                "domain": row["domain"],
-                "source": row["source"],
-                "source_url": row["source_url"],
-                "rating": row["rating"],
-                "review_count": row["review_count"],
-                "features": json.loads(row["features"] or "[]"),
-                "pricing_tier": row["pricing_tier"],
-                "status": row["status"],
-                "metadata": json.loads(row["metadata"] or "{}"),
-                "discovered_at": row["discovered_at"],
-                "confirmed_at": row["confirmed_at"],
-                "confirmed_by": row["confirmed_by"],
-            })
+            results.append(
+                {
+                    "id": row["id"],
+                    "name": row["name"],
+                    "domain": row["domain"],
+                    "source": row["source"],
+                    "source_url": row["source_url"],
+                    "rating": row["rating"],
+                    "review_count": row["review_count"],
+                    "features": json.loads(row["features"] or "[]"),
+                    "pricing_tier": row["pricing_tier"],
+                    "status": row["status"],
+                    "metadata": json.loads(row["metadata"] or "{}"),
+                    "discovered_at": row["discovered_at"],
+                    "confirmed_at": row["confirmed_at"],
+                    "confirmed_by": row["confirmed_by"],
+                }
+            )
         return results
     finally:
         conn.close()
@@ -603,8 +610,7 @@ def refresh_competitor_features(competitor_id, db_path=None):
     conn = _get_db(db_path)
     try:
         row = conn.execute(
-            "SELECT id, name, source_url, source FROM creative_competitors WHERE id=?",
-            (competitor_id,)
+            "SELECT id, name, source_url, source FROM creative_competitors WHERE id=?", (competitor_id,)
         ).fetchone()
         if not row:
             return {"error": f"Competitor not found: {competitor_id}"}
@@ -624,22 +630,23 @@ def refresh_competitor_features(competitor_id, db_path=None):
         conn.commit()
     finally:
         conn.close()
-    _audit("creative.competitor.refresh",
-           f"Refreshed features for {competitor_id}: {len(features)} found",
-           {"competitor_id": competitor_id, "features_found": len(features)})
-    return {"refreshed": True, "competitor_id": competitor_id,
-            "features_found": len(features), "features": features}
+    _audit(
+        "creative.competitor.refresh",
+        f"Refreshed features for {competitor_id}: {len(features)} found",
+        {"competitor_id": competitor_id, "features_found": len(features)},
+    )
+    return {"refreshed": True, "competitor_id": competitor_id, "features_found": len(features), "features": features}
 
 
 # Feature extraction patterns for product pages
 _FEATURE_PATTERNS = [
-    re.compile(r'<li[^>]*class="[^"]*feature[^"]*"[^>]*>([^<]{5,120})</li>',
-               re.IGNORECASE),
+    re.compile(r'<li[^>]*class="[^"]*feature[^"]*"[^>]*>([^<]{5,120})</li>', re.IGNORECASE),
     re.compile(r'"feature(?:Name|Title)?"\s*:\s*"([^"]{5,120})"', re.IGNORECASE),
-    re.compile(r'<h[34][^>]*>\s*([^<]{5,80})\s*</h[34]>\s*<p[^>]*>[^<]*(?:feature|capabilit|function)',
-               re.IGNORECASE | re.DOTALL),
-    re.compile(r'<span[^>]*class="[^"]*feature[^"]*"[^>]*>([^<]{5,120})</span>',
-               re.IGNORECASE),
+    re.compile(
+        r"<h[34][^>]*>\s*([^<]{5,80})\s*</h[34]>\s*<p[^>]*>[^<]*(?:feature|capabilit|function)",
+        re.IGNORECASE | re.DOTALL,
+    ),
+    re.compile(r'<span[^>]*class="[^"]*feature[^"]*"[^>]*>([^<]{5,120})</span>', re.IGNORECASE),
 ]
 
 
@@ -715,12 +722,15 @@ def run_discovery(domain=None, db_path=None):
         sources_scanned += 1
         # Respect rate limit delay
         if g2_url:
-            rate_delay = (config.get("sources", {}).get("review_sites", {})
-                          .get("rate_limit", {}).get("delay_between_requests_seconds", 3))
+            rate_delay = (
+                config.get("sources", {})
+                .get("review_sites", {})
+                .get("rate_limit", {})
+                .get("delay_between_requests_seconds", 3)
+            )
             time.sleep(rate_delay)
         try:
-            capterra_results = discover_from_capterra(capterra_url,
-                                                      max_competitors=max_per_cat)
+            capterra_results = discover_from_capterra(capterra_url, max_competitors=max_per_cat)
             all_competitors.extend(capterra_results)
         except Exception as exc:
             errors.append(f"capterra: {exc}")
@@ -729,12 +739,15 @@ def run_discovery(domain=None, db_path=None):
     if trustradius_url:
         sources_scanned += 1
         if g2_url or capterra_url:
-            rate_delay = (config.get("sources", {}).get("review_sites", {})
-                          .get("rate_limit", {}).get("delay_between_requests_seconds", 3))
+            rate_delay = (
+                config.get("sources", {})
+                .get("review_sites", {})
+                .get("rate_limit", {})
+                .get("delay_between_requests_seconds", 3)
+            )
             time.sleep(rate_delay)
         try:
-            tr_results = discover_from_trustradius(trustradius_url,
-                                                   max_competitors=max_per_cat)
+            tr_results = discover_from_trustradius(trustradius_url, max_competitors=max_per_cat)
             all_competitors.extend(tr_results)
         except Exception as exc:
             errors.append(f"trustradius: {exc}")
@@ -744,13 +757,17 @@ def run_discovery(domain=None, db_path=None):
         available_domains = []
         for key, val in config.items():
             if isinstance(val, dict) and val.get("name"):
-                has_url = any(val.get(u) for u in ("g2_category_url", "capterra_category_url", "trustradius_category_url"))
+                has_url = any(
+                    val.get(u) for u in ("g2_category_url", "capterra_category_url", "trustradius_category_url")
+                )
                 if has_url:
                     available_domains.append(val["name"])
         hint = f" Available domains with URLs: {', '.join(available_domains)}" if available_domains else ""
-        return {"error": f"No category URLs configured for domain '{domain}'. "
-                         f"Set g2_category_url, capterra_category_url, or "
-                         f"trustradius_category_url in the domain config.{hint}"}
+        return {
+            "error": f"No category URLs configured for domain '{domain}'. "
+            f"Set g2_category_url, capterra_category_url, or "
+            f"trustradius_category_url in the domain config.{hint}"
+        }
 
     # Filter by min review count
     filtered = []
@@ -765,14 +782,19 @@ def run_discovery(domain=None, db_path=None):
     # Store
     store_result = store_competitors(filtered, domain, db_path=db_path)
 
-    _audit("creative.discovery.run",
-           f"Discovery for '{domain}': {len(all_competitors)} found, "
-           f"{store_result['stored']} stored, {store_result['duplicates']} duplicates",
-           {"domain": domain, "sources_scanned": sources_scanned,
+    _audit(
+        "creative.discovery.run",
+        f"Discovery for '{domain}': {len(all_competitors)} found, "
+        f"{store_result['stored']} stored, {store_result['duplicates']} duplicates",
+        {
+            "domain": domain,
+            "sources_scanned": sources_scanned,
             "total_discovered": len(all_competitors),
             "filtered_below_threshold": below_threshold,
             "stored": store_result["stored"],
-            "duplicates": store_result["duplicates"]})
+            "duplicates": store_result["duplicates"],
+        },
+    )
 
     return {
         "domain": domain,
@@ -804,14 +826,14 @@ def _format_human(data):
         lines.append(f"\n  Competitors: {len(data)}")
         lines.append("-" * 70)
         for c in data:
-            status_icon = {"discovered": "[?]", "confirmed": "[+]",
-                           "archived": "[-]"}.get(c.get("status", ""), "[ ]")
+            status_icon = {"discovered": "[?]", "confirmed": "[+]", "archived": "[-]"}.get(c.get("status", ""), "[ ]")
             rating_str = f"{c['rating']:.1f}/5" if c.get("rating") else "N/A"
             lines.append(f"  {status_icon} {c['name']}")
-            lines.append(f"      ID: {c['id']}  |  Source: {c['source']}  |  "
-                         f"Rating: {rating_str}  |  Reviews: {c.get('review_count', 0)}")
-            lines.append(f"      Domain: {c.get('domain', 'N/A')}  |  "
-                         f"Status: {c.get('status', 'unknown')}")
+            lines.append(
+                f"      ID: {c['id']}  |  Source: {c['source']}  |  "
+                f"Rating: {rating_str}  |  Reviews: {c.get('review_count', 0)}"
+            )
+            lines.append(f"      Domain: {c.get('domain', 'N/A')}  |  Status: {c.get('status', 'unknown')}")
             if c.get("features"):
                 lines.append(f"      Features: {len(c['features'])} extracted")
             lines.append("")
@@ -834,41 +856,38 @@ def main():
         description="Competitor Auto-Discoverer — CUI // SP-CTI",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="Examples:\n"
-               "  %(prog)s --discover --domain 'proposal management' --json\n"
-               "  %(prog)s --list --status confirmed --json\n"
-               "  %(prog)s --confirm --competitor-id comp-abc --confirmed-by user@mil --json\n"
-               "  %(prog)s --archive --competitor-id comp-abc --json\n"
-               "  %(prog)s --refresh --competitor-id comp-abc --json\n",
+        "  %(prog)s --discover --domain 'proposal management' --json\n"
+        "  %(prog)s --list --status confirmed --json\n"
+        "  %(prog)s --confirm --competitor-id comp-abc --confirmed-by user@mil --json\n"
+        "  %(prog)s --archive --competitor-id comp-abc --json\n"
+        "  %(prog)s --refresh --competitor-id comp-abc --json\n",
     )
     # Actions
     actions = parser.add_mutually_exclusive_group(required=True)
-    actions.add_argument("--discover", action="store_true",
-                         help="Run competitor discovery pipeline")
-    actions.add_argument("--list", action="store_true",
-                         help="List stored competitors")
-    actions.add_argument("--confirm", action="store_true",
-                         help="Confirm a discovered competitor")
-    actions.add_argument("--archive", action="store_true",
-                         help="Archive a competitor")
-    actions.add_argument("--refresh", action="store_true",
-                         help="Refresh features for a competitor")
+    actions.add_argument("--discover", action="store_true", help="Run competitor discovery pipeline")
+    actions.add_argument("--list", action="store_true", help="List stored competitors")
+    actions.add_argument("--confirm", action="store_true", help="Confirm a discovered competitor")
+    actions.add_argument("--archive", action="store_true", help="Archive a competitor")
+    actions.add_argument("--refresh", action="store_true", help="Refresh features for a competitor")
 
     # Parameters
-    parser.add_argument("--domain", type=str, default=None,
-                        help="Domain to discover competitors for")
-    parser.add_argument("--status", type=str, default=None,
-                        choices=["discovered", "confirmed", "archived"],
-                        help="Filter by status (for --list)")
-    parser.add_argument("--competitor-id", type=str, default=None,
-                        help="Competitor ID (for --confirm, --archive, --refresh)")
-    parser.add_argument("--confirmed-by", type=str, default=None,
-                        help="User confirming the competitor (for --confirm)")
+    parser.add_argument("--domain", type=str, default=None, help="Domain to discover competitors for")
+    parser.add_argument(
+        "--status",
+        type=str,
+        default=None,
+        choices=["discovered", "confirmed", "archived"],
+        help="Filter by status (for --list)",
+    )
+    parser.add_argument(
+        "--competitor-id", type=str, default=None, help="Competitor ID (for --confirm, --archive, --refresh)"
+    )
+    parser.add_argument("--confirmed-by", type=str, default=None, help="User confirming the competitor (for --confirm)")
 
     # Output
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--human", action="store_true", help="Human-readable output")
-    parser.add_argument("--db-path", type=str, default=None,
-                        help="Override database path")
+    parser.add_argument("--db-path", type=str, default=None, help="Override database path")
 
     args = parser.parse_args()
     db_path = Path(args.db_path) if args.db_path else None
@@ -877,16 +896,14 @@ def main():
         if args.discover:
             result = run_discovery(domain=args.domain, db_path=db_path)
         elif args.list:
-            result = get_competitors(domain=args.domain, status=args.status,
-                                     db_path=db_path)
+            result = get_competitors(domain=args.domain, status=args.status, db_path=db_path)
         elif args.confirm:
             if not args.competitor_id:
                 result = {"error": "--competitor-id is required for --confirm"}
             elif not args.confirmed_by:
                 result = {"error": "--confirmed-by is required for --confirm"}
             else:
-                result = confirm_competitor(args.competitor_id, args.confirmed_by,
-                                           db_path=db_path)
+                result = confirm_competitor(args.competitor_id, args.confirmed_by, db_path=db_path)
         elif args.archive:
             if not args.competitor_id:
                 result = {"error": "--competitor-id is required for --archive"}
@@ -896,8 +913,7 @@ def main():
             if not args.competitor_id:
                 result = {"error": "--competitor-id is required for --refresh"}
             else:
-                result = refresh_competitor_features(args.competitor_id,
-                                                     db_path=db_path)
+                result = refresh_competitor_features(args.competitor_id, db_path=db_path)
         else:
             result = {"error": "No action specified"}
     except FileNotFoundError as exc:

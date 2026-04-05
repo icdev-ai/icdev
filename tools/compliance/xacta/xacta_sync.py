@@ -277,11 +277,16 @@ def sync_to_xacta(project_id, mode="hybrid", output_dir=None, db_path=None):
         conn.commit()
 
         # Log sync completion
-        _log_audit(conn, project_id, f"sync_completed_{mode}", {
-            "mode": mode,
-            "data_counts": summary["data_counts"],
-            "status": summary["status"],
-        })
+        _log_audit(
+            conn,
+            project_id,
+            f"sync_completed_{mode}",
+            {
+                "mode": mode,
+                "data_counts": summary["data_counts"],
+                "status": summary["status"],
+            },
+        )
 
         return summary
 
@@ -305,13 +310,13 @@ def sync_to_xacta(project_id, mode="hybrid", output_dir=None, db_path=None):
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Sync ICDEV™ compliance data to Xacta 360"
-    )
+    parser = argparse.ArgumentParser(description="Sync ICDEV™ compliance data to Xacta 360")
     parser.add_argument("--project-id", required=True, help="ICDEV™ project ID")
     parser.add_argument(
-        "--mode", default="hybrid", choices=["api", "export", "hybrid"],
-        help="Sync mode (default: hybrid — try API, fall back to export)"
+        "--mode",
+        default="hybrid",
+        choices=["api", "export", "hybrid"],
+        help="Sync mode (default: hybrid — try API, fall back to export)",
     )
     parser.add_argument("--output-dir", type=Path, help="Output directory for exports")
     parser.add_argument("--db-path", type=Path, default=DB_PATH, help="Database path")

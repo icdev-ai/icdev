@@ -166,10 +166,7 @@ class SaaSBaseConnector(DataConnector):
         if table not in self._endpoints:
             return ConnectorResponse(
                 status="error",
-                errors=[
-                    f"Unknown endpoint: '{table}'. "
-                    f"Available: {list(self._endpoints.keys())}"
-                ],
+                errors=[f"Unknown endpoint: '{table}'. Available: {list(self._endpoints.keys())}"],
             )
 
         path = self._endpoints[table]
@@ -255,9 +252,7 @@ class SaaSBaseConnector(DataConnector):
         """Infer schema by fetching a sample record."""
         resp = self.read(ConnectorRequest(table_name=table_name, limit=1))
         if resp.status != "ok" or not resp.data:
-            return SchemaDefinition(
-                metadata={"source": self._connector_name, "table": table_name}
-            )
+            return SchemaDefinition(metadata={"source": self._connector_name, "table": table_name})
 
         sample = resp.data[0] if isinstance(resp.data, list) else resp.data
         fields = []

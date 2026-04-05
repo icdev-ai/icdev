@@ -84,9 +84,7 @@ def run(config: Dict[str, Any], trust) -> Dict[str, Any]:
     conn = get_connection()
     try:
         # Find selected challenge
-        challenge = conn.execute(
-            "SELECT * FROM appforge_challenges WHERE status = 'selected' LIMIT 1"
-        ).fetchone()
+        challenge = conn.execute("SELECT * FROM appforge_challenges WHERE status = 'selected' LIMIT 1").fetchone()
         if not challenge:
             return {
                 "success": True,
@@ -153,7 +151,8 @@ def run(config: Dict[str, Any], trust) -> Dict[str, Any]:
 def _slugify(title: str) -> str:
     """Convert title to filesystem-safe app name."""
     import re
-    slug = re.sub(r'[^a-z0-9]+', '_', title.lower()).strip('_')
+
+    slug = re.sub(r"[^a-z0-9]+", "_", title.lower()).strip("_")
     return slug[:40]
 
 
@@ -161,9 +160,7 @@ def _next_port() -> int:
     """Find next available port starting from 5100."""
     conn = get_connection()
     try:
-        row = conn.execute(
-            "SELECT MAX(app_port) m FROM appforge_challenges WHERE app_port IS NOT NULL"
-        ).fetchone()
+        row = conn.execute("SELECT MAX(app_port) m FROM appforge_challenges WHERE app_port IS NOT NULL").fetchone()
         return (row["m"] or 5099) + 1
     except Exception:
         return 5100

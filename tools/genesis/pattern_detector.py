@@ -35,6 +35,7 @@ def _utcnow_iso() -> str:
 # Tool chain extraction
 # ---------------------------------------------------------------------------
 
+
 def _extract_session_tool_chains(
     lookback_days: int = 7,
     max_gap_seconds: int = 300,
@@ -50,18 +51,19 @@ def _extract_session_tool_chains(
     """
     conn = get_connection()
     try:
-        cutoff = (
-            datetime.now(timezone.utc) - timedelta(days=lookback_days)
-        ).strftime("%Y-%m-%dT%H:%M:%SZ")
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=lookback_days)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-        rows = conn.execute("""
+        rows = conn.execute(
+            """
             SELECT session_id, tool_name, created_at
             FROM hook_events
             WHERE created_at > %s
               AND session_id IS NOT NULL
               AND tool_name IS NOT NULL
             ORDER BY session_id, created_at
-        """, (cutoff,)).fetchall()
+        """,
+            (cutoff,),
+        ).fetchall()
 
         sessions: Dict[str, List[List[str]]] = defaultdict(list)
         current_session = None
@@ -123,6 +125,7 @@ def _extract_session_tool_chains(
 # Sub-chain (n-gram) extraction
 # ---------------------------------------------------------------------------
 
+
 def _extract_ngrams(chains: Dict[str, List[List[str]]], min_length: int = 3) -> Counter:
     """Extract all n-grams of length >= min_length from tool chains.
 
@@ -133,7 +136,7 @@ def _extract_ngrams(chains: Dict[str, List[List[str]]], min_length: int = 3) -> 
         for chain in session_chains:
             for n in range(min_length, len(chain) + 1):
                 for i in range(len(chain) - n + 1):
-                    ngram = tuple(chain[i:i + n])
+                    ngram = tuple(chain[i : i + n])
                     ngram_counts[ngram] += 1
     return ngram_counts
 
@@ -141,6 +144,7 @@ def _extract_ngrams(chains: Dict[str, List[List[str]]], min_length: int = 3) -> 
 # ---------------------------------------------------------------------------
 # Pattern scoring
 # ---------------------------------------------------------------------------
+
 
 def _score_pattern(
     ngram: tuple,
@@ -163,7 +167,7 @@ def _score_pattern(
         for chain in session_chains:
             chain_tuple = tuple(chain)
             for i in range(len(chain_tuple) - len(ngram) + 1):
-                if chain_tuple[i:i + len(ngram)] == ngram:
+                if chain_tuple[i : i + len(ngram)] == ngram:
                     session_ids.add(sid)
                     break
 
@@ -171,6 +175,7 @@ def _score_pattern(
 
     # Composite score: frequency * diversity * log(length)
     import math
+
     length_bonus = math.log2(max(len(ngram), 2))
     composite = count * diversity * length_bonus
 
@@ -188,6 +193,7 @@ def _score_pattern(
 # ---------------------------------------------------------------------------
 # Main detection pipeline
 # ---------------------------------------------------------------------------
+
 
 def detect_tool_patterns(
     min_frequency: int = 3,
@@ -277,6 +283,7 @@ def detect_tool_patterns(
 # Persistence
 # ---------------------------------------------------------------------------
 
+
 def store_patterns(patterns: List[Dict], db_path: Optional[str] = None) -> int:
     """Store detected patterns in genesis_tool_patterns table.
 
@@ -293,39 +300,51 @@ def store_patterns(patterns: List[Dict], db_path: Optional[str] = None) -> int:
 
             # Check for existing pattern with same hash
             existing = conn.execute(
-                "SELECT id FROM genesis_tool_patterns WHERE chain_hash = %s",
-                (chain_hash,)
+                "SELECT id FROM genesis_tool_patterns WHERE chain_hash = %s", (chain_hash,)
             ).fetchone()
 
             if existing:
                 # Update frequency and last_seen
-                conn.execute("""
+                conn.execute(
+                    """
                     UPDATE genesis_tool_patterns
                     SET frequency = %s, last_seen = %s,
                         sessions = %s, composite_score = %s
                     WHERE chain_hash = %s
-                """, (
-                    p["frequency"],
-                    _utcnow_iso(),
-                    json.dumps(p.get("session_ids", [])),
-                    p["composite_score"],
-                    chain_hash,
-                ))
+                """,
+                    (
+                        p["frequency"],
+                        _utcnow_iso(),
+                        json.dumps(p.get("session_ids", [])),
+                        p["composite_score"],
+                        chain_hash,
+                    ),
+                )
             else:
                 pattern_id = f"tpat-{chain_hash}"
-                conn.execute("""
+                conn.execute(
+                    """
                     INSERT INTO genesis_tool_patterns
                         (id, chain_hash, tool_chain, frequency, caller_diversity,
                          chain_length, composite_score, sessions, status,
                          first_seen, last_seen, created_at)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                """, (
-                    pattern_id, chain_hash, chain_json,
-                    p["frequency"], p["caller_diversity"],
-                    p["chain_length"], p["composite_score"],
-                    json.dumps(p.get("session_ids", [])),
-                    "detected", _utcnow_iso(), _utcnow_iso(), _utcnow_iso(),
-                ))
+                """,
+                    (
+                        pattern_id,
+                        chain_hash,
+                        chain_json,
+                        p["frequency"],
+                        p["caller_diversity"],
+                        p["chain_length"],
+                        p["composite_score"],
+                        json.dumps(p.get("session_ids", [])),
+                        "detected",
+                        _utcnow_iso(),
+                        _utcnow_iso(),
+                        _utcnow_iso(),
+                    ),
+                )
                 stored += 1
 
         conn.commit()
@@ -341,16 +360,14 @@ def store_patterns(patterns: List[Dict], db_path: Optional[str] = None) -> int:
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
-    parser = argparse.ArgumentParser(
-        description="Genesis Pattern Detector — mine recurring tool chains"
-    )
+    parser = argparse.ArgumentParser(description="Genesis Pattern Detector — mine recurring tool chains")
     parser.add_argument("--lookback-days", type=int, default=7)
     parser.add_argument("--min-frequency", type=int, default=3)
     parser.add_argument("--min-chain-length", type=int, default=3)
     parser.add_argument("--top-k", type=int, default=20)
-    parser.add_argument("--store", action="store_true",
-                        help="Store detected patterns in DB")
+    parser.add_argument("--store", action="store_true", help="Store detected patterns in DB")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
 
@@ -374,8 +391,7 @@ def main():
         print(f"  Patterns found:    {result.get('deduplicated_patterns', 0)}")
         for i, p in enumerate(result.get("patterns", []), 1):
             print(f"\n  {i}. {' → '.join(p['pattern'])}")
-            print(f"     freq={p['frequency']} diversity={p['caller_diversity']} "
-                  f"score={p['composite_score']}")
+            print(f"     freq={p['frequency']} diversity={p['caller_diversity']} score={p['composite_score']}")
 
 
 if __name__ == "__main__":

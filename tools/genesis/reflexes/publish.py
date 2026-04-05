@@ -33,19 +33,30 @@ def _get_pending_topics(limit: int = 2) -> List[Dict[str, Any]]:
     topics = []
     try:
         # Priority 1: High-demand signals
-        rows = conn.execute("""
+        rows = conn.execute(
+            """
             SELECT id, pain_point_text, domain_category, keywords, created_at
             FROM pulse_demand_signals
             WHERE is_high_demand = 1
             AND article_generated = 0
             ORDER BY frequency DESC, created_at DESC
             LIMIT ?
-        """, (limit,)).fetchall()
+        """,
+            (limit,),
+        ).fetchall()
         for r in rows:
-            d = dict(r) if hasattr(r, "keys") else {
-                "id": r[0], "topic": r[1], "pain_point": r[1],
-                "category": r[2], "keywords": r[3], "created_at": r[4],
-            }
+            d = (
+                dict(r)
+                if hasattr(r, "keys")
+                else {
+                    "id": r[0],
+                    "topic": r[1],
+                    "pain_point": r[1],
+                    "category": r[2],
+                    "keywords": r[3],
+                    "created_at": r[4],
+                }
+            )
             d.setdefault("topic", d.get("pain_point_text", ""))
             d.setdefault("pain_point", d.get("pain_point_text", ""))
             d["source"] = "demand_signal"
@@ -57,17 +68,26 @@ def _get_pending_topics(limit: int = 2) -> List[Dict[str, Any]]:
     remaining = limit - len(topics)
     if remaining > 0:
         try:
-            rows = conn.execute("""
+            rows = conn.execute(
+                """
                 SELECT id, name, description, pain_points
                 FROM pulse_topic_clusters
                 WHERE used_count = 0
                 ORDER BY priority_score DESC, created_at DESC
                 LIMIT ?
-            """, (remaining,)).fetchall()
+            """,
+                (remaining,),
+            ).fetchall()
             for r in rows:
-                d = dict(r) if hasattr(r, "keys") else {
-                    "id": r[0], "topic": r[1], "pain_point": r[2],
-                }
+                d = (
+                    dict(r)
+                    if hasattr(r, "keys")
+                    else {
+                        "id": r[0],
+                        "topic": r[1],
+                        "pain_point": r[2],
+                    }
+                )
                 d.setdefault("topic", d.get("name", ""))
                 d.setdefault("pain_point", d.get("description", ""))
                 d["source"] = "topic_cluster"
@@ -84,6 +104,7 @@ def _draft_article(topic: str, pain_point: str) -> Optional[Dict[str, Any]]:
     try:
         from tools.pulse.engine.scheduler import run_full_pipeline
         from tools.pulse.db import init_db
+
         init_db()
         result = run_full_pipeline(
             topic_override=topic,
@@ -101,6 +122,7 @@ def _run_writeguard(body: str) -> Dict[str, Any]:
     """Run WriteGuard quality check (deterministic, no LLM)."""
     try:
         from tools.pulse.writeguard import check_quality
+
         result = check_quality(body)
         return result if isinstance(result, dict) else {"score": 0, "findings": []}
     except Exception as e:
@@ -112,21 +134,26 @@ def _generate_hero_image(topic: str, category: str = "") -> Optional[Dict[str, A
     """Generate a hero image for the article (GPU → SVG fallback)."""
     try:
         from tools.pulse.engine.image_generator import generate_hero_image
+
         result = generate_hero_image(title=topic, category=category)
         if result and result.get("success"):
-            print(f"  Publish: hero image generated via {result['method']} "
-                  f"({result.get('elapsed_ms', 0)}ms)")
+            print(f"  Publish: hero image generated via {result['method']} ({result.get('elapsed_ms', 0)}ms)")
             return result
     except Exception as e:
         print(f"  WARN: Hero image generation failed: {e}")
     return None
 
 
-def _stage_draft(topic: str, body: str, quality_score: float,
-                 demand_signal_id: Optional[int] = None,
-                 hero_image: Optional[Dict[str, Any]] = None) -> Optional[int]:
+def _stage_draft(
+    topic: str,
+    body: str,
+    quality_score: float,
+    demand_signal_id: Optional[int] = None,
+    hero_image: Optional[Dict[str, Any]] = None,
+) -> Optional[int]:
     """Insert article as staging draft in pulse_posts."""
     import uuid
+
     now = _utcnow_iso()
     slug = topic[:80].lower().replace(" ", "-").replace("/", "-")
     post_id = f"pulse-genesis-{uuid.uuid4().hex[:8]}"
@@ -152,7 +179,7 @@ def _stage_draft(topic: str, body: str, quality_score: float,
                 "genesis_publish",
                 now,
                 now,
-            )
+            ),
         )
         conn.commit()
         return post_id
@@ -173,6 +200,7 @@ def _run_sam_bridge(max_articles: int = 2) -> List[Dict[str, Any]]:
     try:
         from tools.pulse.engine.sam_bridge import run_sam_to_pulse
         from tools.pulse.db import init_db
+
         init_db()
         sam_result = run_sam_to_pulse(dry_run=False, max_articles=max_articles)
         generated = sam_result.get("articles_generated", 0)
@@ -180,15 +208,19 @@ def _run_sam_bridge(max_articles: int = 2) -> List[Dict[str, Any]]:
             print(f"  Publish: SAM bridge generated {generated} article(s)")
             for detail in sam_result.get("details", []):
                 if detail.get("status") == "drafted" and detail.get("post_id"):
-                    results.append({
-                        "topic": detail.get("topic", "")[:60],
-                        "status": "staged",
-                        "post_id": detail["post_id"],
-                        "source": "sam_gov",
-                        "quality_score": detail.get("quality_score", 0),
-                    })
+                    results.append(
+                        {
+                            "topic": detail.get("topic", "")[:60],
+                            "status": "staged",
+                            "post_id": detail["post_id"],
+                            "source": "sam_gov",
+                            "quality_score": detail.get("quality_score", 0),
+                        }
+                    )
         else:
-            print(f"  Publish: SAM bridge — no new articles (processed: {sam_result.get('opportunities_processed', 0)})")
+            print(
+                f"  Publish: SAM bridge — no new articles (processed: {sam_result.get('opportunities_processed', 0)})"
+            )
     except Exception as e:
         print(f"  Publish: SAM bridge skipped — {e}")
     return results
@@ -232,20 +264,21 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             continue
 
         post_id = draft.get("post_id")
-        results.append({
-            "topic": topic[:60],
-            "status": "staged" if post_id else "stage_failed",
-            "post_id": post_id,
-            "source": source,
-        })
+        results.append(
+            {
+                "topic": topic[:60],
+                "status": "staged" if post_id else "stage_failed",
+                "post_id": post_id,
+                "source": source,
+            }
+        )
 
         # Mark topic cluster as used
         if source == "topic_cluster" and topic_data.get("id"):
             try:
                 conn = get_connection()
                 conn.execute(
-                    "UPDATE pulse_topic_clusters SET used_count = used_count + 1 WHERE id = ?",
-                    (topic_data["id"],)
+                    "UPDATE pulse_topic_clusters SET used_count = used_count + 1 WHERE id = ?", (topic_data["id"],)
                 )
                 conn.commit()
                 conn.close()

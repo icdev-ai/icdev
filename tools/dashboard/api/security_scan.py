@@ -14,9 +14,7 @@ if str(BASE_DIR) not in sys.path:
 
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
-security_scan_api = Blueprint(
-    "security_scan_api", __name__, url_prefix="/api/security-scan"
-)
+security_scan_api = Blueprint("security_scan_api", __name__, url_prefix="/api/security-scan")
 
 
 def _is_pg(conn):
@@ -34,8 +32,7 @@ def _table_exists(conn, table_name: str) -> bool:
     try:
         if getattr(conn, "_backend", "sqlite") == "postgresql":
             row = conn.execute(
-                "SELECT 1 FROM information_schema.tables "
-                "WHERE table_schema = 'public' AND table_name = ?",
+                "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = ?",
                 (table_name,),
             ).fetchone()
             return row is not None
@@ -66,30 +63,22 @@ def scan_stats():
         # --- STIG findings ---
         if _table_exists(conn, "stig_findings"):
             # Count by severity
-            rows = conn.execute(
-                "SELECT severity, COUNT(*) FROM stig_findings GROUP BY severity"
-            ).fetchall()
+            rows = conn.execute("SELECT severity, COUNT(*) FROM stig_findings GROUP BY severity").fetchall()
             for sev, cnt in rows:
                 stats["stig"]["by_severity"][sev] = cnt
                 stats["total_findings"] += cnt
 
             # Count by status
-            rows = conn.execute(
-                "SELECT status, COUNT(*) FROM stig_findings GROUP BY status"
-            ).fetchall()
+            rows = conn.execute("SELECT status, COUNT(*) FROM stig_findings GROUP BY status").fetchall()
             for st, cnt in rows:
                 stats["stig"]["by_status"][st] = cnt
 
             # Open findings
-            row = conn.execute(
-                "SELECT COUNT(*) FROM stig_findings WHERE status = 'Open'"
-            ).fetchone()
+            row = conn.execute("SELECT COUNT(*) FROM stig_findings WHERE status = 'Open'").fetchone()
             stats["open_findings"] += row[0]
 
             # Remediated (NotAFinding)
-            row = conn.execute(
-                "SELECT COUNT(*) FROM stig_findings WHERE status = 'NotAFinding'"
-            ).fetchone()
+            row = conn.execute("SELECT COUNT(*) FROM stig_findings WHERE status = 'NotAFinding'").fetchone()
             stats["remediated"] += row[0]
 
         # --- Dependency vulnerabilities ---
@@ -103,22 +92,16 @@ def scan_stats():
                 stats["total_findings"] += cnt
 
             # Count by status
-            rows = conn.execute(
-                "SELECT status, COUNT(*) FROM dependency_vulnerabilities GROUP BY status"
-            ).fetchall()
+            rows = conn.execute("SELECT status, COUNT(*) FROM dependency_vulnerabilities GROUP BY status").fetchall()
             for st, cnt in rows:
                 stats["dependency"]["by_status"][st] = cnt
 
             # Open findings
-            row = conn.execute(
-                "SELECT COUNT(*) FROM dependency_vulnerabilities WHERE status = 'open'"
-            ).fetchone()
+            row = conn.execute("SELECT COUNT(*) FROM dependency_vulnerabilities WHERE status = 'open'").fetchone()
             stats["open_findings"] += row[0]
 
             # Remediated
-            row = conn.execute(
-                "SELECT COUNT(*) FROM dependency_vulnerabilities WHERE status = 'remediated'"
-            ).fetchone()
+            row = conn.execute("SELECT COUNT(*) FROM dependency_vulnerabilities WHERE status = 'remediated'").fetchone()
             stats["remediated"] += row[0]
 
         # --- Latest SBOM per project ---
@@ -220,7 +203,8 @@ def scan_findings():
 
         # Total count
         count_row = conn.execute(
-            f"SELECT COUNT(*) FROM ({union_sql})", params_count  # nosec B608 -- table/column names are internal constants, not user input
+            f"SELECT COUNT(*) FROM ({union_sql})",
+            params_count,  # nosec B608 -- table/column names are internal constants, not user input
         ).fetchone()
         total = count_row[0]
 
@@ -244,12 +228,14 @@ def scan_findings():
             for r in rows
         ]
 
-        return jsonify({
-            "findings": findings,
-            "total": total,
-            "page": page,
-            "per_page": per_page,
-        })
+        return jsonify(
+            {
+                "findings": findings,
+                "total": total,
+                "page": page,
+                "per_page": per_page,
+            }
+        )
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
     finally:
@@ -269,16 +255,16 @@ def trigger_scan():
     try:
         from tools.security.security_scanner import run_security_scan
 
-        result = run_security_scan(
-            project_id=project_id, scan_types=scan_types
-        )
+        result = run_security_scan(project_id=project_id, scan_types=scan_types)
         return jsonify(result)
     except ImportError:
-        return jsonify({
-            "error": "security_scanner module not available",
-            "project_id": project_id,
-            "scan_types": scan_types,
-        }), 501
+        return jsonify(
+            {
+                "error": "security_scanner module not available",
+                "project_id": project_id,
+                "scan_types": scan_types,
+            }
+        ), 501
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 

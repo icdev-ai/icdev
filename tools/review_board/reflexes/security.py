@@ -57,15 +57,17 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                     if value and not value.startswith("${") and not value.startswith("<"):
                         if any(k in key.upper() for k in ["SECRET", "PASSWORD", "TOKEN"]):
                             if len(value) > 10 and value not in ["changeme", "your-key-here"]:
-                                findings.append({
-                                    "severity": "high",
-                                    "category": "secret_exposure",
-                                    "title": f"Potential secret in .env: {key}",
-                                    "description": "Non-placeholder value detected for sensitive key",
-                                    "recommendation": "Move to AWS Secrets Manager or K8s secrets",
-                                    "confidence": 0.7,
-                                    "auto_fixable": False,
-                                })
+                                findings.append(
+                                    {
+                                        "severity": "high",
+                                        "category": "secret_exposure",
+                                        "title": f"Potential secret in .env: {key}",
+                                        "description": "Non-placeholder value detected for sensitive key",
+                                        "recommendation": "Move to AWS Secrets Manager or K8s secrets",
+                                        "confidence": 0.7,
+                                        "auto_fixable": False,
+                                    }
+                                )
         checks_completed += 1
     except Exception:
         checks_completed += 1
@@ -86,15 +88,17 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                     (str(max_critical_age),),
                 ).fetchall()
                 for row in overdue:
-                    findings.append({
-                        "severity": "critical",
-                        "category": "cve_sla",
-                        "title": f"Critical CVE overdue: {row[0]} ({row[2]})",
-                        "description": f"Triaged {row[3]}, SLA: {max_critical_age} days",
-                        "recommendation": "Run: python tools/supply_chain/cve_triager.py --sla-check",
-                        "confidence": 1.0,
-                        "auto_fixable": False,
-                    })
+                    findings.append(
+                        {
+                            "severity": "critical",
+                            "category": "cve_sla",
+                            "title": f"Critical CVE overdue: {row[0]} ({row[2]})",
+                            "description": f"Triaged {row[3]}, SLA: {max_critical_age} days",
+                            "recommendation": "Run: python tools/supply_chain/cve_triager.py --sla-check",
+                            "confidence": 1.0,
+                            "auto_fixable": False,
+                        }
+                    )
 
                 max_high_age = int(max_high_age)  # sanitize
                 overdue_high = conn.execute(
@@ -104,13 +108,15 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                     (str(max_high_age),),
                 ).fetchall()
                 for row in overdue_high:
-                    findings.append({
-                        "severity": "high",
-                        "category": "cve_sla",
-                        "title": f"High CVE overdue: {row[0]} ({row[1]})",
-                        "confidence": 0.9,
-                        "auto_fixable": False,
-                    })
+                    findings.append(
+                        {
+                            "severity": "high",
+                            "category": "cve_sla",
+                            "title": f"High CVE overdue: {row[0]} ({row[1]})",
+                            "confidence": 0.9,
+                            "auto_fixable": False,
+                        }
+                    )
                 checks_completed += 1
             except Exception:
                 checks_completed += 1
@@ -142,15 +148,17 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                     pass
 
         if injection_hits:
-            findings.append({
-                "severity": "high",
-                "category": "injection_pattern",
-                "title": f"Prompt injection patterns found in {len(injection_hits)} files",
-                "description": "Files: " + ", ".join(injection_hits[:5]),
-                "recommendation": "Review files for accidental prompt injection vulnerabilities",
-                "confidence": 0.6,
-                "auto_fixable": False,
-            })
+            findings.append(
+                {
+                    "severity": "high",
+                    "category": "injection_pattern",
+                    "title": f"Prompt injection patterns found in {len(injection_hits)} files",
+                    "description": "Files: " + ", ".join(injection_hits[:5]),
+                    "recommendation": "Review files for accidental prompt injection vulnerabilities",
+                    "confidence": 0.6,
+                    "auto_fixable": False,
+                }
+            )
         checks_completed += 1
     except Exception:
         checks_completed += 1
@@ -176,23 +184,27 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                             # Skip known safe uses (e.g., in sandbox tools)
                             if "sandbox" in py_file.name or "scanner" in py_file.name:
                                 continue
-                            dangerous_hits.append({
-                                "file": str(py_file.relative_to(BASE_DIR)),
-                                "pattern": label,
-                            })
+                            dangerous_hits.append(
+                                {
+                                    "file": str(py_file.relative_to(BASE_DIR)),
+                                    "pattern": label,
+                                }
+                            )
                 except Exception:
                     pass
 
         if dangerous_hits:
-            findings.append({
-                "severity": "medium",
-                "category": "dangerous_patterns",
-                "title": f"{len(dangerous_hits)} dangerous code patterns detected",
-                "description": "; ".join(f"{h['file']}: {h['pattern']}" for h in dangerous_hits[:5]),
-                "evidence": {"hits": dangerous_hits[:20]},
-                "confidence": 0.7,
-                "auto_fixable": False,
-            })
+            findings.append(
+                {
+                    "severity": "medium",
+                    "category": "dangerous_patterns",
+                    "title": f"{len(dangerous_hits)} dangerous code patterns detected",
+                    "description": "; ".join(f"{h['file']}: {h['pattern']}" for h in dangerous_hits[:5]),
+                    "evidence": {"hits": dangerous_hits[:20]},
+                    "confidence": 0.7,
+                    "auto_fixable": False,
+                }
+            )
         checks_completed += 1
     except Exception:
         checks_completed += 1

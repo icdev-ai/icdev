@@ -60,17 +60,20 @@ def verifier(verifier_db):
     return PropagationVerifier(db_path=verifier_db)
 
 
-def _insert_propagation(db_path, prop_id="prop-1", status="completed",
-                         cap_id="cap-1", children=None, results=None):
+def _insert_propagation(db_path, prop_id="prop-1", status="completed", cap_id="cap-1", children=None, results=None):
     conn = sqlite3.connect(str(db_path))
     conn.execute(
         """INSERT INTO propagation_log
            (id, capability_id, capability_name, status, target_children_json,
             completed_at, execution_results_json, created_at)
            VALUES (?, ?, 'test-cap', ?, ?, '2026-01-01T00:00:00Z', ?, '2026-01-01')""",
-        (prop_id, cap_id, status,
-         json.dumps(children or ["child-1"]),
-         json.dumps(results or {"success_count": 1, "fail_count": 0})),
+        (
+            prop_id,
+            cap_id,
+            status,
+            json.dumps(children or ["child-1"]),
+            json.dumps(results or {"success_count": 1, "fail_count": 0}),
+        ),
     )
     conn.commit()
     conn.close()
@@ -115,8 +118,7 @@ class TestVerifyPropagation:
         conn.commit()
         conn.close()
         result = verifier.verify_propagation("prop-1")
-        error_checks = [c for c in result["checks"]
-                        if c["name"] == "error_rate_check" and c["status"] == "fail"]
+        error_checks = [c for c in result["checks"] if c["name"] == "error_rate_check" and c["status"] == "fail"]
         assert len(error_checks) >= 1
 
     def test_verify_with_digest(self, verifier, verifier_db):
@@ -167,6 +169,7 @@ class TestHistory:
 # ---------------------------------------------------------------------------
 # Rollback scenario tests (after failed verification)
 # ---------------------------------------------------------------------------
+
 
 class TestRollbackScenarios:
     def test_verify_failed_propagation_status(self, verifier, verifier_db):
@@ -222,8 +225,7 @@ class TestRollbackScenarios:
         conn.close()
         result = verifier.verify_propagation("prop-1")
         assert result["passed"] is False
-        error_rate_fails = [c for c in result["checks"]
-                            if c["name"] == "error_rate_check" and c["status"] == "fail"]
+        error_rate_fails = [c for c in result["checks"] if c["name"] == "error_rate_check" and c["status"] == "fail"]
         assert len(error_rate_fails) == 2
 
 
@@ -231,10 +233,12 @@ class TestRollbackScenarios:
 # CUI marking preservation checks
 # ---------------------------------------------------------------------------
 
+
 class TestCUIMarkings:
     def test_module_has_cui_marking(self):
         """Verify the propagation_verifier.py module starts with CUI marking."""
         from pathlib import Path
+
         module_path = Path(__file__).resolve().parent.parent / "tools" / "registry" / "propagation_verifier.py"
         first_lines = module_path.read_text(encoding="utf-8").splitlines()[:3]
         cui_found = any("CUI // SP-CTI" in line for line in first_lines)
@@ -243,6 +247,7 @@ class TestCUIMarkings:
     def test_test_file_has_cui_marking(self):
         """Verify this test file itself starts with CUI marking."""
         from pathlib import Path
+
         test_path = Path(__file__).resolve()
         first_lines = test_path.read_text(encoding="utf-8").splitlines()[:3]
         cui_found = any("CUI // SP-CTI" in line for line in first_lines)
@@ -260,15 +265,26 @@ class TestCUIMarkings:
 # CLI gate output tests (exit code 0 pass vs exit code 1 fail)
 # ---------------------------------------------------------------------------
 
+
 class TestCLIGate:
     def test_gate_pass_exit_code_0(self, verifier_db):
         """--gate should exit 0 when propagation passes all checks."""
         _insert_propagation(verifier_db)
         proc = subprocess.run(
-            [sys.executable, "-m", "tools.registry.propagation_verifier",
-             "--gate", "--propagation-id", "prop-1",
-             "--json", "--db-path", str(verifier_db)],
-            capture_output=True, text=True, timeout=30,
+            [
+                sys.executable,
+                "-m",
+                "tools.registry.propagation_verifier",
+                "--gate",
+                "--propagation-id",
+                "prop-1",
+                "--json",
+                "--db-path",
+                str(verifier_db),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         assert proc.returncode == 0
 
@@ -279,20 +295,40 @@ class TestCLIGate:
             results={"success_count": 0, "fail_count": 3},
         )
         proc = subprocess.run(
-            [sys.executable, "-m", "tools.registry.propagation_verifier",
-             "--gate", "--propagation-id", "prop-1",
-             "--json", "--db-path", str(verifier_db)],
-            capture_output=True, text=True, timeout=30,
+            [
+                sys.executable,
+                "-m",
+                "tools.registry.propagation_verifier",
+                "--gate",
+                "--propagation-id",
+                "prop-1",
+                "--json",
+                "--db-path",
+                str(verifier_db),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         assert proc.returncode == 1
 
     def test_gate_nonexistent_propagation_exit_code_1(self, verifier_db):
         """--gate for a nonexistent propagation should exit 1 (not found = not passed)."""
         proc = subprocess.run(
-            [sys.executable, "-m", "tools.registry.propagation_verifier",
-             "--gate", "--propagation-id", "does-not-exist",
-             "--json", "--db-path", str(verifier_db)],
-            capture_output=True, text=True, timeout=30,
+            [
+                sys.executable,
+                "-m",
+                "tools.registry.propagation_verifier",
+                "--gate",
+                "--propagation-id",
+                "does-not-exist",
+                "--json",
+                "--db-path",
+                str(verifier_db),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         assert proc.returncode == 1
 
@@ -301,15 +337,26 @@ class TestCLIGate:
 # CLI --json output structure test
 # ---------------------------------------------------------------------------
 
+
 class TestCLIJsonOutput:
     def test_json_output_structure_verify(self, verifier_db):
         """--verify --json should produce valid JSON with expected keys."""
         _insert_propagation(verifier_db)
         proc = subprocess.run(
-            [sys.executable, "-m", "tools.registry.propagation_verifier",
-             "--verify", "--propagation-id", "prop-1",
-             "--json", "--db-path", str(verifier_db)],
-            capture_output=True, text=True, timeout=30,
+            [
+                sys.executable,
+                "-m",
+                "tools.registry.propagation_verifier",
+                "--verify",
+                "--propagation-id",
+                "prop-1",
+                "--json",
+                "--db-path",
+                str(verifier_db),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         assert proc.returncode == 0
         data = json.loads(proc.stdout)
@@ -327,16 +374,36 @@ class TestCLIJsonOutput:
         _insert_propagation(verifier_db)
         # Run verify first to create history records
         subprocess.run(
-            [sys.executable, "-m", "tools.registry.propagation_verifier",
-             "--verify", "--propagation-id", "prop-1",
-             "--json", "--db-path", str(verifier_db)],
-            capture_output=True, text=True, timeout=30,
+            [
+                sys.executable,
+                "-m",
+                "tools.registry.propagation_verifier",
+                "--verify",
+                "--propagation-id",
+                "prop-1",
+                "--json",
+                "--db-path",
+                str(verifier_db),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         proc = subprocess.run(
-            [sys.executable, "-m", "tools.registry.propagation_verifier",
-             "--history", "--propagation-id", "prop-1",
-             "--json", "--db-path", str(verifier_db)],
-            capture_output=True, text=True, timeout=30,
+            [
+                sys.executable,
+                "-m",
+                "tools.registry.propagation_verifier",
+                "--history",
+                "--propagation-id",
+                "prop-1",
+                "--json",
+                "--db-path",
+                str(verifier_db),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         assert proc.returncode == 0
         data = json.loads(proc.stdout)
@@ -352,6 +419,7 @@ class TestCLIJsonOutput:
 # ---------------------------------------------------------------------------
 # History query with multiple propagation events
 # ---------------------------------------------------------------------------
+
 
 class TestHistoryMultiple:
     def test_history_multiple_propagations(self, verifier, verifier_db):
@@ -391,23 +459,20 @@ class TestHistoryMultiple:
 # Append-only table enforcement (INSERT only, no UPDATE/DELETE)
 # ---------------------------------------------------------------------------
 
+
 class TestAppendOnly:
     def test_verifications_table_is_insert_only(self, verifier, verifier_db):
         """Verify that running verify twice creates new rows, never updates existing ones."""
         _insert_propagation(verifier_db)
         verifier.verify_propagation("prop-1")
         conn = sqlite3.connect(str(verifier_db))
-        count_before = conn.execute(
-            "SELECT COUNT(*) FROM propagation_verifications"
-        ).fetchone()[0]
+        count_before = conn.execute("SELECT COUNT(*) FROM propagation_verifications").fetchone()[0]
         conn.close()
 
         # Run verification again — should INSERT new rows, not UPDATE
         verifier.verify_propagation("prop-1")
         conn = sqlite3.connect(str(verifier_db))
-        count_after = conn.execute(
-            "SELECT COUNT(*) FROM propagation_verifications"
-        ).fetchone()[0]
+        count_after = conn.execute("SELECT COUNT(*) FROM propagation_verifications").fetchone()[0]
         conn.close()
         assert count_after > count_before, "Second verify should INSERT new rows"
 
@@ -417,9 +482,7 @@ class TestAppendOnly:
         verifier.verify_propagation("prop-1")
         verifier.verify_propagation("prop-1")
         conn = sqlite3.connect(str(verifier_db))
-        rows = conn.execute(
-            "SELECT id FROM propagation_verifications WHERE propagation_id = 'prop-1'"
-        ).fetchall()
+        rows = conn.execute("SELECT id FROM propagation_verifications WHERE propagation_id = 'prop-1'").fetchall()
         conn.close()
         ids = [r[0] for r in rows]
         assert len(ids) == len(set(ids)), "All verification IDs must be unique (UUID)"
@@ -427,20 +490,24 @@ class TestAppendOnly:
     def test_verifications_table_no_update_no_delete_in_source(self):
         """Verify the source code does not contain UPDATE or DELETE on propagation_verifications."""
         from pathlib import Path
+
         source = Path(__file__).resolve().parent.parent / "tools" / "registry" / "propagation_verifier.py"
         content = source.read_text(encoding="utf-8").upper()
         # Should have INSERT
         assert "INSERT INTO PROPAGATION_VERIFICATIONS" in content
         # Should NOT have UPDATE or DELETE
-        assert "UPDATE PROPAGATION_VERIFICATIONS" not in content, \
+        assert "UPDATE PROPAGATION_VERIFICATIONS" not in content, (
             "propagation_verifications is append-only — no UPDATE allowed"
-        assert "DELETE FROM PROPAGATION_VERIFICATIONS" not in content, \
+        )
+        assert "DELETE FROM PROPAGATION_VERIFICATIONS" not in content, (
             "propagation_verifications is append-only — no DELETE allowed"
+        )
 
 
 # ---------------------------------------------------------------------------
 # Error cases: nonexistent / edge cases
 # ---------------------------------------------------------------------------
+
 
 class TestErrorCases:
     def test_nonexistent_propagation_id_returns_error(self, verifier):

@@ -18,23 +18,27 @@ import pytest
 
 # --- Module Import ---
 
+
 def test_classification_manager_imports():
     """Verify module can be imported without errors."""
     try:
-        import tools.compliance.classification_manager
+        import tools.compliance.classification_manager  # noqa: F401
     except ImportError as e:
         pytest.skip(f"Import dependency missing: {e}")
 
 
 # --- Function Signature Tests ---
 
+
 def test_classification_manager_load_impact_level_profiles_exists():
     """Verify load_impact_level_profiles exists and is callable."""
     try:
         from tools.compliance.classification_manager import load_impact_level_profiles
-        assert callable(load_impact_level_profiles), 'load_impact_level_profiles is not callable'
+
+        assert callable(load_impact_level_profiles), "load_impact_level_profiles is not callable"
     except ImportError:
         pytest.skip("Module not importable")
+
 
 def test_classification_manager_load_impact_level_profiles_invocation():
     """Verify load_impact_level_profiles can be called with test inputs."""
@@ -58,13 +62,16 @@ def test_classification_manager_load_impact_level_profiles_invocation():
             else:
                 raise
 
+
 def test_classification_manager_load_markings_config_exists():
     """Verify load_markings_config exists and is callable."""
     try:
         from tools.compliance.classification_manager import load_markings_config
-        assert callable(load_markings_config), 'load_markings_config is not callable'
+
+        assert callable(load_markings_config), "load_markings_config is not callable"
     except ImportError:
         pytest.skip("Module not importable")
+
 
 def test_classification_manager_load_markings_config_invocation():
     """Verify load_markings_config can be called with test inputs."""
@@ -88,24 +95,30 @@ def test_classification_manager_load_markings_config_invocation():
             else:
                 raise
 
+
 def test_classification_manager_get_impact_level_profile_exists():
     """Verify get_impact_level_profile exists and is callable."""
     try:
         from tools.compliance.classification_manager import get_impact_level_profile
-        assert callable(get_impact_level_profile), 'get_impact_level_profile is not callable'
+
+        assert callable(get_impact_level_profile), "get_impact_level_profile is not callable"
     except ImportError:
         pytest.skip("Module not importable")
+
 
 def test_classification_manager_get_impact_level_profile_signature():
     """Verify get_impact_level_profile accepts expected parameters."""
     import inspect
+
     try:
         from tools.compliance.classification_manager import get_impact_level_profile
+
         sig = inspect.signature(get_impact_level_profile)
         params = list(sig.parameters.keys())
-        assert "il_level" in params, f"Missing parameter \"il_level\" in {params}"
+        assert "il_level" in params, f'Missing parameter "il_level" in {params}'
     except ImportError:
         pytest.skip("Module not importable")
+
 
 def test_classification_manager_get_impact_level_profile_invocation():
     """Verify get_impact_level_profile can be called with test inputs."""
@@ -129,24 +142,30 @@ def test_classification_manager_get_impact_level_profile_invocation():
             else:
                 raise
 
+
 def test_classification_manager_get_classification_for_il_exists():
     """Verify get_classification_for_il exists and is callable."""
     try:
         from tools.compliance.classification_manager import get_classification_for_il
-        assert callable(get_classification_for_il), 'get_classification_for_il is not callable'
+
+        assert callable(get_classification_for_il), "get_classification_for_il is not callable"
     except ImportError:
         pytest.skip("Module not importable")
+
 
 def test_classification_manager_get_classification_for_il_signature():
     """Verify get_classification_for_il accepts expected parameters."""
     import inspect
+
     try:
         from tools.compliance.classification_manager import get_classification_for_il
+
         sig = inspect.signature(get_classification_for_il)
         params = list(sig.parameters.keys())
-        assert "il_level" in params, f"Missing parameter \"il_level\" in {params}"
+        assert "il_level" in params, f'Missing parameter "il_level" in {params}'
     except ImportError:
         pytest.skip("Module not importable")
+
 
 def test_classification_manager_get_classification_for_il_invocation():
     """Verify get_classification_for_il can be called with test inputs."""
@@ -170,13 +189,16 @@ def test_classification_manager_get_classification_for_il_invocation():
             else:
                 raise
 
+
 def test_classification_manager_get_marking_banner_exists():
     """Verify get_marking_banner exists and is callable."""
     try:
         from tools.compliance.classification_manager import get_marking_banner
-        assert callable(get_marking_banner), 'get_marking_banner is not callable'
+
+        assert callable(get_marking_banner), "get_marking_banner is not callable"
     except ImportError:
         pytest.skip("Module not importable")
+
 
 def test_classification_manager_get_marking_banner_invocation():
     """Verify get_marking_banner can be called with test inputs."""
@@ -200,13 +222,16 @@ def test_classification_manager_get_marking_banner_invocation():
             else:
                 raise
 
+
 def test_classification_manager_get_code_header_exists():
     """Verify get_code_header exists and is callable."""
     try:
         from tools.compliance.classification_manager import get_code_header
-        assert callable(get_code_header), 'get_code_header is not callable'
+
+        assert callable(get_code_header), "get_code_header is not callable"
     except ImportError:
         pytest.skip("Module not importable")
+
 
 def test_classification_manager_get_code_header_invocation():
     """Verify get_code_header can be called with test inputs."""
@@ -230,13 +255,16 @@ def test_classification_manager_get_code_header_invocation():
             else:
                 raise
 
+
 def test_classification_manager_get_document_banner_exists():
     """Verify get_document_banner exists and is callable."""
     try:
         from tools.compliance.classification_manager import get_document_banner
-        assert callable(get_document_banner), 'get_document_banner is not callable'
+
+        assert callable(get_document_banner), "get_document_banner is not callable"
     except ImportError:
         pytest.skip("Module not importable")
+
 
 def test_classification_manager_get_document_banner_invocation():
     """Verify get_document_banner can be called with test inputs."""
@@ -260,13 +288,16 @@ def test_classification_manager_get_document_banner_invocation():
             else:
                 raise
 
+
 def test_classification_manager_get_portion_marking_exists():
     """Verify get_portion_marking exists and is callable."""
     try:
         from tools.compliance.classification_manager import get_portion_marking
-        assert callable(get_portion_marking), 'get_portion_marking is not callable'
+
+        assert callable(get_portion_marking), "get_portion_marking is not callable"
     except ImportError:
         pytest.skip("Module not importable")
+
 
 def test_classification_manager_get_portion_marking_invocation():
     """Verify get_portion_marking can be called with test inputs."""
@@ -290,24 +321,30 @@ def test_classification_manager_get_portion_marking_invocation():
             else:
                 raise
 
+
 def test_classification_manager_get_required_baseline_exists():
     """Verify get_required_baseline exists and is callable."""
     try:
         from tools.compliance.classification_manager import get_required_baseline
-        assert callable(get_required_baseline), 'get_required_baseline is not callable'
+
+        assert callable(get_required_baseline), "get_required_baseline is not callable"
     except ImportError:
         pytest.skip("Module not importable")
+
 
 def test_classification_manager_get_required_baseline_signature():
     """Verify get_required_baseline accepts expected parameters."""
     import inspect
+
     try:
         from tools.compliance.classification_manager import get_required_baseline
+
         sig = inspect.signature(get_required_baseline)
         params = list(sig.parameters.keys())
-        assert "il_level" in params, f"Missing parameter \"il_level\" in {params}"
+        assert "il_level" in params, f'Missing parameter "il_level" in {params}'
     except ImportError:
         pytest.skip("Module not importable")
+
 
 def test_classification_manager_get_required_baseline_invocation():
     """Verify get_required_baseline can be called with test inputs."""
@@ -331,24 +368,30 @@ def test_classification_manager_get_required_baseline_invocation():
             else:
                 raise
 
+
 def test_classification_manager_get_encryption_requirements_exists():
     """Verify get_encryption_requirements exists and is callable."""
     try:
         from tools.compliance.classification_manager import get_encryption_requirements
-        assert callable(get_encryption_requirements), 'get_encryption_requirements is not callable'
+
+        assert callable(get_encryption_requirements), "get_encryption_requirements is not callable"
     except ImportError:
         pytest.skip("Module not importable")
+
 
 def test_classification_manager_get_encryption_requirements_signature():
     """Verify get_encryption_requirements accepts expected parameters."""
     import inspect
+
     try:
         from tools.compliance.classification_manager import get_encryption_requirements
+
         sig = inspect.signature(get_encryption_requirements)
         params = list(sig.parameters.keys())
-        assert "il_level" in params, f"Missing parameter \"il_level\" in {params}"
+        assert "il_level" in params, f'Missing parameter "il_level" in {params}'
     except ImportError:
         pytest.skip("Module not importable")
+
 
 def test_classification_manager_get_encryption_requirements_invocation():
     """Verify get_encryption_requirements can be called with test inputs."""
@@ -372,24 +415,30 @@ def test_classification_manager_get_encryption_requirements_invocation():
             else:
                 raise
 
+
 def test_classification_manager_get_network_requirements_exists():
     """Verify get_network_requirements exists and is callable."""
     try:
         from tools.compliance.classification_manager import get_network_requirements
-        assert callable(get_network_requirements), 'get_network_requirements is not callable'
+
+        assert callable(get_network_requirements), "get_network_requirements is not callable"
     except ImportError:
         pytest.skip("Module not importable")
+
 
 def test_classification_manager_get_network_requirements_signature():
     """Verify get_network_requirements accepts expected parameters."""
     import inspect
+
     try:
         from tools.compliance.classification_manager import get_network_requirements
+
         sig = inspect.signature(get_network_requirements)
         params = list(sig.parameters.keys())
-        assert "il_level" in params, f"Missing parameter \"il_level\" in {params}"
+        assert "il_level" in params, f'Missing parameter "il_level" in {params}'
     except ImportError:
         pytest.skip("Module not importable")
+
 
 def test_classification_manager_get_network_requirements_invocation():
     """Verify get_network_requirements can be called with test inputs."""
@@ -413,24 +462,30 @@ def test_classification_manager_get_network_requirements_invocation():
             else:
                 raise
 
+
 def test_classification_manager_get_cloud_environments_exists():
     """Verify get_cloud_environments exists and is callable."""
     try:
         from tools.compliance.classification_manager import get_cloud_environments
-        assert callable(get_cloud_environments), 'get_cloud_environments is not callable'
+
+        assert callable(get_cloud_environments), "get_cloud_environments is not callable"
     except ImportError:
         pytest.skip("Module not importable")
+
 
 def test_classification_manager_get_cloud_environments_signature():
     """Verify get_cloud_environments accepts expected parameters."""
     import inspect
+
     try:
         from tools.compliance.classification_manager import get_cloud_environments
+
         sig = inspect.signature(get_cloud_environments)
         params = list(sig.parameters.keys())
-        assert "il_level" in params, f"Missing parameter \"il_level\" in {params}"
+        assert "il_level" in params, f'Missing parameter "il_level" in {params}'
     except ImportError:
         pytest.skip("Module not importable")
+
 
 def test_classification_manager_get_cloud_environments_invocation():
     """Verify get_cloud_environments can be called with test inputs."""
@@ -454,24 +509,30 @@ def test_classification_manager_get_cloud_environments_invocation():
             else:
                 raise
 
+
 def test_classification_manager_validate_classification_exists():
     """Verify validate_classification exists and is callable."""
     try:
         from tools.compliance.classification_manager import validate_classification
-        assert callable(validate_classification), 'validate_classification is not callable'
+
+        assert callable(validate_classification), "validate_classification is not callable"
     except ImportError:
         pytest.skip("Module not importable")
+
 
 def test_classification_manager_validate_classification_signature():
     """Verify validate_classification accepts expected parameters."""
     import inspect
+
     try:
         from tools.compliance.classification_manager import validate_classification
+
         sig = inspect.signature(validate_classification)
         params = list(sig.parameters.keys())
-        assert "project_id" in params, f"Missing parameter \"project_id\" in {params}"
+        assert "project_id" in params, f'Missing parameter "project_id" in {params}'
     except ImportError:
         pytest.skip("Module not importable")
+
 
 def test_classification_manager_validate_classification_invocation():
     """Verify validate_classification can be called with test inputs."""
@@ -495,25 +556,31 @@ def test_classification_manager_validate_classification_invocation():
             else:
                 raise
 
+
 def test_classification_manager_get_cross_domain_controls_exists():
     """Verify get_cross_domain_controls exists and is callable."""
     try:
         from tools.compliance.classification_manager import get_cross_domain_controls
-        assert callable(get_cross_domain_controls), 'get_cross_domain_controls is not callable'
+
+        assert callable(get_cross_domain_controls), "get_cross_domain_controls is not callable"
     except ImportError:
         pytest.skip("Module not importable")
+
 
 def test_classification_manager_get_cross_domain_controls_signature():
     """Verify get_cross_domain_controls accepts expected parameters."""
     import inspect
+
     try:
         from tools.compliance.classification_manager import get_cross_domain_controls
+
         sig = inspect.signature(get_cross_domain_controls)
         params = list(sig.parameters.keys())
-        assert "source_il" in params, f"Missing parameter \"source_il\" in {params}"
-        assert "target_il" in params, f"Missing parameter \"target_il\" in {params}"
+        assert "source_il" in params, f'Missing parameter "source_il" in {params}'
+        assert "target_il" in params, f'Missing parameter "target_il" in {params}'
     except ImportError:
         pytest.skip("Module not importable")
+
 
 def test_classification_manager_get_cross_domain_controls_invocation():
     """Verify get_cross_domain_controls can be called with test inputs."""
@@ -537,26 +604,32 @@ def test_classification_manager_get_cross_domain_controls_invocation():
             else:
                 raise
 
+
 def test_classification_manager_upgrade_markings_exists():
     """Verify upgrade_markings exists and is callable."""
     try:
         from tools.compliance.classification_manager import upgrade_markings
-        assert callable(upgrade_markings), 'upgrade_markings is not callable'
+
+        assert callable(upgrade_markings), "upgrade_markings is not callable"
     except ImportError:
         pytest.skip("Module not importable")
+
 
 def test_classification_manager_upgrade_markings_signature():
     """Verify upgrade_markings accepts expected parameters."""
     import inspect
+
     try:
         from tools.compliance.classification_manager import upgrade_markings
+
         sig = inspect.signature(upgrade_markings)
         params = list(sig.parameters.keys())
-        assert "content" in params, f"Missing parameter \"content\" in {params}"
-        assert "from_classification" in params, f"Missing parameter \"from_classification\" in {params}"
-        assert "to_classification" in params, f"Missing parameter \"to_classification\" in {params}"
+        assert "content" in params, f'Missing parameter "content" in {params}'
+        assert "from_classification" in params, f'Missing parameter "from_classification" in {params}'
+        assert "to_classification" in params, f'Missing parameter "to_classification" in {params}'
     except ImportError:
         pytest.skip("Module not importable")
+
 
 def test_classification_manager_upgrade_markings_invocation():
     """Verify upgrade_markings can be called with test inputs."""
@@ -583,10 +656,12 @@ def test_classification_manager_upgrade_markings_invocation():
 
 # --- Constants ---
 
+
 def test_classification_manager_constants():
     """Verify module exports expected constants."""
     try:
         import tools.compliance.classification_manager as mod
+
         assert hasattr(mod, "_IL_PROFILES_CACHE"), "Missing constant _IL_PROFILES_CACHE"
         assert hasattr(mod, "_MARKINGS_CACHE"), "Missing constant _MARKINGS_CACHE"
     except ImportError:

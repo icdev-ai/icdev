@@ -42,14 +42,13 @@ def _get_connection():
     return conn
 
 
-
-
 def _load_config():
     config_path = BASE_DIR / "args" / "autonomy_config.yaml"
     if not config_path.exists():
         return {}
     try:
         import yaml
+
         with open(config_path, encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
     except ImportError:
@@ -169,14 +168,12 @@ def _apply_signal(conn, signal: Dict) -> None:
     # Update trust state
     if alpha_delta > 0:
         conn.execute(
-            "UPDATE autonomy_trust_state SET alpha = alpha + ?, last_updated = ? "
-            "WHERE category = ?",
+            "UPDATE autonomy_trust_state SET alpha = alpha + ?, last_updated = ? WHERE category = ?",
             (alpha_delta, now_iso(), category),
         )
     if beta_delta > 0:
         conn.execute(
-            "UPDATE autonomy_trust_state SET beta = beta + ?, last_updated = ? "
-            "WHERE category = ?",
+            "UPDATE autonomy_trust_state SET beta = beta + ?, last_updated = ? WHERE category = ?",
             (beta_delta, now_iso(), category),
         )
 
@@ -222,8 +219,7 @@ def get_stats() -> Dict[str, Any]:
         ).fetchall()
         return {
             "by_signal_type": {
-                r[0]: {"count": r[1], "total_alpha": r[2] or 0, "total_beta": r[3] or 0}
-                for r in by_type
+                r[0]: {"count": r[1], "total_alpha": r[2] or 0, "total_beta": r[3] or 0} for r in by_type
             },
             "total_signals": sum(r[1] for r in by_type) if by_type else 0,
         }
@@ -247,16 +243,17 @@ def main():
         if args.json:
             print(json.dumps(result, indent=2))
         else:
-            print(f"  Signals found: {result.get('signals_found', 0)}, "
-                  f"Applied: {result.get('signals_applied', 0)}")
+            print(f"  Signals found: {result.get('signals_found', 0)}, Applied: {result.get('signals_applied', 0)}")
     elif args.history:
         history = get_history(limit=args.limit)
         if args.json:
             print(json.dumps({"history": history}, indent=2))
         else:
             for h in history:
-                print(f"  [{h.get('signal_type')}] α+{h.get('alpha_delta', 0)} "
-                      f"β+{h.get('beta_delta', 0)} ({h.get('created_at')})")
+                print(
+                    f"  [{h.get('signal_type')}] α+{h.get('alpha_delta', 0)} "
+                    f"β+{h.get('beta_delta', 0)} ({h.get('created_at')})"
+                )
     elif args.stats:
         stats = get_stats()
         print(json.dumps(stats, indent=2) if args.json else str(stats))

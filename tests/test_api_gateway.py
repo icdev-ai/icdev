@@ -26,6 +26,7 @@ except ImportError:
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def app(platform_db, icdev_db):
     """Create a test app with TESTING=True and a temporary platform DB."""
@@ -44,6 +45,7 @@ def client(app):
 # ============================================================================
 # TestHealthEndpoint
 # ============================================================================
+
 
 class TestHealthEndpoint:
     """Verify GET /health returns correct JSON payload."""
@@ -72,6 +74,7 @@ class TestHealthEndpoint:
 # ============================================================================
 # TestAuthMiddleware
 # ============================================================================
+
 
 class TestAuthMiddleware:
     """Verify authentication middleware behavior on API endpoints."""
@@ -129,6 +132,7 @@ class TestAuthMiddleware:
 # TestRateLimiting
 # ============================================================================
 
+
 class TestRateLimiting:
     """Verify rate limiting behavior."""
 
@@ -168,6 +172,7 @@ class TestRateLimiting:
 # TestCORS
 # ============================================================================
 
+
 class TestCORS:
     """Verify CORS headers for allowed and disallowed origins."""
 
@@ -198,6 +203,7 @@ class TestCORS:
 # TestMetrics
 # ============================================================================
 
+
 class TestMetrics:
     """Verify /metrics endpoint and Prometheus format."""
 
@@ -225,6 +231,7 @@ class TestMetrics:
 # TestErrorHandling
 # ============================================================================
 
+
 class TestErrorHandling:
     """Verify JSON error handlers return correct status codes and structure."""
 
@@ -251,6 +258,7 @@ class TestErrorHandling:
 
     def test_500_error_handler_structure(self, app):
         """Internal errors return structured JSON with 'error' and 'code'."""
+
         # Register a route under /health/ path prefix so it is recognised
         # as a public endpoint by the auth middleware (which checks
         # ``path.startswith(public + "/")`` for "/health").
@@ -275,6 +283,7 @@ class TestErrorHandling:
 # ============================================================================
 # TestSwagger
 # ============================================================================
+
 
 class TestSwagger:
     """Verify OpenAPI/Swagger endpoints."""
@@ -311,6 +320,7 @@ class TestSwagger:
 # TestCUIHeaders
 # ============================================================================
 
+
 class TestCUIHeaders:
     """Verify CUI classification headers are present on every response."""
 
@@ -340,6 +350,7 @@ class TestCUIHeaders:
 # ============================================================================
 # TestFormatUptime
 # ============================================================================
+
 
 class TestFormatUptime:
     """Verify the uptime formatter produces human-readable strings."""

@@ -41,6 +41,7 @@ def _generate_id(prefix: str = "pgtrc") -> str:
 # Compliance matrix coverage analysis
 # ---------------------------------------------------------------------------
 
+
 def _get_opportunities_with_matrices() -> List[Dict]:
     """Find opportunities that have compliance matrix entries."""
     conn = get_connection()
@@ -107,7 +108,8 @@ def _check_unmapped_sections(opp_id: str) -> Dict[str, Any]:
     conn = get_connection()
     try:
         # Sections that have drafts but no compliance matrix entry
-        rows = conn.execute("""
+        rows = conn.execute(
+            """
             SELECT psd.id, psd.section_id
             FROM proposal_section_drafts psd
             LEFT JOIN pg_compliance_matrix cm
@@ -116,7 +118,9 @@ def _check_unmapped_sections(opp_id: str) -> Dict[str, Any]:
             WHERE psd.opportunity_id = ?
             AND cm.id IS NULL
             AND psd.status IN ('draft', 'approved')
-        """, (opp_id,)).fetchall()
+        """,
+            (opp_id,),
+        ).fetchall()
         return {
             "unmapped_sections": len(rows),
             "section_ids": [r["section_id"] for r in rows[:10]],
@@ -132,7 +136,8 @@ def _check_amendment_drift(opp_id: str) -> Dict[str, Any]:
     conn = get_connection()
     try:
         # Find amendment diffs that were re-extracted but matrix not updated
-        rows = conn.execute("""
+        rows = conn.execute(
+            """
             SELECT ad.id, ad.amendment_number, ad.change_summary
             FROM pg_amendment_diffs ad
             WHERE ad.opportunity_id = ?
@@ -140,12 +145,13 @@ def _check_amendment_drift(opp_id: str) -> Dict[str, Any]:
             AND ad.matrix_updated = 0
             ORDER BY ad.created_at DESC
             LIMIT 10
-        """, (opp_id,)).fetchall()
+        """,
+            (opp_id,),
+        ).fetchall()
         return {
             "stale_amendments": len(rows),
             "amendments": [
-                {"id": r["id"], "amendment": r["amendment_number"],
-                 "summary": (r["change_summary"] or "")[:100]}
+                {"id": r["id"], "amendment": r["amendment_number"], "summary": (r["change_summary"] or "")[:100]}
                 for r in rows
             ],
         }
@@ -159,6 +165,7 @@ def _check_amendment_drift(opp_id: str) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
+
 
 def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     """Execute the Trace Reflex (R22).
@@ -185,17 +192,19 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
 
         total_coverage += coverage["coverage_pct"]
 
-        trace_results.append({
-            "opportunity_id": opp_id,
-            "title": opp["title"],
-            "coverage_pct": coverage["coverage_pct"],
-            "total_items": coverage["total"],
-            "compliant": coverage.get("compliant", 0),
-            "partial": coverage.get("partial", 0),
-            "non_compliant": coverage.get("non_compliant", 0),
-            "unmapped_sections": unmapped["unmapped_sections"],
-            "stale_amendments": drift["stale_amendments"],
-        })
+        trace_results.append(
+            {
+                "opportunity_id": opp_id,
+                "title": opp["title"],
+                "coverage_pct": coverage["coverage_pct"],
+                "total_items": coverage["total"],
+                "compliant": coverage.get("compliant", 0),
+                "partial": coverage.get("partial", 0),
+                "non_compliant": coverage.get("non_compliant", 0),
+                "unmapped_sections": unmapped["unmapped_sections"],
+                "stale_amendments": drift["stale_amendments"],
+            }
+        )
 
     avg_coverage = total_coverage / len(opportunities) if opportunities else 0.0
 
@@ -211,10 +220,12 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                 "trace_coverage",
                 "trace",
                 "green",
-                json.dumps({
-                    "opportunities_traced": len(opportunities),
-                    "avg_coverage_pct": round(avg_coverage, 1),
-                }),
+                json.dumps(
+                    {
+                        "opportunities_traced": len(opportunities),
+                        "avg_coverage_pct": round(avg_coverage, 1),
+                    }
+                ),
                 1,
                 _utcnow_iso(),
             ),
@@ -234,4 +245,6 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             "trace_results": trace_results,
         },
     }
+
+
 # CUI // SP-CTI

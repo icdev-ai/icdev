@@ -44,6 +44,7 @@ ICDEV_DB = BASE_DIR / "data" / "icdev.db"
 # Config
 # ---------------------------------------------------------------------------
 
+
 def _load_config() -> dict:
     """Load knowledge_graph_config.yaml for parallel retrieval settings."""
     config_path = BASE_DIR / "args" / "knowledge_graph_config.yaml"
@@ -51,6 +52,7 @@ def _load_config() -> dict:
         return {}
     try:
         import yaml
+
         with open(config_path, "r", encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
     except Exception:
@@ -61,23 +63,29 @@ def _load_config() -> dict:
 # Strategy 1: RAG Vector Retrieval
 # ---------------------------------------------------------------------------
 
+
 def _strategy_rag_vector(
-    query: str, top_k: int = 5, project_id: Optional[str] = None,
+    query: str,
+    top_k: int = 5,
+    project_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Run RAG two-stage retrieval pipeline."""
     try:
         from tools.rag.retriever import RAGRetriever
+
         retriever = RAGRetriever()
         results = retriever.search(query=query, top_k=top_k, project_id=project_id or "")
         documents = []
         for r in results:
-            documents.append({
-                "content": r.content,
-                "source": r.source_type or "rag_vector",
-                "id": r.chunk_id or "",
-                "score": getattr(r, "final_score", r.score),
-                "metadata": r.metadata if hasattr(r, "metadata") else {},
-            })
+            documents.append(
+                {
+                    "content": r.content,
+                    "source": r.source_type or "rag_vector",
+                    "id": r.chunk_id or "",
+                    "score": getattr(r, "final_score", r.score),
+                    "metadata": r.metadata if hasattr(r, "metadata") else {},
+                }
+            )
         return {"strategy": "rag_vector", "documents": documents, "count": len(documents)}
     except Exception as exc:
         logger.debug("RAG vector strategy failed: %s", exc)
@@ -88,13 +96,17 @@ def _strategy_rag_vector(
 # Strategy 2: GraphRAG Profile-Aware Retrieval
 # ---------------------------------------------------------------------------
 
+
 def _strategy_graphrag(
-    query: str, top_k: int = 5, profile: Optional[str] = None,
+    query: str,
+    top_k: int = 5,
+    profile: Optional[str] = None,
     project_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Run GraphRAG with scoring profiles (D-KARL-1)."""
     try:
         from tools.knowledge_graph.graph_rag import retrieve as graphrag_retrieve
+
         result = graphrag_retrieve(
             query=query,
             project_id=project_id,
@@ -108,26 +120,30 @@ def _strategy_graphrag(
         context = result.get("context", "")
         if nodes:
             for node in nodes:
-                documents.append({
-                    "content": f"{node.get('label', '')} ({node.get('entity_type', '')})",
-                    "source": "graphrag",
-                    "id": node.get("id", ""),
-                    "score": node.get("score", 0.0),
-                    "metadata": {
-                        "entity_type": node.get("entity_type", ""),
-                        "centrality": node.get("centrality", 0.0),
-                        "profile": result.get("profile_used", ""),
-                    },
-                })
+                documents.append(
+                    {
+                        "content": f"{node.get('label', '')} ({node.get('entity_type', '')})",
+                        "source": "graphrag",
+                        "id": node.get("id", ""),
+                        "score": node.get("score", 0.0),
+                        "metadata": {
+                            "entity_type": node.get("entity_type", ""),
+                            "centrality": node.get("centrality", 0.0),
+                            "profile": result.get("profile_used", ""),
+                        },
+                    }
+                )
         elif context:
             # Fallback: use the full context as a single document
-            documents.append({
-                "content": context,
-                "source": "graphrag",
-                "id": "graphrag_context",
-                "score": 0.5,
-                "metadata": {"profile": result.get("profile_used", "")},
-            })
+            documents.append(
+                {
+                    "content": context,
+                    "source": "graphrag",
+                    "id": "graphrag_context",
+                    "score": 0.5,
+                    "metadata": {"profile": result.get("profile_used", "")},
+                }
+            )
         return {"strategy": "graphrag", "documents": documents, "count": len(documents)}
     except Exception as exc:
         logger.debug("GraphRAG strategy failed: %s", exc)
@@ -138,8 +154,10 @@ def _strategy_graphrag(
 # Strategy 3: Source Registry Keyword Scan
 # ---------------------------------------------------------------------------
 
+
 def _strategy_source_scan(
-    query: str, top_k: int = 5,
+    query: str,
+    top_k: int = 5,
 ) -> Dict[str, Any]:
     """Scan source registry tables for keyword matches."""
     try:
@@ -169,9 +187,7 @@ def _strategy_source_scan(
                 # Build LIKE query for keyword matching
                 table = cfg["table"]
                 pk = cfg.get("pk", "id")
-                col_concat = " || ' ' || ".join(
-                    f"COALESCE({c}, '')" for c in content_cols
-                )
+                col_concat = " || ' ' || ".join(f"COALESCE({c}, '')" for c in content_cols)
                 where_clauses = [f"({col_concat}) LIKE ?" for _ in query_terms]
                 params = [f"%{term}%" for term in query_terms]
 
@@ -193,13 +209,15 @@ def _strategy_source_scan(
                     content_parts = [str(row[i + 1]) for i in range(len(content_cols)) if row[i + 1]]
                     content = " — ".join(content_parts)
                     if content.strip():
-                        documents.append({
-                            "content": content,
-                            "source": f"source_scan:{source_key}",
-                            "id": str(row_id),
-                            "score": 0.3,
-                            "metadata": {"source_type": source_key, "table": table},
-                        })
+                        documents.append(
+                            {
+                                "content": content,
+                                "source": f"source_scan:{source_key}",
+                                "id": str(row_id),
+                                "score": 0.3,
+                                "metadata": {"source_type": source_key, "table": table},
+                            }
+                        )
             except Exception:
                 continue
 
@@ -214,6 +232,7 @@ def _strategy_source_scan(
 # ---------------------------------------------------------------------------
 # Aggregation / Compression
 # ---------------------------------------------------------------------------
+
 
 def _content_hash(text: str) -> str:
     """SHA-256 hash for deduplication."""
@@ -233,11 +252,13 @@ def _deduplicate(documents: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 
 def _aggregate_with_llm(
-    strategy_results: Dict[str, Dict[str, Any]], query: str,
+    strategy_results: Dict[str, Dict[str, Any]],
+    query: str,
 ) -> str:
     """Compress multi-strategy results via scanner-tier LLM (qwen3.5)."""
     try:
         from tools.llm.router import LLMRouter
+
         router = LLMRouter()
 
         # Collect all documents into a context block
@@ -256,6 +277,7 @@ def _aggregate_with_llm(
         )
 
         from tools.llm.provider import LLMRequest
+
         request = LLMRequest(
             messages=[{"role": "user", "content": prompt}],
             system_prompt="You are a concise knowledge synthesizer. Combine the retrieval results into a single coherent context.",
@@ -270,6 +292,7 @@ def _aggregate_with_llm(
 # ---------------------------------------------------------------------------
 # Main Entry Point
 # ---------------------------------------------------------------------------
+
 
 def parallel_retrieve(
     query: str,
@@ -319,7 +342,9 @@ def parallel_retrieve(
                 strategy_results[name] = future.result(timeout=15)
             except Exception as exc:
                 strategy_results[name] = {
-                    "strategy": name, "documents": [], "count": 0,
+                    "strategy": name,
+                    "documents": [],
+                    "count": 0,
                     "error": str(exc),
                 }
 
@@ -330,7 +355,7 @@ def parallel_retrieve(
 
     # Sort by score descending, then deduplicate
     all_documents.sort(key=lambda d: d.get("score", 0), reverse=True)
-    merged = _deduplicate(all_documents)[:top_k * 2]
+    merged = _deduplicate(all_documents)[: top_k * 2]
 
     # Optional aggregation via scanner-tier LLM
     aggregated_context = ""
@@ -349,9 +374,7 @@ def parallel_retrieve(
         "total_results": len(merged),
         "aggregated_context": aggregated_context,
         "strategies_run": list(strategy_results.keys()),
-        "strategies_succeeded": [
-            k for k, v in strategy_results.items() if "error" not in v
-        ],
+        "strategies_succeeded": [k for k, v in strategy_results.items() if "error" not in v],
         "elapsed_seconds": round(elapsed, 3),
     }
 
@@ -359,6 +382,7 @@ def parallel_retrieve(
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+
 
 def main():
     parser = argparse.ArgumentParser(

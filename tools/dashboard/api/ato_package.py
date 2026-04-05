@@ -73,8 +73,7 @@ def _table_exists(conn, table_name):
     try:
         if _is_pg(conn):
             row = conn.execute(
-                "SELECT 1 FROM information_schema.tables "
-                "WHERE table_schema = 'public' AND table_name = ?",
+                "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = ?",
                 (table_name,),
             ).fetchone()
             return row is not None
@@ -274,15 +273,17 @@ def package_status():
 
         readiness_pct = (required_complete / required_total * 100) if required_total > 0 else 0
 
-        return jsonify({
-            "project_id": project_id,
-            "steps": steps,
-            "readiness_pct": round(readiness_pct, 1),
-            "required_complete": required_complete,
-            "required_total": required_total,
-            "total_complete": all_complete,
-            "total_steps": len(PACKAGE_STEPS),
-        })
+        return jsonify(
+            {
+                "project_id": project_id,
+                "steps": steps,
+                "readiness_pct": round(readiness_pct, 1),
+                "required_complete": required_complete,
+                "required_total": required_total,
+                "total_complete": all_complete,
+                "total_steps": len(PACKAGE_STEPS),
+            }
+        )
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     finally:
@@ -334,9 +335,17 @@ def controls_summary():
     conn = _get_db()
     try:
         if not _table_exists(conn, "project_controls"):
-            return jsonify({"families": [], "totals": {
-                "total": 0, "implemented": 0, "partial": 0, "planned": 0,
-            }})
+            return jsonify(
+                {
+                    "families": [],
+                    "totals": {
+                        "total": 0,
+                        "implemented": 0,
+                        "partial": 0,
+                        "planned": 0,
+                    },
+                }
+            )
 
         # Build base query — extract family from control_id (e.g. AC-1 → AC)
         base_where = " WHERE project_id = ?" if project_id else ""
@@ -353,8 +362,7 @@ def controls_summary():
             "  SUM(CASE WHEN implementation_status IN ('implemented', 'not_applicable') THEN 1 ELSE 0 END) AS implemented, "
             "  SUM(CASE WHEN implementation_status = 'partial' THEN 1 ELSE 0 END) AS partial, "
             "  SUM(CASE WHEN implementation_status IN ('planned', 'not_implemented') THEN 1 ELSE 0 END) AS planned "
-            "FROM project_controls" + base_where +
-            " GROUP BY family ORDER BY family"
+            "FROM project_controls" + base_where + " GROUP BY family ORDER BY family"
         )
         rows = conn.execute(q, params).fetchall()
         families = [dict(r) for r in rows]
@@ -365,15 +373,17 @@ def controls_summary():
         partial = sum(f["partial"] for f in families)
         planned = sum(f["planned"] for f in families)
 
-        return jsonify({
-            "families": families,
-            "totals": {
-                "total": total,
-                "implemented": implemented,
-                "partial": partial,
-                "planned": planned,
-            },
-        })
+        return jsonify(
+            {
+                "families": families,
+                "totals": {
+                    "total": total,
+                    "implemented": implemented,
+                    "partial": partial,
+                    "planned": planned,
+                },
+            }
+        )
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     finally:
@@ -390,12 +400,14 @@ def poam_summary():
     conn = _get_db()
     try:
         if not _table_exists(conn, "poam_items"):
-            return jsonify({
-                "by_severity": {},
-                "by_status": {},
-                "overdue": 0,
-                "total": 0,
-            })
+            return jsonify(
+                {
+                    "by_severity": {},
+                    "by_status": {},
+                    "overdue": 0,
+                    "total": 0,
+                }
+            )
 
         base_where = " WHERE project_id = ?" if project_id else ""
         params = (project_id,) if project_id else ()
@@ -403,7 +415,8 @@ def poam_summary():
         # Count by severity
         q_sev = (
             "SELECT severity, COUNT(*) AS count FROM poam_items"  # nosec B608 -- table/column names are internal constants, not user input
-            + base_where + " GROUP BY severity"
+            + base_where
+            + " GROUP BY severity"
         )
         sev_rows = conn.execute(q_sev, params).fetchall()
         by_severity = {r["severity"]: r["count"] for r in sev_rows}
@@ -411,7 +424,8 @@ def poam_summary():
         # Count by status
         q_status = (
             "SELECT status, COUNT(*) AS count FROM poam_items"  # nosec B608 -- table/column names are internal constants, not user input
-            + base_where + " GROUP BY status"
+            + base_where
+            + " GROUP BY status"
         )
         status_rows = conn.execute(q_status, params).fetchall()
         by_status = {r["status"]: r["count"] for r in status_rows}
@@ -430,12 +444,14 @@ def poam_summary():
         q_total = "SELECT COUNT(*) AS cnt FROM poam_items" + base_where  # nosec B608 -- table/column names are internal constants, not user input
         total = _count(conn, q_total, params)
 
-        return jsonify({
-            "by_severity": by_severity,
-            "by_status": by_status,
-            "overdue": overdue,
-            "total": total,
-        })
+        return jsonify(
+            {
+                "by_severity": by_severity,
+                "by_status": by_status,
+                "overdue": overdue,
+                "total": total,
+            }
+        )
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     finally:
@@ -463,17 +479,21 @@ def pre_submission_checklist():
             else:
                 q += " WHERE severity = 'CAT1' AND status = 'Open'"
             cat1 = _count(conn, q, params)
-            checks.append({
-                "name": "No CAT1 Open STIG Findings",
-                "status": "PASS" if cat1 == 0 else "FAIL",
-                "detail": f"{cat1} CAT1 Open finding(s)" if cat1 > 0 else "All CAT1 findings remediated",
-            })
+            checks.append(
+                {
+                    "name": "No CAT1 Open STIG Findings",
+                    "status": "PASS" if cat1 == 0 else "FAIL",
+                    "detail": f"{cat1} CAT1 Open finding(s)" if cat1 > 0 else "All CAT1 findings remediated",
+                }
+            )
         else:
-            checks.append({
-                "name": "No CAT1 Open STIG Findings",
-                "status": "WARN",
-                "detail": "STIG findings table not found",
-            })
+            checks.append(
+                {
+                    "name": "No CAT1 Open STIG Findings",
+                    "status": "WARN",
+                    "detail": "STIG findings table not found",
+                }
+            )
 
         # 2. SSP Approved
         if _table_exists(conn, "ssp_documents"):
@@ -483,17 +503,21 @@ def pre_submission_checklist():
             else:
                 q += " WHERE status = 'approved'"
             approved = _count(conn, q, params)
-            checks.append({
-                "name": "SSP Approved",
-                "status": "PASS" if approved > 0 else "FAIL",
-                "detail": f"{approved} approved SSP(s)" if approved > 0 else "No approved SSP document",
-            })
+            checks.append(
+                {
+                    "name": "SSP Approved",
+                    "status": "PASS" if approved > 0 else "FAIL",
+                    "detail": f"{approved} approved SSP(s)" if approved > 0 else "No approved SSP document",
+                }
+            )
         else:
-            checks.append({
-                "name": "SSP Approved",
-                "status": "FAIL",
-                "detail": "SSP table not found",
-            })
+            checks.append(
+                {
+                    "name": "SSP Approved",
+                    "status": "FAIL",
+                    "detail": "SSP table not found",
+                }
+            )
 
         # 3. Controls >= 80% implemented
         if _table_exists(conn, "project_controls"):
@@ -506,17 +530,21 @@ def pre_submission_checklist():
                 impl_q += " WHERE implementation_status IN ('implemented', 'not_applicable')"
             implemented = _count(conn, impl_q, params)
             pct = (implemented / total * 100) if total > 0 else 0
-            checks.append({
-                "name": "Controls >= 80% Implemented",
-                "status": "PASS" if pct >= 80 else "FAIL",
-                "detail": f"{implemented}/{total} ({pct:.0f}%)",
-            })
+            checks.append(
+                {
+                    "name": "Controls >= 80% Implemented",
+                    "status": "PASS" if pct >= 80 else "FAIL",
+                    "detail": f"{implemented}/{total} ({pct:.0f}%)",
+                }
+            )
         else:
-            checks.append({
-                "name": "Controls >= 80% Implemented",
-                "status": "FAIL",
-                "detail": "Controls table not found",
-            })
+            checks.append(
+                {
+                    "name": "Controls >= 80% Implemented",
+                    "status": "FAIL",
+                    "detail": "Controls table not found",
+                }
+            )
 
         # 4. No critical POAMs overdue
         date_now = _date_now_expr(conn)
@@ -527,17 +555,23 @@ def pre_submission_checklist():
             else:
                 q += f" WHERE severity IN ('critical', 'high') AND milestone_date < {date_now} AND status NOT IN ('closed', 'completed', 'resolved')"
             overdue_crit = _count(conn, q, params)
-            checks.append({
-                "name": "No Critical/High POAMs Overdue",
-                "status": "PASS" if overdue_crit == 0 else "FAIL",
-                "detail": f"{overdue_crit} overdue critical/high POAM(s)" if overdue_crit > 0 else "No overdue critical/high POAMs",
-            })
+            checks.append(
+                {
+                    "name": "No Critical/High POAMs Overdue",
+                    "status": "PASS" if overdue_crit == 0 else "FAIL",
+                    "detail": f"{overdue_crit} overdue critical/high POAM(s)"
+                    if overdue_crit > 0
+                    else "No overdue critical/high POAMs",
+                }
+            )
         else:
-            checks.append({
-                "name": "No Critical/High POAMs Overdue",
-                "status": "WARN",
-                "detail": "POAM table not found",
-            })
+            checks.append(
+                {
+                    "name": "No Critical/High POAMs Overdue",
+                    "status": "WARN",
+                    "detail": "POAM table not found",
+                }
+            )
 
         # 5. Evidence fresh (>= 50% current)
         if _table_exists(conn, "cato_evidence"):
@@ -550,51 +584,63 @@ def pre_submission_checklist():
                 else:
                     current_q += " WHERE status = 'current'"
                 current = _count(conn, current_q, params)
-                pct = (current / total * 100)
-                checks.append({
-                    "name": "Evidence Freshness >= 50%",
-                    "status": "PASS" if pct >= 50 else "WARN",
-                    "detail": f"{current}/{total} current ({pct:.0f}%)",
-                })
+                pct = current / total * 100
+                checks.append(
+                    {
+                        "name": "Evidence Freshness >= 50%",
+                        "status": "PASS" if pct >= 50 else "WARN",
+                        "detail": f"{current}/{total} current ({pct:.0f}%)",
+                    }
+                )
             else:
-                checks.append({
+                checks.append(
+                    {
+                        "name": "Evidence Freshness >= 50%",
+                        "status": "WARN",
+                        "detail": "No evidence records found",
+                    }
+                )
+        else:
+            checks.append(
+                {
                     "name": "Evidence Freshness >= 50%",
                     "status": "WARN",
-                    "detail": "No evidence records found",
-                })
-        else:
-            checks.append({
-                "name": "Evidence Freshness >= 50%",
-                "status": "WARN",
-                "detail": "Evidence table not found",
-            })
+                    "detail": "Evidence table not found",
+                }
+            )
 
         # 6. SBOM current
         if _table_exists(conn, "sbom_records"):
             total_q = "SELECT COUNT(*) AS cnt FROM sbom_records" + where_project  # nosec B608 -- table/column names are internal constants, not user input
             total = _count(conn, total_q, params)
-            checks.append({
-                "name": "SBOM Current",
-                "status": "PASS" if total > 0 else "FAIL",
-                "detail": f"{total} SBOM record(s) on file" if total > 0 else "No SBOM generated",
-            })
+            checks.append(
+                {
+                    "name": "SBOM Current",
+                    "status": "PASS" if total > 0 else "FAIL",
+                    "detail": f"{total} SBOM record(s) on file" if total > 0 else "No SBOM generated",
+                }
+            )
         else:
-            checks.append({
-                "name": "SBOM Current",
-                "status": "FAIL",
-                "detail": "SBOM table not found",
-            })
+            checks.append(
+                {
+                    "name": "SBOM Current",
+                    "status": "FAIL",
+                    "detail": "SBOM table not found",
+                }
+            )
 
         all_pass = all(c["status"] == "PASS" for c in checks)
         any_fail = any(c["status"] == "FAIL" for c in checks)
 
-        return jsonify({
-            "checks": checks,
-            "all_pass": all_pass,
-            "has_failures": any_fail,
-            "pass_count": sum(1 for c in checks if c["status"] == "PASS"),
-            "total_checks": len(checks),
-        })
+        return jsonify(
+            {
+                "checks": checks,
+                "all_pass": all_pass,
+                "has_failures": any_fail,
+                "pass_count": sum(1 for c in checks if c["status"] == "PASS"),
+                "total_checks": len(checks),
+            }
+        )
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     finally:
@@ -619,19 +665,24 @@ def generate_package():
 
     try:
         from tools.compliance.ato_packager import generate_package as _generate
+
         result = _generate(project_id=project_id, package_type=package_type)
-        return jsonify({
-            "status": "success",
-            "project_id": project_id,
-            "package_type": package_type,
-            "result": result,
-        })
+        return jsonify(
+            {
+                "status": "success",
+                "project_id": project_id,
+                "package_type": package_type,
+                "result": result,
+            }
+        )
     except ImportError:
-        return jsonify({
-            "status": "not_implemented",
-            "message": "ATO package generator module (tools.compliance.ato_packager) is not available yet.",
-            "project_id": project_id,
-            "package_type": package_type,
-        }), 501
+        return jsonify(
+            {
+                "status": "not_implemented",
+                "message": "ATO package generator module (tools.compliance.ato_packager) is not available yet.",
+                "project_id": project_id,
+                "package_type": package_type,
+            }
+        ), 501
     except Exception as e:
         return jsonify({"error": str(e)}), 500

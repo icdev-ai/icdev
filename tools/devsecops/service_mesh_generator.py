@@ -58,6 +58,7 @@ except ImportError:
 # YAML / JSON serialization
 # ---------------------------------------------------------------------------
 
+
 def _yaml_dump(obj: dict) -> str:
     """Serialize a dict to YAML. Falls back to JSON if PyYAML is unavailable."""
     if yaml is not None:
@@ -79,6 +80,7 @@ def _combine_manifests(manifests: list) -> str:
 # ---------------------------------------------------------------------------
 # Config / DB helpers
 # ---------------------------------------------------------------------------
+
 
 def _load_config() -> dict:
     """Load ZTA config from args/zta_config.yaml (fallback to defaults)."""
@@ -177,6 +179,7 @@ def _get_project_info(project_id: str) -> dict:
 # Common label helpers
 # ---------------------------------------------------------------------------
 
+
 def _mesh_labels(project_id: str, component: str, classification: str = "CUI") -> dict:
     """Return standard ICDEV™ service mesh labels for a K8s resource."""
     return {
@@ -190,6 +193,7 @@ def _mesh_labels(project_id: str, component: str, classification: str = "CUI") -
 # ---------------------------------------------------------------------------
 # Istio manifest builders
 # ---------------------------------------------------------------------------
+
 
 def _istio_peer_authentication(
     namespace: str,
@@ -240,11 +244,7 @@ def _istio_authorization_policy(
     - Ingress controller
     PDP integration references are surfaced as annotations (ADR D124).
     """
-    pdp_annotation = (
-        json.dumps([r.get("name", r.get("id", "")) for r in pdp_refs])
-        if pdp_refs
-        else "[]"
-    )
+    pdp_annotation = json.dumps([r.get("name", r.get("id", "")) for r in pdp_refs]) if pdp_refs else "[]"
     return {
         "apiVersion": api_version,
         "kind": "AuthorizationPolicy",
@@ -257,8 +257,7 @@ def _istio_authorization_policy(
                 "icdev.mil/adr": "D124",
                 "icdev.mil/pdp-references": pdp_annotation,
                 "icdev.mil/description": (
-                    "Deny-by-default AuthorizationPolicy. "
-                    "PDP decisions are enforced externally (see pdp-references)."
+                    "Deny-by-default AuthorizationPolicy. PDP decisions are enforced externally (see pdp-references)."
                 ),
             },
         },
@@ -420,9 +419,7 @@ def _istio_destination_rule(
             "labels": _mesh_labels(project_id, "destination-rule", classification),
             "annotations": {
                 "icdev.mil/generated": datetime.now(timezone.utc).isoformat(),
-                "icdev.mil/description": (
-                    "Circuit breaking, outlier detection, ISTIO_MUTUAL TLS"
-                ),
+                "icdev.mil/description": ("Circuit breaking, outlier detection, ISTIO_MUTUAL TLS"),
             },
         },
         "spec": {
@@ -520,6 +517,7 @@ def _istio_sidecar(
 # Linkerd manifest builders
 # ---------------------------------------------------------------------------
 
+
 def _linkerd_server(
     namespace: str,
     project_id: str,
@@ -571,11 +569,7 @@ def _linkerd_server_authorization(
     - Monitoring workloads (metrics scraping)
     PDP references surfaced as annotations (ADR D124).
     """
-    pdp_annotation = (
-        json.dumps([r.get("name", r.get("id", "")) for r in pdp_refs])
-        if pdp_refs
-        else "[]"
-    )
+    pdp_annotation = json.dumps([r.get("name", r.get("id", "")) for r in pdp_refs]) if pdp_refs else "[]"
     return {
         "apiVersion": policy_api,
         "kind": "ServerAuthorization",
@@ -763,6 +757,7 @@ def _linkerd_http_route(
 # Public generators
 # ---------------------------------------------------------------------------
 
+
 def generate_istio_config(project_id: str, profile: dict = None) -> dict:
     """Generate Istio service mesh configuration manifests for a project.
 
@@ -804,22 +799,45 @@ def generate_istio_config(project_id: str, profile: dict = None) -> dict:
     pdp_refs = config.get("pdp_references", [])
 
     peer_auth = _istio_peer_authentication(
-        namespace, project_id, classification, security_api,
+        namespace,
+        project_id,
+        classification,
+        security_api,
     )
     authz_deny = _istio_authorization_policy(
-        namespace, project_id, project_name, classification, security_api, pdp_refs,
+        namespace,
+        project_id,
+        project_name,
+        classification,
+        security_api,
+        pdp_refs,
     )
     authz_allow = _istio_authorization_policy_allow(
-        namespace, project_id, project_name, classification, security_api,
+        namespace,
+        project_id,
+        project_name,
+        classification,
+        security_api,
     )
     virtual_svc = _istio_virtual_service(
-        namespace, project_id, project_name, classification, networking_api,
+        namespace,
+        project_id,
+        project_name,
+        classification,
+        networking_api,
     )
     dest_rule = _istio_destination_rule(
-        namespace, project_id, project_name, classification, networking_api,
+        namespace,
+        project_id,
+        project_name,
+        classification,
+        networking_api,
     )
     sidecar = _istio_sidecar(
-        namespace, project_id, classification, networking_api,
+        namespace,
+        project_id,
+        classification,
+        networking_api,
     )
 
     manifests = [peer_auth, authz_deny, authz_allow, virtual_svc, dest_rule, sidecar]
@@ -876,20 +894,36 @@ def generate_linkerd_config(project_id: str, profile: dict = None) -> dict:
     linkerd_opts = config.get("service_mesh_options", {}).get("linkerd", {})
     api_versions = linkerd_opts.get("api_versions", {})
     policy_api = api_versions.get("policy", "policy.linkerd.io/v1beta2")
-    server_api = "linkerd.io/v1alpha2"   # ServiceProfile uses a separate API group
+    server_api = "linkerd.io/v1alpha2"  # ServiceProfile uses a separate API group
     pdp_refs = config.get("pdp_references", [])
 
     server = _linkerd_server(
-        namespace, project_id, project_name, classification, policy_api,
+        namespace,
+        project_id,
+        project_name,
+        classification,
+        policy_api,
     )
     server_authz = _linkerd_server_authorization(
-        namespace, project_id, classification, policy_api, pdp_refs,
+        namespace,
+        project_id,
+        classification,
+        policy_api,
+        pdp_refs,
     )
     svc_profile = _linkerd_service_profile(
-        namespace, project_id, project_name, classification, server_api,
+        namespace,
+        project_id,
+        project_name,
+        classification,
+        server_api,
     )
     http_route = _linkerd_http_route(
-        namespace, project_id, project_name, classification, policy_api,
+        namespace,
+        project_id,
+        project_name,
+        classification,
+        policy_api,
     )
 
     manifests = [server, server_authz, svc_profile, http_route]
@@ -914,6 +948,7 @@ def generate_linkerd_config(project_id: str, profile: dict = None) -> dict:
 # Output helpers
 # ---------------------------------------------------------------------------
 
+
 def _human_output(result: dict) -> None:
     """Print a human-readable summary of generated manifests to stdout."""
     mesh = result.get("mesh", "unknown").upper()
@@ -923,15 +958,15 @@ def _human_output(result: dict) -> None:
     count = result.get("manifest_count", 0)
     generated_at = result.get("generated_at", "")
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"  ICDEV™ Service Mesh Generator — {mesh}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     print(f"  Project:        {project_id}")
     print(f"  Namespace:      {namespace}")
     print(f"  Classification: {classification}")
     print(f"  Manifests:      {count}")
     print(f"  Generated:      {generated_at}")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
     if mesh == "ISTIO":
         manifest_keys = [
@@ -958,7 +993,7 @@ def _human_output(result: dict) -> None:
 
     print()
     print("  YAML output (-80 chars per line):")
-    print(f"{'─'*60}")
+    print(f"{'─' * 60}")
     for line in result.get("yaml_content", "").splitlines():
         print(f"  {line[:78]}")
     print()
@@ -967,6 +1002,7 @@ def _human_output(result: dict) -> None:
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -1007,8 +1043,7 @@ ADR D124: PDP modeled as external reference; ICDEV™ generates PEP configs only
         metavar="DIR",
         default=None,
         help=(
-            "Directory to write generated YAML manifests. "
-            "If omitted, manifests are printed to stdout (combined YAML)."
+            "Directory to write generated YAML manifests. If omitted, manifests are printed to stdout (combined YAML)."
         ),
     )
     parser.add_argument(

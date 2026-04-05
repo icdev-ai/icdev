@@ -45,8 +45,14 @@ from tools.common.helpers import row_to_dict  # noqa: E402
 # Must match CHECK constraint on pg_talent_signals.signal_type:
 #   'velocity_spike', 'role_cluster', 'new_capability', 'pricing_intel', 'general'
 _ROLE_KEYWORDS_PROPOSAL = [
-    "proposal", "capture", "bid", "orals", "solutioning", "business development",
-    "bd manager", "capture manager",
+    "proposal",
+    "capture",
+    "bid",
+    "orals",
+    "solutioning",
+    "business development",
+    "bd manager",
+    "capture manager",
 ]
 _CLEARANCE_CLASSIFIED = ["ts/sci", "ts", "sci", "top secret"]
 
@@ -73,6 +79,7 @@ def _classify_signal(role_title, clearance, salary_low, salary_high):
 
 # ── Helpers ───────────────────────────────────────────────────────────
 
+
 def _now():
     return datetime.now(timezone.utc).isoformat()
 
@@ -86,10 +93,7 @@ def _get_db():
 
 
 def _audit(conn, event_type, action, details, project_id=None):
-    det = (
-        json.dumps(details)
-        if isinstance(details, dict) else str(details)
-    )
+    det = json.dumps(details) if isinstance(details, dict) else str(details)
     try:
         conn.execute(
             "INSERT INTO audit_trail "
@@ -97,9 +101,14 @@ def _audit(conn, event_type, action, details, project_id=None):
             "details, project_id, session_id) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
-                _gen_id("aud"), _now(), event_type,
-                "talent_intelligence", action, det,
-                project_id, None,
+                _gen_id("aud"),
+                _now(),
+                event_type,
+                "talent_intelligence",
+                action,
+                det,
+                project_id,
+                None,
             ),
         )
     except Exception:
@@ -111,15 +120,16 @@ def _audit(conn, event_type, action, details, project_id=None):
                 "action, details, session_id) "
                 "VALUES (?, ?, ?, ?, ?, ?)",
                 (
-                    project_id, event_type,
-                    "talent_intelligence", action,
-                    det, None,
+                    project_id,
+                    event_type,
+                    "talent_intelligence",
+                    action,
+                    det,
+                    None,
                 ),
             )
         except Exception:
             pass  # audit is best-effort
-
-
 
 
 def _categorize_role(role_title):
@@ -132,10 +142,16 @@ def _categorize_role(role_title):
         ("architect", ["architect", "principal"]),
         ("admin", ["administrator", "sysadmin", "devops", "sre"]),
         ("security", ["security", "cyber", "infosec", "isso", "issm", "ciso"]),
-        ("data", [
-            "data scientist", "data engineer", "ml engineer",
-            "ai ", "machine learning",
-        ]),
+        (
+            "data",
+            [
+                "data scientist",
+                "data engineer",
+                "ml engineer",
+                "ai ",
+                "machine learning",
+            ],
+        ),
         ("consultant", ["consultant", "advisor", "sme"]),
         ("proposal", ["proposal", "capture", "bd ", "business development"]),
     ]
@@ -146,6 +162,7 @@ def _categorize_role(role_title):
 
 
 # ── Core Functions ────────────────────────────────────────────────────
+
 
 def add_posting(
     competitor_name,
@@ -183,16 +200,30 @@ def add_posting(
         "signal_type, created_at) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
-            signal_id, competitor_name, role_title, location, clearance,
-            salary_low, salary_high, tools_mentioned, certs_mentioned,
-            source_url, posting_date or now[:10], now[:10], None,
-            signal_type, now,
+            signal_id,
+            competitor_name,
+            role_title,
+            location,
+            clearance,
+            salary_low,
+            salary_high,
+            tools_mentioned,
+            certs_mentioned,
+            source_url,
+            posting_date or now[:10],
+            now[:10],
+            None,
+            signal_type,
+            now,
         ),
     )
 
-    _audit(conn, "talent.add_posting", f"Added talent signal for {competitor_name}",
-           {"signal_id": signal_id, "competitor": competitor_name, "role": role_title,
-            "signal_type": signal_type})
+    _audit(
+        conn,
+        "talent.add_posting",
+        f"Added talent signal for {competitor_name}",
+        {"signal_id": signal_id, "competitor": competitor_name, "role": role_title, "signal_type": signal_type},
+    )
 
     conn.commit()
     conn.close()
@@ -284,7 +315,8 @@ def compute_velocity(competitor_name, weeks_back=12):
             yr, wn = wk.split("-W")
             fmt_in = f"{yr}-W{wn}-1"
             week_start = datetime.strptime(
-                fmt_in, "%G-W%V-%u",
+                fmt_in,
+                "%G-W%V-%u",
             ).strftime("%Y-%m-%d")
         except (ValueError, TypeError):
             week_start = wk
@@ -293,26 +325,35 @@ def compute_velocity(competitor_name, weeks_back=12):
             "INSERT OR REPLACE INTO pg_talent_velocity "
             "(id, competitor_name, week_start, posting_count, velocity_zscore, "
             "dominant_role_category, dominant_location, "
-             "dominant_clearance, created_at) "
+            "dominant_clearance, created_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (vel_id, competitor_name, week_start, c, round(zscore, 4),
-             dom_role, dom_loc, dom_clr, now),
+            (vel_id, competitor_name, week_start, c, round(zscore, 4), dom_role, dom_loc, dom_clr, now),
         )
 
-        result_weeks.append({
-            "week": wk,
-            "week_start": week_start,
-            "count": c,
-            "zscore": round(zscore, 4),
-            "spike": spike,
-            "dominant_role": dom_role,
-            "dominant_location": dom_loc,
-        })
+        result_weeks.append(
+            {
+                "week": wk,
+                "week_start": week_start,
+                "count": c,
+                "zscore": round(zscore, 4),
+                "spike": spike,
+                "dominant_role": dom_role,
+                "dominant_location": dom_loc,
+            }
+        )
 
-    _audit(conn, "talent.velocity", f"Computed velocity for {competitor_name}",
-           {"competitor": competitor_name, "weeks_back": weeks_back,
-            "total_signals": sum(counts), "mean": round(mean, 2),
-            "stddev": round(stddev, 2)})
+    _audit(
+        conn,
+        "talent.velocity",
+        f"Computed velocity for {competitor_name}",
+        {
+            "competitor": competitor_name,
+            "weeks_back": weeks_back,
+            "total_signals": sum(counts),
+            "mean": round(mean, 2),
+            "stddev": round(stddev, 2),
+        },
+    )
 
     conn.commit()
     conn.close()
@@ -376,14 +417,16 @@ def detect_clusters(competitor_name=None, min_cluster_size=3):
             else:
                 assessment = "Broad hiring campaign in region"
 
-            clusters.append({
-                "competitor": comp,
-                "location": loc,
-                "clearance": clr,
-                "count": len(roles),
-                "roles": list(set(roles)),
-                "assessment": assessment,
-            })
+            clusters.append(
+                {
+                    "competitor": comp,
+                    "location": loc,
+                    "clearance": clr,
+                    "count": len(roles),
+                    "roles": list(set(roles)),
+                    "assessment": assessment,
+                }
+            )
 
     clusters.sort(key=lambda c: c["count"], reverse=True)
 
@@ -440,7 +483,8 @@ def correlate_with_opportunities(competitor_name=None):
 
     if not signals:
         return {
-            "status": "ok", "correlations": [],
+            "status": "ok",
+            "correlations": [],
             "message": "No recent talent signals",
         }
 
@@ -457,7 +501,8 @@ def correlate_with_opportunities(competitor_name=None):
 
     if not all_opps:
         return {
-            "status": "ok", "correlations": [],
+            "status": "ok",
+            "correlations": [],
             "message": "No active opportunities to correlate",
         }
 
@@ -501,12 +546,16 @@ def correlate_with_opportunities(competitor_name=None):
             kw_score = 0.0
             if sig_keywords and opp_keywords:
                 stop = {
-                    "", "the", "and", "for",
-                    "of", "a", "to", "in",
+                    "",
+                    "the",
+                    "and",
+                    "for",
+                    "of",
+                    "a",
+                    "to",
+                    "in",
                 }
-                common = (
-                    sig_keywords & opp_keywords - stop
-                )
+                common = sig_keywords & opp_keywords - stop
                 if common:
                     kw_score = min(1.0, len(common) / 3.0)
 
@@ -521,14 +570,16 @@ def correlate_with_opportunities(competitor_name=None):
                 if kw_score > 0:
                     evidence.append(f"keyword_match({kw_score:.1f})")
 
-                correlations.append({
-                    "competitor": sd.get("competitor_name"),
-                    "opportunity_id": opp.get("id"),
-                    "opportunity_title": opp.get("title"),
-                    "opportunity_source": opp.get("source"),
-                    "correlation_score": round(composite, 3),
-                    "evidence": evidence,
-                })
+                correlations.append(
+                    {
+                        "competitor": sd.get("competitor_name"),
+                        "opportunity_id": opp.get("id"),
+                        "opportunity_title": opp.get("title"),
+                        "opportunity_source": opp.get("source"),
+                        "correlation_score": round(composite, 3),
+                        "evidence": evidence,
+                    }
+                )
 
     # Deduplicate: keep highest score per (competitor, opportunity_id)
     best = {}
@@ -562,7 +613,8 @@ def get_salary_intelligence(role_category=None):
 
     if not rows:
         return {
-            "status": "ok", "salary_intel": [],
+            "status": "ok",
+            "salary_intel": [],
             "message": "No salary data available",
         }
 
@@ -595,21 +647,21 @@ def get_salary_intelligence(role_category=None):
         if n % 2:
             median = salaries[n // 2]
         else:
-            median = (
-                salaries[n // 2 - 1] + salaries[n // 2]
-            ) / 2.0
+            median = (salaries[n // 2 - 1] + salaries[n // 2]) / 2.0
         p25_idx = max(0, n // 4)
         p75_idx = min(n - 1, (3 * n) // 4)
         p25 = salaries[p25_idx]
         p75 = salaries[p75_idx]
 
-        results.append({
-            "role_category": cat,
-            "median": round(median, 2),
-            "p25": round(p25, 2),
-            "p75": round(p75, 2),
-            "sample_size": n,
-        })
+        results.append(
+            {
+                "role_category": cat,
+                "median": round(median, 2),
+                "p25": round(p25, 2),
+                "p75": round(p75, 2),
+                "sample_size": n,
+            }
+        )
 
     return {
         "status": "ok",
@@ -626,9 +678,7 @@ def generate_competitor_profile(competitor_name):
     conn = _get_db()
 
     signals = conn.execute(
-        "SELECT * FROM pg_talent_signals "
-        "WHERE competitor_name = ? "
-        "ORDER BY scan_date DESC",
+        "SELECT * FROM pg_talent_signals WHERE competitor_name = ? ORDER BY scan_date DESC",
         (competitor_name,),
     ).fetchall()
     conn.close()
@@ -638,10 +688,7 @@ def generate_competitor_profile(competitor_name):
             "status": "ok",
             "competitor": competitor_name,
             "message": "No talent data available for this competitor",
-            "profile_markdown": (
-                f"# Talent Profile: {competitor_name}"
-                "\n\nNo data available."
-            ),
+            "profile_markdown": (f"# Talent Profile: {competitor_name}\n\nNo data available."),
         }
 
     all_signals = [row_to_dict(s) for s in signals]
@@ -728,10 +775,7 @@ def generate_competitor_profile(competitor_name):
         md_lines.append("")
         md_lines.append("## Active Bid Signals")
         n_bid = len(bid_signals)
-        md_lines.append(
-            f"**{n_bid} potential bid-related "
-            "postings detected**"
-        )
+        md_lines.append(f"**{n_bid} potential bid-related postings detected**")
         for bs in bid_signals[:5]:
             md_lines.append(f"- {bs.get('role_title')} ({bs.get('location', 'N/A')})")
 
@@ -746,11 +790,8 @@ def generate_competitor_profile(competitor_name):
         md_lines.append("")
         md_lines.append("## Velocity Spikes")
         for sw in spike_weeks:
-            zs = sw['zscore']
-            md_lines.append(
-                f"- {sw['week']}: {sw['count']} "
-                f"postings (z={zs:.2f})"
-            )
+            zs = sw["zscore"]
+            md_lines.append(f"- {sw['week']}: {sw['count']} postings (z={zs:.2f})")
 
     profile_md = "\n".join(md_lines)
 
@@ -761,10 +802,7 @@ def generate_competitor_profile(competitor_name):
         "top_roles": [{"role": r, "count": c} for r, c in top_roles],
         "top_tech": [{"tool": t, "count": c} for t, c in top_tech],
         "clearance_profile": clr_counts,
-        "geographic_footprint": [
-            {"location": loc, "count": c}
-            for loc, c in top_locations
-        ],
+        "geographic_footprint": [{"location": loc, "count": c} for loc, c in top_locations],
         "bid_signal_count": len(bid_signals),
         "salary_range": salary_range,
         "velocity_summary": {
@@ -779,6 +817,7 @@ def generate_competitor_profile(competitor_name):
 
 # ── CLI ───────────────────────────────────────────────────────────────
 
+
 def _build_parser():
     p = argparse.ArgumentParser(
         prog="talent_intelligence",
@@ -786,27 +825,33 @@ def _build_parser():
     )
     g = p.add_mutually_exclusive_group(required=True)
     g.add_argument(
-        "--add-posting", action="store_true",
+        "--add-posting",
+        action="store_true",
         help="Add a talent signal",
     )
     g.add_argument(
-        "--velocity", action="store_true",
+        "--velocity",
+        action="store_true",
         help="Compute hiring velocity",
     )
     g.add_argument(
-        "--clusters", action="store_true",
+        "--clusters",
+        action="store_true",
         help="Detect role/location clusters",
     )
     g.add_argument(
-        "--correlate", action="store_true",
+        "--correlate",
+        action="store_true",
         help="Correlate with opportunities",
     )
     g.add_argument(
-        "--salary-intel", action="store_true",
+        "--salary-intel",
+        action="store_true",
         help="Aggregate salary intelligence",
     )
     g.add_argument(
-        "--competitor-profile", action="store_true",
+        "--competitor-profile",
+        action="store_true",
         help="Generate competitor profile",
     )
 

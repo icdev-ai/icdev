@@ -45,8 +45,7 @@ class IAMProvider(ABC):
         """Assign a role to a service account."""
 
     @abstractmethod
-    def check_permission(self, account_id: str, action: str,
-                         resource: str = "") -> bool:
+    def check_permission(self, account_id: str, action: str, resource: str = "") -> bool:
         """Check if a service account has permission for an action on a resource."""
 
     @abstractmethod
@@ -63,6 +62,7 @@ class IAMProvider(ABC):
 # ============================================================
 try:
     import boto3 as _boto3_iam
+
     _HAS_BOTO3_IAM = True
 except ImportError:
     _HAS_BOTO3_IAM = False
@@ -89,13 +89,15 @@ class AWSIAMProvider(IAMProvider):
         if not client:
             return None
         try:
-            resp = client.create_user(UserName=name, Tags=[
-                {"Key": "Description", "Value": description or "ICDEV™ service account"},
-                {"Key": "ManagedBy", "Value": "icdev"},
-            ])
+            resp = client.create_user(
+                UserName=name,
+                Tags=[
+                    {"Key": "Description", "Value": description or "ICDEV™ service account"},
+                    {"Key": "ManagedBy", "Value": "icdev"},
+                ],
+            )
             user = resp["User"]
-            return {"id": user["UserName"], "arn": user["Arn"],
-                    "created_at": str(user["CreateDate"])}
+            return {"id": user["UserName"], "arn": user["Arn"], "created_at": str(user["CreateDate"])}
         except Exception:
             return None
 
@@ -106,8 +108,7 @@ class AWSIAMProvider(IAMProvider):
         try:
             resp = client.get_user(UserName=account_id)
             user = resp["User"]
-            return {"id": user["UserName"], "arn": user["Arn"],
-                    "created_at": str(user["CreateDate"])}
+            return {"id": user["UserName"], "arn": user["Arn"], "created_at": str(user["CreateDate"])}
         except Exception:
             return None
 
@@ -117,9 +118,10 @@ class AWSIAMProvider(IAMProvider):
             return []
         try:
             resp = client.list_users(MaxItems=100)
-            return [{"id": u["UserName"], "arn": u["Arn"],
-                      "created_at": str(u["CreateDate"])}
-                     for u in resp.get("Users", [])]
+            return [
+                {"id": u["UserName"], "arn": u["Arn"], "created_at": str(u["CreateDate"])}
+                for u in resp.get("Users", [])
+            ]
         except Exception:
             return []
 
@@ -133,8 +135,7 @@ class AWSIAMProvider(IAMProvider):
         except Exception:
             return False
 
-    def check_permission(self, account_id: str, action: str,
-                         resource: str = "") -> bool:
+    def check_permission(self, account_id: str, action: str, resource: str = "") -> bool:
         client = self._get_client()
         if not client:
             return False
@@ -203,8 +204,7 @@ class AzureEntraIDProvider(IAMProvider):
     def assign_role(self, account_id: str, role: str, scope: str = "") -> bool:
         return False
 
-    def check_permission(self, account_id: str, action: str,
-                         resource: str = "") -> bool:
+    def check_permission(self, account_id: str, action: str, resource: str = "") -> bool:
         return False
 
     def delete_service_account(self, account_id: str) -> bool:
@@ -219,6 +219,7 @@ class AzureEntraIDProvider(IAMProvider):
 # ============================================================
 try:
     from google.cloud import iam_admin_v1 as _gcp_iam
+
     _HAS_GCP_IAM = True
 except ImportError:
     _HAS_GCP_IAM = False
@@ -272,11 +273,8 @@ class GCPCloudIAMProvider(IAMProvider):
         if not client or not self._project_id:
             return []
         try:
-            resp = client.list_service_accounts(
-                request={"name": f"projects/{self._project_id}"}
-            )
-            return [{"id": sa.unique_id, "email": sa.email, "name": sa.display_name}
-                     for sa in resp.accounts]
+            resp = client.list_service_accounts(request={"name": f"projects/{self._project_id}"})
+            return [{"id": sa.unique_id, "email": sa.email, "name": sa.display_name} for sa in resp.accounts]
         except Exception:
             return []
 
@@ -284,8 +282,7 @@ class GCPCloudIAMProvider(IAMProvider):
         # GCP role assignment requires Resource Manager API — simplified stub
         return False
 
-    def check_permission(self, account_id: str, action: str,
-                         resource: str = "") -> bool:
+    def check_permission(self, account_id: str, action: str, resource: str = "") -> bool:
         return False
 
     def delete_service_account(self, account_id: str) -> bool:
@@ -336,8 +333,7 @@ class OCIIAMProvider(IAMProvider):
     def assign_role(self, account_id: str, role: str, scope: str = "") -> bool:
         return False
 
-    def check_permission(self, account_id: str, action: str,
-                         resource: str = "") -> bool:
+    def check_permission(self, account_id: str, action: str, resource: str = "") -> bool:
         return False
 
     def delete_service_account(self, account_id: str) -> bool:
@@ -353,6 +349,7 @@ class OCIIAMProvider(IAMProvider):
 try:
     from ibm_platform_services import IamIdentityV1
     from ibm_cloud_sdk_core.authenticators import IAMAuthenticator as _IBMIAMAuth
+
     _HAS_IBM_IAM = True
 except ImportError:
     _HAS_IBM_IAM = False
@@ -407,8 +404,7 @@ class IBMIAMProvider(IAMProvider):
             resp = client.list_service_ids(
                 account_id=os.environ.get("IBM_ACCOUNT_ID", ""),
             ).get_result()
-            return [{"id": s.get("id", ""), "name": s.get("name", "")}
-                    for s in resp.get("serviceids", [])]
+            return [{"id": s.get("id", ""), "name": s.get("name", "")} for s in resp.get("serviceids", [])]
         except Exception:
             return []
 
@@ -416,8 +412,7 @@ class IBMIAMProvider(IAMProvider):
         # IBM IAM role assignment requires Policy Management API — simplified stub
         return False
 
-    def check_permission(self, account_id: str, action: str,
-                         resource: str = "") -> bool:
+    def check_permission(self, account_id: str, action: str, resource: str = "") -> bool:
         # IBM IAM permission check requires Authorization API — simplified stub
         return False
 
@@ -439,8 +434,7 @@ class IBMIAMProvider(IAMProvider):
             resp = client.get_api_keys_details(
                 iam_api_key=self._api_key,
             ).get_result()
-            return {"id": resp.get("id", ""), "name": resp.get("name", ""),
-                    "account_id": resp.get("account_id", "")}
+            return {"id": resp.get("id", ""), "name": resp.get("name", ""), "account_id": resp.get("account_id", "")}
         except Exception:
             return None
 
@@ -503,14 +497,12 @@ class LocalIAMProvider(IAMProvider):
             now = datetime.now(timezone.utc).isoformat()
             conn = get_connection(db_path=str(self._db_path))
             conn.execute(
-                "INSERT INTO local_service_accounts (id, name, description, created_at) "
-                "VALUES (?, ?, ?, ?)",
+                "INSERT INTO local_service_accounts (id, name, description, created_at) VALUES (?, ?, ?, ?)",
                 (account_id, name, description, now),
             )
             conn.commit()
             conn.close()
-            return {"id": account_id, "name": name, "description": description,
-                    "created_at": now}
+            return {"id": account_id, "name": name, "description": description, "created_at": now}
         except Exception:
             return None
 
@@ -532,8 +524,7 @@ class LocalIAMProvider(IAMProvider):
         try:
             conn = get_connection(db_path=str(self._db_path))
             rows = conn.execute(
-                "SELECT * FROM local_service_accounts WHERE status = 'active' "
-                "ORDER BY created_at DESC"
+                "SELECT * FROM local_service_accounts WHERE status = 'active' ORDER BY created_at DESC"
             ).fetchall()
             conn.close()
             return [dict(r) for r in rows]
@@ -546,8 +537,7 @@ class LocalIAMProvider(IAMProvider):
             now = datetime.now(timezone.utc).isoformat()
             conn = get_connection(db_path=str(self._db_path))
             conn.execute(
-                "INSERT INTO local_role_assignments (id, account_id, role, scope, assigned_at) "
-                "VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO local_role_assignments (id, account_id, role, scope, assigned_at) VALUES (?, ?, ?, ?, ?)",
                 (role_id, account_id, role, scope, now),
             )
             conn.commit()
@@ -556,13 +546,11 @@ class LocalIAMProvider(IAMProvider):
         except Exception:
             return False
 
-    def check_permission(self, account_id: str, action: str,
-                         resource: str = "") -> bool:
+    def check_permission(self, account_id: str, action: str, resource: str = "") -> bool:
         try:
             conn = get_connection(db_path=str(self._db_path))
             row = conn.execute(
-                "SELECT COUNT(*) FROM local_role_assignments "
-                "WHERE account_id = ? AND (role = ? OR role = 'admin')",
+                "SELECT COUNT(*) FROM local_role_assignments WHERE account_id = ? AND (role = ? OR role = 'admin')",
                 (account_id, action),
             ).fetchone()
             conn.close()

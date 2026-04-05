@@ -47,6 +47,7 @@ logger = logging.getLogger("icdev.claude_md_generator")
 
 try:
     from jinja2 import Environment, BaseLoader
+
     _HAS_JINJA2 = True
 except ImportError:
     _HAS_JINJA2 = False
@@ -55,6 +56,7 @@ except ImportError:
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
 except ImportError:
+
     def audit_log_event(**kwargs):  # type: ignore[misc]
         logger.debug("audit_logger unavailable -- skipping audit event")
 
@@ -763,6 +765,7 @@ GOAL_METADATA: Dict[str, Dict[str, str]] = {
 # HELPER FUNCTIONS
 # ===========================================================================
 
+
 def _compute_content_hash(content: str) -> str:
     """Compute SHA-256 hash of the generated CLAUDE.md content.
 
@@ -797,17 +800,13 @@ def _load_blueprint(path: str) -> Dict[str, Any]:
         data = json.load(f)
 
     if not isinstance(data, dict):
-        raise ValueError(
-            f"Blueprint must be a JSON object, got {type(data).__name__}"
-        )
+        raise ValueError(f"Blueprint must be a JSON object, got {type(data).__name__}")
 
     # Validate minimal required fields
     required = ("app_name", "capabilities", "agents")
     missing = [k for k in required if k not in data]
     if missing:
-        raise ValueError(
-            f"Blueprint missing required fields: {', '.join(missing)}"
-        )
+        raise ValueError(f"Blueprint missing required fields: {', '.join(missing)}")
 
     return data
 
@@ -887,9 +886,16 @@ def _build_template_context(blueprint: Dict[str, Any]) -> Dict[str, Any]:
     mcp_servers = _derive_mcp_servers(agents, capabilities)
 
     # Determine ANVIL phases (exclude fitness assessment)
-    atlas_phases = atlas_config.get("phases", [
-        "architect", "trace", "link", "assemble", "stress_test",
-    ])
+    atlas_phases = atlas_config.get(
+        "phases",
+        [
+            "architect",
+            "trace",
+            "link",
+            "assemble",
+            "stress_test",
+        ],
+    )
     # Ensure fitness is never present
     atlas_phases = [p for p in atlas_phases if p != "fitness"]
 
@@ -897,11 +903,13 @@ def _build_template_context(blueprint: Dict[str, Any]) -> Dict[str, Any]:
     goals_list = []
     for goal_stem in goals_config:
         meta = GOAL_METADATA.get(goal_stem, {})
-        goals_list.append({
-            "name": meta.get("name", goal_stem.replace("_", " ").title()),
-            "file": f"{goal_stem}.md",
-            "purpose": meta.get("purpose", goal_stem.replace("_", " ")),
-        })
+        goals_list.append(
+            {
+                "name": meta.get("name", goal_stem.replace("_", " ").title()),
+                "file": f"{goal_stem}.md",
+                "purpose": meta.get("purpose", goal_stem.replace("_", " ")),
+            }
+        )
 
     # Key architecture decisions for the child app
     key_decisions = _build_key_decisions(blueprint)
@@ -911,11 +919,7 @@ def _build_template_context(blueprint: Dict[str, Any]) -> Dict[str, Any]:
 
     # Extract app description from scorecard spec or blueprint fields
     scorecard = blueprint.get("fitness_scorecard", {})
-    app_description = (
-        blueprint.get("description", "")
-        or blueprint.get("purpose", "")
-        or scorecard.get("spec", "")
-    )
+    app_description = blueprint.get("description", "") or blueprint.get("purpose", "") or scorecard.get("spec", "")
 
     # Extract LLM config hints
     llm_config = blueprint.get("llm_config", {})
@@ -1046,109 +1050,151 @@ def _build_key_decisions(blueprint: Dict[str, Any]) -> List[Dict[str, str]]:
     decisions: List[Dict[str, str]] = []
 
     # Always-included decisions
-    decisions.append({
-        "id": "D1",
-        "text": "SQLite for internal operational data (zero-config portability)",
-    })
-    decisions.append({
-        "id": "D2",
-        "text": "Stdio for MCP (Claude Code); HTTPS+mTLS for A2A (K8s inter-agent)",
-    })
-    decisions.append({
-        "id": "D5",
-        "text": "CUI markings applied at generation time (inline, not post-processing)",
-    })
-    decisions.append({
-        "id": "D6",
-        "text": "Audit trail is append-only/immutable (no UPDATE/DELETE -- NIST AU compliance)",
-    })
+    decisions.append(
+        {
+            "id": "D1",
+            "text": "SQLite for internal operational data (zero-config portability)",
+        }
+    )
+    decisions.append(
+        {
+            "id": "D2",
+            "text": "Stdio for MCP (Claude Code); HTTPS+mTLS for A2A (K8s inter-agent)",
+        }
+    )
+    decisions.append(
+        {
+            "id": "D5",
+            "text": "CUI markings applied at generation time (inline, not post-processing)",
+        }
+    )
+    decisions.append(
+        {
+            "id": "D6",
+            "text": "Audit trail is append-only/immutable (no UPDATE/DELETE -- NIST AU compliance)",
+        }
+    )
 
     if capabilities.get("dashboard", False):
-        decisions.append({
-            "id": "D3",
-            "text": "Flask over FastAPI (simpler, fewer deps, auditable SSR, smaller STIG surface)",
-        })
+        decisions.append(
+            {
+                "id": "D3",
+                "text": "Flask over FastAPI (simpler, fewer deps, auditable SSR, smaller STIG surface)",
+            }
+        )
 
     if capabilities.get("knowledge", False):
-        decisions.append({
-            "id": "D4",
-            "text": "Statistical methods for pattern detection; Bedrock LLM for root cause analysis",
-        })
+        decisions.append(
+            {
+                "id": "D4",
+                "text": "Statistical methods for pattern detection; Bedrock LLM for root cause analysis",
+            }
+        )
 
     if capabilities.get("mbse", False):
-        decisions.append({
-            "id": "D7",
-            "text": "Python stdlib xml.etree.ElementTree for XMI/ReqIF parsing (zero deps, air-gap safe)",
-        })
-        decisions.append({
-            "id": "D8",
-            "text": "Normalized DB tables for model elements (enables SQL joins across digital thread)",
-        })
-        decisions.append({
-            "id": "D9",
-            "text": "M-ANVIL adds Model pre-phase to ANVIL (backward compatible -- skips if no model)",
-        })
-        decisions.append({
-            "id": "D12",
-            "text": "N:M digital thread links (one block -> many code modules; one control -> many requirements)",
-        })
+        decisions.append(
+            {
+                "id": "D7",
+                "text": "Python stdlib xml.etree.ElementTree for XMI/ReqIF parsing (zero deps, air-gap safe)",
+            }
+        )
+        decisions.append(
+            {
+                "id": "D8",
+                "text": "Normalized DB tables for model elements (enables SQL joins across digital thread)",
+            }
+        )
+        decisions.append(
+            {
+                "id": "D9",
+                "text": "M-ANVIL adds Model pre-phase to ANVIL (backward compatible -- skips if no model)",
+            }
+        )
+        decisions.append(
+            {
+                "id": "D12",
+                "text": "N:M digital thread links (one block -> many code modules; one control -> many requirements)",
+            }
+        )
 
     # D-CHILD-1: Enterprise capability decisions
     if capabilities.get("ricoas", False):
-        decisions.append({
-            "id": "D21",
-            "text": "Readiness scoring uses deterministic weighted average (reproducible, not probabilistic)",
-        })
-        decisions.append({
-            "id": "D22",
-            "text": "Monte Carlo uses Python stdlib random (zero deps, air-gap safe)",
-        })
-        decisions.append({
-            "id": "D27",
-            "text": "Supply chain graph stored as SQL adjacency list (no graph DB needed)",
-        })
+        decisions.append(
+            {
+                "id": "D21",
+                "text": "Readiness scoring uses deterministic weighted average (reproducible, not probabilistic)",
+            }
+        )
+        decisions.append(
+            {
+                "id": "D22",
+                "text": "Monte Carlo uses Python stdlib random (zero deps, air-gap safe)",
+            }
+        )
+        decisions.append(
+            {
+                "id": "D27",
+                "text": "Supply chain graph stored as SQL adjacency list (no graph DB needed)",
+            }
+        )
 
     if capabilities.get("devsecops_zta", False):
-        decisions.append({
-            "id": "D117",
-            "text": "DevSecOps/ZTA Agent with hard veto on pipeline_configuration and zero_trust_policy",
-        })
-        decisions.append({
-            "id": "D120",
-            "text": "ZTA maturity model uses DoD 7-pillar scoring (Traditional -> Advanced -> Optimal)",
-        })
+        decisions.append(
+            {
+                "id": "D117",
+                "text": "DevSecOps/ZTA Agent with hard veto on pipeline_configuration and zero_trust_policy",
+            }
+        )
+        decisions.append(
+            {
+                "id": "D120",
+                "text": "ZTA maturity model uses DoD 7-pillar scoring (Traditional -> Advanced -> Optimal)",
+            }
+        )
 
     if capabilities.get("ai_security", False):
-        decisions.append({
-            "id": "D215",
-            "text": "Prompt injection detector uses 5 detection categories",
-        })
-        decisions.append({
-            "id": "D216",
-            "text": "AI telemetry hashes prompts/responses with SHA-256 (privacy-preserving audit)",
-        })
+        decisions.append(
+            {
+                "id": "D215",
+                "text": "Prompt injection detector uses 5 detection categories",
+            }
+        )
+        decisions.append(
+            {
+                "id": "D216",
+                "text": "AI telemetry hashes prompts/responses with SHA-256 (privacy-preserving audit)",
+            }
+        )
 
     if capabilities.get("observability", False):
-        decisions.append({
-            "id": "D280",
-            "text": "Pluggable Tracer ABC: OTelTracer (production), SQLiteTracer (air-gapped), NullTracer (fallback)",
-        })
-        decisions.append({
-            "id": "D287",
-            "text": "PROV-AGENT provenance in 3 append-only SQLite tables (W3C PROV standard)",
-        })
+        decisions.append(
+            {
+                "id": "D280",
+                "text": "Pluggable Tracer ABC: OTelTracer (production), SQLiteTracer (air-gapped), NullTracer (fallback)",
+            }
+        )
+        decisions.append(
+            {
+                "id": "D287",
+                "text": "PROV-AGENT provenance in 3 append-only SQLite tables (W3C PROV standard)",
+            }
+        )
 
     if capabilities.get("code_intelligence", False):
-        decisions.append({
-            "id": "D331",
-            "text": "Code quality metrics are read-only, advisory-only -- never modifies source files",
-        })
+        decisions.append(
+            {
+                "id": "D331",
+                "text": "Code quality metrics are read-only, advisory-only -- never modifies source files",
+            }
+        )
 
     # Grandchild prevention is always documented
-    decisions.append({
-        "id": "D52",
-        "text": "This is a generated child app -- grandchild app generation is disabled by design",
-    })
+    decisions.append(
+        {
+            "id": "D52",
+            "text": "This is a generated child app -- grandchild app generation is disabled by design",
+        }
+    )
 
     return decisions
 
@@ -1156,6 +1202,7 @@ def _build_key_decisions(blueprint: Dict[str, Any]) -> List[Dict[str, str]]:
 # ===========================================================================
 # JINJA2 RENDERER
 # ===========================================================================
+
 
 def _generate_with_jinja2(blueprint: Dict[str, Any]) -> str:
     """Render CLAUDE.md using the Jinja2 template engine.
@@ -1203,6 +1250,7 @@ def _generate_with_jinja2(blueprint: Dict[str, Any]) -> str:
 # FALLBACK RENDERER (no Jinja2)
 # ===========================================================================
 
+
 def _generate_fallback(blueprint: Dict[str, Any]) -> str:
     """Render CLAUDE.md using basic string operations when Jinja2 is absent.
 
@@ -1221,8 +1269,7 @@ def _generate_fallback(blueprint: Dict[str, Any]) -> str:
     # -- Header --
     sections.append("# CLAUDE.md\n")
     sections.append(
-        f"This file provides guidance to Claude Code (claude.ai/code) "
-        f"when working with {ctx['app_name']}.\n"
+        f"This file provides guidance to Claude Code (claude.ai/code) when working with {ctx['app_name']}.\n"
     )
 
     if ctx.get("demo_mode"):
@@ -1297,14 +1344,22 @@ def _build_commands_section(ctx: Dict[str, Any]) -> str:
     parts.append("### Commands\n")
     parts.append("```bash")
     parts.append("# Memory system")
-    parts.append('python tools/memory/memory_read.py --format markdown          # Load all memory')
+    parts.append("python tools/memory/memory_read.py --format markdown          # Load all memory")
     parts.append('python tools/memory/memory_write.py --content "text" --type event  # Write to daily log + DB')
     parts.append('python tools/memory/memory_write.py --content "text" --type fact --importance 7  # Store a fact')
-    parts.append('python tools/memory/memory_write.py --update-memory --content "text" --section user_preferences  # Update MEMORY.md')
+    parts.append(
+        'python tools/memory/memory_write.py --update-memory --content "text" --section user_preferences  # Update MEMORY.md'
+    )
     parts.append('python tools/memory/memory_db.py --action search --query "keyword"   # Keyword search')
-    parts.append('python tools/memory/semantic_search.py --query "concept"             # Semantic search (requires OpenAI key)')
-    parts.append('python tools/memory/hybrid_search.py --query "query"                 # Best: combined keyword + semantic')
-    parts.append('python tools/memory/embed_memory.py --all                            # Generate embeddings for all entries')
+    parts.append(
+        'python tools/memory/semantic_search.py --query "concept"             # Semantic search (requires OpenAI key)'
+    )
+    parts.append(
+        'python tools/memory/hybrid_search.py --query "query"                 # Best: combined keyword + semantic'
+    )
+    parts.append(
+        "python tools/memory/embed_memory.py --all                            # Generate embeddings for all entries"
+    )
     parts.append("```\n")
 
     caps = ctx["capabilities"]
@@ -1329,7 +1384,9 @@ def _build_commands_section(ctx: Dict[str, Any]) -> str:
         parts.append(f'python tools/compliance/poam_generator.py --project-id "{app}"')
         parts.append(f'python tools/compliance/stig_checker.py --project-id "{app}"')
         parts.append('python tools/compliance/sbom_generator.py --project-dir "/path/to/project"')
-        parts.append(f'python tools/compliance/cui_marker.py --file "/path/to/file" --marking "{classification} // SP-CTI"')
+        parts.append(
+            f'python tools/compliance/cui_marker.py --file "/path/to/file" --marking "{classification} // SP-CTI"'
+        )
         parts.append('python tools/compliance/nist_lookup.py --control "AC-2"')
         parts.append(f'python tools/compliance/control_mapper.py --activity "code.commit" --project-id "{app}"')
         parts.append("python tools/compliance/crosswalk_engine.py --control AC-2")
@@ -1474,7 +1531,9 @@ def _build_system_section(ctx: Dict[str, Any]) -> str:
     parts.append(f"### Multi-Agent Architecture ({len(agents)} Agents)\n")
     parts.append(_build_agent_table(agents))
     parts.append("")
-    parts.append("Agents communicate via **A2A protocol** (JSON-RPC 2.0 over mutual TLS within K8s).  Each publishes an Agent Card at `/.well-known/agent.json`.\n")
+    parts.append(
+        "Agents communicate via **A2A protocol** (JSON-RPC 2.0 over mutual TLS within K8s).  Each publishes an Agent Card at `/.well-known/agent.json`.\n"
+    )
 
     # MCP servers
     mcp_servers = ctx["mcp_servers"]
@@ -1500,7 +1559,9 @@ def _build_system_section(ctx: Dict[str, Any]) -> str:
         parts.append("| IEEE 1012 IV&V | Independent verification and validation |")
         parts.append("| DoDI 5000.87 DES | Digital engineering strategy |")
         parts.append("")
-        parts.append("**Control Crosswalk:** Implementing one NIST 800-53 control auto-populates FedRAMP, CMMC, and 800-171 status via the crosswalk engine.\n")
+        parts.append(
+            "**Control Crosswalk:** Implementing one NIST 800-53 control auto-populates FedRAMP, CMMC, and 800-171 status via the crosswalk engine.\n"
+        )
 
     # MBSE
     if caps.get("mbse", False):
@@ -1568,7 +1629,9 @@ def _build_system_section(ctx: Dict[str, Any]) -> str:
     parts.append("| `data/memory.db` | Memory system: entries, daily logs, access log |")
     parts.append("| `data/activity.db` | Task tracking |")
     parts.append("")
-    parts.append("**Audit trail is append-only/immutable** -- no UPDATE/DELETE operations.  Satisfies NIST 800-53 AU controls.\n")
+    parts.append(
+        "**Audit trail is append-only/immutable** -- no UPDATE/DELETE operations.  Satisfies NIST 800-53 AU controls.\n"
+    )
 
     return "\n".join(parts)
 
@@ -1624,31 +1687,49 @@ def _build_guardrails_section(ctx: Dict[str, Any]) -> str:
     if caps.get("compliance", False):
         parts.append("- All generated artifacts MUST include classification markings appropriate to impact level")
         parts.append("- SBOM must be regenerated on every build")
-        parts.append("- When implementing a NIST 800-53 control, always call crosswalk engine to auto-populate FedRAMP/CMMC/800-171 status")
+        parts.append(
+            "- When implementing a NIST 800-53 control, always call crosswalk engine to auto-populate FedRAMP/CMMC/800-171 status"
+        )
 
     if caps.get("security", False):
-        parts.append("- Security gates block on: CAT1 STIG findings, critical/high vulnerabilities, failed tests, missing markings")
+        parts.append(
+            "- Security gates block on: CAT1 STIG findings, critical/high vulnerabilities, failed tests, missing markings"
+        )
     if caps.get("ai_security", False):
-        parts.append("- AI Security gates block on: prompt injection defense inactive, AI telemetry disabled, AI BOM missing, ATLAS coverage < 80%")
+        parts.append(
+            "- AI Security gates block on: prompt injection defense inactive, AI telemetry disabled, AI BOM missing, ATLAS coverage < 80%"
+        )
     if caps.get("devsecops_zta", False):
-        parts.append("- ZTA gates block on: maturity < Advanced for IL4+, mTLS not enforced with service mesh, no default-deny NetworkPolicy")
+        parts.append(
+            "- ZTA gates block on: maturity < Advanced for IL4+, mTLS not enforced with service mesh, no default-deny NetworkPolicy"
+        )
     if caps.get("ricoas", False):
-        parts.append("- RICOAS gates block on: readiness score < 0.7, unresolved critical gaps, RED requirements without alternative COAs")
+        parts.append(
+            "- RICOAS gates block on: readiness score < 0.7, unresolved critical gaps, RED requirements without alternative COAs"
+        )
     if caps.get("observability", False):
-        parts.append("- Observability gates block on: tracing not active, provenance graph empty, XAI assessment not completed")
+        parts.append(
+            "- Observability gates block on: tracing not active, provenance graph empty, XAI assessment not completed"
+        )
     if caps.get("code_intelligence", False):
         parts.append("- Code Quality gates block on: average cyclomatic complexity > 25")
 
     # Cross-platform compatibility (always-on for all child apps)
     parts.append("- All file paths MUST use `pathlib.Path` -- never string concatenation with `/` or `\\\\`")
     parts.append("- All `open()` calls MUST specify `encoding='utf-8'` -- never rely on system default encoding")
-    parts.append("- Never hardcode `/tmp` or `C:\\\\` -- use `tempfile.gettempdir()` or `tools/compat/platform_utils.py`")
-    parts.append("- Ollama availability checks MUST use HTTP API (`/api/tags`) -- never `subprocess.run(['ollama', ...])`")
+    parts.append(
+        "- Never hardcode `/tmp` or `C:\\\\` -- use `tempfile.gettempdir()` or `tools/compat/platform_utils.py`"
+    )
+    parts.append(
+        "- Ollama availability checks MUST use HTTP API (`/api/tags`) -- never `subprocess.run(['ollama', ...])`"
+    )
     parts.append("- Use `datetime.now(timezone.utc)` -- never `datetime.utcnow()` (deprecated in Python 3.12+)")
     parts.append("- Use `hashlib.sha256` for non-cryptographic hashing -- never `hashlib.md5` (bandit B324)")
     parts.append("- `.gitattributes` enforces `eol=lf` -- all text files use Unix line endings on all platforms")
     parts.append("- Run `python tools/testing/platform_check.py` to validate cross-platform compatibility")
-    parts.append("- LLM model names and API keys MUST be in `.env`, not hardcoded — use `os.environ.get()` with defaults")
+    parts.append(
+        "- LLM model names and API keys MUST be in `.env`, not hardcoded — use `os.environ.get()` with defaults"
+    )
     parts.append("- When adding LLM-dependent features, add env vars to `.env.example` with comments")
 
     parts.append(
@@ -1699,6 +1780,7 @@ def _build_decisions_section(ctx: Dict[str, Any]) -> str:
 # PUBLIC API
 # ===========================================================================
 
+
 def generate_claude_md(blueprint: Dict[str, Any]) -> str:
     """Generate CLAUDE.md content from a blueprint.
 
@@ -1723,6 +1805,7 @@ def generate_claude_md(blueprint: Dict[str, Any]) -> str:
 # CLI ENTRY POINT
 # ===========================================================================
 
+
 def main():
     """CLI entry point for the CLAUDE.md generator."""
     logging.basicConfig(
@@ -1732,8 +1815,7 @@ def main():
 
     parser = argparse.ArgumentParser(
         description=(
-            "Dynamic CLAUDE.md Generator -- creates adaptive documentation "
-            "for child apps from a deployment blueprint."
+            "Dynamic CLAUDE.md Generator -- creates adaptive documentation for child apps from a deployment blueprint."
         ),
     )
     parser.add_argument(
@@ -1753,7 +1835,8 @@ def main():
         help="Wrap output in JSON envelope with metadata",
     )
     parser.add_argument(
-        "--verbose", "-v",
+        "--verbose",
+        "-v",
         action="store_true",
         help="Enable debug logging",
     )
@@ -1795,18 +1878,18 @@ def main():
             actor="builder/claude_md_generator",
             action=f"Generated CLAUDE.md for '{blueprint.get('app_name', 'unknown')}'",
             project_id=blueprint.get("blueprint_id", ""),
-            details=json.dumps({
-                "app_name": blueprint.get("app_name"),
-                "blueprint_id": blueprint.get("blueprint_id"),
-                "blueprint_hash": blueprint.get("blueprint_hash", "")[:32],
-                "content_hash": content_hash[:32],
-                "line_count": line_count,
-                "renderer": renderer,
-                "capabilities_enabled": sum(
-                    1 for v in blueprint.get("capabilities", {}).values() if v
-                ),
-                "agent_count": len(blueprint.get("agents", [])),
-            }),
+            details=json.dumps(
+                {
+                    "app_name": blueprint.get("app_name"),
+                    "blueprint_id": blueprint.get("blueprint_id"),
+                    "blueprint_hash": blueprint.get("blueprint_hash", "")[:32],
+                    "content_hash": content_hash[:32],
+                    "line_count": line_count,
+                    "renderer": renderer,
+                    "capabilities_enabled": sum(1 for v in blueprint.get("capabilities", {}).values() if v),
+                    "agent_count": len(blueprint.get("agents", [])),
+                }
+            ),
         )
     except Exception as e:
         logger.debug("Audit log failed: %s", e)

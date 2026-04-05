@@ -35,6 +35,7 @@ logger = logging.getLogger("icdev.rag.quality_feedback_loop")
 # Config
 # ---------------------------------------------------------------------------
 
+
 def _load_config() -> Dict[str, Any]:
     """Load quality_feedback config from finetune_config.yaml."""
     config_path = BASE_DIR / "args" / "finetune_config.yaml"
@@ -42,6 +43,7 @@ def _load_config() -> Dict[str, Any]:
         return {}
     try:
         import yaml
+
         with open(config_path, "r", encoding="utf-8") as f:
             cfg = yaml.safe_load(f) or {}
         return cfg.get("quality_feedback", {})
@@ -79,6 +81,7 @@ def _gen_id(prefix: str = "qfl") -> str:
 # Feedback Loop
 # ---------------------------------------------------------------------------
 
+
 def run_feedback_cycle(
     dry_run: bool = False,
     conn: Any = None,
@@ -106,6 +109,7 @@ def run_feedback_cycle(
     # Step 1: Check current quality
     try:
         from tools.finetune.quality_monitor import check_quality
+
         quality = check_quality(conn=conn)
     except ImportError:
         result["error"] = "quality_monitor not available"
@@ -136,10 +140,7 @@ def run_feedback_cycle(
         return result
 
     # Step 3: Identify failing areas from alerts
-    failing_metrics = [
-        a["metric"] for a in quality.get("alerts", [])
-        if a.get("retrain_recommended", False)
-    ]
+    failing_metrics = [a["metric"] for a in quality.get("alerts", []) if a.get("retrain_recommended", False)]
     result["failing_metrics"] = failing_metrics
 
     # Step 4: Generate targeted training pairs
@@ -192,9 +193,7 @@ def _generate_with_statement_extraction(
         from tools.finetune.statement_extractor import generate_from_rag_source
         from tools.finetune.dataset_manager import ensure_dataset
 
-        dataset_id = ensure_dataset(name=dataset_name, purpose=purpose).get(
-            "dataset_id", ""
-        )
+        dataset_id = ensure_dataset(name=dataset_name, purpose=purpose).get("dataset_id", "")
         if not dataset_id:
             return 0
 
@@ -236,9 +235,7 @@ def _generate_with_pair_generator(
         from tools.finetune.pair_generator import generate_from_rag_source
         from tools.finetune.dataset_manager import ensure_dataset
 
-        dataset_id = ensure_dataset(name=dataset_name, purpose=purpose).get(
-            "dataset_id", ""
-        )
+        dataset_id = ensure_dataset(name=dataset_name, purpose=purpose).get("dataset_id", "")
         if not dataset_id:
             return 0
 
@@ -260,6 +257,7 @@ def _try_trigger_retrain(dataset_name: str) -> bool:
     """Attempt to trigger retrain via retrain_trigger.py."""
     try:
         from tools.finetune.retrain_trigger import check_and_trigger
+
         result = check_and_trigger()
         return result.get("triggered", False)
     except ImportError:
@@ -272,10 +270,12 @@ def _try_trigger_retrain(dataset_name: str) -> bool:
 # Status
 # ---------------------------------------------------------------------------
 
+
 def get_feedback_status() -> Dict[str, Any]:
     """Get current feedback loop status."""
     try:
         from tools.finetune.quality_monitor import check_quality, get_quality_status
+
         quality = check_quality()
         history = get_quality_status()
         config = _get_config()
@@ -298,6 +298,7 @@ def get_feedback_status() -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+
 
 def main():
     parser = argparse.ArgumentParser(

@@ -72,23 +72,28 @@ CONFIG_PATH = BASE_DIR / "args" / "innovation_config.yaml"
 # =========================================================================
 try:
     import yaml
+
     _HAS_YAML = True
 except ImportError:
     _HAS_YAML = False
 
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
+
     def audit_log_event(**kwargs):
         return -1
+
 
 # Import innovation sub-modules (all optional — graceful degradation)
 def _try_import(module_path, func_name):
     """Dynamically import a function with graceful fallback."""
     try:
         import importlib
+
         mod = importlib.import_module(module_path)
         return getattr(mod, func_name, None)
     except (ImportError, ModuleNotFoundError, AttributeError):
@@ -98,6 +103,7 @@ def _try_import(module_path, func_name):
 # =========================================================================
 # HELPERS
 # =========================================================================
+
 
 def _load_config():
     """Load innovation config from YAML."""
@@ -401,9 +407,7 @@ def get_status(db_path=None):
 
         # Signal counts by status
         try:
-            rows = conn.execute(
-                "SELECT status, COUNT(*) as count FROM innovation_signals GROUP BY status"
-            ).fetchall()
+            rows = conn.execute("SELECT status, COUNT(*) as count FROM innovation_signals GROUP BY status").fetchall()
             status["signals_by_status"] = {row["status"]: row["count"] for row in rows}
         except sqlite3.OperationalError:
             status["signals_by_status"] = {}
@@ -420,9 +424,8 @@ def get_status(db_path=None):
         # Recent signals (last 24h)
         try:
             from datetime import timedelta
-            cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).strftime(
-                "%Y-%m-%dT%H:%M:%SZ"
-            )
+
+            cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%SZ")
             recent = conn.execute(
                 "SELECT COUNT(*) as count FROM innovation_signals WHERE discovered_at >= ?",
                 (cutoff,),
@@ -433,18 +436,14 @@ def get_status(db_path=None):
 
         # Solution counts
         try:
-            rows = conn.execute(
-                "SELECT status, COUNT(*) as count FROM innovation_solutions GROUP BY status"
-            ).fetchall()
+            rows = conn.execute("SELECT status, COUNT(*) as count FROM innovation_solutions GROUP BY status").fetchall()
             status["solutions_by_status"] = {row["status"]: row["count"] for row in rows}
         except sqlite3.OperationalError:
             status["solutions_by_status"] = {}
 
         # Trend counts
         try:
-            rows = conn.execute(
-                "SELECT status, COUNT(*) as count FROM innovation_trends GROUP BY status"
-            ).fetchall()
+            rows = conn.execute("SELECT status, COUNT(*) as count FROM innovation_trends GROUP BY status").fetchall()
             status["trends_by_status"] = {row["status"]: row["count"] for row in rows}
         except sqlite3.OperationalError:
             status["trends_by_status"] = {}
@@ -505,17 +504,11 @@ def get_pipeline_report(db_path=None):
 
     # Generate recommendations
     if new > 100:
-        report["recommendations"].append(
-            "High backlog of unscored signals — consider running --score"
-        )
+        report["recommendations"].append("High backlog of unscored signals — consider running --score")
     if scored > 50:
-        report["recommendations"].append(
-            "High backlog of untriaged signals — consider running --triage"
-        )
+        report["recommendations"].append("High backlog of untriaged signals — consider running --triage")
     if not status.get("healthy"):
-        report["recommendations"].append(
-            "Database tables missing — run: python tools/db/migrate.py --up"
-        )
+        report["recommendations"].append("Database tables missing — run: python tools/db/migrate.py --up")
 
     return report
 
@@ -544,8 +537,7 @@ def run_daemon(db_path=None):
             print(f"\n[{now_iso()}] Running pipeline...")
             try:
                 result = run_full_pipeline(db_path=db_path)
-                print(f"[{now_iso()}] Pipeline complete. "
-                      f"Stages: {len(result.get('stages', {}))}")
+                print(f"[{now_iso()}] Pipeline complete. Stages: {len(result.get('stages', {}))}")
             except Exception as e:
                 print(f"[{now_iso()}] Pipeline error: {e}", file=sys.stderr)
                 _audit("innovation.daemon.error", f"Pipeline error: {e}")
@@ -562,9 +554,7 @@ def run_daemon(db_path=None):
 # CLI
 # =========================================================================
 def main():
-    parser = argparse.ArgumentParser(
-        description="ICDEV™ Innovation Engine — autonomous self-improvement orchestrator"
-    )
+    parser = argparse.ArgumentParser(description="ICDEV™ Innovation Engine — autonomous self-improvement orchestrator")
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--db-path", type=Path, default=None, help="Database path override")
 

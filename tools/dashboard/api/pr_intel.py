@@ -34,8 +34,7 @@ def _table_exists(conn, name):
     try:
         if getattr(conn, "_backend", "sqlite") == "postgresql":
             row = conn.execute(
-                "SELECT 1 FROM information_schema.tables "
-                "WHERE table_schema = 'public' AND table_name = ?",
+                "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = ?",
                 (name,),
             ).fetchone()
             return row is not None
@@ -62,24 +61,29 @@ def _safe_json_loads(value, default=None):
 
 # ── GET /api/pr-intel/stats ─────────────────────────────────────────
 
+
 @pr_intel_api.route("/stats", methods=["GET"])
 def stats():
     """Aggregate PR intelligence statistics."""
     conn = _get_db()
     try:
         if not _table_exists(conn, "pr_intelligence_reports"):
-            return jsonify({
-                "total": 0, "by_status": {}, "pass_rate": 0.0,
-                "total_security_findings": 0, "total_compliance_impacts": 0,
-                "recent_trend": [],
-            })
+            return jsonify(
+                {
+                    "total": 0,
+                    "by_status": {},
+                    "pass_rate": 0.0,
+                    "total_security_findings": 0,
+                    "total_compliance_impacts": 0,
+                    "recent_trend": [],
+                }
+            )
 
         pg = _is_pg(conn)
 
         # Totals by status
         rows = conn.execute(
-            "SELECT overall_status, COUNT(*) AS cnt FROM pr_intelligence_reports "
-            "GROUP BY overall_status"
+            "SELECT overall_status, COUNT(*) AS cnt FROM pr_intelligence_reports GROUP BY overall_status"
         ).fetchall()
         by_status = {}
         for r in rows:
@@ -90,10 +94,7 @@ def stats():
         pass_rate = (by_status.get("pass", 0) / total * 100) if total else 0.0
 
         # Security findings + compliance impacts counts
-        all_rows = conn.execute(
-            "SELECT security_findings, compliance_impacts "
-            "FROM pr_intelligence_reports"
-        ).fetchall()
+        all_rows = conn.execute("SELECT security_findings, compliance_impacts FROM pr_intelligence_reports").fetchall()
         total_sec = 0
         total_comp = 0
         for row in all_rows:
@@ -123,14 +124,16 @@ def stats():
             cnt = r["cnt"] if isinstance(r, dict) else r[1]
             recent_trend.append({"date": str(day), "count": cnt})
 
-        return jsonify({
-            "total": total,
-            "by_status": by_status,
-            "pass_rate": round(pass_rate, 2),
-            "total_security_findings": total_sec,
-            "total_compliance_impacts": total_comp,
-            "recent_trend": recent_trend,
-        })
+        return jsonify(
+            {
+                "total": total,
+                "by_status": by_status,
+                "pass_rate": round(pass_rate, 2),
+                "total_security_findings": total_sec,
+                "total_compliance_impacts": total_comp,
+                "recent_trend": recent_trend,
+            }
+        )
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
     finally:
@@ -138,6 +141,7 @@ def stats():
 
 
 # ── GET /api/pr-intel/reports ───────────────────────────────────────
+
 
 @pr_intel_api.route("/reports", methods=["GET"])
 def list_reports():
@@ -164,7 +168,8 @@ def list_reports():
         where = (" WHERE " + " AND ".join(conditions)) if conditions else ""
 
         count_row = conn.execute(
-            f"SELECT COUNT(*) AS cnt FROM pr_intelligence_reports{where}", params  # nosec B608 -- table/column names are internal constants, not user input
+            f"SELECT COUNT(*) AS cnt FROM pr_intelligence_reports{where}",
+            params,  # nosec B608 -- table/column names are internal constants, not user input
         ).fetchone()
         total = count_row["cnt"] if isinstance(count_row, dict) else count_row[0]
 
@@ -179,9 +184,16 @@ def list_reports():
         ).fetchall()
 
         columns = [
-            "id", "project_id", "pr_reference", "diff_summary", "files_changed",
-            "security_findings", "compliance_impacts", "overall_status",
-            "classification", "created_at",
+            "id",
+            "project_id",
+            "pr_reference",
+            "diff_summary",
+            "files_changed",
+            "security_findings",
+            "compliance_impacts",
+            "overall_status",
+            "classification",
+            "created_at",
         ]
         reports = []
         for r in rows:
@@ -191,30 +203,35 @@ def list_reports():
                 d = dict(zip(columns, r))
             sec = _safe_json_loads(d["security_findings"])
             comp = _safe_json_loads(d["compliance_impacts"])
-            reports.append({
-                "id": d["id"],
-                "project_id": d["project_id"],
-                "pr_reference": d["pr_reference"],
-                "diff_summary": d["diff_summary"],
-                "files_changed": d["files_changed"],
-                "security_findings_count": len(sec),
-                "compliance_impacts_count": len(comp),
-                "overall_status": d["overall_status"],
-                "classification": d["classification"],
-                "created_at": str(d["created_at"]),
-            })
+            reports.append(
+                {
+                    "id": d["id"],
+                    "project_id": d["project_id"],
+                    "pr_reference": d["pr_reference"],
+                    "diff_summary": d["diff_summary"],
+                    "files_changed": d["files_changed"],
+                    "security_findings_count": len(sec),
+                    "compliance_impacts_count": len(comp),
+                    "overall_status": d["overall_status"],
+                    "classification": d["classification"],
+                    "created_at": str(d["created_at"]),
+                }
+            )
 
-        return jsonify({
-            "reports": reports,
-            "total": total,
-            "page": page,
-            "per_page": per_page,
-        })
+        return jsonify(
+            {
+                "reports": reports,
+                "total": total,
+                "page": page,
+                "per_page": per_page,
+            }
+        )
     finally:
         conn.close()
 
 
 # ── GET /api/pr-intel/reports/<report_id> ───────────────────────────
+
 
 @pr_intel_api.route("/reports/<report_id>", methods=["GET"])
 def report_detail(report_id):
@@ -236,31 +253,43 @@ def report_detail(report_id):
             return jsonify({"error": "report not found"}), 404
 
         detail_cols = [
-            "id", "project_id", "pr_reference", "diff_summary", "files_changed",
-            "security_findings", "compliance_impacts", "code_quality_delta",
-            "overall_status", "report_json", "classification", "created_at",
+            "id",
+            "project_id",
+            "pr_reference",
+            "diff_summary",
+            "files_changed",
+            "security_findings",
+            "compliance_impacts",
+            "code_quality_delta",
+            "overall_status",
+            "report_json",
+            "classification",
+            "created_at",
         ]
         d = row if isinstance(row, dict) else dict(zip(detail_cols, row))
 
-        return jsonify({
-            "id": d["id"],
-            "project_id": d["project_id"],
-            "pr_reference": d["pr_reference"],
-            "diff_summary": d["diff_summary"],
-            "files_changed": d["files_changed"],
-            "security_findings": _safe_json_loads(d["security_findings"]),
-            "compliance_impacts": _safe_json_loads(d["compliance_impacts"]),
-            "code_quality_delta": _safe_json_loads(d["code_quality_delta"], default={}),
-            "overall_status": d["overall_status"],
-            "report_json": _safe_json_loads(d["report_json"], default={}),
-            "classification": d["classification"],
-            "created_at": str(d["created_at"]),
-        })
+        return jsonify(
+            {
+                "id": d["id"],
+                "project_id": d["project_id"],
+                "pr_reference": d["pr_reference"],
+                "diff_summary": d["diff_summary"],
+                "files_changed": d["files_changed"],
+                "security_findings": _safe_json_loads(d["security_findings"]),
+                "compliance_impacts": _safe_json_loads(d["compliance_impacts"]),
+                "code_quality_delta": _safe_json_loads(d["code_quality_delta"], default={}),
+                "overall_status": d["overall_status"],
+                "report_json": _safe_json_loads(d["report_json"], default={}),
+                "classification": d["classification"],
+                "created_at": str(d["created_at"]),
+            }
+        )
     finally:
         conn.close()
 
 
 # ── GET /api/pr-intel/drift ─────────────────────────────────────────
+
 
 @pr_intel_api.route("/drift", methods=["GET"])
 def compliance_drift():
@@ -270,9 +299,7 @@ def compliance_drift():
         if not _table_exists(conn, "pr_intelligence_reports"):
             return jsonify({"controls": [], "total_impacts": 0})
 
-        rows = conn.execute(
-            "SELECT compliance_impacts FROM pr_intelligence_reports"
-        ).fetchall()
+        rows = conn.execute("SELECT compliance_impacts FROM pr_intelligence_reports").fetchall()
 
         control_freq = {}
         total_impacts = 0
@@ -299,27 +326,30 @@ def compliance_drift():
         controls = []
         for fam in control_freq.values():
             fam_total = sum(fam["controls"].values())
-            controls.append({
-                "family": fam["family"],
-                "total": fam_total,
-                "controls": [
-                    {"id": cid, "count": cnt}
-                    for cid, cnt in sorted(
-                        fam["controls"].items(), key=lambda x: x[1], reverse=True
-                    )
-                ],
-            })
+            controls.append(
+                {
+                    "family": fam["family"],
+                    "total": fam_total,
+                    "controls": [
+                        {"id": cid, "count": cnt}
+                        for cid, cnt in sorted(fam["controls"].items(), key=lambda x: x[1], reverse=True)
+                    ],
+                }
+            )
         controls.sort(key=lambda x: x["total"], reverse=True)
 
-        return jsonify({
-            "controls": controls,
-            "total_impacts": total_impacts,
-        })
+        return jsonify(
+            {
+                "controls": controls,
+                "total_impacts": total_impacts,
+            }
+        )
     finally:
         conn.close()
 
 
 # ── POST /api/pr-intel/analyze ──────────────────────────────────────
+
 
 @pr_intel_api.route("/analyze", methods=["POST"])
 def analyze():

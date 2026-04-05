@@ -22,6 +22,7 @@ import pytest
 # DB fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def bt_db(tmp_path):
     """Minimal DB with bayesian_teaching_scores and ft_dataset_examples."""
@@ -108,13 +109,15 @@ def _insert_spans(db_path, project_id="proj-test", count=5):
     """Insert synthetic otel_spans for SmartEncoding test."""
     conn = sqlite3.connect(str(db_path))
     for i in range(count):
-        attrs = json.dumps({
-            "agent_id": "builder-agent",
-            "status_code": "OK",
-            "name": "mcp.tool_call",
-            "classification": "CUI // SP-CTI",
-            "custom_field": f"value-{i}",
-        })
+        attrs = json.dumps(
+            {
+                "agent_id": "builder-agent",
+                "status_code": "OK",
+                "name": "mcp.tool_call",
+                "classification": "CUI // SP-CTI",
+                "custom_field": f"value-{i}",
+            }
+        )
         conn.execute(
             """INSERT INTO otel_spans
                (id, trace_id, name, start_time, attributes, project_id)
@@ -128,6 +131,7 @@ def _insert_spans(db_path, project_id="proj-test", count=5):
 # ---------------------------------------------------------------------------
 # 1. Information Gain Scorer Tests (D-BT-2)
 # ---------------------------------------------------------------------------
+
 
 class TestInformationGainScorer:
     """Tests for score_candidate() and score_training_pairs()."""
@@ -217,9 +221,9 @@ class TestInformationGainScorer:
         score_training_pairs("ds-stored", top_k=3, db_path=bt_db)
 
         conn = sqlite3.connect(str(bt_db))
-        count = conn.execute(
-            "SELECT COUNT(*) FROM bayesian_teaching_scores WHERE context_id = 'ds-stored'"
-        ).fetchone()[0]
+        count = conn.execute("SELECT COUNT(*) FROM bayesian_teaching_scores WHERE context_id = 'ds-stored'").fetchone()[
+            0
+        ]
         conn.close()
         assert count >= 1  # At least some scores stored
 
@@ -227,6 +231,7 @@ class TestInformationGainScorer:
 # ---------------------------------------------------------------------------
 # 2. Teaching Dimension Tests (D-BT-3)
 # ---------------------------------------------------------------------------
+
 
 class TestTeachingDimension:
     """Tests for teaching_dimension() — Goldman & Kearns 1995."""
@@ -289,6 +294,7 @@ class TestTeachingDimension:
 # 3. Optimal Compliance Ordering Tests (D-BT-4)
 # ---------------------------------------------------------------------------
 
+
 class TestOptimalComplianceOrder:
     """Tests for optimal_compliance_order()."""
 
@@ -350,9 +356,7 @@ class TestOptimalComplianceOrder:
     def test_stores_result_in_db(self, bt_db):
         from tools.intelligence.bayesian_teacher import optimal_compliance_order
 
-        optimal_compliance_order(
-            ["AC-2", "AC-3"], project_id="proj-db-test", db_path=bt_db
-        )
+        optimal_compliance_order(["AC-2", "AC-3"], project_id="proj-db-test", db_path=bt_db)
 
         conn = sqlite3.connect(str(bt_db))
         count = conn.execute(
@@ -365,6 +369,7 @@ class TestOptimalComplianceOrder:
 # ---------------------------------------------------------------------------
 # 4. SmartEncoding Tests (D-BT-5)
 # ---------------------------------------------------------------------------
+
 
 class TestSmartEncoding:
     """Tests for DeepFlow-inspired SmartEncoding tag compression."""
@@ -451,6 +456,7 @@ class TestSmartEncoding:
 # 5. Core Math Tests
 # ---------------------------------------------------------------------------
 
+
 class TestCoreMath:
     """Test entropy, KL divergence, and posterior shift."""
 
@@ -506,6 +512,7 @@ class TestCoreMath:
 # 6. Health Check Tests
 # ---------------------------------------------------------------------------
 
+
 class TestHealthCheck:
     def test_health_check_with_db(self, bt_db):
         from tools.intelligence.bayesian_teacher import health_check
@@ -528,15 +535,18 @@ class TestHealthCheck:
 # 7. Integration Tests (pair_generator, reranker)
 # ---------------------------------------------------------------------------
 
+
 class TestIntegration:
     def test_pair_generator_bayesian_rank_import(self):
         """Verify the bayesian_rank_pairs function is importable."""
         from tools.finetune.pair_generator import bayesian_rank_pairs
+
         assert callable(bayesian_rank_pairs)
 
     def test_reranker_teaching_diversity_function(self):
         """Verify the _apply_teaching_diversity function exists."""
         from tools.rag.reranker import _apply_teaching_diversity
+
         assert callable(_apply_teaching_diversity)
 
     def test_teaching_diversity_reduces_redundancy(self):
@@ -548,8 +558,7 @@ class TestIntegration:
         results = [
             SearchResult(
                 chunk_id=f"c{i}",
-                content="NIST 800-53 AC-2 account management control" if i < 3
-                else f"Unique content about topic {i}",
+                content="NIST 800-53 AC-2 account management control" if i < 3 else f"Unique content about topic {i}",
                 source_id=f"s{i}",
                 source_table="test",
                 final_score=0.9 - (i * 0.01),
@@ -570,17 +579,16 @@ class TestIntegration:
 # 8. CLI Tests
 # ---------------------------------------------------------------------------
 
+
 class TestCLI:
     def test_health_json(self, bt_db, capsys):
         """Test CLI --health --json output."""
         import sys
         from unittest.mock import patch
 
-        with patch.object(
-            sys, "argv",
-            ["bayesian_teacher.py", "--health", "--json", "--db-path", str(bt_db)]
-        ):
+        with patch.object(sys, "argv", ["bayesian_teacher.py", "--health", "--json", "--db-path", str(bt_db)]):
             from tools.intelligence.bayesian_teacher import main
+
             main()
 
         captured = capsys.readouterr()
@@ -593,14 +601,20 @@ class TestCLI:
         from unittest.mock import patch
 
         with patch.object(
-            sys, "argv",
+            sys,
+            "argv",
             [
-                "bayesian_teacher.py", "--optimal-order", "--json",
-                "--controls", "AC-2,AC-3,SC-7",
-                "--db-path", str(bt_db),
-            ]
+                "bayesian_teacher.py",
+                "--optimal-order",
+                "--json",
+                "--controls",
+                "AC-2,AC-3,SC-7",
+                "--db-path",
+                str(bt_db),
+            ],
         ):
             from tools.intelligence.bayesian_teacher import main
+
             main()
 
         captured = capsys.readouterr()

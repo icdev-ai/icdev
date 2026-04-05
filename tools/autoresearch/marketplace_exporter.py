@@ -31,9 +31,11 @@ def _get_db():
     """Get database connection via storage abstraction."""
     try:
         from tools.db.storage import get_connection
+
         return get_connection()
     except ImportError:
         import sqlite3
+
         db_path = _ROOT / "data" / "icdev.db"
         conn = sqlite3.connect(str(db_path))
         conn.row_factory = sqlite3.Row
@@ -152,11 +154,18 @@ def export_experiment_as_asset(
                     "created_at, updated_at) "
                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
-                        asset_id, tenant_id, asset_name,
-                        "experiment_program", description,
+                        asset_id,
+                        tenant_id,
+                        asset_name,
+                        "experiment_program",
+                        description,
                         f"{tenant_id}/{asset_name}",
-                        publisher_user, "IL4", "draft", "CUI",
-                        now_iso(), now_iso(),
+                        publisher_user,
+                        "IL4",
+                        "draft",
+                        "CUI",
+                        now_iso(),
+                        now_iso(),
                     ),
                 )
             except Exception:
@@ -173,9 +182,9 @@ def export_experiment_as_asset(
                         "autoresearch.marketplace_export",
                         "autoresearch-engine",
                         f"Exported experiment {experiment_id} as marketplace asset {asset_id}",
-                        json.dumps({"experiment_id": experiment_id,
-                                    "asset_id": asset_id, "domain": domain},
-                                   default=str),
+                        json.dumps(
+                            {"experiment_id": experiment_id, "asset_id": asset_id, "domain": domain}, default=str
+                        ),
                         "autoresearch",
                         "autoresearch",
                         now_iso(),
@@ -221,12 +230,11 @@ def health_check() -> dict:
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
 
+
 def main():
     parser = argparse.ArgumentParser(description="Marketplace Exporter")
-    parser.add_argument("--export", action="store_true",
-                        help="Export experiment as marketplace asset")
-    parser.add_argument("--list-exportable", action="store_true",
-                        help="List exportable experiments")
+    parser.add_argument("--export", action="store_true", help="Export experiment as marketplace asset")
+    parser.add_argument("--list-exportable", action="store_true", help="List exportable experiments")
     parser.add_argument("--health", action="store_true", help="Health check")
     parser.add_argument("--experiment-id", type=str, default="")
     parser.add_argument("--min-improvement", type=float, default=0.005)

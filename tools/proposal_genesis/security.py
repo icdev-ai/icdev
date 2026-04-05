@@ -46,7 +46,11 @@ def request_credential(reflex_name: str, config: dict) -> Optional[str]:
         The scoped token string on success, or ``None`` if the broker is
         disabled, not installed, or the request was denied.
     """
-    security_cfg = config.get("security", config) if "security" not in config or isinstance(config.get("security"), dict) else config
+    security_cfg = (
+        config.get("security", config)
+        if "security" not in config or isinstance(config.get("security"), dict)
+        else config
+    )
     if "security" in config and isinstance(config["security"], dict):
         security_cfg = config["security"]
 

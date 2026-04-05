@@ -64,6 +64,7 @@ for _lang, _exts in _LANG_EXT.items():
 # Config
 # ---------------------------------------------------------------------------
 
+
 def _load_config() -> Dict[str, Any]:
     """Load verify_loop_config.yaml with env var expansion."""
     try:
@@ -77,13 +78,15 @@ def _load_config() -> Dict[str, Any]:
             raw = f.read()
         # Expand ${VAR:-default} patterns
         import re
+
         def _expand(match):
             expr = match.group(1)
             if ":-" in expr:
                 var, default = expr.split(":-", 1)
                 return os.environ.get(var, default)
             return os.environ.get(expr, match.group(0))
-        raw = re.sub(r'\$\{([^}]+)\}', _expand, raw)
+
+        raw = re.sub(r"\$\{([^}]+)\}", _expand, raw)
         return yaml.safe_load(raw) or {}
     except Exception:
         return {}
@@ -180,6 +183,7 @@ def _store_result(result: Dict, project_id: str = "") -> None:
 # Verifier execution
 # ---------------------------------------------------------------------------
 
+
 def _run_verifier(
     verifier: Dict,
     file_path: str,
@@ -214,8 +218,13 @@ def _run_verifier(
     exe = command[0] if command else ""
     if not exe:
         return {
-            "name": name, "blocking": blocking, "passed": True,
-            "errors": [], "stderr": "", "return_code": 0, "skipped": True,
+            "name": name,
+            "blocking": blocking,
+            "passed": True,
+            "errors": [],
+            "stderr": "",
+            "return_code": 0,
+            "skipped": True,
             "reason": "No command configured",
         }
 
@@ -254,29 +263,43 @@ def _run_verifier(
     except FileNotFoundError:
         if optional:
             return {
-                "name": name, "blocking": False, "passed": True,
-                "errors": [], "stderr": "", "return_code": 0,
-                "skipped": True, "reason": f"{exe} not found (optional)",
+                "name": name,
+                "blocking": False,
+                "passed": True,
+                "errors": [],
+                "stderr": "",
+                "return_code": 0,
+                "skipped": True,
+                "reason": f"{exe} not found (optional)",
             }
         return {
-            "name": name, "blocking": blocking, "passed": False,
+            "name": name,
+            "blocking": blocking,
+            "passed": False,
             "errors": [f"Command not found: {exe}"],
             "stderr": f"Command not found: {exe}",
-            "return_code": -1, "skipped": False,
+            "return_code": -1,
+            "skipped": False,
         }
     except subprocess.TimeoutExpired:
         return {
-            "name": name, "blocking": blocking, "passed": False,
+            "name": name,
+            "blocking": blocking,
+            "passed": False,
             "errors": [f"Timeout after {timeout}s"],
             "stderr": f"Timeout after {timeout}s",
-            "return_code": -1, "skipped": False,
+            "return_code": -1,
+            "skipped": False,
         }
     except Exception as e:
         return {
-            "name": name, "blocking": blocking, "passed": False,
+            "name": name,
+            "blocking": blocking,
+            "passed": False,
             "errors": [str(e)],
             "stderr": str(e),
-            "return_code": -1, "skipped": False,
+            "return_code": -1,
+            "skipped": False,
         }
 
 
@@ -297,6 +320,7 @@ def _run_all_verifiers(
 # ---------------------------------------------------------------------------
 # LLM Repair
 # ---------------------------------------------------------------------------
+
 
 def _repair_with_llm(
     file_path: str,
@@ -388,6 +412,7 @@ def _repair_with_llm(
 # Main verify loop
 # ---------------------------------------------------------------------------
 
+
 def verify_file(
     file_path: str,
     language: str = "",
@@ -422,17 +447,21 @@ def verify_file(
         language = _EXT_TO_LANG.get(ext, "")
     if not language:
         return {
-            "file": file_path, "language": "unknown",
+            "file": file_path,
+            "language": "unknown",
             "error": f"Cannot detect language for {Path(file_path).suffix}",
-            "passed": False, "gate_passed": False,
+            "passed": False,
+            "gate_passed": False,
         }
 
     verifiers = _get_verifiers(language, config)
     if not verifiers:
         return {
-            "file": file_path, "language": language,
+            "file": file_path,
+            "language": language,
             "error": f"No verifiers configured for {language}",
-            "passed": True, "gate_passed": True,
+            "passed": True,
+            "gate_passed": True,
             "verifier_results": [],
         }
 
@@ -442,7 +471,8 @@ def verify_file(
 
     if dry_run:
         return {
-            "file": file_path, "language": language,
+            "file": file_path,
+            "language": language,
             "dry_run": True,
             "verifiers": [v["name"] for v in verifiers],
             "max_iterations": max_iterations if repair else 1,
@@ -455,9 +485,11 @@ def verify_file(
             original_source = f.read()
     except Exception as e:
         return {
-            "file": file_path, "language": language,
+            "file": file_path,
+            "language": language,
             "error": f"Cannot read file: {e}",
-            "passed": False, "gate_passed": False,
+            "passed": False,
+            "gate_passed": False,
         }
 
     content_hash = hashlib.sha256(original_source.encode()).hexdigest()[:16]
@@ -488,21 +520,24 @@ def verify_file(
         audit_cfg = config.get("audit", {})
         if audit_cfg.get("store_results", True):
             for r in results:
-                _store_result({
-                    "file_path": file_path,
-                    "language": language,
-                    "iteration": iteration + 1,
-                    "max_iterations": max_iterations,
-                    "verifier_name": r["name"],
-                    "verifier_type": r["name"],
-                    "blocking": r["blocking"],
-                    "passed": r["passed"],
-                    "error_count": len(r.get("errors", [])),
-                    "error_summary": r.get("stderr", "")[:2000] if not r["passed"] else "",
-                    "repaired": repaired_flag,
-                    "repair_model": repair_model,
-                    "content_hash": content_hash,
-                }, project_id)
+                _store_result(
+                    {
+                        "file_path": file_path,
+                        "language": language,
+                        "iteration": iteration + 1,
+                        "max_iterations": max_iterations,
+                        "verifier_name": r["name"],
+                        "verifier_type": r["name"],
+                        "blocking": r["blocking"],
+                        "passed": r["passed"],
+                        "error_count": len(r.get("errors", [])),
+                        "error_summary": r.get("stderr", "")[:2000] if not r["passed"] else "",
+                        "repaired": repaired_flag,
+                        "repair_model": repair_model,
+                        "content_hash": content_hash,
+                    },
+                    project_id,
+                )
 
         # If all blocking passed, we're done
         if all_passed:
@@ -511,9 +546,7 @@ def verify_file(
         # Attempt repair if enabled and not on last iteration
         if repair and iteration < max_iterations - 1:
             failed_results = blocking_failures + warning_failures
-            repaired_code = _repair_with_llm(
-                file_path, original_source, failed_results, language, config
-            )
+            repaired_code = _repair_with_llm(file_path, original_source, failed_results, language, config)
             if repaired_code and repaired_code != original_source:
                 # Write repaired code back
                 try:
@@ -525,6 +558,7 @@ def verify_file(
                     # Extract model info from LLM router if available
                     try:
                         from tools.llm.router import LLMRouter
+
                         router = LLMRouter()
                         _, model_name = router.get_provider_for_function(
                             _get_loop_config(config).get("repair_function", "verify_loop_repair")
@@ -546,10 +580,7 @@ def verify_file(
     max_unresolved_blocking = gate_cfg.get("max_unresolved_blocking", 0)
     max_unresolved_warnings = gate_cfg.get("max_unresolved_warnings", 10)
 
-    gate_passed = (
-        len(final_blocking) <= max_unresolved_blocking
-        and len(final_warnings) <= max_unresolved_warnings
-    )
+    gate_passed = len(final_blocking) <= max_unresolved_blocking and len(final_warnings) <= max_unresolved_warnings
 
     return {
         "file": file_path,
@@ -582,9 +613,22 @@ def verify_project(
         config = _load_config()
 
     exclude_dirs = {
-        "venv", ".venv", "env", "node_modules", ".git", "__pycache__",
-        "build", "dist", ".tox", ".eggs", "vendor", "target", "bin", "obj",
-        ".tmp", "playwright",
+        "venv",
+        ".venv",
+        "env",
+        "node_modules",
+        ".git",
+        "__pycache__",
+        "build",
+        "dist",
+        ".tox",
+        ".eggs",
+        "vendor",
+        "target",
+        "bin",
+        "obj",
+        ".tmp",
+        "playwright",
     }
 
     # Collect files
@@ -606,8 +650,13 @@ def verify_project(
 
     for fpath, flang in files:
         r = verify_file(
-            fpath, flang, repair=repair, dry_run=dry_run,
-            project_dir=project_dir, project_id=project_id, config=config,
+            fpath,
+            flang,
+            repair=repair,
+            dry_run=dry_run,
+            project_dir=project_dir,
+            project_id=project_id,
+            config=config,
         )
         results.append(r)
         total_blocking += r.get("blocking_failures", 0)
@@ -616,9 +665,8 @@ def verify_project(
             total_repaired += 1
 
     gate_cfg = config.get("gate", {})
-    gate_passed = (
-        total_blocking <= gate_cfg.get("max_unresolved_blocking", 0)
-        and total_warnings <= gate_cfg.get("max_unresolved_warnings", 10)
+    gate_passed = total_blocking <= gate_cfg.get("max_unresolved_blocking", 0) and total_warnings <= gate_cfg.get(
+        "max_unresolved_warnings", 10
     )
 
     return {
@@ -638,10 +686,9 @@ def verify_project(
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
-    parser = argparse.ArgumentParser(
-        description="Compiler-in-the-Loop Verification (LeanStral-adapted)"
-    )
+    parser = argparse.ArgumentParser(description="Compiler-in-the-Loop Verification (LeanStral-adapted)")
     parser.add_argument("--file", help="Single file to verify")
     parser.add_argument("--project-dir", help="Project directory to verify")
     parser.add_argument("--language", default="", help="Language (auto-detected if omitted)")
@@ -660,13 +707,21 @@ def main():
 
     if args.file:
         result = verify_file(
-            args.file, args.language, repair=args.repair,
-            dry_run=args.dry_run, project_id=args.project_id, config=config,
+            args.file,
+            args.language,
+            repair=args.repair,
+            dry_run=args.dry_run,
+            project_id=args.project_id,
+            config=config,
         )
     else:
         result = verify_project(
-            args.project_dir, args.language, repair=args.repair,
-            dry_run=args.dry_run, project_id=args.project_id, config=config,
+            args.project_dir,
+            args.language,
+            repair=args.repair,
+            dry_run=args.dry_run,
+            project_id=args.project_id,
+            config=config,
         )
 
     if args.json:
@@ -684,16 +739,16 @@ def _print_human(result: Dict):
     """Human-readable terminal output."""
     if "file_results" in result:
         # Project-level result
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"  Verify Loop — {result['project_dir']}")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
         print(f"  Files checked:      {result['files_checked']}")
         print(f"  Blocking failures:  {result['total_blocking_failures']}")
         print(f"  Warning failures:   {result['total_warning_failures']}")
         print(f"  Files repaired:     {result['total_repaired']}")
         status = "PASS" if result.get("gate_passed") else "FAIL"
         print(f"  Gate:               {status}")
-        print(f"{'='*60}\n")
+        print(f"{'=' * 60}\n")
 
         for fr in result.get("file_results", []):
             status_icon = "+" if fr.get("passed") else "!"
@@ -705,9 +760,9 @@ def _print_human(result: Dict):
             print(f"  [{status_icon}] {fname} — iter:{iters} blk:{blk} warn:{warn}{repaired}")
     else:
         # File-level result
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"  Verify Loop — {Path(result.get('file', '')).name}")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
         print(f"  Language:           {result.get('language', 'unknown')}")
         print(f"  Iterations:         {result.get('iterations', 0)}/{result.get('max_iterations', 1)}")
         print(f"  Blocking failures:  {result.get('blocking_failures', 0)}")
@@ -715,7 +770,7 @@ def _print_human(result: Dict):
         print(f"  Repaired:           {'Yes' if result.get('repaired') else 'No'}")
         status = "PASS" if result.get("gate_passed") else "FAIL"
         print(f"  Gate:               {status}")
-        print(f"{'='*60}\n")
+        print(f"{'=' * 60}\n")
 
         for iter_detail in result.get("iteration_details", []):
             print(f"  --- Iteration {iter_detail['iteration']} ---")

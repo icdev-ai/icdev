@@ -23,8 +23,14 @@ _NULL_DEVICE = "NUL" if os.name == "nt" else "/dev/null"
 
 # Validation check names
 CHECKS = [
-    "syntax", "lint", "round_trip", "api_surface",
-    "type_coverage", "complexity", "compliance", "feature_mapping",
+    "syntax",
+    "lint",
+    "round_trip",
+    "api_surface",
+    "type_coverage",
+    "complexity",
+    "compliance",
+    "feature_mapping",
 ]
 
 # Syntax check commands per language
@@ -54,6 +60,7 @@ def _load_config():
     if config_path.exists():
         try:
             import yaml
+
             with open(config_path, "r") as f:
                 return yaml.safe_load(f)
         except ImportError:
@@ -91,7 +98,10 @@ def check_syntax(file_path, language):
 
     try:
         result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=60,
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=60,
             stdin=subprocess.DEVNULL,
         )
         if result.returncode == 0:
@@ -116,7 +126,10 @@ def check_lint(file_path, language):
     try:
         cmd = cmd_parts + [str(file_path)]
         result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=60,
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=60,
             stdin=subprocess.DEVNULL,
         )
         if result.returncode == 0:
@@ -134,8 +147,10 @@ def check_round_trip(source_ir, translated_file, target_language):
     Returns (score, findings)."""
     try:
         from tools.translation.source_extractor import extract_source
+
         target_ir = extract_source(
-            str(translated_file.parent), target_language,
+            str(translated_file.parent),
+            target_language,
         )
     except Exception:
         return 0.5, ["Round-trip extraction not available"]
@@ -167,9 +182,7 @@ def check_round_trip(source_ir, translated_file, target_language):
             src_params = len(src_unit.get("params", []))
             tgt_params = len(tgt.get("params", []))
             if src_params != tgt_params:
-                findings.append(
-                    f"{name}: param count mismatch ({src_params} vs {tgt_params})"
-                )
+                findings.append(f"{name}: param count mismatch ({src_params} vs {tgt_params})")
         else:
             findings.append(f"{name}: not found in translated output")
 
@@ -218,6 +231,7 @@ def check_type_coverage(source_ir, target_language):
 
     try:
         from tools.translation.type_checker import load_type_mappings, map_type
+
         type_mappings = load_type_mappings()
     except ImportError:
         return 0.5, ["Type checker not available"]
@@ -268,9 +282,7 @@ def check_complexity(source_ir, translated_units):
             increase_pct = ((tgt_lines - src_lines) / src_lines) * 100
             if increase_pct > 30:
                 complexity_increases.append(increase_pct)
-                findings.append(
-                    f"{name}: {increase_pct:.0f}% line increase ({src_lines} → {tgt_lines})"
-                )
+                findings.append(f"{name}: {increase_pct:.0f}% line increase ({src_lines} → {tgt_lines})")
 
     if not complexity_increases:
         return 1.0, findings
@@ -304,6 +316,7 @@ def check_feature_mapping(source_ir, translated_units, source_language, target_l
     """Validate feature mapping rules were applied (D247). Returns (score, findings)."""
     try:
         from tools.translation.feature_map import FeatureMapLoader
+
         loader = FeatureMapLoader()
         rules = loader.get_rules(source_language, target_language)
     except ImportError:
@@ -345,9 +358,17 @@ def check_feature_mapping(source_ir, translated_units, source_language, target_l
     return round(max(0.0, score), 3), findings
 
 
-def validate_translation(source_ir, translated_data, source_language, target_language,
-                         output_dir=None, project_id=None, job_id=None,
-                         config=None, db_path=None):
+def validate_translation(
+    source_ir,
+    translated_data,
+    source_language,
+    target_language,
+    output_dir=None,
+    project_id=None,
+    job_id=None,
+    config=None,
+    db_path=None,
+):
     """Run all 8 validation checks. Returns validation report dict."""
     if config is None:
         config = _load_config()
@@ -355,8 +376,7 @@ def validate_translation(source_ir, translated_data, source_language, target_lan
     thresholds = config.get("validation", {}).get("thresholds", {})
     compliance_config = config.get("compliance", {})
 
-    translated_units = translated_data.get("translated_units", []) + \
-                       translated_data.get("mocked_units", [])
+    translated_units = translated_data.get("translated_units", []) + translated_data.get("mocked_units", [])
 
     results = {}
     overall_pass = True
@@ -367,9 +387,13 @@ def validate_translation(source_ir, translated_data, source_language, target_lan
     if output_dir:
         out = Path(output_dir)
         ext_map = {
-            "python": "*.py", "java": "*.java", "go": "*.go",
-            "rust": "*.rs", "csharp": "*.cs",
-            "typescript": "*.ts", "javascript": "*.js",
+            "python": "*.py",
+            "java": "*.java",
+            "go": "*.go",
+            "rust": "*.rs",
+            "csharp": "*.cs",
+            "typescript": "*.ts",
+            "javascript": "*.js",
         }
         pattern = ext_map.get(target_language, "*")
         for f in out.rglob(pattern):
@@ -457,9 +481,7 @@ def validate_translation(source_ir, translated_data, source_language, target_lan
         overall_pass = False
 
     # 8. Feature mapping
-    fm_score, fm_findings = check_feature_mapping(
-        source_ir, translated_units, source_language, target_language
-    )
+    fm_score, fm_findings = check_feature_mapping(source_ir, translated_units, source_language, target_language)
     results["feature_mapping"] = {
         "passed": fm_score >= 0.8,
         "score": fm_score,
@@ -469,8 +491,7 @@ def validate_translation(source_ir, translated_data, source_language, target_lan
     # Gate evaluation
     gate_result = "pass" if overall_pass else "fail"
     if not overall_pass and all(
-        r.get("passed", True) for k, r in results.items()
-        if k in ("syntax", "api_surface", "compliance")
+        r.get("passed", True) for k, r in results.items() if k in ("syntax", "api_surface", "compliance")
     ):
         gate_result = "warn"
 
@@ -493,6 +514,7 @@ def validate_translation(source_ir, translated_data, source_language, target_lan
     # Audit trail
     try:
         from tools.audit.audit_logger import log_event
+
         event_type = "translation.validation_passed" if overall_pass else "translation.validation_failed"
         log_event(
             event_type=event_type,
@@ -525,7 +547,9 @@ def _record_validations(db_path, job_id, results):
                    (id, job_id, check_type, passed, score, findings)
                    VALUES (?, ?, ?, ?, ?, ?)""",
                 (
-                    val_id, job_id, check_type,
+                    val_id,
+                    job_id,
+                    check_type,
                     1 if result.get("passed") else 0,
                     result.get("score", 0.0),
                     json.dumps(result.get("findings", [])),
@@ -537,8 +561,7 @@ def _record_validations(db_path, job_id, results):
         pass
 
 
-def repair_translation(unit, source_code, translated_code, errors,
-                       source_language, target_language, config=None):
+def repair_translation(unit, source_code, translated_code, errors, source_language, target_language, config=None):
     """Attempt LLM-based repair using compiler feedback (D255).
     Returns repaired code or None."""
     if config is None:
@@ -582,6 +605,7 @@ def repair_translation(unit, source_code, translated_code, errors,
     try:
         from tools.llm.router import LLMRouter
         from tools.llm.provider import LLMRequest
+
         router = LLMRouter()
         request = LLMRequest(
             messages=[{"role": "user", "content": prompt}],
@@ -599,8 +623,7 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--ir-file", required=True, help="Source IR JSON file")
-    parser.add_argument("--translated-file", required=True,
-                        help="Translated units JSON file")
+    parser.add_argument("--translated-file", required=True, help="Translated units JSON file")
     parser.add_argument("--source-language", required=True, help="Source language")
     parser.add_argument("--target-language", required=True, help="Target language")
     parser.add_argument("--output-dir", help="Assembled project directory")

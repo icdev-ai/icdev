@@ -3,12 +3,12 @@
 Tests the deterministic engines (path, failure, neighbor, inventory) via the
 Python API — no running server or Ollama required for CI.
 """
+
 from __future__ import annotations
 
 import json
 import sqlite3
 import sys
-import tempfile
 import uuid
 from pathlib import Path
 
@@ -29,32 +29,82 @@ from tools.network.nl_query import (
 
 _SAMPLE_GRAPH = {
     "cells": [
-        {"id": "r1", "type": "network.Router", "deviceType": "Router",
-         "label": "Core-Router", "position": {"x": 100, "y": 100}},
-        {"id": "sw1", "type": "network.Switch", "deviceType": "Switch",
-         "label": "Core-Switch", "position": {"x": 300, "y": 100}},
-        {"id": "fw1", "type": "network.Firewall", "deviceType": "Firewall",
-         "label": "Edge-Firewall", "position": {"x": 500, "y": 100}},
-        {"id": "srv1", "type": "network.Server", "deviceType": "Server",
-         "label": "Web-Server", "position": {"x": 700, "y": 100}},
-        {"id": "srv2", "type": "network.Server", "deviceType": "Server",
-         "label": "DB-Server", "position": {"x": 700, "y": 300}},
+        {
+            "id": "r1",
+            "type": "network.Router",
+            "deviceType": "Router",
+            "label": "Core-Router",
+            "position": {"x": 100, "y": 100},
+        },
+        {
+            "id": "sw1",
+            "type": "network.Switch",
+            "deviceType": "Switch",
+            "label": "Core-Switch",
+            "position": {"x": 300, "y": 100},
+        },
+        {
+            "id": "fw1",
+            "type": "network.Firewall",
+            "deviceType": "Firewall",
+            "label": "Edge-Firewall",
+            "position": {"x": 500, "y": 100},
+        },
+        {
+            "id": "srv1",
+            "type": "network.Server",
+            "deviceType": "Server",
+            "label": "Web-Server",
+            "position": {"x": 700, "y": 100},
+        },
+        {
+            "id": "srv2",
+            "type": "network.Server",
+            "deviceType": "Server",
+            "label": "DB-Server",
+            "position": {"x": 700, "y": 300},
+        },
         # Isolated node — not connected to rest
-        {"id": "iso1", "type": "network.Workstation", "deviceType": "Workstation",
-         "label": "Isolated-WS", "position": {"x": 900, "y": 500}},
+        {
+            "id": "iso1",
+            "type": "network.Workstation",
+            "deviceType": "Workstation",
+            "label": "Isolated-WS",
+            "position": {"x": 900, "y": 500},
+        },
         # Links
-        {"id": "e1", "type": "network.Link",
-         "source": {"id": "r1"}, "target": {"id": "sw1"},
-         "protocol": "OSPF", "bandwidth": "10G"},
-        {"id": "e2", "type": "network.Link",
-         "source": {"id": "sw1"}, "target": {"id": "fw1"},
-         "protocol": "VLAN", "bandwidth": "1G"},
-        {"id": "e3", "type": "network.Link",
-         "source": {"id": "fw1"}, "target": {"id": "srv1"},
-         "protocol": "HTTPS", "bandwidth": "1G"},
-        {"id": "e4", "type": "network.Link",
-         "source": {"id": "sw1"}, "target": {"id": "srv2"},
-         "protocol": "SQL", "bandwidth": "10G"},
+        {
+            "id": "e1",
+            "type": "network.Link",
+            "source": {"id": "r1"},
+            "target": {"id": "sw1"},
+            "protocol": "OSPF",
+            "bandwidth": "10G",
+        },
+        {
+            "id": "e2",
+            "type": "network.Link",
+            "source": {"id": "sw1"},
+            "target": {"id": "fw1"},
+            "protocol": "VLAN",
+            "bandwidth": "1G",
+        },
+        {
+            "id": "e3",
+            "type": "network.Link",
+            "source": {"id": "fw1"},
+            "target": {"id": "srv1"},
+            "protocol": "HTTPS",
+            "bandwidth": "1G",
+        },
+        {
+            "id": "e4",
+            "type": "network.Link",
+            "source": {"id": "sw1"},
+            "target": {"id": "srv2"},
+            "protocol": "SQL",
+            "bandwidth": "10G",
+        },
     ]
 }
 
@@ -100,6 +150,7 @@ def db_conn(tmp_path):
 # ---------------------------------------------------------------------------
 # TopologyGraphAdapter tests
 # ---------------------------------------------------------------------------
+
 
 class TestTopologyGraphAdapter:
     def test_node_count(self, graph):
@@ -147,6 +198,7 @@ class TestTopologyGraphAdapter:
 # QueryClassifier tests
 # ---------------------------------------------------------------------------
 
+
 class TestQueryClassifier:
     def test_classify_path(self):
         assert classify_query("Show all paths between Router-A and Server-B") == "path"
@@ -180,11 +232,10 @@ class TestQueryClassifier:
 # answer_query — deterministic engine tests (no Ollama)
 # ---------------------------------------------------------------------------
 
+
 class TestPathEngine:
     def test_path_found(self, db_conn):
-        result = answer_query(_TOPO_ID,
-                              "Show all paths between Core-Router and Web-Server",
-                              db_conn)
+        result = answer_query(_TOPO_ID, "Show all paths between Core-Router and Web-Server", db_conn)
         assert result["intent"] == "path"
         assert result["engine"] == "path"
         assert "Core-Router" in result["answer"]
@@ -192,17 +243,13 @@ class TestPathEngine:
         assert result["data"]["path_count"] >= 1
 
     def test_path_no_path_to_isolated(self, db_conn):
-        result = answer_query(_TOPO_ID,
-                              "Show path from Core-Router to Isolated-WS",
-                              db_conn)
+        result = answer_query(_TOPO_ID, "Show path from Core-Router to Isolated-WS", db_conn)
         assert result["intent"] == "path"
         # isolated node → no path
         assert "no path" in result["answer"].lower() or "not found" in result["answer"].lower()
 
     def test_shortest_path_hops(self, db_conn):
-        result = answer_query(_TOPO_ID,
-                              "What is the shortest path from Core-Router to Web-Server?",
-                              db_conn)
+        result = answer_query(_TOPO_ID, "What is the shortest path from Core-Router to Web-Server?", db_conn)
         data = result["data"]
         # Core-Router → Core-Switch → Edge-Firewall → Web-Server = 3 hops
         assert data.get("shortest_hops") == 3
@@ -211,9 +258,7 @@ class TestPathEngine:
 class TestFailureEngine:
     def test_failure_critical_node(self, db_conn):
         # Core-Switch is an articulation point (connects router to both servers)
-        result = answer_query(_TOPO_ID,
-                              "What happens if Core-Switch goes down?",
-                              db_conn)
+        result = answer_query(_TOPO_ID, "What happens if Core-Switch goes down?", db_conn)
         assert result["intent"] == "failure"
         assert result["engine"] == "failure"
         data = result["data"]
@@ -221,16 +266,12 @@ class TestFailureEngine:
         assert data["is_critical"] is True
 
     def test_failure_lists_neighbors(self, db_conn):
-        result = answer_query(_TOPO_ID,
-                              "What if Core-Router fails?",
-                              db_conn)
+        result = answer_query(_TOPO_ID, "What if Core-Router fails?", db_conn)
         data = result["data"]
         assert "Core-Switch" in data["direct_neighbors"]
 
     def test_failure_isolated_node(self, db_conn):
-        result = answer_query(_TOPO_ID,
-                              "What if Isolated-WS goes down?",
-                              db_conn)
+        result = answer_query(_TOPO_ID, "What if Isolated-WS goes down?", db_conn)
         data = result["data"]
         # Isolated node — not a critical bridge
         assert data["is_critical"] is False
@@ -239,18 +280,14 @@ class TestFailureEngine:
 
 class TestNeighborEngine:
     def test_neighbors_of_switch(self, db_conn):
-        result = answer_query(_TOPO_ID,
-                              "What is directly connected to Core-Switch?",
-                              db_conn)
+        result = answer_query(_TOPO_ID, "What is directly connected to Core-Switch?", db_conn)
         assert result["intent"] == "neighbor"
         data = result["data"]
         assert data["count"] == 3  # r1, fw1, srv2
         assert "Core-Router" in data["neighbors"]
 
     def test_neighbors_of_isolated(self, db_conn):
-        result = answer_query(_TOPO_ID,
-                              "What is connected to Isolated-WS?",
-                              db_conn)
+        result = answer_query(_TOPO_ID, "What is connected to Isolated-WS?", db_conn)
         assert "no connections" in result["answer"].lower()
 
 
@@ -265,8 +302,7 @@ class TestInventoryEngine:
         assert result["data"]["count"] == 2
 
     def test_general_inventory_summary(self, db_conn):
-        result = answer_query(_TOPO_ID,
-                              "Show me an inventory of all devices", db_conn)
+        result = answer_query(_TOPO_ID, "Show me an inventory of all devices", db_conn)
         assert result["intent"] == "inventory"
         assert "Total nodes" in result["answer"]
 
@@ -274,6 +310,7 @@ class TestInventoryEngine:
 # ---------------------------------------------------------------------------
 # answer_query — edge cases
 # ---------------------------------------------------------------------------
+
 
 class TestEdgeCases:
     def test_empty_question(self, db_conn):
@@ -286,9 +323,7 @@ class TestEdgeCases:
 
     def test_query_logged(self, db_conn):
         answer_query(_TOPO_ID, "How many routers?", db_conn)
-        row = db_conn.execute(
-            "SELECT * FROM nc_query_log WHERE topology_id=?", (_TOPO_ID,)
-        ).fetchone()
+        row = db_conn.execute("SELECT * FROM nc_query_log WHERE topology_id=?", (_TOPO_ID,)).fetchone()
         assert row is not None
         assert row["question"] == "How many routers?"
         assert row["intent"] == "inventory"

@@ -35,6 +35,7 @@ def _generate_id(prefix: str = "pgtal") -> str:
 # Talent signal analysis
 # ---------------------------------------------------------------------------
 
+
 def _get_recent_signals(days: int = 30) -> List[Dict]:
     """Get talent signals from the last N days."""
     conn = get_connection()
@@ -85,20 +86,14 @@ def _compute_velocity(signals: List[Dict]) -> Dict[str, Any]:
             skill_counts[tag.lower()] = skill_counts.get(tag.lower(), 0) + 1
 
     # Top competitors by hiring volume
-    top_competitors = sorted(
-        competitor_counts.items(), key=lambda x: x[1], reverse=True
-    )[:10]
+    top_competitors = sorted(competitor_counts.items(), key=lambda x: x[1], reverse=True)[:10]
 
     # Top skills in demand
-    top_skills = sorted(
-        skill_counts.items(), key=lambda x: x[1], reverse=True
-    )[:15]
+    top_skills = sorted(skill_counts.items(), key=lambda x: x[1], reverse=True)[:15]
 
     return {
         "competitors": dict(top_competitors),
-        "clearance_heavy": {
-            k: v for k, v in clearance_counts.items() if v >= 2
-        },
+        "clearance_heavy": {k: v for k, v in clearance_counts.items() if v >= 2},
         "top_skills": dict(top_skills),
         "total_signals": len(signals),
     }
@@ -114,11 +109,13 @@ def _detect_surges(signals: List[Dict], threshold: int = 5) -> List[Dict]:
     surges = []
     for name, count in competitor_counts.items():
         if count >= threshold:
-            surges.append({
-                "competitor": name,
-                "postings": count,
-                "signal": "hiring_surge",
-            })
+            surges.append(
+                {
+                    "competitor": name,
+                    "postings": count,
+                    "signal": "hiring_surge",
+                }
+            )
 
     return sorted(surges, key=lambda x: x["postings"], reverse=True)
 
@@ -126,6 +123,7 @@ def _detect_surges(signals: List[Dict], threshold: int = 5) -> List[Dict]:
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
+
 
 def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     """Execute the Talent Reflex (R20).
@@ -157,11 +155,13 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                 "talent_scan",
                 "talent",
                 "green",
-                json.dumps({
-                    "signals_analyzed": len(signals),
-                    "surges_detected": len(surges),
-                    "lookback_days": lookback_days,
-                }),
+                json.dumps(
+                    {
+                        "signals_analyzed": len(signals),
+                        "surges_detected": len(surges),
+                        "lookback_days": lookback_days,
+                    }
+                ),
                 1,
                 _utcnow_iso(),
             ),
@@ -184,4 +184,6 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             "hiring_surges": surges,
         },
     }
+
+
 # CUI // SP-CTI

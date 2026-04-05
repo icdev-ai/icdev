@@ -64,18 +64,21 @@ _blueprint_verifier = None
 
 try:
     from tools.security.credential_broker import CredentialBroker  # noqa: E402
+
     _credential_broker = CredentialBroker
 except ImportError:
     pass
 
 try:
     from tools.security.egress_policy_manager import EgressPolicyManager  # noqa: E402
+
     _egress_policy_manager = EgressPolicyManager
 except ImportError:
     pass
 
 try:
     from tools.security.blueprint_verifier import BlueprintVerifier  # noqa: E402
+
     _blueprint_verifier = BlueprintVerifier
 except ImportError:
     pass
@@ -215,9 +218,18 @@ def _normalize_reflex(reflex_name: str) -> str:
     reflex_lower = reflex_name.lower().strip()
     # Mapping from R-numbers to canonical short names
     r_to_short = {
-        "r1": "discover", "r2": "scout", "r4": "extract", "r5": "map",
-        "r7": "draft", "r8": "polish", "r9": "score", "r11": "fulfill",
-        "r13": "analyze", "r14": "train", "r15": "review", "r17": "price",
+        "r1": "discover",
+        "r2": "scout",
+        "r4": "extract",
+        "r5": "map",
+        "r7": "draft",
+        "r8": "polish",
+        "r9": "score",
+        "r11": "fulfill",
+        "r13": "analyze",
+        "r14": "train",
+        "r15": "review",
+        "r17": "price",
         "r18": "comply_cmmc",
     }
     if reflex_lower in r_to_short:
@@ -318,10 +330,12 @@ def generate_network_policy(reflex_name: str) -> Dict[str, Any]:
     egress_rules: list[dict] = []
 
     # DNS access (always allowed)
-    egress_rules.append({
-        "ports": [{"port": 53, "protocol": "UDP"}, {"port": 53, "protocol": "TCP"}],
-        "to": [{"namespaceSelector": {}}],
-    })
+    egress_rules.append(
+        {
+            "ports": [{"port": 53, "protocol": "UDP"}, {"port": 53, "protocol": "TCP"}],
+            "to": [{"namespaceSelector": {}}],
+        }
+    )
 
     # Per-endpoint rules
     for endpoint in allowed:
@@ -329,16 +343,20 @@ def generate_network_policy(reflex_name: str) -> Dict[str, Any]:
         port = endpoint.get("port", 443)
         if host == "localhost" or host == "127.0.0.1":
             # localhost access via pod-local
-            egress_rules.append({
-                "ports": [{"port": port, "protocol": "TCP"}],
-                "to": [{"podSelector": {"matchLabels": {"app": "icdev-proposal-genesis"}}}],
-            })
+            egress_rules.append(
+                {
+                    "ports": [{"port": port, "protocol": "TCP"}],
+                    "to": [{"podSelector": {"matchLabels": {"app": "icdev-proposal-genesis"}}}],
+                }
+            )
         else:
             # External DNS-based endpoint
-            egress_rules.append({
-                "ports": [{"port": port, "protocol": "TCP"}],
-                "to": [{"ipBlock": {"cidr": "0.0.0.0/0"}}],
-            })
+            egress_rules.append(
+                {
+                    "ports": [{"port": port, "protocol": "TCP"}],
+                    "to": [{"ipBlock": {"cidr": "0.0.0.0/0"}}],
+                }
+            )
 
     # Build full NetworkPolicy manifest
     manifest = {
@@ -442,9 +460,7 @@ def verify_cdrl_integrity(
             rel_path = fpath.relative_to(dir_path).as_posix()
             try:
                 content = fpath.read_bytes()
-                file_hash = hashlib.sha256(
-                    (rel_path + "\x00").encode("utf-8") + content
-                ).hexdigest()
+                file_hash = hashlib.sha256((rel_path + "\x00").encode("utf-8") + content).hexdigest()
                 file_hashes.append(file_hash)
                 file_count += 1
                 total_bytes += len(content)
@@ -476,14 +492,16 @@ def verify_cdrl_integrity(
     _audit(
         conn,
         "cdrl_integrity_verified",
-        json.dumps({
-            "output_dir": str(dir_path),
-            "deliverable_id": deliverable_id,
-            "digest": digest[:16] + "...",
-            "file_count": file_count,
-            "total_bytes": total_bytes,
-            "stored": stored,
-        }),
+        json.dumps(
+            {
+                "output_dir": str(dir_path),
+                "deliverable_id": deliverable_id,
+                "digest": digest[:16] + "...",
+                "file_count": file_count,
+                "total_bytes": total_bytes,
+                "stored": stored,
+            }
+        ),
     )
     conn.commit()
     conn.close()
@@ -532,14 +550,16 @@ def audit_credential_usage(
                 (cutoff,),
             ).fetchall()
         for row in rows:
-            events.append({
-                "source": "credential_broker_log",
-                "id": row[0],
-                "reflex": row[1].replace("proposal_genesis.", "") if row[1] else "",
-                "function": row[2],
-                "action": row[3],
-                "timestamp": row[4],
-            })
+            events.append(
+                {
+                    "source": "credential_broker_log",
+                    "id": row[0],
+                    "reflex": row[1].replace("proposal_genesis.", "") if row[1] else "",
+                    "function": row[2],
+                    "action": row[3],
+                    "timestamp": row[4],
+                }
+            )
     except Exception:
         pass  # Table may not exist
 
@@ -563,14 +583,16 @@ def audit_credential_usage(
                 (cutoff,),
             ).fetchall()
         for row in rows:
-            events.append({
-                "source": "egress_policy_audit",
-                "id": row[0],
-                "reflex": row[1] if row[1] else "",
-                "function": "",
-                "action": row[2],
-                "timestamp": row[3],
-            })
+            events.append(
+                {
+                    "source": "egress_policy_audit",
+                    "id": row[0],
+                    "reflex": row[1] if row[1] else "",
+                    "function": "",
+                    "action": row[2],
+                    "timestamp": row[3],
+                }
+            )
     except Exception:
         pass  # Table may not exist
 
@@ -737,7 +759,9 @@ def main() -> None:
         elif "events" in result:
             print(f"Audit events ({result['count']} in last {result['last_hours']}h):")
             for ev in result["events"]:
-                print(f"  [{ev['source']}] {ev['timestamp']} {ev['action']} reflex={ev['reflex']} func={ev['function']}")
+                print(
+                    f"  [{ev['source']}] {ev['timestamp']} {ev['action']} reflex={ev['reflex']} func={ev['function']}"
+                )
         else:
             print(json.dumps(result, indent=2, default=str))
 

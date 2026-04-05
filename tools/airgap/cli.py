@@ -94,8 +94,11 @@ def cmd_health(as_json: bool = False) -> int:
         for name, check in result["checks"].items():
             status = check.get("status", "unknown")
             icon = {
-                "pass": "+", "fail": "X", "warn": "!",
-                "info": "i", "error": "E",
+                "pass": "+",
+                "fail": "X",
+                "warn": "!",
+                "info": "i",
+                "error": "E",
             }.get(status, "?")
             detail = check.get("error", "")
             if not detail and "models" in check:

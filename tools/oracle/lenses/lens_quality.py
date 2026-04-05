@@ -103,25 +103,37 @@ class QualityLens(BaseLens):
             avg_older = sum(scores[3:]) / len(scores[3:]) if len(scores) > 3 else avg_recent
 
             if avg_recent < avg_older - 5:
-                predictions.append(OraclePrediction(
-                    lens=self.name,
-                    title="UQS Declining Trend",
-                    description=f"UQS has dropped from {avg_older:.1f} to {avg_recent:.1f} over recent assessments",
-                    confidence=min(0.95, 0.5 + abs(avg_older - avg_recent) / 20),
-                    severity="warning" if avg_recent >= 70 else "critical",
-                    category="quality_regression",
-                    data={"avg_recent": avg_recent, "avg_older": avg_older, "delta": round(avg_recent - avg_older, 1)},
-                ))
+                predictions.append(
+                    OraclePrediction(
+                        lens=self.name,
+                        title="UQS Declining Trend",
+                        description=f"UQS has dropped from {avg_older:.1f} to {avg_recent:.1f} over recent assessments",
+                        confidence=min(0.95, 0.5 + abs(avg_older - avg_recent) / 20),
+                        severity="warning" if avg_recent >= 70 else "critical",
+                        category="quality_regression",
+                        data={
+                            "avg_recent": avg_recent,
+                            "avg_older": avg_older,
+                            "delta": round(avg_recent - avg_older, 1),
+                        },
+                    )
+                )
             elif avg_recent > avg_older + 5:
-                predictions.append(OraclePrediction(
-                    lens=self.name,
-                    title="UQS Improving Trend",
-                    description=f"UQS has improved from {avg_older:.1f} to {avg_recent:.1f}",
-                    confidence=min(0.95, 0.5 + abs(avg_recent - avg_older) / 20),
-                    severity="info",
-                    category="quality_improvement",
-                    data={"avg_recent": avg_recent, "avg_older": avg_older, "delta": round(avg_recent - avg_older, 1)},
-                ))
+                predictions.append(
+                    OraclePrediction(
+                        lens=self.name,
+                        title="UQS Improving Trend",
+                        description=f"UQS has improved from {avg_older:.1f} to {avg_recent:.1f}",
+                        confidence=min(0.95, 0.5 + abs(avg_recent - avg_older) / 20),
+                        severity="info",
+                        category="quality_improvement",
+                        data={
+                            "avg_recent": avg_recent,
+                            "avg_older": avg_older,
+                            "delta": round(avg_recent - avg_older, 1),
+                        },
+                    )
+                )
 
         # Predict gate failure patterns
         gate_history = analysis.get("gate_history", [])
@@ -133,15 +145,17 @@ class QualityLens(BaseLens):
 
         for gate_id, count in gate_failures.items():
             if count >= 3:
-                predictions.append(OraclePrediction(
-                    lens=self.name,
-                    title=f"Recurring Gate Failure: {gate_id}",
-                    description=f"Gate '{gate_id}' has failed {count} times in recent history",
-                    confidence=min(0.90, 0.4 + count * 0.1),
-                    severity="warning" if count < 5 else "critical",
-                    category="gate_failure_pattern",
-                    data={"gate_id": gate_id, "failure_count": count},
-                ))
+                predictions.append(
+                    OraclePrediction(
+                        lens=self.name,
+                        title=f"Recurring Gate Failure: {gate_id}",
+                        description=f"Gate '{gate_id}' has failed {count} times in recent history",
+                        confidence=min(0.90, 0.4 + count * 0.1),
+                        severity="warning" if count < 5 else "critical",
+                        category="gate_failure_pattern",
+                        data={"gate_id": gate_id, "failure_count": count},
+                    )
+                )
 
         # Predict findings growth
         snapshots = analysis.get("quality_snapshots", [])
@@ -149,28 +163,32 @@ class QualityLens(BaseLens):
             current_findings = snapshots[0].get("total_findings", 0)
             prev_findings = snapshots[1].get("total_findings", 0)
             if current_findings > prev_findings * 1.5 and current_findings > 10:
-                predictions.append(OraclePrediction(
-                    lens=self.name,
-                    title="Findings Growth Spike",
-                    description=f"Quality findings jumped from {prev_findings} to {current_findings} (+{current_findings - prev_findings})",  # noqa: E501
-                    confidence=0.75,
-                    severity="warning",
-                    category="findings_spike",
-                    data={"current": current_findings, "previous": prev_findings},
-                ))
+                predictions.append(
+                    OraclePrediction(
+                        lens=self.name,
+                        title="Findings Growth Spike",
+                        description=f"Quality findings jumped from {prev_findings} to {current_findings} (+{current_findings - prev_findings})",  # noqa: E501
+                        confidence=0.75,
+                        severity="warning",
+                        category="findings_spike",
+                        data={"current": current_findings, "previous": prev_findings},
+                    )
+                )
 
         # Flag unresolved trends
         for trend in analysis.get("recent_trends", []):
             if trend.get("severity") == "critical":
-                predictions.append(OraclePrediction(
-                    lens=self.name,
-                    title=f"Unresolved Critical Trend: {trend.get('trend_type')}",
-                    description=trend.get("detail", ""),
-                    confidence=0.85,
-                    severity="critical",
-                    category="unresolved_trend",
-                    data=trend,
-                ))
+                predictions.append(
+                    OraclePrediction(
+                        lens=self.name,
+                        title=f"Unresolved Critical Trend: {trend.get('trend_type')}",
+                        description=trend.get("detail", ""),
+                        confidence=0.85,
+                        severity="critical",
+                        category="unresolved_trend",
+                        data=trend,
+                    )
+                )
 
         return predictions
 

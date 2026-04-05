@@ -24,7 +24,8 @@ import json
 from datetime import datetime, timezone
 
 from tools.pipeline.deploy_catalog import (
-    HELM_CHARTS, resolve_dependencies,
+    HELM_CHARTS,
+    resolve_dependencies,
 )
 from tools.pipeline.constants import estimate_pipeline_cost
 
@@ -136,11 +137,21 @@ def generate_deploy_bundle(graph, name, target_csp="auto", options=None):
 # ── SCCA Detection & Layer 00 ─────────────────────────────────────────────────
 
 _SCCA_INDICATOR_PREFIXES = (
-    "aws-guardduty", "aws-securityhub", "aws-nfw", "aws-shield",
-    "aws-inspector", "aws-macie", "aws-ct", "aws-config",
-    "az-sentinel", "az-defender", "az-fw",
-    "gcp-scc", "gcp-armor",
-    "oci-guard", "oci-vss",
+    "aws-guardduty",
+    "aws-securityhub",
+    "aws-nfw",
+    "aws-shield",
+    "aws-inspector",
+    "aws-macie",
+    "aws-ct",
+    "aws-config",
+    "az-sentinel",
+    "az-defender",
+    "az-fw",
+    "gcp-scc",
+    "gcp-armor",
+    "oci-guard",
+    "oci-vss",
 )
 
 
@@ -165,7 +176,10 @@ def _gen_scca_foundation(csp, project_name, env, region):
     """
     files = []
 
-    files.append({"path": "00-scca-foundation/README.md", "content": f"""{_CUI_HEADER}
+    files.append(
+        {
+            "path": "00-scca-foundation/README.md",
+            "content": f"""{_CUI_HEADER}
 # Layer 00: SCCA Foundation
 
 **Deploy this layer BEFORE all other layers.**
@@ -192,9 +206,14 @@ terraform apply -input=false
 ```
 
 Then proceed with Layer 01 (Network) and subsequent layers.
-"""})
+""",
+        }
+    )
 
-    files.append({"path": "00-scca-foundation/main.tf", "content": f"""{_CUI_HEADER}
+    files.append(
+        {
+            "path": "00-scca-foundation/main.tf",
+            "content": f"""{_CUI_HEADER}
 # Layer 00: SCCA Foundation — {csp.upper()}
 # Deploy BEFORE all other layers.
 # Generated: {_NOW()}
@@ -249,12 +268,15 @@ variable "il_level" {{
 variable "region" {{
   default = "{region}"
 }}
-"""})
+""",
+        }
+    )
 
     return files
 
 
 # ── Layer Generators ──────────────────────────────────────────────────────────
+
 
 def _gen_network(csp, project_name, env, region):
     """Generate VPC/VNet Terraform for the target CSP."""
@@ -262,7 +284,10 @@ def _gen_network(csp, project_name, env, region):
     vpc_cidr = "10.0.0.0/16"
 
     if csp == "aws":
-        files.append({"path": "01-network/main.tf", "content": f"""{_CUI_HEADER}
+        files.append(
+            {
+                "path": "01-network/main.tf",
+                "content": f"""{_CUI_HEADER}
 # Layer 1: Network — AWS VPC
 # Generated: {_NOW()}
 
@@ -297,9 +322,14 @@ module "vpc" {{
 output "vpc_id" {{ value = module.vpc.vpc_id }}
 output "private_subnet_ids" {{ value = module.vpc.private_subnets }}
 output "public_subnet_ids" {{ value = module.vpc.public_subnets }}
-"""})
+""",
+            }
+        )
     elif csp == "azure":
-        files.append({"path": "01-network/main.tf", "content": f"""{_CUI_HEADER}
+        files.append(
+            {
+                "path": "01-network/main.tf",
+                "content": f"""{_CUI_HEADER}
 # Layer 1: Network — Azure VNet
 provider "azurerm" {{
   features {{}}
@@ -323,9 +353,14 @@ resource "azurerm_subnet" "private" {{
   virtual_network_name = azurerm_virtual_network.main.name
   address_prefixes     = ["10.0.1.0/24"]
 }}
-"""})
+""",
+            }
+        )
     elif csp == "gcp":
-        files.append({"path": "01-network/main.tf", "content": f"""{_CUI_HEADER}
+        files.append(
+            {
+                "path": "01-network/main.tf",
+                "content": f"""{_CUI_HEADER}
 # Layer 1: Network — GCP VPC
 provider "google" {{
   project = var.gcp_project_id
@@ -344,17 +379,27 @@ resource "google_compute_subnetwork" "private" {{
   network       = google_compute_network.main.id
   private_ip_google_access = true
 }}
-"""})
+""",
+            }
+        )
     else:
-        files.append({"path": "01-network/main.tf", "content": f"""{_CUI_HEADER}
+        files.append(
+            {
+                "path": "01-network/main.tf",
+                "content": f"""{_CUI_HEADER}
 # Layer 1: Network — On-Premises / Generic
 # Configure your network infrastructure here.
 # For VMware: use vsphere provider
 # For bare metal: use Ansible for network config
-"""})
+""",
+            }
+        )
 
     # Variables file (all CSPs)
-    files.append({"path": "01-network/variables.tf", "content": f"""{_CUI_HEADER}
+    files.append(
+        {
+            "path": "01-network/variables.tf",
+            "content": f"""{_CUI_HEADER}
 variable "region" {{
   default = "{region}"
 }}
@@ -362,7 +407,9 @@ variable "environment" {{
   default = "{env}"
 }}
 {('variable "gcp_project_id" { default = "" }') if csp == "gcp" else ""}
-"""})
+""",
+        }
+    )
 
     return files
 
@@ -376,7 +423,10 @@ def _gen_k8s_cluster(csp, project_name, env, region, opts):
     files = []
 
     if csp == "aws":
-        files.append({"path": "02-compute/eks.tf", "content": f"""{_CUI_HEADER}
+        files.append(
+            {
+                "path": "02-compute/eks.tf",
+                "content": f"""{_CUI_HEADER}
 # Layer 2: Compute — AWS EKS Cluster
 
 module "eks" {{
@@ -407,9 +457,14 @@ module "eks" {{
 
 output "cluster_endpoint" {{ value = module.eks.cluster_endpoint }}
 output "cluster_name" {{ value = module.eks.cluster_name }}
-"""})
+""",
+            }
+        )
     elif csp == "azure":
-        files.append({"path": "02-compute/aks.tf", "content": f"""{_CUI_HEADER}
+        files.append(
+            {
+                "path": "02-compute/aks.tf",
+                "content": f"""{_CUI_HEADER}
 # Layer 2: Compute — Azure AKS Cluster
 
 resource "azurerm_kubernetes_cluster" "main" {{
@@ -427,9 +482,14 @@ resource "azurerm_kubernetes_cluster" "main" {{
 
   identity {{ type = "SystemAssigned" }}
 }}
-"""})
+""",
+            }
+        )
     elif csp == "gcp":
-        files.append({"path": "02-compute/gke.tf", "content": f"""{_CUI_HEADER}
+        files.append(
+            {
+                "path": "02-compute/gke.tf",
+                "content": f"""{_CUI_HEADER}
 # Layer 2: Compute — GCP GKE Cluster
 
 resource "google_container_cluster" "main" {{
@@ -451,17 +511,24 @@ resource "google_container_node_pool" "default" {{
     machine_type = "{instance_type}"
   }}
 }}
-"""})
+""",
+            }
+        )
 
     # Remote state for Layer 1
-    files.append({"path": "02-compute/data.tf", "content": f"""{_CUI_HEADER}
+    files.append(
+        {
+            "path": "02-compute/data.tf",
+            "content": f"""{_CUI_HEADER}
 data "terraform_remote_state" "network" {{
   backend = "local"
   config = {{
     path = "../01-network/terraform.tfstate"
   }}
 }}
-"""})
+""",
+        }
+    )
 
     return files
 
@@ -474,7 +541,10 @@ def _gen_vm_instances(csp, project_name, env, region, deps):
         return files
 
     if csp == "aws":
-        files.append({"path": "02-compute/vm.tf", "content": f"""{_CUI_HEADER}
+        files.append(
+            {
+                "path": "02-compute/vm.tf",
+                "content": f"""{_CUI_HEADER}
 # Layer 2: Compute — VM Instances for DevSecOps tools
 
 resource "aws_instance" "devops_tools" {{
@@ -498,7 +568,9 @@ data "aws_ami" "amazon_linux" {{
 }}
 
 output "vm_private_ip" {{ value = aws_instance.devops_tools.private_ip }}
-"""})
+""",
+            }
+        )
 
     return files
 
@@ -521,7 +593,7 @@ def _gen_platform_services(csp, project_name, env, deps):
         safe = node_type.replace("-", "_")
         lines.append(f"# {node_type}")
         lines.append(f'resource "{tf_resource}" "{safe}" {{')
-        lines.append(f'  # Configure {node_type} here')
+        lines.append(f"  # Configure {node_type} here")
         lines.append(f'  tags = {{ Project = "{project_name}", Environment = "{env}" }}')
         lines.append("}")
         lines.append("")
@@ -556,24 +628,26 @@ def _gen_helm_releases(helm_keys, project_name, opts):
         ns = chart.get("namespace", "default")
 
         # Terraform helm_release
-        tf_lines.extend([
-            f'resource "helm_release" "{release_name}" {{',
-            f'  name       = "{chart_key}"',
-            f'  repository = "{chart["repo"]}"',
-            f'  chart      = "{chart["chart"]}"',
-            f'  version    = "{chart["version"]}"',
-            f'  namespace  = "{ns}"',
-            "  create_namespace = true",
-            "",
-            f'  values = [file("${{path.module}}/../values/{chart_key}.yaml")]',
-            "",
-            "  set {",
-            '    name  = "global.labels.project"',
-            f'    value = "{project_name}"',
-            "  }",
-            "}",
-            "",
-        ])
+        tf_lines.extend(
+            [
+                f'resource "helm_release" "{release_name}" {{',
+                f'  name       = "{chart_key}"',
+                f'  repository = "{chart["repo"]}"',
+                f'  chart      = "{chart["chart"]}"',
+                f'  version    = "{chart["version"]}"',
+                f'  namespace  = "{ns}"',
+                "  create_namespace = true",
+                "",
+                f'  values = [file("${{path.module}}/../values/{chart_key}.yaml")]',
+                "",
+                "  set {",
+                '    name  = "global.labels.project"',
+                f'    value = "{project_name}"',
+                "  }",
+                "}",
+                "",
+            ]
+        )
 
         # Values file
         values_content = _gen_helm_values(chart_key, project_name, opts)
@@ -705,10 +779,13 @@ genericRules:
 """,
     }
 
-    return values_map.get(chart_key, f"""{base}
+    return values_map.get(
+        chart_key,
+        f"""{base}
 # Default values — customize for your environment
 # See chart documentation for all available options
-""")
+""",
+    )
 
 
 def _gen_ci_config(nodes, edges, name, deps):
@@ -716,6 +793,7 @@ def _gen_ci_config(nodes, edges, name, deps):
     files = []
     try:
         from tools.pipeline.export import export_pipeline
+
         graph = {"nodes": nodes, "edges": edges}
         result = export_pipeline(graph, name, "gitlab_ci")
         files.append({"path": "05-ci-config/.gitlab-ci.yml", "content": result["content"]})
@@ -892,7 +970,9 @@ def _gen_ansible_playbook(pb_name, project_name):
         state: started
 """,
     }
-    return playbooks.get(pb_name, f"""{_CUI_HEADER}
+    return playbooks.get(
+        pb_name,
+        f"""{_CUI_HEADER}
 ---
 - name: {pb_name}
   hosts: all
@@ -901,7 +981,8 @@ def _gen_ansible_playbook(pb_name, project_name):
     - name: Placeholder
       debug:
         msg: "Implement {pb_name} playbook"
-""")
+""",
+    )
 
 
 def _gen_deploy_script(csp, deps, scca=False):
@@ -996,6 +1077,7 @@ echo ""
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+
 def _safe_name(name):
     return name.lower().replace(" ", "-").replace("_", "-")[:32]
 
@@ -1025,6 +1107,7 @@ def _default_instance(csp):
 
 if __name__ == "__main__":
     import sys
+
     # Test with sample graph
     graph = {
         "nodes": [
@@ -1043,8 +1126,16 @@ if __name__ == "__main__":
     }
     result = generate_deploy_bundle(graph, "Test DevSecOps Pipeline")
     if "--json" in sys.argv:
-        print(json.dumps({"summary": result["summary"], "file_count": len(result["files"]),
-                          "files": [f["path"] for f in result["files"]]}, indent=2))
+        print(
+            json.dumps(
+                {
+                    "summary": result["summary"],
+                    "file_count": len(result["files"]),
+                    "files": [f["path"] for f in result["files"]],
+                },
+                indent=2,
+            )
+        )
     else:
         print(result["summary"])
         print("\nFiles:")

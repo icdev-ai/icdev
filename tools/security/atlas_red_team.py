@@ -85,17 +85,18 @@ class ATLASRedTeamScanner:
         return ""
 
     @staticmethod
-    def _result(technique: str, name: str, tests_run: int, tests_passed: int,
-                findings: List[Dict]) -> dict:
+    def _result(technique: str, name: str, tests_run: int, tests_passed: int, findings: List[Dict]) -> dict:
         return {
-            "technique": technique, "name": name,
+            "technique": technique,
+            "name": name,
             "passed": tests_run == tests_passed,
-            "tests_run": tests_run, "tests_passed": tests_passed,
-            "findings": findings, "scanned_at": datetime.now(timezone.utc).isoformat(),
+            "tests_run": tests_run,
+            "tests_passed": tests_passed,
+            "findings": findings,
+            "scanned_at": datetime.now(timezone.utc).isoformat(),
         }
 
-    def _check(self, findings, tests, exists: bool, test_name: str,
-               severity: str, fail_msg: str):
+    def _check(self, findings, tests, exists: bool, test_name: str, severity: str, fail_msg: str):
         """Run a boolean check — appends finding on failure, returns updated counters."""
         tests[0] += 1
         if exists:
@@ -115,17 +116,19 @@ class ATLASRedTeamScanner:
                 all_ok = False
             self._store_result(r, project_id=project_id)
         return {
-            "passed": all_ok, "techniques_tested": len(results),
+            "passed": all_ok,
+            "techniques_tested": len(results),
             "techniques_passed": sum(1 for r in results if r["passed"]),
-            "total_tests_run": total_run, "total_tests_passed": total_passed,
-            "results": results, "scanned_at": datetime.now(timezone.utc).isoformat(),
+            "total_tests_run": total_run,
+            "total_tests_passed": total_passed,
+            "results": results,
+            "scanned_at": datetime.now(timezone.utc).isoformat(),
         }
 
     def run_technique(self, technique_id: str, project_id: Optional[str] = None) -> dict:
         info = ATLAS_TECHNIQUES.get(technique_id)
         if not info:
-            return {"error": f"Unknown technique: {technique_id}",
-                    "valid_techniques": list(ATLAS_TECHNIQUES.keys())}
+            return {"error": f"Unknown technique: {technique_id}", "valid_techniques": list(ATLAS_TECHNIQUES.keys())}
         r = getattr(self, info["method"])(project_id=project_id)
         self._store_result(r, project_id=project_id)
         return r
@@ -135,33 +138,66 @@ class ATLASRedTeamScanner:
         f, t = [], [0, 0]  # findings, [tests_run, tests_passed]
         det = BASE_DIR / "tools" / "security" / "prompt_injection_detector.py"
         content = self._read(det)
-        self._check(f, t, det.exists(), "detector_exists", "critical",
-                    "prompt_injection_detector.py not found")
-        for cat in ("role_hijacking", "delimiter_attack", "instruction_injection",
-                    "data_exfiltration", "encoded_payload"):
-            self._check(f, t, f'"{cat}"' in content or f"'{cat}'" in content,
-                       f"category_{cat}", "high",
-                       f"Pattern category '{cat}' not found in detector" if det.exists()
-                       else f"Cannot verify '{cat}' -- detector missing")
-        self._check(f, t, "evaluate_gate" in content, "gate_evaluation", "high",
-                   "Gate evaluation method not found in detector" if det.exists()
-                   else "Cannot verify gate evaluation -- detector missing")
+        self._check(f, t, det.exists(), "detector_exists", "critical", "prompt_injection_detector.py not found")
+        for cat in (
+            "role_hijacking",
+            "delimiter_attack",
+            "instruction_injection",
+            "data_exfiltration",
+            "encoded_payload",
+        ):
+            self._check(
+                f,
+                t,
+                f'"{cat}"' in content or f"'{cat}'" in content,
+                f"category_{cat}",
+                "high",
+                f"Pattern category '{cat}' not found in detector"
+                if det.exists()
+                else f"Cannot verify '{cat}' -- detector missing",
+            )
+        self._check(
+            f,
+            t,
+            "evaluate_gate" in content,
+            "gate_evaluation",
+            "high",
+            "Gate evaluation method not found in detector"
+            if det.exists()
+            else "Cannot verify gate evaluation -- detector missing",
+        )
         return self._result("AML.T0051", "LLM Prompt Injection", t[0], t[1], f)
 
     # -- AML.T0056: System Prompt Extraction -------------------------------
     def test_system_prompt_extraction(self, project_id: Optional[str] = None) -> dict:
         f, t = [], [0, 0]
         det_content = self._read(BASE_DIR / "tools" / "security" / "prompt_injection_detector.py")
-        self._check(f, t, "system_prompt_reveal" in det_content or "AML.T0056" in det_content,
-                   "extraction_patterns", "high" if det_content else "critical",
-                   "No system prompt extraction patterns in detector" if det_content
-                   else "Prompt injection detector not found")
-        self._check(f, t, (BASE_DIR / "tools" / "gateway" / "response_filter.py").exists(),
-                   "response_filter_exists", "high",
-                   "Response filter (tools/gateway/response_filter.py) not found")
-        self._check(f, t, (BASE_DIR / "tools" / "compliance" / "classification_manager.py").exists(),
-                   "classification_filtering", "high",
-                   "Classification manager not found -- output filtering at risk")
+        self._check(
+            f,
+            t,
+            "system_prompt_reveal" in det_content or "AML.T0056" in det_content,
+            "extraction_patterns",
+            "high" if det_content else "critical",
+            "No system prompt extraction patterns in detector"
+            if det_content
+            else "Prompt injection detector not found",
+        )
+        self._check(
+            f,
+            t,
+            (BASE_DIR / "tools" / "gateway" / "response_filter.py").exists(),
+            "response_filter_exists",
+            "high",
+            "Response filter (tools/gateway/response_filter.py) not found",
+        )
+        self._check(
+            f,
+            t,
+            (BASE_DIR / "tools" / "compliance" / "classification_manager.py").exists(),
+            "classification_filtering",
+            "high",
+            "Classification manager not found -- output filtering at risk",
+        )
         return self._result("AML.T0056", "LLM System Prompt Extraction", t[0], t[1], f)
 
     # -- AML.T0080: Memory Poisoning ---------------------------------------
@@ -169,18 +205,31 @@ class ATLASRedTeamScanner:
         f, t = [], [0, 0]
         mw = BASE_DIR / "tools" / "memory" / "memory_write.py"
         content = self._read(mw)
-        self._check(f, t, mw.exists(), "memory_write_exists", "critical",
-                   "Memory write tool not found")
-        self._check(f, t, "content_hash" in content and "sha256" in content.lower(),
-                   "content_hash_dedup", "high",
-                   "Content-hash deduplication (D179) not found in memory_write")
-        self._check(f, t, "VALID_TYPES" in content or "valid_types" in content.lower(),
-                   "type_validation", "medium",
-                   "Memory type validation (enum check) not found")
-        self._check(f, t,
-                   "UPDATE memory_entries" not in content and "DELETE FROM memory_entries" not in content,
-                   "append_only", "critical",
-                   "Memory write contains UPDATE/DELETE on memory_entries -- violates D6")
+        self._check(f, t, mw.exists(), "memory_write_exists", "critical", "Memory write tool not found")
+        self._check(
+            f,
+            t,
+            "content_hash" in content and "sha256" in content.lower(),
+            "content_hash_dedup",
+            "high",
+            "Content-hash deduplication (D179) not found in memory_write",
+        )
+        self._check(
+            f,
+            t,
+            "VALID_TYPES" in content or "valid_types" in content.lower(),
+            "type_validation",
+            "medium",
+            "Memory type validation (enum check) not found",
+        )
+        self._check(
+            f,
+            t,
+            "UPDATE memory_entries" not in content and "DELETE FROM memory_entries" not in content,
+            "append_only",
+            "critical",
+            "Memory write contains UPDATE/DELETE on memory_entries -- violates D6",
+        )
         return self._result("AML.T0080", "LLM Memory Poisoning", t[0], t[1], f)
 
     # -- AML.T0086: Tool Abuse ---------------------------------------------
@@ -188,16 +237,22 @@ class ATLASRedTeamScanner:
         f, t = [], [0, 0]
         gc_path = BASE_DIR / "args" / "remote_gateway_config.yaml"
         gc = self._read(gc_path)
-        self._check(f, t, "command_allowlist:" in gc, "command_allowlist_exists", "critical",
-                   "command_allowlist missing from gateway config" if gc
-                   else "remote_gateway_config.yaml not found")
+        self._check(
+            f,
+            t,
+            "command_allowlist:" in gc,
+            "command_allowlist_exists",
+            "critical",
+            "command_allowlist missing from gateway config" if gc else "remote_gateway_config.yaml not found",
+        )
         # D138: deploy disabled on remote channels
         deploy_ok = False
         if "icdev-deploy" in gc:
-            sec = gc[gc.find("icdev-deploy"):gc.find("icdev-deploy") + 200]
+            sec = gc[gc.find("icdev-deploy") : gc.find("icdev-deploy") + 200]
             deploy_ok = 'channels: ""' in sec or "channels: ''" in sec
-        self._check(f, t, deploy_ok, "deploy_disabled_remote", "critical",
-                   "icdev-deploy not disabled on remote channels (D138)")
+        self._check(
+            f, t, deploy_ok, "deploy_disabled_remote", "critical", "icdev-deploy not disabled on remote channels (D138)"
+        )
         # Execute commands require confirmation
         exec_ok = True
         if gc:
@@ -205,31 +260,63 @@ class ATLASRedTeamScanner:
                 if "requires_confirmation: false" in sec[:200]:
                     exec_ok = False
                     break
-        self._check(f, t, exec_ok and bool(gc), "execute_confirmation", "high",
-                   "Execute-category commands found without confirmation" if gc
-                   else "Cannot verify -- gateway config missing")
-        self._check(f, t, (BASE_DIR / "tools" / "gateway" / "user_binder.py").exists(),
-                   "user_binding", "high",
-                   "User binder not found -- D136 at risk")
+        self._check(
+            f,
+            t,
+            exec_ok and bool(gc),
+            "execute_confirmation",
+            "high",
+            "Execute-category commands found without confirmation" if gc else "Cannot verify -- gateway config missing",
+        )
+        self._check(
+            f,
+            t,
+            (BASE_DIR / "tools" / "gateway" / "user_binder.py").exists(),
+            "user_binding",
+            "high",
+            "User binder not found -- D136 at risk",
+        )
         return self._result("AML.T0086", "LLM Tool Abuse", t[0], t[1], f)
 
     # -- AML.T0057: Data Leakage -------------------------------------------
     def test_data_leakage(self, project_id: Optional[str] = None) -> dict:
         f, t = [], [0, 0]
-        self._check(f, t, (BASE_DIR / "tools" / "compliance" / "classification_manager.py").exists(),
-                   "classification_manager_exists", "critical", "Classification manager not found")
+        self._check(
+            f,
+            t,
+            (BASE_DIR / "tools" / "compliance" / "classification_manager.py").exists(),
+            "classification_manager_exists",
+            "critical",
+            "Classification manager not found",
+        )
         ucm = self._read(BASE_DIR / "tools" / "compliance" / "universal_classification_manager.py")
-        self._check(f, t, "composite" in ucm.lower() or "banner" in ucm.lower(),
-                   "composite_markings", "high",
-                   "Universal classification manager missing or lacks composite marking support")
+        self._check(
+            f,
+            t,
+            "composite" in ucm.lower() or "banner" in ucm.lower(),
+            "composite_markings",
+            "high",
+            "Universal classification manager missing or lacks composite marking support",
+        )
         rf = self._read(BASE_DIR / "tools" / "gateway" / "response_filter.py")
-        self._check(f, t, "max_il" in rf or "classification" in rf.lower(),
-                   "il_response_filtering", "critical" if not rf else "high",
-                   "Response filter not found -- D135 at risk" if not rf
-                   else "Response filter lacks IL-based content stripping")
-        self._check(f, t, (BASE_DIR / "args" / "cui_markings.yaml").exists(),
-                   "cui_marking_config", "high",
-                   "CUI markings config (args/cui_markings.yaml) not found")
+        self._check(
+            f,
+            t,
+            "max_il" in rf or "classification" in rf.lower(),
+            "il_response_filtering",
+            "critical" if not rf else "high",
+            "Response filter not found -- D135 at risk"
+            if not rf
+            else "Response filter lacks IL-based content stripping",
+        )
+        self._check(
+            f,
+            t,
+            (BASE_DIR / "args" / "cui_markings.yaml").exists(),
+            "cui_marking_config",
+            "high",
+            "CUI markings config (args/cui_markings.yaml) not found",
+        )
         return self._result("AML.T0057", "LLM Data Leakage", t[0], t[1], f)
 
     # -- AML.T0034: Cost Harvesting ----------------------------------------
@@ -239,31 +326,44 @@ class ATLASRedTeamScanner:
         if not rl:
             gc = self._read(BASE_DIR / "args" / "remote_gateway_config.yaml")
             rl = "rate_limit" in gc
-        self._check(f, t, rl, "rate_limiting", "critical",
-                   "No rate limiting mechanism found")
+        self._check(f, t, rl, "rate_limiting", "critical", "No rate limiting mechanism found")
         cli = self._read(BASE_DIR / "args" / "cli_config.yaml")
-        self._check(f, t, "max_tokens_per_run" in cli, "token_budget", "high",
-                   "Token budget (max_tokens_per_run) not configured" if cli
-                   else "cli_config.yaml not found -- no token budget enforcement")
+        self._check(
+            f,
+            t,
+            "max_tokens_per_run" in cli,
+            "token_budget",
+            "high",
+            "Token budget (max_tokens_per_run) not configured"
+            if cli
+            else "cli_config.yaml not found -- no token budget enforcement",
+        )
         tel = BASE_DIR / "tools" / "security" / "ai_telemetry_logger.py"
         tel_content = self._read(tel)
-        self._check(f, t, tel.exists(), "telemetry_logger", "high",
-                   "AI telemetry logger not found -- usage monitoring absent")
-        self._check(f, t, "detect_anomalies" in tel_content and "cost_spike" in tel_content,
-                   "cost_anomaly_detection", "medium",
-                   "Cost anomaly detection not found in telemetry logger")
+        self._check(
+            f, t, tel.exists(), "telemetry_logger", "high", "AI telemetry logger not found -- usage monitoring absent"
+        )
+        self._check(
+            f,
+            t,
+            "detect_anomalies" in tel_content and "cost_spike" in tel_content,
+            "cost_anomaly_detection",
+            "medium",
+            "Cost anomaly detection not found in telemetry logger",
+        )
         return self._result("AML.T0034", "Cost Harvesting", t[0], t[1], f)
 
     # -- Phase 45: Behavioral Red Teaming (D262) ----------------------------
 
-    def run_behavioral_tests(self, project_id: Optional[str] = None,
-                             technique: Optional[str] = None) -> dict:
+    def run_behavioral_tests(self, project_id: Optional[str] = None, technique: Optional[str] = None) -> dict:
         """Run behavioral red team tests (opt-in via --behavioral, D262)."""
         techniques = BEHAVIORAL_TECHNIQUES
         if technique:
             if technique not in techniques:
-                return {"error": f"Unknown behavioral technique: {technique}",
-                        "valid_techniques": list(techniques.keys())}
+                return {
+                    "error": f"Unknown behavioral technique: {technique}",
+                    "valid_techniques": list(techniques.keys()),
+                }
             techniques = {technique: techniques[technique]}
 
         results, total_run, total_passed, all_ok = [], 0, 0, True
@@ -276,25 +376,38 @@ class ATLASRedTeamScanner:
                 all_ok = False
             self._store_result(r, project_id=project_id)
         return {
-            "passed": all_ok, "techniques_tested": len(results),
+            "passed": all_ok,
+            "techniques_tested": len(results),
             "techniques_passed": sum(1 for r in results if r["passed"]),
-            "total_tests_run": total_run, "total_tests_passed": total_passed,
-            "results": results, "scanned_at": datetime.now(timezone.utc).isoformat(),
+            "total_tests_run": total_run,
+            "total_tests_passed": total_passed,
+            "results": results,
+            "scanned_at": datetime.now(timezone.utc).isoformat(),
         }
 
     # BRT-001: Goal Hijacking
     def test_goal_hijacking(self, project_id: Optional[str] = None) -> dict:
         f, t = [], [0, 0]
         goals_dir = BASE_DIR / "goals"
-        self._check(f, t, goals_dir.exists() and any(goals_dir.glob("*.md")),
-                   "goals_directory_exists", "critical",
-                   "goals/ directory missing or empty — no workflow definitions")
+        self._check(
+            f,
+            t,
+            goals_dir.exists() and any(goals_dir.glob("*.md")),
+            "goals_directory_exists",
+            "critical",
+            "goals/ directory missing or empty — no workflow definitions",
+        )
         hook = self._read(BASE_DIR / ".claude" / "hooks" / "pre_tool_use.py")
-        self._check(f, t, "BLOCKED" in hook, "pre_tool_hook_active", "high",
-                   "Pre-tool-use hook not found or inactive")
+        self._check(f, t, "BLOCKED" in hook, "pre_tool_hook_active", "high", "Pre-tool-use hook not found or inactive")
         guardrails_content = self._read(BASE_DIR / "CLAUDE.md")
-        self._check(f, t, "Guardrails" in guardrails_content, "guardrails_defined", "high",
-                   "CLAUDE.md missing Guardrails section")
+        self._check(
+            f,
+            t,
+            "Guardrails" in guardrails_content,
+            "guardrails_defined",
+            "high",
+            "CLAUDE.md missing Guardrails section",
+        )
         return self._result("BRT-001", "Goal Hijacking", t[0], t[1], f)
 
     # BRT-002: Authority Escalation
@@ -302,35 +415,79 @@ class ATLASRedTeamScanner:
         f, t = [], [0, 0]
         auth_yaml = BASE_DIR / "args" / "agent_authority.yaml"
         auth_content = self._read(auth_yaml)
-        self._check(f, t, auth_yaml.exists(), "agent_authority_exists", "critical",
-                   "agent_authority.yaml not found — no domain authority matrix")
-        self._check(f, t, "hard_veto" in auth_content or "hard" in auth_content,
-                   "hard_veto_defined", "high",
-                   "Hard veto rules not found in agent authority config")
+        self._check(
+            f,
+            t,
+            auth_yaml.exists(),
+            "agent_authority_exists",
+            "critical",
+            "agent_authority.yaml not found — no domain authority matrix",
+        )
+        self._check(
+            f,
+            t,
+            "hard_veto" in auth_content or "hard" in auth_content,
+            "hard_veto_defined",
+            "high",
+            "Hard veto rules not found in agent authority config",
+        )
         mcp_auth = self._read(BASE_DIR / "args" / "owasp_agentic_config.yaml")
-        self._check(f, t, "mcp_authorization" in mcp_auth, "mcp_rbac_configured", "high",
-                   "MCP per-tool RBAC not configured in owasp_agentic_config.yaml")
+        self._check(
+            f,
+            t,
+            "mcp_authorization" in mcp_auth,
+            "mcp_rbac_configured",
+            "high",
+            "MCP per-tool RBAC not configured in owasp_agentic_config.yaml",
+        )
         vetoes_hook = self._read(BASE_DIR / ".claude" / "hooks" / "pre_tool_use.py")
-        self._check(f, t, "agent_vetoes" in vetoes_hook, "veto_tracking_protected", "medium",
-                   "agent_vetoes table not protected in pre_tool_use.py")
+        self._check(
+            f,
+            t,
+            "agent_vetoes" in vetoes_hook,
+            "veto_tracking_protected",
+            "medium",
+            "agent_vetoes table not protected in pre_tool_use.py",
+        )
         return self._result("BRT-002", "Authority Escalation", t[0], t[1], f)
 
     # BRT-003: HITL Fatigue
     def test_hitl_fatigue(self, project_id: Optional[str] = None) -> dict:
         f, t = [], [0, 0]
         sh_goal = self._read(BASE_DIR / "goals" / "self_healing.md")
-        self._check(f, t, "0.7" in sh_goal or "confidence" in sh_goal.lower(),
-                   "confidence_threshold_defined", "high",
-                   "Self-healing confidence threshold (0.7) not found in goal")
-        self._check(f, t, "0.3" in sh_goal or "escalat" in sh_goal.lower(),
-                   "escalation_threshold_defined", "high",
-                   "Escalation threshold (0.3) not found in self_healing.md")
-        self._check(f, t, "5" in sh_goal and ("hour" in sh_goal.lower() or "max" in sh_goal.lower()),
-                   "rate_limit_defined", "medium",
-                   "Auto-heal rate limit (5/hour) not found in self_healing.md")
+        self._check(
+            f,
+            t,
+            "0.7" in sh_goal or "confidence" in sh_goal.lower(),
+            "confidence_threshold_defined",
+            "high",
+            "Self-healing confidence threshold (0.7) not found in goal",
+        )
+        self._check(
+            f,
+            t,
+            "0.3" in sh_goal or "escalat" in sh_goal.lower(),
+            "escalation_threshold_defined",
+            "high",
+            "Escalation threshold (0.3) not found in self_healing.md",
+        )
+        self._check(
+            f,
+            t,
+            "5" in sh_goal and ("hour" in sh_goal.lower() or "max" in sh_goal.lower()),
+            "rate_limit_defined",
+            "medium",
+            "Auto-heal rate limit (5/hour) not found in self_healing.md",
+        )
         trust_config = self._read(BASE_DIR / "args" / "owasp_agentic_config.yaml")
-        self._check(f, t, "trust_scoring" in trust_config, "trust_scoring_configured", "high",
-                   "Trust scoring not configured — no dynamic HITL escalation")
+        self._check(
+            f,
+            t,
+            "trust_scoring" in trust_config,
+            "trust_scoring_configured",
+            "high",
+            "Trust scoring not configured — no dynamic HITL escalation",
+        )
         return self._result("BRT-003", "HITL Fatigue", t[0], t[1], f)
 
     # BRT-004: Multi-Agent Collusion
@@ -338,18 +495,35 @@ class ATLASRedTeamScanner:
         f, t = [], [0, 0]
         mailbox = BASE_DIR / "tools" / "agent" / "mailbox.py"
         mb_content = self._read(mailbox)
-        self._check(f, t, mailbox.exists(), "mailbox_exists", "high",
-                   "Agent mailbox (tools/agent/mailbox.py) not found")
-        self._check(f, t, "hmac" in mb_content.lower() or "signature" in mb_content.lower(),
-                   "mailbox_hmac", "high",
-                   "HMAC signing not found in agent mailbox — D41 at risk")
+        self._check(
+            f, t, mailbox.exists(), "mailbox_exists", "high", "Agent mailbox (tools/agent/mailbox.py) not found"
+        )
+        self._check(
+            f,
+            t,
+            "hmac" in mb_content.lower() or "signature" in mb_content.lower(),
+            "mailbox_hmac",
+            "high",
+            "HMAC signing not found in agent mailbox — D41 at risk",
+        )
         corr = self._read(BASE_DIR / "tools" / "saas" / "correlation.py")
-        self._check(f, t, "correlation" in corr.lower() or (BASE_DIR / "tools" / "saas" / "correlation.py").exists(),
-                   "correlation_ids", "medium",
-                   "Correlation ID tracking not found")
+        self._check(
+            f,
+            t,
+            "correlation" in corr.lower() or (BASE_DIR / "tools" / "saas" / "correlation.py").exists(),
+            "correlation_ids",
+            "medium",
+            "Correlation ID tracking not found",
+        )
         chain_val = (BASE_DIR / "tools" / "security" / "tool_chain_validator.py").exists()
-        self._check(f, t, chain_val, "chain_validator_exists", "high",
-                   "Tool chain validator not found — cannot detect multi-step collusion")
+        self._check(
+            f,
+            t,
+            chain_val,
+            "chain_validator_exists",
+            "high",
+            "Tool chain validator not found — cannot detect multi-step collusion",
+        )
         return self._result("BRT-004", "Multi-Agent Collusion", t[0], t[1], f)
 
     # BRT-005: Tool Chain Exploitation
@@ -357,15 +531,32 @@ class ATLASRedTeamScanner:
         f, t = [], [0, 0]
         tcv = BASE_DIR / "tools" / "security" / "tool_chain_validator.py"
         tcv_content = self._read(tcv)
-        self._check(f, t, tcv.exists(), "chain_validator_exists", "critical",
-                   "tool_chain_validator.py not found")
-        self._check(f, t, "sequence_pattern" in tcv_content, "sequence_rules_defined", "high",
-                   "No sequence pattern rules found in tool chain validator")
-        self._check(f, t, "burst_threshold" in tcv_content, "burst_detection_defined", "medium",
-                   "Burst detection not found in tool chain validator")
+        self._check(f, t, tcv.exists(), "chain_validator_exists", "critical", "tool_chain_validator.py not found")
+        self._check(
+            f,
+            t,
+            "sequence_pattern" in tcv_content,
+            "sequence_rules_defined",
+            "high",
+            "No sequence pattern rules found in tool chain validator",
+        )
+        self._check(
+            f,
+            t,
+            "burst_threshold" in tcv_content,
+            "burst_detection_defined",
+            "medium",
+            "Burst detection not found in tool chain validator",
+        )
         owasp_cfg = self._read(BASE_DIR / "args" / "owasp_agentic_config.yaml")
-        self._check(f, t, "TC-001" in owasp_cfg, "tc001_rule_configured", "high",
-                   "TC-001 (secrets_then_external) rule not configured")
+        self._check(
+            f,
+            t,
+            "TC-001" in owasp_cfg,
+            "tc001_rule_configured",
+            "high",
+            "TC-001 (secrets_then_external) rule not configured",
+        )
         return self._result("BRT-005", "Tool Chain Exploitation", t[0], t[1], f)
 
     # BRT-006: Memory Poisoning via Output
@@ -373,17 +564,33 @@ class ATLASRedTeamScanner:
         f, t = [], [0, 0]
         ov = BASE_DIR / "tools" / "security" / "agent_output_validator.py"
         ov_content = self._read(ov)
-        self._check(f, t, ov.exists(), "output_validator_exists", "critical",
-                   "agent_output_validator.py not found")
-        self._check(f, t, "classification" in ov_content.lower(), "classification_check", "high",
-                   "Classification leak detection not found in output validator")
+        self._check(f, t, ov.exists(), "output_validator_exists", "critical", "agent_output_validator.py not found")
+        self._check(
+            f,
+            t,
+            "classification" in ov_content.lower(),
+            "classification_check",
+            "high",
+            "Classification leak detection not found in output validator",
+        )
         mw = self._read(BASE_DIR / "tools" / "memory" / "memory_write.py")
-        self._check(f, t, "sha256" in mw.lower() or "content_hash" in mw,
-                   "memory_hash_dedup", "high",
-                   "Memory content-hash deduplication not found")
+        self._check(
+            f,
+            t,
+            "sha256" in mw.lower() or "content_hash" in mw,
+            "memory_hash_dedup",
+            "high",
+            "Memory content-hash deduplication not found",
+        )
         trust = (BASE_DIR / "tools" / "security" / "agent_trust_scorer.py").exists()
-        self._check(f, t, trust, "trust_scoring_exists", "medium",
-                   "Agent trust scorer not found — no dynamic response to output violations")
+        self._check(
+            f,
+            t,
+            trust,
+            "trust_scoring_exists",
+            "medium",
+            "Agent trust scorer not found — no dynamic response to output violations",
+        )
         return self._result("BRT-006", "Memory Poisoning via Output", t[0], t[1], f)
 
     # -- DB storage (append-only per D6) -----------------------------------
@@ -398,11 +605,19 @@ class ATLASRedTeamScanner:
                    (id, project_id, technique, technique_name, passed,
                     tests_run, tests_passed, findings_json, scanned_at, classification)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (entry_id, project_id, result.get("technique", ""),
-                 result.get("name", ""), 1 if result.get("passed") else 0,
-                 result.get("tests_run", 0), result.get("tests_passed", 0),
-                 json.dumps(result.get("findings", [])),
-                 result.get("scanned_at", datetime.now(timezone.utc).isoformat()), "CUI"))
+                (
+                    entry_id,
+                    project_id,
+                    result.get("technique", ""),
+                    result.get("name", ""),
+                    1 if result.get("passed") else 0,
+                    result.get("tests_run", 0),
+                    result.get("tests_passed", 0),
+                    json.dumps(result.get("findings", [])),
+                    result.get("scanned_at", datetime.now(timezone.utc).isoformat()),
+                    "CUI",
+                ),
+            )
             conn.commit()
             conn.close()
             return entry_id
@@ -410,8 +625,7 @@ class ATLASRedTeamScanner:
             return None
 
     # -- Query stored results ----------------------------------------------
-    def get_results(self, project_id: Optional[str] = None,
-                    technique: Optional[str] = None) -> list:
+    def get_results(self, project_id: Optional[str] = None, technique: Optional[str] = None) -> list:
         if not self._db_path.exists():
             return []
         try:
@@ -426,14 +640,23 @@ class ATLASRedTeamScanner:
             where = (" WHERE " + " AND ".join(wh)) if wh else ""
             rows = conn.execute(
                 f"SELECT * FROM atlas_red_team_results{where} ORDER BY scanned_at DESC",  # nosec B608 -- table/column names are internal constants, not user input
-                params).fetchall()
+                params,
+            ).fetchall()
             conn.close()
-            return [{"id": r["id"], "project_id": r["project_id"],
-                     "technique": r["technique"], "technique_name": r["technique_name"],
-                     "passed": bool(r["passed"]), "tests_run": r["tests_run"],
-                     "tests_passed": r["tests_passed"],
-                     "findings": json.loads(r["findings_json"]) if r["findings_json"] else [],
-                     "scanned_at": r["scanned_at"]} for r in rows]
+            return [
+                {
+                    "id": r["id"],
+                    "project_id": r["project_id"],
+                    "technique": r["technique"],
+                    "technique_name": r["technique_name"],
+                    "passed": bool(r["passed"]),
+                    "tests_run": r["tests_run"],
+                    "tests_passed": r["tests_passed"],
+                    "findings": json.loads(r["findings_json"]) if r["findings_json"] else [],
+                    "scanned_at": r["scanned_at"],
+                }
+                for r in rows
+            ]
         except Exception:
             return []
 
@@ -451,23 +674,32 @@ class ATLASRedTeamScanner:
                     SELECT technique, MAX(scanned_at) AS latest
                     FROM atlas_red_team_results{where} GROUP BY technique
                 ) l ON r.technique = l.technique AND r.scanned_at = l.latest""",  # nosec B608 -- table/column names are internal constants, not user input
-                params).fetchall()
+                params,
+            ).fetchall()
             conn.close()
             techs, total_r, total_p, ok = {}, 0, 0, True
             for r in rows:
                 p = bool(r["passed"])
-                techs[r["technique"]] = {"name": r["technique_name"], "passed": p,
-                    "tests_run": r["tests_run"], "tests_passed": r["tests_passed"],
-                    "scanned_at": r["scanned_at"]}
+                techs[r["technique"]] = {
+                    "name": r["technique_name"],
+                    "passed": p,
+                    "tests_run": r["tests_run"],
+                    "tests_passed": r["tests_passed"],
+                    "scanned_at": r["scanned_at"],
+                }
                 total_r += r["tests_run"]
                 total_p += r["tests_passed"]
                 if not p:
                     ok = False
-            return {"overall_passed": ok if techs else False,
-                    "techniques_tested": len(techs),
-                    "techniques_passed": sum(1 for v in techs.values() if v["passed"]),
-                    "total_tests_run": total_r, "total_tests_passed": total_p,
-                    "techniques": techs, "project_id": project_id}
+            return {
+                "overall_passed": ok if techs else False,
+                "techniques_tested": len(techs),
+                "techniques_passed": sum(1 for v in techs.values() if v["passed"]),
+                "total_tests_run": total_r,
+                "total_tests_passed": total_p,
+                "techniques": techs,
+                "project_id": project_id,
+            }
         except Exception as e:
             return {"error": str(e), "techniques": {}}
 
@@ -476,15 +708,12 @@ class ATLASRedTeamScanner:
 # CLI
 # ===============================================================
 def main():
-    ap = argparse.ArgumentParser(
-        description="ATLAS Red Team Scanner -- MITRE ATLAS AI/LLM defense testing")
+    ap = argparse.ArgumentParser(description="ATLAS Red Team Scanner -- MITRE ATLAS AI/LLM defense testing")
     ap.add_argument("--all", action="store_true", help="Run all ATLAS red team tests")
     ap.add_argument("--technique", help="Run specific ATLAS technique (e.g. AML.T0051)")
     ap.add_argument("--summary", action="store_true", help="Show summary of stored results")
-    ap.add_argument("--behavioral", action="store_true",
-                    help="Run behavioral red team tests (Phase 45, D262)")
-    ap.add_argument("--brt-technique",
-                    help="Run specific behavioral technique (e.g. BRT-001)")
+    ap.add_argument("--behavioral", action="store_true", help="Run behavioral red team tests (Phase 45, D262)")
+    ap.add_argument("--brt-technique", help="Run specific behavioral technique (e.g. BRT-001)")
     ap.add_argument("--project-id", help="Project ID for scoping and storage")
     ap.add_argument("--json", action="store_true", help="Output as JSON")
     args = ap.parse_args()

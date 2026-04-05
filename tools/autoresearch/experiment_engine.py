@@ -47,6 +47,7 @@ def _score_uuid() -> str:
 def _get_db():
     """Get database connection via storage abstraction."""
     from tools.db.storage import get_connection
+
     return get_connection()
 
 
@@ -57,6 +58,7 @@ def _load_config() -> dict:
         return {}
     try:
         import yaml
+
         with open(config_path, encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
     except ImportError:
@@ -70,14 +72,14 @@ def _load_program(domain: str) -> dict:
         return {}
     try:
         import yaml
+
         with open(program_path, encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
     except ImportError:
         return {"domain": domain}
 
 
-def _audit(event_type: str, action: str, details: dict = None,
-           project_id: str = "autoresearch"):
+def _audit(event_type: str, action: str, details: dict = None, project_id: str = "autoresearch"):
     """Append to audit trail."""
     try:
         with _get_db() as conn:
@@ -102,14 +104,13 @@ def _audit(event_type: str, action: str, details: dict = None,
 
 # ── Table Initialization ─────────────────────────────────────────────────────
 
+
 def ensure_tables() -> None:
     """Create autoresearch tables if they do not exist."""
     try:
         with _get_db() as conn:
             # Quick check — if experiment_candidates exists, skip
-            conn.execute(
-                "SELECT 1 FROM experiment_candidates LIMIT 1"
-            )
+            conn.execute("SELECT 1 FROM experiment_candidates LIMIT 1")
     except Exception:
         # Tables don't exist — init_icdev_db should have created them
         # Run init if needed
@@ -125,6 +126,7 @@ def ensure_tables() -> None:
 
 
 # ── CRUD ─────────────────────────────────────────────────────────────────────
+
 
 def create_experiment(
     domain: str,
@@ -148,17 +150,31 @@ def create_experiment(
                 "signal_id, status, content_hash, created_at, updated_at) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
-                    exp_id, domain, hypothesis, category,
+                    exp_id,
+                    domain,
+                    hypothesis,
+                    category,
                     json.dumps(modifications or {}, default=str),
-                    source, signal_id, "created", content_hash, now, now,
+                    source,
+                    signal_id,
+                    "created",
+                    content_hash,
+                    now,
+                    now,
                 ),
             )
     except Exception as exc:
         return {"success": False, "error": str(exc)}
 
-    _audit("experiment.created", f"Created experiment {exp_id}", {
-        "experiment_id": exp_id, "domain": domain, "hypothesis": hypothesis[:200],
-    })
+    _audit(
+        "experiment.created",
+        f"Created experiment {exp_id}",
+        {
+            "experiment_id": exp_id,
+            "domain": domain,
+            "hypothesis": hypothesis[:200],
+        },
+    )
 
     return {
         "success": True,
@@ -188,6 +204,7 @@ def get_experiment(experiment_id: str) -> dict:
 
 
 # ── Execution ────────────────────────────────────────────────────────────────
+
 
 def run_experiment(
     experiment_id: str,
@@ -222,8 +239,7 @@ def run_experiment(
     try:
         with _get_db() as conn:
             conn.execute(
-                "UPDATE experiment_candidates SET status = ?, updated_at = ? "
-                "WHERE id = ?",
+                "UPDATE experiment_candidates SET status = ?, updated_at = ? WHERE id = ?",
                 ("running", now_iso(), experiment_id),
             )
     except Exception:
@@ -231,15 +247,20 @@ def run_experiment(
 
     # Measure pre-metric
     from tools.autoresearch.fitness_evaluator import evaluate
+
     pre_eval = evaluate(domain)
     pre_metric = pre_eval.get("metric_value", 0.0)
 
-    _audit("experiment.started", f"Running experiment {experiment_id}", {
-        "experiment_id": experiment_id,
-        "domain": domain,
-        "pre_metric": pre_metric,
-        "time_budget": time_budget_seconds,
-    })
+    _audit(
+        "experiment.started",
+        f"Running experiment {experiment_id}",
+        {
+            "experiment_id": experiment_id,
+            "domain": domain,
+            "pre_metric": pre_metric,
+            "time_budget": time_budget_seconds,
+        },
+    )
 
     return {
         "success": True,
@@ -262,6 +283,7 @@ def evaluate_experiment(experiment_id: str) -> dict:
 
     # Measure current metric
     from tools.autoresearch.fitness_evaluator import evaluate
+
     post_eval = evaluate(domain)
     post_metric = post_eval.get("metric_value", 0.0)
 
@@ -270,8 +292,7 @@ def evaluate_experiment(experiment_id: str) -> dict:
     try:
         with _get_db() as conn:
             row = conn.execute(
-                "SELECT pre_metric FROM experiment_results "
-                "WHERE experiment_id = ? ORDER BY created_at DESC LIMIT 1",
+                "SELECT pre_metric FROM experiment_results WHERE experiment_id = ? ORDER BY created_at DESC LIMIT 1",
                 (experiment_id,),
             ).fetchone()
             if row:
@@ -305,9 +326,13 @@ def evaluate_experiment(experiment_id: str) -> dict:
     }
 
 
-def decide(experiment_id: str, pre_metric: float = None,
-           post_metric: float = None, tests_passed: bool = True,
-           coherence_passed: bool = True) -> dict:
+def decide(
+    experiment_id: str,
+    pre_metric: float = None,
+    post_metric: float = None,
+    tests_passed: bool = True,
+    coherence_passed: bool = True,
+) -> dict:
     """Binary keep/discard decision (Karpathy pattern).
 
     keep: record success, update landscape posterior
@@ -350,7 +375,7 @@ def decide(experiment_id: str, pre_metric: float = None,
         rationale = "Coherence check failed — discarding change"
     elif metric_delta >= keep_threshold:
         decision = "keep"
-        rationale = f"Metric improved by {improvement_pct:.2f}% (>= {keep_threshold*100:.1f}% threshold)"
+        rationale = f"Metric improved by {improvement_pct:.2f}% (>= {keep_threshold * 100:.1f}% threshold)"
     else:
         decision = "discard"
         rationale = f"Metric delta {metric_delta:.6f} below threshold {keep_threshold}"
@@ -369,11 +394,17 @@ def decide(experiment_id: str, pre_metric: float = None,
                 "classification, created_at) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
-                    result_id, experiment_id, domain,
+                    result_id,
+                    experiment_id,
+                    domain,
                     exp.get("hypothesis", ""),
                     exp.get("category"),
-                    pre_metric, post_metric, metric_delta, improvement_pct,
-                    decision, rationale,
+                    pre_metric,
+                    post_metric,
+                    metric_delta,
+                    improvement_pct,
+                    decision,
+                    rationale,
                     1 if tests_passed else 0,
                     1 if coherence_passed else 0,
                     "CUI",
@@ -384,8 +415,7 @@ def decide(experiment_id: str, pre_metric: float = None,
             # Update candidate status
             new_status = "completed" if decision == "keep" else "discarded"
             conn.execute(
-                "UPDATE experiment_candidates SET status = ?, updated_at = ? "
-                "WHERE id = ?",
+                "UPDATE experiment_candidates SET status = ?, updated_at = ? WHERE id = ?",
                 (new_status, now, experiment_id),
             )
 
@@ -399,19 +429,25 @@ def decide(experiment_id: str, pre_metric: float = None,
     # Update trust engine
     try:
         from tools.autonomy.trust_engine import observe
-        observe("run_experiment", success=(decision == "keep"),
-                details={"experiment_id": experiment_id, "domain": domain})
+
+        observe(
+            "run_experiment", success=(decision == "keep"), details={"experiment_id": experiment_id, "domain": domain}
+        )
     except (ImportError, Exception):
         pass
 
-    _audit(f"experiment.{decision}", f"Experiment {experiment_id}: {decision}", {
-        "experiment_id": experiment_id,
-        "result_id": result_id,
-        "domain": domain,
-        "decision": decision,
-        "metric_delta": metric_delta,
-        "improvement_pct": improvement_pct,
-    })
+    _audit(
+        f"experiment.{decision}",
+        f"Experiment {experiment_id}: {decision}",
+        {
+            "experiment_id": experiment_id,
+            "result_id": result_id,
+            "domain": domain,
+            "decision": decision,
+            "metric_delta": metric_delta,
+            "improvement_pct": improvement_pct,
+        },
+    )
 
     return {
         "success": True,
@@ -427,8 +463,7 @@ def decide(experiment_id: str, pre_metric: float = None,
     }
 
 
-def _update_landscape(conn, domain: str, category: str, decision: str,
-                      metric_delta: float, now: str):
+def _update_landscape(conn, domain: str, category: str, decision: str, metric_delta: float, now: str):
     """Update experiment landscape posterior (Thompson Sampling)."""
     try:
         row = conn.execute(
@@ -461,8 +496,17 @@ def _update_landscape(conn, domain: str, category: str, decision: str,
                 "last_experiment_at = ?, updated_at = ? "
                 "WHERE domain = ? AND category = ?",
                 (
-                    alpha, beta_val, total + 1, kept, discarded,
-                    best, cumulative, now, now, domain, category,
+                    alpha,
+                    beta_val,
+                    total + 1,
+                    kept,
+                    discarded,
+                    best,
+                    cumulative,
+                    now,
+                    now,
+                    domain,
+                    category,
                 ),
             )
         else:
@@ -476,12 +520,18 @@ def _update_landscape(conn, domain: str, category: str, decision: str,
                 "cumulative_improvement, last_experiment_at, updated_at) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
-                    lid, domain, category, alpha, beta_val, 1,
+                    lid,
+                    domain,
+                    category,
+                    alpha,
+                    beta_val,
+                    1,
                     1 if decision == "keep" else 0,
                     1 if decision == "discard" else 0,
                     metric_delta if decision == "keep" else 0.0,
                     metric_delta if decision == "keep" else 0.0,
-                    now, now,
+                    now,
+                    now,
                 ),
             )
     except Exception:
@@ -489,6 +539,7 @@ def _update_landscape(conn, domain: str, category: str, decision: str,
 
 
 # ── Autonomous Loop ──────────────────────────────────────────────────────────
+
 
 def run_loop(
     domain: str,
@@ -511,16 +562,15 @@ def run_loop(
         return {"success": False, "error": f"No program config for domain: {domain}"}
 
     if overnight:
-        max_experiments = config.get("defaults", {}).get(
-            "overnight_max_experiments", 20)
+        max_experiments = config.get("defaults", {}).get("overnight_max_experiments", 20)
 
     # Check circuit breaker
     consecutive_failures = 0
-    max_failures = config.get("circuit_breaker", {}).get(
-        "max_consecutive_failures", 3)
+    max_failures = config.get("circuit_breaker", {}).get("max_consecutive_failures", 3)
 
     # Generate hypotheses
     from tools.autoresearch.hypothesis_generator import generate_hypotheses
+
     hyp_result = generate_hypotheses(domain, max_hypotheses=max_experiments * 2, seed=seed)
     candidates = hyp_result.get("hypotheses", [])
 
@@ -549,6 +599,7 @@ def run_loop(
 
     # Measure baseline
     from tools.autoresearch.fitness_evaluator import evaluate
+
     baseline = evaluate(domain)
     baseline_metric = baseline.get("metric_value", 0.0)
 
@@ -560,15 +611,24 @@ def run_loop(
     for i in range(min(max_experiments, len(candidates))):
         # Circuit breaker check
         if consecutive_failures >= max_failures:
-            _audit("experiment.circuit_breaker", "Circuit breaker tripped", {
-                "domain": domain, "consecutive_failures": consecutive_failures,
-            })
+            _audit(
+                "experiment.circuit_breaker",
+                "Circuit breaker tripped",
+                {
+                    "domain": domain,
+                    "consecutive_failures": consecutive_failures,
+                },
+            )
             break
 
         # Select next experiment via Bayesian selector
         from tools.autoresearch.bayesian_selector import select_next_experiment
+
         selection = select_next_experiment(
-            candidates[i:], domain, recent_experiments=recent, seed=seed + i,
+            candidates[i:],
+            domain,
+            recent_experiments=recent,
+            seed=seed + i,
         )
         selected = selection.get("selected")
         if not selected:
@@ -596,7 +656,9 @@ def run_loop(
                     "threshold_band, thompson_sample, scored_at) "
                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                     (
-                        _score_uuid(), exp_id, domain,
+                        _score_uuid(),
+                        exp_id,
+                        domain,
                         selection.get("info_gain_score", 0.5),
                         json.dumps(selection.get("dimensions", {}), default=str),
                         selection.get("threshold_band", "suggest"),
@@ -634,31 +696,39 @@ def run_loop(
             discarded_count += 1
             consecutive_failures += 1
 
-        results.append({
-            "experiment_id": exp_id,
-            "hypothesis": selected["hypothesis"][:200],
-            "decision": decision,
-            "metric_delta": decision_result.get("metric_delta", 0.0),
-            "info_gain_score": selection.get("info_gain_score", 0.0),
-            "thompson_explored": selection.get("thompson_explored", False),
-        })
+        results.append(
+            {
+                "experiment_id": exp_id,
+                "hypothesis": selected["hypothesis"][:200],
+                "decision": decision,
+                "metric_delta": decision_result.get("metric_delta", 0.0),
+                "info_gain_score": selection.get("info_gain_score", 0.0),
+                "thompson_explored": selection.get("thompson_explored", False),
+            }
+        )
 
         # Add to recent for dedup
-        recent.append({
-            "hypothesis": selected["hypothesis"],
-            "content_hash": selected.get("content_hash", ""),
-        })
+        recent.append(
+            {
+                "hypothesis": selected["hypothesis"],
+                "content_hash": selected.get("content_hash", ""),
+            }
+        )
 
     acceptance_rate = kept_count / max(kept_count + discarded_count, 1)
 
-    _audit("experiment.loop_complete", f"Loop completed for {domain}", {
-        "domain": domain,
-        "experiments_run": len(results),
-        "kept": kept_count,
-        "discarded": discarded_count,
-        "acceptance_rate": round(acceptance_rate, 4),
-        "total_improvement": round(total_improvement, 6),
-    })
+    _audit(
+        "experiment.loop_complete",
+        f"Loop completed for {domain}",
+        {
+            "domain": domain,
+            "experiments_run": len(results),
+            "kept": kept_count,
+            "discarded": discarded_count,
+            "acceptance_rate": round(acceptance_rate, 4),
+            "total_improvement": round(total_improvement, 6),
+        },
+    )
 
     return {
         "success": True,
@@ -677,20 +747,17 @@ def run_loop(
 
 # ── Status ───────────────────────────────────────────────────────────────────
 
+
 def get_status() -> dict:
     """Current autoresearch status across all domains."""
     try:
         with _get_db() as conn:
             # Total experiments
-            total = conn.execute(
-                "SELECT COUNT(*) as cnt FROM experiment_results"
-            ).fetchone()
+            total = conn.execute("SELECT COUNT(*) as cnt FROM experiment_results").fetchone()
             total_count = total["cnt"] if total else 0
 
             # By decision
-            kept = conn.execute(
-                "SELECT COUNT(*) as cnt FROM experiment_results WHERE decision = 'keep'"
-            ).fetchone()
+            kept = conn.execute("SELECT COUNT(*) as cnt FROM experiment_results WHERE decision = 'keep'").fetchone()
             kept_count = kept["cnt"] if kept else 0
 
             # By domain
@@ -702,16 +769,13 @@ def get_status() -> dict:
             ).fetchall()
 
             # Landscapes
-            landscapes = conn.execute(
-                "SELECT * FROM experiment_landscapes ORDER BY domain, category"
-            ).fetchall()
+            landscapes = conn.execute("SELECT * FROM experiment_landscapes ORDER BY domain, category").fetchall()
 
             return {
                 "total_experiments": total_count,
                 "total_kept": kept_count,
                 "total_discarded": total_count - kept_count,
-                "acceptance_rate": round(
-                    kept_count / max(total_count, 1), 4),
+                "acceptance_rate": round(kept_count / max(total_count, 1), 4),
                 "domains": [dict(d) for d in domains],
                 "landscapes": [dict(row) for row in landscapes],
                 "timestamp": now_iso(),
@@ -755,9 +819,9 @@ def health_check() -> dict:
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
 
+
 def main():
-    parser = argparse.ArgumentParser(
-        description="Bayesian Autoresearch Engine — autonomous experiment loop")
+    parser = argparse.ArgumentParser(description="Bayesian Autoresearch Engine — autonomous experiment loop")
     parser.add_argument("--create", action="store_true", help="Create experiment")
     parser.add_argument("--run", action="store_true", help="Run experiment")
     parser.add_argument("--evaluate", action="store_true", help="Evaluate experiment")

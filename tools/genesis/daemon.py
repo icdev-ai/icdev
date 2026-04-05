@@ -52,9 +52,25 @@ PID_FILE = BASE_DIR / ".tmp" / "genesis" / "daemon.pid"
 STATE_FILE = BASE_DIR / ".tmp" / "genesis" / "state.json"
 
 REFLEX_NAMES = [
-    "research", "scout", "audit", "comply", "ingest", "market", "report",
-    "publish", "test", "learn", "heal", "evolve", "docs", "experiment",
-    "synthesize", "kanban", "oracle", "goal_learner", "remediation_lens",
+    "research",
+    "scout",
+    "audit",
+    "comply",
+    "ingest",
+    "market",
+    "report",
+    "publish",
+    "test",
+    "learn",
+    "heal",
+    "evolve",
+    "docs",
+    "experiment",
+    "synthesize",
+    "kanban",
+    "oracle",
+    "goal_learner",
+    "remediation_lens",
 ]
 
 # Backward-compat aliases for module-level access used by other code
@@ -156,48 +172,62 @@ class GenesisDaemon(DaemonBase):
         finally:
             conn.close()
 
-    def log_audit(self, event_type: str, reflex_name: str = None,
-                  risk_tier: str = None, details: Dict = None,
-                  success: bool = None, duration_ms: int = None,
-                  metric_name: str = None, metric_value: float = None,
-                  gkp_id: str = None, **kwargs) -> str:
+    def log_audit(
+        self,
+        event_type: str,
+        reflex_name: str = None,
+        risk_tier: str = None,
+        details: Dict = None,
+        success: bool = None,
+        duration_ms: int = None,
+        metric_name: str = None,
+        metric_value: float = None,
+        gkp_id: str = None,
+        **kwargs,
+    ) -> str:
         """Append an audit event (D-GEN-10: append-only, NIST AU)."""
         audit_id = generate_id("aud")
         conn = get_connection()
         try:
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT INTO genesis_audit
                     (id, event_type, reflex_name, risk_tier, details, success,
                      duration_ms, metric_name, metric_value, gkp_id, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                audit_id, event_type, reflex_name, risk_tier,
-                json.dumps(details) if details else None,
-                1 if success else (0 if success is False else None),
-                duration_ms, metric_name, metric_value, gkp_id,
-                utcnow_iso(),
-            ))
+            """,
+                (
+                    audit_id,
+                    event_type,
+                    reflex_name,
+                    risk_tier,
+                    json.dumps(details) if details else None,
+                    1 if success else (0 if success is False else None),
+                    duration_ms,
+                    metric_name,
+                    metric_value,
+                    gkp_id,
+                    utcnow_iso(),
+                ),
+            )
             conn.commit()
         finally:
             conn.close()
         return audit_id
 
-    def create_reflex_state(self, name: str,
-                            config: Dict[str, Any]) -> ReflexStateBase:
+    def create_reflex_state(self, name: str, config: Dict[str, Any]) -> ReflexStateBase:
         return GenesisReflexState(name, config)
 
     def create_trust_kernel(self, config: Dict[str, Any]) -> TrustKernelBase:
         return GenesisTrustKernel(config)
 
-    def run_reflex_impl(self, name: str, config: Dict[str, Any],
-                        trust: TrustKernelBase) -> Tuple[bool, float, Dict]:
+    def run_reflex_impl(self, name: str, config: Dict[str, Any], trust: TrustKernelBase) -> Tuple[bool, float, Dict]:
         """Execute a single reflex via tools/genesis/reflexes/<name>.py."""
         risk_tier = config.get("risk_tier", RISK_GREEN)
 
         # ORANGE tier — log that human review is needed
         if trust.requires_human_approval(risk_tier):
-            return True, 0.0, {"status": "awaiting_human_approval",
-                               "risk_tier": risk_tier}
+            return True, 0.0, {"status": "awaiting_human_approval", "risk_tier": risk_tier}
 
         try:
             module = importlib.import_module(f"tools.genesis.reflexes.{name}")
@@ -214,10 +244,14 @@ class GenesisDaemon(DaemonBase):
             return False, 0.0, {"error": str(e), "stage": "reflex_execution"}
 
         # Stub mode
-        return True, 0.0, {
-            "status": "stub",
-            "message": f"Reflex '{name}' not yet implemented -- stub mode (success)",
-        }
+        return (
+            True,
+            0.0,
+            {
+                "status": "stub",
+                "message": f"Reflex '{name}' not yet implemented -- stub mode (success)",
+            },
+        )
 
     def on_reflex_completed(self, name: str, result: Dict[str, Any]) -> None:
         """Post-reflex hook: run convergence gate and stagnation detector."""
@@ -243,12 +277,11 @@ class GenesisDaemon(DaemonBase):
             description = reflex_cfg.get("description", name)
 
             gate = ConvergenceGate(conv_config)
-            conv_result = gate.evaluate(
-                name, metric_value, output_text, generation, description
-            )
+            conv_result = gate.evaluate(name, metric_value, output_text, generation, description)
 
             self.log_audit(
-                "genesis.convergence.evaluated", name,
+                "genesis.convergence.evaluated",
+                name,
                 details={
                     "combined_drift": conv_result.get("combined_drift"),
                     "converged": conv_result.get("converged"),
@@ -258,23 +291,19 @@ class GenesisDaemon(DaemonBase):
 
             # Run stagnation detector if convergence flags issues
             if stag_config.get("enabled", False) and (
-                conv_result.get("converged")
-                or conv_result.get("retrospective_triggered")
+                conv_result.get("converged") or conv_result.get("retrospective_triggered")
             ):
                 from tools.genesis.stagnation_detector import StagnationDetector
 
-                detector = StagnationDetector(
-                    stag_config, self.config.get("llm", {})
-                )
+                detector = StagnationDetector(stag_config, self.config.get("llm", {}))
                 detection = detector.detect(name)
 
                 if detection.get("stagnation_detected"):
                     context = json.dumps(result.get("details", {}))
-                    plateau_result = detector.break_plateau(
-                        name, detection["pattern_type"], context
-                    )
+                    plateau_result = detector.break_plateau(name, detection["pattern_type"], context)
                     self.log_audit(
-                        "genesis.stagnation.detected", name,
+                        "genesis.stagnation.detected",
+                        name,
                         details={
                             "pattern": detection["pattern_type"],
                             "persona": plateau_result.get("persona_used"),
@@ -300,9 +329,9 @@ class GenesisDaemon(DaemonBase):
                 "uptime": "running" if PID_FILE.exists() else "stopped",
             },
             "trust_kernel": {
-                "circuit_breaker_max_failures": self.config.get(
-                    "trust_kernel", {}).get("circuit_breaker", {}).get(
-                    "max_consecutive_failures", 3),
+                "circuit_breaker_max_failures": self.config.get("trust_kernel", {})
+                .get("circuit_breaker", {})
+                .get("max_consecutive_failures", 3),
             },
         }
 
@@ -322,27 +351,42 @@ def _ensure_tables() -> None:
     daemon.ensure_tables()
 
 
-def _log_audit(event_type: str, reflex_name: str = None,
-               risk_tier: str = None, details: Dict = None,
-               success: bool = None, duration_ms: int = None,
-               metric_name: str = None, metric_value: float = None,
-               gkp_id: str = None) -> str:
+def _log_audit(
+    event_type: str,
+    reflex_name: str = None,
+    risk_tier: str = None,
+    details: Dict = None,
+    success: bool = None,
+    duration_ms: int = None,
+    metric_name: str = None,
+    metric_value: float = None,
+    gkp_id: str = None,
+) -> str:
     """Append an audit event (backward-compat wrapper)."""
     audit_id = generate_id("aud")
     conn = get_connection()
     try:
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO genesis_audit
                 (id, event_type, reflex_name, risk_tier, details, success,
                  duration_ms, metric_name, metric_value, gkp_id, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            audit_id, event_type, reflex_name, risk_tier,
-            json.dumps(details) if details else None,
-            1 if success else (0 if success is False else None),
-            duration_ms, metric_name, metric_value, gkp_id,
-            utcnow_iso(),
-        ))
+        """,
+            (
+                audit_id,
+                event_type,
+                reflex_name,
+                risk_tier,
+                json.dumps(details) if details else None,
+                1 if success else (0 if success is False else None),
+                duration_ms,
+                metric_name,
+                metric_value,
+                gkp_id,
+                utcnow_iso(),
+            ),
+        )
         conn.commit()
     finally:
         conn.close()
@@ -355,15 +399,19 @@ ReflexState = GenesisReflexState
 # Keep old TrustKernel accessible as module-level class
 TrustKernel = GenesisTrustKernel
 
+
 # Keep schedule helpers accessible at module level
 def _parse_schedule(s):
-    return __import__('tools.daemon.base', fromlist=['parse_schedule']).parse_schedule(s)
+    return __import__("tools.daemon.base", fromlist=["parse_schedule"]).parse_schedule(s)
+
 
 def _is_due(sched, last):
-    return __import__('tools.daemon.base', fromlist=['is_due']).is_due(sched, last)
+    return __import__("tools.daemon.base", fromlist=["is_due"]).is_due(sched, last)
+
 
 def _evaluate_metric(mc, v):
-    return __import__('tools.daemon.base', fromlist=['evaluate_metric']).evaluate_metric(mc, v)
+    return __import__("tools.daemon.base", fromlist=["evaluate_metric"]).evaluate_metric(mc, v)
+
 
 # Keep _run_reflex accessible for reflexes that call it directly
 def _run_reflex(name: str, config: Dict[str, Any], trust) -> Tuple[bool, float, Dict]:
@@ -384,10 +432,14 @@ def _run_reflex(name: str, config: Dict[str, Any], trust) -> Tuple[bool, float, 
         pass
     except Exception as e:
         return False, 0.0, {"error": str(e), "stage": "reflex_execution"}
-    return True, 0.0, {
-        "status": "stub",
-        "message": f"Reflex '{name}' not yet implemented -- stub mode (success)",
-    }
+    return (
+        True,
+        0.0,
+        {
+            "status": "stub",
+            "message": f"Reflex '{name}' not yet implemented -- stub mode (success)",
+        },
+    )
 
 
 # ---------------------------------------------------------------------------

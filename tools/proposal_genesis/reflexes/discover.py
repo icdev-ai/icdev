@@ -98,6 +98,7 @@ def _store_amendment_diff(opp_id: str, diff_type: str, section: str, old_text: s
 # Workflow Discipline Engine integration (D-WF-1, Enhancement §3.3)
 # ---------------------------------------------------------------------------
 
+
 def _ensure_workflow_loop_id_column() -> bool:
     """Add workflow_loop_id column to proposal_opportunities if missing.
 
@@ -107,15 +108,11 @@ def _ensure_workflow_loop_id_column() -> bool:
     conn = get_connection()
     try:
         # Check if column already exists via PRAGMA
-        cols = conn.execute(
-            "PRAGMA table_info(proposal_opportunities)"
-        ).fetchall()
+        cols = conn.execute("PRAGMA table_info(proposal_opportunities)").fetchall()
         col_names = [c["name"] if isinstance(c, dict) else c[1] for c in cols]
         if "workflow_loop_id" in col_names:
             return True
-        conn.execute(
-            "ALTER TABLE proposal_opportunities ADD COLUMN workflow_loop_id TEXT"
-        )
+        conn.execute("ALTER TABLE proposal_opportunities ADD COLUMN workflow_loop_id TEXT")
         conn.commit()
         return True
     except Exception:

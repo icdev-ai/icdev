@@ -19,9 +19,10 @@ def fix_backup_freshness(finding: Dict[str, Any]) -> Dict[str, Any]:
     """Run database backup to fix stale backup finding."""
     try:
         result = subprocess.run(
-            [sys.executable, str(BASE_DIR / "tools" / "db" / "backup.py"),
-             "--backup", "--all", "--json"],
-            capture_output=True, text=True, timeout=120,
+            [sys.executable, str(BASE_DIR / "tools" / "db" / "backup.py"), "--backup", "--all", "--json"],
+            capture_output=True,
+            text=True,
+            timeout=120,
             cwd=str(BASE_DIR),
             stdin=subprocess.DEVNULL,
         )
@@ -37,13 +38,15 @@ def fix_backup_freshness(finding: Dict[str, Any]) -> Dict[str, Any]:
 def verify_backup_freshness(finding: Dict[str, Any]) -> Dict[str, Any]:
     """Verify backup was created recently."""
     from datetime import datetime, timezone
+
     backup_dir = BASE_DIR / "data" / "backups"
     if not backup_dir.exists():
         return {"passed": False, "reason": "Backup directory does not exist"}
 
     backup_files = sorted(
         backup_dir.glob("*.bak"),
-        key=lambda f: f.stat().st_mtime, reverse=True,
+        key=lambda f: f.stat().st_mtime,
+        reverse=True,
     )
     if not backup_files:
         return {"passed": False, "reason": "No backup files found"}
@@ -75,12 +78,14 @@ def fix_disk_usage(finding: Dict[str, Any]) -> Dict[str, Any]:
             conn.execute("VACUUM")
             conn.close()
             size_after_mb = db_file.stat().st_size / (1024 * 1024)
-            vacuumed.append({
-                "file": db_file.name,
-                "before_mb": round(size_before_mb, 1),
-                "after_mb": round(size_after_mb, 1),
-                "saved_mb": round(size_before_mb - size_after_mb, 1),
-            })
+            vacuumed.append(
+                {
+                    "file": db_file.name,
+                    "before_mb": round(size_before_mb, 1),
+                    "after_mb": round(size_after_mb, 1),
+                    "saved_mb": round(size_before_mb - size_after_mb, 1),
+                }
+            )
         except Exception as e:
             errors.append({"file": db_file.name, "error": str(e)})
 

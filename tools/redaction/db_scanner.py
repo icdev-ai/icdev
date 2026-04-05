@@ -89,12 +89,10 @@ class DBScanner:
 
         # Summary
         total_columns = sum(
-            len(r.get("columns", {})) for r in results.values()
-            if isinstance(r, dict) and "columns" in r
+            len(r.get("columns", {})) for r in results.values() if isinstance(r, dict) and "columns" in r
         )
         pii_columns = sum(
-            sum(1 for c in r.get("columns", {}).values()
-                if c.get("pii_density", 0) > 0)
+            sum(1 for c in r.get("columns", {}).values() if c.get("pii_density", 0) > 0)
             for r in results.values()
             if isinstance(r, dict) and "columns" in r
         )
@@ -111,17 +109,15 @@ class DBScanner:
     def _scan_table(self, conn, table: str) -> Optional[Dict[str, Any]]:
         """Scan a single table."""
         # Check if table exists
-        exists = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-            (table,)
-        ).fetchone()
+        exists = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone()
         if not exists:
             return None
 
         # Get text columns
         pragma = conn.execute(f"PRAGMA table_info({table})").fetchall()
         text_columns = [
-            col["name"] for col in pragma
+            col["name"]
+            for col in pragma
             if col["type"].upper() in ("TEXT", "VARCHAR", "CLOB", "")
             and col["name"] not in ("id", "created_at", "updated_at", "status", "type")
         ]
@@ -139,7 +135,7 @@ class DBScanner:
                 samples = conn.execute(  # nosec B608 — col/table from PRAGMA, not user input
                     f"SELECT {col} FROM {table} WHERE {col} IS NOT NULL "  # nosec B608 -- table/column names are internal constants, not user input
                     f"AND {col} != '' ORDER BY RANDOM() LIMIT ?",
-                    (self._sample_size,)
+                    (self._sample_size,),
                 ).fetchall()
 
                 if not samples:
@@ -157,9 +153,7 @@ class DBScanner:
                     if detections:
                         pii_count += 1
                         for d in detections:
-                            entity_types_found[d.entity_type] = (
-                                entity_types_found.get(d.entity_type, 0) + 1
-                            )
+                            entity_types_found[d.entity_type] = entity_types_found.get(d.entity_type, 0) + 1
 
                 density = pii_count / len(samples) if samples else 0.0
                 column_results[col] = {
@@ -192,13 +186,12 @@ class DBScanner:
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
     parser = argparse.ArgumentParser(description="ICDEV™ Database PII Scanner")
     parser.add_argument("--scan", action="store_true", help="Scan tables for PII")
-    parser.add_argument("--table", type=str, default=None,
-                        help="Specific table to scan")
-    parser.add_argument("--sample-size", type=int, default=20,
-                        help="Sample rows per column (default: 20)")
+    parser.add_argument("--table", type=str, default=None, help="Specific table to scan")
+    parser.add_argument("--sample-size", type=int, default=20, help="Sample rows per column (default: 20)")
     parser.add_argument("--health", action="store_true")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--gate", action="store_true")
@@ -227,16 +220,12 @@ def main():
             print(f"Columns with PII: {result['columns_with_pii']}")
             for table, info in result.get("tables", {}).items():
                 if isinstance(info, dict) and "columns" in info:
-                    pii_cols = [
-                        c for c, v in info["columns"].items()
-                        if v.get("pii_density", 0) > 0
-                    ]
+                    pii_cols = [c for c, v in info["columns"].items() if v.get("pii_density", 0) > 0]
                     if pii_cols:
                         print(f"\n  {table} ({info['row_count']} rows):")
                         for col in pii_cols:
                             v = info["columns"][col]
-                            print(f"    {col}: {v['pii_density']:.0%} PII density "
-                                  f"({v.get('entity_types', {})})")
+                            print(f"    {col}: {v['pii_density']:.0%} PII density ({v.get('entity_types', {})})")
         return
 
     parser.print_help()

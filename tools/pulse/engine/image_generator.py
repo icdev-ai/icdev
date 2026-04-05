@@ -49,6 +49,7 @@ DEFAULT_GUIDANCE = 0.0  # SDXL Turbo uses CFG=0 (guidance-free)
 # GPU / CUDA detection
 # ---------------------------------------------------------------------------
 
+
 def check_gpu() -> Dict[str, Any]:
     """Check GPU availability and VRAM for image generation."""
     result = {
@@ -60,14 +61,15 @@ def check_gpu() -> Dict[str, Any]:
     }
     try:
         import torch
+
         if torch.cuda.is_available():
             result["cuda_available"] = True
             result["device_name"] = torch.cuda.get_device_name(0)
             props = torch.cuda.get_device_properties(0)
             total = getattr(props, "total_memory", None) or getattr(props, "total_mem", 0)
             free = total - torch.cuda.memory_allocated(0)
-            result["vram_total_gb"] = round(total / (1024 ** 3), 1)
-            result["vram_free_gb"] = round(free / (1024 ** 3), 1)
+            result["vram_total_gb"] = round(total / (1024**3), 1)
+            result["vram_free_gb"] = round(free / (1024**3), 1)
             # SDXL Turbo needs ~6 GB VRAM
             result["sdxl_turbo_compatible"] = result["vram_total_gb"] >= 6.0
     except ImportError:
@@ -78,6 +80,7 @@ def check_gpu() -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Tier 1: Deterministic SVG fallback (zero deps, air-gap safe)
 # ---------------------------------------------------------------------------
+
 
 def _generate_svg_hero(
     title: str,
@@ -100,15 +103,8 @@ def _generate_svg_hero(
     # Truncate title for display
     display_title = title[:80] + ("..." if len(title) > 80 else "")
     # Escape XML entities
-    display_title = (
-        display_title.replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace('"', "&quot;")
-    )
-    category_display = (
-        category[:30].upper().replace("&", "&amp;") if category else "ICDEV™ PULSE"
-    )
+    display_title = display_title.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+    category_display = category[:30].upper().replace("&", "&amp;") if category else "ICDEV™ PULSE"
 
     svg = f"""<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" width="{width}" height="{height}">
@@ -123,19 +119,19 @@ def _generate_svg_hero(
   </defs>
   <rect width="{width}" height="{height}" fill="url(#bg)"/>
   <rect width="{width}" height="{height}" fill="url(#grid)"/>
-  <rect x="60" y="{height//2 - 80}" width="{width - 120}" height="160" rx="12"
+  <rect x="60" y="{height // 2 - 80}" width="{width - 120}" height="160" rx="12"
         fill="rgba(0,0,0,0.3)"/>
-  <text x="{width//2}" y="{height//2 - 20}" text-anchor="middle"
+  <text x="{width // 2}" y="{height // 2 - 20}" text-anchor="middle"
         font-family="system-ui, -apple-system, sans-serif" font-size="14"
         font-weight="600" letter-spacing="3" fill="{accent}">
     {category_display}
   </text>
-  <text x="{width//2}" y="{height//2 + 25}" text-anchor="middle"
+  <text x="{width // 2}" y="{height // 2 + 25}" text-anchor="middle"
         font-family="system-ui, -apple-system, sans-serif" font-size="28"
         font-weight="700" fill="white">
     {display_title}
   </text>
-  <text x="{width//2}" y="{height - 30}" text-anchor="middle"
+  <text x="{width // 2}" y="{height - 30}" text-anchor="middle"
         font-family="system-ui, -apple-system, sans-serif" font-size="12"
         fill="rgba(255,255,255,0.5)">
     ICDEV™ Intelligent Certified Development
@@ -441,6 +437,7 @@ def generate_image(
 # Public API: auto-select best available method
 # ---------------------------------------------------------------------------
 
+
 def generate_hero_image(
     title: str,
     category: str = "",
@@ -520,10 +517,9 @@ def create_post_image(title: str, topic: str = "") -> dict:
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
-    parser = argparse.ArgumentParser(
-        description="Pulse hero image generator (SDXL Turbo / SVG fallback)"
-    )
+    parser = argparse.ArgumentParser(description="Pulse hero image generator (SDXL Turbo / SVG fallback)")
     parser.add_argument("--prompt", type=str, help="Article title or custom prompt")
     parser.add_argument("--category", type=str, default="", help="Article category")
     parser.add_argument("--output", type=str, help="Output file path")
@@ -531,12 +527,8 @@ def main():
     parser.add_argument("--height", type=int, default=DEFAULT_HEIGHT)
     parser.add_argument("--steps", type=int, default=DEFAULT_STEPS)
     parser.add_argument("--seed", type=int, default=None, help="Random seed")
-    parser.add_argument(
-        "--svg-only", action="store_true", help="Force SVG (no GPU)"
-    )
-    parser.add_argument(
-        "--gpu-only", action="store_true", help="Force GPU (no SVG fallback)"
-    )
+    parser.add_argument("--svg-only", action="store_true", help="Force SVG (no GPU)")
+    parser.add_argument("--gpu-only", action="store_true", help="Force GPU (no SVG fallback)")
     parser.add_argument("--health", action="store_true", help="Check GPU health")
     parser.add_argument("--json", action="store_true", help="JSON output")
     args = parser.parse_args()

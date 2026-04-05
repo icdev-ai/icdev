@@ -3,6 +3,7 @@
 """Generate Terraform configurations for GCP Government (Assured Workloads) deployments.
 Produces provider.tf, variables.tf, outputs.tf, main.tf, and modules
 for VPC, Cloud SQL, Artifact Registry, and Secret Manager — all with CUI header comments."""
+
 from __future__ import annotations
 
 import argparse

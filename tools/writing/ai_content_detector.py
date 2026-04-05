@@ -1,4 +1,5 @@
 """AI content detector — thin wrapper re-exporting from analysis_engine."""
+
 from tools.writing.analysis_engine import _ai_detection
 
 

@@ -7,6 +7,7 @@ status (green/yellow/red) for overlay coloring.
 
 No Flask dependency — takes file content and graph data, returns results.
 """
+
 from defusedxml.ElementTree import fromstring as safe_fromstring
 from typing import Any
 
@@ -209,16 +210,18 @@ def parse_xccdf(content: str) -> dict[str, Any]:
                 if rule_title:
                     title = rule_title.strip()
 
-            findings.append({
-                "vuln_id": rule_ref,
-                "rule_id": rule_ref,
-                "stig_id": rule_ref,
-                "severity": SEVERITY_TO_CAT.get(severity, "CAT2"),
-                "title": title,
-                "status": status,
-                "finding_details": "",
-                "comments": "",
-            })
+            findings.append(
+                {
+                    "vuln_id": rule_ref,
+                    "rule_id": rule_ref,
+                    "stig_id": rule_ref,
+                    "severity": SEVERITY_TO_CAT.get(severity, "CAT2"),
+                    "title": title,
+                    "status": status,
+                    "finding_details": "",
+                    "comments": "",
+                }
+            )
             summary[status] = summary.get(status, 0) + 1
 
         if hostname in result["hosts"]:
@@ -336,17 +339,19 @@ def match_hosts_to_devices(
             else:
                 status = "green"
 
-            matched.append({
-                "node_id": node_id,
-                "label": best_node.get("label", node_id),
-                "hostname": hostname,
-                "status": status,
-                "summary": host_data["summary"],
-                "cat1_count": cat1_count,
-                "cat2_count": cat2_count,
-                "cat3_count": cat3_count,
-                "findings": fail_findings,  # Only include failures for overlay
-            })
+            matched.append(
+                {
+                    "node_id": node_id,
+                    "label": best_node.get("label", node_id),
+                    "hostname": hostname,
+                    "status": status,
+                    "summary": host_data["summary"],
+                    "cat1_count": cat1_count,
+                    "cat2_count": cat2_count,
+                    "cat3_count": cat3_count,
+                    "findings": fail_findings,  # Only include failures for overlay
+                }
+            )
 
     # Unmatched
     unmatched_hosts = [h for h in hosts if h not in matched_hostnames]
@@ -355,9 +360,17 @@ def match_hosts_to_devices(
         for n in nodes
         if n.get("id") not in matched_node_ids
         # Exclude drawing shapes (rectangles, text, etc.)
-        and n.get("type", "") not in (
-            "rectangle", "circle", "ellipse", "diamond", "triangle",
-            "hexagon", "star", "arrow", "text",
+        and n.get("type", "")
+        not in (
+            "rectangle",
+            "circle",
+            "ellipse",
+            "diamond",
+            "triangle",
+            "hexagon",
+            "star",
+            "arrow",
+            "text",
         )
     ]
 

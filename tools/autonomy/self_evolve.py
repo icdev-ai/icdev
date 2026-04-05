@@ -40,8 +40,11 @@ def _run_coherence_check() -> Dict[str, Any]:
     try:
         result = subprocess.run(
             [sys.executable, "tools/workflow/coherence_checker.py", "--all", "--json"],
-            capture_output=True, text=True, timeout=60,
-            cwd=str(BASE_DIR), stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            cwd=str(BASE_DIR),
+            stdin=subprocess.DEVNULL,
         )
         if result.returncode == 0 and result.stdout.strip():
             return json.loads(result.stdout)
@@ -54,6 +57,7 @@ def _run_remediation() -> Dict[str, Any]:
     """Run remediation engine to auto-fix coherence issues."""
     try:
         from tools.review_board.remediation_engine import run_remediation
+
         return run_remediation(dry_run=False)
     except Exception as e:
         return {"failed": 1, "error": str(e)}
@@ -64,8 +68,11 @@ def _compile_check(file_path: str) -> bool:
     try:
         result = subprocess.run(
             [sys.executable, "-m", "py_compile", file_path],
-            capture_output=True, text=True, timeout=10,
-            cwd=str(BASE_DIR), stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            cwd=str(BASE_DIR),
+            stdin=subprocess.DEVNULL,
         )
         return result.returncode == 0
     except Exception:
@@ -77,16 +84,18 @@ def _lint_check(file_path: str) -> bool:
     try:
         result = subprocess.run(
             [sys.executable, "-m", "ruff", "check", file_path, "--ignore", "E402"],
-            capture_output=True, text=True, timeout=10,
-            cwd=str(BASE_DIR), stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            cwd=str(BASE_DIR),
+            stdin=subprocess.DEVNULL,
         )
         return result.returncode == 0
     except Exception:
         return True  # ruff not available = pass
 
 
-def evolve_action(category: str, action_fn, description: str,
-                  dry_run: bool = False) -> Dict[str, Any]:
+def evolve_action(category: str, action_fn, description: str, dry_run: bool = False) -> Dict[str, Any]:
     """Execute a self-evolution action through the full safety pipeline.
 
     Args:
@@ -140,8 +149,7 @@ def evolve_action(category: str, action_fn, description: str,
     except Exception as e:
         result["action_result"] = {"error": str(e)}
         result["final_status"] = "action_failed"
-        observe(category, success=False, source="self_evolve",
-                details={"error": str(e)})
+        observe(category, success=False, source="self_evolve", details={"error": str(e)})
         return result
 
     # Step 4: Coherence check
@@ -161,19 +169,18 @@ def evolve_action(category: str, action_fn, description: str,
         if not coherence_passed:
             # Step 6: Rollback — record failure
             result["final_status"] = "coherence_failed"
-            observe(category, success=False, source="self_evolve",
-                    details={"reason": "coherence_failed_after_remediation"})
+            observe(
+                category, success=False, source="self_evolve", details={"reason": "coherence_failed_after_remediation"}
+            )
             return result
 
     # Step 7: Success
     result["final_status"] = "success"
-    observe(category, success=True, source="self_evolve",
-            details={"description": description})
+    observe(category, success=True, source="self_evolve", details={"description": description})
     return result
 
 
-def create_tool_module(name: str, purpose: str, package: str = "tools",
-                       dry_run: bool = False) -> Dict[str, Any]:
+def create_tool_module(name: str, purpose: str, package: str = "tools", dry_run: bool = False) -> Dict[str, Any]:
     """Create a new Python tool module through the full safety pipeline."""
     target_dir = BASE_DIR / package
     target_file = target_dir / f"{name}.py"
@@ -193,9 +200,9 @@ def create_tool_module(name: str, purpose: str, package: str = "tools",
             f"import sys\n"
             f"from pathlib import Path\n"
             f"\n"
-            f'BASE_DIR = Path(__file__).resolve().parent.parent\n'
-            f'if str(BASE_DIR) not in sys.path:\n'
-            f'    sys.path.insert(0, str(BASE_DIR))\n'
+            f"BASE_DIR = Path(__file__).resolve().parent.parent\n"
+            f"if str(BASE_DIR) not in sys.path:\n"
+            f"    sys.path.insert(0, str(BASE_DIR))\n"
             f"\n"
             f"\n"
             f"def run(**kwargs):\n"

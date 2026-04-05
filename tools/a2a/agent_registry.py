@@ -31,8 +31,6 @@ def _get_db(db_path: Path = None) -> sqlite3.Connection:
     return conn
 
 
-
-
 def register_agent(
     agent_id: str,
     name: str,

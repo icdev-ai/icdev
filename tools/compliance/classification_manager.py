@@ -59,25 +59,25 @@ _CLASSIFICATION_MAP = {
 # Language comment-style mapping (language key -> prefix style)
 # Kept in-module so the tool works standalone without language_support.py.
 _COMMENT_STYLES = {
-    "python":     "hash",
-    "ruby":       "hash",
-    "java":       "c-style",
-    "go":         "c-style",
-    "rust":       "c-style",
-    "csharp":     "c-style",
-    "c#":         "c-style",
-    "typescript":  "c-style",
-    "javascript":  "c-style",
-    "xml":        "xml-style",
-    "html":       "xml-style",
+    "python": "hash",
+    "ruby": "hash",
+    "java": "c-style",
+    "go": "c-style",
+    "rust": "c-style",
+    "csharp": "c-style",
+    "c#": "c-style",
+    "typescript": "c-style",
+    "javascript": "c-style",
+    "xml": "xml-style",
+    "html": "xml-style",
 }
 
 # Portion-marking shortcuts
 _PORTION_MARKS = {
-    "PUBLIC":          "",
-    "CUI":             "(CUI)",
-    "SECRET":          "(S)",
-    "TOP SECRET":      "(TS)",
+    "PUBLIC": "",
+    "CUI": "(CUI)",
+    "SECRET": "(S)",
+    "TOP SECRET": "(TS)",
     "TOP SECRET//SCI": "(TS//SCI)",
 }
 
@@ -85,6 +85,7 @@ _PORTION_MARKS = {
 # ---------------------------------------------------------------------------
 # Profile / config loaders
 # ---------------------------------------------------------------------------
+
 
 def load_impact_level_profiles() -> Dict:
     """Load and cache DoD Impact Level profiles from JSON.
@@ -113,8 +114,7 @@ def load_impact_level_profiles() -> Dict:
             return _IL_PROFILES_CACHE
         except (json.JSONDecodeError, OSError) as exc:
             print(
-                f"Warning: Could not load IL profiles ({exc}); "
-                "using built-in CUI defaults.",
+                f"Warning: Could not load IL profiles ({exc}); using built-in CUI defaults.",
                 file=sys.stderr,
             )
 
@@ -265,23 +265,19 @@ def _parse_simple_yaml(content: str, config: Dict) -> None:
 # Database helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
     """Return a database connection with Row factory."""
     path = db_path or DB_PATH
     if not path.exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\n"
-            "Run: python tools/db/init_icdev_db.py"
-        )
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
     conn = get_connection(db_path=str(path))
     return conn
 
 
 def _get_project(conn: sqlite3.Connection, project_id: str) -> Dict:
     """Load project row from the ``projects`` table."""
-    row = conn.execute(
-        "SELECT * FROM projects WHERE id = ?", (project_id,)
-    ).fetchone()
+    row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
     if not row:
         raise ValueError(f"Project '{project_id}' not found in database.")
     return dict(row)
@@ -322,6 +318,7 @@ def _log_audit_event(
 # Core functions
 # ---------------------------------------------------------------------------
 
+
 def get_impact_level_profile(il_level: str) -> Dict:
     """Return the full profile dict for a given impact level.
 
@@ -337,10 +334,7 @@ def get_impact_level_profile(il_level: str) -> Dict:
     """
     il_upper = il_level.upper()
     if il_upper not in VALID_IMPACT_LEVELS:
-        raise ValueError(
-            f"Invalid impact level '{il_level}'. "
-            f"Valid levels: {', '.join(VALID_IMPACT_LEVELS)}"
-        )
+        raise ValueError(f"Invalid impact level '{il_level}'. Valid levels: {', '.join(VALID_IMPACT_LEVELS)}")
 
     profiles = load_impact_level_profiles()
     profile = profiles.get(il_upper)
@@ -369,10 +363,7 @@ def get_classification_for_il(il_level: str) -> str:
     """
     il_upper = il_level.upper()
     if il_upper not in VALID_IMPACT_LEVELS:
-        raise ValueError(
-            f"Invalid impact level '{il_level}'. "
-            f"Valid levels: {', '.join(VALID_IMPACT_LEVELS)}"
-        )
+        raise ValueError(f"Invalid impact level '{il_level}'. Valid levels: {', '.join(VALID_IMPACT_LEVELS)}")
 
     # Prefer the authoritative mapping from profiles when available
     profiles = load_impact_level_profiles()
@@ -493,11 +484,11 @@ def get_code_header(
             "POC: ICDEV™ System Administrator",
         ]
         # Try language_support module for CUI (it has registry-aware logic)
-        if language.lower() in ("python", "ruby", "java", "go", "rust",
-                                "csharp", "c#", "typescript", "javascript"):
+        if language.lower() in ("python", "ruby", "java", "go", "rust", "csharp", "c#", "typescript", "javascript"):
             try:
                 sys.path.insert(0, str(BASE_DIR / "tools" / "builder"))
                 from language_support import get_cui_header as _ls_header
+
                 result = _ls_header(language)
                 if result:
                     return result
@@ -679,11 +670,14 @@ def get_encryption_requirements(il_level: str) -> Dict:
         ValueError: If *il_level* is invalid.
     """
     profile = get_impact_level_profile(il_level)
-    return profile.get("encryption_requirements", {
-        "at_rest": "FIPS 140-2 validated modules",
-        "in_transit": "TLS 1.2+",
-        "key_management": "Customer managed keys",
-    })
+    return profile.get(
+        "encryption_requirements",
+        {
+            "at_rest": "FIPS 140-2 validated modules",
+            "in_transit": "TLS 1.2+",
+            "key_management": "Customer managed keys",
+        },
+    )
 
 
 def get_network_requirements(il_level: str) -> Dict:
@@ -700,12 +694,15 @@ def get_network_requirements(il_level: str) -> Dict:
         ValueError: If *il_level* is invalid.
     """
     profile = get_impact_level_profile(il_level)
-    return profile.get("network_requirements", {
-        "dedicated_infrastructure": False,
-        "cross_domain": False,
-        "vpn_required": False,
-        "sipr_only": False,
-    })
+    return profile.get(
+        "network_requirements",
+        {
+            "dedicated_infrastructure": False,
+            "cross_domain": False,
+            "vpn_required": False,
+            "sipr_only": False,
+        },
+    )
 
 
 def get_cloud_environments(il_level: str) -> List[str]:
@@ -760,17 +757,11 @@ def validate_classification(
 
         # Check classification is valid
         if proj_classification not in VALID_CLASSIFICATIONS:
-            issues.append(
-                f"Invalid classification '{proj_classification}'. "
-                f"Valid: {', '.join(VALID_CLASSIFICATIONS)}"
-            )
+            issues.append(f"Invalid classification '{proj_classification}'. Valid: {', '.join(VALID_CLASSIFICATIONS)}")
 
         # Check impact level is valid (if set)
         if proj_il and proj_il not in VALID_IMPACT_LEVELS:
-            issues.append(
-                f"Invalid impact level '{proj_il}'. "
-                f"Valid: {', '.join(VALID_IMPACT_LEVELS)}"
-            )
+            issues.append(f"Invalid impact level '{proj_il}'. Valid: {', '.join(VALID_IMPACT_LEVELS)}")
 
         # Cross-validate classification vs. impact level
         if proj_il and proj_il in VALID_IMPACT_LEVELS:
@@ -796,20 +787,24 @@ def validate_classification(
 
         elif not proj_il:
             issues.append(
-                "Impact level not set on project. Recommend setting "
-                "impact_level to ensure compliance mapping."
+                "Impact level not set on project. Recommend setting impact_level to ensure compliance mapping."
             )
 
         result["valid"] = len(issues) == 0
 
         # Log audit event
-        _log_audit_event(conn, project_id, "Classification validation", {
-            "classification": proj_classification,
-            "impact_level": proj_il,
-            "valid": result["valid"],
-            "issues": issues,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        })
+        _log_audit_event(
+            conn,
+            project_id,
+            "Classification validation",
+            {
+                "classification": proj_classification,
+                "impact_level": proj_il,
+                "valid": result["valid"],
+                "issues": issues,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            },
+        )
 
         return result
 
@@ -840,10 +835,7 @@ def get_cross_domain_controls(
     """
     for il in (source_il, target_il):
         if il.upper() not in VALID_IMPACT_LEVELS:
-            raise ValueError(
-                f"Invalid impact level '{il}'. "
-                f"Valid: {', '.join(VALID_IMPACT_LEVELS)}"
-            )
+            raise ValueError(f"Invalid impact level '{il}'. Valid: {', '.join(VALID_IMPACT_LEVELS)}")
 
     profiles = load_impact_level_profiles()
     cross_domain = profiles.get("_cross_domain", {})
@@ -887,8 +879,7 @@ def get_cross_domain_controls(
     # No explicit mapping found -- return a conservative response
     return {
         "description": (
-            f"Cross-domain transfer between {src} and {tgt}. "
-            "No explicit mapping found; treat as requiring AO approval."
+            f"Cross-domain transfer between {src} and {tgt}. No explicit mapping found; treat as requiring AO approval."
         ),
         "additional_controls": ["AC-4", "SC-7(5)"],
         "solution_type": "Consult AO for approved data transfer mechanism",
@@ -993,11 +984,10 @@ def upgrade_markings(
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main() -> None:
     """CLI entry point and demonstration of all capabilities."""
-    parser = argparse.ArgumentParser(
-        description="Classification & Marking Manager for ICDEV™"
-    )
+    parser = argparse.ArgumentParser(description="Classification & Marking Manager for ICDEV™")
     parser.add_argument(
         "--impact-level",
         choices=["IL2", "IL4", "IL5", "IL6"],
@@ -1064,11 +1054,20 @@ def main() -> None:
     args = parser.parse_args()
 
     # If no arguments given, show a full demo
-    if not any([
-        args.impact_level, args.classification, args.banner,
-        args.code_header, args.baseline, args.encryption, args.network,
-        args.cloud, args.cross_domain, args.validate,
-    ]):
+    if not any(
+        [
+            args.impact_level,
+            args.classification,
+            args.banner,
+            args.code_header,
+            args.baseline,
+            args.encryption,
+            args.network,
+            args.cloud,
+            args.cross_domain,
+            args.validate,
+        ]
+    ):
         _run_demo(args.json)
         return
 
@@ -1154,13 +1153,18 @@ def main() -> None:
             banner = get_marking_banner(classification)
             if args.json:
                 doc = get_document_banner(classification)
-                print(json.dumps({
-                    "classification": classification,
-                    "banner": banner,
-                    "document_header": doc["header"],
-                    "document_footer": doc["footer"],
-                    "portion_marking": get_portion_marking(classification),
-                }, indent=2))
+                print(
+                    json.dumps(
+                        {
+                            "classification": classification,
+                            "banner": banner,
+                            "document_header": doc["header"],
+                            "document_footer": doc["footer"],
+                            "portion_marking": get_portion_marking(classification),
+                        },
+                        indent=2,
+                    )
+                )
             else:
                 print(f"Banner for {classification}:\n")
                 print(banner)
@@ -1170,11 +1174,16 @@ def main() -> None:
         if args.code_header:
             header = get_code_header(classification, args.code_header)
             if args.json:
-                print(json.dumps({
-                    "classification": classification,
-                    "language": args.code_header,
-                    "code_header": header,
-                }, indent=2))
+                print(
+                    json.dumps(
+                        {
+                            "classification": classification,
+                            "language": args.code_header,
+                            "code_header": header,
+                        },
+                        indent=2,
+                    )
+                )
             else:
                 print(f"Code header for {classification} ({args.code_header}):\n")
                 print(header)
@@ -1273,10 +1282,12 @@ def _run_demo(as_json: bool = False) -> None:
     for il in ("IL4", "IL5", "IL6"):
         try:
             baseline = get_required_baseline(il)
-            print(f"  {il}: FedRAMP={baseline['fedramp_baseline']}, "
-                  f"CMMC={baseline['cmmc_level']}, "
-                  f"NIST 171={baseline['nist_800_171_required']}, "
-                  f"Overlay controls={len(baseline.get('required_controls_overlay', []))}")
+            print(
+                f"  {il}: FedRAMP={baseline['fedramp_baseline']}, "
+                f"CMMC={baseline['cmmc_level']}, "
+                f"NIST 171={baseline['nist_800_171_required']}, "
+                f"Overlay controls={len(baseline.get('required_controls_overlay', []))}"
+            )
         except ValueError:
             print(f"  {il}: (not available)")
     print()

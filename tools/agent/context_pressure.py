@@ -31,28 +31,26 @@ sys.path.insert(0, str(BASE_DIR))
 
 from tools.common.helpers import now_iso  # noqa: E402
 from tools.db.storage import get_connection  # noqa: E402
+
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 # ── Configuration (overridable via args/context_pressure_config.yaml) ────────
 DEFAULT_CONFIG = {
     # Context pressure thresholds (percentage of window remaining)
-    "warning_threshold_pct": 35,       # WARNING at 35% remaining
-    "critical_threshold_pct": 25,      # CRITICAL at 25% remaining
-    "context_window_tokens": 200000,   # Default context window size
-
+    "warning_threshold_pct": 35,  # WARNING at 35% remaining
+    "critical_threshold_pct": 25,  # CRITICAL at 25% remaining
+    "context_window_tokens": 200000,  # Default context window size
     # Stuck detection
-    "max_consecutive_reads": 5,        # Analysis paralysis after N reads
-    "max_duplicate_calls": 3,          # Loop detection after N identical calls
-    "duplicate_window_minutes": 5,     # Time window for duplicate detection
-
+    "max_consecutive_reads": 5,  # Analysis paralysis after N reads
+    "max_duplicate_calls": 3,  # Loop detection after N identical calls
+    "duplicate_window_minutes": 5,  # Time window for duplicate detection
     # Token estimation (chars -> tokens approximation)
-    "chars_per_token": 4,              # Average chars per token
-
+    "chars_per_token": 4,  # Average chars per token
     # Actions
-    "auto_checkpoint": False,          # Auto-trigger checkpoint on critical
-    "auto_compress": False,            # Phase 72: Auto-compress on warning/critical
-    "preserve_recent_turns": 5,        # Keep N most recent messages uncompressed
-    "log_to_db": True,                 # Store events in DB
+    "auto_checkpoint": False,  # Auto-trigger checkpoint on critical
+    "auto_compress": False,  # Phase 72: Auto-compress on warning/critical
+    "preserve_recent_turns": 5,  # Keep N most recent messages uncompressed
+    "log_to_db": True,  # Store events in DB
 }
 
 
@@ -62,7 +60,6 @@ def _get_db(db_path: Path = None) -> sqlite3.Connection:
     return conn
 
 
-
 def _load_config() -> dict:
     """Load config from YAML if available, else use defaults."""
     config = dict(DEFAULT_CONFIG)
@@ -70,6 +67,7 @@ def _load_config() -> dict:
     if config_path.exists():
         try:
             import yaml
+
             with open(config_path, encoding="utf-8") as f:
                 yaml_config = yaml.safe_load(f) or {}
             config.update(yaml_config)
@@ -162,8 +160,7 @@ def estimate_context_usage(session_id: str = None, db_path: Path = None) -> dict
         conn.close()
 
     # Phase 72 (D-CMP-1): Auto-compress on warning/critical
-    if (config.get("auto_compress", False)
-            and result["pressure_level"] in ("warning", "critical")):
+    if config.get("auto_compress", False) and result["pressure_level"] in ("warning", "critical"):
         compress_result = trigger_auto_compression(
             budget_tokens=config["context_window_tokens"],
             preserve_recent_n=config.get("preserve_recent_turns", 5),
@@ -219,8 +216,8 @@ def detect_stuck(session_id: str = None, db_path: Path = None) -> dict:
         "timestamp": now_iso(),
         "session_id": session_id or "unknown",
         "is_stuck": False,
-        "stuck_type": None,      # analysis_paralysis, duplicate_loop, retry_spiral
-        "severity": "normal",    # normal, warning, stuck
+        "stuck_type": None,  # analysis_paralysis, duplicate_loop, retry_spiral
+        "severity": "normal",  # normal, warning, stuck
         "consecutive_reads": 0,
         "duplicate_calls": 0,
         "recommendation": None,
@@ -229,11 +226,16 @@ def detect_stuck(session_id: str = None, db_path: Path = None) -> dict:
 
     # Read-only tools (don't produce durable output)
     READ_ONLY_TOOLS = {
-        "Read", "Glob", "Grep", "Bash",  # when used for reads
+        "Read",
+        "Glob",
+        "Grep",
+        "Bash",  # when used for reads
     }
     # Write tools (produce durable output)
     WRITE_TOOLS = {
-        "Write", "Edit", "NotebookEdit",
+        "Write",
+        "Edit",
+        "NotebookEdit",
     }
 
     conn = _get_db(db_path)
@@ -280,8 +282,7 @@ def detect_stuck(session_id: str = None, db_path: Path = None) -> dict:
                 f"If blocked, try a different approach or ask for clarification."
             )
             result["details"].append(
-                f"Analysis paralysis: {consecutive_reads} reads "
-                f"(threshold: {config['max_consecutive_reads']})"
+                f"Analysis paralysis: {consecutive_reads} reads (threshold: {config['max_consecutive_reads']})"
             )
 
         # 2. Duplicate Loop: same tool+input repeated
@@ -298,6 +299,7 @@ def detect_stuck(session_id: str = None, db_path: Path = None) -> dict:
             if recent_calls:
                 # Count most frequent call
                 from collections import Counter
+
                 counts = Counter(recent_calls)
                 most_common, count = counts.most_common(1)[0]
                 result["duplicate_calls"] = count
@@ -313,8 +315,7 @@ def detect_stuck(session_id: str = None, db_path: Path = None) -> dict:
                         f"different approach or escalate for human guidance."
                     )
                     result["details"].append(
-                        f"Duplicate loop: {tool_name} called {count}x "
-                        f"(threshold: {config['max_duplicate_calls']})"
+                        f"Duplicate loop: {tool_name} called {count}x (threshold: {config['max_duplicate_calls']})"
                     )
 
         # 3. Warning level: approaching thresholds
@@ -368,6 +369,7 @@ def _log_stuck_event(result: dict, db_path: Path = None):
 
 # ── Phase 72: Auto-Compression (D-CMP-1, Hermes adaptation) ─────────────────
 
+
 def trigger_auto_compression(
     budget_tokens: int = 200000,
     preserve_recent_n: int = 5,
@@ -392,6 +394,7 @@ def trigger_auto_compression(
     }
     try:
         from tools.memory.history_compressor import HistoryCompressor
+
         compressor = HistoryCompressor()
 
         # Compress using 3-tier budget with recent preservation
@@ -424,37 +427,30 @@ def health_check(session_id: str = None, db_path: Path = None) -> dict:
         "session_id": session_id or "unknown",
         "context_pressure": pressure,
         "stuck_detection": stuck,
-        "overall_healthy": (
-            pressure["pressure_level"] == "normal"
-            and not stuck["is_stuck"]
-        ),
+        "overall_healthy": (pressure["pressure_level"] == "normal" and not stuck["is_stuck"]),
         "actions_needed": [
-            a for a in [
+            a
+            for a in [
                 pressure.get("recommendation") if pressure["pressure_level"] != "normal" else None,
                 stuck.get("recommendation") if stuck["is_stuck"] else None,
-            ] if a
+            ]
+            if a
         ],
     }
 
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
 def main():
-    parser = argparse.ArgumentParser(
-        description="Context Pressure Monitor & Stuck Detection Guard (GSD-adapted)"
-    )
+    parser = argparse.ArgumentParser(description="Context Pressure Monitor & Stuck Detection Guard (GSD-adapted)")
     parser.add_argument(
-        "--check", choices=["pressure", "stuck", "health"],
-        default="health", help="Which check to run",
+        "--check",
+        choices=["pressure", "stuck", "health"],
+        default="health",
+        help="Which check to run",
     )
-    parser.add_argument(
-        "--session-id", help="Session ID to analyze"
-    )
-    parser.add_argument(
-        "--json", action="store_true", dest="json_output", help="JSON output"
-    )
-    parser.add_argument(
-        "--human", action="store_true", help="Human-readable output"
-    )
+    parser.add_argument("--session-id", help="Session ID to analyze")
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
+    parser.add_argument("--human", action="store_true", help="Human-readable output")
     args = parser.parse_args()
 
     session_id = args.session_id

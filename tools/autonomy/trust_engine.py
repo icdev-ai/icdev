@@ -49,7 +49,6 @@ def _get_connection():
     return conn
 
 
-
 def _gen_id(prefix: str = "ao") -> str:
     return f"{prefix}-{uuid.uuid4().hex[:10]}"
 
@@ -61,6 +60,7 @@ def _load_config() -> Dict[str, Any]:
         return {}
     try:
         import yaml
+
         with open(config_path, encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
     except ImportError:
@@ -164,9 +164,7 @@ def get_trust_state(category: str) -> Dict[str, Any]:
         if row:
             d = dict(row)
             d["mean"] = d["alpha"] / (d["alpha"] + d["beta"])
-            d["variance"] = (d["alpha"] * d["beta"]) / (
-                (d["alpha"] + d["beta"]) ** 2 * (d["alpha"] + d["beta"] + 1)
-            )
+            d["variance"] = (d["alpha"] * d["beta"]) / ((d["alpha"] + d["beta"]) ** 2 * (d["alpha"] + d["beta"] + 1))
             return d
 
         # Initialize from config
@@ -209,8 +207,7 @@ def get_all_trust_states() -> List[Dict[str, Any]]:
     return [get_trust_state(c) for c in categories]
 
 
-def observe(category: str, success: bool, source: str = "daemon",
-            details: Dict = None) -> Dict[str, Any]:
+def observe(category: str, success: bool, source: str = "daemon", details: Dict = None) -> Dict[str, Any]:
     """Record an observation and update the posterior.
 
     success=True → α += 1 (posterior shifts right)
@@ -256,10 +253,17 @@ def observe(category: str, success: bool, source: str = "daemon",
             "source, details, created_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
-                obs_id, category,
+                obs_id,
+                category,
                 "success" if success else "failure",
-                alpha_before, beta_before, alpha_after, beta_after,
-                mean_before, mean_after, tier_before, tier_after,
+                alpha_before,
+                beta_before,
+                alpha_after,
+                beta_after,
+                mean_before,
+                mean_after,
+                tier_before,
+                tier_after,
                 source,
                 json.dumps(details) if details else None,
                 now_iso(),
@@ -274,9 +278,13 @@ def observe(category: str, success: bool, source: str = "daemon",
             "current_tier = ?, last_updated = ? "
             "WHERE category = ?",
             (
-                alpha_after, beta_after,
-                1 if success else 0, 0 if success else 1,
-                tier_after, now_iso(), category,
+                alpha_after,
+                beta_after,
+                1 if success else 0,
+                0 if success else 1,
+                tier_after,
+                now_iso(),
+                category,
             ),
         )
         conn.commit()
@@ -306,6 +314,7 @@ def should_act(category: str, required_tier: str = None) -> Dict[str, Any]:
     Returns decision: approved, denied, explored, or safety_blocked.
     """
     from tools.autonomy.kill_switch import is_killed
+
     if is_killed():
         return {"decision": "safety_blocked", "reason": "Kill switch active"}
 
@@ -353,8 +362,14 @@ def should_act(category: str, required_tier: str = None) -> Dict[str, Any]:
             "tier_required, tier_current, details, created_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
-                action_id, category, category, decision,
-                mean, sample, required_tier, current_tier,
+                action_id,
+                category,
+                category,
+                decision,
+                mean,
+                sample,
+                required_tier,
+                current_tier,
                 json.dumps({"reason": reason}),
                 now_iso(),
             ),
@@ -470,17 +485,21 @@ def main():
             print(json.dumps({"trust_states": states}, indent=2))
         else:
             for s in states:
-                print(f"  {s['category']:20s} Beta({s['alpha']:.1f}, {s['beta']:.1f}) "
-                      f"mean={s['mean']:.3f} tier={s['current_tier']} "
-                      f"obs={s['total_observations']}")
+                print(
+                    f"  {s['category']:20s} Beta({s['alpha']:.1f}, {s['beta']:.1f}) "
+                    f"mean={s['mean']:.3f} tier={s['current_tier']} "
+                    f"obs={s['total_observations']}"
+                )
 
     elif args.check:
         result = should_act(args.check)
         if args.json:
             print(json.dumps(result, indent=2))
         else:
-            print(f"  {result['category']}: {result['decision']} "
-                  f"(mean={result['trust_mean']:.3f}, sample={result['thompson_sample']:.3f})")
+            print(
+                f"  {result['category']}: {result['decision']} "
+                f"(mean={result['trust_mean']:.3f}, sample={result['thompson_sample']:.3f})"
+            )
 
     elif args.observe:
         if not args.success and not args.failure:
@@ -490,17 +509,28 @@ def main():
         if args.json:
             print(json.dumps(result, indent=2))
         else:
-            print(f"  {result['category']}: {result['outcome']} "
-                  f"mean {result['mean_before']:.3f} → {result['mean_after']:.3f} "
-                  f"tier {result['tier_before']} → {result['tier_after']}")
+            print(
+                f"  {result['category']}: {result['outcome']} "
+                f"mean {result['mean_before']:.3f} → {result['mean_after']:.3f} "
+                f"tier {result['tier_before']} → {result['tier_after']}"
+            )
 
     elif args.sample:
         state = get_trust_state(args.sample)
         sample = random.betavariate(state["alpha"], state["beta"])
         if args.json:
-            print(json.dumps({"category": args.sample, "sample": round(sample, 4),
-                              "mean": round(state["mean"], 4), "alpha": state["alpha"],
-                              "beta": state["beta"]}, indent=2))
+            print(
+                json.dumps(
+                    {
+                        "category": args.sample,
+                        "sample": round(sample, 4),
+                        "mean": round(state["mean"], 4),
+                        "alpha": state["alpha"],
+                        "beta": state["beta"],
+                    },
+                    indent=2,
+                )
+            )
         else:
             print(f"  {args.sample}: sample={sample:.4f} mean={state['mean']:.4f}")
 
@@ -518,8 +548,11 @@ def main():
             conn.commit()
         finally:
             conn.close()
-        print(json.dumps({"reset": args.reset, "alpha": prior["alpha"], "beta": prior["beta"]}, indent=2)
-              if args.json else f"  Reset {args.reset} to Beta({prior['alpha']}, {prior['beta']})")
+        print(
+            json.dumps({"reset": args.reset, "alpha": prior["alpha"], "beta": prior["beta"]}, indent=2)
+            if args.json
+            else f"  Reset {args.reset} to Beta({prior['alpha']}, {prior['beta']})"
+        )
 
     elif args.safety_check:
         is_safe, reason = check_safety_invariant(args.safety_check)

@@ -41,17 +41,17 @@ def list_campaigns():
                ORDER BY created_at DESC LIMIT ? OFFSET ?""",
             (limit, offset),
         ).fetchall()
-        total = conn.execute(
-            "SELECT COUNT(*) FROM rag_evaluation_campaigns"
-        ).fetchone()[0]
+        total = conn.execute("SELECT COUNT(*) FROM rag_evaluation_campaigns").fetchone()[0]
         conn.close()
 
-        return jsonify({
-            "campaigns": [dict(r) for r in rows],
-            "total": total,
-            "limit": limit,
-            "offset": offset,
-        })
+        return jsonify(
+            {
+                "campaigns": [dict(r) for r in rows],
+                "total": total,
+                "limit": limit,
+                "offset": offset,
+            }
+        )
     except Exception as exc:
         return jsonify({"error": str(exc), "campaigns": [], "total": 0})
 
@@ -107,12 +107,14 @@ def campaign_detail(campaign_id: str):
 
         conn.close()
 
-        return jsonify({
-            "campaign": dict(campaign),
-            "results": [dict(r) for r in results],
-            "by_question_type": [dict(r) for r in type_breakdown],
-            "by_entity_popularity": [dict(r) for r in tier_breakdown],
-        })
+        return jsonify(
+            {
+                "campaign": dict(campaign),
+                "results": [dict(r) for r in results],
+                "by_question_type": [dict(r) for r in type_breakdown],
+                "by_entity_popularity": [dict(r) for r in tier_breakdown],
+            }
+        )
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 
@@ -127,11 +129,10 @@ def run_campaign():
 
     try:
         from tools.rag.crag_evaluator import CRAGBenchmarkRunner
+
         runner = CRAGBenchmarkRunner()
         result = runner.run_campaign(
-            test_set_path=test_set or str(
-                BASE_DIR / "data" / "rag" / "crag_test_template.json"
-            ),
+            test_set_path=test_set or str(BASE_DIR / "data" / "rag" / "crag_test_template.json"),
             task_type=task_type,
             campaign_name=campaign_name,
         )
@@ -147,6 +148,7 @@ def quality_status():
     """Get current quality monitor status with feedback loop info."""
     try:
         from tools.rag.quality_feedback_loop import get_feedback_status
+
         status = get_feedback_status()
         return jsonify(status)
     except ImportError:
@@ -182,9 +184,7 @@ def dataset_balance():
                    WHERE taxonomy_label IS NOT NULL
                    GROUP BY taxonomy_label"""
             ).fetchall()
-            total = conn.execute(
-                "SELECT COUNT(*) FROM ft_dataset_examples"
-            ).fetchone()[0]
+            total = conn.execute("SELECT COUNT(*) FROM ft_dataset_examples").fetchone()[0]
 
         conn.close()
 
@@ -200,13 +200,15 @@ def dataset_balance():
             elif pct > 60:
                 warnings.append(f"{label} overrepresented ({pct:.1f}%)")
 
-        return jsonify({
-            "dataset_id": dataset_id or "all",
-            "total_examples": total,
-            "labeled_examples": labeled_total,
-            "distribution": distribution,
-            "balance_warnings": warnings,
-            "balanced": len(warnings) == 0,
-        })
+        return jsonify(
+            {
+                "dataset_id": dataset_id or "all",
+                "total_examples": total,
+                "labeled_examples": labeled_total,
+                "distribution": distribution,
+                "balance_warnings": warnings,
+                "balanced": len(warnings) == 0,
+            }
+        )
     except Exception as exc:
         return jsonify({"error": str(exc), "distribution": {}, "total_examples": 0})

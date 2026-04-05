@@ -49,10 +49,12 @@ class TestResult:
 
     def summary(self):
         total = len(self.passed) + len(self.failed)
-        rate = f"{len(self.passed)/total*100:.1f}%" if total else "0%"
+        rate = f"{len(self.passed) / total * 100:.1f}%" if total else "0%"
         return {
-            "total": total, "passed": len(self.passed),
-            "failed": len(self.failed), "pass_rate": rate,
+            "total": total,
+            "passed": len(self.passed),
+            "failed": len(self.failed),
+            "pass_rate": rate,
             "failures": self.failed,
         }
 
@@ -81,9 +83,7 @@ def check_js_errors(driver):
         for entry in driver.get_log("browser"):
             if entry.get("level") == "SEVERE":
                 msg = entry.get("message", "")
-                if any(x in msg.lower() for x in [
-                    "favicon", "401", "404", "failed to load resource"
-                ]):
+                if any(x in msg.lower() for x in ["favicon", "401", "404", "failed to load resource"]):
                     continue
                 errors.append(msg)
     except Exception:
@@ -133,40 +133,40 @@ def run_tests():
         time.sleep(2)
 
         # Setup: two projects with topologies
-        d = api(driver, "POST", "/network/api/projects", {
-            "name": "E2E PhaseB Project A", "status": "approved",
-            "owner": "e2e-test"
-        })
+        d = api(
+            driver,
+            "POST",
+            "/network/api/projects",
+            {"name": "E2E PhaseB Project A", "status": "approved", "owner": "e2e-test"},
+        )
         pid = d.get("id")
-        d2 = api(driver, "POST", "/network/api/projects", {
-            "name": "E2E PhaseB Project B", "status": "deployed",
-            "owner": "e2e-test"
-        })
+        d2 = api(
+            driver,
+            "POST",
+            "/network/api/projects",
+            {"name": "E2E PhaseB Project B", "status": "deployed", "owner": "e2e-test"},
+        )
         pid2 = d2.get("id")
 
         topos = api(driver, "GET", "/network/api/topologies")
         topo_a = topos[0]["id"] if topos else None
         topo_b = topos[1]["id"] if len(topos) > 1 else topo_a
         if topo_a:
-            api(driver, "POST",
-                f"/network/api/projects/{pid}/topologies",
-                {"topology_id": topo_a})
+            api(driver, "POST", f"/network/api/projects/{pid}/topologies", {"topology_id": topo_a})
         if topo_b:
-            api(driver, "POST",
-                f"/network/api/projects/{pid2}/topologies",
-                {"topology_id": topo_b})
+            api(driver, "POST", f"/network/api/projects/{pid2}/topologies", {"topology_id": topo_b})
 
         # Set ROI on project A for presentation
-        api(driver, "PUT", f"/network/api/projects/{pid}/roi", {
-            "capex": 150000, "opex_annual": 24000,
-            "savings_annual": 80000,
-            "justification": "E2E test business case"
-        })
+        api(
+            driver,
+            "PUT",
+            f"/network/api/projects/{pid}/roi",
+            {"capex": 150000, "opex_annual": 24000, "savings_annual": 80000, "justification": "E2E test business case"},
+        )
 
         # ── 1. Presentation API ───────────────────────────────────────────
         try:
-            pres = api(driver, "GET",
-                       f"/network/api/projects/{pid}/presentation")
+            pres = api(driver, "GET", f"/network/api/projects/{pid}/presentation")
             assert pres.get("title") == "E2E PhaseB Project A"
             assert pres.get("executive_summary"), "No exec summary"
             assert pres.get("generated_at"), "No timestamp"
@@ -174,25 +174,21 @@ def run_tests():
             assert "compliance_pct" in es
             assert "total_capex" in es
             assert "roi" in es
-            results.ok("presentation_api",
-                        f"devices={es.get('total_devices')}")
+            results.ok("presentation_api", f"devices={es.get('total_devices')}")
         except Exception as e:
             results.fail("presentation_api", e)
 
         # ── 2. Presentation page ──────────────────────────────────────────
         try:
-            driver.get(
-                f"{BASE_URL}/network/projects/{pid}/presentation")
+            driver.get(f"{BASE_URL}/network/projects/{pid}/presentation")
             time.sleep(3)
             screenshot(driver, "presentation-page")
             title = driver.find_element(By.CSS_SELECTOR, ".page-title")
             assert "E2E PhaseB Project A" in title.text
             # Check JS loaded content
-            panels = driver.find_elements(
-                By.CSS_SELECTOR, ".pres-section")
+            panels = driver.find_elements(By.CSS_SELECTOR, ".pres-section")
             assert len(panels) >= 1, "No presentation sections rendered"
-            results.ok("presentation_page_renders",
-                        f"{len(panels)} sections")
+            results.ok("presentation_page_renders", f"{len(panels)} sections")
         except Exception as e:
             results.fail("presentation_page_renders", e)
 
@@ -201,24 +197,29 @@ def run_tests():
             gt = api(driver, "GET", "/network/api/global-topology")
             assert gt.get("projects") is not None
             assert gt.get("total_projects") >= 2
-            results.ok("global_topology_api",
-                        f"projects={gt['total_projects']}, "
-                        f"ics={gt.get('total_interconnects', 0)}")
+            results.ok(
+                "global_topology_api", f"projects={gt['total_projects']}, ics={gt.get('total_interconnects', 0)}"
+            )
         except Exception as e:
             results.fail("global_topology_api", e)
 
         # ── 4. Create interconnect ────────────────────────────────────────
         try:
-            r = api(driver, "POST", "/network/api/interconnects", {
-                "src_project_id": pid,
-                "src_topology_id": topo_a,
-                "dst_project_id": pid2,
-                "dst_topology_id": topo_b,
-                "circuit_id": "WAN-E2E-001",
-                "protocol": "BGP",
-                "bandwidth": "10G",
-                "notes": "E2E test interconnect"
-            })
+            r = api(
+                driver,
+                "POST",
+                "/network/api/interconnects",
+                {
+                    "src_project_id": pid,
+                    "src_topology_id": topo_a,
+                    "dst_project_id": pid2,
+                    "dst_topology_id": topo_b,
+                    "circuit_id": "WAN-E2E-001",
+                    "protocol": "BGP",
+                    "bandwidth": "10G",
+                    "notes": "E2E test interconnect",
+                },
+            )
             ic_id = r.get("id")
             assert ic_id, f"No interconnect ID: {r}"
             results.ok("create_interconnect", f"id={ic_id}")
@@ -239,9 +240,7 @@ def run_tests():
             cd = api(driver, "GET", "/network/api/conflicts")
             assert "conflicts" in cd
             assert "checked" in cd
-            results.ok("conflict_detection_api",
-                        f"conflicts={cd['total']}, "
-                        f"checked={cd['checked']}")
+            results.ok("conflict_detection_api", f"conflicts={cd['total']}, checked={cd['checked']}")
         except Exception as e:
             results.fail("conflict_detection_api", e)
 
@@ -260,8 +259,7 @@ def run_tests():
 
         # ── 8. Global: project cards ──────────────────────────────────────
         try:
-            cards = driver.find_elements(
-                By.CSS_SELECTOR, ".global-project-card")
+            cards = driver.find_elements(By.CSS_SELECTOR, ".global-project-card")
             assert len(cards) >= 2, f"Expected 2+ cards, got {len(cards)}"
             results.ok("global_project_cards", f"{len(cards)} cards")
         except Exception as e:
@@ -274,8 +272,7 @@ def run_tests():
             assert len(rows) >= 1
             page_text = driver.page_source
             assert "WAN-E2E-001" in page_text
-            results.ok("global_interconnects_table",
-                        f"{len(rows)} rows")
+            results.ok("global_interconnects_table", f"{len(rows)} rows")
         except Exception as e:
             results.fail("global_interconnects_table", e)
 
@@ -290,8 +287,7 @@ def run_tests():
         try:
             driver.get(f"{BASE_URL}/network/projects/{pid}")
             time.sleep(2)
-            links = driver.find_elements(
-                By.CSS_SELECTOR, ".page-actions a, .page-actions button")
+            links = driver.find_elements(By.CSS_SELECTOR, ".page-actions a, .page-actions button")
             texts = [l.text for l in links]
             assert "Presentation" in texts
             results.ok("presentation_link_on_detail")
@@ -301,8 +297,7 @@ def run_tests():
         # ── 12. Delete interconnect ───────────────────────────────────────
         if ic_id:
             try:
-                api(driver, "DELETE",
-                    f"/network/api/interconnects/{ic_id}")
+                api(driver, "DELETE", f"/network/api/interconnects/{ic_id}")
                 ics = api(driver, "GET", "/network/api/interconnects")
                 assert not any(ic["id"] == ic_id for ic in ics)
                 results.ok("delete_interconnect")
@@ -311,15 +306,14 @@ def run_tests():
 
         # ── 13. JS errors on Phase B pages ────────────────────────────────
         for page, name in [
-            (f"/network/global", "global"),
+            ("/network/global", "global"),
             (f"/network/projects/{pid}/presentation", "presentation"),
         ]:
             driver.get(f"{BASE_URL}{page}")
             time.sleep(3)
             errs = check_js_errors(driver)
             if errs:
-                results.fail(f"js_errors_{name}",
-                              f"{len(errs)}: {errs[0][:80]}")
+                results.fail(f"js_errors_{name}", f"{len(errs)}: {errs[0][:80]}")
             else:
                 results.ok(f"js_errors_{name}", "No SEVERE JS errors")
 
@@ -337,14 +331,12 @@ def run_tests():
 
 if __name__ == "__main__":
     print("=" * 60)
-    print("E2E: Network Canvas — Phase B "
-          "(Presentation + Global Connectivity + Conflicts)")
+    print("E2E: Network Canvas — Phase B (Presentation + Global Connectivity + Conflicts)")
     print("=" * 60)
     r = run_tests()
     summary = r.summary()
     print()
-    print(f"Results: {summary['passed']}/{summary['total']} passed "
-          f"({summary['pass_rate']})")
+    print(f"Results: {summary['passed']}/{summary['total']} passed ({summary['pass_rate']})")
     if summary["failures"]:
         print("Failures:")
         for f in summary["failures"]:

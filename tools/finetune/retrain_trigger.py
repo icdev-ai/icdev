@@ -34,7 +34,6 @@ def _get_db(db_path: Optional[Path] = None) -> sqlite3.Connection:
     return conn
 
 
-
 def _load_retrain_config() -> Dict[str, Any]:
     """Load retrain thresholds from config."""
     config_path = BASE_DIR / "args" / "finetune_config.yaml"

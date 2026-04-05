@@ -71,6 +71,7 @@ class VectorStoreFactory:
         # Try pgvector (highest priority when PG is the storage backend)
         try:
             from tools.db.storage import get_backend
+
             if get_backend() == "postgresql":
                 return VectorStoreFactory._create_pgvector(vs_cfg, tenant_id)
         except ImportError:
@@ -99,6 +100,7 @@ class VectorStoreFactory:
     def _create_pgvector(vs_cfg: dict, tenant_id: Optional[str]) -> VectorStoreProvider:
         """Create pgvector store (PostgreSQL with vector extension)."""
         from tools.rag.pg_vector_store import PgVectorStore
+
         return PgVectorStore()
 
     @staticmethod

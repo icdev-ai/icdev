@@ -2,6 +2,7 @@
 Fix template zone positions — recalculate zone boxes to actually encompass
 the devices they're meant to contain. Also fix headings/badges positioning.
 """
+
 import json
 import sqlite3
 from pathlib import Path
@@ -13,7 +14,7 @@ DB_PATH = Path(__file__).resolve().parents[2] / "data" / "network_canvas.db"
 
 PADDING = 20  # px padding around devices inside zone
 DEVICE_W = 110  # default device width
-DEVICE_H = 60   # default device height
+DEVICE_H = 60  # default device height
 HEADING_OFFSET_Y = -28  # heading placed above zone top
 
 
@@ -44,12 +45,12 @@ def get_bounds(nodes_list, all_nodes_map):
 # Each zone: (zone_node_id, heading_node_id, device_ids, color_scheme, badge_info)
 # color_scheme: "blue", "green", "orange", "red", "purple", "teal"
 COLORS = {
-    "blue":   {"_fill": "#0a1628", "_stroke": "#74b9ff", "text": "#74b9ff"},
-    "green":  {"_fill": "#0a180a", "_stroke": "#27ae60", "text": "#27ae60"},
+    "blue": {"_fill": "#0a1628", "_stroke": "#74b9ff", "text": "#74b9ff"},
+    "green": {"_fill": "#0a180a", "_stroke": "#27ae60", "text": "#27ae60"},
     "orange": {"_fill": "#1a1500", "_stroke": "#f39c12", "text": "#f39c12"},
-    "red":    {"_fill": "#1a0a0a", "_stroke": "#e74c3c", "text": "#e74c3c"},
+    "red": {"_fill": "#1a0a0a", "_stroke": "#e74c3c", "text": "#e74c3c"},
     "purple": {"_fill": "#120a20", "_stroke": "#9b59b6", "text": "#9b59b6"},
-    "teal":   {"_fill": "#0a1a1a", "_stroke": "#00cec9", "text": "#00cec9"},
+    "teal": {"_fill": "#0a1a1a", "_stroke": "#00cec9", "text": "#00cec9"},
 }
 
 TEMPLATE_ZONES = {
@@ -143,7 +144,12 @@ TEMPLATE_ZONES = {
             ("zone-gpu", "GPU Compute + Storage", ["gpu1", "gpu2", "gpu3", "gpu4", "stor"], "green"),
             ("zone-hpc-spine", "HPC Spine Tier", ["hpc-sp1", "hpc-sp2", "hpc-login", "hpc-sched"], "blue"),
             ("zone-hpc-leaf", "HPC Leaf Tier", ["hpc-lf1", "hpc-lf2", "hpc-lf3", "hpc-pfs"], "teal"),
-            ("zone-hpc-compute", "HPC Compute + Management", ["hpc-cn1", "hpc-cn2", "hpc-cn3", "hpc-cn4", "hpc-mgmt"], "purple"),
+            (
+                "zone-hpc-compute",
+                "HPC Compute + Management",
+                ["hpc-cn1", "hpc-cn2", "hpc-cn3", "hpc-cn4", "hpc-mgmt"],
+                "purple",
+            ),
         ],
         "badge": ("AI/ML + HPC Fabric", "red"),
     },
@@ -181,17 +187,42 @@ TEMPLATE_ZONES = {
         "zones": [
             ("zone-border", "N-S Border", ["border-lf1", "border-lf2", "edge-fw", "wan-rtr"], "red"),
             ("zone-sspine", "Super-Spine", ["ss1", "ss2", "ss3", "ss4"], "purple"),
-            ("zone-poda", "Pod A — Compute", ["sp-a1", "sp-a2", "lf-a1", "lf-a2", "lf-a3", "srv-a1", "srv-a2", "srv-a3", "vrf-app"], "blue"),
-            ("zone-podb", "Pod B — Storage", ["sp-b1", "sp-b2", "lf-b1", "lf-b2", "lf-b3", "srv-b1", "srv-b2", "srv-b3", "vrf-data"], "green"),
+            (
+                "zone-poda",
+                "Pod A — Compute",
+                ["sp-a1", "sp-a2", "lf-a1", "lf-a2", "lf-a3", "srv-a1", "srv-a2", "srv-a3", "vrf-app"],
+                "blue",
+            ),
+            (
+                "zone-podb",
+                "Pod B — Storage",
+                ["sp-b1", "sp-b2", "lf-b1", "lf-b2", "lf-b3", "srv-b1", "srv-b2", "srv-b3", "vrf-data"],
+                "green",
+            ),
         ],
         "badge": ("5-Stage Clos", "orange"),
     },
     "tpl-microseg": {
         "zones": [
             ("zone-spine", "Spine Fabric", ["spine1", "spine2", "perim-fw"], "purple"),
-            ("zone-web", "Web Tier", ["leaf-web", "zone-web", "dfw-web", "web-1", "web-2", "vlan-web-t1", "vlan-web-t2"], "blue"),
-            ("zone-app", "App Tier", ["leaf-app", "zone-app", "dfw-app", "app-1", "app-2", "vlan-app-t1", "vlan-app-t2"], "orange"),
-            ("zone-db", "Data Tier", ["leaf-db", "zone-db", "dfw-db", "db-1", "db-2", "vlan-db-t1", "vlan-db-t2"], "green"),
+            (
+                "zone-web",
+                "Web Tier",
+                ["leaf-web", "zone-web", "dfw-web", "web-1", "web-2", "vlan-web-t1", "vlan-web-t2"],
+                "blue",
+            ),
+            (
+                "zone-app",
+                "App Tier",
+                ["leaf-app", "zone-app", "dfw-app", "app-1", "app-2", "vlan-app-t1", "vlan-app-t2"],
+                "orange",
+            ),
+            (
+                "zone-db",
+                "Data Tier",
+                ["leaf-db", "zone-db", "dfw-db", "db-1", "db-2", "vlan-db-t1", "vlan-db-t2"],
+                "green",
+            ),
         ],
         "badge": ("Distributed FW", "red"),
     },
@@ -199,8 +230,31 @@ TEMPLATE_ZONES = {
         "zones": [
             ("zone-ingress", "Ingress", ["ingress-gw", "waf"], "red"),
             ("zone-ctrl", "Control Plane", ["mesh-cp", "spiffe", "opa"], "purple"),
-            ("zone-mesh", "Service Mesh", ["ns-frontend", "svc-fe1", "sidecar-fe1", "ns-order", "svc-order1", "sidecar-order1", "ns-payment", "svc-pay1", "sidecar-pay1", "ns-inventory", "svc-inv1", "sidecar-inv1"], "blue"),
-            ("zone-data", "Data Stores", ["ns-data", "db-orders", "sidecar-db-ord", "db-inventory", "sidecar-db-inv"], "green"),
+            (
+                "zone-mesh",
+                "Service Mesh",
+                [
+                    "ns-frontend",
+                    "svc-fe1",
+                    "sidecar-fe1",
+                    "ns-order",
+                    "svc-order1",
+                    "sidecar-order1",
+                    "ns-payment",
+                    "svc-pay1",
+                    "sidecar-pay1",
+                    "ns-inventory",
+                    "svc-inv1",
+                    "sidecar-inv1",
+                ],
+                "blue",
+            ),
+            (
+                "zone-data",
+                "Data Stores",
+                ["ns-data", "db-orders", "sidecar-db-ord", "db-inventory", "sidecar-db-inv"],
+                "green",
+            ),
         ],
         "badge": ("Service Mesh + SPIFFE", "purple"),
     },
@@ -210,16 +264,49 @@ TEMPLATE_ZONES = {
             ("zone-hq", "HQ Site", ["pe-hq", "fips-hq", "fiber-hq", "hq-core", "hq-users"], "blue"),
             ("zone-dc", "DC Site", ["pe-dc", "fips-dc", "fiber-dc", "dc-spine", "dc-srv"], "green"),
             ("zone-colo", "Colo", ["pe-colo", "fips-colo", "fiber-colo", "colo-sw", "colo-cloud"], "orange"),
-            ("zone-branch", "Branch", ["pe-branch", "fips-branch", "fiber-branch", "branch-sw", "branch-users"], "teal"),
+            (
+                "zone-branch",
+                "Branch",
+                ["pe-branch", "fips-branch", "fiber-branch", "branch-sw", "branch-users"],
+                "teal",
+            ),
         ],
         "badge": ("FIPS 140 Encrypted", "red"),
     },
     "tpl-wan": {
         "zones": [
-            ("zone-huba", "Hub-A (Primary DC)", ["hub-a-rtr", "hub-a-fw", "hub-a-hsm", "hub-a-fips", "hub-a-fiber"], "blue"),
-            ("zone-hubb", "Hub-B (DR Site)", ["hub-b-rtr", "hub-b-fw", "hub-b-hsm", "hub-b-fips", "hub-b-fiber"], "green"),
+            (
+                "zone-huba",
+                "Hub-A (Primary DC)",
+                ["hub-a-rtr", "hub-a-fw", "hub-a-hsm", "hub-a-fips", "hub-a-fiber"],
+                "blue",
+            ),
+            (
+                "zone-hubb",
+                "Hub-B (DR Site)",
+                ["hub-b-rtr", "hub-b-fw", "hub-b-hsm", "hub-b-fips", "hub-b-fiber"],
+                "green",
+            ),
             ("zone-transport", "WAN Transport", ["mpls-cloud", "inet-cloud", "lte-cloud", "optical-ll"], "orange"),
-            ("zone-branches", "Branch Sites", ["br-a-ce", "br-a-fips", "br-a-ge", "br-a-sw", "br-b-ce", "br-b-fips", "br-b-ge", "br-b-sw", "br-c-ce", "br-c-fips", "br-c-ge", "br-c-sw"], "teal"),
+            (
+                "zone-branches",
+                "Branch Sites",
+                [
+                    "br-a-ce",
+                    "br-a-fips",
+                    "br-a-ge",
+                    "br-a-sw",
+                    "br-b-ce",
+                    "br-b-fips",
+                    "br-b-ge",
+                    "br-b-sw",
+                    "br-c-ce",
+                    "br-c-fips",
+                    "br-c-ge",
+                    "br-c-sw",
+                ],
+                "teal",
+            ),
             ("zone-remote", "Remote / Tactical", ["remote-ce", "remote-fips", "remote-srv"], "red"),
         ],
         "badge": ("Multi-Transport WAN", "purple"),
@@ -227,7 +314,12 @@ TEMPLATE_ZONES = {
     "tpl-sonet-ring": {
         "zones": [
             ("zone-hub", "Central Office / Hub", ["dcs", "fpp-hub", "pop-hub", "ds3-1"], "red"),
-            ("zone-blsr", "BLSR Backbone", ["adm-1", "adm-2", "adm-3", "adm-4", "fiber-ne", "fiber-se", "fiber-sw", "fiber-nw", "oc3-1"], "blue"),
+            (
+                "zone-blsr",
+                "BLSR Backbone",
+                ["adm-1", "adm-2", "adm-3", "adm-4", "fiber-ne", "fiber-se", "fiber-sw", "fiber-nw", "oc3-1"],
+                "blue",
+            ),
             ("zone-acca", "Access Ring A", ["acc-a1", "acc-a2", "ge-a1", "ge-a2"], "green"),
             ("zone-accb", "Access Ring B", ["acc-b1", "acc-b2", "ge-b1", "ge-b2"], "orange"),
         ],
@@ -235,17 +327,47 @@ TEMPLATE_ZONES = {
     },
     "tpl-aws-dx-can": {
         "zones": [
-            ("zone-aws", "AWS Cloud", ["aws-tgw", "aws-vpc1", "aws-vpc2", "aws-sub1", "aws-sub2", "aws-nfw", "aws-r53"], "orange"),
-            ("zone-mmr", "Meet-Me Rooms (Customer Cross-Connects)", ["dx-a", "dx-b", "mmr-a", "mmr-b", "xx-a", "xx-b"], "purple"),
-            ("zone-campus", "Campus Network", ["br1", "br2", "fw1", "fw2", "core1", "core2", "dist1", "dist2", "acc1", "acc2", "acc3"], "green"),
+            (
+                "zone-aws",
+                "AWS Cloud",
+                ["aws-tgw", "aws-vpc1", "aws-vpc2", "aws-sub1", "aws-sub2", "aws-nfw", "aws-r53"],
+                "orange",
+            ),
+            (
+                "zone-mmr",
+                "Meet-Me Rooms (Customer Cross-Connects)",
+                ["dx-a", "dx-b", "mmr-a", "mmr-b", "xx-a", "xx-b"],
+                "purple",
+            ),
+            (
+                "zone-campus",
+                "Campus Network",
+                ["br1", "br2", "fw1", "fw2", "core1", "core2", "dist1", "dist2", "acc1", "acc2", "acc3"],
+                "green",
+            ),
         ],
         "badge": ("AWS Direct Connect", "orange"),
     },
     "tpl-azure-er-man": {
         "zones": [
-            ("zone-azure", "Azure Cloud", ["az-vwan", "az-vnet1", "az-vnet2", "az-fw", "az-sub1", "az-sub2", "az-fd", "az-dns"], "blue"),
-            ("zone-mmr", "Meet-Me Rooms (Customer Cross-Connects)", ["er-a", "er-b", "mmr-a", "mmr-b", "xx-a", "xx-b"], "purple"),
-            ("zone-man", "Metro Area Network", ["pe1", "pe2", "p1", "site-fw1", "site-fw2", "site-fw3", "sw-a", "sw-b", "sw-c"], "green"),
+            (
+                "zone-azure",
+                "Azure Cloud",
+                ["az-vwan", "az-vnet1", "az-vnet2", "az-fw", "az-sub1", "az-sub2", "az-fd", "az-dns"],
+                "blue",
+            ),
+            (
+                "zone-mmr",
+                "Meet-Me Rooms (Customer Cross-Connects)",
+                ["er-a", "er-b", "mmr-a", "mmr-b", "xx-a", "xx-b"],
+                "purple",
+            ),
+            (
+                "zone-man",
+                "Metro Area Network",
+                ["pe1", "pe2", "p1", "site-fw1", "site-fw2", "site-fw3", "sw-a", "sw-b", "sw-c"],
+                "green",
+            ),
         ],
         "badge": ("Azure ExpressRoute", "blue"),
     },
@@ -253,7 +375,25 @@ TEMPLATE_ZONES = {
         "zones": [
             ("zone-aws", "AWS Cloud", ["aws-tgw", "aws-vpc", "aws-nfw", "aws-dx-w", "aws-dx-e"], "orange"),
             ("zone-azure", "Azure Cloud", ["az-vwan", "az-vnet", "az-fw", "az-er-w", "az-er-e"], "blue"),
-            ("zone-pops", "POP Sites + Meet-Me Rooms", ["mmr-w", "mmr-e", "xx-w-aws", "xx-w-az", "xx-e-aws", "xx-e-az", "pop-w-rtr1", "pop-w-rtr2", "pop-w-fw", "pop-e-rtr1", "pop-e-rtr2", "pop-e-fw"], "purple"),
+            (
+                "zone-pops",
+                "POP Sites + Meet-Me Rooms",
+                [
+                    "mmr-w",
+                    "mmr-e",
+                    "xx-w-aws",
+                    "xx-w-az",
+                    "xx-e-aws",
+                    "xx-e-az",
+                    "pop-w-rtr1",
+                    "pop-w-rtr2",
+                    "pop-w-fw",
+                    "pop-e-rtr1",
+                    "pop-e-rtr2",
+                    "pop-e-fw",
+                ],
+                "purple",
+            ),
             ("zone-mpls", "MPLS Backbone", ["mpls-pe-w", "mpls-p1", "mpls-p2", "mpls-pe-e"], "orange"),
             ("zone-metro", "Metro Sites", ["man-fw1", "man-fw2", "man-fw3", "man-sw1", "man-sw2", "man-sw3"], "green"),
         ],
@@ -275,11 +415,11 @@ def fix_template(conn, tpl_id, spec):
     node_map = {n["id"]: n for n in nodes}
 
     # Remove all old zone/heading/badge nodes
-    nodes = [n for n in nodes if not (
-        n["id"].startswith("zone-") or
-        n["id"].startswith("heading-") or
-        n["id"].startswith("badge-")
-    )]
+    nodes = [
+        n
+        for n in nodes
+        if not (n["id"].startswith("zone-") or n["id"].startswith("heading-") or n["id"].startswith("badge-"))
+    ]
 
     # Rebuild node map after stripping
     node_map = {n["id"]: n for n in nodes}
@@ -295,30 +435,34 @@ def fix_template(conn, tpl_id, spec):
             continue
 
         # Zone rectangle
-        new_zone_nodes.append({
-            "id": zone_id,
-            "label": "",
-            "type": "draw-rect",
-            "x": bounds["x"],
-            "y": bounds["y"],
-            "config": {
-                "_fill": color["_fill"],
-                "_stroke": color["_stroke"],
-                "_width": bounds["w"],
-                "_height": bounds["h"],
-                "_fillOpacity": 0.5,
+        new_zone_nodes.append(
+            {
+                "id": zone_id,
+                "label": "",
+                "type": "draw-rect",
+                "x": bounds["x"],
+                "y": bounds["y"],
+                "config": {
+                    "_fill": color["_fill"],
+                    "_stroke": color["_stroke"],
+                    "_width": bounds["w"],
+                    "_height": bounds["h"],
+                    "_fillOpacity": 0.5,
+                },
             }
-        })
+        )
 
         # Heading above zone
-        new_heading_nodes.append({
-            "id": f"heading-{zone_id}",
-            "label": zone_label,
-            "type": "text-heading",
-            "x": bounds["x"] + 10,
-            "y": bounds["y"] + HEADING_OFFSET_Y,
-            "config": {"_textColor": color["text"]}
-        })
+        new_heading_nodes.append(
+            {
+                "id": f"heading-{zone_id}",
+                "label": zone_label,
+                "type": "text-heading",
+                "x": bounds["x"] + 10,
+                "y": bounds["y"] + HEADING_OFFSET_Y,
+                "config": {"_textColor": color["text"]},
+            }
+        )
 
     # Badge
     badge_nodes = []
@@ -329,14 +473,16 @@ def fix_template(conn, tpl_id, spec):
         all_xs = [n["x"] for n in nodes]
         center_x = (min(all_xs) + max(all_xs)) // 2 if all_xs else 400
         min_y = min(n["y"] for n in nodes) if nodes else 100
-        badge_nodes.append({
-            "id": f"badge-{tpl_id}",
-            "label": badge_text,
-            "type": "text-badge",
-            "x": center_x - 30,
-            "y": min_y - 60,
-            "config": {"_fill": bc["_fill"], "_stroke": bc["_stroke"]}
-        })
+        badge_nodes.append(
+            {
+                "id": f"badge-{tpl_id}",
+                "label": badge_text,
+                "type": "text-badge",
+                "x": center_x - 30,
+                "y": min_y - 60,
+                "config": {"_fill": bc["_fill"], "_stroke": bc["_stroke"]},
+            }
+        )
 
     # Assemble: zones first (back), then headings, then badge, then devices
     gj["nodes"] = new_zone_nodes + new_heading_nodes + badge_nodes + nodes

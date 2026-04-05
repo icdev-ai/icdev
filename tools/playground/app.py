@@ -6,6 +6,7 @@ Standalone Flask app on port 5001 with no authentication.
 Pre-loaded with sample projects, compliance data, and assessments
 for demonstration purposes.
 """
+
 import logging
 import os
 import sys
@@ -39,9 +40,8 @@ def create_app():
         static_url_path="/playground/static",
     )
     import secrets as _secrets
-    app.config["SECRET_KEY"] = os.environ.get(
-        "PLAYGROUND_SECRET_KEY", _secrets.token_hex(32)
-    )
+
+    app.config["SECRET_KEY"] = os.environ.get("PLAYGROUND_SECRET_KEY", _secrets.token_hex(32))
 
     @app.context_processor
     def inject_demo():
@@ -113,9 +113,7 @@ def create_app():
     def ssp_preview():
         conn = _get_db()
         try:
-            project = conn.execute(
-                "SELECT * FROM projects WHERE id = 'proj-demo-001'"
-            ).fetchone()
+            project = conn.execute("SELECT * FROM projects WHERE id = 'proj-demo-001'").fetchone()
             controls = conn.execute(
                 "SELECT control_id, title, status, implementation_status FROM nist_controls WHERE project_id = 'proj-demo-001' ORDER BY control_id"
             ).fetchall()
@@ -139,6 +137,7 @@ def main():
     # Initialize seed data if DB doesn't exist
     if not DB_PATH.exists():
         from tools.playground.seed_data import seed_playground_db
+
         seed_playground_db(str(DB_PATH))
         logger.info("Playground database seeded at %s", DB_PATH)
 

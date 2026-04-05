@@ -34,14 +34,12 @@ STIG_CATEGORIES = ["CAT1", "CAT2", "CAT3"]
 # Helper functions
 # ---------------------------------------------------------------------------
 
+
 def _get_connection(db_path=None):
     """Get a database connection with Row factory."""
     path = db_path or DB_PATH
     if not path.exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\n"
-            "Run: python tools/db/init_icdev_db.py"
-        )
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
     conn = get_connection(db_path=str(path))
     return conn
 
@@ -132,9 +130,7 @@ def _builtin_template():
 
 def _get_project_data(conn, project_id):
     """Load project record from database."""
-    row = conn.execute(
-        "SELECT * FROM projects WHERE id = ?", (project_id,)
-    ).fetchone()
+    row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
     if not row:
         raise ValueError(f"Project '{project_id}' not found in database.")
     return dict(row)
@@ -148,6 +144,7 @@ def _load_cui_config():
     """
     try:
         from tools.compliance.cui_marker import load_cui_config as _load
+
         return _load()
     except Exception:
         pass
@@ -157,6 +154,7 @@ def _load_cui_config():
         cui_marker_path = Path(__file__).resolve().parent / "cui_marker.py"
         if cui_marker_path.exists():
             import importlib.util
+
             spec = importlib.util.spec_from_file_location("cui_marker", cui_marker_path)
             mod = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(mod)
@@ -184,6 +182,7 @@ def _load_cui_config():
 # ---------------------------------------------------------------------------
 # Data retrieval
 # ---------------------------------------------------------------------------
+
 
 def _get_cssp_assessments(conn, project_id):
     """Retrieve all CSSP assessment results for a project."""
@@ -275,6 +274,7 @@ def _get_poam_status(conn, project_id):
 # Score calculation
 # ---------------------------------------------------------------------------
 
+
 def _calculate_functional_area_scores(assessments):
     """Calculate a compliance score for each functional area.
 
@@ -318,9 +318,7 @@ def _calculate_functional_area_scores(assessments):
         # Denominator excludes not_applicable
         scoreable = total - not_applicable
         if scoreable > 0:
-            score = 100.0 * (
-                satisfied + partially * 0.5 + risk_accepted * 0.75
-            ) / scoreable
+            score = 100.0 * (satisfied + partially * 0.5 + risk_accepted * 0.75) / scoreable
         else:
             score = 100.0  # All N/A means fully compliant for this area
 
@@ -365,6 +363,7 @@ def _calculate_overall_status(area_scores):
 # Section builders
 # ---------------------------------------------------------------------------
 
+
 def _build_functional_area_scores_table(area_scores, overall_score, overall_status):
     """Build a markdown table summarising per-area scores."""
     lines = [
@@ -382,9 +381,7 @@ def _build_functional_area_scores_table(area_scores, overall_score, overall_stat
             f"| {s.get('risk_accepted', 0)} "
             f"| {s.get('not_applicable', 0)} |"
         )
-    lines.append(
-        f"| **Overall** | **{overall_score:.1f}%** | | | | | | |"
-    )
+    lines.append(f"| **Overall** | **{overall_score:.1f}%** | | | | | | |")
     lines.append("")
     lines.append(f"**Overall Status:** {overall_status}")
     return "\n".join(lines)
@@ -416,12 +413,8 @@ def _build_functional_area_details(assessments, area_scores):
             sections.append("")
             continue
 
-        sections.append(
-            "| Requirement ID | Status | Evidence | Notes |"
-        )
-        sections.append(
-            "|----------------|--------|----------|-------|"
-        )
+        sections.append("| Requirement ID | Status | Evidence | Notes |")
+        sections.append("|----------------|--------|----------|-------|")
         for item in sorted(items, key=lambda x: x.get("requirement_id", "")):
             req_id = item.get("requirement_id", "N/A")
             status = item.get("status", "not_assessed")
@@ -432,9 +425,7 @@ def _build_functional_area_details(assessments, area_scores):
                 evidence = evidence[:77] + "..."
             if len(notes) > 80:
                 notes = notes[:77] + "..."
-            sections.append(
-                f"| {req_id} | {status} | {evidence} | {notes} |"
-            )
+            sections.append(f"| {req_id} | {status} | {evidence} | {notes} |")
         sections.append("")
 
     return "\n".join(sections)
@@ -464,8 +455,7 @@ def _build_stig_summary_table(stig_findings):
         total = sum(c.values())
         grand_total += total
         lines.append(
-            f"| {cat} | {c['Open']} | {c['NotAFinding']} "
-            f"| {c['Not_Applicable']} | {c['Not_Reviewed']} | {total} |"
+            f"| {cat} | {c['Open']} | {c['NotAFinding']} | {c['Not_Applicable']} | {c['Not_Reviewed']} | {total} |"
         )
     lines.append(f"| **Total** | | | | | **{grand_total}** |")
 
@@ -540,8 +530,7 @@ def _build_incident_summary_table(incidents):
                 pass
 
         lines.append(
-            f"| {inc_id} | {sev} | {cat} "
-            f"| {status} | {detected} | {contained or 'N/A'} | {resolved or 'N/A'} |"
+            f"| {inc_id} | {sev} | {cat} | {status} | {detected} | {contained or 'N/A'} | {resolved or 'N/A'} |"
         )
 
     if contain_deltas:
@@ -560,9 +549,7 @@ def _build_findings_table(assessments):
     priority by functional area ordering (Identify > Protect > Detect >
     Respond > Sustain) and list all findings.
     """
-    findings = [
-        a for a in assessments if a.get("status") == "not_satisfied"
-    ]
+    findings = [a for a in assessments if a.get("status") == "not_satisfied"]
     if not findings:
         return "*No findings requiring remediation.*"
 
@@ -579,18 +566,14 @@ def _build_findings_table(assessments):
                 evidence = evidence[:57] + "..."
             if len(notes) > 60:
                 notes = notes[:57] + "..."
-            lines.append(
-                f"| {area} | {f.get('requirement_id', 'N/A')} "
-                f"| {evidence} | {notes} |"
-            )
+            lines.append(f"| {area} | {f.get('requirement_id', 'N/A')} | {evidence} | {notes} |")
 
     return "\n".join(lines)
 
 
 def _build_evidence_summary_table(assessments):
     """Count evidence artifacts by functional area."""
-    area_counts = {area: {"with_evidence": 0, "without_evidence": 0, "total": 0}
-                   for area in FUNCTIONAL_AREAS}
+    area_counts = {area: {"with_evidence": 0, "without_evidence": 0, "total": 0} for area in FUNCTIONAL_AREAS}
 
     for a in assessments:
         fa = a.get("functional_area")
@@ -608,23 +591,14 @@ def _build_evidence_summary_table(assessments):
     ]
     for area in FUNCTIONAL_AREAS:
         c = area_counts[area]
-        coverage = (
-            f"{100.0 * c['with_evidence'] / c['total']:.0f}%"
-            if c["total"] > 0 else "N/A"
-        )
-        lines.append(
-            f"| {area} | {c['total']} | {c['with_evidence']} "
-            f"| {c['without_evidence']} | {coverage} |"
-        )
+        coverage = f"{100.0 * c['with_evidence'] / c['total']:.0f}%" if c["total"] > 0 else "N/A"
+        lines.append(f"| {area} | {c['total']} | {c['with_evidence']} | {c['without_evidence']} | {coverage} |")
 
     total_all = sum(c["total"] for c in area_counts.values())
     total_with = sum(c["with_evidence"] for c in area_counts.values())
     total_without = sum(c["without_evidence"] for c in area_counts.values())
     total_cov = f"{100.0 * total_with / total_all:.0f}%" if total_all > 0 else "N/A"
-    lines.append(
-        f"| **Total** | **{total_all}** | **{total_with}** "
-        f"| **{total_without}** | **{total_cov}** |"
-    )
+    lines.append(f"| **Total** | **{total_all}** | **{total_with}** | **{total_without}** | **{total_cov}** |")
 
     return "\n".join(lines)
 
@@ -644,10 +618,7 @@ def _build_remediation_table(assessments):
         "Sustain": 60,
     }
 
-    needing_remediation = [
-        a for a in assessments
-        if a.get("status") in ("not_satisfied", "partially_satisfied")
-    ]
+    needing_remediation = [a for a in assessments if a.get("status") in ("not_satisfied", "partially_satisfied")]
     if not needing_remediation:
         return "*No items require remediation at this time.*"
 
@@ -657,10 +628,15 @@ def _build_remediation_table(assessments):
         "|----------------|-----------------|----------------|-------------|----------|",
     ]
 
-    for item in sorted(needing_remediation,
-                       key=lambda x: (FUNCTIONAL_AREAS.index(x.get("functional_area", "Sustain"))
-                                      if x.get("functional_area") in FUNCTIONAL_AREAS else 99,
-                                      x.get("requirement_id", ""))):
+    for item in sorted(
+        needing_remediation,
+        key=lambda x: (
+            FUNCTIONAL_AREAS.index(x.get("functional_area", "Sustain"))
+            if x.get("functional_area") in FUNCTIONAL_AREAS
+            else 99,
+            x.get("requirement_id", ""),
+        ),
+    ):
         req_id = item.get("requirement_id", "N/A")
         fa = item.get("functional_area", "N/A")
         status = item.get("status", "N/A")
@@ -668,6 +644,7 @@ def _build_remediation_table(assessments):
         # Determine target date
         window_days = DEFAULT_WINDOWS.get(fa, 30)
         from datetime import timedelta
+
         target = (now + timedelta(days=window_days)).strftime("%Y-%m-%d")
 
         # Priority based on status and area
@@ -678,28 +655,17 @@ def _build_remediation_table(assessments):
         else:
             priority = "Low"
 
-        lines.append(
-            f"| {req_id} | {fa} | {status} | {target} | {priority} |"
-        )
+        lines.append(f"| {req_id} | {fa} | {status} | {target} | {priority} |")
 
     return "\n".join(lines)
 
 
 def _build_controls_summary(controls):
     """Aggregate control implementation counts."""
-    implemented = sum(
-        1 for c in controls if c.get("implementation_status") == "implemented"
-    )
-    planned = sum(
-        1 for c in controls
-        if c.get("implementation_status") in ("planned", "partially_implemented")
-    )
-    na = sum(
-        1 for c in controls if c.get("implementation_status") == "not_applicable"
-    )
-    compensating = sum(
-        1 for c in controls if c.get("implementation_status") == "compensating"
-    )
+    implemented = sum(1 for c in controls if c.get("implementation_status") == "implemented")
+    planned = sum(1 for c in controls if c.get("implementation_status") in ("planned", "partially_implemented"))
+    na = sum(1 for c in controls if c.get("implementation_status") == "not_applicable")
+    compensating = sum(1 for c in controls if c.get("implementation_status") == "compensating")
     return {
         "total": len(controls),
         "implemented": implemented,
@@ -744,6 +710,7 @@ def _build_poam_summary(poam_rows):
 # Variable substitution & CUI markings
 # ---------------------------------------------------------------------------
 
+
 def _apply_cui_markings(content, cui_config):
     """Apply CUI header and footer banners to the report content."""
     header = cui_config.get("document_header", "").strip()
@@ -760,15 +727,18 @@ def _apply_cui_markings(content, cui_config):
 
 def _substitute_variables(template, variables):
     """Replace {{variable_name}} placeholders in the template."""
+
     def replacer(match):
         key = match.group(1).strip()
         return str(variables.get(key, match.group(0)))
+
     return re.sub(r"\{\{(\w+)\}\}", replacer, template)
 
 
 # ---------------------------------------------------------------------------
 # Audit logging
 # ---------------------------------------------------------------------------
+
 
 def _log_audit_event(conn, project_id, action, details, file_path):
     """Log an audit trail event for CSSP report generation."""
@@ -796,6 +766,7 @@ def _log_audit_event(conn, project_id, action, details, file_path):
 # ---------------------------------------------------------------------------
 # Main generator
 # ---------------------------------------------------------------------------
+
 
 def generate_cssp_report(project_id, output_path=None, db_path=None):
     """Generate a CSSP certification report for a project.
@@ -832,9 +803,7 @@ def generate_cssp_report(project_id, output_path=None, db_path=None):
         overall_score, overall_status = _calculate_overall_status(area_scores)
 
         # 5. Build section content
-        fa_scores_table = _build_functional_area_scores_table(
-            area_scores, overall_score, overall_status
-        )
+        fa_scores_table = _build_functional_area_scores_table(area_scores, overall_score, overall_status)
         fa_details = _build_functional_area_details(assessments, area_scores)
         stig_table, stig_gate, cat1_open = _build_stig_summary_table(stig_findings)
         vuln_table, vuln_sla = _build_vuln_summary_table(vuln_records)
@@ -873,14 +842,12 @@ def generate_cssp_report(project_id, output_path=None, db_path=None):
             "project_id": project_id,
             "classification": project.get("classification", "CUI"),
             "system_type": project.get("type", "webapp"),
-
             # Report metadata
             "report_version": new_version,
             "date_prepared": now.strftime("%Y-%m-%d"),
             "prepared_by": "ICDEV™ Compliance Engine",
             "generation_timestamp": now.strftime("%Y-%m-%d %H:%M UTC"),
             "icdev_version": "1.0",
-
             # Certification info
             "certification_status": certification.get("status", "in_progress"),
             "cssp_provider": certification.get("cssp_provider", "TBD"),
@@ -894,45 +861,37 @@ def generate_cssp_report(project_id, output_path=None, db_path=None):
             "certified_date": certification.get("certified_date", "N/A"),
             "expiration_date": certification.get("expiration_date", "N/A"),
             "conditions": certification.get("conditions", "None"),
-
             # Overall scores
             "overall_score": f"{overall_score:.1f}",
             "overall_status": overall_status,
-
             # Functional area tables
             "functional_area_scores_table": fa_scores_table,
             "functional_area_details": fa_details,
-
             # STIG
             "stig_summary_table": stig_table,
             "stig_gate_status": stig_gate,
             "cat1_open_count": str(cat1_open),
-
             # Vulnerability management
             "vuln_summary_table": vuln_table,
             "vuln_sla_status": vuln_sla,
             "total_vuln_scans": str(len(vuln_records)),
             "total_vuln_critical": str(sum(v.get("critical_count", 0) for v in vuln_records)),
             "total_vuln_high": str(sum(v.get("high_count", 0) for v in vuln_records)),
-
             # Incidents
             "incident_summary_table": incident_table,
             "open_incidents_count": str(open_incidents),
             "total_incidents": str(len(incidents)),
             "mean_time_to_contain": mttc,
-
             # Controls
             "controls_mapped": str(ctrl_summary["total"]),
             "controls_implemented": str(ctrl_summary["implemented"]),
             "controls_planned": str(ctrl_summary["planned"]),
             "controls_na": str(ctrl_summary["not_applicable"]),
             "controls_compensating": str(ctrl_summary["compensating"]),
-
             # SSP
             "ssp_version": ssp_data.get("version", "N/A"),
             "ssp_status": ssp_data.get("status", "Not Generated"),
             "ssp_system_name": ssp_data.get("system_name", "N/A"),
-
             # POAM
             "poam_total": str(poam_summary["total"]),
             "poam_open": str(poam_summary["open"]),
@@ -940,21 +899,14 @@ def generate_cssp_report(project_id, output_path=None, db_path=None):
             "poam_completed": str(poam_summary["completed"]),
             "poam_accepted_risk": str(poam_summary["accepted_risk"]),
             "poam_overdue": "0",  # Computed separately if needed
-
             # Findings and evidence
             "findings_table": findings_table,
             "evidence_summary_table": evidence_table,
             "remediation_table": remediation_table,
-
             # Assessment counts
             "total_assessments": str(len(assessments)),
-            "assessments_satisfied": str(sum(
-                1 for a in assessments if a.get("status") == "satisfied"
-            )),
-            "assessments_not_satisfied": str(sum(
-                1 for a in assessments if a.get("status") == "not_satisfied"
-            )),
-
+            "assessments_satisfied": str(sum(1 for a in assessments if a.get("status") == "satisfied")),
+            "assessments_not_satisfied": str(sum(1 for a in assessments if a.get("status") == "not_satisfied")),
             # CUI banners
             "cui_banner_top": cui_config.get("document_header", cui_config.get("banner_top", "CUI // SP-CTI")),
             "cui_banner_bottom": cui_config.get("document_footer", cui_config.get("banner_bottom", "CUI // SP-CTI")),
@@ -1047,7 +999,8 @@ def generate_cssp_report(project_id, output_path=None, db_path=None):
             "output_file": str(out_file),
         }
         _log_audit_event(
-            conn, project_id,
+            conn,
+            project_id,
             f"CSSP report v{new_version} generated",
             audit_details,
             out_file,
@@ -1073,9 +1026,7 @@ def generate_cssp_report(project_id, output_path=None, db_path=None):
             "project_name": project_name,
             "overall_score": overall_score,
             "overall_status": overall_status,
-            "functional_area_scores": {
-                area: area_scores[area]["score"] for area in FUNCTIONAL_AREAS
-            },
+            "functional_area_scores": {area: area_scores[area]["score"] for area in FUNCTIONAL_AREAS},
             "stig_gate": stig_gate,
             "total_assessments": len(assessments),
             "total_incidents": len(incidents),
@@ -1093,21 +1044,15 @@ def generate_cssp_report(project_id, output_path=None, db_path=None):
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Generate CSSP certification report"
-    )
+    parser = argparse.ArgumentParser(description="Generate CSSP certification report")
     parser.add_argument("--project-id", required=True, help="Project ID")
     parser.add_argument("--output-dir", help="Output directory")
-    parser.add_argument(
-        "--db-path", type=Path, default=DB_PATH, help="Database path"
-    )
+    parser.add_argument("--db-path", type=Path, default=DB_PATH, help="Database path")
     parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 
     try:
-        result = generate_cssp_report(
-            args.project_id, args.output_dir, args.db_path
-        )
+        result = generate_cssp_report(args.project_id, args.output_dir, args.db_path)
         print(f"\nCSSP report generated: {result}")
     except (FileNotFoundError, ValueError) as e:
         print(f"ERROR: {e}", file=sys.stderr)

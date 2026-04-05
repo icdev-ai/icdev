@@ -59,12 +59,14 @@ REGISTRY_PATH = BASE_DIR / "context" / "research" / "regulatory_registry.json"
 # =========================================================================
 try:
     import yaml
+
     _HAS_YAML = True
 except ImportError:
     _HAS_YAML = False
 
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
@@ -72,27 +74,45 @@ except ImportError:
     def audit_log_event(**kwargs):
         return -1
 
+
 # =========================================================================
 # ICDEV™ FRAMEWORK DEFINITIONS
 # =========================================================================
 ICDEV_FRAMEWORKS = [
-    "nist_800_53", "fedramp_moderate", "fedramp_high", "cmmc",
-    "nist_800_171", "hipaa", "hitrust", "soc2", "pci_dss",
-    "iso27001", "cjis", "nist_800_207",
+    "nist_800_53",
+    "fedramp_moderate",
+    "fedramp_high",
+    "cmmc",
+    "nist_800_171",
+    "hipaa",
+    "hitrust",
+    "soc2",
+    "pci_dss",
+    "iso27001",
+    "cjis",
+    "nist_800_207",
 ]
 
 # Keywords for enforcement action detection
 ENFORCEMENT_KEYWORDS = [
-    "enforcement", "penalty", "fine", "violation", "action",
-    "sanction", "consent order", "cease and desist", "injunction",
-    "remediation order", "civil money penalty",
+    "enforcement",
+    "penalty",
+    "fine",
+    "violation",
+    "action",
+    "sanction",
+    "consent order",
+    "cease and desist",
+    "injunction",
+    "remediation order",
+    "civil money penalty",
 ]
 
 # Regex for deadline/effective date detection
 _RE_DEADLINE = re.compile(
-    r'(?:deadline|effective\s+date|compliance\s+date|enforcement\s+date|'
-    r'mandatory\s+by|required\s+by|due\s+date|sunset\s+date)'
-    r'[:\s]*(\d{4}[-/]\d{1,2}[-/]\d{1,2}|\w+\s+\d{1,2},?\s+\d{4}|\d{4})',
+    r"(?:deadline|effective\s+date|compliance\s+date|enforcement\s+date|"
+    r"mandatory\s+by|required\s+by|due\s+date|sunset\s+date)"
+    r"[:\s]*(\d{4}[-/]\d{1,2}[-/]\d{1,2}|\w+\s+\d{1,2},?\s+\d{4}|\d{4})",
     re.IGNORECASE,
 )
 
@@ -104,9 +124,7 @@ def _get_db(db_path=None):
     """Get database connection with dict-like row access."""
     path = db_path or DB_PATH
     if not Path(str(path)).exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py"
-        )
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
     conn = get_connection(db_path=str(path))
     return conn
 
@@ -441,9 +459,7 @@ def map_regulatory_signals(session_id, db_path=None):
             best_score = 0.0
 
             for body_key, body_def in registry.items():
-                score = _match_body_to_signal(
-                    body_key, body_def, signal_title, signal_body
-                )
+                score = _match_body_to_signal(body_key, body_def, signal_title, signal_body)
                 if score > best_score:
                     best_score = score
                     best_body_key = body_key
@@ -461,9 +477,7 @@ def map_regulatory_signals(session_id, db_path=None):
             icdev_frameworks = _determine_icdev_frameworks(nist_controls)
 
             # Compute crosswalk coverage
-            crosswalk_coverage = _compute_crosswalk_coverage(
-                nist_controls, icdev_frameworks
-            )
+            crosswalk_coverage = _compute_crosswalk_coverage(nist_controls, icdev_frameworks)
             coverage_scores.append(crosswalk_coverage)
 
             # Count enforcement actions
@@ -479,9 +493,7 @@ def map_regulatory_signals(session_id, db_path=None):
             gap_analysis = {
                 "covered": sorted(covered_frameworks),
                 "uncovered": uncovered,
-                "coverage_pct": round(
-                    len(covered_frameworks) / max(len(all_frameworks), 1) * 100, 1
-                ),
+                "coverage_pct": round(len(covered_frameworks) / max(len(all_frameworks), 1) * 100, 1),
             }
 
             # Determine regulation name from registry key_regulations or signal title
@@ -535,11 +547,7 @@ def map_regulatory_signals(session_id, db_path=None):
 
         conn.commit()
 
-        avg_coverage = (
-            round(sum(coverage_scores) / len(coverage_scores), 4)
-            if coverage_scores
-            else 0.0
-        )
+        avg_coverage = round(sum(coverage_scores) / len(coverage_scores), 4) if coverage_scores else 0.0
 
         _audit(
             "research.regulatory.map",
@@ -586,9 +594,7 @@ def map_challenge_regulations(challenge_id, session_id, db_path=None):
     conn = _get_db(db_path)
     try:
         # Get challenge from DB
-        challenge_row = conn.execute(
-            "SELECT * FROM research_challenges WHERE id = ?", (challenge_id,)
-        ).fetchone()
+        challenge_row = conn.execute("SELECT * FROM research_challenges WHERE id = ?", (challenge_id,)).fetchone()
         if not challenge_row:
             return {"error": f"Challenge not found: {challenge_id}"}
 
@@ -750,16 +756,10 @@ def get_regulatory_landscape(session_id, db_path=None):
         for body_key in sorted(body_data.keys()):
             bd = body_data[body_key]
             coverages = bd.pop("coverages")
-            bd["avg_coverage"] = round(
-                sum(coverages) / max(len(coverages), 1), 4
-            )
+            bd["avg_coverage"] = round(sum(coverages) / max(len(coverages), 1), 4)
             bodies.append(bd)
 
-        avg_coverage = (
-            round(sum(coverage_scores) / len(coverage_scores), 4)
-            if coverage_scores
-            else 0.0
-        )
+        avg_coverage = round(sum(coverage_scores) / len(coverage_scores), 4) if coverage_scores else 0.0
 
         return {
             "session_id": session_id,
@@ -813,22 +813,24 @@ def get_challenge_regulations(challenge_id, db_path=None):
             except (json.JSONDecodeError, TypeError):
                 metadata = {}
 
-            regulations.append({
-                "id": reg["id"],
-                "session_id": reg.get("session_id", ""),
-                "regulatory_body": reg.get("regulatory_body", ""),
-                "regulation_name": reg.get("regulation_name", ""),
-                "regulation_id": reg.get("regulation_id", ""),
-                "regulation_url": reg.get("regulation_url", ""),
-                "enforcement_actions": reg.get("enforcement_actions", 0),
-                "deadline": reg.get("deadline"),
-                "nist_controls": nist_controls,
-                "icdev_frameworks": icdev_frameworks,
-                "crosswalk_coverage": reg.get("crosswalk_coverage", 0.0),
-                "gap_analysis": gap_analysis,
-                "metadata": metadata,
-                "mapped_at": reg.get("mapped_at", ""),
-            })
+            regulations.append(
+                {
+                    "id": reg["id"],
+                    "session_id": reg.get("session_id", ""),
+                    "regulatory_body": reg.get("regulatory_body", ""),
+                    "regulation_name": reg.get("regulation_name", ""),
+                    "regulation_id": reg.get("regulation_id", ""),
+                    "regulation_url": reg.get("regulation_url", ""),
+                    "enforcement_actions": reg.get("enforcement_actions", 0),
+                    "deadline": reg.get("deadline"),
+                    "nist_controls": nist_controls,
+                    "icdev_frameworks": icdev_frameworks,
+                    "crosswalk_coverage": reg.get("crosswalk_coverage", 0.0),
+                    "gap_analysis": gap_analysis,
+                    "metadata": metadata,
+                    "mapped_at": reg.get("mapped_at", ""),
+                }
+            )
 
         return {
             "challenge_id": challenge_id,
@@ -868,7 +870,7 @@ def _print_human(args, result):
         if bodies:
             print("\n  Regulations per Body:")
             print(f"    {'Body':12s}  {'Count':>6s}")
-            print(f"    {'-'*12}  {'-'*6}")
+            print(f"    {'-' * 12}  {'-' * 6}")
             for body, count in sorted(bodies.items()):
                 print(f"    {body:12s}  {count:6d}")
 
@@ -880,9 +882,8 @@ def _print_human(args, result):
         bodies = result.get("bodies", [])
         if bodies:
             print()
-            print(f"    {'Body':12s}  {'Regs':>5s}  {'Enforce':>8s}  "
-                  f"{'Coverage':>9s}  Deadlines")
-            print(f"    {'-'*12}  {'-'*5}  {'-'*8}  {'-'*9}  {'-'*20}")
+            print(f"    {'Body':12s}  {'Regs':>5s}  {'Enforce':>8s}  {'Coverage':>9s}  Deadlines")
+            print(f"    {'-' * 12}  {'-' * 5}  {'-' * 8}  {'-' * 9}  {'-' * 20}")
             for bd in bodies:
                 deadlines = bd.get("deadlines", [])
                 dl_str = ", ".join(deadlines[:3]) if deadlines else "None"
@@ -901,11 +902,12 @@ def _print_human(args, result):
         if regs:
             print()
             for i, reg in enumerate(regs, 1):
-                print(f"  {i:3d}. [{reg.get('regulatory_body', '')}] "
-                      f"{reg.get('regulation_name', '')}")
-                print(f"       Coverage: {reg.get('crosswalk_coverage', 0):.4f}  |  "
-                      f"Enforcement: {reg.get('enforcement_actions', 0)}  |  "
-                      f"Deadline: {reg.get('deadline') or 'None'}")
+                print(f"  {i:3d}. [{reg.get('regulatory_body', '')}] {reg.get('regulation_name', '')}")
+                print(
+                    f"       Coverage: {reg.get('crosswalk_coverage', 0):.4f}  |  "
+                    f"Enforcement: {reg.get('enforcement_actions', 0)}  |  "
+                    f"Deadline: {reg.get('deadline') or 'None'}"
+                )
                 nist = reg.get("nist_controls", [])
                 if nist:
                     print(f"       NIST: {', '.join(nist[:8])}")
@@ -937,30 +939,35 @@ def main():
     )
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--human", action="store_true", help="Human-readable output")
-    parser.add_argument(
-        "--db-path", type=Path, default=None, help="Database path override"
-    )
+    parser.add_argument("--db-path", type=Path, default=None, help="Database path override")
 
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(
-        "--map", action="store_true",
+        "--map",
+        action="store_true",
         help="Map regulatory signals to ICDEV™ crosswalk frameworks",
     )
     group.add_argument(
-        "--landscape", action="store_true",
+        "--landscape",
+        action="store_true",
         help="Show regulatory landscape summary for a session",
     )
     group.add_argument(
-        "--challenge-regs", action="store_true",
+        "--challenge-regs",
+        action="store_true",
         help="Show regulations for a specific challenge",
     )
 
     parser.add_argument(
-        "--session-id", type=str, default=None,
+        "--session-id",
+        type=str,
+        default=None,
         help="Research session ID (with --map, --landscape)",
     )
     parser.add_argument(
-        "--challenge-id", type=str, default=None,
+        "--challenge-id",
+        type=str,
+        default=None,
         help="Research challenge ID (with --challenge-regs)",
     )
 

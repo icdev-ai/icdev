@@ -50,10 +50,12 @@ class TestResult:
 
     def summary(self):
         total = len(self.passed) + len(self.failed)
-        rate = f"{len(self.passed)/total*100:.1f}%" if total else "0%"
+        rate = f"{len(self.passed) / total * 100:.1f}%" if total else "0%"
         return {
-            "total": total, "passed": len(self.passed),
-            "failed": len(self.failed), "pass_rate": rate,
+            "total": total,
+            "passed": len(self.passed),
+            "failed": len(self.failed),
+            "pass_rate": rate,
             "failures": self.failed,
         }
 
@@ -82,9 +84,7 @@ def check_js_errors(driver):
         for entry in driver.get_log("browser"):
             if entry.get("level") == "SEVERE":
                 msg = entry.get("message", "")
-                if any(x in msg.lower() for x in [
-                    "favicon", "401", "404", "failed to load resource"
-                ]):
+                if any(x in msg.lower() for x in ["favicon", "401", "404", "failed to load resource"]):
                     continue
                 errors.append(msg)
     except Exception:
@@ -134,18 +134,18 @@ def run_tests():
         time.sleep(2)
 
         # Setup: create project + link topology
-        d = api(driver, "POST", "/network/api/projects", {
-            "name": "E2E PhaseA Pipeline Project", "status": "draft",
-            "owner": "e2e-test"
-        })
+        d = api(
+            driver,
+            "POST",
+            "/network/api/projects",
+            {"name": "E2E PhaseA Pipeline Project", "status": "draft", "owner": "e2e-test"},
+        )
         pid = d.get("id")
         topos = api(driver, "GET", "/network/api/topologies")
         topo_id = None
         if topos:
             topo_id = topos[0]["id"]
-            api(driver, "POST",
-                f"/network/api/projects/{pid}/topologies",
-                {"topology_id": topo_id})
+            api(driver, "POST", f"/network/api/projects/{pid}/topologies", {"topology_id": topo_id})
 
         # ── 1. Review boards API ──────────────────────────────────────────
         try:
@@ -159,8 +159,7 @@ def run_tests():
 
         # ── 2. Initialize phases ──────────────────────────────────────────
         try:
-            r = api(driver, "POST",
-                    f"/network/api/projects/{pid}/init-phases")
+            r = api(driver, "POST", f"/network/api/projects/{pid}/init-phases")
             assert r.get("ok") or r.get("phases"), f"Init failed: {r}"
             results.ok("init_phases")
         except Exception as e:
@@ -169,13 +168,17 @@ def run_tests():
         # ── 3. Submit ARB review ──────────────────────────────────────────
         arb_review_id = None
         try:
-            r = api(driver, "POST",
-                    f"/network/api/projects/{pid}/reviews", {
-                        "board_id": "board-arb",
-                        "phase": 1,
-                        "reviewers": ["architect@dod.mil", "isso@dod.mil"],
-                        "scheduled_date": "2026-04-01"
-                    })
+            r = api(
+                driver,
+                "POST",
+                f"/network/api/projects/{pid}/reviews",
+                {
+                    "board_id": "board-arb",
+                    "phase": 1,
+                    "reviewers": ["architect@dod.mil", "isso@dod.mil"],
+                    "scheduled_date": "2026-04-01",
+                },
+            )
             arb_review_id = r.get("id")
             assert arb_review_id, f"No review ID: {r}"
             results.ok("submit_arb_review", f"id={arb_review_id}")
@@ -190,20 +193,21 @@ def run_tests():
             assert "total_capex" in pkg
             assert "total_devices" in pkg
             assert "generated_at" in pkg
-            results.ok("review_package_generated",
-                        f"devices={pkg['total_devices']}, "
-                        f"compliance={pkg['compliance_pct']}")
+            results.ok(
+                "review_package_generated", f"devices={pkg['total_devices']}, compliance={pkg['compliance_pct']}"
+            )
         except Exception as e:
             results.fail("review_package_generated", e)
 
         # ── 5. Approve review ─────────────────────────────────────────────
         if arb_review_id:
             try:
-                r = api(driver, "POST",
-                        f"/network/api/reviews/{arb_review_id}/decide", {
-                            "decision": "approved",
-                            "notes": "Architecture meets standards"
-                        })
+                r = api(
+                    driver,
+                    "POST",
+                    f"/network/api/reviews/{arb_review_id}/decide",
+                    {"decision": "approved", "notes": "Architecture meets standards"},
+                )
                 assert r.get("ok") and r.get("decision") == "approved"
                 results.ok("approve_review")
             except Exception as e:
@@ -211,18 +215,19 @@ def run_tests():
 
         # ── 6. Submit + reject ERB review ─────────────────────────────────
         try:
-            r = api(driver, "POST",
-                    f"/network/api/projects/{pid}/reviews", {
-                        "board_id": "board-erb",
-                        "phase": 2,
-                        "reviewers": ["engineer@dod.mil"]
-                    })
+            r = api(
+                driver,
+                "POST",
+                f"/network/api/projects/{pid}/reviews",
+                {"board_id": "board-erb", "phase": 2, "reviewers": ["engineer@dod.mil"]},
+            )
             erb_id = r.get("id")
-            r2 = api(driver, "POST",
-                     f"/network/api/reviews/{erb_id}/decide", {
-                         "decision": "rejected",
-                         "notes": "BOM needs vendor quotes"
-                     })
+            r2 = api(
+                driver,
+                "POST",
+                f"/network/api/reviews/{erb_id}/decide",
+                {"decision": "rejected", "notes": "BOM needs vendor quotes"},
+            )
             assert r2.get("decision") == "rejected"
             results.ok("reject_review")
         except Exception as e:
@@ -230,35 +235,35 @@ def run_tests():
 
         # ── 7. ROI calculator ─────────────────────────────────────────────
         try:
-            r = api(driver, "PUT",
-                    f"/network/api/projects/{pid}/roi", {
-                        "capex": 250000,
-                        "opex_annual": 36000,
-                        "savings_annual": 120000,
-                        "justification": "Replace aging MPLS with SD-WAN",
-                        "alternatives": "Maintain current MPLS; Evaluate SASE"
-                    })
+            r = api(
+                driver,
+                "PUT",
+                f"/network/api/projects/{pid}/roi",
+                {
+                    "capex": 250000,
+                    "opex_annual": 36000,
+                    "savings_annual": 120000,
+                    "justification": "Replace aging MPLS with SD-WAN",
+                    "alternatives": "Maintain current MPLS; Evaluate SASE",
+                },
+            )
             roi = r.get("roi", {})
             assert roi.get("payback_months") > 0, f"No payback: {roi}"
             assert roi.get("npv_5yr") != 0, f"Zero NPV: {roi}"
-            results.ok("roi_calculator",
-                        f"payback={roi['payback_months']}mo, "
-                        f"NPV=${roi['npv_5yr']}")
+            results.ok("roi_calculator", f"payback={roi['payback_months']}mo, NPV=${roi['npv_5yr']}")
         except Exception as e:
             results.fail("roi_calculator", e)
 
         # ── 8. Pipeline API ───────────────────────────────────────────────
         try:
-            r = api(driver, "GET",
-                    f"/network/api/projects/{pid}/pipeline")
+            r = api(driver, "GET", f"/network/api/projects/{pid}/pipeline")
             assert r.get("boards"), "No boards in pipeline"
             assert r.get("reviews"), "No reviews in pipeline"
             assert r.get("phases"), "No phases in pipeline"
             assert r.get("bridge"), "No SAFe bridge in pipeline"
-            results.ok("pipeline_api",
-                        f"boards={len(r['boards'])}, "
-                        f"reviews={len(r['reviews'])}, "
-                        f"phases={len(r['phases'])}")
+            results.ok(
+                "pipeline_api", f"boards={len(r['boards'])}, reviews={len(r['reviews'])}, phases={len(r['phases'])}"
+            )
         except Exception as e:
             results.fail("pipeline_api", e)
 
@@ -284,17 +289,11 @@ def run_tests():
 
         # ── 11. Board cards with reviews ──────────────────────────────────
         try:
-            board_cards = driver.find_elements(
-                By.CSS_SELECTOR, ".board-card")
-            assert len(board_cards) >= 3, \
-                f"Expected 3+ board cards, got {len(board_cards)}"
-            review_items = driver.find_elements(
-                By.CSS_SELECTOR, ".board-review-item")
-            assert len(review_items) >= 2, \
-                f"Expected 2+ review items, got {len(review_items)}"
-            results.ok("detail_board_cards",
-                        f"{len(board_cards)} boards, "
-                        f"{len(review_items)} reviews")
+            board_cards = driver.find_elements(By.CSS_SELECTOR, ".board-card")
+            assert len(board_cards) >= 3, f"Expected 3+ board cards, got {len(board_cards)}"
+            review_items = driver.find_elements(By.CSS_SELECTOR, ".board-review-item")
+            assert len(review_items) >= 2, f"Expected 2+ review items, got {len(review_items)}"
+            results.ok("detail_board_cards", f"{len(board_cards)} boards, {len(review_items)} reviews")
         except Exception as e:
             results.fail("detail_board_cards", e)
 
@@ -320,8 +319,7 @@ def run_tests():
         # ── 14. JS errors ─────────────────────────────────────────────────
         js_errs = check_js_errors(driver)
         if js_errs:
-            results.fail("js_errors_pipeline",
-                          f"{len(js_errs)}: {js_errs[0][:100]}")
+            results.fail("js_errors_pipeline", f"{len(js_errs)}: {js_errs[0][:100]}")
         else:
             results.ok("js_errors_pipeline", "No SEVERE JS errors")
 
@@ -338,14 +336,12 @@ def run_tests():
 
 if __name__ == "__main__":
     print("=" * 60)
-    print("E2E: Network Canvas — Phase A "
-          "(Review Board Pipeline + SAFe Bridge)")
+    print("E2E: Network Canvas — Phase A (Review Board Pipeline + SAFe Bridge)")
     print("=" * 60)
     r = run_tests()
     summary = r.summary()
     print()
-    print(f"Results: {summary['passed']}/{summary['total']} passed "
-          f"({summary['pass_rate']})")
+    print(f"Results: {summary['passed']}/{summary['total']} passed ({summary['pass_rate']})")
     if summary["failures"]:
         print("Failures:")
         for f in summary["failures"]:

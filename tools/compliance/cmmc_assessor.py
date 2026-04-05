@@ -66,23 +66,19 @@ DOMAIN_NAME_TO_CODE = {name: code for code, name in CMMC_DOMAINS}
 # Database helpers
 # -----------------------------------------------------------------
 
+
 def _get_connection(db_path=None):
     """Get a database connection with Row factory."""
     path = db_path or DB_PATH
     if not path.exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\n"
-            "Run: python tools/db/init_icdev_db.py"
-        )
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
     conn = get_connection(db_path=str(path))
     return conn
 
 
 def _get_project(conn, project_id):
     """Load project data from the projects table."""
-    row = conn.execute(
-        "SELECT * FROM projects WHERE id = ?", (project_id,)
-    ).fetchone()
+    row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
     if not row:
         raise ValueError(f"Project '{project_id}' not found.")
     return dict(row)
@@ -115,11 +111,13 @@ def _log_audit_event(conn, project_id, action, details, file_path=None):
 # CUI config helper
 # -----------------------------------------------------------------
 
+
 def _load_cui_config():
     """Load CUI marking configuration."""
     try:
         sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
         from cui_marker import load_cui_config
+
         return load_cui_config()
     except ImportError:
         return {
@@ -140,6 +138,7 @@ def _load_cui_config():
 # -----------------------------------------------------------------
 # CMMC catalog loader
 # -----------------------------------------------------------------
+
 
 def load_cmmc_practices(level=2):
     """Load CMMC practice catalog for Level 2 or 3.
@@ -175,6 +174,7 @@ def load_cmmc_practices(level=2):
 # -----------------------------------------------------------------
 # Crosswalk inheritance helper
 # -----------------------------------------------------------------
+
 
 def _inherit_nist_implementations(project_id, practices, db_path=None):
     """Use the crosswalk engine to inherit NIST 800-53/800-171 implementations.
@@ -240,6 +240,7 @@ def _inherit_nist_implementations(project_id, practices, db_path=None):
 # Auto-check helper: walk project files matching extensions
 # -----------------------------------------------------------------
 
+
 def _scan_files(project_dir, extensions, patterns, threshold=1):
     """Scan project files for regex patterns.
 
@@ -303,6 +304,7 @@ def _dir_or_file_exists(project_dir, dir_names=None, glob_patterns=None):
 #    "details": "specifics"}
 # -----------------------------------------------------------------
 
+
 def _check_ac_domain(project_dir):
     """Access Control: RBAC, least privilege, session mgmt, remote access, wireless."""
     patterns = [
@@ -359,9 +361,14 @@ def _check_at_domain(project_dir):
     found = _dir_or_file_exists(
         project_dir,
         glob_patterns=[
-            "SECURITY*.md", "security-training*", "security_training*",
-            "onboarding*", "training*", "awareness*",
-            "docs/security*", "docs/training*",
+            "SECURITY*.md",
+            "security-training*",
+            "security_training*",
+            "onboarding*",
+            "training*",
+            "awareness*",
+            "docs/security*",
+            "docs/training*",
         ],
     )
     found_dirs = _dir_or_file_exists(
@@ -373,10 +380,7 @@ def _check_at_domain(project_dir):
     if all_found:
         return {
             "status": "met",
-            "evidence": (
-                f"Security awareness/training artifacts found: "
-                f"{len(all_found)} item(s)."
-            ),
+            "evidence": (f"Security awareness/training artifacts found: {len(all_found)} item(s)."),
             "details": "; ".join(os.path.basename(f) for f in all_found[:5]),
         }
 
@@ -394,10 +398,7 @@ def _check_at_domain(project_dir):
     return {
         "status": "not_met",
         "evidence": "No security awareness or training documentation detected.",
-        "details": (
-            "Expected: SECURITY.md, training docs, onboarding procedures, "
-            "security awareness materials."
-        ),
+        "details": ("Expected: SECURITY.md, training docs, onboarding procedures, security awareness materials."),
     }
 
 
@@ -442,8 +443,7 @@ def _check_au_domain(project_dir):
         return {
             "status": "met",
             "evidence": (
-                f"Comprehensive audit logging: {count} distinct log types "
-                f"across {len(evidence_files)} file(s)."
+                f"Comprehensive audit logging: {count} distinct log types across {len(evidence_files)} file(s)."
             ),
             "details": f"Types: {', '.join(sorted(found_types))}",
         }
@@ -472,9 +472,16 @@ def _check_cm_domain(project_dir):
     found_configs = _dir_or_file_exists(
         project_dir,
         glob_patterns=[
-            "*.tf", "*.tfvars", "Dockerfile*", "docker-compose*",
-            "*.yaml", "*.yml", "ansible*", "playbook*",
-            ".gitlab-ci.yml", ".github/workflows/*",
+            "*.tf",
+            "*.tfvars",
+            "Dockerfile*",
+            "docker-compose*",
+            "*.yaml",
+            "*.yml",
+            "ansible*",
+            "playbook*",
+            ".gitlab-ci.yml",
+            ".github/workflows/*",
         ],
     )
     found_dirs = _dir_or_file_exists(
@@ -575,8 +582,12 @@ def _check_ir_domain(project_dir):
     found = _dir_or_file_exists(
         project_dir,
         glob_patterns=[
-            "incident-response*", "incident_response*", "ir-plan*", "ir_plan*",
-            "docs/incident*", "security/incident*",
+            "incident-response*",
+            "incident_response*",
+            "ir-plan*",
+            "ir_plan*",
+            "docs/incident*",
+            "security/incident*",
         ],
     )
     found_dirs = _dir_or_file_exists(
@@ -595,9 +606,7 @@ def _check_ir_domain(project_dir):
     if len(all_found) >= 2:
         return {
             "status": "met",
-            "evidence": (
-                f"Incident response artifacts found: {len(all_found)} item(s)."
-            ),
+            "evidence": (f"Incident response artifacts found: {len(all_found)} item(s)."),
             "details": "; ".join(os.path.basename(f) for f in all_found[:5]),
         }
     elif all_found:
@@ -614,8 +623,7 @@ def _check_ir_domain(project_dir):
         "status": "not_met",
         "evidence": "No incident response artifacts detected.",
         "details": (
-            "Expected: IR plan documents, IR testing records, "
-            "incident reporting procedures, containment/recovery docs."
+            "Expected: IR plan documents, IR testing records, incident reporting procedures, containment/recovery docs."
         ),
     }
 
@@ -625,8 +633,12 @@ def _check_ma_domain(project_dir):
     found = _dir_or_file_exists(
         project_dir,
         glob_patterns=[
-            "maintenance*", "MAINTENANCE*", "docs/maintenance*",
-            "runbook*", "playbook*", "ops/*",
+            "maintenance*",
+            "MAINTENANCE*",
+            "docs/maintenance*",
+            "runbook*",
+            "playbook*",
+            "ops/*",
         ],
     )
     patterns = [
@@ -641,9 +653,7 @@ def _check_ma_domain(project_dir):
     if all_found:
         return {
             "status": "met",
-            "evidence": (
-                f"Maintenance procedure artifacts found: {len(all_found)} item(s)."
-            ),
+            "evidence": (f"Maintenance procedure artifacts found: {len(all_found)} item(s)."),
             "details": "; ".join(os.path.basename(f) for f in all_found[:5]),
         }
 
@@ -651,8 +661,7 @@ def _check_ma_domain(project_dir):
         "status": "not_met",
         "evidence": "No maintenance procedure documentation detected.",
         "details": (
-            "Expected: maintenance procedures, non-local maintenance controls, "
-            "patch management docs, runbooks."
+            "Expected: maintenance procedures, non-local maintenance controls, patch management docs, runbooks."
         ),
     }
 
@@ -698,10 +707,7 @@ def _check_mp_domain(project_dir):
     return {
         "status": "not_met",
         "evidence": "No media protection patterns detected.",
-        "details": (
-            "Expected: encryption-at-rest, KMS, media marking, "
-            "data protection, sanitization procedures."
-        ),
+        "details": ("Expected: encryption-at-rest, KMS, media marking, data protection, sanitization procedures."),
     }
 
 
@@ -718,8 +724,10 @@ def _check_pe_domain(project_dir):
     found = _dir_or_file_exists(
         project_dir,
         glob_patterns=[
-            "physical-security*", "physical_security*",
-            "docs/physical*", "security/physical*",
+            "physical-security*",
+            "physical_security*",
+            "docs/physical*",
+            "security/physical*",
         ],
     )
     all_found = list(set(matched + found))
@@ -727,9 +735,7 @@ def _check_pe_domain(project_dir):
     if all_found:
         return {
             "status": "met",
-            "evidence": (
-                f"Physical protection documentation found: {len(all_found)} item(s)."
-            ),
+            "evidence": (f"Physical protection documentation found: {len(all_found)} item(s)."),
             "details": "; ".join(os.path.basename(f) for f in all_found[:5]),
         }
 
@@ -757,8 +763,10 @@ def _check_ps_domain(project_dir):
     found = _dir_or_file_exists(
         project_dir,
         glob_patterns=[
-            "personnel-security*", "personnel_security*",
-            "hr-security*", "docs/personnel*",
+            "personnel-security*",
+            "personnel_security*",
+            "hr-security*",
+            "docs/personnel*",
         ],
     )
     all_found = list(set(matched + found))
@@ -766,9 +774,7 @@ def _check_ps_domain(project_dir):
     if all_found:
         return {
             "status": "met",
-            "evidence": (
-                f"Personnel security documentation found: {len(all_found)} item(s)."
-            ),
+            "evidence": (f"Personnel security documentation found: {len(all_found)} item(s)."),
             "details": "; ".join(os.path.basename(f) for f in all_found[:5]),
         }
 
@@ -787,9 +793,16 @@ def _check_ra_domain(project_dir):
     found = _dir_or_file_exists(
         project_dir,
         glob_patterns=[
-            "risk-assessment*", "risk_assessment*", "threat-model*",
-            "threat_model*", "vulnerability-scan*", "vuln-report*",
-            ".snyk", ".safety", "audit-report*", "pip-audit-report*",
+            "risk-assessment*",
+            "risk_assessment*",
+            "threat-model*",
+            "threat_model*",
+            "vulnerability-scan*",
+            "vuln-report*",
+            ".snyk",
+            ".safety",
+            "audit-report*",
+            "pip-audit-report*",
         ],
     )
     found_dirs = _dir_or_file_exists(
@@ -827,10 +840,7 @@ def _check_ra_domain(project_dir):
     return {
         "status": "not_met",
         "evidence": "No risk assessment or vulnerability scanning artifacts detected.",
-        "details": (
-            "Expected: risk assessment documents, vulnerability scan reports, "
-            "threat model artifacts."
-        ),
+        "details": ("Expected: risk assessment documents, vulnerability scan reports, threat model artifacts."),
     }
 
 
@@ -839,9 +849,13 @@ def _check_ca_domain(project_dir):
     found = _dir_or_file_exists(
         project_dir,
         glob_patterns=[
-            "security-assessment*", "security_assessment*",
-            "compliance/*", "ato/*", "authorization*",
-            "system-connection*", "interconnection*",
+            "security-assessment*",
+            "security_assessment*",
+            "compliance/*",
+            "ato/*",
+            "authorization*",
+            "system-connection*",
+            "interconnection*",
         ],
     )
     patterns = [
@@ -866,9 +880,7 @@ def _check_ca_domain(project_dir):
     elif all_found:
         return {
             "status": "partially_met",
-            "evidence": (
-                f"Partial security assessment: {len(all_found)} artifact(s)."
-            ),
+            "evidence": (f"Partial security assessment: {len(all_found)} artifact(s)."),
             "details": "; ".join(os.path.basename(f) for f in all_found[:5]),
         }
 
@@ -1013,6 +1025,7 @@ DOMAIN_AUTO_CHECKS = {
 # Core assessment function
 # -----------------------------------------------------------------
 
+
 def run_cmmc_assessment(
     project_id,
     level=2,
@@ -1048,23 +1061,15 @@ def run_cmmc_assessment(
         catalog.get("metadata", {})
 
         if not practices:
-            raise ValueError(
-                "No CMMC practices loaded. Ensure "
-                "context/compliance/cmmc_practices.json exists."
-            )
+            raise ValueError("No CMMC practices loaded. Ensure context/compliance/cmmc_practices.json exists.")
 
         # 2. Inherit NIST 800-53/800-171 implementations via crosswalk
-        inheritance = _inherit_nist_implementations(
-            project_id, practices, db_path=db_path
-        )
+        inheritance = _inherit_nist_implementations(project_id, practices, db_path=db_path)
 
         # 3. Resolve project directory for auto-checks
         if project_dir and Path(project_dir).is_dir():
             can_auto_check = True
-        elif (
-            project.get("directory_path")
-            and Path(project["directory_path"]).is_dir()
-        ):
+        elif project.get("directory_path") and Path(project["directory_path"]).is_dir():
             project_dir = project["directory_path"]
             can_auto_check = True
         else:
@@ -1076,9 +1081,7 @@ def run_cmmc_assessment(
             for domain_code, domain_name in CMMC_DOMAINS:
                 if domain_code in DOMAIN_AUTO_CHECKS:
                     try:
-                        domain_check_results[domain_code] = (
-                            DOMAIN_AUTO_CHECKS[domain_code](project_dir)
-                        )
+                        domain_check_results[domain_code] = DOMAIN_AUTO_CHECKS[domain_code](project_dir)
                     except Exception as e:
                         domain_check_results[domain_code] = {
                             "status": "not_met",
@@ -1150,10 +1153,7 @@ def run_cmmc_assessment(
                 # Manual
                 status = "not_assessed"
                 evidence = "Manual assessment required."
-                notes = (
-                    f"Evidence needed: "
-                    f"{practice.get('evidence_required', 'See practice description.')}"
-                )
+                notes = f"Evidence needed: {practice.get('evidence_required', 'See practice description.')}"
 
             # Add partial credit if some NIST controls are implemented
             if status == "not_assessed" and inh.get("controls_implemented"):
@@ -1202,10 +1202,12 @@ def run_cmmc_assessment(
                         status,
                         evidence,
                         details if details else None,
-                        json.dumps({
-                            "automation_level": automation_level,
-                            "inherited": inh.get("inherited", False),
-                        }),
+                        json.dumps(
+                            {
+                                "automation_level": automation_level,
+                                "inherited": inh.get("inherited", False),
+                            }
+                        ),
                         practice.get("nist_800_171_id", ""),
                         notes if notes else None,
                         now.isoformat(),
@@ -1222,9 +1224,7 @@ def run_cmmc_assessment(
         # 7. Compute per-domain and overall scores
         domain_scores = {}
         for domain_code, domain_name in CMMC_DOMAINS:
-            domain_practices = [
-                r for r in results if r["domain_code"] == domain_code
-            ]
+            domain_practices = [r for r in results if r["domain_code"] == domain_code]
             total = len(domain_practices)
             if total == 0:
                 domain_scores[domain_code] = {
@@ -1263,17 +1263,12 @@ def run_cmmc_assessment(
             }
 
         # Overall: weighted average across 14 domains
-        scoreable_domains = [
-            s for s in domain_scores.values() if s["total"] > 0
-        ]
+        scoreable_domains = [s for s in domain_scores.values() if s["total"] > 0]
         if scoreable_domains:
             # Weight by number of practices
             total_practices = sum(s["total"] - s["not_applicable"] for s in scoreable_domains)
             if total_practices > 0:
-                weighted_sum = sum(
-                    s["score"] * (s["total"] - s["not_applicable"])
-                    for s in scoreable_domains
-                )
+                weighted_sum = sum(s["score"] * (s["total"] - s["not_applicable"]) for s in scoreable_domains)
                 overall_score = round(weighted_sum / total_practices, 1)
             else:
                 overall_score = 100.0
@@ -1302,27 +1297,17 @@ def run_cmmc_assessment(
             "reason": (
                 f"PASS: 0 critical practices not_met for Level {level}"
                 if gate_passed
-                else (
-                    f"FAIL: {len(critical_not_met)} critical practice(s) not_met: "
-                    f"{', '.join(critical_not_met[:5])}"
-                )
+                else (f"FAIL: {len(critical_not_met)} critical practice(s) not_met: {', '.join(critical_not_met[:5])}")
             ),
         }
 
         # Compute SPRS score estimate (DFARS 252.204-7019/7020)
         # SPRS = 110 - (5 * critical_not_met) - (3 * high_not_met) - (1 * other_not_met)
-        high_not_met = sum(
-            1 for r in results
-            if r["priority"] == "high" and r["status"] == "not_met"
-        )
+        high_not_met = sum(1 for r in results if r["priority"] == "high" and r["status"] == "not_met")
         other_not_met = sum(
-            1 for r in results
-            if r["priority"] not in ("critical", "high") and r["status"] == "not_met"
+            1 for r in results if r["priority"] not in ("critical", "high") and r["status"] == "not_met"
         )
-        sprs_score = max(
-            -203,
-            110 - (5 * len(critical_not_met)) - (3 * high_not_met) - (1 * other_not_met)
-        )
+        sprs_score = max(-203, 110 - (5 * len(critical_not_met)) - (3 * high_not_met) - (1 * other_not_met))
 
         # 9. Log audit event
         _log_audit_event(
@@ -1336,10 +1321,7 @@ def run_cmmc_assessment(
                 "spill_score": spill_score,
                 "sprs_score": sprs_score,
                 "gate_result": gate_result,
-                "domain_scores": {
-                    k: v["score"] for k, v in domain_scores.items()
-                    if v["total"] > 0
-                },
+                "domain_scores": {k: v["score"] for k, v in domain_scores.items() if v["total"] > 0},
             },
         )
 
@@ -1414,14 +1396,13 @@ def assess_project(
 # -----------------------------------------------------------------
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Run CMMC Level 2/3 assessment"
-    )
+    parser = argparse.ArgumentParser(description="Run CMMC Level 2/3 assessment")
+    parser.add_argument("--project-id", required=True, help="Project ID")
     parser.add_argument(
-        "--project-id", required=True, help="Project ID"
-    )
-    parser.add_argument(
-        "--level", type=int, default=2, choices=[2, 3],
+        "--level",
+        type=int,
+        default=2,
+        choices=[2, 3],
         help="CMMC level (2 or 3, default: 2)",
     )
     parser.add_argument(
@@ -1434,7 +1415,8 @@ if __name__ == "__main__":
         help="Project directory for automated file-based checks",
     )
     parser.add_argument(
-        "--gate", action="store_true",
+        "--gate",
+        action="store_true",
         help="Evaluate CMMC gate (0 critical not_met = pass)",
     )
     parser.add_argument(
@@ -1442,11 +1424,14 @@ if __name__ == "__main__":
         help="Output directory for the assessment report",
     )
     parser.add_argument(
-        "--db-path", type=Path, default=DB_PATH,
+        "--db-path",
+        type=Path,
+        default=DB_PATH,
         help="Override database path",
     )
     parser.add_argument(
-        "--json", action="store_true",
+        "--json",
+        action="store_true",
         help="Output results as JSON",
     )
     args = parser.parse_args()
@@ -1463,9 +1448,7 @@ if __name__ == "__main__":
 
         if args.json:
             # Remove full results list for cleaner JSON output
-            output = {
-                k: v for k, v in result.items() if k != "results"
-            }
+            output = {k: v for k, v in result.items() if k != "results"}
             print(json.dumps(output, indent=2))
         else:
             print(

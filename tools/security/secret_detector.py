@@ -7,6 +7,7 @@ Implements:
 - evaluate_gate(findings) -> any secrets found = FAIL
 - CLI: python tools/security/secret_detector.py --project-path PATH [--gate]
 """
+
 from __future__ import annotations
 
 import argparse

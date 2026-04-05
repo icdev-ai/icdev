@@ -31,32 +31,76 @@ from tools.network.compliance import (
 # Shared helpers
 # ---------------------------------------------------------------------------
 
-_ENCRYPTOR_TYPES = frozenset({
-    "fips-140-l1", "fips-140-l2", "fips-140-l3", "fips-140-l4",
-    "hsm", "type1-encryptor", "kg-175d", "kg-175g", "kg-250",
-    "kg-340", "kg-245x", "kg-255", "macsec",
-})
+_ENCRYPTOR_TYPES = frozenset(
+    {
+        "fips-140-l1",
+        "fips-140-l2",
+        "fips-140-l3",
+        "fips-140-l4",
+        "hsm",
+        "type1-encryptor",
+        "kg-175d",
+        "kg-175g",
+        "kg-250",
+        "kg-340",
+        "kg-245x",
+        "kg-255",
+        "macsec",
+    }
+)
 
-_FIREWALL_TYPES = frozenset({
-    "firewall", "aws-nfw", "az-fw", "gcp-armor", "oci-waf", "aws-waf",
-})
+_FIREWALL_TYPES = frozenset(
+    {
+        "firewall",
+        "aws-nfw",
+        "az-fw",
+        "gcp-armor",
+        "oci-waf",
+        "aws-waf",
+    }
+)
 
-_WAN_TYPES = frozenset({
-    "cloud", "aws-dx", "az-er", "gcp-ic", "oci-fc", "ibm-dl",
-    "aws-vpn", "az-vpn-gw", "gcp-vpn", "ibm-vpn", "sdwan-overlay",
-    "internet-exchange", "aws-dx-gw", "az-er-global",
-})
+_WAN_TYPES = frozenset(
+    {
+        "cloud",
+        "aws-dx",
+        "az-er",
+        "gcp-ic",
+        "oci-fc",
+        "ibm-dl",
+        "aws-vpn",
+        "az-vpn-gw",
+        "gcp-vpn",
+        "ibm-vpn",
+        "sdwan-overlay",
+        "internet-exchange",
+        "aws-dx-gw",
+        "az-er-global",
+    }
+)
 
 _CLOUD_PREFIXES = ("aws-", "az-", "gcp-", "oci-", "ibm-")
 
-_DX_TYPES = frozenset({
-    "aws-dx", "aws-dx-gw", "az-er", "az-er-global",
-    "gcp-ic", "oci-fc", "ibm-dl",
-})
+_DX_TYPES = frozenset(
+    {
+        "aws-dx",
+        "aws-dx-gw",
+        "az-er",
+        "az-er-global",
+        "gcp-ic",
+        "oci-fc",
+        "ibm-dl",
+    }
+)
 
-_VPN_TYPES = frozenset({
-    "aws-vpn", "az-vpn-gw", "gcp-vpn", "ibm-vpn",
-})
+_VPN_TYPES = frozenset(
+    {
+        "aws-vpn",
+        "az-vpn-gw",
+        "gcp-vpn",
+        "ibm-vpn",
+    }
+)
 
 # Map node type -> human-readable category for boundary diagram zones
 _ZONE_MAP: dict[str, str] = {
@@ -160,6 +204,7 @@ def _classify_node_zone(node: dict) -> str:
 # 1. System Boundary Diagram  (RMF Step 1)
 # ---------------------------------------------------------------------------
 
+
 def generate_boundary_diagram(
     graph: dict,
     system_name: str = "Information System",
@@ -189,16 +234,17 @@ def generate_boundary_diagram(
 
     node_map = {n["id"]: n for n in nodes}
 
-
     # Assign nodes to zones
     zone_nodes: dict[str, list[dict]] = defaultdict(list)
     for n in nodes:
         zone = _classify_node_zone(n)
-        zone_nodes[zone].append({
-            "id": n["id"],
-            "label": n.get("label", n["id"]),
-            "type": n.get("type", "unknown"),
-        })
+        zone_nodes[zone].append(
+            {
+                "id": n["id"],
+                "label": n.get("label", n["id"]),
+                "type": n.get("type", "unknown"),
+            }
+        )
 
     # Identify cross-zone edges (interconnections)
     interconnections = []
@@ -210,41 +256,49 @@ def generate_boundary_diagram(
         src_zone = _classify_node_zone(src)
         tgt_zone = _classify_node_zone(tgt)
         if src_zone != tgt_zone:
-            interconnections.append({
-                "source_zone": src_zone,
-                "target_zone": tgt_zone,
-                "source_node": src.get("label", e["source"]),
-                "target_node": tgt.get("label", e["target"]),
-                "protocol": e.get("protocol", ""),
-                "label": e.get("label", ""),
-            })
+            interconnections.append(
+                {
+                    "source_zone": src_zone,
+                    "target_zone": tgt_zone,
+                    "source_node": src.get("label", e["source"]),
+                    "target_node": tgt.get("label", e["target"]),
+                    "protocol": e.get("protocol", ""),
+                    "label": e.get("label", ""),
+                }
+            )
 
     # External interfaces (WAN nodes or edges leaving the boundary)
     external_interfaces = []
     for n in nodes:
         ntype = n.get("type", "")
         if ntype in _WAN_TYPES or ntype == "internet-exchange":
-            external_interfaces.append({
-                "node_id": n["id"],
-                "label": n.get("label", n["id"]),
-                "type": ntype,
-                "connected_to": [
-                    node_map[nb]["label"]
-                    for e in edges
-                    for nb in [e["target"] if e["source"] == n["id"] else e["source"] if e["target"] == n["id"] else None]
-                    if nb and nb in node_map
-                ],
-            })
+            external_interfaces.append(
+                {
+                    "node_id": n["id"],
+                    "label": n.get("label", n["id"]),
+                    "type": ntype,
+                    "connected_to": [
+                        node_map[nb]["label"]
+                        for e in edges
+                        for nb in [
+                            e["target"] if e["source"] == n["id"] else e["source"] if e["target"] == n["id"] else None
+                        ]
+                        if nb and nb in node_map
+                    ],
+                }
+            )
 
     zones = []
     boundary_zones = {"Perimeter / DMZ", "Encryption Boundary", "WAN / External"}
     for zname, znodes in sorted(zone_nodes.items()):
-        zones.append({
-            "name": zname,
-            "node_count": len(znodes),
-            "nodes": znodes,
-            "is_boundary": zname in boundary_zones,
-        })
+        zones.append(
+            {
+                "name": zname,
+                "node_count": len(znodes),
+                "nodes": znodes,
+                "is_boundary": zname in boundary_zones,
+            }
+        )
 
     svg = _render_boundary_svg(zones, interconnections, system_name, classification)
 
@@ -289,6 +343,7 @@ def _collect_region_nodes(
         if not g:
             continue
         import json
+
         try:
             auto = json.loads(g.get("auto_nodes_json") or "[]")
             node_ids.update(auto)
@@ -378,8 +433,7 @@ def _render_boundary_svg(
         f'<rect x="{margin - 5}" y="{y_offset - 10}" '
         f'width="{total_w - 2 * margin + 10}" height="{total_h - y_offset - 30}" '
         f'fill="none" stroke="#e74c3c" stroke-width="2" stroke-dasharray="8,4" rx="6"/>',
-        f'<text x="{margin}" y="{total_h - 15}" fill="#e74c3c" font-size="9">'
-        f'--- Authorization Boundary ---</text>',
+        f'<text x="{margin}" y="{total_h - 15}" fill="#e74c3c" font-size="9">--- Authorization Boundary ---</text>',
     ]
 
     for i, z in enumerate(zones):
@@ -397,14 +451,12 @@ def _render_boundary_svg(
         for j, nd in enumerate(z["nodes"][:8]):
             ny = y + 36 + j * node_h
             lines.append(
-                f'<text x="{x + 14}" y="{ny}" fill="#bdc3c7" font-size="9">'
-                f'{_svg_escape(nd["label"][:25])}</text>'
+                f'<text x="{x + 14}" y="{ny}" fill="#bdc3c7" font-size="9">{_svg_escape(nd["label"][:25])}</text>'
             )
         if len(z["nodes"]) > 8:
             ny = y + 36 + 8 * node_h
             lines.append(
-                f'<text x="{x + 14}" y="{ny}" fill="#7f8c8d" font-size="9">'
-                f'... +{len(z["nodes"]) - 8} more</text>'
+                f'<text x="{x + 14}" y="{ny}" fill="#7f8c8d" font-size="9">... +{len(z["nodes"]) - 8} more</text>'
             )
 
     lines.append("</svg>")
@@ -418,6 +470,7 @@ def _svg_escape(text: str) -> str:
 # ---------------------------------------------------------------------------
 # 2. Data Flow Diagram
 # ---------------------------------------------------------------------------
+
 
 def generate_data_flow_diagram(
     graph: dict,
@@ -443,7 +496,6 @@ def generate_data_flow_diagram(
 
     node_map = {n["id"]: n for n in nodes}
 
-
     encrypted_protos = {"ipsec", "ipsec esp", "gre/ipsec", "tls", "https", "ssh", "macsec", "snmpv3"}
 
     flows = []
@@ -460,24 +512,33 @@ def generate_data_flow_diagram(
 
         # Determine data classification for this flow
         flow_class = classification
-        if any(node_map.get(nid, {}).get("type", "") in _WAN_TYPES
-               for nid in [e["source"], e["target"]]):
+        if any(node_map.get(nid, {}).get("type", "") in _WAN_TYPES for nid in [e["source"], e["target"]]):
             flow_class = f"{classification} (in-transit)"
 
-        flows.append({
-            "id": e.get("id", ""),
-            "source": {"id": e["source"], "label": src.get("label", e["source"]),
-                        "type": src.get("type", ""), "zone": src_zone},
-            "target": {"id": e["target"], "label": tgt.get("label", e["target"]),
-                        "type": tgt.get("type", ""), "zone": tgt_zone},
-            "protocol": e.get("protocol", ""),
-            "label": e.get("label", ""),
-            "encrypted": is_encrypted,
-            "encryption_method": proto if is_encrypted else "NONE",
-            "data_classification": flow_class,
-            "crosses_boundary": crosses_boundary,
-            "bandwidth": e.get("bandwidth", ""),
-        })
+        flows.append(
+            {
+                "id": e.get("id", ""),
+                "source": {
+                    "id": e["source"],
+                    "label": src.get("label", e["source"]),
+                    "type": src.get("type", ""),
+                    "zone": src_zone,
+                },
+                "target": {
+                    "id": e["target"],
+                    "label": tgt.get("label", e["target"]),
+                    "type": tgt.get("type", ""),
+                    "zone": tgt_zone,
+                },
+                "protocol": e.get("protocol", ""),
+                "label": e.get("label", ""),
+                "encrypted": is_encrypted,
+                "encryption_method": proto if is_encrypted else "NONE",
+                "data_classification": flow_class,
+                "crosses_boundary": crosses_boundary,
+                "bandwidth": e.get("bandwidth", ""),
+            }
+        )
 
     # Trust boundaries: zone transitions
     trust_boundaries = []
@@ -487,30 +548,34 @@ def generate_data_flow_diagram(
             pair = tuple(sorted([f["source"]["zone"], f["target"]["zone"]]))
             if pair not in seen_boundaries:
                 seen_boundaries.add(pair)
-                trust_boundaries.append({
-                    "zone_a": pair[0],
-                    "zone_b": pair[1],
-                    "flows_crossing": sum(
-                        1 for fl in flows
-                        if tuple(sorted([fl["source"]["zone"], fl["target"]["zone"]])) == pair
-                    ),
-                    "all_encrypted": all(
-                        fl["encrypted"] for fl in flows
-                        if tuple(sorted([fl["source"]["zone"], fl["target"]["zone"]])) == pair
-                    ),
-                })
+                trust_boundaries.append(
+                    {
+                        "zone_a": pair[0],
+                        "zone_b": pair[1],
+                        "flows_crossing": sum(
+                            1 for fl in flows if tuple(sorted([fl["source"]["zone"], fl["target"]["zone"]])) == pair
+                        ),
+                        "all_encrypted": all(
+                            fl["encrypted"]
+                            for fl in flows
+                            if tuple(sorted([fl["source"]["zone"], fl["target"]["zone"]])) == pair
+                        ),
+                    }
+                )
 
     # External entities
     external_entities = []
     for n in nodes:
         ntype = n.get("type", "")
         if ntype in _WAN_TYPES or ntype == "internet-exchange" or ntype.startswith("cloud"):
-            external_entities.append({
-                "id": n["id"],
-                "label": n.get("label", n["id"]),
-                "type": ntype,
-                "zone": _classify_node_zone(n),
-            })
+            external_entities.append(
+                {
+                    "id": n["id"],
+                    "label": n.get("label", n["id"]),
+                    "type": ntype,
+                    "zone": _classify_node_zone(n),
+                }
+            )
 
     return {
         "artifact": "data_flow_diagram",
@@ -529,6 +594,7 @@ def generate_data_flow_diagram(
 # ---------------------------------------------------------------------------
 # 3. Ports / Protocols / Services Matrix
 # ---------------------------------------------------------------------------
+
 
 def generate_pps_matrix(
     graph: dict,
@@ -571,11 +637,14 @@ def generate_pps_matrix(
         if not proto:
             continue
 
-        pps = _PROTOCOL_PPS.get(proto, {
-            "port": "N/A",
-            "service": proto.upper(),
-            "direction": "Bidirectional",
-        })
+        pps = _PROTOCOL_PPS.get(
+            proto,
+            {
+                "port": "N/A",
+                "service": proto.upper(),
+                "direction": "Bidirectional",
+            },
+        )
 
         src = node_map.get(e["source"])
         tgt = node_map.get(e["target"])
@@ -584,8 +653,7 @@ def generate_pps_matrix(
 
         key = proto
         if key not in pps_entries:
-            encrypted_protos = {"ipsec", "ipsec esp", "gre/ipsec", "tls", "https",
-                                "ssh", "macsec", "snmpv3"}
+            encrypted_protos = {"ipsec", "ipsec esp", "gre/ipsec", "tls", "https", "ssh", "macsec", "snmpv3"}
             pps_entries[key] = {
                 "protocol": proto.upper(),
                 "port": pps["port"],
@@ -614,7 +682,9 @@ def generate_pps_matrix(
         if key in ("ospf", "bgp", "bgp evpn"):
             entry["justification"] = "Dynamic routing protocol required for network convergence and path selection."
         elif key in ("ipsec", "ipsec esp", "gre/ipsec", "tls", "macsec"):
-            entry["justification"] = "Encryption protocol required for protecting CUI/classified data in transit per NIST SC-8, SC-13."
+            entry["justification"] = (
+                "Encryption protocol required for protecting CUI/classified data in transit per NIST SC-8, SC-13."
+            )
         elif key in ("ssh", "https"):
             entry["justification"] = "Encrypted management access per NIST SC-8, AC-17."
         elif key in ("snmpv3",):
@@ -632,8 +702,9 @@ def generate_pps_matrix(
         "artifact": "ports_protocols_services_matrix",
         "total_protocols": len(matrix),
         "encrypted_protocols": sum(1 for e in matrix if e["encrypted"]),
-        "insecure_protocols": sum(1 for e in matrix if not e["encrypted"] and
-                                   e["protocol"].lower() in ("telnet", "http", "snmpv1", "snmpv2")),
+        "insecure_protocols": sum(
+            1 for e in matrix if not e["encrypted"] and e["protocol"].lower() in ("telnet", "http", "snmpv1", "snmpv2")
+        ),
         "matrix": matrix,
         "generated_at": _now_iso(),
     }
@@ -645,70 +716,130 @@ def generate_pps_matrix(
 
 # DISA Network STIG checks derived from topology objects
 _STIG_CHECKLIST_ITEMS: list[dict[str, Any]] = [
-    {"stig_id": "V-237753", "rule_id": "SV-237753r1", "severity": "CAT1",
-     "title": "Network devices must use FIPS-validated encryption for management",
-     "check": "mgmt_encrypted",
-     "fix": "Configure SSH/HTTPS for all device management; disable Telnet/HTTP."},
-    {"stig_id": "V-237754", "rule_id": "SV-237754r1", "severity": "CAT1",
-     "title": "Network firewalls must be deployed at enclave boundaries",
-     "check": "firewall_at_boundary",
-     "fix": "Deploy firewall between internal network and WAN/internet."},
-    {"stig_id": "V-237755", "rule_id": "SV-237755r1", "severity": "CAT1",
-     "title": "Encrypted tunnels must use FIPS 140-2/3 validated crypto modules",
-     "check": "fips_crypto",
-     "fix": "Replace non-FIPS crypto with FIPS 140-2 Level 2+ validated modules."},
-    {"stig_id": "V-237756", "rule_id": "SV-237756r1", "severity": "CAT2",
-     "title": "Core/distribution network devices must have redundant links",
-     "check": "core_redundancy",
-     "fix": "Add redundant uplinks to all core and distribution devices."},
-    {"stig_id": "V-237757", "rule_id": "SV-237757r1", "severity": "CAT2",
-     "title": "Network must implement out-of-band management",
-     "check": "oob_mgmt",
-     "fix": "Deploy separate OOB management network for device administration."},
-    {"stig_id": "V-237758", "rule_id": "SV-237758r1", "severity": "CAT2",
-     "title": "DNS must be configured with redundant servers",
-     "check": "dns_redundancy",
-     "fix": "Configure at least 2 DNS resolvers or use cloud DNS service."},
-    {"stig_id": "V-237759", "rule_id": "SV-237759r1", "severity": "CAT2",
-     "title": "WAN links must be encrypted",
-     "check": "wan_encrypted",
-     "fix": "Deploy IPSec, MACsec, or Type 1 encryption on all WAN links."},
-    {"stig_id": "V-237760", "rule_id": "SV-237760r1", "severity": "CAT2",
-     "title": "Cloud VPCs must be isolated from on-premises networks via firewall",
-     "check": "cloud_isolated",
-     "fix": "Deploy firewall/ACL between cloud VPC and on-premises network."},
-    {"stig_id": "V-237761", "rule_id": "SV-237761r1", "severity": "CAT2",
-     "title": "Network segmentation must prevent lateral movement",
-     "check": "segmentation",
-     "fix": "Deploy internal firewalls or ACLs between security zones."},
-    {"stig_id": "V-237762", "rule_id": "SV-237762r1", "severity": "CAT3",
-     "title": "All network devices must have descriptive hostnames",
-     "check": "devices_labeled",
-     "fix": "Assign meaningful hostnames to all network devices."},
-    {"stig_id": "V-237763", "rule_id": "SV-237763r1", "severity": "CAT3",
-     "title": "Network diagram must match as-built documentation",
-     "check": "as_built_exists",
-     "fix": "Save current topology as 'As-Built' version for ATO documentation."},
-    {"stig_id": "V-237764", "rule_id": "SV-237764r1", "severity": "CAT2",
-     "title": "SECRET+ networks require NSA Type 1 encryption",
-     "check": "type1_for_secret",
-     "fix": "Deploy KG-175D, KG-250, or other NSA Type 1 encryptors on SECRET+ links."},
-    {"stig_id": "V-237765", "rule_id": "SV-237765r1", "severity": "CAT2",
-     "title": "Encryptor throughput must match or exceed link bandwidth",
-     "check": "encryptor_speed",
-     "fix": "Upgrade encryptor to model rated for link bandwidth."},
-    {"check_id": "NET-HYB-BFD", "title": "BFD enabled on dedicated interconnect VIFs",
-     "severity": "CAT1",
-     "check": lambda nodes, edges, types: any(
-         n.get("config", {}).get("bfd_enabled") for n in nodes
-         if types.get(n["id"]) in _DX_TYPES),
-     "fix": "Enable BFD on all DX/ER/IC/FC virtual interfaces for sub-second failover"},
-    {"check_id": "NET-HYB-VPN-BACKUP", "title": "VPN backup for dedicated interconnect",
-     "severity": "CAT2",
-     "check": lambda nodes, edges, types: any(
-         types.get(n["id"]) in _VPN_TYPES for n in nodes) if any(
-         types.get(n["id"]) in _DX_TYPES for n in nodes) else True,
-     "fix": "Configure Site-to-Site VPN as automatic backup for DX/ER failure"},
+    {
+        "stig_id": "V-237753",
+        "rule_id": "SV-237753r1",
+        "severity": "CAT1",
+        "title": "Network devices must use FIPS-validated encryption for management",
+        "check": "mgmt_encrypted",
+        "fix": "Configure SSH/HTTPS for all device management; disable Telnet/HTTP.",
+    },
+    {
+        "stig_id": "V-237754",
+        "rule_id": "SV-237754r1",
+        "severity": "CAT1",
+        "title": "Network firewalls must be deployed at enclave boundaries",
+        "check": "firewall_at_boundary",
+        "fix": "Deploy firewall between internal network and WAN/internet.",
+    },
+    {
+        "stig_id": "V-237755",
+        "rule_id": "SV-237755r1",
+        "severity": "CAT1",
+        "title": "Encrypted tunnels must use FIPS 140-2/3 validated crypto modules",
+        "check": "fips_crypto",
+        "fix": "Replace non-FIPS crypto with FIPS 140-2 Level 2+ validated modules.",
+    },
+    {
+        "stig_id": "V-237756",
+        "rule_id": "SV-237756r1",
+        "severity": "CAT2",
+        "title": "Core/distribution network devices must have redundant links",
+        "check": "core_redundancy",
+        "fix": "Add redundant uplinks to all core and distribution devices.",
+    },
+    {
+        "stig_id": "V-237757",
+        "rule_id": "SV-237757r1",
+        "severity": "CAT2",
+        "title": "Network must implement out-of-band management",
+        "check": "oob_mgmt",
+        "fix": "Deploy separate OOB management network for device administration.",
+    },
+    {
+        "stig_id": "V-237758",
+        "rule_id": "SV-237758r1",
+        "severity": "CAT2",
+        "title": "DNS must be configured with redundant servers",
+        "check": "dns_redundancy",
+        "fix": "Configure at least 2 DNS resolvers or use cloud DNS service.",
+    },
+    {
+        "stig_id": "V-237759",
+        "rule_id": "SV-237759r1",
+        "severity": "CAT2",
+        "title": "WAN links must be encrypted",
+        "check": "wan_encrypted",
+        "fix": "Deploy IPSec, MACsec, or Type 1 encryption on all WAN links.",
+    },
+    {
+        "stig_id": "V-237760",
+        "rule_id": "SV-237760r1",
+        "severity": "CAT2",
+        "title": "Cloud VPCs must be isolated from on-premises networks via firewall",
+        "check": "cloud_isolated",
+        "fix": "Deploy firewall/ACL between cloud VPC and on-premises network.",
+    },
+    {
+        "stig_id": "V-237761",
+        "rule_id": "SV-237761r1",
+        "severity": "CAT2",
+        "title": "Network segmentation must prevent lateral movement",
+        "check": "segmentation",
+        "fix": "Deploy internal firewalls or ACLs between security zones.",
+    },
+    {
+        "stig_id": "V-237762",
+        "rule_id": "SV-237762r1",
+        "severity": "CAT3",
+        "title": "All network devices must have descriptive hostnames",
+        "check": "devices_labeled",
+        "fix": "Assign meaningful hostnames to all network devices.",
+    },
+    {
+        "stig_id": "V-237763",
+        "rule_id": "SV-237763r1",
+        "severity": "CAT3",
+        "title": "Network diagram must match as-built documentation",
+        "check": "as_built_exists",
+        "fix": "Save current topology as 'As-Built' version for ATO documentation.",
+    },
+    {
+        "stig_id": "V-237764",
+        "rule_id": "SV-237764r1",
+        "severity": "CAT2",
+        "title": "SECRET+ networks require NSA Type 1 encryption",
+        "check": "type1_for_secret",
+        "fix": "Deploy KG-175D, KG-250, or other NSA Type 1 encryptors on SECRET+ links.",
+    },
+    {
+        "stig_id": "V-237765",
+        "rule_id": "SV-237765r1",
+        "severity": "CAT2",
+        "title": "Encryptor throughput must match or exceed link bandwidth",
+        "check": "encryptor_speed",
+        "fix": "Upgrade encryptor to model rated for link bandwidth.",
+    },
+    {
+        "check_id": "NET-HYB-BFD",
+        "title": "BFD enabled on dedicated interconnect VIFs",
+        "severity": "CAT1",
+        "check": lambda nodes, edges, types: any(
+            n.get("config", {}).get("bfd_enabled") for n in nodes if types.get(n["id"]) in _DX_TYPES
+        ),
+        "fix": "Enable BFD on all DX/ER/IC/FC virtual interfaces for sub-second failover",
+    },
+    {
+        "check_id": "NET-HYB-VPN-BACKUP",
+        "title": "VPN backup for dedicated interconnect",
+        "severity": "CAT2",
+        "check": lambda nodes, edges, types: (
+            any(types.get(n["id"]) in _VPN_TYPES for n in nodes)
+            if any(types.get(n["id"]) in _DX_TYPES for n in nodes)
+            else True
+        ),
+        "fix": "Configure Site-to-Site VPN as automatic backup for DX/ER failure",
+    },
 ]
 
 
@@ -749,21 +880,35 @@ def generate_stig_checklist(
     core_types = {"router", "switch-l3", "mpls-pe", "mpls-p", "route-reflector"}
     dns_types = {"aws-r53", "az-dns", "gcp-dns"}
     cloud_types = {t for t in type_set if t.startswith(_CLOUD_PREFIXES)}
-    has_oob = any("oob" in (n.get("label") or "").lower() or
-                   "management" in (n.get("label") or "").lower() or
-                   n.get("type") in ("siem", "network-tap", "wlc") for n in nodes)
-    insecure_protos = [e for e in edges if (e.get("protocol") or "").lower() in
-                       ("telnet", "http", "snmpv1", "snmpv2")]
-    encrypted_wan = all(
-        any(node_types.get(nb) in _ENCRYPTOR_TYPES for nb in adj.get(wn["id"], set()))
-        or any((e.get("protocol") or "").lower() in ("ipsec", "ipsec esp", "macsec", "tls", "gre/ipsec")
-               for e in edges if wn["id"] in (e["source"], e["target"]))
-        for wn in wan_nodes
-    ) if wan_nodes else True
-    fips_on_encrypted = all(
-        any(node_types.get(nid) in _ENCRYPTOR_TYPES for nid in (e["source"], e["target"]))
-        for e in edges if (e.get("protocol") or "").lower() in ("ipsec", "ipsec esp", "macsec", "tls", "gre/ipsec")
-    ) if edges else True
+    has_oob = any(
+        "oob" in (n.get("label") or "").lower()
+        or "management" in (n.get("label") or "").lower()
+        or n.get("type") in ("siem", "network-tap", "wlc")
+        for n in nodes
+    )
+    insecure_protos = [e for e in edges if (e.get("protocol") or "").lower() in ("telnet", "http", "snmpv1", "snmpv2")]
+    encrypted_wan = (
+        all(
+            any(node_types.get(nb) in _ENCRYPTOR_TYPES for nb in adj.get(wn["id"], set()))
+            or any(
+                (e.get("protocol") or "").lower() in ("ipsec", "ipsec esp", "macsec", "tls", "gre/ipsec")
+                for e in edges
+                if wn["id"] in (e["source"], e["target"])
+            )
+            for wn in wan_nodes
+        )
+        if wan_nodes
+        else True
+    )
+    fips_on_encrypted = (
+        all(
+            any(node_types.get(nid) in _ENCRYPTOR_TYPES for nid in (e["source"], e["target"]))
+            for e in edges
+            if (e.get("protocol") or "").lower() in ("ipsec", "ipsec esp", "macsec", "tls", "gre/ipsec")
+        )
+        if edges
+        else True
+    )
     core_redundant = all(
         len(adj.get(n["id"], set())) >= 2
         for n in nodes
@@ -930,15 +1075,17 @@ def generate_stig_checklist(
                 status = "Open"
                 comments = "One or more encryptors are under-rated for their link bandwidth."
 
-        checklist.append({
-            "stig_id": item["stig_id"],
-            "rule_id": item["rule_id"],
-            "severity": item["severity"],
-            "title": item["title"],
-            "status": status,
-            "comments": comments,
-            "fix_text": item["fix"] if status == "Open" else "",
-        })
+        checklist.append(
+            {
+                "stig_id": item["stig_id"],
+                "rule_id": item["rule_id"],
+                "severity": item["severity"],
+                "title": item["title"],
+                "status": status,
+                "comments": comments,
+                "fix_text": item["fix"] if status == "Open" else "",
+            }
+        )
 
     cat1_open = sum(1 for c in checklist if c["severity"] == "CAT1" and c["status"] == "Open")
     cat2_open = sum(1 for c in checklist if c["severity"] == "CAT2" and c["status"] == "Open")
@@ -964,6 +1111,7 @@ def generate_stig_checklist(
 # ---------------------------------------------------------------------------
 # 5. Full ATO Package Generator (combines all artifacts)
 # ---------------------------------------------------------------------------
+
 
 def generate_ato_package(
     topology_id: str,
@@ -1003,23 +1151,15 @@ def generate_ato_package(
     audit = run_compliance_audit(topology_id, graph, regimes, classification, has_as_built_version)
 
     # Compute overall readiness
-    stig_pass_rate = round(
-        stig["not_a_finding"] / max(stig["total_checks"] - stig["not_applicable"], 1) * 100, 1
-    )
+    stig_pass_rate = round(stig["not_a_finding"] / max(stig["total_checks"] - stig["not_applicable"], 1) * 100, 1)
     avg_compliance = 0.0
     if audit["scores"]:
-        avg_compliance = round(
-            sum(s["score_pct"] for s in audit["scores"].values()) / len(audit["scores"]), 1
-        )
-    encryption_coverage = round(
-        data_flow["encrypted_flows"] / max(data_flow["total_flows"], 1) * 100, 1
-    )
+        avg_compliance = round(sum(s["score_pct"] for s in audit["scores"].values()) / len(audit["scores"]), 1)
+    encryption_coverage = round(data_flow["encrypted_flows"] / max(data_flow["total_flows"], 1) * 100, 1)
 
     # Package ID for tracking
     pkg_id = str(_uuid.uuid4())
-    pkg_hash = hashlib.sha256(
-        f"{topology_id}:{region_id or 'full'}:{_now_iso()}".encode()
-    ).hexdigest()[:12]
+    pkg_hash = hashlib.sha256(f"{topology_id}:{region_id or 'full'}:{_now_iso()}".encode()).hexdigest()[:12]
 
     return {
         "package_id": pkg_id,
@@ -1030,7 +1170,6 @@ def generate_ato_package(
         "regimes": regimes,
         "region_id": region_id,
         "generated_at": _now_iso(),
-
         # Summary
         "summary": {
             "stig_pass_rate": stig_pass_rate,
@@ -1044,13 +1183,12 @@ def generate_ato_package(
             "cat1_findings": audit["cat1_count"],
             "cat2_findings": audit["cat2_count"],
             "cat3_findings": audit["cat3_count"],
-            "overall_readiness": "GREEN" if (
-                stig["gate_passed"] and avg_compliance >= 80 and pps["insecure_protocols"] == 0
-            ) else "YELLOW" if (
-                stig["cat1_open"] <= 1 and avg_compliance >= 60
-            ) else "RED",
+            "overall_readiness": "GREEN"
+            if (stig["gate_passed"] and avg_compliance >= 80 and pps["insecure_protocols"] == 0)
+            else "YELLOW"
+            if (stig["cat1_open"] <= 1 and avg_compliance >= 60)
+            else "RED",
         },
-
         # Artifacts
         "artifacts": {
             "system_boundary_diagram": boundary,
@@ -1065,6 +1203,7 @@ def generate_ato_package(
 # ---------------------------------------------------------------------------
 # 6. PPS Matrix for Enclave / Device Pair
 # ---------------------------------------------------------------------------
+
 
 def get_topology_enclaves(graph: dict, groups: list[dict] | None = None) -> dict:
     """Return all enclaves (zones) and device nodes available for pair selection.
@@ -1081,17 +1220,16 @@ def get_topology_enclaves(graph: dict, groups: list[dict] | None = None) -> dict
     for n in nodes:
         zone = _classify_node_zone(n)
         zone_counts[zone] += 1
-        node_list.append({
-            "id": n["id"],
-            "label": n.get("label", n["id"]),
-            "type": n.get("type", "unknown"),
-            "zone": zone,
-        })
+        node_list.append(
+            {
+                "id": n["id"],
+                "label": n.get("label", n["id"]),
+                "type": n.get("type", "unknown"),
+                "zone": zone,
+            }
+        )
 
-    enclaves = [
-        {"id": z, "label": z, "node_count": c}
-        for z, c in sorted(zone_counts.items())
-    ]
+    enclaves = [{"id": z, "label": z, "node_count": c} for z, c in sorted(zone_counts.items())]
     return {"enclaves": enclaves, "nodes": node_list}
 
 
@@ -1127,14 +1265,8 @@ def generate_pps_matrix_for_pair(
         dst_label = node_map.get(dest_selector, {}).get("label", dest_selector)
     else:
         # Zone-based: collect all nodes in each zone
-        src_ids = {
-            n["id"] for n in nodes
-            if _classify_node_zone(n) == source_selector
-        }
-        dst_ids = {
-            n["id"] for n in nodes
-            if _classify_node_zone(n) == dest_selector
-        }
+        src_ids = {n["id"] for n in nodes if _classify_node_zone(n) == source_selector}
+        dst_ids = {n["id"] for n in nodes if _classify_node_zone(n) == dest_selector}
         src_label = source_selector
         dst_label = dest_selector
 
@@ -1173,21 +1305,22 @@ def generate_pps_matrix_for_pair(
             src_addr = rule.get("src", rule.get("source", "any"))
             dst_addr = rule.get("dst", rule.get("destination", "any"))
             svc = rule.get("service", rule.get("application", proto.upper() if proto else "ANY"))
-            firewall_rows.append({
-                "_from_firewall": True,
-                "_firewall_label": n.get("label", nid),
-                "_action": action,
-                "protocol": proto.upper() if proto else "ANY",
-                "port": port,
-                "service": svc,
-                "src_addr": src_addr,
-                "dst_addr": dst_addr,
-            })
+            firewall_rows.append(
+                {
+                    "_from_firewall": True,
+                    "_firewall_label": n.get("label", nid),
+                    "_action": action,
+                    "protocol": proto.upper() if proto else "ANY",
+                    "port": port,
+                    "service": svc,
+                    "src_addr": src_addr,
+                    "dst_addr": dst_addr,
+                }
+            )
 
     # Build PPS entries from cross-boundary edges (same logic as generate_pps_matrix)
     pps_entries: dict[str, dict] = {}
-    encrypted_protos = {"ipsec", "ipsec esp", "gre/ipsec", "tls", "https",
-                        "ssh", "macsec", "snmpv3"}
+    encrypted_protos = {"ipsec", "ipsec esp", "gre/ipsec", "tls", "https", "ssh", "macsec", "snmpv3"}
     insecure_protos = {"telnet", "http", "snmpv1", "snmpv2"}
 
     for e in cross_edges:
@@ -1201,11 +1334,14 @@ def generate_pps_matrix_for_pair(
         if not proto:
             proto = "unknown"
 
-        pps_info = _PROTOCOL_PPS.get(proto, {
-            "port": "N/A",
-            "service": proto.upper() if proto != "unknown" else "Unspecified",
-            "direction": "Bidirectional",
-        })
+        pps_info = _PROTOCOL_PPS.get(
+            proto,
+            {
+                "port": "N/A",
+                "service": proto.upper() if proto != "unknown" else "Unspecified",
+                "direction": "Bidirectional",
+            },
+        )
 
         src_node = node_map.get(e["source"])
         tgt_node = node_map.get(e["target"])
@@ -1253,24 +1389,26 @@ def generate_pps_matrix_for_pair(
     # Merge firewall rule entries as supplemental rows
     fw_supplement: list[dict] = []
     for fr in firewall_rows:
-        fw_supplement.append({
-            "protocol": fr["protocol"],
-            "port": fr["port"],
-            "service": fr["service"],
-            "direction": f"{fr['src_addr']} → {fr['dst_addr']}",
-            "encrypted": fr["protocol"].lower() in encrypted_protos,
-            "fips_validated": False,
-            "risk": "HIGH" if fr["_action"] == "deny" else (
-                "HIGH" if fr["protocol"].lower() in insecure_protos else "MEDIUM"
-            ),
-            "justification": f"Firewall rule on {fr['_firewall_label']}: action={fr['_action']}",
-            "usage_count": 1,
-            "endpoints": [f"{fr['src_addr']} → {fr['dst_addr']}"],
-            "source_enclave": src_label,
-            "dest_enclave": dst_label,
-            "_source": "firewall_rule",
-            "_action": fr["_action"],
-        })
+        fw_supplement.append(
+            {
+                "protocol": fr["protocol"],
+                "port": fr["port"],
+                "service": fr["service"],
+                "direction": f"{fr['src_addr']} → {fr['dst_addr']}",
+                "encrypted": fr["protocol"].lower() in encrypted_protos,
+                "fips_validated": False,
+                "risk": "HIGH"
+                if fr["_action"] == "deny"
+                else ("HIGH" if fr["protocol"].lower() in insecure_protos else "MEDIUM"),
+                "justification": f"Firewall rule on {fr['_firewall_label']}: action={fr['_action']}",
+                "usage_count": 1,
+                "endpoints": [f"{fr['src_addr']} → {fr['dst_addr']}"],
+                "source_enclave": src_label,
+                "dest_enclave": dst_label,
+                "_source": "firewall_rule",
+                "_action": fr["_action"],
+            }
+        )
 
     return {
         "artifact": "pps_matrix_pair",
@@ -1340,7 +1478,7 @@ def export_pps_as_ssp_table(pps_result: dict, fmt: str = "csv") -> str:
             eps = "; ".join(row.get("endpoints", [])[:3])
             lines.append(
                 f"| {i} | {row['protocol']} | {row['port']} | {row['service']} "
-                f"| {row['direction']} | {enc} | {fips} | {row.get('risk','MEDIUM')} "
+                f"| {row['direction']} | {enc} | {fips} | {row.get('risk', 'MEDIUM')} "
                 f"| {row['justification']} | {eps} |"
             )
         return "\n".join(lines)
@@ -1348,22 +1486,38 @@ def export_pps_as_ssp_table(pps_result: dict, fmt: str = "csv") -> str:
     # CSV
     import io
     import csv as _csv
+
     buf = io.StringIO()
     writer = _csv.writer(buf)
-    writer.writerow([
-        "Source Enclave", "Destination Enclave",
-        "Protocol", "Port", "Service", "Direction",
-        "Encrypted", "FIPS Validated", "Risk",
-        "Justification", "Endpoints",
-    ])
+    writer.writerow(
+        [
+            "Source Enclave",
+            "Destination Enclave",
+            "Protocol",
+            "Port",
+            "Service",
+            "Direction",
+            "Encrypted",
+            "FIPS Validated",
+            "Risk",
+            "Justification",
+            "Endpoints",
+        ]
+    )
     for row in rows:
-        writer.writerow([
-            src_label, dst_label,
-            row["protocol"], row["port"], row["service"], row["direction"],
-            "Yes" if row.get("encrypted") else "No",
-            "Yes" if row.get("fips_validated") else "No",
-            row.get("risk", "MEDIUM"),
-            row["justification"],
-            "; ".join(row.get("endpoints", [])[:5]),
-        ])
+        writer.writerow(
+            [
+                src_label,
+                dst_label,
+                row["protocol"],
+                row["port"],
+                row["service"],
+                row["direction"],
+                "Yes" if row.get("encrypted") else "No",
+                "Yes" if row.get("fips_validated") else "No",
+                row.get("risk", "MEDIUM"),
+                row["justification"],
+                "; ".join(row.get("endpoints", [])[:5]),
+            ]
+        )
     return buf.getvalue()

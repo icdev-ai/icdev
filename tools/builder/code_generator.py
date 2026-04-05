@@ -15,6 +15,7 @@ Implementation split into focused sub-modules:
 - code_gen_multilang.py — Java, Go, TypeScript, Rust, C# generators
 - code_gen_agentic.py — Phase 19 agentic + Phase 26 MOSA generators
 """
+
 from __future__ import annotations
 
 import argparse
@@ -184,10 +185,7 @@ def generate_from_spec(
     # Get language-specific generators
     lang_generators = LANGUAGE_GENERATORS.get(language)
     if not lang_generators:
-        raise ValueError(
-            f"Unsupported language: {language}. "
-            f"Supported: {', '.join(LANGUAGE_GENERATORS.keys())}"
-        )
+        raise ValueError(f"Unsupported language: {language}. Supported: {', '.join(LANGUAGE_GENERATORS.keys())}")
 
     # Find the generator for this code type
     generator = lang_generators.get(code_type)
@@ -197,8 +195,7 @@ def generate_from_spec(
         if not generator:
             available = ", ".join(lang_generators.keys())
             raise ValueError(
-                f"No '{code_type}' generator for language '{language}'. "
-                f"Available types for {language}: {available}"
+                f"No '{code_type}' generator for language '{language}'. Available types for {language}: {available}"
             )
 
     # Pass secure flag to API generators (D-EPSEC-5)
@@ -277,24 +274,38 @@ def main():
     parser.add_argument(
         "--type",
         choices=[
-            "api", "model", "service", "cli", "utility", "middleware", "config", "module",
-            "agent_skill", "llm_service", "prompt_template", "agent_collaboration", "model_config",
+            "api",
+            "model",
+            "service",
+            "cli",
+            "utility",
+            "middleware",
+            "config",
+            "module",
+            "agent_skill",
+            "llm_service",
+            "prompt_template",
+            "agent_collaboration",
+            "model_config",
         ],
         help="Force a specific code type",
     )
     parser.add_argument(
-        "--language", default="python",
+        "--language",
+        default="python",
         choices=["python", "java", "go", "typescript", "csharp", "rust"],
         help="Target language for code generation (default: python)",
     )
     parser.add_argument(
-        "--project-id", default=None,
+        "--project-id",
+        default=None,
         help="Project ID for dev profile injection (Phase 34, D187)",
     )
     parser.add_argument(
-        "--no-auth", action="store_true",
+        "--no-auth",
+        action="store_true",
         help="Disable auth decorators and validation in generated API code (D-EPSEC-5). "
-             "WARNING: Generated code will fail endpoint_security gate.",
+        "WARNING: Generated code will fail endpoint_security gate.",
     )
     args = parser.parse_args()
 

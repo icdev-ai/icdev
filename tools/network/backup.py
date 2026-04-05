@@ -9,6 +9,7 @@ Usage:
     python tools/backup.py --restore <backup_id>         # Restore specific backup
     python tools/backup.py --schedule                    # Start scheduled daily backup
 """
+
 import argparse
 import json
 import shutil
@@ -97,7 +98,9 @@ def list_backups():
     print("-" * 100)
     for r in rows:
         size_kb = (r["file_size_bytes"] or 0) / 1024
-        print(f"{r['id']:<38} {r['backup_type']:<10} {size_kb:>8.1f}KB {(r['created_at'] or '')[:19]:<22} {r['notes'] or ''}")
+        print(
+            f"{r['id']:<38} {r['backup_type']:<10} {size_kb:>8.1f}KB {(r['created_at'] or '')[:19]:<22} {r['notes'] or ''}"
+        )
 
 
 def restore_backup(backup_id):

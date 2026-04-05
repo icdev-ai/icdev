@@ -15,6 +15,7 @@ Pipeline stages:
 
 FORGE-compliant: LLM calls go through tools/llm/router.py.
 """
+
 from __future__ import annotations
 
 import json
@@ -51,8 +52,12 @@ from tools.pulse.engine.seo_optimizer import optimize_post, generate_schema_json
 from tools.pulse.engine.exporter import export_both
 from tools.pulse.config import SCHEDULE_INTERVAL
 from tools.pulse.db import (
-    get_connection, init_db, insert_row, update_row,
-    get_existing_titles, get_existing_slugs,
+    get_connection,
+    init_db,
+    insert_row,
+    update_row,
+    get_existing_titles,
+    get_existing_slugs,
 )
 from tools.pulse.writeguard import run_full_quality_check, rewrite_content
 
@@ -195,7 +200,8 @@ def draft_phase(
         word_count = _count_words(result.get("body_markdown", ""))
         logger.info(
             "Draft complete: %d words (model: %s)",
-            word_count, result.get("model_used"),
+            word_count,
+            result.get("model_used"),
         )
         result["word_count"] = word_count
     else:
@@ -287,27 +293,56 @@ def _resolve_placeholders(
     # Strip LLM-generated placeholder lines (Documentation, Community links)
     body_md = re.sub(
         r"^.*Placeholder for (?:Documentation|Community).*$",
-        "", body_md, flags=re.MULTILINE,
+        "",
+        body_md,
+        flags=re.MULTILINE,
     )
 
     return body_md
 
 
 _VALID_POST_COLUMNS = {
-    "id", "title", "slug", "status", "topic", "pain_points", "tldr",
-    "body_markdown", "body_html", "seo_title", "seo_description",
-    "seo_keywords", "og_image_url", "hero_image_path", "video_embeds",
-    "source_urls", "word_count", "readability_score", "plagiarism_score",
-    "ai_detection_score", "writeguard_passed", "author_id", "reviewer_id",
-    "review_notes", "schema_json", "frontmatter", "capabilities_referenced",
-    "generated_video_path", "generated_video_method", "generated_video_duration",
-    "judge_color", "judge_composite", "judge_combined",
-    "created_at", "updated_at", "published_at", "archived_at",
+    "id",
+    "title",
+    "slug",
+    "status",
+    "topic",
+    "pain_points",
+    "tldr",
+    "body_markdown",
+    "body_html",
+    "seo_title",
+    "seo_description",
+    "seo_keywords",
+    "og_image_url",
+    "hero_image_path",
+    "video_embeds",
+    "source_urls",
+    "word_count",
+    "readability_score",
+    "plagiarism_score",
+    "ai_detection_score",
+    "writeguard_passed",
+    "author_id",
+    "reviewer_id",
+    "review_notes",
+    "schema_json",
+    "frontmatter",
+    "capabilities_referenced",
+    "generated_video_path",
+    "generated_video_method",
+    "generated_video_duration",
+    "judge_color",
+    "judge_composite",
+    "judge_combined",
+    "created_at",
+    "updated_at",
+    "published_at",
+    "archived_at",
 }
 
 
-def _enrich_media(run_id: str, post_data: dict, cluster: dict,
-                   template_type: str = "challenge_solution") -> None:
+def _enrich_media(run_id: str, post_data: dict, cluster: dict, template_type: str = "challenge_solution") -> None:
     """Generate hero image, generated video, find YouTube videos, and cross-link; mutates post_data in place."""
     logger.info("[%s] Generating hero image...", run_id)
     try:
@@ -338,7 +373,9 @@ def _enrich_media(run_id: str, post_data: dict, cluster: dict,
             post_data["generated_video_duration"] = video_result.get("duration_sec", 0)
             logger.info(
                 "[%s] Video generated: %s (method=%s, %.1fs)",
-                run_id, video_result.get("path"), video_result.get("method"),
+                run_id,
+                video_result.get("path"),
+                video_result.get("method"),
                 video_result.get("duration_sec", 0),
             )
         else:
@@ -416,6 +453,7 @@ def _inject_cross_links(run_id: str, body_md: str, current_title: str) -> str:
 
         # Insert before the last ## heading (usually Conclusion or CTA)
         import re
+
         headings = list(re.finditer(r"^##\s+", body_md, re.MULTILINE))
         if len(headings) >= 2:
             insert_pos = headings[-1].start()
@@ -442,16 +480,23 @@ def _apply_seo(run_id: str, post_data: dict) -> None:
     # Inject cross-links to related Pulse articles
     logger.info("[%s] Injecting cross-links...", run_id)
     post_data["body_markdown"] = _inject_cross_links(
-        run_id, post_data.get("body_markdown", ""), post_data.get("title", ""),
+        run_id,
+        post_data.get("body_markdown", ""),
+        post_data.get("title", ""),
     )
 
     # Compute and store SEO score
     from tools.pulse.engine.seo_optimizer import analyze_seo_score
+
     seo_analysis = analyze_seo_score(post_data)
     post_data["seo_score"] = seo_analysis.get("score", 0)
-    logger.info("[%s] SEO score: %d/100 (%s) — %d recommendations",
-                run_id, seo_analysis["score"], seo_analysis["grade"],
-                len(seo_analysis.get("recommendations", [])))
+    logger.info(
+        "[%s] SEO score: %d/100 (%s) — %d recommendations",
+        run_id,
+        seo_analysis["score"],
+        seo_analysis["grade"],
+        len(seo_analysis.get("recommendations", [])),
+    )
 
     seo_data = post_data.pop("seo", {})
     post_data["seo_title"] = seo_data.get("title", post_data.get("title", ""))
@@ -526,7 +571,8 @@ def _build_result(ctx: dict) -> dict:
     quality = ctx["quality"]
     post_data = ctx["post_data"]
     final_body = (
-        rewrite_data.get("body_markdown", "") if rewrite_data and rewrite_data.get("body_markdown")
+        rewrite_data.get("body_markdown", "")
+        if rewrite_data and rewrite_data.get("body_markdown")
         else post_data.get("body_markdown", "")
     )
     result = {
@@ -573,13 +619,16 @@ def post_processing(
     capabilities_referenced = capabilities_referenced or []
     run_id = f"run-{uuid4().hex[:12]}"
     started = datetime.now(timezone.utc).isoformat()
-    insert_row("schedule_log", {
-        "id": run_id,
-        "run_type": "llm_pipeline" if auto_rewrite else "claude_code_orchestrated",
-        "status": "running",
-        "topic_cluster_id": cluster.get("id", ""),
-        "started_at": started,
-    })
+    insert_row(
+        "schedule_log",
+        {
+            "id": run_id,
+            "run_type": "llm_pipeline" if auto_rewrite else "claude_code_orchestrated",
+            "status": "running",
+            "topic_cluster_id": cluster.get("id", ""),
+            "started_at": started,
+        },
+    )
 
     try:
         # Strip LLM preamble before processing
@@ -601,14 +650,14 @@ def post_processing(
         if not capabilities_referenced:
             try:
                 from tools.pulse.engine.capability_scanner import match_capabilities
+
                 title_text = post_data.get("title", "")
                 topic_text = cluster.get("name", "")
                 cap_keywords = [kw for kw in f"{title_text} {topic_text}".split() if len(kw) > 2]
                 matched = match_capabilities(cap_keywords, top_n=5)
                 if matched:
                     capabilities_referenced = [
-                        {"slug": c["slug"], "name": c["name"], "domain": c["domain"],
-                         "score": c.get("match_score", 0)}
+                        {"slug": c["slug"], "name": c["name"], "domain": c["domain"], "score": c.get("match_score", 0)}
                         for c in matched
                     ]
                     logger.info("[%s] Auto-matched %d capabilities", run_id, len(capabilities_referenced))
@@ -640,7 +689,9 @@ def post_processing(
                 progress_callback("rewrite")
             except Exception:
                 pass
-        quality, rewrite_data = _handle_rewrite(run_id, post_id, post_data.get("body_markdown", ""), quality, auto_rewrite)
+        quality, rewrite_data = _handle_rewrite(
+            run_id, post_id, post_data.get("body_markdown", ""), quality, auto_rewrite
+        )
 
         if progress_callback:
             try:
@@ -651,26 +702,47 @@ def post_processing(
         if mark_used:
             mark_cluster_used(cluster.get("id", ""))
 
-        update_row("schedule_log", run_id, {
-            "status": "completed", "post_id": post_id,
-            "completed_at": datetime.now(timezone.utc).isoformat(),
-        })
+        update_row(
+            "schedule_log",
+            run_id,
+            {
+                "status": "completed",
+                "post_id": post_id,
+                "completed_at": datetime.now(timezone.utc).isoformat(),
+            },
+        )
 
-        result = _build_result({
-            "run_id": run_id, "post_data": post_data, "quality": quality,
-            "rewrite_data": rewrite_data, "template_type": template_type, "exports": exports,
-        })
-        logger.info("[%s] Pipeline complete: %s", run_id, json.dumps(
-            {k: v for k, v in result.items() if k not in ("quality_details", "rewrite_findings")}, indent=2,
-        ))
+        result = _build_result(
+            {
+                "run_id": run_id,
+                "post_data": post_data,
+                "quality": quality,
+                "rewrite_data": rewrite_data,
+                "template_type": template_type,
+                "exports": exports,
+            }
+        )
+        logger.info(
+            "[%s] Pipeline complete: %s",
+            run_id,
+            json.dumps(
+                {k: v for k, v in result.items() if k not in ("quality_details", "rewrite_findings")},
+                indent=2,
+            ),
+        )
         return result
 
     except Exception as e:
         logger.error("[%s] Pipeline failed: %s\n%s", run_id, e, traceback.format_exc())
-        update_row("schedule_log", run_id, {
-            "status": "failed", "error_message": str(e)[:1000],
-            "completed_at": datetime.now(timezone.utc).isoformat(),
-        })
+        update_row(
+            "schedule_log",
+            run_id,
+            {
+                "status": "failed",
+                "error_message": str(e)[:1000],
+                "completed_at": datetime.now(timezone.utc).isoformat(),
+            },
+        )
         return {"run_id": run_id, "status": "failed", "stage": "error", "error": str(e)}
 
 
@@ -681,6 +753,7 @@ def _run_llm_judge(run_id: str, post_id: str, body: str, quality: dict) -> dict 
     """
     try:
         from tools.writing.llm_judge import evaluate_and_store, init_judge_db
+
         init_judge_db()
 
         wg_score = quality.get("overall_score", 0)
@@ -704,11 +777,15 @@ def _run_llm_judge(run_id: str, post_id: str, body: str, quality: dict) -> dict 
                 result.get("combined_score", 0),
             )
             # Update post with judge scores
-            update_row("posts", post_id, {
-                "judge_color": color.get("color", ""),
-                "judge_composite": result.get("composite_score", 0),
-                "judge_combined": result.get("combined_score", 0),
-            })
+            update_row(
+                "posts",
+                post_id,
+                {
+                    "judge_color": color.get("color", ""),
+                    "judge_composite": result.get("composite_score", 0),
+                    "judge_combined": result.get("combined_score", 0),
+                },
+            )
             return result
         elif result.get("status") == "skipped":
             logger.info("[%s] LLM Judge skipped: %s", run_id, result.get("reason", ""))
@@ -724,14 +801,18 @@ def _run_quality_check(run_id: str, post_id: str, body: str) -> dict:
     try:
         quality = run_full_quality_check(body)
         stats = _extract_quality_stats(quality)
-        update_row("posts", post_id, {
-            "writeguard_passed": 1 if quality["passed"] else 0,
-            "readability_score": quality.get("overall_score", 0),
-            "grammar_score": stats.get("grammar", 0),
-            "plagiarism_score": stats.get("plagiarism", 0),
-            "ai_detection_score": stats.get("ai_detection", 0),
-            "tone_score": stats.get("tone", 0),
-        })
+        update_row(
+            "posts",
+            post_id,
+            {
+                "writeguard_passed": 1 if quality["passed"] else 0,
+                "readability_score": quality.get("overall_score", 0),
+                "grammar_score": stats.get("grammar", 0),
+                "plagiarism_score": stats.get("plagiarism", 0),
+                "ai_detection_score": stats.get("ai_detection", 0),
+                "tone_score": stats.get("tone", 0),
+            },
+        )
         logger.info(
             "[%s] WriteGuard: %s (score: %.1f, grammar: %.0f, readability: %.0f, "
             "plagiarism: %.0f, ai: %.0f, tone: %.0f)",
@@ -758,18 +839,26 @@ def _extract_findings(quality: dict) -> list[dict]:
             continue
         for f in result.get("findings", result.get("issues", [])):
             if isinstance(f, dict):
-                findings.append({
-                    "category": key,
-                    "message": f.get("message", f.get("description", "")),
-                    "suggestion": f.get("suggestion", f.get("replacement", "")),
-                })
+                findings.append(
+                    {
+                        "category": key,
+                        "message": f.get("message", f.get("description", "")),
+                        "suggestion": f.get("suggestion", f.get("replacement", "")),
+                    }
+                )
             elif isinstance(f, str):
                 findings.append({"category": key, "message": f, "suggestion": ""})
     for rec in quality.get("recommendations", []):
         if isinstance(rec, str):
             findings.append({"category": "recommendation", "message": rec, "suggestion": ""})
         elif isinstance(rec, dict):
-            findings.append({"category": "recommendation", "message": rec.get("message", ""), "suggestion": rec.get("suggestion", "")})
+            findings.append(
+                {
+                    "category": "recommendation",
+                    "message": rec.get("message", ""),
+                    "suggestion": rec.get("suggestion", ""),
+                }
+            )
     return findings
 
 
@@ -785,6 +874,7 @@ def _auto_rewrite(run_id: str, post_id: str, body: str, quality: dict) -> dict:
         # Apply deterministic fixes first
         try:
             from tools.writing.rewriter import _apply_deterministic_fixes
+
             body, _ = _apply_deterministic_fixes(body)
         except ImportError:
             pass
@@ -795,14 +885,19 @@ def _auto_rewrite(run_id: str, post_id: str, body: str, quality: dict) -> dict:
         if result.get("status") == "rewritten" and result.get("body_markdown"):
             # Save rewritten content
             new_body = result["body_markdown"]
-            update_row("posts", post_id, {
-                "body_markdown": new_body,
-                "word_count": _count_words(new_body),
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-            })
+            update_row(
+                "posts",
+                post_id,
+                {
+                    "body_markdown": new_body,
+                    "word_count": _count_words(new_body),
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                },
+            )
             logger.info(
                 "[%s] Auto-rewrite complete: model=%s",
-                run_id, result.get("model_used"),
+                run_id,
+                result.get("model_used"),
             )
         return result
 
@@ -854,6 +949,7 @@ def run_full_pipeline(
     Returns:
         Pipeline result dict.
     """
+
     def _notify(stage: str):
         if progress_callback:
             try:
@@ -881,8 +977,7 @@ def run_full_pipeline(
         themes = synthesis.get("top_themes", [])
         if themes:
             research_context += "\n\nKey themes:\n" + "\n".join(
-                f"- {t.get('theme', t) if isinstance(t, dict) else t}"
-                for t in themes[:5]
+                f"- {t.get('theme', t) if isinstance(t, dict) else t}" for t in themes[:5]
             )
 
     # Inject existing titles into research context so LLM avoids duplicates
@@ -902,10 +997,12 @@ def run_full_pipeline(
     capabilities_referenced = []
     try:
         from tools.pulse.engine.capability_scanner import match_capabilities, format_capability_context
+
         topic_text = cluster.get("name", cluster.get("topic", ""))
         pain_pts = cluster.get("pain_points", [])
         if isinstance(pain_pts, str):
             import json as _json
+
             pain_pts = _json.loads(pain_pts)
         cap_keywords = topic_text.split() + (pain_pts if isinstance(pain_pts, list) else [])
         cap_keywords = [kw for kw in cap_keywords if len(kw) > 2]
@@ -913,8 +1010,7 @@ def run_full_pipeline(
         if matched_caps:
             capability_context = format_capability_context(matched_caps)
             capabilities_referenced = [
-                {"slug": c["slug"], "name": c["name"], "domain": c["domain"],
-                 "score": c.get("match_score", 0)}
+                {"slug": c["slug"], "name": c["name"], "domain": c["domain"], "score": c.get("match_score", 0)}
                 for c in matched_caps
             ]
             logger.info("Matched %d capabilities for article context", len(matched_caps))
@@ -976,26 +1072,34 @@ def update_post_content(post_id: str, body_markdown: str) -> dict:
     title = _extract_title(body_markdown)
     tldr = _extract_tldr(body_markdown)
 
-    update_row("posts", post_id, {
-        "body_markdown": body_markdown,
-        "title": title,
-        "word_count": word_count,
-        "tldr": tldr,
-        "updated_at": datetime.now(timezone.utc).isoformat(),
-    })
+    update_row(
+        "posts",
+        post_id,
+        {
+            "body_markdown": body_markdown,
+            "title": title,
+            "word_count": word_count,
+            "tldr": tldr,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        },
+    )
     logger.info("Post %s updated: %d words", post_id, word_count)
 
     # Re-run quality check
     quality = run_full_quality_check(body_markdown)
     stats = _extract_quality_stats(quality)
-    update_row("posts", post_id, {
-        "writeguard_passed": 1 if quality["passed"] else 0,
-        "readability_score": quality.get("overall_score", 0),
-        "grammar_score": stats.get("grammar", 0),
-        "plagiarism_score": stats.get("plagiarism", 0),
-        "ai_detection_score": stats.get("ai_detection", 0),
-        "tone_score": stats.get("tone", 0),
-    })
+    update_row(
+        "posts",
+        post_id,
+        {
+            "writeguard_passed": 1 if quality["passed"] else 0,
+            "readability_score": quality.get("overall_score", 0),
+            "grammar_score": stats.get("grammar", 0),
+            "plagiarism_score": stats.get("plagiarism", 0),
+            "ai_detection_score": stats.get("ai_detection", 0),
+            "tone_score": stats.get("tone", 0),
+        },
+    )
     logger.info(
         "Post %s quality after rewrite: %s (score: %.1f)",
         post_id,
@@ -1032,6 +1136,7 @@ def rewrite_post_via_llm(post_id: str) -> dict:
     init_db()
 
     from tools.pulse.db import get_row
+
     post = get_row("posts", post_id)
     if not post:
         return {"status": "error", "error": f"Post not found: {post_id}"}
@@ -1056,6 +1161,7 @@ def rewrite_post_via_llm(post_id: str) -> dict:
     # Apply deterministic fixes first
     try:
         from tools.writing.rewriter import _apply_deterministic_fixes
+
         body, _ = _apply_deterministic_fixes(body)
     except ImportError:
         pass
@@ -1089,6 +1195,7 @@ def enrich_post_with_capabilities(post_id: str) -> dict:
     init_db()
 
     from tools.pulse.db import get_row
+
     post = get_row("posts", post_id)
     if not post:
         return {"status": "error", "error": f"Post not found: {post_id}"}
@@ -1102,8 +1209,9 @@ def enrich_post_with_capabilities(post_id: str) -> dict:
 
     # Match capabilities
     from tools.pulse.engine.capability_scanner import match_capabilities, format_capability_context
+
     keywords = (title + " " + topic).split()
-    keywords = [kw.strip(",:;.!?()\"") for kw in keywords if len(kw) > 2]
+    keywords = [kw.strip(',:;.!?()"') for kw in keywords if len(kw) > 2]
     matched = match_capabilities(keywords, top_n=5)
 
     if not matched:
@@ -1111,8 +1219,7 @@ def enrich_post_with_capabilities(post_id: str) -> dict:
 
     capability_context = format_capability_context(matched)
     caps_ref = [
-        {"slug": c["slug"], "name": c["name"], "domain": c["domain"], "score": c.get("match_score", 0)}
-        for c in matched
+        {"slug": c["slug"], "name": c["name"], "domain": c["domain"], "score": c.get("match_score", 0)} for c in matched
     ]
 
     # Store capabilities_referenced
@@ -1123,11 +1230,13 @@ def enrich_post_with_capabilities(post_id: str) -> dict:
         )
 
     # Build capability-enrichment findings (synthetic finding to trigger rewrite)
-    findings = [{
-        "category": "capability_enrichment",
-        "message": "Article should reference ICDEV™ capabilities naturally",
-        "suggestion": "Weave relevant ICDEV™ capability descriptions into the narrative. Do NOT include CLI commands, internal tool paths, or references to Pulse, SAM.gov, or any backend tooling names.",
-    }]
+    findings = [
+        {
+            "category": "capability_enrichment",
+            "message": "Article should reference ICDEV™ capabilities naturally",
+            "suggestion": "Weave relevant ICDEV™ capability descriptions into the narrative. Do NOT include CLI commands, internal tool paths, or references to Pulse, SAM.gov, or any backend tooling names.",
+        }
+    ]
 
     # Rewrite with capability context
     result = rewrite_article_via_llm(body, findings, capability_context)
@@ -1176,12 +1285,12 @@ def run_pipeline_from_draft(
     capabilities_referenced = []
     try:
         from tools.pulse.engine.capability_scanner import match_capabilities
+
         cap_keywords = [kw for kw in topic.split() if len(kw) > 2]
         matched_caps = match_capabilities(cap_keywords, top_n=5)
         if matched_caps:
             capabilities_referenced = [
-                {"slug": c["slug"], "name": c["name"], "domain": c["domain"],
-                 "score": c.get("match_score", 0)}
+                {"slug": c["slug"], "name": c["name"], "domain": c["domain"], "score": c.get("match_score", 0)}
                 for c in matched_caps
             ]
             logger.info("Matched %d capabilities for draft pipeline", len(matched_caps))
@@ -1205,10 +1314,7 @@ def run_scheduled():
 
     init_db()
     logger.info("Starting ICDEV™ Pulse scheduler (%s)...", SCHEDULE_INTERVAL)
-    logger.info(
-        "NOTE: Scheduled mode runs research + cluster only. "
-        "Claude Code must write the article."
-    )
+    logger.info("NOTE: Scheduled mode runs research + cluster only. Claude Code must write the article.")
 
     if SCHEDULE_INTERVAL == "daily":
         schedule.every().day.at("06:00").do(research_phase)

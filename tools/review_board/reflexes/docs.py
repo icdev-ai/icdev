@@ -35,23 +35,25 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             for doc_file in docs_dir.glob("*.md"):
                 age_days = (now - doc_file.stat().st_mtime) / 86400
                 if age_days > max_age_days:
-                    stale_docs.append({
-                        "file": doc_file.name,
-                        "age_days": round(age_days),
-                    })
+                    stale_docs.append(
+                        {
+                            "file": doc_file.name,
+                            "age_days": round(age_days),
+                        }
+                    )
 
         if stale_docs:
             stale_docs.sort(key=lambda x: x["age_days"], reverse=True)
-            findings.append({
-                "severity": "low",
-                "category": "stale_docs",
-                "title": f"{len(stale_docs)} feature docs older than {max_age_days} days",
-                "description": "; ".join(
-                    f"{d['file']} ({d['age_days']}d)" for d in stale_docs[:5]
-                ),
-                "confidence": 0.7,
-                "auto_fixable": False,
-            })
+            findings.append(
+                {
+                    "severity": "low",
+                    "category": "stale_docs",
+                    "title": f"{len(stale_docs)} feature docs older than {max_age_days} days",
+                    "description": "; ".join(f"{d['file']} ({d['age_days']}d)" for d in stale_docs[:5]),
+                    "confidence": 0.7,
+                    "auto_fixable": False,
+                }
+            )
         checks_completed += 1
     except Exception:
         checks_completed += 1
@@ -66,7 +68,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         if manifest_path.exists():
             content = manifest_path.read_text(encoding="utf-8")
             # Extract tool references from manifest
-            for match in re.finditer(r'`tools/([^`]+\.py)`', content):
+            for match in re.finditer(r"`tools/([^`]+\.py)`", content):
                 documented_tools.add(match.group(1))
 
         # Find all Python scripts in tools/
@@ -80,15 +82,17 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
 
         undocumented = actual_tools - documented_tools
         if len(undocumented) > max_undocumented:
-            findings.append({
-                "severity": "low",
-                "category": "undocumented_tools",
-                "title": f"{len(undocumented)} tools not in manifest.md",
-                "description": "Examples: " + ", ".join(sorted(undocumented)[:10]),
-                "recommendation": "Add entries to tools/manifest.md",
-                "confidence": 0.6,
-                "auto_fixable": False,
-            })
+            findings.append(
+                {
+                    "severity": "low",
+                    "category": "undocumented_tools",
+                    "title": f"{len(undocumented)} tools not in manifest.md",
+                    "description": "Examples: " + ", ".join(sorted(undocumented)[:10]),
+                    "recommendation": "Add entries to tools/manifest.md",
+                    "confidence": 0.6,
+                    "auto_fixable": False,
+                }
+            )
         checks_completed += 1
     except Exception:
         checks_completed += 1
@@ -103,32 +107,36 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
 
             # Check for broken internal references
             broken_refs = []
-            for match in re.finditer(r'`(tools/[^`]+\.py)`', content):
+            for match in re.finditer(r"`(tools/[^`]+\.py)`", content):
                 ref_path = BASE_DIR / match.group(1)
                 if not ref_path.exists():
                     broken_refs.append(match.group(1))
 
             if broken_refs:
-                findings.append({
-                    "severity": "medium",
-                    "category": "broken_refs",
-                    "title": f"{len(broken_refs)} broken tool references in CLAUDE.md",
-                    "description": "; ".join(broken_refs[:10]),
-                    "recommendation": "Update or remove stale references",
-                    "confidence": 0.9,
-                    "auto_fixable": False,
-                })
+                findings.append(
+                    {
+                        "severity": "medium",
+                        "category": "broken_refs",
+                        "title": f"{len(broken_refs)} broken tool references in CLAUDE.md",
+                        "description": "; ".join(broken_refs[:10]),
+                        "recommendation": "Update or remove stale references",
+                        "confidence": 0.9,
+                        "auto_fixable": False,
+                    }
+                )
 
             # CLAUDE.md size warning
             if line_count > 5000:
-                findings.append({
-                    "severity": "info",
-                    "category": "claude_md_size",
-                    "title": f"CLAUDE.md is {line_count} lines ({word_count} words)",
-                    "description": "Very large CLAUDE.md may impact LLM context efficiency",
-                    "confidence": 0.5,
-                    "auto_fixable": False,
-                })
+                findings.append(
+                    {
+                        "severity": "info",
+                        "category": "claude_md_size",
+                        "title": f"CLAUDE.md is {line_count} lines ({word_count} words)",
+                        "description": "Very large CLAUDE.md may impact LLM context efficiency",
+                        "confidence": 0.5,
+                        "auto_fixable": False,
+                    }
+                )
         checks_completed += 1
     except Exception:
         checks_completed += 1
@@ -152,14 +160,16 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                         missing.append(i)
 
                 if missing:
-                    findings.append({
-                        "severity": "low",
-                        "category": "missing_phase_docs",
-                        "title": f"{len(missing)} phase docs missing in sequence",
-                        "description": f"Missing phases: {missing[:20]}",
-                        "confidence": 0.6,
-                        "auto_fixable": False,
-                    })
+                    findings.append(
+                        {
+                            "severity": "low",
+                            "category": "missing_phase_docs",
+                            "title": f"{len(missing)} phase docs missing in sequence",
+                            "description": f"Missing phases: {missing[:20]}",
+                            "confidence": 0.6,
+                            "auto_fixable": False,
+                        }
+                    )
         checks_completed += 1
     except Exception:
         checks_completed += 1

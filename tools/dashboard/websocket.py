@@ -56,9 +56,7 @@ def init_socketio(app):
         return _socketio
 
     except ImportError:
-        app.logger.info(
-            "flask-socketio not installed — WebSocket disabled, using HTTP polling"
-        )
+        app.logger.info("flask-socketio not installed — WebSocket disabled, using HTTP polling")
         return None
 
 

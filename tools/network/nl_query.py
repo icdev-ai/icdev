@@ -14,6 +14,7 @@ Architecture:
   4. LLMQueryEngine        — Ollama fallback for open-ended questions
   5. Public function       — answer_query(topology_id, question, conn) → dict
 """
+
 from __future__ import annotations
 
 import json
@@ -24,6 +25,7 @@ from typing import Any
 
 try:
     import networkx as nx
+
     _HAS_NETWORKX = True
 except ImportError:
     nx = None
@@ -31,6 +33,7 @@ except ImportError:
 
 try:
     import requests
+
     _HAS_REQUESTS = True
 except ImportError:
     requests = None
@@ -42,8 +45,7 @@ logger = logging.getLogger(__name__)
 # Configuration
 # ---------------------------------------------------------------------------
 _OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
-_OLLAMA_MODEL = os.environ.get("OLLAMA_NL_QUERY_MODEL",
-                               os.environ.get("OLLAMA_TOPO_MODEL", "qwen3.5:latest"))
+_OLLAMA_MODEL = os.environ.get("OLLAMA_NL_QUERY_MODEL", os.environ.get("OLLAMA_TOPO_MODEL", "qwen3.5:latest"))
 _LLM_TIMEOUT = int(os.environ.get("OLLAMA_NL_QUERY_TIMEOUT", "60"))
 _MAX_CTX_NODES = int(os.environ.get("NL_QUERY_MAX_NODES", "200"))
 
@@ -52,16 +54,17 @@ _MAX_CTX_NODES = int(os.environ.get("NL_QUERY_MAX_NODES", "200"))
 # 1. Topology Graph Adapter
 # ---------------------------------------------------------------------------
 
+
 class TopologyGraphAdapter:
     """Converts a JointJS graph_json blob into a NetworkX undirected graph
     plus convenient look-up structures."""
 
     def __init__(self, graph_json: dict) -> None:
         self.G = nx.Graph()
-        self._nodes: dict[str, dict] = {}   # id → attrs
+        self._nodes: dict[str, dict] = {}  # id → attrs
         self._edges: list[dict] = []
         self._label_index: dict[str, list[str]] = {}  # lower(label) → [ids]
-        self._type_index: dict[str, list[str]] = {}   # type → [ids]
+        self._type_index: dict[str, list[str]] = {}  # type → [ids]
         self._parse(graph_json)
 
     # -- Parsing ---------------------------------------------------------
@@ -81,8 +84,7 @@ class TopologyGraphAdapter:
                 continue
 
             label = self._extract_label(cell)
-            dev_type = cell.get("deviceType") or cell.get("attrs", {}).get(
-                "deviceType", "") or kind
+            dev_type = cell.get("deviceType") or cell.get("attrs", {}).get("deviceType", "") or kind
 
             attrs = {
                 "id": cell_id,
@@ -107,11 +109,9 @@ class TopologyGraphAdapter:
                 continue
             if src not in self._nodes or tgt not in self._nodes:
                 continue
-            proto = (cell.get("attrs") or {}).get("line", {}).get(
-                "strokeDasharray", "") or cell.get("protocol", "")
+            proto = (cell.get("attrs") or {}).get("line", {}).get("strokeDasharray", "") or cell.get("protocol", "")
             bandwidth = cell.get("bandwidth", "")
-            edge_attrs = {"protocol": proto, "bandwidth": bandwidth,
-                          "raw": cell}
+            edge_attrs = {"protocol": proto, "bandwidth": bandwidth, "raw": cell}
             self.G.add_edge(src, tgt, **edge_attrs)
             self._edges.append({"src": src, "tgt": tgt, **edge_attrs})
 
@@ -140,8 +140,7 @@ class TopologyGraphAdapter:
         if name_lower in self._label_index:
             return self._label_index[name_lower]
         # partial
-        return [nid for lbl, ids in self._label_index.items()
-                if name_lower in lbl for nid in ids]
+        return [nid for lbl, ids in self._label_index.items() if name_lower in lbl for nid in ids]
 
     def nodes_by_type(self, type_fragment: str) -> list[str]:
         """Return node IDs whose device type contains *type_fragment*."""
@@ -178,8 +177,7 @@ class TopologyGraphAdapter:
             proto = e.get("protocol", "")
             bw = e.get("bandwidth", "")
             extra = " ".join(filter(None, [proto, bw]))
-            lines.append(f"  LINK {src_lbl} <-> {tgt_lbl}" +
-                         (f" [{extra}]" if extra else ""))
+            lines.append(f"  LINK {src_lbl} <-> {tgt_lbl}" + (f" [{extra}]" if extra else ""))
         return "\n".join(lines)
 
     @property
@@ -249,8 +247,8 @@ def classify_query(question: str) -> str:
 # 3. Deterministic Query Engines
 # ---------------------------------------------------------------------------
 
-def _extract_device_names_from_question(question: str,
-                                        graph: TopologyGraphAdapter) -> list[str]:
+
+def _extract_device_names_from_question(question: str, graph: TopologyGraphAdapter) -> list[str]:
     """Heuristic: try to match topology labels mentioned in the question."""
     found: list[str] = []
     q_lower = question.lower()
@@ -272,8 +270,10 @@ def _path_query(question: str, graph: TopologyGraphAdapter) -> dict[str, Any]:
     nodes = _extract_device_names_from_question(question, graph)
     if len(nodes) < 2:
         return {
-            "answer": ("Could not identify two distinct devices in your question. "
-                       "Please use labels that appear in the topology."),
+            "answer": (
+                "Could not identify two distinct devices in your question. "
+                "Please use labels that appear in the topology."
+            ),
             "data": [],
             "engine": "path",
         }
@@ -290,8 +290,9 @@ def _path_query(question: str, graph: TopologyGraphAdapter) -> dict[str, Any]:
 
     if not paths:
         return {
-            "answer": (f"No path found between **{src_lbl}** and **{tgt_lbl}**. "
-                       "They may be in disconnected network segments."),
+            "answer": (
+                f"No path found between **{src_lbl}** and **{tgt_lbl}**. They may be in disconnected network segments."
+            ),
             "data": [],
             "engine": "path",
         }
@@ -303,15 +304,12 @@ def _path_query(question: str, graph: TopologyGraphAdapter) -> dict[str, Any]:
     path_descriptions = []
     for i, path in enumerate(paths[:5], 1):
         hops = [graph.label_of(n) for n in path]
-        path_descriptions.append(f"Path {i} ({len(path)-1} hops): " +
-                                  " → ".join(hops))
+        path_descriptions.append(f"Path {i} ({len(path) - 1} hops): " + " → ".join(hops))
 
     answer_parts = [
-        f"Found **{len(paths)}** path(s) between **{src_lbl}** and "
-        f"**{tgt_lbl}**.",
+        f"Found **{len(paths)}** path(s) between **{src_lbl}** and **{tgt_lbl}**.",
         "",
-        f"**Shortest path ({len(shortest)-1} hops):** " +
-        " → ".join(shortest_labels),
+        f"**Shortest path ({len(shortest) - 1} hops):** " + " → ".join(shortest_labels),
     ]
     if len(paths) > 1:
         answer_parts.append("")
@@ -337,8 +335,7 @@ def _failure_query(question: str, graph: TopologyGraphAdapter) -> dict[str, Any]
     nodes = _extract_device_names_from_question(question, graph)
     if not nodes:
         return {
-            "answer": ("Could not identify a device in your question. "
-                       "Please name a device from the topology."),
+            "answer": ("Could not identify a device in your question. Please name a device from the topology."),
             "data": {},
             "engine": "failure",
         }
@@ -361,8 +358,7 @@ def _failure_query(question: str, graph: TopologyGraphAdapter) -> dict[str, Any]
         isolated = []
     else:
         largest_cc = max(nx.connected_components(G_after), key=len)
-        isolated = [graph.label_of(n) for n in G_after.nodes()
-                    if n not in largest_cc]
+        isolated = [graph.label_of(n) for n in G_after.nodes() if n not in largest_cc]
 
     # Articulation points check
     is_articulation = failed_id in set(nx.articulation_points(graph.G))
@@ -386,9 +382,7 @@ def _failure_query(question: str, graph: TopologyGraphAdapter) -> dict[str, Any]
     ]
 
     if cloud_ha_note:
-        answer_parts.append(
-            f"ℹ **Cloud-managed HA:** {cloud_ha_note}"
-        )
+        answer_parts.append(f"ℹ **Cloud-managed HA:** {cloud_ha_note}")
         answer_parts.append("")
 
     if is_articulation:
@@ -398,8 +392,7 @@ def _failure_query(question: str, graph: TopologyGraphAdapter) -> dict[str, Any]
         )
         if cloud_ha_note:
             answer_parts.append(
-                "  → However, this is a cloud-managed service with "
-                "provider HA — actual risk is very low."
+                "  → However, this is a cloud-managed service with provider HA — actual risk is very low."
             )
     else:
         answer_parts.append(
@@ -451,15 +444,12 @@ def _neighbor_query(question: str, graph: TopologyGraphAdapter) -> dict[str, Any
     if not neighbors:
         answer = f"**{node_lbl}** has no connections in this topology."
     else:
-        answer = (f"**{node_lbl}** is directly connected to "
-                  f"**{len(neighbors)}** device(s):\n\n" +
-                  "\n".join(f"- {lbl} ({graph.type_of(n)})"
-                            for n, lbl in zip(neighbors, neighbor_labels)))
+        answer = f"**{node_lbl}** is directly connected to **{len(neighbors)}** device(s):\n\n" + "\n".join(
+            f"- {lbl} ({graph.type_of(n)})" for n, lbl in zip(neighbors, neighbor_labels)
+        )
     return {
         "answer": answer,
-        "data": {"device": node_lbl,
-                 "neighbors": neighbor_labels,
-                 "count": len(neighbors)},
+        "data": {"device": node_lbl, "neighbors": neighbor_labels, "count": len(neighbors)},
         "engine": "neighbor",
     }
 
@@ -521,15 +511,13 @@ def _inventory_query(question: str, graph: TopologyGraphAdapter) -> dict[str, An
         found_ids = graph.nodes_by_type(matched_type)
         labels = [graph.label_of(n) for n in found_ids]
         answer_parts = [
-            f"Found **{len(found_ids)}** {matched_type.replace('.', ' ')} "
-            f"device(s) in this topology:",
+            f"Found **{len(found_ids)}** {matched_type.replace('.', ' ')} device(s) in this topology:",
         ]
         if labels:
             answer_parts.append("\n".join(f"- {lbl}" for lbl in labels[:50]))
         return {
             "answer": "\n".join(answer_parts),
-            "data": {"type": matched_type, "count": len(found_ids),
-                     "devices": labels},
+            "data": {"type": matched_type, "count": len(found_ids), "devices": labels},
             "engine": "inventory",
         }
 
@@ -548,22 +536,22 @@ def _inventory_query(question: str, graph: TopologyGraphAdapter) -> dict[str, An
     )
     return {
         "answer": answer,
-        "data": {"total_nodes": graph.node_count,
-                 "total_edges": graph.edge_count,
-                 "by_type": dict(top)},
+        "data": {"total_nodes": graph.node_count, "total_edges": graph.edge_count, "by_type": dict(top)},
         "engine": "inventory",
     }
 
 
-def _compliance_query(question: str, graph: TopologyGraphAdapter,
-                      conn: Any, topology_id: str | None = None) -> dict[str, Any]:
+def _compliance_query(
+    question: str, graph: TopologyGraphAdapter, conn: Any, topology_id: str | None = None
+) -> dict[str, Any]:
     """Pull compliance findings from the DB and answer compliance questions."""
     q = question.lower()
 
     if not topology_id:
         return {
-            "answer": ("Compliance data is available only when querying a "
-                       "specific topology. Please open a topology and retry."),
+            "answer": (
+                "Compliance data is available only when querying a specific topology. Please open a topology and retry."
+            ),
             "data": {},
             "engine": "compliance",
         }
@@ -580,8 +568,7 @@ def _compliance_query(question: str, graph: TopologyGraphAdapter,
 
     if not rows:
         return {
-            "answer": "No compliance findings recorded for this topology. "
-                      "Run a compliance audit first.",
+            "answer": "No compliance findings recorded for this topology. Run a compliance audit first.",
             "data": {},
             "engine": "compliance",
         }
@@ -596,12 +583,13 @@ def _compliance_query(question: str, graph: TopologyGraphAdapter,
         sev_filter = "CAT3"
 
     displayed = [r for r in rows if (not sev_filter or r[0] == sev_filter)]
-    counts = {s: sum(1 for r in rows if r[0] == s)
-              for s in ("CAT1", "CAT2", "CAT3")}
+    counts = {s: sum(1 for r in rows if r[0] == s) for s in ("CAT1", "CAT2", "CAT3")}
 
-    lines = [f"**Compliance Findings** (CAT1: {counts.get('CAT1',0)}, "
-             f"CAT2: {counts.get('CAT2',0)}, "
-             f"CAT3: {counts.get('CAT3',0)})\n"]
+    lines = [
+        f"**Compliance Findings** (CAT1: {counts.get('CAT1', 0)}, "
+        f"CAT2: {counts.get('CAT2', 0)}, "
+        f"CAT3: {counts.get('CAT3', 0)})\n"
+    ]
     if sev_filter:
         lines.append(f"Showing only **{sev_filter}** findings:\n")
     for row in displayed[:20]:
@@ -610,9 +598,7 @@ def _compliance_query(question: str, graph: TopologyGraphAdapter,
 
     return {
         "answer": "\n".join(lines),
-        "data": {"finding_counts": counts,
-                 "total": len(rows),
-                 "filtered": len(displayed)},
+        "data": {"finding_counts": counts, "total": len(rows), "filtered": len(displayed)},
         "engine": "compliance",
     }
 
@@ -629,15 +615,10 @@ If you cannot answer from the topology data, say so clearly.
 Do NOT invent devices or links that are not listed."""
 
 
-def _llm_query(question: str, graph: TopologyGraphAdapter,
-               topology_name: str = "") -> dict[str, Any]:
+def _llm_query(question: str, graph: TopologyGraphAdapter, topology_name: str = "") -> dict[str, Any]:
     """Use Ollama to answer open-ended questions about the topology."""
     topo_text = graph.compact_text()
-    user_content = (
-        f"Topology: {topology_name or 'unnamed'}\n\n"
-        f"{topo_text}\n\n"
-        f"Question: {question}"
-    )
+    user_content = f"Topology: {topology_name or 'unnamed'}\n\n{topo_text}\n\nQuestion: {question}"
     payload = {
         "model": _OLLAMA_MODEL,
         "messages": [
@@ -653,9 +634,9 @@ def _llm_query(question: str, graph: TopologyGraphAdapter,
     }
     if not _HAS_REQUESTS:
         return {
-            "answer": "LLM query requires the 'requests' package. "
-                      "Install it with: pip install requests",
-            "data": {}, "engine": "llm_unavailable",
+            "answer": "LLM query requires the 'requests' package. Install it with: pip install requests",
+            "data": {},
+            "engine": "llm_unavailable",
         }
     try:
         resp = requests.post(
@@ -667,10 +648,8 @@ def _llm_query(question: str, graph: TopologyGraphAdapter,
         data = resp.json()
         answer = (data.get("message") or {}).get("content", "").strip()
         # Strip <think> blocks (qwen3.5 reasoning)
-        answer = re.sub(r"<think>.*?</think>", "", answer,
-                        flags=re.DOTALL).strip()
-        return {"answer": answer, "data": {}, "engine": "llm",
-                "model": _OLLAMA_MODEL}
+        answer = re.sub(r"<think>.*?</think>", "", answer, flags=re.DOTALL).strip()
+        return {"answer": answer, "data": {}, "engine": "llm", "model": _OLLAMA_MODEL}
     except requests.exceptions.ConnectionError:
         return {
             "answer": (
@@ -694,8 +673,8 @@ def _llm_query(question: str, graph: TopologyGraphAdapter,
 # 4b. Cloud-Aware Query Engines
 # ---------------------------------------------------------------------------
 
-def _cloud_properties_query(question: str,
-                            graph: TopologyGraphAdapter) -> dict[str, Any]:
+
+def _cloud_properties_query(question: str, graph: TopologyGraphAdapter) -> dict[str, Any]:
     """Answer questions about cloud properties (BFD, resiliency, flow logs)."""
     q = question.lower()
     answer_parts = ["**Cloud Properties Analysis**", ""]
@@ -704,8 +683,7 @@ def _cloud_properties_query(question: str,
     if "bfd" in q:
         bfd_nodes = []
         no_bfd_nodes = []
-        dx_types = {"aws-dx", "aws-dx-gw", "az-er", "az-er-global",
-                    "gcp-ic", "oci-fc", "ibm-dl"}
+        dx_types = {"aws-dx", "aws-dx-gw", "az-er", "az-er-global", "gcp-ic", "oci-fc", "ibm-dl"}
         for nid, data in graph.G.nodes(data=True):
             ntype = data.get("type", "")
             if ntype in dx_types:
@@ -716,18 +694,19 @@ def _cloud_properties_query(question: str,
                 else:
                     no_bfd_nodes.append(graph.label_of(nid))
         if bfd_nodes:
-            answer_parts.append(
-                f"**BFD enabled** on: {', '.join(bfd_nodes)}")
+            answer_parts.append(f"**BFD enabled** on: {', '.join(bfd_nodes)}")
         if no_bfd_nodes:
-            answer_parts.append(
-                f"**BFD NOT enabled** on: {', '.join(no_bfd_nodes)} "
-                "(failover ~90s vs <1s with BFD)")
+            answer_parts.append(f"**BFD NOT enabled** on: {', '.join(no_bfd_nodes)} (failover ~90s vs <1s with BFD)")
         if not bfd_nodes and not no_bfd_nodes:
-            answer_parts.append(
-                "No dedicated interconnect (DX/ER/IC/FC) nodes found.")
-        return {"answer": "\n".join(answer_parts), "data": {
-            "bfd_enabled": bfd_nodes, "bfd_missing": no_bfd_nodes,
-        }, "engine": "cloud_properties"}
+            answer_parts.append("No dedicated interconnect (DX/ER/IC/FC) nodes found.")
+        return {
+            "answer": "\n".join(answer_parts),
+            "data": {
+                "bfd_enabled": bfd_nodes,
+                "bfd_missing": no_bfd_nodes,
+            },
+            "engine": "cloud_properties",
+        }
 
     # Flow logs
     if "flow" in q and "log" in q:
@@ -743,15 +722,17 @@ def _cloud_properties_query(question: str,
                     with_logs.append(graph.label_of(nid))
                 else:
                     without_logs.append(graph.label_of(nid))
-        answer_parts.append(
-            f"Flow logs enabled: {len(with_logs)}, "
-            f"missing: {len(without_logs)}")
+        answer_parts.append(f"Flow logs enabled: {len(with_logs)}, missing: {len(without_logs)}")
         if without_logs:
-            answer_parts.append(
-                f"Missing on: {', '.join(without_logs)}")
-        return {"answer": "\n".join(answer_parts), "data": {
-            "with_logs": with_logs, "without_logs": without_logs,
-        }, "engine": "cloud_properties"}
+            answer_parts.append(f"Missing on: {', '.join(without_logs)}")
+        return {
+            "answer": "\n".join(answer_parts),
+            "data": {
+                "with_logs": with_logs,
+                "without_logs": without_logs,
+            },
+            "engine": "cloud_properties",
+        }
 
     # Resiliency tier
     if "resilien" in q or "tier" in q or "sla" in q:
@@ -759,35 +740,26 @@ def _cloud_properties_query(question: str,
             from tools.network.cloud_architecture import (
                 score_hybrid_resiliency,
             )
-            raw_nodes = [graph.G.nodes[n].get("raw", {})
-                         for n in graph.G.nodes()]
+
+            raw_nodes = [graph.G.nodes[n].get("raw", {}) for n in graph.G.nodes()]
             raw_edges = []
             for u, v, data in graph.G.edges(data=True):
                 raw_edges.append(data.get("raw", {"source": u, "target": v}))
             res = score_hybrid_resiliency(raw_nodes, raw_edges)
+            answer_parts.append(f"**Resiliency Tier:** {res['tier_label']} (SLA: {res['sla']})")
+            answer_parts.append(f"DX connections: {res['dedicated_connections']}, locations: {res['unique_locations']}")
             answer_parts.append(
-                f"**Resiliency Tier:** {res['tier_label']} "
-                f"(SLA: {res['sla']})")
-            answer_parts.append(
-                f"DX connections: {res['dedicated_connections']}, "
-                f"locations: {res['unique_locations']}")
-            answer_parts.append(
-                f"VPN backup: {'Yes' if res['has_vpn_backup'] else 'No'}, "
-                f"BFD: {'Yes' if res['bfd_enabled'] else 'No'}")
-            answer_parts.append(
-                f"Est. failover: {res['estimated_failover_sec']}s")
+                f"VPN backup: {'Yes' if res['has_vpn_backup'] else 'No'}, BFD: {'Yes' if res['bfd_enabled'] else 'No'}"
+            )
+            answer_parts.append(f"Est. failover: {res['estimated_failover_sec']}s")
             for r in res.get("recommendations", []):
                 answer_parts.append(f"  - {r}")
         except Exception:
-            answer_parts.append(
-                "Could not compute resiliency tier.")
-        return {"answer": "\n".join(answer_parts), "data": {},
-                "engine": "cloud_properties"}
+            answer_parts.append("Could not compute resiliency tier.")
+        return {"answer": "\n".join(answer_parts), "data": {}, "engine": "cloud_properties"}
 
-    answer_parts.append("Supported queries: BFD status, flow logs, "
-                        "resiliency tier, SLA")
-    return {"answer": "\n".join(answer_parts), "data": {},
-            "engine": "cloud_properties"}
+    answer_parts.append("Supported queries: BFD status, flow logs, resiliency tier, SLA")
+    return {"answer": "\n".join(answer_parts), "data": {}, "engine": "cloud_properties"}
 
 
 def _csp_equivalence_query(question: str) -> dict[str, Any]:
@@ -795,8 +767,7 @@ def _csp_equivalence_query(question: str) -> dict[str, Any]:
     try:
         from tools.network.constants import CSP_EQUIVALENCE
     except ImportError:
-        return {"answer": "CSP equivalence data not available.",
-                "data": {}, "engine": "csp_equivalence"}
+        return {"answer": "CSP equivalence data not available.", "data": {}, "engine": "csp_equivalence"}
 
     q = question.lower()
     # Try to match a service name
@@ -835,12 +806,12 @@ def _csp_equivalence_query(question: str) -> dict[str, Any]:
 
     if not matched_key:
         # List all available services
-        services = [f"- {k}: {v.get('description', '')}"
-                    for k, v in CSP_EQUIVALENCE.items()]
-        return {"answer": ("**Available CSP equivalence mappings:**\n"
-                           + "\n".join(services)),
-                "data": {"services": list(CSP_EQUIVALENCE.keys())},
-                "engine": "csp_equivalence"}
+        services = [f"- {k}: {v.get('description', '')}" for k, v in CSP_EQUIVALENCE.items()]
+        return {
+            "answer": ("**Available CSP equivalence mappings:**\n" + "\n".join(services)),
+            "data": {"services": list(CSP_EQUIVALENCE.keys())},
+            "engine": "csp_equivalence",
+        }
 
     mapping = CSP_EQUIVALENCE.get(matched_key, {})
     parts = [f"**{mapping.get('description', matched_key)}**", ""]
@@ -854,9 +825,11 @@ def _csp_equivalence_query(question: str) -> dict[str, Any]:
             line += f" — {note}"
         parts.append(line)
 
-    return {"answer": "\n".join(parts),
-            "data": {"service_key": matched_key, "mapping": mapping},
-            "engine": "csp_equivalence"}
+    return {
+        "answer": "\n".join(parts),
+        "data": {"service_key": matched_key, "mapping": mapping},
+        "engine": "csp_equivalence",
+    }
 
 
 def _cost_query(question: str) -> dict[str, Any]:
@@ -864,11 +837,11 @@ def _cost_query(question: str) -> dict[str, Any]:
     try:
         from tools.network.cloud_architecture import compare_egress_costs
     except ImportError:
-        return {"answer": "Cost comparison not available.",
-                "data": {}, "engine": "cost"}
+        return {"answer": "Cost comparison not available.", "data": {}, "engine": "cost"}
 
     # Extract GB amount if mentioned
     import re as _re
+
     gb_match = _re.search(r"(\d+)\s*(gb|tb|terabyte|gigabyte)", question.lower())
     gb = 1000.0
     if gb_match:
@@ -884,19 +857,17 @@ def _cost_query(question: str) -> dict[str, Any]:
         parts.append(
             f"- **{r['source_csp'].upper()}:** "
             f"${r['monthly_cost_usd']:.2f}/mo "
-            f"(${r['rate_per_gb']}/GB)"
-            + (f" — {r['note']}" if r.get("note") else "")
+            f"(${r['rate_per_gb']}/GB)" + (f" — {r['note']}" if r.get("note") else "")
         )
-    return {"answer": "\n".join(parts), "data": {"results": results},
-            "engine": "cost"}
+    return {"answer": "\n".join(parts), "data": {"results": results}, "engine": "cost"}
 
 
 # ---------------------------------------------------------------------------
 # 5. Public API
 # ---------------------------------------------------------------------------
 
-def answer_query(topology_id: str, question: str,
-                 conn: Any) -> dict[str, Any]:
+
+def answer_query(topology_id: str, question: str, conn: Any) -> dict[str, Any]:
     """Answer a natural language question about a topology.
 
     Args:
@@ -913,13 +884,16 @@ def answer_query(topology_id: str, question: str,
 
     question = (question or "").strip()
     if not question:
-        return {"answer": "Please enter a question.", "data": {},
-                "engine": "none", "intent": "none", "query_id": ""}
+        return {"answer": "Please enter a question.", "data": {}, "engine": "none", "intent": "none", "query_id": ""}
 
     if not _HAS_NETWORKX:
-        return {"answer": "Natural language query requires the 'networkx' package. "
-                "Install it with: pip install networkx",
-                "data": {}, "engine": "none", "intent": "none", "query_id": ""}
+        return {
+            "answer": "Natural language query requires the 'networkx' package. Install it with: pip install networkx",
+            "data": {},
+            "engine": "none",
+            "intent": "none",
+            "query_id": "",
+        }
 
     # Load topology from DB
     row = conn.execute(
@@ -927,15 +901,19 @@ def answer_query(topology_id: str, question: str,
         (topology_id,),
     ).fetchone()
     if not row:
-        return {"answer": "Topology not found.", "data": {},
-                "engine": "none", "intent": "none", "query_id": ""}
+        return {"answer": "Topology not found.", "data": {}, "engine": "none", "intent": "none", "query_id": ""}
 
     topo_name = row[0] or topology_id
     try:
         graph_json = json.loads(row[1]) if isinstance(row[1], str) else row[1]
     except (json.JSONDecodeError, TypeError):
-        return {"answer": "Topology data is corrupt or empty.", "data": {},
-                "engine": "none", "intent": "none", "query_id": ""}
+        return {
+            "answer": "Topology data is corrupt or empty.",
+            "data": {},
+            "engine": "none",
+            "intent": "none",
+            "query_id": "",
+        }
 
     graph = TopologyGraphAdapter(graph_json)
 
@@ -980,9 +958,7 @@ def answer_query(topology_id: str, question: str,
     result["query_id"] = query_id
     try:
         conn.execute(
-            "INSERT INTO nc_query_log "
-            "(id, topology_id, question, intent, answer, engine, ts) "
-            "VALUES (?,?,?,?,?,?,?)",
+            "INSERT INTO nc_query_log (id, topology_id, question, intent, answer, engine, ts) VALUES (?,?,?,?,?,?,?)",
             (
                 query_id,
                 topology_id,

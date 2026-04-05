@@ -42,12 +42,18 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from tools.db.storage import get_connection  # noqa: E402
+
 _DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(_ROOT / "data" / "icdev.db")))
 
 # Valid team member roles
 MEMBER_ROLES = (
-    "prime", "sub_tier1", "sub_tier2", "sub_tier3",
-    "jv_partner", "teaming_partner", "consultant",
+    "prime",
+    "sub_tier1",
+    "sub_tier2",
+    "sub_tier3",
+    "jv_partner",
+    "teaming_partner",
+    "consultant",
 )
 
 # Valid compliance statuses
@@ -87,6 +93,7 @@ MEMBER_SECTION_TEMPLATE = """    {role_label}: {name}
 
 
 # ── Helpers ──────────────────────────────────────────────────────────
+
 
 def _get_db():
     conn = get_connection()
@@ -172,9 +179,19 @@ def _determine_status(member):
 
 # ── Team Member CRUD ─────────────────────────────────────────────────
 
-def add_team_member(opportunity_id, name, role, required_cmmc_level,
-                    cage=None, actual_cmmc_level=None, sprs_score=None,
-                    assessment_type=None, poam_status="none", cert_expiry=None):
+
+def add_team_member(
+    opportunity_id,
+    name,
+    role,
+    required_cmmc_level,
+    cage=None,
+    actual_cmmc_level=None,
+    sprs_score=None,
+    assessment_type=None,
+    poam_status="none",
+    cert_expiry=None,
+):
     """Add a team member with CMMC compliance data.
 
     Args:
@@ -253,9 +270,11 @@ def add_team_member(opportunity_id, name, role, required_cmmc_level,
                 now,
             ),
         )
-        _audit(conn, "add_team_member",
-               f"Added {name} ({role}) to {opportunity_id}: required L{required_cmmc_level}, "
-               f"status={effective_status}")
+        _audit(
+            conn,
+            "add_team_member",
+            f"Added {name} ({role}) to {opportunity_id}: required L{required_cmmc_level}, status={effective_status}",
+        )
         conn.commit()
     except Exception as exc:
         conn.close()
@@ -288,8 +307,14 @@ def update_member(member_id, **kwargs):
         return {"status": "error", "message": f"Member {member_id} not found"}
 
     updatable = [
-        "team_member_name", "role", "required_cmmc_level", "actual_cmmc_level",
-        "sprs_score", "assessment_type", "poam_status", "cert_expiry",
+        "team_member_name",
+        "role",
+        "required_cmmc_level",
+        "actual_cmmc_level",
+        "sprs_score",
+        "assessment_type",
+        "poam_status",
+        "cert_expiry",
         "cage_code",
     ]
     sets = []
@@ -315,10 +340,10 @@ def update_member(member_id, **kwargs):
     params.append(member_id)
 
     conn.execute(
-        f"UPDATE pg_cmmc_supply_chain SET {', '.join(sets)} WHERE id = ?", params  # nosec B608 -- table/column names are internal constants, not user input
+        f"UPDATE pg_cmmc_supply_chain SET {', '.join(sets)} WHERE id = ?",
+        params,  # nosec B608 -- table/column names are internal constants, not user input
     )
-    _audit(conn, "update_member",
-           f"Updated member {member_id}: {list(kwargs.keys())}, status={effective_status}")
+    _audit(conn, "update_member", f"Updated member {member_id}: {list(kwargs.keys())}, status={effective_status}")
     conn.commit()
     conn.close()
 
@@ -331,6 +356,7 @@ def update_member(member_id, **kwargs):
 
 
 # ── Validation & Compliance ──────────────────────────────────────────
+
 
 def validate_team(opportunity_id):
     """Validate all team members for CMMC compliance.
@@ -390,24 +416,29 @@ def validate_team(opportunity_id):
         if member.get("sprs_score") is not None and member["sprs_score"] < 110:
             issues.append(f"SPRS score {member['sprs_score']} (below maximum 110)")
 
-        results.append({
-            "member_id": member["id"],
-            "team_member_name": member["team_member_name"],
-            "role": member["role"],
-            "role_label": _role_label(member["role"]),
-            "required_level": member["required_cmmc_level"],
-            "actual_cmmc_level": member.get("actual_cmmc_level"),
-            "sprs_score": member.get("sprs_score"),
-            "assessment_type": member.get("assessment_type"),
-            "poam_status": member.get("poam_status", "none"),
-            "cert_expiry": member.get("cert_expiry"),
-            "compliance_status": effective_status,
-            "issues": issues,
-        })
+        results.append(
+            {
+                "member_id": member["id"],
+                "team_member_name": member["team_member_name"],
+                "role": member["role"],
+                "role_label": _role_label(member["role"]),
+                "required_level": member["required_cmmc_level"],
+                "actual_cmmc_level": member.get("actual_cmmc_level"),
+                "sprs_score": member.get("sprs_score"),
+                "assessment_type": member.get("assessment_type"),
+                "poam_status": member.get("poam_status", "none"),
+                "cert_expiry": member.get("cert_expiry"),
+                "compliance_status": effective_status,
+                "issues": issues,
+            }
+        )
 
-    _audit(conn, "validate_team",
-           f"Validated {len(members)} members for {opportunity_id}: "
-           f"{status_counts['compliant']} compliant, {status_counts['non_compliant']} non-compliant")
+    _audit(
+        conn,
+        "validate_team",
+        f"Validated {len(members)} members for {opportunity_id}: "
+        f"{status_counts['compliant']} compliant, {status_counts['non_compliant']} non-compliant",
+    )
     conn.commit()
     conn.close()
 
@@ -542,13 +573,15 @@ def get_supply_chain_status(opportunity_id):
         role = m["role"]
         if role not in members_by_role:
             members_by_role[role] = []
-        members_by_role[role].append({
-            "name": m["team_member_name"],
-            "level": m["actual_cmmc_level"],
-            "required": m["required_level"],
-            "status": m["compliance_status"],
-            "sprs": m.get("sprs_score"),
-        })
+        members_by_role[role].append(
+            {
+                "name": m["team_member_name"],
+                "level": m["actual_cmmc_level"],
+                "required": m["required_level"],
+                "status": m["compliance_status"],
+                "sprs": m.get("sprs_score"),
+            }
+        )
 
     return {
         "status": "ok",
@@ -586,9 +619,7 @@ def gate_evaluate(opportunity_id):
         blocking = []
     elif overall == "conditional":
         gate = "warn"
-        blocking = [
-            f"{summary.get('in_progress', 0)} team member(s) with open POA&M"
-        ]
+        blocking = [f"{summary.get('in_progress', 0)} team member(s) with open POA&M"]
     elif overall == "no_data":
         gate = "fail"
         blocking = ["No team members registered for CMMC validation"]
@@ -622,10 +653,9 @@ def gate_evaluate(opportunity_id):
 
 # ── CLI ──────────────────────────────────────────────────────────────
 
+
 def main():
-    parser = argparse.ArgumentParser(
-        description="ICDEV™ Proposal Genesis — CMMC Supply Chain Validator (§3.14)"
-    )
+    parser = argparse.ArgumentParser(description="ICDEV™ Proposal Genesis — CMMC Supply Chain Validator (§3.14)")
 
     # Actions
     group = parser.add_mutually_exclusive_group(required=True)
@@ -643,15 +673,12 @@ def main():
     # Member fields
     parser.add_argument("--name", help="Organization name")
     parser.add_argument("--role", choices=MEMBER_ROLES, help="Team role")
-    parser.add_argument("--required-level", type=int, choices=[1, 2, 3],
-                        help="Required CMMC level")
+    parser.add_argument("--required-level", type=int, choices=[1, 2, 3], help="Required CMMC level")
     parser.add_argument("--actual-level", type=int, help="Current actual CMMC level")
     parser.add_argument("--cage", help="CAGE code")
     parser.add_argument("--sprs-score", type=int, help="SPRS score (-203 to 110)")
-    parser.add_argument("--assessment-type", choices=ASSESSMENT_TYPES,
-                        help="Assessment type")
-    parser.add_argument("--poam-status", choices=POAM_STATUSES, default="none",
-                        help="POA&M status")
+    parser.add_argument("--assessment-type", choices=ASSESSMENT_TYPES, help="Assessment type")
+    parser.add_argument("--poam-status", choices=POAM_STATUSES, default="none", help="POA&M status")
     parser.add_argument("--cert-expiry", help="Certification expiry (ISO 8601)")
 
     # Output format
@@ -664,8 +691,7 @@ def main():
 
     if args.add_member:
         if not args.opportunity_id or not args.name or not args.role or not args.required_level:
-            print("Error: --opportunity-id, --name, --role, and --required-level required",
-                  file=sys.stderr)
+            print("Error: --opportunity-id, --name, --role, and --required-level required", file=sys.stderr)
             sys.exit(1)
         result = add_team_member(
             opportunity_id=args.opportunity_id,
@@ -747,8 +773,9 @@ def main():
                     "unknown": "[????]",
                     "expired": "[EXPD]",
                 }.get(m["compliance_status"], "[????]")
-                print(f"  {status_icon} {m['team_member_name']:30s} L{m.get('required_level','?')} "
-                      f"({m['role_label']})")
+                print(
+                    f"  {status_icon} {m['team_member_name']:30s} L{m.get('required_level', '?')} ({m['role_label']})"
+                )
                 for issue in m.get("issues", []):
                     print(f"         -> {issue}")
         if "gate" in result:
@@ -760,12 +787,14 @@ def main():
             print(f"\n{result['flow_down_text']}")
         if "summary" in result:
             s = result["summary"]
-            print(f"\n  Total: {s.get('total', 0)} | "
-                  f"Compliant: {s.get('compliant', 0)} | "
-                  f"Non-Compliant: {s.get('non_compliant', 0)} | "
-                  f"In Progress: {s.get('in_progress', 0)} | "
-                  f"Unknown: {s.get('unknown', 0)} | "
-                  f"Expired: {s.get('expired', 0)}")
+            print(
+                f"\n  Total: {s.get('total', 0)} | "
+                f"Compliant: {s.get('compliant', 0)} | "
+                f"Non-Compliant: {s.get('non_compliant', 0)} | "
+                f"In Progress: {s.get('in_progress', 0)} | "
+                f"Unknown: {s.get('unknown', 0)} | "
+                f"Expired: {s.get('expired', 0)}"
+            )
         print()
     else:
         print(json.dumps(result, indent=2, default=str))

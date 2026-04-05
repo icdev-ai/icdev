@@ -48,8 +48,7 @@ def _table_exists(conn, name):
     try:
         if getattr(conn, "_backend", "sqlite") == "postgresql":
             row = conn.execute(
-                "SELECT 1 FROM information_schema.tables "
-                "WHERE table_schema = 'public' AND table_name = ?",
+                "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = ?",
                 (name,),
             ).fetchone()
             return row is not None
@@ -117,9 +116,7 @@ def iac_stats():
 
         # -- STIG coverage --
         if _table_exists(conn, "stig_findings"):
-            row = conn.execute(
-                "SELECT COUNT(*) FROM stig_findings"
-            ).fetchone()
+            row = conn.execute("SELECT COUNT(*) FROM stig_findings").fetchone()
             total = row[0]
             hardened_row = conn.execute(
                 "SELECT COUNT(*) FROM stig_findings WHERE status = ?",
@@ -129,9 +126,7 @@ def iac_stats():
             stats["stig_coverage"] = {
                 "total_findings": total,
                 "hardened": hardened,
-                "hardening_pct": round(
-                    (hardened / total * 100) if total > 0 else 0.0, 1
-                ),
+                "hardening_pct": round((hardened / total * 100) if total > 0 else 0.0, 1),
             }
 
         return jsonify(stats)
@@ -184,21 +179,25 @@ def list_artifacts():
 
         artifacts = []
         for r in rows:
-            artifacts.append({
-                "id": r[0],
-                "plan_id": r[1],
-                "artifact_type": r[2],
-                "file_path": r[3],
-                "description": r[4],
-                "created_at": r[5],
-            })
+            artifacts.append(
+                {
+                    "id": r[0],
+                    "plan_id": r[1],
+                    "artifact_type": r[2],
+                    "file_path": r[3],
+                    "description": r[4],
+                    "created_at": r[5],
+                }
+            )
 
-        return jsonify({
-            "artifacts": artifacts,
-            "total": total,
-            "page": page,
-            "per_page": per_page,
-        })
+        return jsonify(
+            {
+                "artifacts": artifacts,
+                "total": total,
+                "page": page,
+                "per_page": per_page,
+            }
+        )
     finally:
         conn.close()
 
@@ -237,9 +236,7 @@ def artifact_detail(artifact_id):
                 file_path = BASE_DIR / file_path
             if file_path.is_file():
                 try:
-                    artifact["file_content"] = file_path.read_text(
-                        encoding="utf-8"
-                    )
+                    artifact["file_content"] = file_path.read_text(encoding="utf-8")
                 except (OSError, UnicodeDecodeError):
                     artifact["file_content"] = None
 
@@ -254,13 +251,19 @@ def stig_coverage():
     conn = _get_db()
     try:
         if not _table_exists(conn, "stig_findings"):
-            return jsonify({"targets": [], "summary": {
-                "total": 0, "hardened": 0, "hardening_pct": 0.0,
-            }})
+            return jsonify(
+                {
+                    "targets": [],
+                    "summary": {
+                        "total": 0,
+                        "hardened": 0,
+                        "hardening_pct": 0.0,
+                    },
+                }
+            )
 
         rows = conn.execute(
-            "SELECT target_type, status, COUNT(*) FROM stig_findings "
-            "GROUP BY target_type, status"
+            "SELECT target_type, status, COUNT(*) FROM stig_findings GROUP BY target_type, status"
         ).fetchall()
 
         targets = {}
@@ -296,18 +299,19 @@ def stig_coverage():
                 1,
             )
 
-        return jsonify({
-            "targets": list(targets.values()),
-            "summary": {
-                "total": grand_total,
-                "hardened": grand_hardened,
-                "hardening_pct": round(
-                    (grand_hardened / grand_total * 100)
-                    if grand_total > 0 else 0.0,
-                    1,
-                ),
-            },
-        })
+        return jsonify(
+            {
+                "targets": list(targets.values()),
+                "summary": {
+                    "total": grand_total,
+                    "hardened": grand_hardened,
+                    "hardening_pct": round(
+                        (grand_hardened / grand_total * 100) if grand_total > 0 else 0.0,
+                        1,
+                    ),
+                },
+            }
+        )
     finally:
         conn.close()
 
@@ -344,9 +348,11 @@ def generate_iac():
         )
         return jsonify(result)
     except ImportError:
-        return jsonify({
-            "error": "iac_generator module not available",
-        }), 501
+        return jsonify(
+            {
+                "error": "iac_generator module not available",
+            }
+        ), 501
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 
@@ -354,24 +360,26 @@ def generate_iac():
 @iac_api.route("/templates", methods=["GET"])
 def list_templates():
     """GET /api/iac/templates -- List available IaC template types."""
-    return jsonify({
-        "csps": [
-            {"id": "aws_govcloud", "label": "AWS GovCloud"},
-            {"id": "azure_government", "label": "Azure Government"},
-            {"id": "gcp", "label": "Google Cloud Platform"},
-            {"id": "oci", "label": "Oracle Cloud Infrastructure"},
-            {"id": "ibm", "label": "IBM Cloud"},
-            {"id": "local", "label": "Local / On-Premise"},
-        ],
-        "impact_levels": [
-            {"id": "IL2", "label": "IL2 — Public"},
-            {"id": "IL4", "label": "IL4 — CUI / GovCloud"},
-            {"id": "IL5", "label": "IL5 — CUI / Dedicated"},
-            {"id": "IL6", "label": "IL6 — SECRET / SIPR"},
-        ],
-        "template_types": [
-            {"id": "terraform", "label": "Terraform"},
-            {"id": "ansible", "label": "Ansible"},
-            {"id": "k8s", "label": "Kubernetes / OpenShift"},
-        ],
-    })
+    return jsonify(
+        {
+            "csps": [
+                {"id": "aws_govcloud", "label": "AWS GovCloud"},
+                {"id": "azure_government", "label": "Azure Government"},
+                {"id": "gcp", "label": "Google Cloud Platform"},
+                {"id": "oci", "label": "Oracle Cloud Infrastructure"},
+                {"id": "ibm", "label": "IBM Cloud"},
+                {"id": "local", "label": "Local / On-Premise"},
+            ],
+            "impact_levels": [
+                {"id": "IL2", "label": "IL2 — Public"},
+                {"id": "IL4", "label": "IL4 — CUI / GovCloud"},
+                {"id": "IL5", "label": "IL5 — CUI / Dedicated"},
+                {"id": "IL6", "label": "IL6 — SECRET / SIPR"},
+            ],
+            "template_types": [
+                {"id": "terraform", "label": "Terraform"},
+                {"id": "ansible", "label": "Ansible"},
+                {"id": "k8s", "label": "Kubernetes / OpenShift"},
+            ],
+        }
+    )

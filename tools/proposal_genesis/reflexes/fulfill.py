@@ -71,11 +71,13 @@ COMPLIANCE_CDRL_TYPES = {"ssp", "sbom", "poam", "stig_checklist"}
 # Find deliverables due within N days
 # ---------------------------------------------------------------------------
 
+
 def _get_due_deliverables(days_ahead: int = 14) -> List[Dict]:
     """Find deliverables due within N days that haven't been generated yet."""
     conn = get_connection()
     try:
-        rows = conn.execute("""
+        rows = conn.execute(
+            """
             SELECT d.id, d.contract_id, d.cdrl_number, d.did_number,
                    d.title, d.deliverable_type, d.due_date, d.status,
                    d.days_overdue, d.generated_by_tool,
@@ -89,7 +91,9 @@ def _get_due_deliverables(days_ahead: int = 14) -> List[Dict]:
             AND d.due_date IS NOT NULL
             AND d.due_date <= date('now', '+' || ? || ' days')
             ORDER BY d.due_date ASC
-        """, (days_ahead,)).fetchall()
+        """,
+            (days_ahead,),
+        ).fetchall()
         return [dict(r) for r in rows]
     except Exception:
         return []
@@ -104,7 +108,8 @@ def _get_stale_documentation(max_age_days: int = 90) -> List[Dict]:
     """
     conn = get_connection()
     try:
-        rows = conn.execute("""
+        rows = conn.execute(
+            """
             SELECT d.id, d.contract_id, d.cdrl_number, d.title,
                    d.deliverable_type, d.due_date, d.status,
                    d.generated_by_tool, d.updated_at,
@@ -117,7 +122,9 @@ def _get_stale_documentation(max_age_days: int = 90) -> List[Dict]:
             AND d.generated_by_tool IS NOT NULL
             AND d.updated_at < date('now', '-' || ? || ' days')
             ORDER BY d.updated_at ASC
-        """, (max_age_days,)).fetchall()
+        """,
+            (max_age_days,),
+        ).fetchall()
         return [dict(r) for r in rows]
     except Exception:
         return []
@@ -128,6 +135,7 @@ def _get_stale_documentation(max_age_days: int = 90) -> List[Dict]:
 # ---------------------------------------------------------------------------
 # CDRL generation dispatch
 # ---------------------------------------------------------------------------
+
 
 def _resolve_cdrl_type(deliverable: Dict) -> Optional[str]:
     """Determine the CDRL type from deliverable metadata."""
@@ -164,6 +172,7 @@ def _resolve_cdrl_type(deliverable: Dict) -> Optional[str]:
 # GovEval quality gate (§3.7 — D-VL-9)
 # ---------------------------------------------------------------------------
 
+
 def _run_goveval_gate(project_id: str, cdrl_type: str) -> Dict[str, Any]:
     """Run GovEval benchmark after compliance CDRL generation.
 
@@ -172,14 +181,12 @@ def _run_goveval_gate(project_id: str, cdrl_type: str) -> Dict[str, Any]:
     Gracefully skips on import failure or non-compliance CDRL types.
     """
     if cdrl_type not in COMPLIANCE_CDRL_TYPES:
-        return {"passed": True, "score": 0, "skipped": True,
-                "reason": "non_compliance_cdrl"}
+        return {"passed": True, "score": 0, "skipped": True, "reason": "non_compliance_cdrl"}
 
     try:
         from tools.testing.goveval import run_evaluation
     except (ImportError, Exception):
-        return {"passed": True, "score": 0, "skipped": True,
-                "reason": "goveval_import_failed"}
+        return {"passed": True, "score": 0, "skipped": True, "reason": "goveval_import_failed"}
 
     try:
         result = run_evaluation(project_id=project_id)
@@ -200,16 +207,15 @@ def _run_goveval_gate(project_id: str, cdrl_type: str) -> Dict[str, Any]:
             "findings": result.get("total_findings", 0),
         }
     except Exception as exc:
-        return {"passed": True, "score": 0, "skipped": True,
-                "reason": f"goveval_error: {str(exc)[:100]}"}
+        return {"passed": True, "score": 0, "skipped": True, "reason": f"goveval_error: {str(exc)[:100]}"}
 
 
 # ---------------------------------------------------------------------------
 # DocHub portfolio integration (§3.8 — D-DH-11/D-DH-12)
 # ---------------------------------------------------------------------------
 
-def _register_dochub_module(contract_id: str,
-                            contract_number: str) -> Dict[str, Any]:
+
+def _register_dochub_module(contract_id: str, contract_number: str) -> Dict[str, Any]:
     """Register a contract as a DocHub module for documentation tracking.
 
     Gracefully skips if the DocHub tenant_manager is unavailable.
@@ -217,8 +223,7 @@ def _register_dochub_module(contract_id: str,
     try:
         from tools.dochub.tenant_manager import register_module
     except (ImportError, Exception):
-        return {"registered": False, "skipped": True,
-                "reason": "dochub_tenant_manager_unavailable"}
+        return {"registered": False, "skipped": True, "reason": "dochub_tenant_manager_unavailable"}
 
     try:
         result = register_module(
@@ -226,12 +231,9 @@ def _register_dochub_module(contract_id: str,
             module_name=contract_number or contract_id,
             module_slug=contract_id.replace("-", "_"),
         )
-        return {"registered": True, "skipped": False,
-                "module_id": result.get("module_id", ""),
-                "details": result}
+        return {"registered": True, "skipped": False, "module_id": result.get("module_id", ""), "details": result}
     except Exception as exc:
-        return {"registered": False, "skipped": True,
-                "reason": f"dochub_register_error: {str(exc)[:100]}"}
+        return {"registered": False, "skipped": True, "reason": f"dochub_register_error: {str(exc)[:100]}"}
 
 
 def _compute_dochub_health(contract_id: str) -> Dict[str, Any]:
@@ -244,8 +246,7 @@ def _compute_dochub_health(contract_id: str) -> Dict[str, Any]:
     try:
         from tools.dochub.health_scorer import compute_health
     except (ImportError, Exception):
-        return {"score": 0, "skipped": True,
-                "reason": "dochub_health_scorer_unavailable"}
+        return {"score": 0, "skipped": True, "reason": "dochub_health_scorer_unavailable"}
 
     try:
         result = compute_health(project_id=contract_id)
@@ -258,13 +259,13 @@ def _compute_dochub_health(contract_id: str) -> Dict[str, Any]:
             "details": result,
         }
     except Exception as exc:
-        return {"score": 0, "skipped": True,
-                "reason": f"dochub_health_error: {str(exc)[:100]}"}
+        return {"score": 0, "skipped": True, "reason": f"dochub_health_error: {str(exc)[:100]}"}
 
 
 # ---------------------------------------------------------------------------
 # CDRL generation dispatch
 # ---------------------------------------------------------------------------
+
 
 def _generate_cdrl(deliverable: Dict, cdrl_type: str) -> Tuple[bool, Dict]:
     """Generate a CDRL by dispatching to the mapped ICDEV™ tool.
@@ -285,8 +286,8 @@ def _generate_cdrl(deliverable: Dict, cdrl_type: str) -> Tuple[bool, Dict]:
 
     # Build safe environment
     import os
-    env = {k: v for k, v in os.environ.items()
-           if not k.startswith("_") and "SECRET" not in k.upper()}
+
+    env = {k: v for k, v in os.environ.items() if not k.startswith("_") and "SECRET" not in k.upper()}
 
     try:
         args = [sys.executable, str(tool_full)]
@@ -318,8 +319,7 @@ def _generate_cdrl(deliverable: Dict, cdrl_type: str) -> Tuple[bool, Dict]:
             gen_result["goveval_skipped"] = goveval.get("skipped", False)
 
             # If GovEval fails (score < 0.5), flag for review
-            if (not goveval.get("skipped", False)
-                    and goveval.get("score", 0) < 0.5):
+            if not goveval.get("skipped", False) and goveval.get("score", 0) < 0.5:
                 gen_result["needs_review"] = True
                 gen_result["goveval_reason"] = "score_below_threshold"
 
@@ -340,11 +340,17 @@ def _generate_cdrl(deliverable: Dict, cdrl_type: str) -> Tuple[bool, Dict]:
 # Record generation result
 # ---------------------------------------------------------------------------
 
-def _record_generation(deliverable_id: str, contract_id: str,
-                       cdrl_type: str, tool_path: str,
-                       success: bool, error_msg: Optional[str] = None,
-                       goveval_score: Optional[float] = None,
-                       goveval_status: Optional[str] = None) -> Optional[str]:
+
+def _record_generation(
+    deliverable_id: str,
+    contract_id: str,
+    cdrl_type: str,
+    tool_path: str,
+    success: bool,
+    error_msg: Optional[str] = None,
+    goveval_score: Optional[float] = None,
+    goveval_status: Optional[str] = None,
+) -> Optional[str]:
     """Write to cpmp_cdrl_generations (append-only).
 
     GovEval results (§3.7) are stored in the ``metadata`` JSON column
@@ -358,7 +364,7 @@ def _record_generation(deliverable_id: str, contract_id: str,
     now = _utcnow_iso()
 
     # Determine effective status — GovEval failure flags for review
-    needs_review = (goveval_status == "failed")
+    needs_review = goveval_status == "failed"
     effective_status = "generated" if success else "failed"
 
     # Encode goveval data in the existing metadata JSON column
@@ -405,8 +411,7 @@ def _record_generation(deliverable_id: str, contract_id: str,
         conn.close()
 
 
-def _record_compliance_refresh(deliverable_id: str, contract_id: str,
-                               cdrl_type: str) -> None:
+def _record_compliance_refresh(deliverable_id: str, contract_id: str, cdrl_type: str) -> None:
     """Flag a deliverable for compliance refresh in audit trail."""
     conn = get_connection()
     try:
@@ -421,11 +426,13 @@ def _record_compliance_refresh(deliverable_id: str, contract_id: str,
                 "fulfill",
                 "yellow",
                 contract_id,
-                json.dumps({
-                    "deliverable_id": deliverable_id,
-                    "cdrl_type": cdrl_type,
-                    "reason": "documentation_stale",
-                }),
+                json.dumps(
+                    {
+                        "deliverable_id": deliverable_id,
+                        "cdrl_type": cdrl_type,
+                        "reason": "documentation_stale",
+                    }
+                ),
                 1,
                 _utcnow_iso(),
             ),
@@ -437,8 +444,7 @@ def _record_compliance_refresh(deliverable_id: str, contract_id: str,
         conn.close()
 
 
-def _audit_fulfill(event_type: str, contract_id: Optional[str],
-                   details: Dict, success: bool) -> None:
+def _audit_fulfill(event_type: str, contract_id: Optional[str], details: Dict, success: bool) -> None:
     """Log fulfill event to audit trail."""
     conn = get_connection()
     try:
@@ -468,6 +474,7 @@ def _audit_fulfill(event_type: str, contract_id: Optional[str],
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
+
 
 def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     """Execute the Fulfill Reflex (R11).
@@ -583,9 +590,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     refreshes_flagged = 0
     for doc in stale_docs:
         cdrl_type = _resolve_cdrl_type(doc) or "documentation"
-        _record_compliance_refresh(
-            doc.get("id", ""), doc.get("contract_id", ""), cdrl_type
-        )
+        _record_compliance_refresh(doc.get("id", ""), doc.get("contract_id", ""), cdrl_type)
         refreshes_flagged += 1
 
     # Step 8: Register contracts as DocHub modules (§3.8)
@@ -607,8 +612,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
 
     portfolio_health: Dict[str, Any] = {
         "contracts_assessed": portfolio_count,
-        "average_score": round(portfolio_total / portfolio_count, 3)
-                         if portfolio_count > 0 else 0,
+        "average_score": round(portfolio_total / portfolio_count, 3) if portfolio_count > 0 else 0,
         "scores": dochub_health_scores,
     }
 

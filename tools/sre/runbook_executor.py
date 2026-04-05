@@ -88,8 +88,7 @@ def init_tables(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
-def create_runbook(name: str, description: str, trigger_pattern: str,
-                   steps: list, risk_level: str = "green") -> dict:
+def create_runbook(name: str, description: str, trigger_pattern: str, steps: list, risk_level: str = "green") -> dict:
     """Create a new runbook.
 
     Args:
@@ -137,9 +136,18 @@ def create_runbook(name: str, description: str, trigger_pattern: str,
            (id, name, description, trigger_pattern, steps_json, risk_level,
             auto_execute, max_executions_per_hour, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (runbook_id, name, description, trigger_pattern,
-         json.dumps(steps), risk_level, auto_execute,
-         cfg["max_executions_per_hour"], now, now),
+        (
+            runbook_id,
+            name,
+            description,
+            trigger_pattern,
+            json.dumps(steps),
+            risk_level,
+            auto_execute,
+            cfg["max_executions_per_hour"],
+            now,
+            now,
+        ),
     )
     conn.commit()
 
@@ -192,8 +200,9 @@ def match_runbook(alert_text: str) -> dict:
     return {"status": "ok", "matched": False, "message": "No matching runbook found"}
 
 
-def execute_runbook(runbook_id: str, trigger_source: str = "manual",
-                    trigger_text: str = "", dry_run: bool = False) -> dict:
+def execute_runbook(
+    runbook_id: str, trigger_source: str = "manual", trigger_text: str = "", dry_run: bool = False
+) -> dict:
     """Execute a runbook's steps.
 
     Args:
@@ -243,8 +252,15 @@ def execute_runbook(runbook_id: str, trigger_source: str = "manual",
            (id, runbook_id, trigger_source, trigger_text, status,
             steps_completed, steps_total, output_log, executed_by, created_at)
            VALUES (?, ?, ?, ?, 'running', 0, ?, '[]', ?, ?)""",
-        (execution_id, runbook_id, trigger_source, trigger_text,
-         len(steps), "auto" if trigger_source != "manual" else "manual", now),
+        (
+            execution_id,
+            runbook_id,
+            trigger_source,
+            trigger_text,
+            len(steps),
+            "auto" if trigger_source != "manual" else "manual",
+            now,
+        ),
     )
     conn.commit()
 
@@ -294,8 +310,12 @@ def execute_runbook(runbook_id: str, trigger_source: str = "manual",
                     logger.warning("Step %d failed, attempting rollback: %s", i + 1, step_rollback)
                     try:
                         rb_result = subprocess.run(  # nosec B602 — rollback commands are admin-defined
-                            step_rollback, shell=True, capture_output=True,
-                            text=True, timeout=step_timeout, cwd=str(BASE_DIR),
+                            step_rollback,
+                            shell=True,
+                            capture_output=True,
+                            text=True,
+                            timeout=step_timeout,
+                            cwd=str(BASE_DIR),
                         )
                         step_entry["rollback_exit_code"] = rb_result.returncode
                         step_entry["rollback_output"] = rb_result.stdout[:1000]
@@ -332,13 +352,13 @@ def execute_runbook(runbook_id: str, trigger_source: str = "manual",
            SET status = ?, steps_completed = ?, output_log = ?,
                duration_ms = ?, completed_at = ?
            WHERE id = ?""",
-        (final_status, steps_completed, json.dumps(output_log),
-         duration_ms, completed_at, execution_id),
+        (final_status, steps_completed, json.dumps(output_log), duration_ms, completed_at, execution_id),
     )
     conn.commit()
 
-    logger.info("Runbook %s execution %s: %s (%d/%d steps)",
-                runbook_id, execution_id, final_status, steps_completed, len(steps))
+    logger.info(
+        "Runbook %s execution %s: %s (%d/%d steps)", runbook_id, execution_id, final_status, steps_completed, len(steps)
+    )
 
     return {
         "status": "ok",
@@ -370,8 +390,17 @@ def list_runbooks() -> list:
            ORDER BY name""",
     ).fetchall()
 
-    cols = ["id", "name", "description", "trigger_pattern", "risk_level",
-            "auto_execute", "max_executions_per_hour", "created_at", "updated_at"]
+    cols = [
+        "id",
+        "name",
+        "description",
+        "trigger_pattern",
+        "risk_level",
+        "auto_execute",
+        "max_executions_per_hour",
+        "created_at",
+        "updated_at",
+    ]
 
     return [dict(zip(cols, row)) for row in rows]
 
@@ -400,9 +429,20 @@ def get_execution_history(limit: int = 20) -> list:
         (limit,),
     ).fetchall()
 
-    cols = ["id", "runbook_id", "runbook_name", "trigger_source", "trigger_text",
-            "status", "steps_completed", "steps_total", "duration_ms",
-            "executed_by", "created_at", "completed_at"]
+    cols = [
+        "id",
+        "runbook_id",
+        "runbook_name",
+        "trigger_source",
+        "trigger_text",
+        "status",
+        "steps_completed",
+        "steps_total",
+        "duration_ms",
+        "executed_by",
+        "created_at",
+        "completed_at",
+    ]
 
     return [dict(zip(cols, row)) for row in rows]
 
@@ -435,12 +475,14 @@ def check_runbook_health() -> dict:
 
     failing = []
     for row in recent_failures:
-        failing.append({
-            "execution_id": row[0],
-            "runbook_name": row[1],
-            "status": row[2],
-            "created_at": row[3],
-        })
+        failing.append(
+            {
+                "execution_id": row[0],
+                "runbook_name": row[1],
+                "status": row[2],
+                "created_at": row[3],
+            }
+        )
 
     passed = len(failing) == 0
     return {
@@ -530,8 +572,10 @@ def main():
         else:
             print(f"Execution History ({len(history)} entries):")
             for h in history:
-                print(f"  {h['id']} [{h['status']:>11}] {h['runbook_name']} "
-                      f"({h['steps_completed']}/{h['steps_total']} steps, {h['duration_ms']}ms)")
+                print(
+                    f"  {h['id']} [{h['status']:>11}] {h['runbook_name']} "
+                    f"({h['steps_completed']}/{h['steps_total']} steps, {h['duration_ms']}ms)"
+                )
 
     else:
         parser.print_help()

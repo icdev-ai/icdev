@@ -19,6 +19,7 @@ CLI:
     python tools/llm/gateway.py --gate
     python tools/llm/gateway.py --check-text "some prompt" --json
 """
+
 from __future__ import annotations
 
 import argparse
@@ -172,11 +173,13 @@ def _get_injection_patterns(cfg: Dict) -> List[Dict]:
     compiled = []
     for entry in raw:
         try:
-            compiled.append({
-                "regex": re.compile(entry["pattern"], re.IGNORECASE),
-                "weight": float(entry.get("weight", 0.5)),
-                "label": entry.get("label", "unknown"),
-            })
+            compiled.append(
+                {
+                    "regex": re.compile(entry["pattern"], re.IGNORECASE),
+                    "weight": float(entry.get("weight", 0.5)),
+                    "label": entry.get("label", "unknown"),
+                }
+            )
         except re.error as exc:
             logger.warning("Invalid injection pattern %r: %s", entry.get("pattern"), exc)
     _compiled_injection = compiled
@@ -193,11 +196,13 @@ def _get_pii_patterns(cfg: Dict) -> List[Dict]:
     compiled = []
     for entry in raw:
         try:
-            compiled.append({
-                "regex": re.compile(entry["pattern"]),
-                "label": entry.get("label", "unknown"),
-                "description": entry.get("description", ""),
-            })
+            compiled.append(
+                {
+                    "regex": re.compile(entry["pattern"]),
+                    "label": entry.get("label", "unknown"),
+                    "description": entry.get("description", ""),
+                }
+            )
         except re.error as exc:
             logger.warning("Invalid PII pattern %r: %s", entry.get("pattern"), exc)
     _compiled_pii = compiled
@@ -292,7 +297,7 @@ def _check_rate_limit(agent_id: str, function_name: str, cfg: Dict) -> Dict:
             "WHERE agent_id = ? AND function_name = ? AND window_start = ? AND window_type = ?",
             (agent_id, function_name, minute_window, "minute"),
         ).fetchone()
-        minute_count = (row[0] if row else 0)
+        minute_count = row[0] if row else 0
 
         if minute_count >= per_minute:
             return {"allowed": False, "reason": f"Rate limit exceeded: {minute_count}/{per_minute} per minute"}
@@ -303,7 +308,7 @@ def _check_rate_limit(agent_id: str, function_name: str, cfg: Dict) -> Dict:
             "WHERE agent_id = ? AND function_name = ? AND window_start = ? AND window_type = ?",
             (agent_id, function_name, hour_window, "hour"),
         ).fetchone()
-        hour_count = (row[0] if row else 0)
+        hour_count = row[0] if row else 0
 
         if hour_count >= per_hour:
             return {"allowed": False, "reason": f"Rate limit exceeded: {hour_count}/{per_hour} per hour"}
@@ -340,6 +345,7 @@ def _check_cost_cap(agent_id: str, cfg: Dict) -> Dict:
 
     try:
         from tools.agent.token_tracker import check_budget
+
         budget = check_budget(agent_id)
         if budget["action"] == "block":
             return {"allowed": False, "reason": f"Budget exceeded for agent {agent_id}: {budget.get('message', '')}"}
@@ -411,8 +417,7 @@ def pre_invoke_check(request: Dict, cfg: Optional[Dict] = None) -> Dict:
     length_check = _check_input_length(prompt, cfg)
     if not length_check["passed"] and not blocked_reason:
         blocked_reason = (
-            f"Input too long: ~{length_check['estimated_tokens']} tokens "
-            f"(max {length_check['max_tokens']})"
+            f"Input too long: ~{length_check['estimated_tokens']} tokens (max {length_check['max_tokens']})"
         )
 
     # 4. Rate limiting
@@ -655,10 +660,22 @@ def get_audit_log(filters: Optional[Dict] = None, limit: int = 50) -> List[Dict]
                 result.append(dict(row))
             else:
                 cols = [
-                    "id", "request_id", "agent_id", "function_name", "model_id",
-                    "pre_check_result", "post_check_result", "injection_score",
-                    "pii_detected", "blocked_reason", "input_hash", "output_hash",
-                    "input_length", "output_length", "latency_ms", "created_at",
+                    "id",
+                    "request_id",
+                    "agent_id",
+                    "function_name",
+                    "model_id",
+                    "pre_check_result",
+                    "post_check_result",
+                    "injection_score",
+                    "pii_detected",
+                    "blocked_reason",
+                    "input_hash",
+                    "output_hash",
+                    "input_length",
+                    "output_length",
+                    "latency_ms",
+                    "created_at",
                 ]
                 result.append(dict(zip(cols, row)))
         return result
@@ -676,24 +693,14 @@ def get_gateway_stats() -> Dict:
         _ensure_tables(conn)
 
         total = conn.execute("SELECT COUNT(*) FROM llm_gateway_audit").fetchone()[0]
-        blocked = conn.execute(
-            "SELECT COUNT(*) FROM llm_gateway_audit WHERE pre_check_result = 'block'"
-        ).fetchone()[0]
-        warned = conn.execute(
-            "SELECT COUNT(*) FROM llm_gateway_audit WHERE pre_check_result = 'warn'"
-        ).fetchone()[0]
-        passed = conn.execute(
-            "SELECT COUNT(*) FROM llm_gateway_audit WHERE pre_check_result = 'pass'"
-        ).fetchone()[0]
+        blocked = conn.execute("SELECT COUNT(*) FROM llm_gateway_audit WHERE pre_check_result = 'block'").fetchone()[0]
+        warned = conn.execute("SELECT COUNT(*) FROM llm_gateway_audit WHERE pre_check_result = 'warn'").fetchone()[0]
+        passed = conn.execute("SELECT COUNT(*) FROM llm_gateway_audit WHERE pre_check_result = 'pass'").fetchone()[0]
         post_flagged = conn.execute(
             "SELECT COUNT(*) FROM llm_gateway_audit WHERE post_check_result = 'flagged'"
         ).fetchone()[0]
-        pii_count = conn.execute(
-            "SELECT COUNT(*) FROM llm_gateway_audit WHERE pii_detected IS NOT NULL"
-        ).fetchone()[0]
-        avg_latency_row = conn.execute(
-            "SELECT AVG(latency_ms) FROM llm_gateway_audit WHERE latency_ms > 0"
-        ).fetchone()
+        pii_count = conn.execute("SELECT COUNT(*) FROM llm_gateway_audit WHERE pii_detected IS NOT NULL").fetchone()[0]
+        avg_latency_row = conn.execute("SELECT AVG(latency_ms) FROM llm_gateway_audit WHERE latency_ms > 0").fetchone()
         avg_latency = round(avg_latency_row[0], 1) if avg_latency_row and avg_latency_row[0] else 0.0
 
         # Top blocked functions
@@ -705,9 +712,7 @@ def get_gateway_stats() -> Dict:
         top_blocked = {row[0]: row[1] for row in top_blocked_rows}
 
         # Recent injection scores > 0
-        high_injection = conn.execute(
-            "SELECT COUNT(*) FROM llm_gateway_audit WHERE injection_score > 0"
-        ).fetchone()[0]
+        high_injection = conn.execute("SELECT COUNT(*) FROM llm_gateway_audit WHERE injection_score > 0").fetchone()[0]
 
         return {
             "total_requests": total,
@@ -797,9 +802,7 @@ def check_text(text: str) -> Dict:
 # CLI
 # ---------------------------------------------------------------------------
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="ICDEV™ LLM Gateway — pre/post-invoke guardrails and audit"
-    )
+    parser = argparse.ArgumentParser(description="ICDEV™ LLM Gateway — pre/post-invoke guardrails and audit")
     parser.add_argument("--stats", action="store_true", help="Show gateway statistics")
     parser.add_argument("--audit", action="store_true", help="Show recent audit log")
     parser.add_argument("--limit", type=int, default=50, help="Limit audit rows (default 50)")

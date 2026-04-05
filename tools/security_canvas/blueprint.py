@@ -21,8 +21,13 @@ from functools import wraps
 from pathlib import Path
 
 from flask import (
-    Blueprint, abort, jsonify, redirect, render_template,
-    request, session,
+    Blueprint,
+    abort,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    session,
 )
 
 logger = logging.getLogger("icdev.security_canvas")
@@ -37,26 +42,38 @@ from tools.security_canvas.constants import (  # noqa: E402
     SECURITY_OBJECTS,
 )
 from tools.security_canvas.security_engine import (  # noqa: E402
-    run_stride_analysis, run_security_assessment,
-    detect_security_gaps, map_controls_to_threats,
-    generate_auto_fix, compute_nist_coverage,
-    find_attack_paths, generate_fedramp_boundary,
-    compare_designs, compute_mitre_coverage,
-    compute_compliance_crosswalk, diff_graph_versions,
+    run_stride_analysis,
+    run_security_assessment,
+    detect_security_gaps,
+    map_controls_to_threats,
+    generate_auto_fix,
+    compute_nist_coverage,
+    find_attack_paths,
+    generate_fedramp_boundary,
+    compare_designs,
+    compute_mitre_coverage,
+    compute_compliance_crosswalk,
+    diff_graph_versions,
 )
 from tools.security_canvas.remediation import (  # noqa: E402
     generate_remediation_plan,
 )
 from tools.security_canvas.agent import (  # noqa: E402
-    on_iac_generated, scan_iac_file, scan_iac_directory,
+    on_iac_generated,
+    scan_iac_file,
+    scan_iac_directory,
     llm_identify_threats,
 )
 from tools.security_canvas.runbooks import (  # noqa: E402
-    get_all_runbooks, get_runbook_by_id, get_applicable_runbooks,
+    get_all_runbooks,
+    get_runbook_by_id,
+    get_applicable_runbooks,
 )
 from tools.security_canvas.artifacts import (  # noqa: E402
-    generate_ssp_artifact, generate_sar_artifact,
-    generate_poam_artifact, generate_artifact_bundle,
+    generate_ssp_artifact,
+    generate_sar_artifact,
+    generate_poam_artifact,
+    generate_artifact_bundle,
 )
 
 
@@ -73,6 +90,7 @@ def create_security_blueprint():
     # Initialize DB
     try:
         from tools.security_canvas.db.init_db import init_db
+
         init_db()
     except Exception as exc:
         logger.warning("Security Canvas DB init failed: %s", exc)
@@ -89,12 +107,15 @@ def create_security_blueprint():
         def decorated(*args, **kwargs):
             if not session.get("user_id"):
                 # All API calls and DELETE/POST/PUT return JSON 401 (never redirect)
-                if (request.is_json
-                        or request.path.startswith("/security/api/")
-                        or request.method in ("DELETE", "POST", "PUT")):
+                if (
+                    request.is_json
+                    or request.path.startswith("/security/api/")
+                    or request.method in ("DELETE", "POST", "PUT")
+                ):
                     return jsonify({"error": "Authentication required"}), 401
                 return redirect("/login")
             return f(*args, **kwargs)
+
         return decorated
 
     # ── DB helpers ─────────────────────────────────────────────────────────
@@ -112,8 +133,7 @@ def create_security_blueprint():
         try:
             with get_connection() as conn:
                 conn.execute(
-                    "INSERT INTO sc_audit (action, entity_type, entity_id, "
-                    "details, user_id, ts) VALUES (?,?,?,?,?,?)",
+                    "INSERT INTO sc_audit (action, entity_type, entity_id, details, user_id, ts) VALUES (?,?,?,?,?,?)",
                     (action, entity_type, entity_id, details, user_id, _now()),
                 )
         except Exception:
@@ -131,18 +151,24 @@ def create_security_blueprint():
     def sc_index():
         """Security Design Canvas dashboard — list designs + recent assessments."""
         with get_connection() as conn:
-            designs = [_row_to_dict(r) for r in conn.execute(
-                "SELECT id, name, description, classification, "
-                "source_topology_id, created_at, updated_at "
-                "FROM security_designs ORDER BY updated_at DESC"
-            ).fetchall()]
-            recent_assessments = [_row_to_dict(r) for r in conn.execute(
-                "SELECT a.id, a.design_id, a.assessment_type, a.risk_score, "
-                "a.posture_grade, a.ran_at, d.name AS design_name "
-                "FROM sc_assessments a "
-                "JOIN security_designs d ON a.design_id = d.id "
-                "ORDER BY a.ran_at DESC LIMIT 10"
-            ).fetchall()]
+            designs = [
+                _row_to_dict(r)
+                for r in conn.execute(
+                    "SELECT id, name, description, classification, "
+                    "source_topology_id, created_at, updated_at "
+                    "FROM security_designs ORDER BY updated_at DESC"
+                ).fetchall()
+            ]
+            recent_assessments = [
+                _row_to_dict(r)
+                for r in conn.execute(
+                    "SELECT a.id, a.design_id, a.assessment_type, a.risk_score, "
+                    "a.posture_grade, a.ran_at, d.name AS design_name "
+                    "FROM sc_assessments a "
+                    "JOIN security_designs d ON a.design_id = d.id "
+                    "ORDER BY a.ran_at DESC LIMIT 10"
+                ).fetchall()
+            ]
         return render_template(
             "security_canvas/index.html",
             designs=designs,
@@ -154,9 +180,12 @@ def create_security_blueprint():
     def sc_templates_page():
         """Template gallery — browse and load pre-built security designs."""
         conn = get_connection()
-        templates = [_row_to_dict(r) for r in conn.execute(
-            "SELECT id, name, category, description, tags FROM sc_templates ORDER BY category, name"
-        ).fetchall()]
+        templates = [
+            _row_to_dict(r)
+            for r in conn.execute(
+                "SELECT id, name, category, description, tags FROM sc_templates ORDER BY category, name"
+            ).fetchall()
+        ]
         conn.close()
         return render_template("security_canvas/templates.html", templates=templates)
 
@@ -175,9 +204,7 @@ def create_security_blueprint():
     def sc_canvas(design_id):
         """Open existing security design canvas."""
         with get_connection() as conn:
-            design = _row_to_dict(conn.execute(
-                "SELECT * FROM security_designs WHERE id=?", (design_id,)
-            ).fetchone())
+            design = _row_to_dict(conn.execute("SELECT * FROM security_designs WHERE id=?", (design_id,)).fetchone())
         if not design:
             abort(404)
         return render_template(
@@ -191,15 +218,14 @@ def create_security_blueprint():
     def sc_assessment_page(assessment_id):
         """View a single assessment result."""
         with get_connection() as conn:
-            assessment = _row_to_dict(conn.execute(
-                "SELECT * FROM sc_assessments WHERE id=?", (assessment_id,)
-            ).fetchone())
+            assessment = _row_to_dict(
+                conn.execute("SELECT * FROM sc_assessments WHERE id=?", (assessment_id,)).fetchone()
+            )
             if not assessment:
                 abort(404)
-            design = _row_to_dict(conn.execute(
-                "SELECT * FROM security_designs WHERE id=?",
-                (assessment["design_id"],)
-            ).fetchone())
+            design = _row_to_dict(
+                conn.execute("SELECT * FROM security_designs WHERE id=?", (assessment["design_id"],)).fetchone()
+            )
         return render_template(
             "security_canvas/assessment.html",
             assessment=assessment,
@@ -211,13 +237,13 @@ def create_security_blueprint():
     def sc_remediation_page(design_id):
         """View remediation plans for a design."""
         with get_connection() as conn:
-            design = _row_to_dict(conn.execute(
-                "SELECT * FROM security_designs WHERE id=?", (design_id,)
-            ).fetchone())
-            plans = [_row_to_dict(r) for r in conn.execute(
-                "SELECT * FROM sc_remediation_plans "
-                "WHERE design_id=? ORDER BY created_at DESC", (design_id,)
-            ).fetchall()]
+            design = _row_to_dict(conn.execute("SELECT * FROM security_designs WHERE id=?", (design_id,)).fetchone())
+            plans = [
+                _row_to_dict(r)
+                for r in conn.execute(
+                    "SELECT * FROM sc_remediation_plans WHERE design_id=? ORDER BY created_at DESC", (design_id,)
+                ).fetchall()
+            ]
         return render_template(
             "security_canvas/remediation.html",
             design=design,
@@ -255,10 +281,17 @@ def create_security_blueprint():
                 "(id, name, description, graph_json, template_id, "
                 "source_topology_id, classification, created_at, updated_at) "
                 "VALUES (?,?,?,?,?,?,?,?,?)",
-                (design_id, name, data.get("description", ""),
-                 json.dumps(data.get("graph_json", default_graph)),
-                 data.get("template_id"), data.get("source_topology_id"),
-                 data.get("classification", "CUI"), now, now),
+                (
+                    design_id,
+                    name,
+                    data.get("description", ""),
+                    json.dumps(data.get("graph_json", default_graph)),
+                    data.get("template_id"),
+                    data.get("source_topology_id"),
+                    data.get("classification", "CUI"),
+                    now,
+                    now,
+                ),
             )
         _audit("CREATE", "design", design_id, name)
         return jsonify({"id": design_id, "name": name}), 201
@@ -268,9 +301,7 @@ def create_security_blueprint():
     def sc_api_get_design(design_id):
         """Get a single security design."""
         with get_connection() as conn:
-            row = conn.execute(
-                "SELECT * FROM security_designs WHERE id=?", (design_id,)
-            ).fetchone()
+            row = conn.execute("SELECT * FROM security_designs WHERE id=?", (design_id,)).fetchone()
         if not row:
             return jsonify({"error": "Not found"}), 404
         return jsonify(_row_to_dict(row))
@@ -282,9 +313,7 @@ def create_security_blueprint():
         data = request.get_json(force=True, silent=True) or {}
         now = _now()
         with get_connection() as conn:
-            existing = conn.execute(
-                "SELECT id FROM security_designs WHERE id=?", (design_id,)
-            ).fetchone()
+            existing = conn.execute("SELECT id FROM security_designs WHERE id=?", (design_id,)).fetchone()
             if not existing:
                 return jsonify({"error": "Not found"}), 404
             updates = []
@@ -296,9 +325,7 @@ def create_security_blueprint():
             if "graph_json" in data:
                 updates.append("graph_json=?")
                 val = data["graph_json"]
-                params.append(
-                    json.dumps(val) if isinstance(val, dict) else val
-                )
+                params.append(json.dumps(val) if isinstance(val, dict) else val)
             updates.append("updated_at=?")
             params.append(now)
             params.append(design_id)
@@ -310,12 +337,14 @@ def create_security_blueprint():
         # Trigger security agent on design save
         try:
             from tools.security_canvas.agent import auto_assess
+
             auto_assess(design_id, "design_save")
         except Exception:
             pass
         # Incremental KG update: re-extract only if graph_json changed
         try:
             from tools.canvas.kg_builder import rebuild_canvas_kg
+
             rebuild_canvas_kg("sdc", design_id)
         except Exception:
             pass
@@ -326,9 +355,16 @@ def create_security_blueprint():
     def sc_api_clear_all_designs():
         """Delete ALL security designs and related records."""
         with get_connection() as conn:
-            for table in ("sc_data_flows", "sc_trust_boundaries", "sc_controls",
-                          "sc_threats", "sc_assets", "sc_remediation_plans",
-                          "sc_assessments", "security_designs"):
+            for table in (
+                "sc_data_flows",
+                "sc_trust_boundaries",
+                "sc_controls",
+                "sc_threats",
+                "sc_assets",
+                "sc_remediation_plans",
+                "sc_assessments",
+                "security_designs",
+            ):
                 conn.execute(f"DELETE FROM {table}")
         _audit("DELETE", "design", "ALL", "clear-all")
         return jsonify({"deleted": "all"})
@@ -338,18 +374,18 @@ def create_security_blueprint():
     def sc_api_delete_design(design_id):
         """Delete a security design and all related records."""
         child_tables = (
-            "sc_data_flows", "sc_trust_boundaries", "sc_controls",
-            "sc_threats", "sc_assets", "sc_remediation_plans",
+            "sc_data_flows",
+            "sc_trust_boundaries",
+            "sc_controls",
+            "sc_threats",
+            "sc_assets",
+            "sc_remediation_plans",
             "sc_assessments",
         )
         with get_connection() as conn:
             for table in child_tables:
-                conn.execute(
-                    f"DELETE FROM {table} WHERE design_id=?", (design_id,)
-                )
-            conn.execute(
-                "DELETE FROM security_designs WHERE id=?", (design_id,)
-            )
+                conn.execute(f"DELETE FROM {table} WHERE design_id=?", (design_id,))
+            conn.execute("DELETE FROM security_designs WHERE id=?", (design_id,))
         _audit("DELETE", "design", design_id, "")
         return jsonify({"deleted": design_id})
 
@@ -389,9 +425,7 @@ def create_security_blueprint():
             if not row:
                 return jsonify({"error": "Not found"}), 404
             try:
-                graph = (
-                    json.loads(row[0]) if isinstance(row[0], str) else row[0]
-                )
+                graph = json.loads(row[0]) if isinstance(row[0], str) else row[0]
             except Exception:
                 return jsonify({"error": "Bad graph data"}), 500
 
@@ -407,17 +441,21 @@ def create_security_blueprint():
                 "total_threats, total_controls, risk_score, posture_grade, "
                 "findings_json, recommendations_json, ran_at) "
                 "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                (assess_id, design_id, assessment_type,
-                 data.get("trigger", "manual"),
-                 result.get("total_threats", 0),
-                 result.get("total_controls", 0),
-                 result.get("risk_score", 0),
-                 result.get("posture_grade", "F"),
-                 json.dumps(result.get("findings", [])),
-                 json.dumps(result.get("recommendations", [])), now),
+                (
+                    assess_id,
+                    design_id,
+                    assessment_type,
+                    data.get("trigger", "manual"),
+                    result.get("total_threats", 0),
+                    result.get("total_controls", 0),
+                    result.get("risk_score", 0),
+                    result.get("posture_grade", "F"),
+                    json.dumps(result.get("findings", [])),
+                    json.dumps(result.get("recommendations", [])),
+                    now,
+                ),
             )
-        _audit("ASSESS", "design", design_id,
-               f"score={result.get('risk_score', 0)}")
+        _audit("ASSESS", "design", design_id, f"score={result.get('risk_score', 0)}")
 
         # Generate remediation plan from assessment
         plan = generate_remediation_plan(result, graph)
@@ -433,13 +471,17 @@ def create_security_blueprint():
             row = conn.execute(
                 "SELECT risk_score, posture_grade, ran_at "
                 "FROM sc_assessments WHERE design_id=? "
-                "ORDER BY ran_at DESC LIMIT 1", (design_id,)
+                "ORDER BY ran_at DESC LIMIT 1",
+                (design_id,),
             ).fetchone()
         if not row:
-            return jsonify({
-                "risk_score": 0, "posture_grade": "N/A",
-                "message": "No assessment yet",
-            })
+            return jsonify(
+                {
+                    "risk_score": 0,
+                    "posture_grade": "N/A",
+                    "message": "No assessment yet",
+                }
+            )
         return jsonify(_row_to_dict(row))
 
     # ====================================================================
@@ -476,12 +518,14 @@ def create_security_blueprint():
         stride = run_stride_analysis(graph)
         gaps = detect_security_gaps(graph)
         suggestions = map_controls_to_threats(stride.get("threats", []))
-        return jsonify({
-            "design_name": row[0],
-            "stride_analysis": stride,
-            "gaps": gaps,
-            "suggested_controls": suggestions,
-        })
+        return jsonify(
+            {
+                "design_name": row[0],
+                "stride_analysis": stride,
+                "gaps": gaps,
+                "suggested_controls": suggestions,
+            }
+        )
 
     # ====================================================================
     # API ROUTES — NDC Import
@@ -493,6 +537,7 @@ def create_security_blueprint():
         """Import an NDC topology as a security design."""
         try:
             from tools.security_canvas.bridge import import_ndc_topology
+
             result = import_ndc_topology(topology_id)
             return jsonify(result), 201
         except Exception as exc:
@@ -510,7 +555,8 @@ def create_security_blueprint():
             rows = conn.execute(
                 "SELECT id, assessment_type, trigger_source, risk_score, "
                 "posture_grade, ran_at FROM sc_assessments "
-                "WHERE design_id=? ORDER BY ran_at DESC", (design_id,)
+                "WHERE design_id=? ORDER BY ran_at DESC",
+                (design_id,),
             ).fetchall()
         return jsonify([_row_to_dict(r) for r in rows])
 
@@ -541,12 +587,16 @@ def create_security_blueprint():
                 "(id, design_id, title, priority, status, "
                 "remediation_steps, estimated_effort, created_at) "
                 "VALUES (?,?,?,?,?,?,?,?)",
-                (plan_id, design_id,
-                 f"Remediation Plan — {now[:10]}",
-                 plan.get("overall_risk", "medium").lower(),
-                 "open",
-                 json.dumps(plan.get("phases", [])),
-                 plan.get("estimated_effort", ""), now),
+                (
+                    plan_id,
+                    design_id,
+                    f"Remediation Plan — {now[:10]}",
+                    plan.get("overall_risk", "medium").lower(),
+                    "open",
+                    json.dumps(plan.get("phases", [])),
+                    plan.get("estimated_effort", ""),
+                    now,
+                ),
             )
         _audit("REMEDIATE", "design", design_id, f"plan={plan_id}")
         plan["plan_id"] = plan_id
@@ -568,9 +618,7 @@ def create_security_blueprint():
             if not row:
                 return jsonify({"error": "Not found"}), 404
             try:
-                graph = (
-                    json.loads(row[0]) if isinstance(row[0], str) else row[0]
-                )
+                graph = json.loads(row[0]) if isinstance(row[0], str) else row[0]
             except Exception:
                 return jsonify({"error": "Bad graph data"}), 500
 
@@ -591,12 +639,10 @@ def create_security_blueprint():
             # Save updated graph back to DB
             now = _now()
             conn.execute(
-                "UPDATE security_designs SET graph_json=?, updated_at=? "
-                "WHERE id=?",
+                "UPDATE security_designs SET graph_json=?, updated_at=? WHERE id=?",
                 (json.dumps(graph), now, design_id),
             )
-        _audit("AUTO_FIX", "design", design_id,
-               f"fixes={result['total_fixes']}")
+        _audit("AUTO_FIX", "design", design_id, f"fixes={result['total_fixes']}")
         return jsonify(result)
 
     # ====================================================================
@@ -615,9 +661,7 @@ def create_security_blueprint():
         if not row:
             return jsonify({"error": "Not found"}), 404
         try:
-            graph = (
-                json.loads(row[0]) if isinstance(row[0], str) else row[0]
-            )
+            graph = json.loads(row[0]) if isinstance(row[0], str) else row[0]
         except Exception:
             return jsonify({"error": "Bad graph data"}), 500
         result = compute_nist_coverage(graph)
@@ -635,9 +679,7 @@ def create_security_blueprint():
         if not row:
             return jsonify({"error": "Not found"}), 404
         try:
-            graph = (
-                json.loads(row[0]) if isinstance(row[0], str) else row[0]
-            )
+            graph = json.loads(row[0]) if isinstance(row[0], str) else row[0]
         except Exception:
             return jsonify({"error": "Bad graph data"}), 500
         result = find_attack_paths(graph)
@@ -655,9 +697,7 @@ def create_security_blueprint():
         if not row:
             return jsonify({"error": "Not found"}), 404
         try:
-            graph = (
-                json.loads(row[0]) if isinstance(row[0], str) else row[0]
-            )
+            graph = json.loads(row[0]) if isinstance(row[0], str) else row[0]
         except Exception:
             return jsonify({"error": "Bad graph data"}), 500
 
@@ -677,12 +717,10 @@ def create_security_blueprint():
         now = _now()
         with get_connection() as conn:
             conn.execute(
-                "UPDATE security_designs SET graph_json=?, updated_at=? "
-                "WHERE id=?",
+                "UPDATE security_designs SET graph_json=?, updated_at=? WHERE id=?",
                 (json.dumps(graph), now, design_id),
             )
-        _audit("FEDRAMP_BOUNDARY", "design", design_id,
-               f"impact={impact_level} additions={result['total_additions']}")
+        _audit("FEDRAMP_BOUNDARY", "design", design_id, f"impact={impact_level} additions={result['total_additions']}")
         return jsonify(result)
 
     # ====================================================================
@@ -694,9 +732,7 @@ def create_security_blueprint():
     def sc_api_templates():
         """List available security design templates."""
         with get_connection() as conn:
-            rows = conn.execute(
-                "SELECT * FROM sc_templates ORDER BY category, name"
-            ).fetchall()
+            rows = conn.execute("SELECT * FROM sc_templates ORDER BY category, name").fetchall()
         return jsonify([_row_to_dict(r) for r in rows])
 
     @bp.route("/api/constants", methods=["GET"])
@@ -738,29 +774,34 @@ def create_security_blueprint():
         # Normalize: SDC has nodes + boundaries, merge for export
         export_nodes = list(graph.get("nodes", []))
         for b in graph.get("boundaries", []):
-            export_nodes.append({
-                "id": b.get("id", ""),
-                "type": b.get("type", "boundary"),
-                "label": b.get("label", ""),
-                "x": b.get("x", 0),
-                "y": b.get("y", 0),
-                "width": b.get("width", 300),
-                "height": b.get("height", 200),
-                "config": b.get("config", {}),
-            })
+            export_nodes.append(
+                {
+                    "id": b.get("id", ""),
+                    "type": b.get("type", "boundary"),
+                    "label": b.get("label", ""),
+                    "x": b.get("x", 0),
+                    "y": b.get("y", 0),
+                    "width": b.get("width", 300),
+                    "height": b.get("height", 200),
+                    "config": b.get("config", {}),
+                }
+            )
         export_graph = {"nodes": export_nodes, "edges": graph.get("edges", [])}
 
         import re as _re
+
         safe_name = _re.sub(r"[^a-zA-Z0-9_-]", "_", name)
 
         if fmt == "drawio":
             from tools.network.export_import import to_drawio
+
             content = to_drawio(export_graph, name)
             _audit("EXPORT", "design", design_id, "drawio")
             return jsonify({"format": "drawio", "filename": f"{safe_name}.drawio", "content": content})
 
         if fmt == "svg":
             from tools.network.export_import import to_svg
+
             content = to_svg(export_graph, name)
             _audit("EXPORT", "design", design_id, "svg")
             return jsonify({"format": "svg", "filename": f"{safe_name}.svg", "content": content})
@@ -768,6 +809,7 @@ def create_security_blueprint():
         if fmt == "vsdx":
             from tools.network.visio_export import export_vsdx
             import base64
+
             vsdx_bytes = export_vsdx(name, export_graph)
             encoded = base64.b64encode(vsdx_bytes).decode("ascii")
             _audit("EXPORT", "design", design_id, "vsdx")
@@ -778,6 +820,7 @@ def create_security_blueprint():
             import base64
             import io as _io
             import zipfile
+
             csv_files = export_ops_csvs(name, export_graph)
             buf = _io.BytesIO()
             with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -836,7 +879,11 @@ def create_security_blueprint():
             _audit("EXPORT", "design", design_id, "artifact-bundle")
             return jsonify(result)
 
-        return jsonify({"error": f"Unknown format: {fmt}. Supported: drawio, svg, vsdx, csv, threat-model, ssp, sar, poam, artifact-bundle"}), 400
+        return jsonify(
+            {
+                "error": f"Unknown format: {fmt}. Supported: drawio, svg, vsdx, csv, threat-model, ssp, sar, poam, artifact-bundle"
+            }
+        ), 400
 
     # ====================================================================
     # PAGE ROUTES — Runbooks
@@ -897,11 +944,13 @@ def create_security_blueprint():
         assessment = run_security_assessment(design_id, graph)
         findings = assessment.get("findings", [])
         applicable = get_applicable_runbooks(findings)
-        return jsonify({
-            "design_id": design_id,
-            "total_findings": len(findings),
-            "applicable_runbooks": applicable,
-        })
+        return jsonify(
+            {
+                "design_id": design_id,
+                "total_findings": len(findings),
+                "applicable_runbooks": applicable,
+            }
+        )
 
     # ====================================================================
     # PAGE ROUTES — ATO Artifacts
@@ -943,8 +992,7 @@ def create_security_blueprint():
             return jsonify({"error": "Bad graph data"}), 500
         assessment = run_security_assessment(design_id, graph)
         nist_coverage = compute_nist_coverage(graph)
-        content = generate_ssp_artifact(name, design_id, graph,
-                                        assessment, nist_coverage)
+        content = generate_ssp_artifact(name, design_id, graph, assessment, nist_coverage)
         _audit("EXPORT_SSP", "design", design_id, "ssp")
         return jsonify({"content": content, "format": "ssp"})
 
@@ -992,8 +1040,7 @@ def create_security_blueprint():
         _audit("EXPORT_POAM", "design", design_id, "poam")
         return jsonify({"content": content, "format": "poam"})
 
-    @bp.route("/api/designs/<design_id>/export/artifact-bundle",
-              methods=["POST"])
+    @bp.route("/api/designs/<design_id>/export/artifact-bundle", methods=["POST"])
     @sc_login_required
     def sc_api_export_artifact_bundle(design_id):
         """Generate all ATO artifacts (SSP, SAR, POA&M) as a bundle."""
@@ -1071,9 +1118,9 @@ def create_security_blueprint():
     def sc_api_posture_summary():
         """Aggregate security posture across all designs."""
         with get_connection() as conn:
-            designs = [_row_to_dict(r) for r in conn.execute(
-                "SELECT id, name FROM security_designs ORDER BY name"
-            ).fetchall()]
+            designs = [
+                _row_to_dict(r) for r in conn.execute("SELECT id, name FROM security_designs ORDER BY name").fetchall()
+            ]
 
         design_list = []
         total_score = 0.0
@@ -1110,9 +1157,7 @@ def create_security_blueprint():
                 # Count CAT1 findings from the latest assessment
                 try:
                     findings = json.loads(latest["findings_json"] or "[]")
-                    entry["cat1_count"] = sum(
-                        1 for f in findings if f.get("severity") == "CAT1"
-                    )
+                    entry["cat1_count"] = sum(1 for f in findings if f.get("severity") == "CAT1")
                 except Exception:
                     pass
 
@@ -1167,24 +1212,28 @@ def create_security_blueprint():
             except Exception:
                 cat1 = 0
             total_cat1 += cat1
-            pipeline_assessments.append({
-                "pipeline_id": pid,
-                "cat1_count": cat1,
-                "last_assessed": pr["ran_at"],
-            })
+            pipeline_assessments.append(
+                {
+                    "pipeline_id": pid,
+                    "cat1_count": cat1,
+                    "last_assessed": pr["ran_at"],
+                }
+            )
 
-        return jsonify({
-            "total_designs": total_designs,
-            "assessed_designs": assessed_count,
-            "unassessed_designs": unassessed,
-            "average_risk_score": avg_score,
-            "average_grade": avg_grade,
-            "grade_distribution": grade_dist,
-            "designs": design_list,
-            "overall_posture": overall_posture,
-            "total_cat1_findings": total_cat1,
-            "pipeline_assessments": pipeline_assessments,
-        })
+        return jsonify(
+            {
+                "total_designs": total_designs,
+                "assessed_designs": assessed_count,
+                "unassessed_designs": unassessed,
+                "average_risk_score": avg_score,
+                "average_grade": avg_grade,
+                "grade_distribution": grade_dist,
+                "designs": design_list,
+                "overall_posture": overall_posture,
+                "total_cat1_findings": total_cat1,
+                "pipeline_assessments": pipeline_assessments,
+            }
+        )
 
     # ====================================================================
     # API ROUTES — IaC Scanning
@@ -1241,9 +1290,7 @@ def create_security_blueprint():
         if not row:
             return jsonify({"error": "Not found"}), 404
         try:
-            graph = (
-                json.loads(row[0]) if isinstance(row[0], str) else row[0]
-            )
+            graph = json.loads(row[0]) if isinstance(row[0], str) else row[0]
         except Exception:
             return jsonify({"error": "Bad graph data"}), 500
         result = compute_mitre_coverage(graph)
@@ -1258,6 +1305,7 @@ def create_security_blueprint():
     def sc_api_import_threat_model():
         """Import a threat model from Threat Dragon or TMT format."""
         from tools.security_canvas.importers import import_threat_model
+
         data = request.get_json(force=True, silent=True) or {}
         content = data.get("content", "")
         fmt = data.get("format", "auto")
@@ -1274,10 +1322,15 @@ def create_security_blueprint():
                 "INSERT INTO security_designs "
                 "(id, name, description, graph_json, classification, "
                 "created_at, updated_at) VALUES (?,?,?,?,?,?,?)",
-                (design_id, result.get("design_name", "Imported Design"),
-                 f"Imported from {result.get('source_format', 'unknown')}",
-                 json.dumps(result.get("graph", {})),
-                 "CUI", now, now),
+                (
+                    design_id,
+                    result.get("design_name", "Imported Design"),
+                    f"Imported from {result.get('source_format', 'unknown')}",
+                    json.dumps(result.get("graph", {})),
+                    "CUI",
+                    now,
+                    now,
+                ),
             )
         _audit("IMPORT", "design", design_id, result.get("source_format", ""))
         result["design_id"] = design_id
@@ -1292,6 +1345,7 @@ def create_security_blueprint():
     def sc_api_collab_join(design_id):
         """Join a collaborative editing session."""
         from tools.security_canvas.collaboration import get_session
+
         user_id = session.get("user_id", "anonymous")
         user_name = session.get("username", "")
         sess = get_session(design_id)
@@ -1303,6 +1357,7 @@ def create_security_blueprint():
     def sc_api_collab_leave(design_id):
         """Leave a collaborative editing session."""
         from tools.security_canvas.collaboration import get_session
+
         user_id = session.get("user_id", "anonymous")
         sess = get_session(design_id)
         sess.leave(user_id)
@@ -1313,6 +1368,7 @@ def create_security_blueprint():
     def sc_api_collab_push(design_id):
         """Push an operation to the collaboration session."""
         from tools.security_canvas.collaboration import get_session
+
         data = request.get_json(force=True, silent=True) or {}
         user_id = session.get("user_id", "anonymous")
         sess = get_session(design_id)
@@ -1328,6 +1384,7 @@ def create_security_blueprint():
     def sc_api_collab_poll(design_id):
         """Poll for new operations since a given sequence number."""
         from tools.security_canvas.collaboration import get_session
+
         since = request.args.get("since", 0, type=int)
         user_id = session.get("user_id", "anonymous")
         # Update cursor if provided
@@ -1338,17 +1395,20 @@ def create_security_blueprint():
             sess.update_cursor(user_id, cx, cy)
         ops = sess.get_operations_since(since)
         participants = sess.get_participants()
-        return jsonify({
-            "operations": ops,
-            "participants": participants,
-            "latest_seq": sess.seq,
-        })
+        return jsonify(
+            {
+                "operations": ops,
+                "participants": participants,
+                "latest_seq": sess.seq,
+            }
+        )
 
     @bp.route("/api/collab/<design_id>/participants", methods=["GET"])
     @sc_login_required
     def sc_api_collab_participants(design_id):
         """Get current participants in a session."""
         from tools.security_canvas.collaboration import get_session
+
         sess = get_session(design_id)
         return jsonify({"participants": sess.get_participants()})
 
@@ -1368,9 +1428,7 @@ def create_security_blueprint():
         if not row:
             return jsonify({"error": "Not found"}), 404
         try:
-            graph = (
-                json.loads(row[0]) if isinstance(row[0], str) else row[0]
-            )
+            graph = json.loads(row[0]) if isinstance(row[0], str) else row[0]
         except Exception:
             return jsonify({"error": "Bad graph data"}), 500
         result = compute_compliance_crosswalk(graph)
@@ -1424,7 +1482,9 @@ def create_security_blueprint():
                 return jsonify({"error": "Design not found"}), 404
             current_graph_raw = row[0]
             try:
-                current_graph = json.loads(current_graph_raw) if isinstance(current_graph_raw, str) else current_graph_raw
+                current_graph = (
+                    json.loads(current_graph_raw) if isinstance(current_graph_raw, str) else current_graph_raw
+                )
             except Exception:
                 current_graph = {}
             ver_num = conn.execute(
@@ -1450,9 +1510,15 @@ def create_security_blueprint():
             conn.execute(
                 "INSERT INTO sc_versions (id, design_id, version_number, graph_json, change_summary, user_id, created_at) "
                 "VALUES (?,?,?,?,?,?,?)",
-                (ver_id, design_id, ver_num,
-                 json.dumps(current_graph) if isinstance(current_graph, dict) else str(current_graph_raw),
-                 change_summary, session.get("user_id", ""), now),
+                (
+                    ver_id,
+                    design_id,
+                    ver_num,
+                    json.dumps(current_graph) if isinstance(current_graph, dict) else str(current_graph_raw),
+                    change_summary,
+                    session.get("user_id", ""),
+                    now,
+                ),
             )
         _audit("CREATE", "version", ver_id, f"design={design_id} v{ver_num}")
         return jsonify({"id": ver_id, "version_number": ver_num, "change_summary": change_summary, "created_at": now})
@@ -1469,7 +1535,8 @@ def create_security_blueprint():
             if not ver_row:
                 return jsonify({"error": "Version not found"}), 404
             design_row = conn.execute(
-                "SELECT id FROM security_designs WHERE id=?", (design_id,),
+                "SELECT id FROM security_designs WHERE id=?",
+                (design_id,),
             ).fetchone()
             if not design_row:
                 return jsonify({"error": "Design not found"}), 404
@@ -1479,7 +1546,9 @@ def create_security_blueprint():
                 (ver_row[0], now, design_id),
             )
         _audit("RESTORE", "version", version_id, f"design={design_id} restored to v{ver_row[1]}")
-        return jsonify({"id": design_id, "restored_version": version_id, "version_number": ver_row[1], "updated_at": now})
+        return jsonify(
+            {"id": design_id, "restored_version": version_id, "version_number": ver_row[1], "updated_at": now}
+        )
 
     # ====================================================================
     # API ROUTES — LLM-Assisted Threat Identification

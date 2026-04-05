@@ -33,6 +33,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 # ── Result Types ──────────────────────────────────────────────────────────────
 
+
 class ValidationResult:
     def __init__(self, layer, check_name, status, message, file_path=None, details=None):
         self.layer = layer
@@ -110,6 +111,7 @@ def validate_bundle(files, max_layer=3):
 
 # ── Layer 1: Syntax ──────────────────────────────────────────────────────────
 
+
 def _layer1_syntax(files):
     """Validate file syntax — parseable HCL, valid YAML, valid JSON."""
     results = []
@@ -174,6 +176,7 @@ def _check_yaml_syntax(path, content):
     """Validate YAML syntax."""
     try:
         import yaml
+
         docs = list(yaml.safe_load_all(content))
         if not docs or all(d is None for d in docs):
             return ValidationResult(1, "yaml_syntax", "warn", "YAML file is empty or contains only comments", path)
@@ -215,6 +218,7 @@ def _check_shell_syntax(path, content):
 
 # ── Layer 2: Schema ──────────────────────────────────────────────────────────
 
+
 def _layer2_schema(files):
     """Validate resource schemas — correct types, required fields."""
     results = []
@@ -236,11 +240,22 @@ def _layer2_schema(files):
 def _check_tf_resources(path, content):
     """Validate Terraform resource types are real."""
     known_prefixes = {
-        "aws_", "azurerm_", "google_", "oci_", "ibm_", "helm_", "kubernetes_",
-        "null_", "random_", "local_", "tls_", "docker_",
+        "aws_",
+        "azurerm_",
+        "google_",
+        "oci_",
+        "ibm_",
+        "helm_",
+        "kubernetes_",
+        "null_",
+        "random_",
+        "local_",
+        "tls_",
+        "docker_",
     }
     issues = []
     import re
+
     for match in re.finditer(r'resource\s+"(\w+)"\s+"(\w+)"', content):
         resource_type = match.group(1)
         if not any(resource_type.startswith(p) for p in known_prefixes):
@@ -261,6 +276,7 @@ def _check_helm_values(path, content):
     """Validate Helm values have expected structure."""
     try:
         import yaml
+
         values = yaml.safe_load(content)
         if not isinstance(values, dict):
             return ValidationResult(2, "helm_values", "warn", "Values file is not a dict", path)
@@ -303,6 +319,7 @@ def _check_ci_config(path, content):
 
 
 # ── Layer 3: Policy ──────────────────────────────────────────────────────────
+
 
 def _layer3_policy(files):
     """Validate security policies — encryption, access control, compliance."""
@@ -354,10 +371,11 @@ def _check_encryption_policy(tf_files):
 def _check_no_secrets(files):
     """Check for hardcoded secrets in generated files."""
     import re
+
     secret_patterns = [
         (r'(?i)(password|secret|api_key|access_key)\s*=\s*"[^"]{8,}"', "Possible hardcoded secret"),
-        (r'AKIA[0-9A-Z]{16}', "AWS access key"),
-        (r'(?i)BEGIN\s+(RSA|DSA|EC|OPENSSH)\s+PRIVATE\s+KEY', "Private key"),
+        (r"AKIA[0-9A-Z]{16}", "AWS access key"),
+        (r"(?i)BEGIN\s+(RSA|DSA|EC|OPENSSH)\s+PRIVATE\s+KEY", "Private key"),
     ]
     issues = []
     for f in files:
@@ -430,6 +448,7 @@ def _check_fips_policy(all_content):
 
 # ── Layer 4: Plan (requires credentials) ─────────────────────────────────────
 
+
 def _layer4_plan(files):
     """Run terraform plan if terraform binary available and credentials configured."""
     if not shutil.which("terraform"):
@@ -458,16 +477,31 @@ def _layer4_plan(files):
             try:
                 proc = subprocess.run(
                     ["terraform", "validate"],
-                    capture_output=True, text=True, timeout=30, cwd=str(target),
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                    cwd=str(target),
                 )
                 if proc.returncode == 0:
-                    results.append(ValidationResult(4, "terraform_validate", "pass", f"terraform validate passed for {tf_dir}", tf_dir))
+                    results.append(
+                        ValidationResult(
+                            4, "terraform_validate", "pass", f"terraform validate passed for {tf_dir}", tf_dir
+                        )
+                    )
                 else:
-                    results.append(ValidationResult(4, "terraform_validate", "fail", f"terraform validate failed: {proc.stderr[:200]}", tf_dir))
+                    results.append(
+                        ValidationResult(
+                            4, "terraform_validate", "fail", f"terraform validate failed: {proc.stderr[:200]}", tf_dir
+                        )
+                    )
             except FileNotFoundError:
-                results.append(ValidationResult(4, "terraform_validate", "skip", "terraform init required first", tf_dir))
+                results.append(
+                    ValidationResult(4, "terraform_validate", "skip", "terraform init required first", tf_dir)
+                )
             except subprocess.TimeoutExpired:
-                results.append(ValidationResult(4, "terraform_validate", "skip", "terraform validate timed out", tf_dir))
+                results.append(
+                    ValidationResult(4, "terraform_validate", "skip", "terraform validate timed out", tf_dir)
+                )
             except Exception as exc:
                 results.append(ValidationResult(4, "terraform_validate", "skip", f"Error: {exc}", tf_dir))
 
@@ -475,6 +509,7 @@ def _layer4_plan(files):
 
 
 # ── Layer 5: Deploy Test (requires local emulation) ──────────────────────────
+
 
 def _layer5_deploy_test(files):
     """Test deployment in ephemeral environment (LocalStack, kind, etc.)."""
@@ -484,21 +519,33 @@ def _layer5_deploy_test(files):
     if shutil.which("localstack"):
         results.append(ValidationResult(5, "localstack_available", "pass", "LocalStack available for AWS emulation"))
     else:
-        results.append(ValidationResult(5, "localstack_available", "skip", "LocalStack not installed — install for Layer 5 AWS testing"))
+        results.append(
+            ValidationResult(
+                5, "localstack_available", "skip", "LocalStack not installed — install for Layer 5 AWS testing"
+            )
+        )
 
     # Check for kind (Kubernetes in Docker)
     if shutil.which("kind"):
         results.append(ValidationResult(5, "kind_available", "pass", "kind available for K8s testing"))
     else:
-        results.append(ValidationResult(5, "kind_available", "skip", "kind not installed — install for Layer 5 K8s testing"))
+        results.append(
+            ValidationResult(5, "kind_available", "skip", "kind not installed — install for Layer 5 K8s testing")
+        )
 
     # Check for helm
     if shutil.which("helm"):
         helm_files = [f for f in files if "values/" in f["path"]]
         for hf in helm_files:
             chart_name = Path(hf["path"]).stem
-            results.append(ValidationResult(5, f"helm_template_{chart_name}", "skip",
-                                            f"Helm template test available for {chart_name} — run with 'helm template'"))
+            results.append(
+                ValidationResult(
+                    5,
+                    f"helm_template_{chart_name}",
+                    "skip",
+                    f"Helm template test available for {chart_name} — run with 'helm template'",
+                )
+            )
     else:
         results.append(ValidationResult(5, "helm_available", "skip", "helm not installed"))
 
@@ -507,12 +554,14 @@ def _layer5_deploy_test(files):
 
 # ── API Integration ──────────────────────────────────────────────────────────
 
+
 def validate_deploy_bundle_from_generator(graph, name, target_csp="auto", max_layer=3):
     """Generate a deploy bundle and validate it in one call.
 
     Used by the Pipeline Canvas "Validate" button.
     """
     from tools.pipeline.deploy_generator import generate_deploy_bundle
+
     bundle = generate_deploy_bundle(graph, name, target_csp)
     validation = validate_bundle(bundle["files"], max_layer)
     return {
@@ -523,6 +572,7 @@ def validate_deploy_bundle_from_generator(graph, name, target_csp="auto", max_la
 
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
+
 
 def main():
     parser = argparse.ArgumentParser(description="IaC Validation Engine")
@@ -552,6 +602,7 @@ def main():
     else:
         # Generate a test bundle
         from tools.pipeline.deploy_generator import generate_deploy_bundle
+
         test_graph = {
             "nodes": [
                 {"type": "scm-gitlab", "label": "GitLab"},
@@ -576,8 +627,10 @@ def main():
             print(f"  [{icon}] L{r['layer']} {r['check']}: {r['message']}")
             for d in r.get("details", []):
                 print(f"         {d}")
-        print(f"\nSummary: {result['summary']['passed']} pass, {result['summary']['failed']} fail, "
-              f"{result['summary']['warned']} warn, {result['summary']['skipped']} skip")
+        print(
+            f"\nSummary: {result['summary']['passed']} pass, {result['summary']['failed']} fail, "
+            f"{result['summary']['warned']} warn, {result['summary']['skipped']} skip"
+        )
         print(f"Gate: {result['gate'].upper()}")
 
 

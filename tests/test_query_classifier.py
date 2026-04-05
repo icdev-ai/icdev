@@ -17,6 +17,7 @@ from tools.rag.query_classifier import (
 # Taxonomy constant tests
 # ---------------------------------------------------------------------------
 
+
 class TestTaxonomyLabels:
     def test_taxonomy_labels_constant(self):
         """Verify all 4 expected labels exist in TAXONOMY_LABELS."""
@@ -37,6 +38,7 @@ class TestTaxonomyLabels:
 # ---------------------------------------------------------------------------
 # Single query classification tests
 # ---------------------------------------------------------------------------
+
 
 class TestClassifyQuery:
     """Heuristic-path tests: LLM is patched out so results are deterministic."""
@@ -171,6 +173,7 @@ class TestClassifyQuery:
 # Batch classification tests
 # ---------------------------------------------------------------------------
 
+
 class TestClassifyBatch:
     """Batch classification tests — LLM is patched out for determinism."""
 
@@ -251,6 +254,7 @@ class TestClassifyBatch:
 # ---------------------------------------------------------------------------
 # LLM fallback behaviour (mocked)
 # ---------------------------------------------------------------------------
+
 
 class TestClassifyQueryLLMFallback:
     def test_llm_unavailable_falls_back_to_heuristic(self):

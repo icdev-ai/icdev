@@ -238,13 +238,17 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         if critical:
             logger.warning(
                 "Injection attempt blocked from %s: %s",
-                url, [f["category"] for f in critical],
+                url,
+                [f["category"] for f in critical],
             )
-            feed_results.append({
-                "feed": feed_name, "status": "blocked",
-                "reason": "injection_detected",
-                "categories": [f["category"] for f in critical],
-            })
+            feed_results.append(
+                {
+                    "feed": feed_name,
+                    "status": "blocked",
+                    "reason": "injection_detected",
+                    "categories": [f["category"] for f in critical],
+                }
+            )
             continue
 
         # Parse based on type

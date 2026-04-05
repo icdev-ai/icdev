@@ -64,7 +64,8 @@ def check_bridge_readiness(
     conn = _get_db(db_path)
     try:
         session = conn.execute(
-            "SELECT * FROM intake_sessions WHERE id = ?", (session_id,),
+            "SELECT * FROM intake_sessions WHERE id = ?",
+            (session_id,),
         ).fetchone()
         if not session:
             return {"ready": False, "reason": f"Session {session_id} not found"}
@@ -152,7 +153,8 @@ def bridge_intake_to_loop(
     conn = _get_db(db_path)
     try:
         session = conn.execute(
-            "SELECT * FROM intake_sessions WHERE id = ?", (session_id,),
+            "SELECT * FROM intake_sessions WHERE id = ?",
+            (session_id,),
         ).fetchone()
         project_id = session["project_id"] or ""
         customer = session["customer_name"] or "Unknown"
@@ -180,7 +182,11 @@ def bridge_intake_to_loop(
 
         # Create the workflow loop
         loop_result = create_loop(
-            project_id, phase_name, "build", created_by, db_path,
+            project_id,
+            phase_name,
+            "build",
+            created_by,
+            db_path,
         )
         if "error" in loop_result:
             return loop_result
@@ -212,7 +218,10 @@ def bridge_intake_to_loop(
                         then = stripped[5:]
 
             result = add_acceptance_criterion(
-                loop_id, given, when, then,
+                loop_id,
+                given,
+                when,
+                then,
                 bdd_story_id=story_id,
                 db_path=db_path,
             )
@@ -233,7 +242,11 @@ def bridge_intake_to_loop(
         )
 
         plan_result = finalize_plan(
-            loop_id, plan_summary, task_count, boundaries_list, db_path,
+            loop_id,
+            plan_summary,
+            task_count,
+            boundaries_list,
+            db_path,
         )
 
         if _HAS_AUDIT:
@@ -242,12 +255,14 @@ def bridge_intake_to_loop(
                     event_type="workflow.intake_bridged",
                     actor="intake-bridge",
                     action=f"Bridged session {session_id} to loop {loop_id}",
-                    details=json.dumps({
-                        "session_id": session_id,
-                        "loop_id": loop_id,
-                        "stories": task_count,
-                        "ac_count": ac_count,
-                    }),
+                    details=json.dumps(
+                        {
+                            "session_id": session_id,
+                            "loop_id": loop_id,
+                            "stories": task_count,
+                            "ac_count": ac_count,
+                        }
+                    ),
                     project_id=project_id,
                 )
             except Exception:
@@ -269,9 +284,7 @@ def bridge_intake_to_loop(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Intake → Workflow Loop Bridge"
-    )
+    parser = argparse.ArgumentParser(description="Intake → Workflow Loop Bridge")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--db-path", type=Path, default=None)
 

@@ -16,6 +16,7 @@ CLI:
     python tools/redaction/detector.py --list-entities --json
     python tools/redaction/detector.py --health --json
 """
+
 from __future__ import annotations
 
 import argparse
@@ -50,6 +51,7 @@ def _load_config() -> Dict[str, Any]:
     config_path = BASE_DIR / "args" / "redaction_config.yaml"
     try:
         import yaml
+
         with open(config_path, encoding="utf-8") as f:
             _CONFIG_CACHE = yaml.safe_load(f) or {}
     except Exception:
@@ -66,6 +68,7 @@ def _load_govcon_config() -> Dict[str, Any]:
     config_path = BASE_DIR / "args" / "redaction_govcon.yaml"
     try:
         import yaml
+
         with open(config_path, encoding="utf-8") as f:
             _GOVCON_CONFIG_CACHE = yaml.safe_load(f) or {}
     except Exception:
@@ -77,11 +80,11 @@ def _load_govcon_config() -> Dict[str, Any]:
 # Detection result
 # ---------------------------------------------------------------------------
 
+
 class DetectionResult:
     """A single PII detection."""
 
-    def __init__(self, entity_type: str, start: int, end: int,
-                 score: float, text: str = "", recognizer: str = ""):
+    def __init__(self, entity_type: str, start: int, end: int, score: float, text: str = "", recognizer: str = ""):
         self.entity_type = entity_type
         self.start = start
         self.end = end
@@ -100,8 +103,7 @@ class DetectionResult:
         }
 
     def __repr__(self) -> str:
-        return (f"DetectionResult({self.entity_type}, "
-                f"[{self.start}:{self.end}], score={self.score:.2f})")
+        return f"DetectionResult({self.entity_type}, [{self.start}:{self.end}], score={self.score:.2f})"
 
 
 # ---------------------------------------------------------------------------
@@ -112,7 +114,11 @@ _FALLBACK_PATTERNS: List[Dict[str, Any]] = [
     {"entity_type": "US_SSN", "pattern": r"\b\d{3}-\d{2}-\d{4}\b", "score": 0.95},
     {"entity_type": "EMAIL_ADDRESS", "pattern": r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}", "score": 0.9},
     {"entity_type": "PHONE_NUMBER", "pattern": r"\b(\+?1[-.]?)?\(?\d{3}\)?[-.]?\d{3}[-.]?\d{4}\b", "score": 0.7},
-    {"entity_type": "CREDIT_CARD", "pattern": r"\b(?:4\d{12}(?:\d{3})?|5[1-5]\d{14}|3[47]\d{13}|6(?:011|5\d{2})\d{12})\b", "score": 0.95},
+    {
+        "entity_type": "CREDIT_CARD",
+        "pattern": r"\b(?:4\d{12}(?:\d{3})?|5[1-5]\d{14}|3[47]\d{13}|6(?:011|5\d{2})\d{12})\b",
+        "score": 0.95,
+    },
     {"entity_type": "IP_ADDRESS", "pattern": r"\b(?:\d{1,3}\.){3}\d{1,3}\b", "score": 0.6},
     {"entity_type": "US_PASSPORT", "pattern": r"\b[A-Z]\d{8}\b", "score": 0.5},
 ]
@@ -122,12 +128,13 @@ _FALLBACK_PATTERNS: List[Dict[str, Any]] = [
 # Detector Engine
 # ---------------------------------------------------------------------------
 
+
 class RedactionDetector:
     """PII detection engine: regex + Ollama NER + deny-lists (+ optional Presidio)."""
 
-    def __init__(self, config: Optional[Dict] = None,
-                 govcon_config: Optional[Dict] = None,
-                 use_ollama_ner: bool = True):
+    def __init__(
+        self, config: Optional[Dict] = None, govcon_config: Optional[Dict] = None, use_ollama_ner: bool = True
+    ):
         self._config = config or _load_config()
         self._govcon_config = govcon_config or _load_govcon_config()
         self._presidio_available = False
@@ -150,8 +157,7 @@ class RedactionDetector:
             for rec in govcon_recognizers:
                 self._analyzer.registry.add_recognizer(rec)
             self._presidio_available = True
-            logger.info("Presidio analyzer initialized with %d custom recognizers",
-                        len(govcon_recognizers))
+            logger.info("Presidio analyzer initialized with %d custom recognizers", len(govcon_recognizers))
         except (ImportError, Exception) as e:
             logger.info("Presidio not available (%s) — using built-in detection", type(e).__name__)
             self._presidio_available = False
@@ -159,6 +165,7 @@ class RedactionDetector:
         # Layer 2: Ollama NER for PERSON/ORGANIZATION (air-gap safe)
         try:
             from tools.redaction.ner_recognizer import NERRecognizer
+
             self._ner_recognizer = NERRecognizer(use_ollama=self._use_ollama_ner)
             logger.info("Ollama NER recognizer initialized (use_ollama=%s)", self._use_ollama_ner)
         except ImportError:
@@ -202,32 +209,37 @@ class RedactionDetector:
                 compiled = re.compile(pdef["pattern"])
             except re.error:
                 continue
-            self._custom_patterns.append({
-                "entity_type": pdef.get("name", "CONTRACT_ID").upper(),
-                "pattern": pdef["pattern"],
-                "compiled": compiled,
-                "score": pdef.get("confidence", 0.8),
-                "context_words": pdef.get("context_words", []),
-                "treatment": pdef.get("treatment", "redact"),
-            })
+            self._custom_patterns.append(
+                {
+                    "entity_type": pdef.get("name", "CONTRACT_ID").upper(),
+                    "pattern": pdef["pattern"],
+                    "compiled": compiled,
+                    "score": pdef.get("confidence", 0.8),
+                    "context_words": pdef.get("context_words", []),
+                    "treatment": pdef.get("treatment", "redact"),
+                }
+            )
 
         for pdef in gc.get("pricing_patterns", []) or []:
             try:
                 compiled = re.compile(pdef["pattern"])
             except re.error:
                 continue
-            self._custom_patterns.append({
-                "entity_type": pdef.get("name", "PRICING").upper(),
-                "pattern": pdef["pattern"],
-                "compiled": compiled,
-                "score": pdef.get("confidence", 0.8),
-                "context_words": pdef.get("context_words", []),
-                "treatment": pdef.get("treatment", "redact"),
-                "placeholder": pdef.get("placeholder", ""),
-            })
+            self._custom_patterns.append(
+                {
+                    "entity_type": pdef.get("name", "PRICING").upper(),
+                    "pattern": pdef["pattern"],
+                    "compiled": compiled,
+                    "score": pdef.get("confidence", 0.8),
+                    "context_words": pdef.get("context_words", []),
+                    "treatment": pdef.get("treatment", "redact"),
+                    "placeholder": pdef.get("placeholder", ""),
+                }
+            )
 
-    def detect(self, text: str, entities: Optional[List[str]] = None,
-               impact_level: str = "IL4") -> List[DetectionResult]:
+    def detect(
+        self, text: str, entities: Optional[List[str]] = None, impact_level: str = "IL4"
+    ) -> List[DetectionResult]:
         """Detect PII/sensitive data in text.
 
         Args:
@@ -268,8 +280,7 @@ class RedactionDetector:
             entity_cfg = std_entities.get(r.entity_type, {})
             if entity_cfg.get("enabled", True) is False:
                 continue
-            threshold = entity_cfg.get("threshold",
-                                        detection_cfg.get("thresholds", {}).get("hard_redact", 0.3))
+            threshold = entity_cfg.get("threshold", detection_cfg.get("thresholds", {}).get("hard_redact", 0.3))
             if r.score >= threshold:
                 filtered.append(r)
 
@@ -288,14 +299,16 @@ class RedactionDetector:
                 entities=entities,
             )
             for pr in presidio_results:
-                results.append(DetectionResult(
-                    entity_type=pr.entity_type,
-                    start=pr.start,
-                    end=pr.end,
-                    score=pr.score,
-                    text=text[pr.start:pr.end],
-                    recognizer="presidio",
-                ))
+                results.append(
+                    DetectionResult(
+                        entity_type=pr.entity_type,
+                        start=pr.start,
+                        end=pr.end,
+                        score=pr.score,
+                        text=text[pr.start : pr.end],
+                        recognizer="presidio",
+                    )
+                )
         except Exception as e:
             logger.error("Presidio detection failed: %s", e)
         return results
@@ -306,14 +319,16 @@ class RedactionDetector:
         try:
             ner_results = self._ner_recognizer.extract(text)
             for nr in ner_results:
-                results.append(DetectionResult(
-                    entity_type=nr.entity_type,
-                    start=nr.start,
-                    end=nr.end,
-                    score=nr.score,
-                    text=nr.text,
-                    recognizer=f"ner_{nr.method}",
-                ))
+                results.append(
+                    DetectionResult(
+                        entity_type=nr.entity_type,
+                        start=nr.start,
+                        end=nr.end,
+                        score=nr.score,
+                        text=nr.text,
+                        recognizer=f"ner_{nr.method}",
+                    )
+                )
         except Exception as e:
             logger.debug("NER detection failed: %s", e)
         return results
@@ -352,14 +367,16 @@ class RedactionDetector:
                     if self._looks_like_uuid(matched_text):
                         continue
 
-                    results.append(DetectionResult(
-                        entity_type=pdef["entity_type"],
-                        start=match.start(),
-                        end=match.end(),
-                        score=score,
-                        text=matched_text,
-                        recognizer="regex",
-                    ))
+                    results.append(
+                        DetectionResult(
+                            entity_type=pdef["entity_type"],
+                            start=match.start(),
+                            end=match.end(),
+                            score=score,
+                            text=matched_text,
+                            recognizer="regex",
+                        )
+                    )
             except re.error:
                 continue
 
@@ -374,24 +391,23 @@ class RedactionDetector:
                 # Word boundary matching
                 pattern = re.compile(r"\b" + re.escape(term) + r"\b", re.IGNORECASE)
                 for match in pattern.finditer(text):
-                    results.append(DetectionResult(
-                        entity_type=entity_type,
-                        start=match.start(),
-                        end=match.end(),
-                        score=0.99,  # Deny-list = very high confidence
-                        text=match.group(),
-                        recognizer="deny_list",
-                    ))
+                    results.append(
+                        DetectionResult(
+                            entity_type=entity_type,
+                            start=match.start(),
+                            end=match.end(),
+                            score=0.99,  # Deny-list = very high confidence
+                            text=match.group(),
+                            recognizer="deny_list",
+                        )
+                    )
 
         return results
 
     @staticmethod
     def _looks_like_uuid(text: str) -> bool:
         """Check if text looks like a UUID segment."""
-        return bool(re.match(
-            r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
-            text, re.IGNORECASE
-        ))
+        return bool(re.match(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", text, re.IGNORECASE))
 
     @staticmethod
     def _deduplicate(results: List[DetectionResult]) -> List[DetectionResult]:
@@ -423,31 +439,37 @@ class RedactionDetector:
         # Standard entities from config
         detection_cfg = self._config.get("detection", {})
         for entity_type, cfg in detection_cfg.get("standard_entities", {}).items():
-            entities.append({
-                "entity_type": entity_type,
-                "enabled": cfg.get("enabled", True),
-                "treatment": cfg.get("treatment", "redact"),
-                "source": "presidio" if self._presidio_available else "regex_fallback",
-            })
+            entities.append(
+                {
+                    "entity_type": entity_type,
+                    "enabled": cfg.get("enabled", True),
+                    "treatment": cfg.get("treatment", "redact"),
+                    "source": "presidio" if self._presidio_available else "regex_fallback",
+                }
+            )
 
         # Custom GovCon entities
         for pdef in self._custom_patterns:
-            entities.append({
-                "entity_type": pdef["entity_type"],
-                "enabled": True,
-                "treatment": pdef.get("treatment", "redact"),
-                "source": "govcon_regex",
-            })
+            entities.append(
+                {
+                    "entity_type": pdef["entity_type"],
+                    "enabled": True,
+                    "treatment": pdef.get("treatment", "redact"),
+                    "source": "govcon_regex",
+                }
+            )
 
         # Deny-list entities
         for entity_type, terms in self._deny_lists.items():
-            entities.append({
-                "entity_type": entity_type,
-                "enabled": True,
-                "treatment": "surrogate",
-                "source": "deny_list",
-                "term_count": len(terms),
-            })
+            entities.append(
+                {
+                    "entity_type": entity_type,
+                    "enabled": True,
+                    "treatment": "surrogate",
+                    "source": "deny_list",
+                    "term_count": len(terms),
+                }
+            )
 
         return entities
 
@@ -468,6 +490,7 @@ class RedactionDetector:
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+
 
 def main():
     parser = argparse.ArgumentParser(description="ICDEV™ Redaction Detector")

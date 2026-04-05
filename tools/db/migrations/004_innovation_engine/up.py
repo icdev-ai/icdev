@@ -10,7 +10,6 @@ Adds: innovation_signals (D206), innovation_triage_log (D206),
 """
 
 
-
 def _table_exists(conn, table):
     """Check if a table exists."""
     cursor = conn.execute(

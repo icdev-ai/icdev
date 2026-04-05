@@ -57,73 +57,90 @@ EXTENSION_MAP: Dict[str, str] = {
 DEFAULT_CONFIG: Dict[str, Any] = {
     "route_patterns": {
         "python": [
-            r'@\w+\.(route|get|post|put|delete|patch)\s*\(',
-            r'@app\.route\s*\(',
-            r'@bp\.route\s*\(',
-            r'@blueprint\.route\s*\(',
+            r"@\w+\.(route|get|post|put|delete|patch)\s*\(",
+            r"@app\.route\s*\(",
+            r"@bp\.route\s*\(",
+            r"@blueprint\.route\s*\(",
         ],
         "java": [
-            r'@(Get|Post|Put|Delete|Patch)Mapping',
-            r'@RequestMapping',
+            r"@(Get|Post|Put|Delete|Patch)Mapping",
+            r"@RequestMapping",
         ],
         "go": [
-            r'http\.HandleFunc\s*\(',
-            r'\.(GET|POST|PUT|DELETE|PATCH)\s*\(',
-            r'router\.(Handle|HandleFunc|Get|Post|Put|Delete)\s*\(',
+            r"http\.HandleFunc\s*\(",
+            r"\.(GET|POST|PUT|DELETE|PATCH)\s*\(",
+            r"router\.(Handle|HandleFunc|Get|Post|Put|Delete)\s*\(",
         ],
         "typescript": [
-            r'router\.(get|post|put|delete|patch)\s*\(',
-            r'app\.(get|post|put|delete|patch)\s*\(',
+            r"router\.(get|post|put|delete|patch)\s*\(",
+            r"app\.(get|post|put|delete|patch)\s*\(",
         ],
         "rust": [
-            r'#\[actix_web::(get|post|put|delete)\(',
-            r'\.route\s*\(',
+            r"#\[actix_web::(get|post|put|delete)\(",
+            r"\.route\s*\(",
         ],
         "csharp": [
-            r'\[Http(Get|Post|Put|Delete|Patch)\]',
-            r'\[Route\(',
+            r"\[Http(Get|Post|Put|Delete|Patch)\]",
+            r"\[Route\(",
         ],
     },
     "auth_patterns": {
         "python": [
-            r'@require_role', r'@require_auth', r'@login_required',
-            r'@jwt_required', r'@auth_required', r'g\.current_user',
-            r'@token_required',
+            r"@require_role",
+            r"@require_auth",
+            r"@login_required",
+            r"@jwt_required",
+            r"@auth_required",
+            r"g\.current_user",
+            r"@token_required",
         ],
-        "java": [r'@PreAuthorize', r'@Secured', r'@RolesAllowed', r'SecurityContext'],
-        "go": [r'authMiddleware', r'requireAuth', r'AuthRequired'],
-        "typescript": [r'authMiddleware', r'requireAuth', r'passport\.authenticate', r'isAuthenticated'],
-        "rust": [r'#\[authorize\]', r'AuthGuard'],
-        "csharp": [r'\[Authorize\]', r'\[AllowAnonymous\]'],
+        "java": [r"@PreAuthorize", r"@Secured", r"@RolesAllowed", r"SecurityContext"],
+        "go": [r"authMiddleware", r"requireAuth", r"AuthRequired"],
+        "typescript": [r"authMiddleware", r"requireAuth", r"passport\.authenticate", r"isAuthenticated"],
+        "rust": [r"#\[authorize\]", r"AuthGuard"],
+        "csharp": [r"\[Authorize\]", r"\[AllowAnonymous\]"],
     },
     "validation_patterns": {
         "python": [
-            r'isinstance\s*\(', r'validate\s*\(', r'schema\.\w+\s*\(',
-            r'_validate_fields\s*\(', r'if\s+not\s+data',
-            r"if\s+[\"']\w+[\"']\s+not\s+in\s+data", r'pydantic',
-            r'abort\s*\(\s*4[0-9]{2}',
+            r"isinstance\s*\(",
+            r"validate\s*\(",
+            r"schema\.\w+\s*\(",
+            r"_validate_fields\s*\(",
+            r"if\s+not\s+data",
+            r"if\s+[\"']\w+[\"']\s+not\s+in\s+data",
+            r"pydantic",
+            r"abort\s*\(\s*4[0-9]{2}",
         ],
-        "java": [r'@Valid', r'@NotNull', r'@NotBlank', r'Validator'],
-        "go": [r'validate\.Struct', r'binding:"required"'],
-        "typescript": [r'Joi\.', r'zod\.', r'class-validator'],
-        "rust": [r'#\[validate\]', r'serde::Deserialize'],
-        "csharp": [r'\[Required\]', r'ModelState\.IsValid'],
+        "java": [r"@Valid", r"@NotNull", r"@NotBlank", r"Validator"],
+        "go": [r"validate\.Struct", r'binding:"required"'],
+        "typescript": [r"Joi\.", r"zod\.", r"class-validator"],
+        "rust": [r"#\[validate\]", r"serde::Deserialize"],
+        "csharp": [r"\[Required\]", r"ModelState\.IsValid"],
     },
     "file_level_auth_patterns": {
         "python": [
-            r'before_request', r'register_dashboard_auth',
-            r'session\[.user_id.\]', r'session\.get\(.user_id.\)',
+            r"before_request",
+            r"register_dashboard_auth",
+            r"session\[.user_id.\]",
+            r"session\.get\(.user_id.\)",
         ],
-        "typescript": [r'app\.use\(.*auth', r'app\.use\(.*passport'],
-        "java": [r'WebSecurityConfigurerAdapter', r'SecurityFilterChain'],
-        "go": [r'Use\(.*authMiddleware'],
-        "csharp": [r'AddAuthentication', r'UseAuthorization'],
+        "typescript": [r"app\.use\(.*auth", r"app\.use\(.*passport"],
+        "java": [r"WebSecurityConfigurerAdapter", r"SecurityFilterChain"],
+        "go": [r"Use\(.*authMiddleware"],
+        "csharp": [r"AddAuthentication", r"UseAuthorization"],
     },
     "write_methods": ["POST", "PUT", "PATCH"],
     "exempt_patterns": [
-        "/health", "/ready", "/metrics", "/ping",
-        "/favicon", "/static", "/login", "/logout",
-        "/register", "/api_events",
+        "/health",
+        "/ready",
+        "/metrics",
+        "/ping",
+        "/favicon",
+        "/static",
+        "/login",
+        "/logout",
+        "/register",
+        "/api_events",
     ],
     "severity": {
         "missing_auth": "critical",
@@ -132,12 +149,25 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     },
     "scan": {
         "skip_dirs": [
-            "node_modules", ".git", "__pycache__", ".tox",
-            ".venv", "venv", ".tmp", "vendor", "build", "dist",
+            "node_modules",
+            ".git",
+            "__pycache__",
+            ".tox",
+            ".venv",
+            "venv",
+            ".tmp",
+            "vendor",
+            "build",
+            "dist",
         ],
         "exclude_file_patterns": [
-            "test_*.py", "*_test.py", "conftest.py",
-            "*_test.go", "*Test.java", "*.spec.ts", "*.test.ts",
+            "test_*.py",
+            "*_test.py",
+            "conftest.py",
+            "*_test.go",
+            "*Test.java",
+            "*.spec.ts",
+            "*.test.ts",
         ],
         "context_window_lines": 20,
         "max_file_size_kb": 500,
@@ -179,13 +209,22 @@ class EndpointSecurityScanner:
         """Load configuration from YAML."""
         try:
             import yaml
+
             with open(path, encoding="utf-8") as fh:
                 data = yaml.safe_load(fh) or {}
 
-            for key in ("route_patterns", "auth_patterns", "file_level_auth_patterns",
-                        "validation_patterns", "auth_inherited_dirs",
-                        "exclude_file_patterns_extra",
-                        "write_methods", "exempt_patterns", "severity", "scan"):
+            for key in (
+                "route_patterns",
+                "auth_patterns",
+                "file_level_auth_patterns",
+                "validation_patterns",
+                "auth_inherited_dirs",
+                "exclude_file_patterns_extra",
+                "write_methods",
+                "exempt_patterns",
+                "severity",
+                "scan",
+            ):
                 if key in data:
                     self._config[key] = data[key]
         except (ImportError, Exception) as exc:
@@ -195,9 +234,7 @@ class EndpointSecurityScanner:
         """Pre-compile all regex patterns."""
         self._compiled_routes = self._compile_group(self._config["route_patterns"])
         self._compiled_auth = self._compile_group(self._config["auth_patterns"])
-        self._compiled_file_auth = self._compile_group(
-            self._config.get("file_level_auth_patterns", {})
-        )
+        self._compiled_file_auth = self._compile_group(self._config.get("file_level_auth_patterns", {}))
         self._compiled_validation = self._compile_group(self._config["validation_patterns"])
 
         scan_cfg = self._config.get("scan", {})
@@ -209,8 +246,7 @@ class EndpointSecurityScanner:
         self._max_file_size = max_kb * 1024
         self._exempt_patterns = self._config.get("exempt_patterns", [])
         self._auth_inherited_dirs = [
-            d.replace("/", "\\").replace("\\", "/")
-            for d in self._config.get("auth_inherited_dirs", [])
+            d.replace("/", "\\").replace("\\", "/") for d in self._config.get("auth_inherited_dirs", [])
         ]
 
     @staticmethod
@@ -243,20 +279,34 @@ class EndpointSecurityScanner:
         if not language:
             language = EXTENSION_MAP.get(path.suffix.lower(), "")
         if not language:
-            return {"scan_type": "endpoint_security", "status": "skipped",
-                    "findings_count": 0, "findings": [], "language": "unknown"}
+            return {
+                "scan_type": "endpoint_security",
+                "status": "skipped",
+                "findings_count": 0,
+                "findings": [],
+                "language": "unknown",
+            }
 
         # Skip test files
         if self._is_excluded(path):
-            return {"scan_type": "endpoint_security", "status": "skipped",
-                    "findings_count": 0, "findings": [], "language": language}
+            return {
+                "scan_type": "endpoint_security",
+                "status": "skipped",
+                "findings_count": 0,
+                "findings": [],
+                "language": language,
+            }
 
         # Size guard
         try:
             if path.stat().st_size > self._max_file_size:
-                return {"scan_type": "endpoint_security", "status": "skipped",
-                        "findings_count": 0, "findings": [],
-                        "message": f"File exceeds {self._max_file_size // 1024}KB limit"}
+                return {
+                    "scan_type": "endpoint_security",
+                    "status": "skipped",
+                    "findings_count": 0,
+                    "findings": [],
+                    "message": f"File exceeds {self._max_file_size // 1024}KB limit",
+                }
         except OSError:
             pass
 
@@ -279,9 +329,13 @@ class EndpointSecurityScanner:
         write_methods = [m.upper() for m in self._config.get("write_methods", [])]
 
         if not route_patterns:
-            return {"scan_type": "endpoint_security", "status": "skipped",
-                    "findings_count": 0, "findings": [],
-                    "message": f"No route patterns for language: {language}"}
+            return {
+                "scan_type": "endpoint_security",
+                "status": "skipped",
+                "findings_count": 0,
+                "findings": [],
+                "message": f"No route patterns for language: {language}",
+            }
 
         # Find all route definitions
         routes = self._find_routes(lines, route_patterns, language)
@@ -290,9 +344,7 @@ class EndpointSecurityScanner:
         # Flask before_request).  If found anywhere in file, all routes
         # are considered authenticated — skip per-route auth checks.
         file_auth_patterns = self._compiled_file_auth.get(language, [])
-        has_file_level_auth = any(
-            p.search(content) for p in file_auth_patterns
-        )
+        has_file_level_auth = any(p.search(content) for p in file_auth_patterns)
 
         # Check if file is in an auth-inherited directory (e.g., Flask
         # blueprints registered on an app with before_request auth).
@@ -319,39 +371,41 @@ class EndpointSecurityScanner:
             context_text = "\n".join(context_lines)
 
             # Check 1: Missing auth (skip if file-level auth detected)
-            has_auth = has_file_level_auth or any(
-                p.search(context_text) for p in auth_patterns
-            )
+            has_auth = has_file_level_auth or any(p.search(context_text) for p in auth_patterns)
             if not has_auth:
-                findings.append({
-                    "name": "api_route_without_auth_decorator",
-                    "severity": severity_cfg.get("missing_auth", "critical"),
-                    "description": f"API route at line {line_num} has no auth decorator/check",
-                    "file": source,
-                    "line": line_num,
-                    "line_content": lines[line_num - 1].strip()[:200],
-                    "route_path": route_path,
-                    "http_method": http_method,
-                    "language": language,
-                    "finding_type": "missing_auth",
-                })
-
-            # Check 2: Missing input validation on write methods
-            if http_method in write_methods:
-                has_validation = any(p.search(context_text) for p in validation_patterns)
-                if not has_validation:
-                    findings.append({
-                        "name": "write_route_without_input_validation",
-                        "severity": severity_cfg.get("missing_validation_on_write", "high"),
-                        "description": f"{http_method} route at line {line_num} has no input validation",
+                findings.append(
+                    {
+                        "name": "api_route_without_auth_decorator",
+                        "severity": severity_cfg.get("missing_auth", "critical"),
+                        "description": f"API route at line {line_num} has no auth decorator/check",
                         "file": source,
                         "line": line_num,
                         "line_content": lines[line_num - 1].strip()[:200],
                         "route_path": route_path,
                         "http_method": http_method,
                         "language": language,
-                        "finding_type": "missing_validation",
-                    })
+                        "finding_type": "missing_auth",
+                    }
+                )
+
+            # Check 2: Missing input validation on write methods
+            if http_method in write_methods:
+                has_validation = any(p.search(context_text) for p in validation_patterns)
+                if not has_validation:
+                    findings.append(
+                        {
+                            "name": "write_route_without_input_validation",
+                            "severity": severity_cfg.get("missing_validation_on_write", "high"),
+                            "description": f"{http_method} route at line {line_num} has no input validation",
+                            "file": source,
+                            "line": line_num,
+                            "line_content": lines[line_num - 1].strip()[:200],
+                            "route_path": route_path,
+                            "http_method": http_method,
+                            "language": language,
+                            "finding_type": "missing_validation",
+                        }
+                    )
 
         # Tally severities
         critical = sum(1 for f in findings if f["severity"] == "critical")
@@ -444,6 +498,7 @@ class EndpointSecurityScanner:
         gate_config = {"max_critical": 0, "max_high": 0}
         try:
             import yaml
+
             gates_path = BASE_DIR / "args" / "security_gates.yaml"
             if gates_path.exists():
                 with open(gates_path, encoding="utf-8") as fh:
@@ -490,9 +545,7 @@ class EndpointSecurityScanner:
     # Helpers
     # ------------------------------------------------------------------
 
-    def _find_routes(
-        self, lines: List[str], route_patterns: List[re.Pattern], language: str
-    ) -> List[dict]:
+    def _find_routes(self, lines: List[str], route_patterns: List[re.Pattern], language: str) -> List[dict]:
         """Find all route definitions in the file lines."""
         routes: List[dict] = []
         for line_num, line in enumerate(lines, start=1):
@@ -501,12 +554,14 @@ class EndpointSecurityScanner:
                 if match:
                     route_path = self._extract_route_path(line, language)
                     http_method = self._extract_http_method(line, lines, line_num, language)
-                    routes.append({
-                        "line": line_num,
-                        "path": route_path,
-                        "method": http_method,
-                        "raw": line.strip()[:200],
-                    })
+                    routes.append(
+                        {
+                            "line": line_num,
+                            "path": route_path,
+                            "method": http_method,
+                            "raw": line.strip()[:200],
+                        }
+                    )
                     break  # Don't double-count the same line
         return routes
 
@@ -522,9 +577,7 @@ class EndpointSecurityScanner:
         return m.group(1) if m else ""
 
     @staticmethod
-    def _extract_http_method(
-        line: str, lines: List[str], line_num: int, language: str
-    ) -> str:
+    def _extract_http_method(line: str, lines: List[str], line_num: int, language: str) -> str:
         """Best-effort extract HTTP method from route declaration."""
         line_lower = line.lower()
 
@@ -536,7 +589,7 @@ class EndpointSecurityScanner:
                 return method.upper()
 
         # Python @bp.route(..., methods=["POST"])
-        m = re.search(r'methods\s*=\s*\[([^\]]+)\]', line)
+        m = re.search(r"methods\s*=\s*\[([^\]]+)\]", line)
         if m:
             methods_str = m.group(1).upper()
             for method in ("POST", "PUT", "PATCH", "DELETE", "GET"):
@@ -557,6 +610,7 @@ class EndpointSecurityScanner:
     def _is_excluded(self, file_path: Path) -> bool:
         """Check if file matches exclusion patterns (test files)."""
         import fnmatch
+
         name = file_path.name
         # Also build parent/name for patterns like "playground/app.py"
         rel_parts = "/".join(file_path.parts[-2:]) if len(file_path.parts) >= 2 else name
@@ -611,7 +665,9 @@ if __name__ == "__main__":
         print(f"Routes found: {result.get('routes_found', 0)}")
         print(f"Routes exempt: {result.get('routes_exempt', 0)}")
         print(f"Findings: {result.get('findings_count', 0)}")
-        print(f"  Critical: {result.get('critical', 0)} | High: {result.get('high', 0)} | Medium: {result.get('medium', 0)}")
+        print(
+            f"  Critical: {result.get('critical', 0)} | High: {result.get('high', 0)} | Medium: {result.get('medium', 0)}"
+        )
         print(f"Gate: {'PASSED' if result.get('gate_passed') else 'FAILED'}")
         for f in result.get("findings", [])[:20]:
             print(f"  [{f['severity'].upper()}] {f['name']} at {f.get('file', '?')}:{f.get('line', 0)}")

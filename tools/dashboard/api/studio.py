@@ -32,6 +32,7 @@ studio_api = Blueprint("studio_api", __name__, url_prefix="/api/studio")
 
 # ── Workflow CRUD ──────────────────────────────────────────
 
+
 @studio_api.route("/workflows", methods=["GET"])
 def api_list_workflows():
     shared = request.args.get("shared") == "1"
@@ -100,12 +101,14 @@ def api_workflow_composer_format(workflow_id: str):
 
 # ── Tool Catalog ───────────────────────────────────────────
 
+
 @studio_api.route("/tools/catalog", methods=["GET"])
 def api_tool_catalog():
     return jsonify(get_tool_catalog())
 
 
 # ── Built-in Templates ─────────────────────────────────────
+
 
 @studio_api.route("/templates", methods=["GET"])
 def api_builtin_templates():
@@ -114,27 +117,27 @@ def api_builtin_templates():
 
 # ── Marketplace (read-only wrapper) ───────────────────────
 
+
 @studio_api.route("/marketplace/assets", methods=["GET"])
 def api_marketplace_assets():
     """List marketplace assets for storefront UI."""
     try:
         from tools.marketplace.catalog_manager import list_assets
+
         query = request.args.get("q", "")
         category = request.args.get("category", "")
         assets = list_assets()
         # Client-side filtering if params provided
         if query:
             q_lower = query.lower()
-            assets = [a for a in assets
-                      if q_lower in a.get("name", "").lower()
-                      or q_lower in a.get("description", "").lower()]
+            assets = [
+                a for a in assets if q_lower in a.get("name", "").lower() or q_lower in a.get("description", "").lower()
+            ]
         if category:
-            assets = [a for a in assets
-                      if a.get("category", "").lower() == category.lower()]
+            assets = [a for a in assets if a.get("category", "").lower() == category.lower()]
         return jsonify({"assets": assets, "total": len(assets)})
     except ImportError:
-        return jsonify({"assets": [], "total": 0,
-                        "note": "Marketplace module not available"})
+        return jsonify({"assets": [], "total": 0, "note": "Marketplace module not available"})
 
 
 @studio_api.route("/marketplace/categories", methods=["GET"])
@@ -142,6 +145,7 @@ def api_marketplace_categories():
     """Return distinct asset categories."""
     try:
         from tools.marketplace.catalog_manager import list_assets
+
         assets = list_assets()
         cats = sorted({a.get("category", "uncategorized") for a in assets})
         return jsonify({"categories": cats})
@@ -154,6 +158,7 @@ def api_marketplace_asset_detail(asset_id: str):
     """Get detailed info for a single asset."""
     try:
         from tools.marketplace.catalog_manager import get_asset
+
         asset = get_asset(asset_id)
         if not asset:
             return jsonify({"error": "Asset not found"}), 404
@@ -167,6 +172,7 @@ def api_marketplace_install(asset_id: str):
     """Install a marketplace asset."""
     try:
         from tools.marketplace.install_manager import install_asset
+
         result = install_asset(asset_id)
         return jsonify(result)
     except ImportError:
@@ -177,21 +183,25 @@ def api_marketplace_install(asset_id: str):
 
 # ── Form Builder (Phase 72c) ──────────────────────────────
 
+
 @studio_api.route("/forms/field-types", methods=["GET"])
 def api_form_field_types():
     from tools.studio.form_builder import get_field_types
+
     return jsonify({"field_types": get_field_types()})
 
 
 @studio_api.route("/forms/templates", methods=["GET"])
 def api_form_templates():
     from tools.studio.form_builder import get_form_templates
+
     return jsonify({"templates": get_form_templates()})
 
 
 @studio_api.route("/forms", methods=["GET"])
 def api_list_forms():
     from tools.studio.form_builder import list_forms
+
     status = request.args.get("status")
     return jsonify({"forms": list_forms(status=status)})
 
@@ -199,6 +209,7 @@ def api_list_forms():
 @studio_api.route("/forms", methods=["POST"])
 def api_create_form():
     from tools.studio.form_builder import create_form
+
     data = request.get_json(silent=True) or {}
     name = data.get("name", "").strip()
     fields = data.get("fields", [])
@@ -213,6 +224,7 @@ def api_create_form():
 @studio_api.route("/forms/<form_id>", methods=["GET"])
 def api_get_form(form_id: str):
     from tools.studio.form_builder import get_form
+
     form = get_form(form_id)
     if not form:
         return jsonify({"error": "Form not found"}), 404
@@ -222,10 +234,14 @@ def api_get_form(form_id: str):
 @studio_api.route("/forms/<form_id>", methods=["PATCH"])
 def api_update_form(form_id: str):
     from tools.studio.form_builder import update_form
+
     data = request.get_json(silent=True) or {}
     result = update_form(
-        form_id, name=data.get("name"), fields=data.get("fields"),
-        description=data.get("description"), status=data.get("status"),
+        form_id,
+        name=data.get("name"),
+        fields=data.get("fields"),
+        description=data.get("description"),
+        status=data.get("status"),
     )
     if result.get("status") == "error":
         return jsonify(result), 404
@@ -235,6 +251,7 @@ def api_update_form(form_id: str):
 @studio_api.route("/forms/<form_id>", methods=["DELETE"])
 def api_delete_form(form_id: str):
     from tools.studio.form_builder import delete_form
+
     result = delete_form(form_id)
     if result.get("status") == "error":
         return jsonify(result), 404
@@ -244,12 +261,14 @@ def api_delete_form(form_id: str):
 @studio_api.route("/forms/<form_id>/submissions", methods=["GET"])
 def api_list_submissions(form_id: str):
     from tools.studio.form_builder import list_submissions
+
     return jsonify({"submissions": list_submissions(form_id)})
 
 
 @studio_api.route("/forms/<form_id>/submissions", methods=["POST"])
 def api_submit_form(form_id: str):
     from tools.studio.form_builder import submit_form
+
     data = request.get_json(silent=True) or {}
     result = submit_form(form_id, data.get("data", {}))
     if result.get("status") == "error":
@@ -259,21 +278,25 @@ def api_submit_form(form_id: str):
 
 # ── Case Management (Phase 72c) ───────────────────────────
 
+
 @studio_api.route("/cases/templates", methods=["GET"])
 def api_case_lifecycle_templates():
     from tools.studio.case_manager import get_lifecycle_templates
+
     return jsonify({"templates": get_lifecycle_templates()})
 
 
 @studio_api.route("/cases/types", methods=["GET"])
 def api_list_case_types():
     from tools.studio.case_manager import list_case_types
+
     return jsonify({"types": list_case_types()})
 
 
 @studio_api.route("/cases/types", methods=["POST"])
 def api_create_case_type():
     from tools.studio.case_manager import create_case_type
+
     data = request.get_json(silent=True) or {}
     name = data.get("name", "").strip()
     lifecycle = data.get("lifecycle", {})
@@ -288,6 +311,7 @@ def api_create_case_type():
 @studio_api.route("/cases/types/<type_id>", methods=["GET"])
 def api_get_case_type(type_id: str):
     from tools.studio.case_manager import get_case_type
+
     ct = get_case_type(type_id)
     if not ct:
         return jsonify({"error": "Case type not found"}), 404
@@ -297,6 +321,7 @@ def api_get_case_type(type_id: str):
 @studio_api.route("/cases/types/<type_id>/board", methods=["GET"])
 def api_case_board(type_id: str):
     from tools.studio.case_manager import get_case_board
+
     result = get_case_board(type_id)
     if result.get("status") == "error":
         return jsonify(result), 404
@@ -306,19 +331,26 @@ def api_case_board(type_id: str):
 @studio_api.route("/cases", methods=["GET"])
 def api_list_cases():
     from tools.studio.case_manager import list_cases
-    return jsonify({"cases": list_cases(
-        type_id=request.args.get("type_id"),
-        state=request.args.get("state"),
-        priority=request.args.get("priority"),
-    )})
+
+    return jsonify(
+        {
+            "cases": list_cases(
+                type_id=request.args.get("type_id"),
+                state=request.args.get("state"),
+                priority=request.args.get("priority"),
+            )
+        }
+    )
 
 
 @studio_api.route("/cases", methods=["POST"])
 def api_create_case():
     from tools.studio.case_manager import create_case
+
     data = request.get_json(silent=True) or {}
     result = create_case(
-        data.get("type_id", ""), data.get("title", "").strip(),
+        data.get("type_id", ""),
+        data.get("title", "").strip(),
         description=data.get("description", ""),
         priority=data.get("priority", "medium"),
         assigned_to=data.get("assigned_to"),
@@ -332,6 +364,7 @@ def api_create_case():
 @studio_api.route("/cases/<case_id>", methods=["GET"])
 def api_get_case(case_id: str):
     from tools.studio.case_manager import get_case
+
     case = get_case(case_id)
     if not case:
         return jsonify({"error": "Case not found"}), 404
@@ -341,6 +374,7 @@ def api_get_case(case_id: str):
 @studio_api.route("/cases/<case_id>/transition", methods=["POST"])
 def api_transition_case(case_id: str):
     from tools.studio.case_manager import transition_case
+
     data = request.get_json(silent=True) or {}
     to_state = data.get("to_state", "").strip()
     if not to_state:
@@ -353,27 +387,32 @@ def api_transition_case(case_id: str):
 
 # ── Dashboard Builder (Phase 72e) ──────────────────────────
 
+
 @studio_api.route("/dashboards/widgets", methods=["GET"])
 def api_widget_types():
     from tools.studio.dashboard_builder import get_widget_types
+
     return jsonify({"widgets": get_widget_types()})
 
 
 @studio_api.route("/dashboards/role-defaults", methods=["GET"])
 def api_role_defaults():
     from tools.studio.dashboard_builder import get_role_defaults
+
     return jsonify(get_role_defaults())
 
 
 @studio_api.route("/dashboards", methods=["GET"])
 def api_list_dashboards():
     from tools.studio.dashboard_builder import list_dashboards
+
     return jsonify({"dashboards": list_dashboards(role=request.args.get("role"))})
 
 
 @studio_api.route("/dashboards", methods=["POST"])
 def api_create_dashboard():
     from tools.studio.dashboard_builder import create_dashboard, create_from_role_default
+
     data = request.get_json(silent=True) or {}
     if data.get("from_role"):
         result = create_from_role_default(data["from_role"])
@@ -391,6 +430,7 @@ def api_create_dashboard():
 @studio_api.route("/dashboards/<dash_id>", methods=["GET"])
 def api_get_dashboard(dash_id: str):
     from tools.studio.dashboard_builder import get_dashboard
+
     dash = get_dashboard(dash_id)
     if not dash:
         return jsonify({"error": "Dashboard not found"}), 404
@@ -400,6 +440,7 @@ def api_get_dashboard(dash_id: str):
 @studio_api.route("/dashboards/<dash_id>", methods=["PATCH"])
 def api_update_dashboard(dash_id: str):
     from tools.studio.dashboard_builder import update_dashboard
+
     data = request.get_json(silent=True) or {}
     result = update_dashboard(dash_id, name=data.get("name"), layout=data.get("layout"), shared=data.get("shared"))
     if result.get("status") == "error":
@@ -410,6 +451,7 @@ def api_update_dashboard(dash_id: str):
 @studio_api.route("/dashboards/<dash_id>", methods=["DELETE"])
 def api_delete_dashboard(dash_id: str):
     from tools.studio.dashboard_builder import delete_dashboard
+
     result = delete_dashboard(dash_id)
     if result.get("status") == "error":
         return jsonify(result), 404
@@ -418,39 +460,46 @@ def api_delete_dashboard(dash_id: str):
 
 # ── Citizen Automations (Phase 72d) ────────────────────────
 
+
 @studio_api.route("/automations/triggers", methods=["GET"])
 def api_automation_triggers():
     from tools.studio.automation_builder import get_trigger_types
+
     return jsonify({"triggers": get_trigger_types()})
 
 
 @studio_api.route("/automations/operators", methods=["GET"])
 def api_automation_operators():
     from tools.studio.automation_builder import get_condition_operators
+
     return jsonify({"operators": get_condition_operators()})
 
 
 @studio_api.route("/automations/actions", methods=["GET"])
 def api_automation_actions():
     from tools.studio.automation_builder import get_action_types
+
     return jsonify({"actions": get_action_types()})
 
 
 @studio_api.route("/automations/templates", methods=["GET"])
 def api_automation_templates():
     from tools.studio.automation_builder import get_automation_templates
+
     return jsonify({"templates": get_automation_templates()})
 
 
 @studio_api.route("/automations", methods=["GET"])
 def api_list_automations():
     from tools.studio.automation_builder import list_automations
+
     return jsonify({"automations": list_automations()})
 
 
 @studio_api.route("/automations", methods=["POST"])
 def api_create_automation():
     from tools.studio.automation_builder import create_automation
+
     data = request.get_json(silent=True) or {}
     name = data.get("name", "").strip()
     trigger = data.get("trigger", {})
@@ -458,7 +507,9 @@ def api_create_automation():
     if not name or not trigger or not actions:
         return jsonify({"error": "name, trigger, and actions are required"}), 400
     result = create_automation(
-        name, trigger, actions,
+        name,
+        trigger,
+        actions,
         description=data.get("description", ""),
         conditions=data.get("conditions"),
     )
@@ -470,6 +521,7 @@ def api_create_automation():
 @studio_api.route("/automations/<auto_id>", methods=["GET"])
 def api_get_automation(auto_id: str):
     from tools.studio.automation_builder import get_automation
+
     auto = get_automation(auto_id)
     if not auto:
         return jsonify({"error": "Automation not found"}), 404
@@ -479,6 +531,7 @@ def api_get_automation(auto_id: str):
 @studio_api.route("/automations/<auto_id>/toggle", methods=["POST"])
 def api_toggle_automation(auto_id: str):
     from tools.studio.automation_builder import toggle_automation
+
     data = request.get_json(silent=True) or {}
     return jsonify(toggle_automation(auto_id, data.get("enabled", True)))
 
@@ -486,6 +539,7 @@ def api_toggle_automation(auto_id: str):
 @studio_api.route("/automations/<auto_id>", methods=["DELETE"])
 def api_delete_automation(auto_id: str):
     from tools.studio.automation_builder import delete_automation
+
     result = delete_automation(auto_id)
     if result.get("status") == "error":
         return jsonify(result), 404
@@ -495,6 +549,7 @@ def api_delete_automation(auto_id: str):
 @studio_api.route("/automations/<auto_id>/simulate", methods=["POST"])
 def api_simulate_automation(auto_id: str):
     from tools.studio.automation_builder import simulate_automation
+
     data = request.get_json(silent=True) or {}
     return jsonify(simulate_automation(auto_id, data.get("test_event")))
 
@@ -502,16 +557,19 @@ def api_simulate_automation(auto_id: str):
 @studio_api.route("/automations/runs", methods=["GET"])
 def api_automation_runs():
     from tools.studio.automation_builder import list_automation_runs
+
     auto_id = request.args.get("automation_id")
     return jsonify({"runs": list_automation_runs(automation_id=auto_id)})
 
 
 # ── NL App Builder (Phase 72b) ────────────────────────────
 
+
 @studio_api.route("/app-builder/extract", methods=["POST"])
 def api_app_builder_extract():
     """Extract capabilities from a natural language description."""
     from tools.studio.nl_app_builder import extract_from_description
+
     data = request.get_json(silent=True) or {}
     desc = data.get("description", "").strip()
     if not desc:
@@ -523,6 +581,7 @@ def api_app_builder_extract():
 def api_app_builder_create():
     """Create a new NL app builder session."""
     from tools.studio.nl_app_builder import create_builder_session
+
     data = request.get_json(silent=True) or {}
     desc = data.get("description", "").strip()
     if not desc:
@@ -537,6 +596,7 @@ def api_app_builder_create():
 def api_app_builder_refine(session_id: str):
     """Refine an existing builder session."""
     from tools.studio.nl_app_builder import refine_session
+
     data = request.get_json(silent=True) or {}
     result = refine_session(
         session_id,
@@ -553,6 +613,7 @@ def api_app_builder_refine(session_id: str):
 def api_app_builder_build(session_id: str):
     """Execute the build from a confirmed session."""
     from tools.studio.nl_app_builder import execute_build
+
     data = request.get_json(silent=True) or {}
     result = execute_build(session_id, output_dir=data.get("output_dir"))
     if result.get("status") == "error":

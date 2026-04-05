@@ -138,9 +138,7 @@ class BlueprintVerifier:
                     continue
 
                 # Compute relative path with forward slashes
-                rel_path = _normalize_path(
-                    str(filepath.relative_to(directory))
-                )
+                rel_path = _normalize_path(str(filepath.relative_to(directory)))
 
                 # Hash = SHA-256(relative_path + file_content)
                 hasher = hashlib.sha256()
@@ -179,10 +177,7 @@ class BlueprintVerifier:
             "digest": dir_hasher.hexdigest(),
             "file_count": len(file_hashes),
             "total_bytes": total_bytes,
-            "file_hashes": [
-                {"path": p, "hash": h, "size": s}
-                for p, h, s in file_hashes
-            ],
+            "file_hashes": [{"path": p, "hash": h, "size": s} for p, h, s in file_hashes],
             "directory": str(directory),
         }
 
@@ -228,12 +223,10 @@ class BlueprintVerifier:
 
         return [{"message": "Digest mismatch detected — full file-level diff requires stored file_hashes"}]
 
-    def store_digest(self, entity_type: str, entity_id: str,
-                     directory: Path, computed_by: str = "") -> Dict:
+    def store_digest(self, entity_type: str, entity_id: str, directory: Path, computed_by: str = "") -> Dict:
         """Compute and store a digest for an entity."""
         if entity_type not in ENTITY_TYPES:
-            return {"error": f"Invalid entity_type: {entity_type}",
-                    "valid_types": list(ENTITY_TYPES)}
+            return {"error": f"Invalid entity_type: {entity_type}", "valid_types": list(ENTITY_TYPES)}
 
         result = self.compute_digest(directory)
         if "error" in result:
@@ -246,9 +239,16 @@ class BlueprintVerifier:
                (id, entity_type, entity_id, digest, file_count, total_bytes,
                 directory_path, computed_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (record_id, entity_type, entity_id, result["digest"],
-             result["file_count"], result["total_bytes"],
-             str(directory), _now()),
+            (
+                record_id,
+                entity_type,
+                entity_id,
+                result["digest"],
+                result["file_count"],
+                result["total_bytes"],
+                str(directory),
+                _now(),
+            ),
         )
         conn.commit()
         conn.close()
@@ -263,8 +263,7 @@ class BlueprintVerifier:
             "total_bytes": result["total_bytes"],
         }
 
-    def verify_and_record(self, entity_type: str, entity_id: str,
-                          directory: Path, verified_by: str = "") -> Dict:
+    def verify_and_record(self, entity_type: str, entity_id: str, directory: Path, verified_by: str = "") -> Dict:
         """Verify a directory against the stored digest for an entity."""
         conn = self._get_db()
         row = conn.execute(
@@ -276,9 +275,7 @@ class BlueprintVerifier:
 
         if not row:
             conn.close()
-            return {"error": "no_stored_digest",
-                    "entity_type": entity_type,
-                    "entity_id": entity_id}
+            return {"error": "no_stored_digest", "entity_type": entity_type, "entity_id": entity_id}
 
         expected = row["digest"]
         record_id = row["id"]
@@ -289,9 +286,7 @@ class BlueprintVerifier:
             """UPDATE blueprint_digests
                SET verified_at = ?, verified_by = ?, verification_result = ?
                WHERE id = ?""",
-            (_now(), verified_by,
-             "pass" if result.get("verified") else "fail",
-             record_id),
+            (_now(), verified_by, "pass" if result.get("verified") else "fail", record_id),
         )
         conn.commit()
         conn.close()
@@ -314,8 +309,7 @@ class BlueprintVerifier:
             return {"found": False, "entity_type": entity_type, "entity_id": entity_id}
         return {"found": True, **dict(row)}
 
-    def get_history(self, entity_type: Optional[str] = None,
-                    limit: int = 50) -> List[Dict]:
+    def get_history(self, entity_type: Optional[str] = None, limit: int = 50) -> List[Dict]:
         """Get digest history, optionally filtered by entity type."""
         conn = self._get_db()
         if entity_type:
@@ -336,7 +330,8 @@ class BlueprintVerifier:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Blueprint Digest Verifier — NemoClaw-adapted supply chain integrity (D-NC-3)")
+        description="Blueprint Digest Verifier — NemoClaw-adapted supply chain integrity (D-NC-3)"
+    )
     parser.add_argument("--compute", action="store_true", help="Compute directory digest")
     parser.add_argument("--verify", action="store_true", help="Verify against expected digest")
     parser.add_argument("--store", action="store_true", help="Compute and store digest")
@@ -362,9 +357,7 @@ def main():
     elif args.store:
         result = verifier.store_digest(args.entity_type, args.entity_id, args.path)
     elif args.verify_entity:
-        result = verifier.verify_and_record(
-            args.entity_type, args.entity_id, args.path,
-            verified_by=args.verified_by)
+        result = verifier.verify_and_record(args.entity_type, args.entity_id, args.path, verified_by=args.verified_by)
     elif args.lookup:
         result = verifier.lookup_digest(args.entity_type, args.entity_id)
     elif args.history:

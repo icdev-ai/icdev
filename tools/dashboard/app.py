@@ -28,7 +28,16 @@ if str(BASE_DIR) not in sys.path:
 
 from tools.db.storage import get_connection  # noqa: E402
 
-from flask import Flask, render_template, jsonify, request as flask_request, g, session as flask_session, redirect, url_for  # noqa: E402
+from flask import (
+    Flask,
+    render_template,
+    jsonify,
+    request as flask_request,
+    g,
+    session as flask_session,
+    redirect,
+    url_for,
+)  # noqa: E402
 
 from tools.dashboard.config import (  # noqa: E402
     DB_PATH,
@@ -83,31 +92,45 @@ from tools.dashboard.api.ato_package import ato_package_api  # noqa: E402
 from tools.dashboard.api.oracle import oracle_api  # noqa: E402
 from tools.dashboard.api.analytics import analytics_api  # noqa: E402
 from tools.dashboard.api.canvas_projects import canvas_projects_api  # noqa: E402
+
 try:
     from tools.dashboard.api.finetune import finetune_api  # noqa: E402
+
     _HAS_FINETUNE_API = True
 except ImportError:
     _HAS_FINETUNE_API = False
 try:
     from tools.dashboard.api.rag_eval import rag_eval_api  # noqa: E402
+
     _HAS_RAG_EVAL_API = True
 except ImportError:
     _HAS_RAG_EVAL_API = False
 # Air-gap mode: hide cloud-dependent pages (Pulse, ClawHub, Genesis, GovCon, etc.)
 _AIRGAP_MODE = os.environ.get("ICDEV_AIRGAP", "").lower() in ("true", "1", "yes")
 # Pages disabled in air-gap mode (routes → friendly message instead of 404)
-_AIRGAP_DISABLED_ROUTES = frozenset({
-    "/pulse", "/clawhub", "/research", "/autoresearch",
-    "/genesis", "/govcon", "/proposals", "/cpmp",
-    "/proposal-genesis", "/leads", "/studio/marketplace",
-    "/alphadesk",
-})
+_AIRGAP_DISABLED_ROUTES = frozenset(
+    {
+        "/pulse",
+        "/clawhub",
+        "/research",
+        "/autoresearch",
+        "/genesis",
+        "/govcon",
+        "/proposals",
+        "/cpmp",
+        "/proposal-genesis",
+        "/leads",
+        "/studio/marketplace",
+        "/alphadesk",
+    }
+)
 # Network Design Canvas: feature-flagged, air-gap compatible
 _NETWORK_ENABLED = os.environ.get("ICDEV_NETWORK_ENABLED", "true").lower() == "true"
 _HAS_NETWORK = False
 if _NETWORK_ENABLED:
     try:
         from tools.network.blueprint import create_network_blueprint
+
         _HAS_NETWORK = True
     except ImportError:
         _HAS_NETWORK = False
@@ -117,6 +140,7 @@ _HAS_PIPELINE = False
 if _PIPELINE_ENABLED:
     try:
         from tools.pipeline.blueprint import create_pipeline_blueprint
+
         _HAS_PIPELINE = True
     except ImportError:
         _HAS_PIPELINE = False
@@ -126,6 +150,7 @@ _HAS_SECURITY_CANVAS = False
 if _SECURITY_CANVAS_ENABLED:
     try:
         from tools.security_canvas.blueprint import create_security_blueprint
+
         _HAS_SECURITY_CANVAS = True
     except ImportError:
         _HAS_SECURITY_CANVAS = False
@@ -135,6 +160,7 @@ _HAS_INFRA_CANVAS = False
 if _INFRA_CANVAS_ENABLED:
     try:
         from tools.infra_canvas.blueprint import infra_bp  # noqa: E402
+
         _HAS_INFRA_CANVAS = True
     except ImportError:
         _HAS_INFRA_CANVAS = False
@@ -144,6 +170,7 @@ _HAS_DATA_CANVAS = False
 if _DATA_CANVAS_ENABLED:
     try:
         from tools.data_canvas.blueprint import create_data_canvas_blueprint  # noqa: E402
+
         _HAS_DATA_CANVAS = True
     except ImportError:
         _HAS_DATA_CANVAS = False
@@ -153,6 +180,7 @@ _HAS_BOUNDARY_CANVAS = False
 if _BOUNDARY_CANVAS_ENABLED:
     try:
         from tools.boundary_canvas.blueprint import create_boundary_blueprint  # noqa: E402
+
         _HAS_BOUNDARY_CANVAS = True
     except ImportError:
         _HAS_BOUNDARY_CANVAS = False
@@ -162,6 +190,7 @@ _HAS_OBSERVABILITY_CANVAS = False
 if _OBSERVABILITY_CANVAS_ENABLED:
     try:
         from tools.observability_canvas.blueprint import create_observability_blueprint  # noqa: E402
+
         _HAS_OBSERVABILITY_CANVAS = True
     except ImportError:
         _HAS_OBSERVABILITY_CANVAS = False
@@ -171,6 +200,7 @@ _HAS_CANVAS_KG = False
 if _CANVAS_KG_ENABLED:
     try:
         from tools.canvas.blueprint import create_canvas_kg_blueprint  # noqa: E402
+
         _HAS_CANVAS_KG = True
     except ImportError:
         _HAS_CANVAS_KG = False
@@ -182,19 +212,23 @@ if _GOVCON_ENABLED:
         from tools.dashboard.api.proposals import proposals_api  # noqa: E402
         from tools.dashboard.api.govcon import govcon_api  # noqa: E402
         from tools.dashboard.api.cpmp import cpmp_api  # noqa: E402
+
         _HAS_GOVCON = True
     except ImportError:
         _HAS_GOVCON = False
     try:
         from tools.dashboard.api.proposal_genesis import proposal_genesis_api  # noqa: E402
+
         _HAS_PROPOSAL_GENESIS = True
     except ImportError:
         _HAS_PROPOSAL_GENESIS = False
 else:
     _HAS_PROPOSAL_GENESIS = False
 from tools.dashboard.api.orchestration import orchestration_api  # noqa: E402
+
 try:
     from tools.dashboard.api.chat import chat_api  # noqa: E402
+
     _HAS_CHAT_API = True
 except ImportError:
     _HAS_CHAT_API = False
@@ -222,6 +256,7 @@ for _key, _env, _mod, _attr in _CANVAS_DEFS:
     if _enabled:
         try:
             import importlib as _il
+
             _m = _il.import_module(_mod)
             _bp = getattr(_m, _attr, None)
             if callable(_bp) and not hasattr(_bp, "name"):
@@ -250,6 +285,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
         """CPMP Portfolio — contract performance overview, health scoring."""
         try:
             from tools.govcon.portfolio_manager import get_portfolio_summary
+
             portfolio_data = get_portfolio_summary()
             pf = portfolio_data.get("portfolio", {})
             contracts = pf.get("contracts", [])
@@ -263,17 +299,34 @@ def _register_govcon_pages(app: "Flask", _get_db):
                 "at_risk": pf.get("at_risk_contracts", 0),
                 "health_distribution": pf.get("health_distribution", {"green": 0, "yellow": 0, "red": 0}),
             }
-            return render_template("cpmp/portfolio.html", portfolio=portfolio, contracts=contracts, upcoming_deliverables=upcoming)
+            return render_template(
+                "cpmp/portfolio.html", portfolio=portfolio, contracts=contracts, upcoming_deliverables=upcoming
+            )
         except Exception as e:
             import traceback
+
             traceback.print_exc()
-            return render_template("cpmp/portfolio.html", portfolio={"total_contracts": 0, "active_contracts": 0, "total_value": 0, "burn_rate": 0, "overdue_deliverables": 0, "health_distribution": {"green": 0, "yellow": 0, "red": 0}}, contracts=[], upcoming_deliverables=[], error=str(e))
+            return render_template(
+                "cpmp/portfolio.html",
+                portfolio={
+                    "total_contracts": 0,
+                    "active_contracts": 0,
+                    "total_value": 0,
+                    "burn_rate": 0,
+                    "overdue_deliverables": 0,
+                    "health_distribution": {"green": 0, "yellow": 0, "red": 0},
+                },
+                contracts=[],
+                upcoming_deliverables=[],
+                error=str(e),
+            )
 
     @app.route("/cpmp/<contract_id>")
     def cpmp_detail_page(contract_id):
         """CPMP Contract Detail — 7-tab view."""
         try:
             from tools.govcon.contract_manager import get_contract, list_clins, list_wbs, list_deliverables
+
             contract_result = get_contract(contract_id)
             if contract_result.get("status") == "error":
                 return render_template("404.html", message="Contract not found"), 404
@@ -283,11 +336,13 @@ def _register_govcon_pages(app: "Flask", _get_db):
             deliverables = list_deliverables(contract_id).get("deliverables", [])
             try:
                 from tools.govcon.subcontractor_tracker import list_subcontractors
+
                 subcontractors = list_subcontractors(contract_id).get("subcontractors", [])
             except Exception:
                 subcontractors = []
             try:
                 from tools.govcon.evm_engine import aggregate_contract_evm
+
                 evm = aggregate_contract_evm(contract_id)
                 if "indicators" in evm and isinstance(evm["indicators"], dict):
                     evm.update(evm["indicators"])
@@ -295,6 +350,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
                 evm = {}
             try:
                 from tools.govcon.cpars_predictor import predict_cpars, list_assessments
+
                 cpars_prediction = predict_cpars(contract_id)
                 if "dimension_scores" in cpars_prediction:
                     cpars_prediction["dimensions"] = {
@@ -304,13 +360,20 @@ def _register_govcon_pages(app: "Flask", _get_db):
             except Exception:
                 cpars_prediction = {}
                 cpars_assessments = []
-            return render_template("cpmp/detail.html",
-                                   contract=contract, clins=clins, wbs_elements=wbs_elements,
-                                   deliverables=deliverables, subcontractors=subcontractors,
-                                   evm=evm, cpars_prediction=cpars_prediction,
-                                   cpars_assessments=cpars_assessments)
+            return render_template(
+                "cpmp/detail.html",
+                contract=contract,
+                clins=clins,
+                wbs_elements=wbs_elements,
+                deliverables=deliverables,
+                subcontractors=subcontractors,
+                evm=evm,
+                cpars_prediction=cpars_prediction,
+                cpars_assessments=cpars_assessments,
+            )
         except Exception as e:
             import traceback
+
             traceback.print_exc()
             return render_template("404.html", message=f"Error loading contract: {e}"), 500
 
@@ -319,6 +382,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
         """CPMP Deliverable Detail — status pipeline, CDRL generation."""
         try:
             from tools.govcon.contract_manager import get_contract, get_deliverable
+
             contract_result = get_contract(contract_id)
             contract = contract_result.get("contract", contract_result) if contract_result.get("status") == "ok" else {}
             deliv_result = get_deliverable(deliverable_id)
@@ -327,11 +391,16 @@ def _register_govcon_pages(app: "Flask", _get_db):
             deliverable = deliv_result.get("deliverable", deliv_result)
             generations = deliverable.get("generations", []) if isinstance(deliverable, dict) else []
             status_history = deliverable.get("status_history", []) if isinstance(deliverable, dict) else []
-            return render_template("cpmp/deliverable_detail.html",
-                                   contract=contract, deliverable=deliverable,
-                                   generations=generations, status_history=status_history)
+            return render_template(
+                "cpmp/deliverable_detail.html",
+                contract=contract,
+                deliverable=deliverable,
+                generations=generations,
+                status_history=status_history,
+            )
         except Exception as e:
             import traceback
+
             traceback.print_exc()
             return render_template("404.html", message=f"Error loading deliverable: {e}"), 500
 
@@ -353,6 +422,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
             return render_template("cpmp/cor_portal.html", contracts=contracts, cor_email=cor_email)
         except Exception:
             import traceback
+
             traceback.print_exc()
             return render_template("cpmp/cor_portal.html", contracts=[], cor_email=cor_email)
         finally:
@@ -366,6 +436,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
         conn = _get_db()
         try:
             from tools.govcon.contract_manager import get_contract, list_deliverables
+
             contract_result = get_contract(contract_id)
             if contract_result.get("status") == "error":
                 return render_template("404.html", message="Contract not found"), 404
@@ -373,6 +444,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
             deliverables = list_deliverables(contract_id).get("deliverables", [])
             try:
                 from tools.govcon.evm_engine import aggregate_contract_evm
+
                 evm = aggregate_contract_evm(contract_id)
                 if "indicators" in evm and isinstance(evm["indicators"], dict):
                     evm.update(evm["indicators"])
@@ -383,11 +455,15 @@ def _register_govcon_pages(app: "Flask", _get_db):
                 if "total_ev" in evm:
                     evm.setdefault("ev", evm["total_ev"])
                 if "percent_complete" in evm:
-                    evm.setdefault("percent_complete_schedule", evm["percent_complete"] / 100 if evm["percent_complete"] > 1 else evm["percent_complete"])
+                    evm.setdefault(
+                        "percent_complete_schedule",
+                        evm["percent_complete"] / 100 if evm["percent_complete"] > 1 else evm["percent_complete"],
+                    )
             except Exception:
                 evm = {}
             try:
                 from tools.govcon.cpars_predictor import list_assessments
+
                 cpars_assessments = list_assessments(contract_id).get("assessments", [])
             except Exception:
                 cpars_assessments = []
@@ -395,14 +471,26 @@ def _register_govcon_pages(app: "Flask", _get_db):
                 conn.execute(
                     "INSERT INTO cpmp_cor_access_log (id, user_id, contract_id, action, accessed_at, classification) "
                     "VALUES (?, ?, ?, ?, ?, ?)",
-                    (str(uuid.uuid4()), cor_email, contract_id, "view_contract", datetime.now(timezone.utc).isoformat(), DEFAULT_CLASSIFICATION),
+                    (
+                        str(uuid.uuid4()),
+                        cor_email,
+                        contract_id,
+                        "view_contract",
+                        datetime.now(timezone.utc).isoformat(),
+                        DEFAULT_CLASSIFICATION,
+                    ),
                 )
                 conn.commit()
             except Exception:
                 pass
-            return render_template("cpmp/cor_detail.html",
-                                   contract=contract, deliverables=deliverables,
-                                   evm=evm, cpars_assessments=cpars_assessments, cor_email=cor_email)
+            return render_template(
+                "cpmp/cor_detail.html",
+                contract=contract,
+                deliverables=deliverables,
+                evm=evm,
+                cpars_assessments=cpars_assessments,
+                cor_email=cor_email,
+            )
         except Exception as e:
             return render_template("404.html", message=f"Error: {e}"), 500
         finally:
@@ -416,6 +504,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
             rows = conn.execute("SELECT * FROM proposal_opportunities ORDER BY due_date ASC").fetchall()
             opportunities = [dict(r) for r in rows]
             from datetime import date
+
             today = date.today()
             nearest_deadline = None
             for opp in opportunities:
@@ -430,7 +519,9 @@ def _register_govcon_pages(app: "Flask", _get_db):
                         opp["days_left"] = None
                 else:
                     opp["days_left"] = None
-            return render_template("proposals/list.html", opportunities=opportunities, nearest_deadline=nearest_deadline)
+            return render_template(
+                "proposals/list.html", opportunities=opportunities, nearest_deadline=nearest_deadline
+            )
         finally:
             conn.close()
 
@@ -443,14 +534,19 @@ def _register_govcon_pages(app: "Flask", _get_db):
             if not opp:
                 return render_template("404.html", message="Opportunity not found"), 404
             opp = dict(opp)
-            sections = [dict(r) for r in conn.execute(
-                """SELECT s.*, v.volume_number, v.title as volume_title
+            sections = [
+                dict(r)
+                for r in conn.execute(
+                    """SELECT s.*, v.volume_number, v.title as volume_title
                    FROM proposal_sections s
                    LEFT JOIN proposal_volumes v ON s.volume_id = v.id
                    WHERE s.opportunity_id = ?
-                   ORDER BY v.volume_number, s.section_number""", (opp_id,)
-            ).fetchall()]
+                   ORDER BY v.volume_number, s.section_number""",
+                    (opp_id,),
+                ).fetchall()
+            ]
             from datetime import date
+
             today = date.today()
             for s in sections:
                 s["overdue"] = False
@@ -459,27 +555,42 @@ def _register_govcon_pages(app: "Flask", _get_db):
                         s["overdue"] = date.fromisoformat(s["due_date"]) < today
                     except (ValueError, TypeError):
                         pass
-            volumes = [dict(r) for r in conn.execute(
-                "SELECT * FROM proposal_volumes WHERE opportunity_id = ? ORDER BY volume_number", (opp_id,)
-            ).fetchall()]
-            compliance_items = [dict(r) for r in conn.execute(
-                "SELECT * FROM proposal_compliance_matrix WHERE opportunity_id = ?", (opp_id,)
-            ).fetchall()]
-            reviews = [dict(r) for r in conn.execute(
-                "SELECT * FROM proposal_reviews WHERE opportunity_id = ? ORDER BY scheduled_date", (opp_id,)
-            ).fetchall()]
-            findings = [dict(r) for r in conn.execute(
-                """SELECT f.*, r.review_type FROM proposal_review_findings f
+            volumes = [
+                dict(r)
+                for r in conn.execute(
+                    "SELECT * FROM proposal_volumes WHERE opportunity_id = ? ORDER BY volume_number", (opp_id,)
+                ).fetchall()
+            ]
+            compliance_items = [
+                dict(r)
+                for r in conn.execute(
+                    "SELECT * FROM proposal_compliance_matrix WHERE opportunity_id = ?", (opp_id,)
+                ).fetchall()
+            ]
+            reviews = [
+                dict(r)
+                for r in conn.execute(
+                    "SELECT * FROM proposal_reviews WHERE opportunity_id = ? ORDER BY scheduled_date", (opp_id,)
+                ).fetchall()
+            ]
+            findings = [
+                dict(r)
+                for r in conn.execute(
+                    """SELECT f.*, r.review_type FROM proposal_review_findings f
                    JOIN proposal_reviews r ON f.review_id = r.id
-                   WHERE r.opportunity_id = ?""", (opp_id,)
-            ).fetchall()]
+                   WHERE r.opportunity_id = ?""",
+                    (opp_id,),
+                ).fetchall()
+            ]
             total_sections = len(sections)
             completed_sections = len([s for s in sections if s["status"] in ("final", "submitted")])
             total_compliance = len(compliance_items)
             compliant_count = len([c for c in compliance_items if c.get("compliance_status") == "compliant"])
             coverage_pct = (compliant_count / total_compliance * 100) if total_compliance > 0 else 0
             open_findings = len([f for f in findings if f.get("status") in ("open", "in_progress")])
-            critical_findings = len([f for f in findings if f.get("severity") == "critical" and f.get("status") in ("open", "in_progress")])
+            critical_findings = len(
+                [f for f in findings if f.get("severity") == "critical" and f.get("status") in ("open", "in_progress")]
+            )
             section_status_dist = {}
             for s in sections:
                 st = s.get("status", "not_started")
@@ -496,9 +607,13 @@ def _register_govcon_pages(app: "Flask", _get_db):
             cm_not_applicable = len([c for c in compliance_items if c.get("compliance_status") == "not_applicable"])
             cm_gap_pct = round(cm_not_addressed / total_compliance * 100) if total_compliance > 0 else 0
             compliance_stats = {
-                "total": total_compliance, "compliant": cm_compliant, "partial": cm_partial,
-                "non_compliant": cm_non_compliant, "not_addressed": cm_not_addressed,
-                "not_applicable": cm_not_applicable, "gap_pct": cm_gap_pct,
+                "total": total_compliance,
+                "compliant": cm_compliant,
+                "partial": cm_partial,
+                "non_compliant": cm_non_compliant,
+                "not_addressed": cm_not_addressed,
+                "not_applicable": cm_not_applicable,
+                "gap_pct": cm_gap_pct,
             }
             findings_by_review = {}
             for f in findings:
@@ -517,14 +632,21 @@ def _register_govcon_pages(app: "Flask", _get_db):
                 except (ValueError, TypeError):
                     pass
             stats = {
-                "sections_total": total_sections, "sections_complete": completed_sections,
-                "compliance_coverage_pct": round(coverage_pct), "open_findings": open_findings,
-                "critical_findings": critical_findings, "section_status_distribution": section_status_dist,
+                "sections_total": total_sections,
+                "sections_complete": completed_sections,
+                "compliance_coverage_pct": round(coverage_pct),
+                "open_findings": open_findings,
+                "critical_findings": critical_findings,
+                "section_status_distribution": section_status_dist,
                 "finding_severity_distribution": finding_severity_dist,
             }
-            questions = [dict(r) for r in conn.execute(
-                "SELECT * FROM proposal_questions WHERE opportunity_id = ? ORDER BY question_number ASC", (opp_id,),
-            ).fetchall()]
+            questions = [
+                dict(r)
+                for r in conn.execute(
+                    "SELECT * FROM proposal_questions WHERE opportunity_id = ? ORDER BY question_number ASC",
+                    (opp_id,),
+                ).fetchall()
+            ]
             question_stats = {
                 "total": len(questions),
                 "high_priority": len([q for q in questions if q.get("priority") == "high"]),
@@ -539,9 +661,13 @@ def _register_govcon_pages(app: "Flask", _get_db):
                     questions_days_left = (date.fromisoformat(opp["questions_due_date"]) - today).days
                 except (ValueError, TypeError):
                     pass
-            amendments = [dict(r) for r in conn.execute(
-                "SELECT * FROM proposal_amendments WHERE opportunity_id = ? ORDER BY version_number ASC", (opp_id,),
-            ).fetchall()]
+            amendments = [
+                dict(r)
+                for r in conn.execute(
+                    "SELECT * FROM proposal_amendments WHERE opportunity_id = ? ORDER BY version_number ASC",
+                    (opp_id,),
+                ).fetchall()
+            ]
             responses = {}
             for q in questions:
                 if q.get("status") == "answered":
@@ -551,14 +677,24 @@ def _register_govcon_pages(app: "Flask", _get_db):
                     ).fetchone()
                     if resp:
                         responses[q["id"]] = dict(resp)
-            return render_template("proposals/detail.html",
-                opp=opp, sections=sections, volumes=volumes,
-                compliance_items=compliance_items, reviews=reviews_data, findings=findings,
-                stats=stats, compliance_stats=compliance_stats,
-                reviews_data=reviews_data, days_left=days_left,
-                questions=questions, question_stats=question_stats,
+            return render_template(
+                "proposals/detail.html",
+                opp=opp,
+                sections=sections,
+                volumes=volumes,
+                compliance_items=compliance_items,
+                reviews=reviews_data,
+                findings=findings,
+                stats=stats,
+                compliance_stats=compliance_stats,
+                reviews_data=reviews_data,
+                days_left=days_left,
+                questions=questions,
+                question_stats=question_stats,
                 questions_days_left=questions_days_left,
-                amendments=amendments, responses=responses)
+                amendments=amendments,
+                responses=responses,
+            )
         finally:
             conn.close()
 
@@ -572,47 +708,70 @@ def _register_govcon_pages(app: "Flask", _get_db):
                    FROM proposal_sections s
                    LEFT JOIN proposal_volumes v ON s.volume_id = v.id
                    WHERE s.id = ? AND s.opportunity_id = ?""",
-                (sec_id, opp_id)).fetchone()
+                (sec_id, opp_id),
+            ).fetchone()
             if not section:
                 return render_template("404.html", message="Section not found"), 404
             section = dict(section)
             opp = conn.execute("SELECT title FROM proposal_opportunities WHERE id = ?", (opp_id,)).fetchone()
             opp_title = opp["title"] if opp else "Unknown"
             from tools.dashboard.api.proposals import SECTION_TRANSITIONS
+
             section["valid_transitions"] = SECTION_TRANSITIONS.get(section["status"], [])
             from datetime import date
+
             section["overdue"] = False
             if section.get("due_date") and section["status"] not in ("final", "submitted"):
                 try:
                     section["overdue"] = date.fromisoformat(section["due_date"]) < date.today()
                 except (ValueError, TypeError):
                     pass
-            section["compliance_items"] = [dict(r) for r in conn.execute(
-                "SELECT * FROM proposal_compliance_matrix WHERE proposal_section_id = ?", (sec_id,)
-            ).fetchall()]
-            section["findings"] = [dict(r) for r in conn.execute(
-                """SELECT f.*, r.review_type FROM proposal_review_findings f
+            section["compliance_items"] = [
+                dict(r)
+                for r in conn.execute(
+                    "SELECT * FROM proposal_compliance_matrix WHERE proposal_section_id = ?", (sec_id,)
+                ).fetchall()
+            ]
+            section["findings"] = [
+                dict(r)
+                for r in conn.execute(
+                    """SELECT f.*, r.review_type FROM proposal_review_findings f
                    JOIN proposal_reviews r ON f.review_id = r.id
-                   WHERE f.section_id = ?""", (sec_id,)
-            ).fetchall()]
+                   WHERE f.section_id = ?""",
+                    (sec_id,),
+                ).fetchall()
+            ]
             deps = conn.execute(
                 """SELECT d.*, s.title as depends_on_title, s.status as depends_on_status
                    FROM proposal_section_dependencies d
                    JOIN proposal_sections s ON d.depends_on_section_id = s.id
-                   WHERE d.section_id = ?""", (sec_id,)
+                   WHERE d.section_id = ?""",
+                (sec_id,),
             ).fetchall()
             dep_list = []
             for d in deps:
                 d = dict(d)
                 from tools.dashboard.api.proposals import SECTION_STATUS_ORDER
-                req_idx = SECTION_STATUS_ORDER.index(d["required_status"]) if d["required_status"] in SECTION_STATUS_ORDER else 0
-                cur_idx = SECTION_STATUS_ORDER.index(d["depends_on_status"]) if d["depends_on_status"] in SECTION_STATUS_ORDER else 0
+
+                req_idx = (
+                    SECTION_STATUS_ORDER.index(d["required_status"])
+                    if d["required_status"] in SECTION_STATUS_ORDER
+                    else 0
+                )
+                cur_idx = (
+                    SECTION_STATUS_ORDER.index(d["depends_on_status"])
+                    if d["depends_on_status"] in SECTION_STATUS_ORDER
+                    else 0
+                )
                 d["met"] = cur_idx >= req_idx
                 dep_list.append(d)
             section["dependencies"] = dep_list
-            section["history"] = [dict(r) for r in conn.execute(
-                "SELECT * FROM proposal_status_history WHERE entity_id = ? ORDER BY created_at DESC", (sec_id,)
-            ).fetchall()]
+            section["history"] = [
+                dict(r)
+                for r in conn.execute(
+                    "SELECT * FROM proposal_status_history WHERE entity_id = ? ORDER BY created_at DESC", (sec_id,)
+                ).fetchall()
+            ]
             return render_template("proposals/section_detail.html", section=section, opp_title=opp_title)
         finally:
             conn.close()
@@ -623,6 +782,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
         conn = _get_db()
         try:
             from tools.govcon.govcon_engine import get_status
+
             stats = get_status()
             try:
                 opps = conn.execute("SELECT * FROM sam_gov_opportunities ORDER BY posted_date DESC LIMIT 25").fetchall()
@@ -631,16 +791,28 @@ def _register_govcon_pages(app: "Flask", _get_db):
                 opportunities = []
             linked_opp_ids = set()
             try:
-                linked = conn.execute("SELECT sam_gov_opportunity_id FROM proposal_opportunities WHERE sam_gov_opportunity_id IS NOT NULL").fetchall()
+                linked = conn.execute(
+                    "SELECT sam_gov_opportunity_id FROM proposal_opportunities WHERE sam_gov_opportunity_id IS NOT NULL"
+                ).fetchall()
                 linked_opp_ids = {r["sam_gov_opportunity_id"] for r in linked}
             except Exception:
                 pass
-            return render_template("govcon/pipeline.html", stats=stats, opportunities=opportunities, linked_opp_ids=linked_opp_ids)
+            return render_template(
+                "govcon/pipeline.html", stats=stats, opportunities=opportunities, linked_opp_ids=linked_opp_ids
+            )
         except Exception:
-            stats = {"total_opportunities": 0, "total_requirements": 0, "total_patterns": 0,
-                     "total_capability_maps": 0, "total_drafts": 0, "total_awards": 0,
-                     "knowledge_blocks": 0, "linked_proposals": 0, "domain_distribution": {},
-                     "last_pipeline_run": None}
+            stats = {
+                "total_opportunities": 0,
+                "total_requirements": 0,
+                "total_patterns": 0,
+                "total_capability_maps": 0,
+                "total_drafts": 0,
+                "total_awards": 0,
+                "knowledge_blocks": 0,
+                "linked_proposals": 0,
+                "domain_distribution": {},
+                "last_pipeline_run": None,
+            }
             return render_template("govcon/pipeline.html", stats=stats, opportunities=[], linked_opp_ids=set())
         finally:
             conn.close()
@@ -664,7 +836,9 @@ def _register_govcon_pages(app: "Flask", _get_db):
                 pass
             domain_stats = {}
             try:
-                rows = conn.execute("SELECT domain_category, COUNT(*) as cnt FROM rfp_shall_statements GROUP BY domain_category ORDER BY cnt DESC").fetchall()
+                rows = conn.execute(
+                    "SELECT domain_category, COUNT(*) as cnt FROM rfp_shall_statements GROUP BY domain_category ORDER BY cnt DESC"
+                ).fetchall()
                 domain_stats = {r["domain_category"]: {"count": r["cnt"]} for r in rows}
             except Exception:
                 pass
@@ -672,22 +846,33 @@ def _register_govcon_pages(app: "Flask", _get_db):
             patterns = []
             min_frequency = 3
             try:
-                rows = conn.execute("SELECT * FROM rfp_requirement_patterns WHERE frequency >= ? ORDER BY frequency DESC LIMIT 30", (min_frequency,)).fetchall()
+                rows = conn.execute(
+                    "SELECT * FROM rfp_requirement_patterns WHERE frequency >= ? ORDER BY frequency DESC LIMIT 30",
+                    (min_frequency,),
+                ).fetchall()
                 patterns = [dict(r) for r in rows]
             except Exception:
                 pass
             top_frequency = patterns[0]["frequency"] if patterns else 0
             type_stats = {}
             try:
-                rows = conn.execute("SELECT statement_type, COUNT(*) as cnt FROM rfp_shall_statements GROUP BY statement_type ORDER BY cnt DESC").fetchall()
+                rows = conn.execute(
+                    "SELECT statement_type, COUNT(*) as cnt FROM rfp_shall_statements GROUP BY statement_type ORDER BY cnt DESC"
+                ).fetchall()
                 type_stats = {r["statement_type"]: r["cnt"] for r in rows}
             except Exception:
                 pass
-            return render_template("govcon/requirements.html",
-                total_requirements=total_requirements, total_patterns=total_patterns,
-                domain_stats=domain_stats, domain_count=domain_count,
-                patterns=patterns, top_frequency=top_frequency,
-                type_stats=type_stats, min_frequency=min_frequency)
+            return render_template(
+                "govcon/requirements.html",
+                total_requirements=total_requirements,
+                total_patterns=total_patterns,
+                domain_stats=domain_stats,
+                domain_count=domain_count,
+                patterns=patterns,
+                top_frequency=top_frequency,
+                type_stats=type_stats,
+                min_frequency=min_frequency,
+            )
         finally:
             conn.close()
 
@@ -747,14 +932,19 @@ def _register_govcon_pages(app: "Flask", _get_db):
             recommendations = []
             try:
                 from tools.govcon.gap_analyzer import generate_recommendations
+
                 rec_result = generate_recommendations()
                 recommendations = rec_result.get("recommendations", [])[:15]
             except Exception:
                 pass
-            return render_template("govcon/capabilities.html",
-                coverage=coverage, domain_coverage=domain_coverage,
-                gaps=gaps, total_gaps=total_gaps,
-                recommendations=recommendations)
+            return render_template(
+                "govcon/capabilities.html",
+                coverage=coverage,
+                domain_coverage=domain_coverage,
+                gaps=gaps,
+                total_gaps=total_gaps,
+                recommendations=recommendations,
+            )
         finally:
             conn.close()
 
@@ -772,6 +962,7 @@ def _module_not_installed(slug: str):
 
 def require_installed(slug):
     """Route decorator — catches ImportError when module code is missing."""
+
     def decorator(f):
         @wraps(f)
         def wrapper(*args, **kwargs):
@@ -781,7 +972,9 @@ def require_installed(slug):
                 if slug in str(exc) or f"tools.{slug}" in str(exc) or f"tools/{slug}" in str(exc):
                     return _module_not_installed(slug)
                 raise
+
         return wrapper
+
     return decorator
 
 
@@ -812,6 +1005,7 @@ def create_app() -> Flask:
     # Correlation ID middleware (D149)
     try:
         from tools.resilience.correlation import register_correlation_middleware
+
         register_correlation_middleware(app)
     except ImportError:
         pass
@@ -879,6 +1073,7 @@ def create_app() -> Flask:
         # Route-to-module map for assistant widget auto-scoping (D-CA-4)
         try:
             from tools.dashboard.assistant_config import ROUTE_MODULE_MAP
+
             _route_map = ROUTE_MODULE_MAP
         except ImportError:
             _route_map = {}
@@ -910,6 +1105,7 @@ def create_app() -> Flask:
 
     # ---- Air-gap route guard: friendly message for disabled pages ----
     if _AIRGAP_MODE:
+
         @app.before_request
         def _airgap_route_guard():
             path = flask_request.path.rstrip("/") or "/"
@@ -917,10 +1113,12 @@ def create_app() -> Flask:
             for disabled in _AIRGAP_DISABLED_ROUTES:
                 if path == disabled or path.startswith(disabled + "/"):
                     if flask_request.is_json or path.startswith("/api/"):
-                        return jsonify({
-                            "error": "unavailable",
-                            "message": "This feature is not available in air-gap mode.",
-                        }), 503
+                        return jsonify(
+                            {
+                                "error": "unavailable",
+                                "message": "This feature is not available in air-gap mode.",
+                            }
+                        ), 503
                     return render_template(
                         "airgap_unavailable.html",
                         feature_name=disabled.strip("/").replace("-", " ").title(),
@@ -929,6 +1127,7 @@ def create_app() -> Flask:
     # ---- Auto-register A2A agents from card files ----
     try:
         from tools.a2a.agent_registry import register_all_from_cards
+
         registered = register_all_from_cards()
         if registered:
             app.logger.info("Auto-registered %d agents from card files", len(registered))
@@ -996,6 +1195,7 @@ def create_app() -> Flask:
     # ---- SRE API Blueprint ----
     try:
         from tools.dashboard.api.sre import sre_api
+
         app.register_blueprint(sre_api)
         app.logger.info("SRE API registered at /api/sre/")
     except ImportError as exc:
@@ -1092,9 +1292,14 @@ def create_app() -> Flask:
 
     # ---- Design Canvases (all 8) ----
     _CANVAS_ROUTES = {
-        "idc": "/infra", "ndc": "/network", "sdc": "/security",
-        "bdc": "/boundary", "pdc": "/devops", "odc": "/observability",
-        "ddc": "/data", "qdc": "/quality",
+        "idc": "/infra",
+        "ndc": "/network",
+        "sdc": "/security",
+        "bdc": "/boundary",
+        "pdc": "/devops",
+        "odc": "/observability",
+        "ddc": "/data",
+        "qdc": "/quality",
     }
     for _ck, _cbp in _CANVAS_BLUEPRINTS.items():
         try:
@@ -1114,9 +1319,7 @@ def create_app() -> Flask:
         """Shortcut: GET /api/alerts -> delegates to metrics alerts."""
         conn = _get_db()
         try:
-            rows = conn.execute(
-                "SELECT * FROM alerts ORDER BY created_at DESC LIMIT 50"
-            ).fetchall()
+            rows = conn.execute("SELECT * FROM alerts ORDER BY created_at DESC LIMIT 50").fetchall()
             return jsonify({"alerts": [dict(r) for r in rows], "total": len(rows)})
         finally:
             conn.close()
@@ -1127,33 +1330,33 @@ def create_app() -> Flask:
         conn = _get_db()
         try:
             notifications = []
-            firing = conn.execute(
-                "SELECT COUNT(*) as cnt FROM alerts WHERE status = 'firing'"
-            ).fetchone()["cnt"]
+            firing = conn.execute("SELECT COUNT(*) as cnt FROM alerts WHERE status = 'firing'").fetchone()["cnt"]
             if firing > 0:
-                notifications.append({
-                    "type": "error",
-                    "message": f"{firing} alert{'s' if firing > 1 else ''} currently firing",
-                    "link": "/monitoring",
-                })
-            open_poam = conn.execute(
-                "SELECT COUNT(*) as cnt FROM poam_items WHERE status = 'open'"
-            ).fetchone()["cnt"]
+                notifications.append(
+                    {
+                        "type": "error",
+                        "message": f"{firing} alert{'s' if firing > 1 else ''} currently firing",
+                        "link": "/monitoring",
+                    }
+                )
+            open_poam = conn.execute("SELECT COUNT(*) as cnt FROM poam_items WHERE status = 'open'").fetchone()["cnt"]
             if open_poam > 5:
-                notifications.append({
-                    "type": "warning",
-                    "message": f"{open_poam} open POA&M items need attention",
-                    "link": "/projects",
-                })
-            inactive = conn.execute(
-                "SELECT COUNT(*) as cnt FROM agents WHERE status != 'active'"
-            ).fetchone()["cnt"]
+                notifications.append(
+                    {
+                        "type": "warning",
+                        "message": f"{open_poam} open POA&M items need attention",
+                        "link": "/projects",
+                    }
+                )
+            inactive = conn.execute("SELECT COUNT(*) as cnt FROM agents WHERE status != 'active'").fetchone()["cnt"]
             if inactive > 0:
-                notifications.append({
-                    "type": "info",
-                    "message": f"{inactive} agent{'s' if inactive > 1 else ''} inactive",
-                    "link": "/agents",
-                })
+                notifications.append(
+                    {
+                        "type": "info",
+                        "message": f"{inactive} agent{'s' if inactive > 1 else ''} inactive",
+                        "link": "/agents",
+                    }
+                )
             return jsonify({"notifications": notifications})
         finally:
             conn.close()
@@ -1165,6 +1368,7 @@ def create_app() -> Flask:
         conn = _get_db()
         try:
             feed = []
+
             def _tbl_exists(c, t):
                 try:
                     c.execute(f"SELECT 1 FROM {t} LIMIT 1")  # nosec B608
@@ -1206,9 +1410,7 @@ def create_app() -> Flask:
             # ----------------------------------------------------------------
             # 1. Task Board Status (donut) — replaces empty projects table
             # ----------------------------------------------------------------
-            task_statuses = conn.execute(
-                "SELECT status, COUNT(*) as cnt FROM kanban_tasks GROUP BY status"
-            ).fetchall()
+            task_statuses = conn.execute("SELECT status, COUNT(*) as cnt FROM kanban_tasks GROUP BY status").fetchall()
 
             # ----------------------------------------------------------------
             # 2. Activity Trend: last 7 days (line chart) — from audit_trail
@@ -1231,12 +1433,12 @@ def create_app() -> Flask:
             # 3. Compliance Posture — aggregate across canvas assessment DBs
             # ----------------------------------------------------------------
             _CANVAS_DBS = [
-                ("Security",      BASE_DIR / "data" / "security_canvas.db"),
-                ("Network",       BASE_DIR / "data" / "network_canvas.db"),
-                ("Pipeline",      BASE_DIR / "data" / "pipeline_canvas.db"),
-                ("Infra",         BASE_DIR / "data" / "infra_canvas.db"),
-                ("Data",          BASE_DIR / "data" / "data_canvas.db"),
-                ("Boundary",      BASE_DIR / "data" / "boundary_canvas.db"),
+                ("Security", BASE_DIR / "data" / "security_canvas.db"),
+                ("Network", BASE_DIR / "data" / "network_canvas.db"),
+                ("Pipeline", BASE_DIR / "data" / "pipeline_canvas.db"),
+                ("Infra", BASE_DIR / "data" / "infra_canvas.db"),
+                ("Data", BASE_DIR / "data" / "data_canvas.db"),
+                ("Boundary", BASE_DIR / "data" / "boundary_canvas.db"),
                 ("Observability", BASE_DIR / "data" / "observability_canvas.db"),
             ]
 
@@ -1252,8 +1454,7 @@ def create_app() -> Flask:
                     try:
                         if canvas_name == "Security":
                             row = cconn.execute(
-                                "SELECT AVG(risk_score) as avg_score, "
-                                "COUNT(*) as total_threats FROM sc_assessments"
+                                "SELECT AVG(risk_score) as avg_score, COUNT(*) as total_threats FROM sc_assessments"
                             ).fetchone()
                             score = round(max(0.0, 100.0 - float(row["avg_score"] or 0)), 1)
                             open_f = int(row["total_threats"] or 0)
@@ -1270,9 +1471,7 @@ def create_app() -> Flask:
                             score = round((closed_f / total_f * 100) if total_f > 0 else 100.0, 1)
                         elif canvas_name in ("Infra", "Data"):
                             tbl = "idc_assessments" if canvas_name == "Infra" else "dd_assessments"
-                            row = cconn.execute(
-                                f"SELECT AVG(score) as avg_score FROM {tbl}"
-                            ).fetchone()
+                            row = cconn.execute(f"SELECT AVG(score) as avg_score FROM {tbl}").fetchone()
                             score = round(float(row["avg_score"] or 0), 1)
                             open_f = 0
                             closed_f = 0
@@ -1287,21 +1486,21 @@ def create_app() -> Flask:
                             closed_f = 0
                             score = round(float(row["avg_score"] or 0), 1)
                         elif canvas_name == "Observability":
-                            row = cconn.execute(
-                                "SELECT AVG(score) as avg_score FROM od_assessments"
-                            ).fetchone()
+                            row = cconn.execute("SELECT AVG(score) as avg_score FROM od_assessments").fetchone()
                             score = round(float(row["avg_score"] or 0), 1)
                             open_f = 0
                             closed_f = 0
                         else:
                             continue
 
-                        canvas_compliance.append({
-                            "name": canvas_name,
-                            "score": score,
-                            "open_findings": open_f,
-                            "closed_findings": closed_f,
-                        })
+                        canvas_compliance.append(
+                            {
+                                "name": canvas_name,
+                                "score": score,
+                                "open_findings": open_f,
+                                "closed_findings": closed_f,
+                            }
+                        )
                         if score > 0:
                             overall_scores.append(score)
                     finally:
@@ -1314,26 +1513,24 @@ def create_app() -> Flask:
             # ----------------------------------------------------------------
             # 4. Agent health (gauge: % active) — unchanged
             # ----------------------------------------------------------------
-            total_agents = conn.execute(
-                "SELECT COUNT(*) as cnt FROM agents"
-            ).fetchone()["cnt"]
-            active_agents = conn.execute(
-                "SELECT COUNT(*) as cnt FROM agents WHERE status = 'active'"
-            ).fetchone()["cnt"]
+            total_agents = conn.execute("SELECT COUNT(*) as cnt FROM agents").fetchone()["cnt"]
+            active_agents = conn.execute("SELECT COUNT(*) as cnt FROM agents WHERE status = 'active'").fetchone()["cnt"]
 
-            return jsonify({
-                "task_statuses": [dict(r) for r in task_statuses],
-                "activity_trend": [dict(r) for r in activity_trend],
-                "compliance": {
-                    "canvases": canvas_compliance,
-                    "overall_score": overall_score,
-                },
-                "agent_health": {
-                    "total": total_agents,
-                    "active": active_agents,
-                    "ratio": active_agents / total_agents if total_agents > 0 else 1.0,
-                },
-            })
+            return jsonify(
+                {
+                    "task_statuses": [dict(r) for r in task_statuses],
+                    "activity_trend": [dict(r) for r in activity_trend],
+                    "compliance": {
+                        "canvases": canvas_compliance,
+                        "overall_score": overall_score,
+                    },
+                    "agent_health": {
+                        "total": total_agents,
+                        "active": active_agents,
+                        "ratio": active_agents / total_agents if total_agents > 0 else 1.0,
+                    },
+                }
+            )
         finally:
             conn.close()
 
@@ -1343,13 +1540,27 @@ def create_app() -> Flask:
         import sqlite3 as _sqlite3
 
         _TREND_CANVASES = [
-            ("Security",      BASE_DIR / "data" / "security_canvas.db",      "sc_assessments",        "risk_score", "ran_at",     "inverted"),
-            ("Network",       None,                                            None,                    None,         None,         "skip"),
-            ("Pipeline",      None,                                            None,                    None,         None,         "skip"),
-            ("Infra",         BASE_DIR / "data" / "infra_canvas.db",          "idc_assessments",       "score",      "created_at", "direct"),
-            ("Data",          BASE_DIR / "data" / "data_canvas.db",           "dd_assessments",        "score",      "created_at", "direct"),
-            ("Boundary",      BASE_DIR / "data" / "boundary_canvas.db",       "bd_assessments",        "score",      "created_at", "direct"),
-            ("Observability", BASE_DIR / "data" / "observability_canvas.db",  "od_assessments",        "score",      "created_at", "direct"),
+            (
+                "Security",
+                BASE_DIR / "data" / "security_canvas.db",
+                "sc_assessments",
+                "risk_score",
+                "ran_at",
+                "inverted",
+            ),
+            ("Network", None, None, None, None, "skip"),
+            ("Pipeline", None, None, None, None, "skip"),
+            ("Infra", BASE_DIR / "data" / "infra_canvas.db", "idc_assessments", "score", "created_at", "direct"),
+            ("Data", BASE_DIR / "data" / "data_canvas.db", "dd_assessments", "score", "created_at", "direct"),
+            ("Boundary", BASE_DIR / "data" / "boundary_canvas.db", "bd_assessments", "score", "created_at", "direct"),
+            (
+                "Observability",
+                BASE_DIR / "data" / "observability_canvas.db",
+                "od_assessments",
+                "score",
+                "created_at",
+                "direct",
+            ),
         ]
 
         results = []
@@ -1428,12 +1639,14 @@ def create_app() -> Flask:
                 (project_id,),
             ).fetchall()
 
-            return jsonify({
-                "stig_by_severity": [dict(r) for r in stig_sev],
-                "poam_by_severity": [dict(r) for r in poam_sev],
-                "deployment_history": [dict(r) for r in deploys],
-                "alert_trend": [dict(r) for r in alerts],
-            })
+            return jsonify(
+                {
+                    "stig_by_severity": [dict(r) for r in stig_sev],
+                    "poam_by_severity": [dict(r) for r in poam_sev],
+                    "deployment_history": [dict(r) for r in deploys],
+                    "alert_trend": [dict(r) for r in alerts],
+                }
+            )
         finally:
             conn.close()
 
@@ -1446,22 +1659,17 @@ def create_app() -> Flask:
         try:
             # All projects for Kanban board
             projects = conn.execute(
-                "SELECT id, name, type, status, classification "
-                "FROM projects ORDER BY updated_at DESC, created_at DESC"
+                "SELECT id, name, type, status, classification FROM projects ORDER BY updated_at DESC, created_at DESC"
             ).fetchall()
             projects = [dict(r) for r in projects]
 
             # Agent counts (stat bar)
             total_agents = conn.execute("SELECT COUNT(*) as cnt FROM agents").fetchone()["cnt"]
-            active_agents = conn.execute(
-                "SELECT COUNT(*) as cnt FROM agents WHERE status = 'active'"
-            ).fetchone()["cnt"]
+            active_agents = conn.execute("SELECT COUNT(*) as cnt FROM agents WHERE status = 'active'").fetchone()["cnt"]
             inactive_agents = total_agents - active_agents
 
             # Recent audit entries (for existing audit trail section)
-            recent_audit = conn.execute(
-                "SELECT * FROM audit_trail ORDER BY created_at DESC LIMIT 10"
-            ).fetchall()
+            recent_audit = conn.execute("SELECT * FROM audit_trail ORDER BY created_at DESC LIMIT 10").fetchall()
 
             # --- Recent Activity & Findings: audit_trail + canvas CAT1 findings ---
             import sqlite3 as _sqlite3
@@ -1473,13 +1681,15 @@ def create_app() -> Flask:
             _activity = []
             for _e in _audit_rows:
                 _e = dict(_e)
-                _activity.append({
-                    "event_type": _e.get("event_type") or "AUDIT",
-                    "source": "System",
-                    "details": _e.get("action") or "",
-                    "severity": "info",
-                    "created_at": _e.get("created_at") or "",
-                })
+                _activity.append(
+                    {
+                        "event_type": _e.get("event_type") or "AUDIT",
+                        "source": "System",
+                        "details": _e.get("action") or "",
+                        "severity": "info",
+                        "created_at": _e.get("created_at") or "",
+                    }
+                )
 
             # Canvas DBs: extract CAT1 findings from recent assessments
             _canvas_json_dbs = [
@@ -1495,9 +1705,7 @@ def create_app() -> Flask:
                 try:
                     _cc = _sqlite3.connect(str(BASE_DIR / "data" / _db_name))
                     _cc.row_factory = _sqlite3.Row
-                    _rows = _cc.execute(
-                        f"SELECT {_fcol}, {_tcol} FROM {_tbl} ORDER BY {_tcol} DESC LIMIT 3"
-                    ).fetchall()
+                    _rows = _cc.execute(f"SELECT {_fcol}, {_tcol} FROM {_tbl} ORDER BY {_tcol} DESC LIMIT 3").fetchall()
                     for _row in _rows:
                         _ts = _row[1] or ""
                         try:
@@ -1513,13 +1721,15 @@ def create_app() -> Flask:
                                 _extra = _f.get("detail") or _f.get("affected_entity") or ""
                                 if _extra:
                                     _detail = f"{_detail}: {_extra}"
-                                _activity.append({
-                                    "event_type": "Canvas Finding",
-                                    "source": _label,
-                                    "details": _detail,
-                                    "severity": "CAT1",
-                                    "created_at": _ts,
-                                })
+                                _activity.append(
+                                    {
+                                        "event_type": "Canvas Finding",
+                                        "source": _label,
+                                        "details": _detail,
+                                        "severity": "CAT1",
+                                        "created_at": _ts,
+                                    }
+                                )
                     _cc.close()
                 except Exception:
                     pass
@@ -1544,13 +1754,15 @@ def create_app() -> Flask:
                             open_canvas_count += 1
                         if _sev == "CAT1":
                             cat1_count += 1
-                            _activity.append({
-                                "event_type": "Canvas Finding",
-                                "source": _label,
-                                "details": _row["title"] or "",
-                                "severity": "CAT1",
-                                "created_at": _row["created_at"] or "",
-                            })
+                            _activity.append(
+                                {
+                                    "event_type": "Canvas Finding",
+                                    "source": _label,
+                                    "details": _row["title"] or "",
+                                    "severity": "CAT1",
+                                    "created_at": _row["created_at"] or "",
+                                }
+                            )
                     _cc.close()
                 except Exception:
                     pass
@@ -1606,8 +1818,7 @@ def create_app() -> Flask:
         conn = _get_db()
         try:
             projects = conn.execute(
-                "SELECT id, name, type, status, classification, created_at "
-                "FROM projects ORDER BY created_at DESC"
+                "SELECT id, name, type, status, classification, created_at FROM projects ORDER BY created_at DESC"
             ).fetchall()
             return render_template("projects/list.html", projects=[dict(r) for r in projects])
         finally:
@@ -1703,9 +1914,7 @@ def create_app() -> Flask:
         """Agent status page."""
         conn = _get_db()
         try:
-            rows = conn.execute(
-                "SELECT * FROM agents ORDER BY name"
-            ).fetchall()
+            rows = conn.execute("SELECT * FROM agents ORDER BY name").fetchall()
             agents = []
             for r in rows:
                 agent = dict(r)
@@ -1735,9 +1944,7 @@ def create_app() -> Flask:
         conn = _get_db()
         try:
             # Recent alerts
-            alerts = conn.execute(
-                "SELECT * FROM alerts ORDER BY created_at DESC LIMIT 20"
-            ).fetchall()
+            alerts = conn.execute("SELECT * FROM alerts ORDER BY created_at DESC LIMIT 20").fetchall()
 
             # Self-healing events
             healing_events = conn.execute(
@@ -1748,15 +1955,11 @@ def create_app() -> Flask:
             ).fetchall()
 
             # Health stats
-            firing = conn.execute(
-                "SELECT COUNT(*) as cnt FROM alerts WHERE status = 'firing'"
-            ).fetchone()["cnt"]
-            resolved = conn.execute(
-                "SELECT COUNT(*) as cnt FROM alerts WHERE status = 'resolved'"
-            ).fetchone()["cnt"]
-            unresolved_failures = conn.execute(
-                "SELECT COUNT(*) as cnt FROM failure_log WHERE resolved = 0"
-            ).fetchone()["cnt"]
+            firing = conn.execute("SELECT COUNT(*) as cnt FROM alerts WHERE status = 'firing'").fetchone()["cnt"]
+            resolved = conn.execute("SELECT COUNT(*) as cnt FROM alerts WHERE status = 'resolved'").fetchone()["cnt"]
+            unresolved_failures = conn.execute("SELECT COUNT(*) as cnt FROM failure_log WHERE resolved = 0").fetchone()[
+                "cnt"
+            ]
 
             health = "healthy"
             if firing > 0 or unresolved_failures > 5:
@@ -1783,9 +1986,7 @@ def create_app() -> Flask:
         """Real-time event timeline page (SSE-powered)."""
         conn = _get_db()
         try:
-            recent_events = conn.execute(
-                "SELECT * FROM hook_events ORDER BY created_at DESC LIMIT 50"
-            ).fetchall()
+            recent_events = conn.execute("SELECT * FROM hook_events ORDER BY created_at DESC LIMIT 50").fetchall()
             return render_template(
                 "events/timeline.html",
                 recent_events=[dict(r) for r in recent_events],
@@ -1842,9 +2043,7 @@ def create_app() -> Flask:
         conn = _get_db()
         try:
             try:
-                session = conn.execute(
-                    "SELECT * FROM intake_sessions WHERE id = ?", (session_id,)
-                ).fetchone()
+                session = conn.execute("SELECT * FROM intake_sessions WHERE id = ?", (session_id,)).fetchone()
             except Exception:
                 session = None
             if not session:
@@ -1856,6 +2055,7 @@ def create_app() -> Flask:
             ).fetchall()
             # Extract context for sidebar display
             import json as _json
+
             session_dict = dict(session)
             ctx = {}
             try:
@@ -1898,6 +2098,7 @@ def create_app() -> Flask:
         """List all generated/registered connectors."""
         try:
             from tools.databridge.registry import list_registered
+
             registered = list_registered()
             connectors = [{"name": k, "type": "registered", "status": "active"} for k in registered]
             return jsonify({"connectors": connectors, "total": len(connectors)})
@@ -1935,28 +2136,26 @@ def create_app() -> Flask:
             enabled = ch.get("enabled", False)
             req_internet = ch.get("requires_internet", False)
             available = enabled and not (env_mode == "air_gapped" and req_internet)
-            active_channels.append({
-                "name": name,
-                "enabled": enabled,
-                "available": available,
-                "max_il": ch.get("max_il", "IL4"),
-                "description": ch.get("description", ""),
-            })
+            active_channels.append(
+                {
+                    "name": name,
+                    "enabled": enabled,
+                    "available": available,
+                    "max_il": ch.get("max_il", "IL4"),
+                    "description": ch.get("description", ""),
+                }
+            )
 
         # Load bindings and recent commands
         conn = _get_db()
         try:
-            bindings = conn.execute(
-                "SELECT * FROM remote_user_bindings ORDER BY created_at DESC LIMIT 50"
-            ).fetchall()
+            bindings = conn.execute("SELECT * FROM remote_user_bindings ORDER BY created_at DESC LIMIT 50").fetchall()
             bindings = [dict(r) for r in bindings]
         except Exception:
             bindings = []
 
         try:
-            commands = conn.execute(
-                "SELECT * FROM remote_command_log ORDER BY created_at DESC LIMIT 50"
-            ).fetchall()
+            commands = conn.execute("SELECT * FROM remote_command_log ORDER BY created_at DESC LIMIT 50").fetchall()
             commands = [dict(r) for r in commands]
         except Exception:
             commands = []
@@ -1977,9 +2176,7 @@ def create_app() -> Flask:
         """Natural language compliance query page."""
         conn = _get_db()
         try:
-            recent_queries = conn.execute(
-                "SELECT * FROM nlq_queries ORDER BY created_at DESC LIMIT 20"
-            ).fetchall()
+            recent_queries = conn.execute("SELECT * FROM nlq_queries ORDER BY created_at DESC LIMIT 20").fetchall()
             return render_template(
                 "query/nlq.html",
                 recent_queries=[dict(r) for r in recent_queries],
@@ -2002,12 +2199,12 @@ def create_app() -> Flask:
         # Try DB first
         conn = _get_db()
         try:
-            rows = conn.execute(
-                "SELECT selector, title, description FROM tour_config ORDER BY sort_order"
-            ).fetchall()
+            rows = conn.execute("SELECT selector, title, description FROM tour_config ORDER BY sort_order").fetchall()
             if rows:
                 db_steps = [{"selector": r["selector"], "title": r["title"], "desc": r["description"]} for r in rows]
-                return jsonify({"steps": db_steps, "version": 2, "source": "db", "classification": DEFAULT_CLASSIFICATION})
+                return jsonify(
+                    {"steps": db_steps, "version": 2, "source": "db", "classification": DEFAULT_CLASSIFICATION}
+                )
         except Exception:
             pass  # Table may not exist yet — fall through to defaults
         finally:
@@ -2036,17 +2233,13 @@ def create_app() -> Flask:
                 "selector": ".chart-grid",
                 "title": "Visual Dashboards",
                 "desc": (
-                    "Visual dashboards: compliance posture, alert trends, "
-                    "project status, and agent health charts."
+                    "Visual dashboards: compliance posture, alert trends, project status, and agent health charts."
                 ),
             },
             {
                 "selector": ".table-container",
                 "title": "Data Tables",
-                "desc": (
-                    "Detailed data tables with search, sort, filter, "
-                    "and CSV export capabilities."
-                ),
+                "desc": ("Detailed data tables with search, sort, filter, and CSV export capabilities."),
             },
             {
                 "selector": "#role-select",
@@ -2083,11 +2276,13 @@ def create_app() -> Flask:
                 ),
             },
         ]
-        return jsonify({
-            "steps": steps,
-            "version": 2,
-            "classification": DEFAULT_CLASSIFICATION,
-        })
+        return jsonify(
+            {
+                "steps": steps,
+                "version": 2,
+                "classification": DEFAULT_CLASSIFICATION,
+            }
+        )
 
     # ---- Profile routes (D172, D175-D178) ----
 
@@ -2100,6 +2295,7 @@ def create_app() -> Flask:
     def profile_api_keys():
         """List current user's dashboard API keys."""
         from tools.dashboard.auth import list_api_keys_for_user
+
         user = getattr(g, "current_user", None)
         if not user:
             return jsonify({"keys": []})
@@ -2110,6 +2306,7 @@ def create_app() -> Flask:
     def profile_llm_keys():
         """List current user's BYOK LLM keys."""
         from tools.dashboard.byok import list_llm_keys
+
         user = getattr(g, "current_user", None)
         if not user:
             return jsonify({"keys": []})
@@ -2120,6 +2317,7 @@ def create_app() -> Flask:
     def profile_add_llm_key():
         """Store a new BYOK LLM key for the current user."""
         from tools.dashboard.byok import store_llm_key
+
         user = getattr(g, "current_user", None)
         if not user:
             return jsonify({"error": "Not authenticated"}), 401
@@ -2136,6 +2334,7 @@ def create_app() -> Flask:
     def profile_revoke_llm_key(key_id):
         """Revoke a BYOK LLM key (ownership-scoped)."""
         from tools.dashboard.byok import revoke_llm_key
+
         user = getattr(g, "current_user", None)
         if not user:
             return jsonify({"error": "Not authenticated"}), 401
@@ -2150,8 +2349,12 @@ def create_app() -> Flask:
     def phases_page():
         """Phase roadmap — all ICDEV™ phases with status, categories, and progress."""
         from tools.dashboard.phase_loader import (
-            load_phases, load_categories, load_statuses, get_phase_summary,
+            load_phases,
+            load_categories,
+            load_statuses,
+            get_phase_summary,
         )
+
         phases = load_phases()
         categories = load_categories()
         statuses = load_statuses()
@@ -2187,9 +2390,7 @@ def create_app() -> Flask:
         try:
             # Fetch all registered child applications
             try:
-                children_rows = conn.execute(
-                    "SELECT * FROM child_app_registry ORDER BY created_at DESC"
-                ).fetchall()
+                children_rows = conn.execute("SELECT * FROM child_app_registry ORDER BY created_at DESC").fetchall()
                 children_rows = [dict(r) for r in children_rows]
             except Exception:
                 children_rows = []
@@ -2198,8 +2399,7 @@ def create_app() -> Flask:
             heartbeat_map = {}
             try:
                 heartbeats = conn.execute(
-                    "SELECT child_id, MAX(reported_at) as last_heartbeat "
-                    "FROM child_telemetry GROUP BY child_id"
+                    "SELECT child_id, MAX(reported_at) as last_heartbeat FROM child_telemetry GROUP BY child_id"
                 ).fetchall()
                 for hb in heartbeats:
                     hb_dict = dict(hb)
@@ -2267,6 +2467,7 @@ def create_app() -> Flask:
         """Resolve 5-layer cascade for a scope (JSON)."""
         try:
             from tools.builder.dev_profile_manager import resolve_profile
+
             result = resolve_profile(scope, scope_id)
             return jsonify(result)
         except (ImportError, Exception) as e:
@@ -2280,15 +2481,18 @@ def create_app() -> Flask:
         if templates_dir.exists():
             try:
                 import yaml
+
                 for f in sorted(templates_dir.glob("*.yaml")):
                     with open(f, "r", encoding="utf-8") as fh:
                         data = yaml.safe_load(fh)
-                        templates.append({
-                            "name": data.get("name", f.stem),
-                            "file": f.name,
-                            "description": data.get("description", ""),
-                            "impact_levels": data.get("impact_levels", []),
-                        })
+                        templates.append(
+                            {
+                                "name": data.get("name", f.stem),
+                                "file": f.name,
+                                "description": data.get("description", ""),
+                                "impact_levels": data.get("impact_levels", []),
+                            }
+                        )
             except Exception:
                 pass
         return jsonify({"templates": templates})
@@ -2298,6 +2502,7 @@ def create_app() -> Flask:
         """Create a dev profile from template or data (JSON)."""
         try:
             from tools.builder.dev_profile_manager import create_profile
+
             data = flask_request.get_json(silent=True) or {}
             result = create_profile(
                 scope=data.get("scope", "project"),
@@ -2321,6 +2526,7 @@ def create_app() -> Flask:
                 user = validate_api_key(env_key)
                 if not user:
                     from tools.dashboard.auth import bootstrap_env_user
+
                     user = bootstrap_env_user(env_key)
                 if user:
                     flask_session["user_id"] = user["id"]
@@ -2337,11 +2543,13 @@ def create_app() -> Flask:
                 env_key = os.environ.get("ICDEV_DASHBOARD_API_KEY", "")
                 if env_key and raw_key == env_key:
                     from tools.dashboard.auth import bootstrap_env_user
+
                     user = bootstrap_env_user(env_key)
             if user:
                 flask_session["user_id"] = user["id"]
                 log_auth_event(
-                    user["id"], "login_success",
+                    user["id"],
+                    "login_success",
                     ip_address=flask_request.remote_addr,
                     user_agent=flask_request.headers.get("User-Agent", "")[:256],
                     details="via_login_form",
@@ -2349,7 +2557,8 @@ def create_app() -> Flask:
                 return redirect(url_for("index"))
             else:
                 log_auth_event(
-                    None, "login_failed",
+                    None,
+                    "login_failed",
                     ip_address=flask_request.remote_addr,
                     user_agent=flask_request.headers.get("User-Agent", "")[:256],
                     details="via_login_form",
@@ -2363,7 +2572,8 @@ def create_app() -> Flask:
         user_id = flask_session.get("user_id")
         if user_id:
             log_auth_event(
-                user_id, "logout",
+                user_id,
+                "logout",
                 ip_address=flask_request.remote_addr,
             )
         flask_session.clear()
@@ -2393,7 +2603,11 @@ def create_app() -> Flask:
             # Summary stats
             total = len(jobs)
             completed = sum(1 for j in jobs if j.get("status") == "completed")
-            in_progress = sum(1 for j in jobs if j.get("status") in ("pending", "extracting", "translating", "assembling", "validating"))
+            in_progress = sum(
+                1
+                for j in jobs
+                if j.get("status") in ("pending", "extracting", "translating", "assembling", "validating")
+            )
             failed = sum(1 for j in jobs if j.get("status") in ("failed", "partial"))
 
             # Average API surface score from validations
@@ -2427,9 +2641,7 @@ def create_app() -> Flask:
         try:
             # Fetch job
             try:
-                job = conn.execute(
-                    "SELECT * FROM translation_jobs WHERE id = ?", (job_id,)
-                ).fetchone()
+                job = conn.execute("SELECT * FROM translation_jobs WHERE id = ?", (job_id,)).fetchone()
                 job = dict(job) if job else None
             except Exception:
                 job = None
@@ -2444,7 +2656,8 @@ def create_app() -> Flask:
                               source_complexity, target_complexity,
                               repair_count, candidate_selected, created_at
                        FROM translation_units WHERE job_id = ?
-                       ORDER BY created_at""", (job_id,)
+                       ORDER BY created_at""",
+                    (job_id,),
                 ).fetchall()
                 units = [dict(u) for u in units]
             except Exception:
@@ -2455,7 +2668,8 @@ def create_app() -> Flask:
                 validations = conn.execute(
                     """SELECT check_type, passed, score, findings, created_at
                        FROM translation_validations WHERE job_id = ?
-                       ORDER BY created_at""", (job_id,)
+                       ORDER BY created_at""",
+                    (job_id,),
                 ).fetchall()
                 validations = [dict(v) for v in validations]
             except Exception:
@@ -2467,7 +2681,8 @@ def create_app() -> Flask:
                     """SELECT source_import, target_import, mapping_source,
                               confidence, domain
                        FROM translation_dependency_mappings WHERE job_id = ?
-                       ORDER BY domain, source_import""", (job_id,)
+                       ORDER BY domain, source_import""",
+                    (job_id,),
                 ).fetchall()
                 deps = [dict(d) for d in deps]
             except Exception:
@@ -2491,9 +2706,7 @@ def create_app() -> Flask:
             # Status distribution
             status_dist = {}
             try:
-                rows = conn.execute(
-                    "SELECT status, COUNT(*) as cnt FROM translation_jobs GROUP BY status"
-                ).fetchall()
+                rows = conn.execute("SELECT status, COUNT(*) as cnt FROM translation_jobs GROUP BY status").fetchall()
                 for r in rows:
                     r_dict = dict(r)
                     status_dist[r_dict["status"]] = r_dict["cnt"]
@@ -2514,10 +2727,12 @@ def create_app() -> Flask:
             except Exception:
                 pass
 
-            return jsonify({
-                "status_distribution": status_dist,
-                "language_pair_frequency": lang_pairs,
-            })
+            return jsonify(
+                {
+                    "status_distribution": status_dist,
+                    "language_pair_frequency": lang_pairs,
+                }
+            )
         finally:
             conn.close()
 
@@ -2574,6 +2789,7 @@ def create_app() -> Flask:
     def evidence_page():
         """Evidence Collection — universal evidence auto-collection across all frameworks (Phase 56, D347)."""
         from tools.compliance.evidence_collector import FRAMEWORK_EVIDENCE_MAP, _get_connection, _table_exists
+
         stats = {"total_frameworks": len(FRAMEWORK_EVIDENCE_MAP), "required_frameworks": 0, "frameworks": []}
         try:
             conn = _get_connection()
@@ -2585,12 +2801,14 @@ def create_app() -> Flask:
                     if _table_exists(conn, table_name):
                         row = conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()  # nosec B608 -- table/column names are internal constants, not user input
                         total += row[0]
-                stats["frameworks"].append({
-                    "id": fw_id,
-                    "description": fw_config["description"],
-                    "required": fw_config["required"],
-                    "total_records": total,
-                })
+                stats["frameworks"].append(
+                    {
+                        "id": fw_id,
+                        "description": fw_config["description"],
+                        "required": fw_config["required"],
+                        "total_records": total,
+                    }
+                )
             conn.close()
         except Exception:
             pass
@@ -2626,15 +2844,24 @@ def create_app() -> Flask:
         scenarios = []
         try:
             conn = _get_db()
-            stats["total_scenarios"] = conn.execute("SELECT COUNT(*) FROM simulation_scenarios WHERE status != 'archived'").fetchone()[0]
-            stats["running"] = conn.execute("SELECT COUNT(*) FROM simulation_scenarios WHERE status = 'running'").fetchone()[0]
-            stats["completed"] = conn.execute("SELECT COUNT(*) FROM simulation_scenarios WHERE status = 'completed'").fetchone()[0]
+            stats["total_scenarios"] = conn.execute(
+                "SELECT COUNT(*) FROM simulation_scenarios WHERE status != 'archived'"
+            ).fetchone()[0]
+            stats["running"] = conn.execute(
+                "SELECT COUNT(*) FROM simulation_scenarios WHERE status = 'running'"
+            ).fetchone()[0]
+            stats["completed"] = conn.execute(
+                "SELECT COUNT(*) FROM simulation_scenarios WHERE status = 'completed'"
+            ).fetchone()[0]
             stats["monte_carlo_runs"] = conn.execute("SELECT COUNT(*) FROM monte_carlo_runs").fetchone()[0]
             stats["coas_generated"] = conn.execute("SELECT COUNT(*) FROM coa_definitions").fetchone()[0]
-            scenarios = [dict(r) for r in conn.execute(
-                "SELECT id, project_id, scenario_name, scenario_type, status, created_at, completed_at "
-                "FROM simulation_scenarios WHERE status != 'archived' ORDER BY created_at DESC LIMIT 100"
-            ).fetchall()]
+            scenarios = [
+                dict(r)
+                for r in conn.execute(
+                    "SELECT id, project_id, scenario_name, scenario_type, status, created_at, completed_at "
+                    "FROM simulation_scenarios WHERE status != 'archived' ORDER BY created_at DESC LIMIT 100"
+                ).fetchall()
+            ]
             conn.close()
         except Exception:
             pass
@@ -2689,18 +2916,21 @@ def create_app() -> Flask:
         """MOSA summary — module coupling, cohesion, circular dependency data."""
         try:
             from tools.compliance.mosa_assessor import get_latest_assessment
+
             data = get_latest_assessment()
             return jsonify(data)
         except Exception:
-            return jsonify({
-                "modules": [],
-                "summary": {
-                    "total_modules": 0,
-                    "avg_coupling": 0,
-                    "avg_cohesion": 0,
-                    "circular_deps": 0,
-                },
-            })
+            return jsonify(
+                {
+                    "modules": [],
+                    "summary": {
+                        "total_modules": 0,
+                        "avg_coupling": 0,
+                        "avg_cohesion": 0,
+                        "circular_deps": 0,
+                    },
+                }
+            )
 
     @app.route("/migration-cost")
     def migration_cost_page():
@@ -2716,10 +2946,7 @@ def create_app() -> Flask:
     def api_compliance_posture():
         """Return aggregate compliance posture for the hub page."""
         conn = _get_db()
-        result = {
-            "controls_implemented": 0, "open_poams": 0,
-            "cat1_findings": 0, "ato_status": "--", "frameworks": []
-        }
+        result = {"controls_implemented": 0, "open_poams": 0, "cat1_findings": 0, "ato_status": "--", "frameworks": []}
         try:
             try:
                 row = conn.execute(
@@ -2758,11 +2985,10 @@ def create_app() -> Flask:
                 try:
                     total = conn.execute(f"SELECT COUNT(*) as cnt FROM {table}").fetchone()["cnt"]  # nosec B608 -- table/column names are internal constants, not user input
                     impl = conn.execute(
-                        f"SELECT COUNT(*) as cnt FROM {table} WHERE {col} = ?", (val,)  # nosec B608 -- table/column names are internal constants, not user input
+                        f"SELECT COUNT(*) as cnt FROM {table} WHERE {col} = ?",
+                        (val,),  # nosec B608 -- table/column names are internal constants, not user input
                     ).fetchone()["cnt"]
-                    result["frameworks"].append({
-                        "name": name, "total": total, "implemented": impl, "status": "Active"
-                    })
+                    result["frameworks"].append({"name": name, "total": total, "implemented": impl, "status": "Active"})
                 except Exception:
                     pass
         finally:
@@ -2775,31 +3001,55 @@ def create_app() -> Flask:
         import sqlite3 as _sqlite3
 
         NIST_FAMILIES = [
-            ("AC", "Access Control"), ("AU", "Audit & Accountability"),
-            ("AT", "Awareness & Training"), ("CA", "Assessment & Authorization"),
-            ("CM", "Configuration Mgmt"), ("CP", "Contingency Planning"),
-            ("IA", "ID & Authentication"), ("IR", "Incident Response"),
-            ("MA", "Maintenance"), ("MP", "Media Protection"),
-            ("PE", "Physical & Environmental"), ("PL", "Planning"),
-            ("PM", "Program Management"), ("PS", "Personnel Security"),
-            ("PT", "PII Processing"), ("RA", "Risk Assessment"),
-            ("SA", "System & Services Acq"), ("SC", "System & Comms Protection"),
-            ("SI", "System & Info Integrity"), ("SR", "Supply Chain Risk Mgmt"),
+            ("AC", "Access Control"),
+            ("AU", "Audit & Accountability"),
+            ("AT", "Awareness & Training"),
+            ("CA", "Assessment & Authorization"),
+            ("CM", "Configuration Mgmt"),
+            ("CP", "Contingency Planning"),
+            ("IA", "ID & Authentication"),
+            ("IR", "Incident Response"),
+            ("MA", "Maintenance"),
+            ("MP", "Media Protection"),
+            ("PE", "Physical & Environmental"),
+            ("PL", "Planning"),
+            ("PM", "Program Management"),
+            ("PS", "Personnel Security"),
+            ("PT", "PII Processing"),
+            ("RA", "Risk Assessment"),
+            ("SA", "System & Services Acq"),
+            ("SC", "System & Comms Protection"),
+            ("SI", "System & Info Integrity"),
+            ("SR", "Supply Chain Risk Mgmt"),
         ]
 
         result = {
             "sdc": {
-                "available": False, "design_count": 0, "risk_score": None,
-                "posture_grade": "--", "open_threats": 0, "controls_implemented": 0,
-                "nist_coverage_pct": 0, "nist_families": {},
+                "available": False,
+                "design_count": 0,
+                "risk_score": None,
+                "posture_grade": "--",
+                "open_threats": 0,
+                "controls_implemented": 0,
+                "nist_coverage_pct": 0,
+                "nist_families": {},
             },
             "ndc": {
-                "available": False, "topology_count": 0, "cat1_open": 0,
-                "cat2_open": 0, "cat3_open": 0, "total_findings": 0, "pass_rate": 0,
+                "available": False,
+                "topology_count": 0,
+                "cat1_open": 0,
+                "cat2_open": 0,
+                "cat3_open": 0,
+                "total_findings": 0,
+                "pass_rate": 0,
             },
             "pdc": {
-                "available": False, "pipeline_count": 0, "slsa_level": "--",
-                "ssdf_pct": 0, "owasp_pct": 0, "total_findings": 0,
+                "available": False,
+                "pipeline_count": 0,
+                "slsa_level": "--",
+                "ssdf_pct": 0,
+                "owasp_pct": 0,
+                "total_findings": 0,
             },
             "heatmap": [],
         }
@@ -2813,9 +3063,7 @@ def create_app() -> Flask:
             try:
                 with _sqlite3.connect(str(sdc_db)) as sc:
                     sc.row_factory = _sqlite3.Row
-                    result["sdc"]["design_count"] = sc.execute(
-                        "SELECT COUNT(*) FROM security_designs"
-                    ).fetchone()[0]
+                    result["sdc"]["design_count"] = sc.execute("SELECT COUNT(*) FROM security_designs").fetchone()[0]
                     result["sdc"]["available"] = result["sdc"]["design_count"] > 0
                     row = sc.execute(
                         "SELECT risk_score, posture_grade FROM sc_assessments ORDER BY ran_at DESC LIMIT 1"
@@ -2832,15 +3080,14 @@ def create_app() -> Flask:
                         ).fetchone()[0]
                         impl = sc.execute(
                             "SELECT COUNT(*) FROM sc_controls WHERE control_family = ?"
-                            " AND implementation_status IN ('implemented','tested')", (family,)
+                            " AND implementation_status IN ('implemented','tested')",
+                            (family,),
                         ).fetchone()[0]
                         if total > 0:
                             sdc_family_pcts[family] = round(impl / total * 100)
                             result["sdc"]["controls_implemented"] += impl
                     if sdc_family_pcts:
-                        result["sdc"]["nist_coverage_pct"] = round(
-                            sum(sdc_family_pcts.values()) / len(sdc_family_pcts)
-                        )
+                        result["sdc"]["nist_coverage_pct"] = round(sum(sdc_family_pcts.values()) / len(sdc_family_pcts))
                         result["sdc"]["nist_families"] = sdc_family_pcts
             except Exception:
                 pass
@@ -2851,32 +3098,23 @@ def create_app() -> Flask:
             try:
                 with _sqlite3.connect(str(ndc_db)) as nc:
                     nc.row_factory = _sqlite3.Row
-                    result["ndc"]["topology_count"] = nc.execute(
-                        "SELECT COUNT(*) FROM topologies"
-                    ).fetchone()[0]
+                    result["ndc"]["topology_count"] = nc.execute("SELECT COUNT(*) FROM topologies").fetchone()[0]
                     result["ndc"]["available"] = result["ndc"]["topology_count"] > 0
                     result["ndc"]["cat1_open"] = nc.execute(
-                        "SELECT COUNT(*) FROM nc_compliance_findings"
-                        " WHERE severity = 'CAT1' AND status = 'open'"
+                        "SELECT COUNT(*) FROM nc_compliance_findings WHERE severity = 'CAT1' AND status = 'open'"
                     ).fetchone()[0]
                     result["ndc"]["cat2_open"] = nc.execute(
-                        "SELECT COUNT(*) FROM nc_compliance_findings"
-                        " WHERE severity = 'CAT2' AND status = 'open'"
+                        "SELECT COUNT(*) FROM nc_compliance_findings WHERE severity = 'CAT2' AND status = 'open'"
                     ).fetchone()[0]
                     result["ndc"]["cat3_open"] = nc.execute(
-                        "SELECT COUNT(*) FROM nc_compliance_findings"
-                        " WHERE severity = 'CAT3' AND status = 'open'"
+                        "SELECT COUNT(*) FROM nc_compliance_findings WHERE severity = 'CAT3' AND status = 'open'"
                     ).fetchone()[0]
-                    total_f = nc.execute(
-                        "SELECT COUNT(*) FROM nc_compliance_findings"
-                    ).fetchone()[0]
+                    total_f = nc.execute("SELECT COUNT(*) FROM nc_compliance_findings").fetchone()[0]
                     remediated_f = nc.execute(
                         "SELECT COUNT(*) FROM nc_compliance_findings WHERE status = 'remediated'"
                     ).fetchone()[0]
                     result["ndc"]["total_findings"] = total_f
-                    result["ndc"]["pass_rate"] = (
-                        round(remediated_f / total_f * 100) if total_f > 0 else 0
-                    )
+                    result["ndc"]["pass_rate"] = round(remediated_f / total_f * 100) if total_f > 0 else 0
             except Exception:
                 pass
 
@@ -2886,9 +3124,7 @@ def create_app() -> Flask:
             try:
                 with _sqlite3.connect(str(pdc_db)) as pc:
                     pc.row_factory = _sqlite3.Row
-                    result["pdc"]["pipeline_count"] = pc.execute(
-                        "SELECT COUNT(*) FROM pipelines"
-                    ).fetchone()[0]
+                    result["pdc"]["pipeline_count"] = pc.execute("SELECT COUNT(*) FROM pipelines").fetchone()[0]
                     result["pdc"]["available"] = result["pdc"]["pipeline_count"] > 0
                     slsa_row = pc.execute(
                         "SELECT slsa_level FROM pc_snippets WHERE slsa_level IS NOT NULL"
@@ -2902,14 +3138,13 @@ def create_app() -> Flask:
                     if chk and chk["findings_json"]:
                         try:
                             findings = json.loads(chk["findings_json"])
-                            result["pdc"]["total_findings"] = (
-                                len(findings) if isinstance(findings, list) else 0
-                            )
+                            result["pdc"]["total_findings"] = len(findings) if isinstance(findings, list) else 0
                         except Exception:
                             pass
                     # OWASP coverage — derive from node types in all pipelines
                     try:
                         from tools.pipeline.constants import compute_owasp_coverage
+
                         all_node_types: list = []
                         for g_row in pc.execute("SELECT graph_json FROM pipelines").fetchall():
                             try:
@@ -2971,13 +3206,15 @@ def create_app() -> Flask:
             main_pct = main_family_pcts.get(family)
             vals = [v for v in [sdc_pct, main_pct] if v is not None]
             avg_pct = round(sum(vals) / len(vals)) if vals else 0
-            result["heatmap"].append({
-                "family": family,
-                "name": name,
-                "sdc_pct": sdc_pct,
-                "main_pct": main_pct,
-                "avg_pct": avg_pct,
-            })
+            result["heatmap"].append(
+                {
+                    "family": family,
+                    "name": name,
+                    "sdc_pct": sdc_pct,
+                    "main_pct": main_pct,
+                    "avg_pct": avg_pct,
+                }
+            )
 
         return jsonify(result)
 
@@ -2988,6 +3225,7 @@ def create_app() -> Flask:
         project_id = flask_request.args.get("project_id") or None
         try:
             from tools.compliance.evidence_chain import build_evidence_chain
+
             chain = build_evidence_chain(
                 project_id=project_id,
                 since_hours=since_hours,
@@ -3036,6 +3274,7 @@ def create_app() -> Flask:
         data = flask_request.get_json(silent=True) or {}
         try:
             from tools.simulation.simulation_engine import create_scenario
+
             result = create_scenario(
                 project_id=data.get("project_id", ""),
                 scenario_name=data.get("scenario_name", ""),
@@ -3051,6 +3290,7 @@ def create_app() -> Flask:
         """Run simulation across all 6 dimensions."""
         try:
             from tools.simulation.simulation_engine import run_simulation
+
             result = run_simulation(scenario_id)
             return jsonify(result)
         except Exception as exc:
@@ -3061,6 +3301,7 @@ def create_app() -> Flask:
         """Get scenario summary with results and MC runs."""
         try:
             from tools.simulation.scenario_manager import get_scenario_summary
+
             result = get_scenario_summary(scenario_id)
             return jsonify(result)
         except Exception as exc:
@@ -3072,6 +3313,7 @@ def create_app() -> Flask:
         data = flask_request.get_json(silent=True) or {}
         try:
             from tools.simulation.monte_carlo import run_monte_carlo
+
             result = run_monte_carlo(
                 scenario_id=scenario_id,
                 dimension=data.get("dimension", "schedule"),
@@ -3087,6 +3329,7 @@ def create_app() -> Flask:
         data = flask_request.get_json(silent=True) or {}
         try:
             from tools.simulation.scenario_manager import fork_scenario
+
             result = fork_scenario(
                 scenario_id=scenario_id,
                 new_name=data.get("new_name", "Forked scenario"),
@@ -3101,10 +3344,13 @@ def create_app() -> Flask:
         """Get COAs linked to a scenario."""
         try:
             conn = _get_db()
-            coas = [dict(r) for r in conn.execute(
-                "SELECT * FROM coa_definitions WHERE simulation_scenario_id = ? ORDER BY coa_type",
-                (scenario_id,),
-            ).fetchall()]
+            coas = [
+                dict(r)
+                for r in conn.execute(
+                    "SELECT * FROM coa_definitions WHERE simulation_scenario_id = ? ORDER BY coa_type",
+                    (scenario_id,),
+                ).fetchall()
+            ]
             conn.close()
             return jsonify({"coas": coas})
         except Exception as exc:
@@ -3115,7 +3361,9 @@ def create_app() -> Flask:
         """Select a COA."""
         try:
             conn = _get_db()
-            conn.execute("UPDATE coa_definitions SET status = 'selected', selected_at = datetime('now') WHERE id = ?", (coa_id,))
+            conn.execute(
+                "UPDATE coa_definitions SET status = 'selected', selected_at = datetime('now') WHERE id = ?", (coa_id,)
+            )
             conn.commit()
             conn.close()
             return jsonify({"status": "selected", "coa_id": coa_id})
@@ -3143,6 +3391,7 @@ def create_app() -> Flask:
             return jsonify({"error": "query is required"}), 400
         try:
             from tools.simulation.query_parser import parse_query
+
             result = parse_query(query)
             return jsonify(result)
         except Exception as exc:
@@ -3159,6 +3408,7 @@ def create_app() -> Flask:
         try:
             from tools.simulation.query_parser import parse_query
             from tools.simulation.simulation_engine import create_scenario, run_simulation
+
             parsed = parse_query(query)
             scenario = create_scenario(
                 project_id=project_id,
@@ -3171,11 +3421,13 @@ def create_app() -> Flask:
                 sim_result = run_simulation(scenario["scenario_id"])
             except Exception:
                 pass  # simulation may fail if no SysML data; return parsed+scenario anyway
-            return jsonify({
-                "parsed": parsed,
-                "scenario": scenario,
-                "simulation": sim_result,
-            })
+            return jsonify(
+                {
+                    "parsed": parsed,
+                    "scenario": scenario,
+                    "simulation": sim_result,
+                }
+            )
         except Exception as exc:
             return jsonify({"error": str(exc)}), 400
 
@@ -3192,6 +3444,7 @@ def create_app() -> Flask:
             return jsonify({"error": "project_id is required"}), 400
         try:
             from tools.simulation.cascade_bridge import run_cascade
+
             start_ids = [node_id] if node_id else None
             result = run_cascade(
                 project_id=project_id,
@@ -3213,6 +3466,7 @@ def create_app() -> Flask:
             return jsonify({"error": "project_id is required"}), 400
         try:
             from tools.simulation.risk_monitor import calculate_composite_risk
+
             result = calculate_composite_risk(project_id)
             return jsonify(result)
         except Exception as exc:
@@ -3227,6 +3481,7 @@ def create_app() -> Flask:
             return jsonify({"error": "contract_id is required"}), 400
         try:
             from tools.simulation.risk_monitor import calculate_cpars_risk
+
             result = calculate_cpars_risk(contract_id)
             return jsonify(result)
         except Exception as exc:
@@ -3248,13 +3503,14 @@ def create_app() -> Flask:
             ).fetchone()[0]
             stats["verticals_loaded"] = conn.execute("SELECT COUNT(*) FROM research_verticals").fetchone()[0]
             stats["dossiers_generated"] = conn.execute("SELECT COUNT(*) FROM research_dossiers").fetchone()[0]
-            sessions = [dict(r) for r in conn.execute(
-                """SELECT s.*, (SELECT COUNT(*) FROM research_challenges c WHERE c.session_id = s.id) as challenge_count
+            sessions = [
+                dict(r)
+                for r in conn.execute(
+                    """SELECT s.*, (SELECT COUNT(*) FROM research_challenges c WHERE c.session_id = s.id) as challenge_count
                    FROM research_sessions s ORDER BY s.created_at DESC LIMIT 50"""
-            ).fetchall()]
-            verticals = [dict(r) for r in conn.execute(
-                "SELECT * FROM research_verticals ORDER BY name"
-            ).fetchall()]
+                ).fetchall()
+            ]
+            verticals = [dict(r) for r in conn.execute("SELECT * FROM research_verticals ORDER BY name").fetchall()]
             conn.close()
         except Exception:
             pass
@@ -3266,6 +3522,7 @@ def create_app() -> Flask:
         data = flask_request.get_json(silent=True) or {}
         try:
             from tools.research.session_manager import create_session
+
             result = create_session(
                 name=data.get("name", ""),
                 vertical_slug=data.get("vertical", ""),
@@ -3280,6 +3537,7 @@ def create_app() -> Flask:
         """List research sessions."""
         try:
             from tools.research.session_manager import list_sessions
+
             status = flask_request.args.get("status")
             return jsonify(list_sessions(status=status))
         except Exception as e:
@@ -3290,6 +3548,7 @@ def create_app() -> Flask:
         """Run research pipeline for a session."""
         try:
             from tools.research.research_engine import run_pipeline
+
             result = run_pipeline(session_id=session_id)
             return jsonify(result)
         except Exception as e:
@@ -3300,6 +3559,7 @@ def create_app() -> Flask:
         """Get session status."""
         try:
             from tools.research.research_engine import get_status
+
             return jsonify(get_status(session_id=session_id))
         except Exception as e:
             return jsonify({"ok": False, "error": str(e)}), 500
@@ -3309,6 +3569,7 @@ def create_app() -> Flask:
         """Get dossier by session ID."""
         try:
             from tools.research.dossier_generator import get_dossier
+
             return jsonify(get_dossier(session_id=session_id))
         except Exception as e:
             return jsonify({"ok": False, "error": str(e)}), 500
@@ -3322,6 +3583,7 @@ def create_app() -> Flask:
             return jsonify({"ok": False, "error": "Missing 'stage' parameter"}), 400
         try:
             from tools.research.research_engine import run_stage
+
             result = run_stage(session_id=session_id, stage=stage)
             return jsonify(result)
         except Exception as e:
@@ -3332,6 +3594,7 @@ def create_app() -> Flask:
         """Get regulatory landscape for a session."""
         try:
             from tools.research.regulatory_mapper import get_regulatory_landscape
+
             return jsonify(get_regulatory_landscape(session_id=session_id))
         except Exception as e:
             return jsonify({"ok": False, "error": str(e)}), 500
@@ -3342,6 +3605,7 @@ def create_app() -> Flask:
         try:
             import threading
             from tools.research.research_engine import run_pipeline
+
             t = threading.Thread(target=run_pipeline, kwargs={"session_id": session_id}, daemon=True)
             t.start()
             return jsonify({"ok": True, "message": "Pipeline retry started"})
@@ -3353,6 +3617,7 @@ def create_app() -> Flask:
         """Get a dossier by dossier ID."""
         try:
             from tools.research.dossier_generator import get_dossier
+
             return jsonify(get_dossier(dossier_id=dossier_id))
         except Exception as e:
             return jsonify({"ok": False, "error": str(e)}), 500
@@ -3363,6 +3628,7 @@ def create_app() -> Flask:
         data = flask_request.get_json(silent=True) or {}
         try:
             from tools.research.dossier_generator import review_dossier
+
             result = review_dossier(
                 dossier_id=dossier_id,
                 reviewer=data.get("reviewer", "dashboard"),
@@ -3378,6 +3644,7 @@ def create_app() -> Flask:
         """List available verticals."""
         try:
             from tools.research.vertical_loader import list_verticals
+
             return jsonify(list_verticals())
         except Exception as e:
             return jsonify({"ok": False, "error": str(e)}), 500
@@ -3387,6 +3654,7 @@ def create_app() -> Flask:
         """Load verticals from config files into DB."""
         try:
             from tools.research.vertical_loader import load_verticals_to_db
+
             result = load_verticals_to_db()
             return jsonify(result)
         except Exception as e:
@@ -3403,15 +3671,17 @@ def create_app() -> Flask:
         try:
             from tools.rag.ingestion_manager import get_status as rag_get_status
             from tools.rag.source_registry import SOURCE_REGISTRY
+
             status = rag_get_status()
             source_types = sorted(SOURCE_REGISTRY.keys())
         except Exception:
             pass
         try:
             conn = _get_db()
-            recent_searches = [dict(r) for r in conn.execute(
-                "SELECT * FROM rag_retrieval_log ORDER BY created_at DESC LIMIT 20"
-            ).fetchall()]
+            recent_searches = [
+                dict(r)
+                for r in conn.execute("SELECT * FROM rag_retrieval_log ORDER BY created_at DESC LIMIT 20").fetchall()
+            ]
             conn.close()
         except Exception:
             pass
@@ -3431,6 +3701,7 @@ def create_app() -> Flask:
             return jsonify({"error": "query is required", "results": []}), 400
         try:
             from tools.rag.retriever import RAGRetriever
+
             retriever = RAGRetriever()
             top_k = data.get("top_k", 5)
             source_types = None
@@ -3441,12 +3712,14 @@ def create_app() -> Flask:
                 top_k=top_k,
                 source_types=source_types,
             )
-            return jsonify({
-                "classification": DEFAULT_CLASSIFICATION,
-                "query": query,
-                "results_count": len(results),
-                "results": [r.to_dict() for r in results],
-            })
+            return jsonify(
+                {
+                    "classification": DEFAULT_CLASSIFICATION,
+                    "query": query,
+                    "results_count": len(results),
+                    "results": [r.to_dict() for r in results],
+                }
+            )
         except ImportError:
             return jsonify({"error": "RAG subsystem not available", "results": []}), 503
         except Exception as e:
@@ -3457,6 +3730,7 @@ def create_app() -> Flask:
         """RAG status API endpoint."""
         try:
             from tools.rag.ingestion_manager import get_status as rag_get_status
+
             return jsonify(rag_get_status())
         except ImportError:
             return jsonify({"error": "RAG subsystem not available"}), 503
@@ -3523,6 +3797,7 @@ def create_app() -> Flask:
             return jsonify({"error": "query is required"}), 400
         try:
             from tools.knowledge_graph.graph_rag import retrieve
+
             result = retrieve(
                 query=query,
                 profile=data.get("profile"),
@@ -3539,6 +3814,7 @@ def create_app() -> Flask:
         """Get graph detail with nodes and edges."""
         try:
             from tools.knowledge_graph.text_network import get_graph
+
             result = get_graph(graph_id)
             return jsonify(result)
         except ImportError:
@@ -3551,6 +3827,7 @@ def create_app() -> Flask:
         """Get graph insights (summary, orphans, components)."""
         try:
             from tools.knowledge_graph.insight_generator import graph_summary
+
             result = graph_summary(graph_id)
             return jsonify(result)
         except ImportError:
@@ -3563,6 +3840,7 @@ def create_app() -> Flask:
         """Get bridge gaps between disconnected clusters."""
         try:
             from tools.knowledge_graph.insight_generator import find_bridge_gaps
+
             result = find_bridge_gaps(graph_id)
             return jsonify(result)
         except ImportError:
@@ -3575,6 +3853,7 @@ def create_app() -> Flask:
         """Generate research questions from graph structure."""
         try:
             from tools.knowledge_graph.insight_generator import generate_questions
+
             result = generate_questions(graph_id, use_llm=False)
             return jsonify(result)
         except ImportError:
@@ -3587,6 +3866,7 @@ def create_app() -> Flask:
         """Find orphan nodes with zero edges."""
         try:
             from tools.knowledge_graph.insight_generator import find_orphan_nodes
+
             result = find_orphan_nodes(graph_id)
             return jsonify(result)
         except ImportError:
@@ -3600,6 +3880,7 @@ def create_app() -> Flask:
         data = flask_request.get_json(silent=True) or {}
         try:
             from tools.knowledge_graph.compliance_graph import build_compliance_graph
+
             result = build_compliance_graph(project_id=data.get("project_id"))
             return jsonify(result)
         except ImportError:
@@ -3617,6 +3898,7 @@ def create_app() -> Flask:
             return jsonify({"error": "source_table is required"}), 400
         try:
             from tools.knowledge_graph.ingester import ingest_from_table
+
             result = ingest_from_table(source_table, project_id=project_id)
             return jsonify(result)
         except ImportError:
@@ -3629,8 +3911,15 @@ def create_app() -> Flask:
     @app.route("/finetune")
     def finetune_overview_page():
         """Fine-Tuning overview — stats, GPU status, recent jobs, active overrides (D-FT-1 through D-FT-22)."""
-        stats = {"datasets": 0, "total_jobs": 0, "active_jobs": 0, "model_versions": 0,
-                 "promoted_models": 0, "active_overrides": 0, "evaluations": 0}
+        stats = {
+            "datasets": 0,
+            "total_jobs": 0,
+            "active_jobs": 0,
+            "model_versions": 0,
+            "promoted_models": 0,
+            "active_overrides": 0,
+            "evaluations": 0,
+        }
         recent_jobs = []
         active_overrides = []
         promotions = []
@@ -3649,20 +3938,30 @@ def create_app() -> Flask:
                 "SELECT COUNT(*) FROM ft_active_models WHERE deactivated_at IS NULL"
             ).fetchone()[0]
             stats["evaluations"] = conn.execute("SELECT COUNT(*) FROM ft_evaluations").fetchone()[0]
-            recent_jobs = [dict(r) for r in conn.execute(
-                "SELECT * FROM ft_training_jobs ORDER BY created_at DESC LIMIT 10"
-            ).fetchall()]
-            active_overrides = [dict(r) for r in conn.execute(
-                "SELECT * FROM ft_active_models WHERE deactivated_at IS NULL ORDER BY activated_at DESC"
-            ).fetchall()]
-            promotions = [dict(r) for r in conn.execute(
-                "SELECT * FROM ft_promotion_log ORDER BY created_at DESC LIMIT 10"
-            ).fetchall()]
+            recent_jobs = [
+                dict(r)
+                for r in conn.execute("SELECT * FROM ft_training_jobs ORDER BY created_at DESC LIMIT 10").fetchall()
+            ]
+            active_overrides = [
+                dict(r)
+                for r in conn.execute(
+                    "SELECT * FROM ft_active_models WHERE deactivated_at IS NULL ORDER BY activated_at DESC"
+                ).fetchall()
+            ]
+            promotions = [
+                dict(r)
+                for r in conn.execute("SELECT * FROM ft_promotion_log ORDER BY created_at DESC LIMIT 10").fetchall()
+            ]
             conn.close()
         except Exception:
             pass
-        return render_template("finetune/index.html", stats=stats, recent_jobs=recent_jobs,
-                               active_overrides=active_overrides, promotions=promotions)
+        return render_template(
+            "finetune/index.html",
+            stats=stats,
+            recent_jobs=recent_jobs,
+            active_overrides=active_overrides,
+            promotions=promotions,
+        )
 
     @app.route("/finetune/datasets")
     def finetune_datasets_page():
@@ -3670,9 +3969,7 @@ def create_app() -> Flask:
         datasets = []
         try:
             conn = _get_db()
-            datasets = [dict(r) for r in conn.execute(
-                "SELECT * FROM ft_datasets ORDER BY updated_at DESC"
-            ).fetchall()]
+            datasets = [dict(r) for r in conn.execute("SELECT * FROM ft_datasets ORDER BY updated_at DESC").fetchall()]
             conn.close()
         except Exception:
             pass
@@ -3688,10 +3985,13 @@ def create_app() -> Flask:
             row = conn.execute("SELECT * FROM ft_datasets WHERE id = ?", (dataset_id,)).fetchone()
             if row:
                 dataset = dict(row)
-            examples = [dict(r) for r in conn.execute(
-                "SELECT * FROM ft_dataset_examples WHERE dataset_id = ? ORDER BY id DESC LIMIT 200",
-                (dataset_id,),
-            ).fetchall()]
+            examples = [
+                dict(r)
+                for r in conn.execute(
+                    "SELECT * FROM ft_dataset_examples WHERE dataset_id = ? ORDER BY id DESC LIMIT 200",
+                    (dataset_id,),
+                ).fetchall()
+            ]
             conn.close()
         except Exception:
             pass
@@ -3707,19 +4007,21 @@ def create_app() -> Flask:
         selected_dataset_id = flask_request.args.get("dataset_id", "")
         try:
             conn = _get_db()
-            datasets = [dict(r) for r in conn.execute(
-                "SELECT * FROM ft_datasets ORDER BY updated_at DESC"
-            ).fetchall()]
+            datasets = [dict(r) for r in conn.execute("SELECT * FROM ft_datasets ORDER BY updated_at DESC").fetchall()]
             if selected_dataset_id:
-                examples = [dict(r) for r in conn.execute(
-                    "SELECT * FROM ft_dataset_examples WHERE dataset_id = ? ORDER BY id DESC LIMIT 200",
-                    (selected_dataset_id,),
-                ).fetchall()]
+                examples = [
+                    dict(r)
+                    for r in conn.execute(
+                        "SELECT * FROM ft_dataset_examples WHERE dataset_id = ? ORDER BY id DESC LIMIT 200",
+                        (selected_dataset_id,),
+                    ).fetchall()
+                ]
             conn.close()
         except Exception:
             pass
-        return render_template("finetune/label.html", datasets=datasets, examples=examples,
-                               selected_dataset_id=selected_dataset_id)
+        return render_template(
+            "finetune/label.html", datasets=datasets, examples=examples, selected_dataset_id=selected_dataset_id
+        )
 
     @app.route("/finetune/jobs")
     def finetune_jobs_page():
@@ -3727,9 +4029,7 @@ def create_app() -> Flask:
         jobs = []
         try:
             conn = _get_db()
-            jobs = [dict(r) for r in conn.execute(
-                "SELECT * FROM ft_training_jobs ORDER BY created_at DESC"
-            ).fetchall()]
+            jobs = [dict(r) for r in conn.execute("SELECT * FROM ft_training_jobs ORDER BY created_at DESC").fetchall()]
             conn.close()
         except Exception:
             pass
@@ -3739,6 +4039,7 @@ def create_app() -> Flask:
     def finetune_job_detail_page(job_id):
         """Fine-Tuning job detail — loss curve, hyperparams, events."""
         import json as _json
+
         job = None
         events = []
         loss_history = []
@@ -3751,10 +4052,13 @@ def create_app() -> Flask:
                     loss_history = _json.loads(job.get("loss_history", "[]") or "[]")
                 except (ValueError, TypeError):
                     loss_history = []
-            events = [dict(r) for r in conn.execute(
-                "SELECT * FROM ft_training_job_events WHERE job_id = ? ORDER BY created_at DESC",
-                (job_id,),
-            ).fetchall()]
+            events = [
+                dict(r)
+                for r in conn.execute(
+                    "SELECT * FROM ft_training_job_events WHERE job_id = ? ORDER BY created_at DESC",
+                    (job_id,),
+                ).fetchall()
+            ]
             conn.close()
         except Exception:
             pass
@@ -3768,9 +4072,9 @@ def create_app() -> Flask:
         models = []
         try:
             conn = _get_db()
-            models = [dict(r) for r in conn.execute(
-                "SELECT * FROM ft_model_versions ORDER BY created_at DESC"
-            ).fetchall()]
+            models = [
+                dict(r) for r in conn.execute("SELECT * FROM ft_model_versions ORDER BY created_at DESC").fetchall()
+            ]
             conn.close()
         except Exception:
             pass
@@ -3787,20 +4091,28 @@ def create_app() -> Flask:
             row = conn.execute("SELECT * FROM ft_model_versions WHERE id = ?", (model_id,)).fetchone()
             if row:
                 model = dict(row)
-            evaluations = [dict(r) for r in conn.execute(
-                "SELECT * FROM ft_evaluations WHERE model_version_id = ? ORDER BY evaluated_at DESC",
-                (model_id,),
-            ).fetchall()]
-            promotions = [dict(r) for r in conn.execute(
-                "SELECT * FROM ft_promotion_log WHERE model_version_id = ? ORDER BY created_at DESC",
-                (model_id,),
-            ).fetchall()]
+            evaluations = [
+                dict(r)
+                for r in conn.execute(
+                    "SELECT * FROM ft_evaluations WHERE model_version_id = ? ORDER BY evaluated_at DESC",
+                    (model_id,),
+                ).fetchall()
+            ]
+            promotions = [
+                dict(r)
+                for r in conn.execute(
+                    "SELECT * FROM ft_promotion_log WHERE model_version_id = ? ORDER BY created_at DESC",
+                    (model_id,),
+                ).fetchall()
+            ]
             conn.close()
         except Exception:
             pass
         if not model:
             return render_template("404.html", message="Model version not found"), 404
-        return render_template("finetune/model_detail.html", model=model, evaluations=evaluations, promotions=promotions)
+        return render_template(
+            "finetune/model_detail.html", model=model, evaluations=evaluations, promotions=promotions
+        )
 
     @app.route("/finetune/evaluate")
     def finetune_evaluate_page():
@@ -3808,9 +4120,9 @@ def create_app() -> Flask:
         evaluations = []
         try:
             conn = _get_db()
-            evaluations = [dict(r) for r in conn.execute(
-                "SELECT * FROM ft_evaluations ORDER BY evaluated_at DESC"
-            ).fetchall()]
+            evaluations = [
+                dict(r) for r in conn.execute("SELECT * FROM ft_evaluations ORDER BY evaluated_at DESC").fetchall()
+            ]
             conn.close()
         except Exception:
             pass
@@ -3818,13 +4130,13 @@ def create_app() -> Flask:
 
     # ── ICDEV™ Pulse — Blog Engine ─────────────────────────────────────
 
-
     @app.route("/pulse")
     @require_installed("pulse")
     def pulse():
         """ICDEV™ Pulse — AI-powered blog engine dashboard."""
         try:
             from tools.pulse.db import init_db, query_rows
+
             init_db()
             posts = query_rows("posts", limit=500)
             by_status = {}
@@ -3856,15 +4168,14 @@ def create_app() -> Flask:
             # Capability catalog stats
             try:
                 from tools.pulse.engine.capability_scanner import load_all_capabilities
+
                 stats["capabilities"] = len(load_all_capabilities())
             except Exception:
                 stats["capabilities"] = 0
         except Exception:
             recent_posts = []
-            stats = {"total_posts": 0, "by_status": {}, "research_entries": 0,
-                     "clusters": 0, "pipeline_runs": 0}
+            stats = {"total_posts": 0, "by_status": {}, "research_entries": 0, "clusters": 0, "pipeline_runs": 0}
         return render_template("pulse.html", posts=recent_posts, stats=stats)
-
 
     @app.route("/pulse/post/<post_id>")
     @require_installed("pulse")
@@ -3872,15 +4183,16 @@ def create_app() -> Flask:
         """ICDEV™ Pulse — Single post detail view."""
         try:
             from tools.pulse.db import get_row
+
             post = get_row("posts", post_id)
         except Exception:
             post = None
         if not post:
-            return render_template("pulse.html", posts=[], stats={},
-                                   error=f"Post not found: {post_id}"), 404
+            return render_template("pulse.html", posts=[], stats={}, error=f"Post not found: {post_id}"), 404
         # Render markdown to HTML if body_html is missing
         if post.get("body_markdown") and not post.get("body_html"):
             import re
+
             md = post["body_markdown"]
             # Convert markdown to basic HTML
             lines = md.split("\n")
@@ -3921,21 +4233,23 @@ def create_app() -> Flask:
                         html_parts.append("<ul>")
                         in_list = True
                     content = stripped[2:]
-                    content = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', content)
-                    content = re.sub(r'\*(.+?)\*', r'<em>\1</em>', content)
+                    content = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", content)
+                    content = re.sub(r"\*(.+?)\*", r"<em>\1</em>", content)
                     html_parts.append(f"<li>{content}</li>")
-                elif re.match(r'^\d+\.\s', stripped):
+                elif re.match(r"^\d+\.\s", stripped):
                     if not in_list:
                         html_parts.append("<ol>")
                         in_list = True
-                    content = re.sub(r'^\d+\.\s', '', stripped)
-                    content = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', content)
-                    content = re.sub(r'\*(.+?)\*', r'<em>\1</em>', content)
+                    content = re.sub(r"^\d+\.\s", "", stripped)
+                    content = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", content)
+                    content = re.sub(r"\*(.+?)\*", r"<em>\1</em>", content)
                     html_parts.append(f"<li>{content}</li>")
                 # Empty line
                 elif not stripped:
                     if in_list:
-                        html_parts.append("</ul>" if html_parts[-5:] and "<ul>" in "".join(html_parts[-5:]) else "</ol>")
+                        html_parts.append(
+                            "</ul>" if html_parts[-5:] and "<ul>" in "".join(html_parts[-5:]) else "</ol>"
+                        )
                         in_list = False
                     html_parts.append("")
                 # Paragraph
@@ -3944,10 +4258,12 @@ def create_app() -> Flask:
                         html_parts.append("</ul>" if "<ul>" in "".join(html_parts[-10:]) else "</ol>")
                         in_list = False
                     content = stripped
-                    content = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', content)
-                    content = re.sub(r'\*(.+?)\*', r'<em>\1</em>', content)
-                    content = re.sub(r'`(.+?)`', r'<code>\1</code>', content)
-                    content = re.sub(r'\[(.+?)\]\((.+?)\)', r'<a href="\2" style="color:var(--primary);">\1</a>', content)
+                    content = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", content)
+                    content = re.sub(r"\*(.+?)\*", r"<em>\1</em>", content)
+                    content = re.sub(r"`(.+?)`", r"<code>\1</code>", content)
+                    content = re.sub(
+                        r"\[(.+?)\]\((.+?)\)", r'<a href="\2" style="color:var(--primary);">\1</a>', content
+                    )
                     html_parts.append(f"<p>{content}</p>")
             if in_list:
                 html_parts.append("</ul>")
@@ -3956,9 +4272,7 @@ def create_app() -> Flask:
             post["body_html"] = "\n".join(html_parts)
         return render_template("pulse_post.html", post=post)
 
-
     # ── Pulse API Endpoints ──────────────────────────────────────────
-
 
     @app.route("/api/pulse/posts")
     @require_installed("pulse")
@@ -3966,6 +4280,7 @@ def create_app() -> Flask:
         """List all Pulse posts."""
         try:
             from tools.pulse.db import init_db, query_rows
+
             init_db()
             status = flask_request.args.get("status")
             if status:
@@ -3976,13 +4291,13 @@ def create_app() -> Flask:
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
-
     @app.route("/api/pulse/posts/<post_id>")
     @require_installed("pulse")
     def api_pulse_get_post(post_id):
         """Get a single Pulse post."""
         try:
             from tools.pulse.db import get_row
+
             post = get_row("posts", post_id)
             if not post:
                 return jsonify({"error": "Post not found"}), 404
@@ -3990,24 +4305,24 @@ def create_app() -> Flask:
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
-
     @app.route("/api/pulse/posts/<post_id>", methods=["PUT"])
     @require_installed("pulse")
     def api_pulse_update_post(post_id):
         """Update a Pulse post."""
         try:
             from tools.pulse.db import get_row, update_row
+
             post = get_row("posts", post_id)
             if not post:
                 return jsonify({"error": "Post not found"}), 404
             body = flask_request.get_json(silent=True) or {}
             updates = {}
-            for field in ("title", "body_markdown", "tldr", "seo_title",
-                           "seo_description", "seo_keywords", "status"):
+            for field in ("title", "body_markdown", "tldr", "seo_title", "seo_description", "seo_keywords", "status"):
                 if field in body:
                     updates[field] = body[field]
             if "title" in updates:
                 from slugify import slugify as _slugify
+
                 updates["slug"] = _slugify(updates["title"], max_length=80)
             if not updates:
                 return jsonify({"error": "No valid fields to update"}), 400
@@ -4016,29 +4331,31 @@ def create_app() -> Flask:
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
-
     @app.route("/api/pulse/posts/<post_id>/approve", methods=["POST"])
     @require_installed("pulse")
     def api_pulse_approve(post_id):
         """Approve a Pulse post."""
         try:
             from tools.pulse.db import get_row, update_row, insert_row
+
             post = get_row("posts", post_id)
             if not post:
                 return jsonify({"error": "Post not found"}), 404
             now = datetime.now(timezone.utc).isoformat()
             update_row("posts", post_id, {"status": "approved"})
-            insert_row("post_reviews", {
-                "id": f"rev-{uuid.uuid4().hex[:12]}",
-                "post_id": post_id,
-                "action": "approved",
-                "notes": "",
-                "created_at": now,
-            })
+            insert_row(
+                "post_reviews",
+                {
+                    "id": f"rev-{uuid.uuid4().hex[:12]}",
+                    "post_id": post_id,
+                    "action": "approved",
+                    "notes": "",
+                    "created_at": now,
+                },
+            )
             return jsonify({"status": "approved", "post_id": post_id})
         except Exception as e:
             return jsonify({"error": str(e)}), 500
-
 
     @app.route("/api/pulse/posts/<post_id>/reject", methods=["POST"])
     @require_installed("pulse")
@@ -4046,6 +4363,7 @@ def create_app() -> Flask:
         """Reject a Pulse post."""
         try:
             from tools.pulse.db import get_row, update_row, insert_row
+
             post = get_row("posts", post_id)
             if not post:
                 return jsonify({"error": "Post not found"}), 404
@@ -4053,23 +4371,26 @@ def create_app() -> Flask:
             notes = body.get("notes", "")
             now = datetime.now(timezone.utc).isoformat()
             update_row("posts", post_id, {"status": "rejected", "review_notes": notes})
-            insert_row("post_reviews", {
-                "id": f"rev-{uuid.uuid4().hex[:12]}",
-                "post_id": post_id,
-                "action": "rejected",
-                "notes": notes,
-                "created_at": now,
-            })
+            insert_row(
+                "post_reviews",
+                {
+                    "id": f"rev-{uuid.uuid4().hex[:12]}",
+                    "post_id": post_id,
+                    "action": "rejected",
+                    "notes": notes,
+                    "created_at": now,
+                },
+            )
             return jsonify({"status": "rejected", "post_id": post_id})
         except Exception as e:
             return jsonify({"error": str(e)}), 500
-
 
     @app.route("/api/pulse/posts/<post_id>/judge", methods=["POST"])
     @require_installed("pulse")
     def api_pulse_judge_post(post_id):
         """Run LLM Judge (Prometheus-2) on a Pulse post."""
         import threading
+
         try:
             conn = _get_db()
             row = conn.execute(
@@ -4083,19 +4404,25 @@ def create_app() -> Flask:
             def _judge(pid, body, wg_score):
                 try:
                     from tools.writing.llm_judge import evaluate_and_store, init_judge_db
+
                     init_judge_db()
                     result = evaluate_and_store(
-                        text=body, content_type="blog",
-                        writeguard_score=wg_score or 0, post_id=pid,
+                        text=body,
+                        content_type="blog",
+                        writeguard_score=wg_score or 0,
+                        post_id=pid,
                     )
                     if result.get("status") == "evaluated":
                         conn2 = _get_db()
                         conn2.execute(
                             "UPDATE pulse_posts SET judge_color = ?, judge_composite = ?, "
                             "judge_combined = ? WHERE id = ?",
-                            (result["color_rating"]["color"],
-                             result["composite_score"],
-                             result.get("combined_score", 0), pid),
+                            (
+                                result["color_rating"]["color"],
+                                result["composite_score"],
+                                result.get("combined_score", 0),
+                                pid,
+                            ),
                         )
                         conn2.commit()
                         conn2.close()
@@ -4117,6 +4444,7 @@ def create_app() -> Flask:
         """Undo rejection — revert post to draft status."""
         try:
             from tools.pulse.db import get_row, update_row, insert_row
+
             post = get_row("posts", post_id)
             if not post:
                 return jsonify({"error": "Post not found"}), 404
@@ -4124,13 +4452,16 @@ def create_app() -> Flask:
                 return jsonify({"error": f"Post is {post.get('status')}, not rejected"}), 400
             now = datetime.now(timezone.utc).isoformat()
             update_row("posts", post_id, {"status": "draft", "review_notes": ""})
-            insert_row("post_reviews", {
-                "id": f"rev-{uuid.uuid4().hex[:12]}",
-                "post_id": post_id,
-                "action": "undo_reject",
-                "notes": "Reverted to draft",
-                "created_at": now,
-            })
+            insert_row(
+                "post_reviews",
+                {
+                    "id": f"rev-{uuid.uuid4().hex[:12]}",
+                    "post_id": post_id,
+                    "action": "undo_reject",
+                    "notes": "Reverted to draft",
+                    "created_at": now,
+                },
+            )
             return jsonify({"status": "draft", "post_id": post_id})
         except Exception as e:
             return jsonify({"error": str(e)}), 500
@@ -4142,6 +4473,7 @@ def create_app() -> Flask:
         try:
             from tools.pulse.db import get_row, update_row
             from tools.pulse.engine.exporter import export_both
+
             post = get_row("posts", post_id)
             if not post:
                 return jsonify({"error": "Post not found"}), 404
@@ -4155,19 +4487,21 @@ def create_app() -> Flask:
             if auto_push:
                 try:
                     from tools.pulse.engine.wordpress_publisher import publish_post as wp_publish
+
                     wp_result = wp_publish(post_id)
                 except Exception as we:
                     wp_result = {"status": "error", "message": str(we)}
 
-            return jsonify({
-                "status": "published",
-                "post_id": post_id,
-                "exports": exports,
-                "hostinger": wp_result,
-            })
+            return jsonify(
+                {
+                    "status": "published",
+                    "post_id": post_id,
+                    "exports": exports,
+                    "hostinger": wp_result,
+                }
+            )
         except Exception as e:
             return jsonify({"error": str(e)}), 500
-
 
     @app.route("/api/pulse/posts/<post_id>/unpublish", methods=["POST"])
     @require_installed("pulse")
@@ -4175,13 +4509,18 @@ def create_app() -> Flask:
         """Unpublish a post: revert to draft locally and set WP post to draft."""
         try:
             from tools.pulse.db import get_row, update_row
+
             post = get_row("posts", post_id)
             if not post:
                 return jsonify({"error": "Post not found"}), 404
-            update_row("posts", post_id, {
-                "status": "draft",
-                "published_at": None,
-            })
+            update_row(
+                "posts",
+                post_id,
+                {
+                    "status": "draft",
+                    "published_at": None,
+                },
+            )
 
             # Set WordPress post to draft if it was published there
             wp_result = None
@@ -4189,26 +4528,34 @@ def create_app() -> Flask:
             if wp_post_id:
                 try:
                     from tools.pulse.engine.wordpress_publisher import (
-                        _get_client, WP_BLOG_ID, WP_USERNAME, WP_PASSWORD,
+                        _get_client,
+                        WP_BLOG_ID,
+                        WP_USERNAME,
+                        WP_PASSWORD,
                     )
+
                     if WP_PASSWORD:
                         wp = _get_client()
                         wp.wp.editPost(
-                            WP_BLOG_ID, WP_USERNAME, WP_PASSWORD,
-                            wp_post_id, {"post_status": "draft"},
+                            WP_BLOG_ID,
+                            WP_USERNAME,
+                            WP_PASSWORD,
+                            wp_post_id,
+                            {"post_status": "draft"},
                         )
                         wp_result = {"status": "ok", "wp_post_id": wp_post_id, "wp_status": "draft"}
                 except Exception as we:
                     wp_result = {"status": "error", "message": str(we)}
 
-            return jsonify({
-                "status": "unpublished",
-                "post_id": post_id,
-                "wordpress": wp_result,
-            })
+            return jsonify(
+                {
+                    "status": "unpublished",
+                    "post_id": post_id,
+                    "wordpress": wp_result,
+                }
+            )
         except Exception as e:
             return jsonify({"error": str(e)}), 500
-
 
     @app.route("/api/pulse/posts/<post_id>/push-hostinger", methods=["POST"])
     @require_installed("pulse")
@@ -4217,6 +4564,7 @@ def create_app() -> Flask:
         try:
             from tools.pulse.db import get_row
             from tools.pulse.engine.wordpress_publisher import publish_post as wp_publish
+
             post = get_row("posts", post_id)
             if not post:
                 return jsonify({"error": "Post not found"}), 404
@@ -4227,21 +4575,22 @@ def create_app() -> Flask:
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
-
     @app.route("/api/pulse/hostinger/session")
     @require_installed("pulse")
     def api_pulse_hostinger_session():
         """Check WordPress connection status."""
         try:
             from tools.pulse.engine.wordpress_publisher import test_connection
+
             result = test_connection()
-            return jsonify({
-                "session": result,
-                "key_rotation": {"status": "ok", "message": "N/A — WordPress uses password auth"},
-            })
+            return jsonify(
+                {
+                    "session": result,
+                    "key_rotation": {"status": "ok", "message": "N/A — WordPress uses password auth"},
+                }
+            )
         except Exception as e:
             return jsonify({"error": str(e)}), 500
-
 
     @app.route("/api/pulse/posts/<post_id>/export", methods=["POST"])
     @require_installed("pulse")
@@ -4250,6 +4599,7 @@ def create_app() -> Flask:
         try:
             from tools.pulse.db import get_row
             from tools.pulse.engine.exporter import export_both
+
             post = get_row("posts", post_id)
             if not post:
                 return jsonify({"error": "Post not found"}), 404
@@ -4258,13 +4608,13 @@ def create_app() -> Flask:
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
-
     @app.route("/api/pulse/posts/<post_id>", methods=["DELETE"])
     @require_installed("pulse")
     def api_pulse_archive(post_id):
         """Archive or permanently delete a Pulse post."""
         try:
             from tools.pulse.db import get_row, update_row
+
             post = get_row("posts", post_id)
             if not post:
                 return jsonify({"error": "Post not found"}), 404
@@ -4280,19 +4630,18 @@ def create_app() -> Flask:
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
-
     @app.route("/api/pulse/research")
     @require_installed("pulse")
     def api_pulse_research():
         """List Pulse research cache entries."""
         try:
             from tools.pulse.db import query_rows
+
             limit = flask_request.args.get("limit", 50, type=int)
             rows = query_rows("research_cache", limit=limit)
             return jsonify(rows)
         except Exception as e:
             return jsonify({"error": str(e)}), 500
-
 
     @app.route("/api/pulse/clusters")
     @require_installed("pulse")
@@ -4307,9 +4656,7 @@ def create_app() -> Flask:
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
-
     _pulse_pipeline_runs: dict = {}
-
 
     @app.route("/api/pulse/pipeline/run", methods=["POST"])
     @require_installed("pulse")
@@ -4322,8 +4669,10 @@ def create_app() -> Flask:
         - No params: Run research + cluster for all configured topics
         """
         import threading
+
         try:
             from tools.pulse.db import init_db
+
             init_db()
             body = flask_request.get_json(silent=True) or {}
             topic = body.get("topic")
@@ -4336,10 +4685,12 @@ def create_app() -> Flask:
                     if bm and t:
                         # Claude Code wrote the article — run post-processing
                         from tools.pulse.engine.scheduler import run_pipeline_from_draft
+
                         result = run_pipeline_from_draft(t, bm, [])
                     else:
                         # Research + cluster only — returns context for Claude Code
                         from tools.pulse.engine.scheduler import research_phase
+
                         result = research_phase(topic_override=t)
                     _pulse_pipeline_runs[rid] = result
                 except Exception as exc:
@@ -4350,13 +4701,13 @@ def create_app() -> Flask:
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
-
     @app.route("/api/pulse/posts/<post_id>/rewrite", methods=["POST"])
     @require_installed("pulse")
     def api_pulse_rewrite_post(post_id):
         """Update a post with rewritten content from Claude Code."""
         try:
             from tools.pulse.engine.scheduler import update_post_content
+
             body = flask_request.get_json(silent=True) or {}
             body_markdown = body.get("body_markdown")
             if not body_markdown:
@@ -4365,7 +4716,6 @@ def create_app() -> Flask:
             return jsonify(result)
         except Exception as e:
             return jsonify({"error": str(e)}), 500
-
 
     @app.route("/api/pulse/posts/<post_id>/rewrite-llm", methods=["POST"])
     @require_installed("pulse")
@@ -4377,11 +4727,11 @@ def create_app() -> Flask:
         """
         try:
             from tools.pulse.engine.scheduler import rewrite_post_via_llm
+
             result = rewrite_post_via_llm(post_id)
             return jsonify(result)
         except Exception as e:
             return jsonify({"error": str(e)}), 500
-
 
     @app.route("/api/pulse/posts/<post_id>/enrich-capabilities", methods=["POST"])
     @require_installed("pulse")
@@ -4393,30 +4743,31 @@ def create_app() -> Flask:
         """
         try:
             from tools.pulse.engine.scheduler import enrich_post_with_capabilities
+
             result = enrich_post_with_capabilities(post_id)
             return jsonify(result)
         except Exception as e:
             return jsonify({"error": str(e)}), 500
-
 
     @app.route("/api/pulse/posts/enrich-all", methods=["POST"])
     @require_installed("pulse")
     def api_pulse_enrich_all():
         """Enrich all published posts with ICDEV™ capabilities (batch)."""
         import threading
+
         try:
             from tools.pulse.db import init_db
+
             init_db()
             with _get_db() as conn:
-                posts = conn.execute(
-                    "SELECT id, title FROM pulse_posts WHERE status = 'published'"
-                ).fetchall()
+                posts = conn.execute("SELECT id, title FROM pulse_posts WHERE status = 'published'").fetchall()
 
             run_id = f"enrich-{__import__('uuid').uuid4().hex[:8]}"
             post_ids = [p["id"] for p in posts]
 
             def _run_batch():
                 from tools.pulse.engine.scheduler import enrich_post_with_capabilities
+
                 results = []
                 for pid in post_ids:
                     try:
@@ -4427,27 +4778,32 @@ def create_app() -> Flask:
                 # Store results in pipeline runs table
                 try:
                     from tools.pulse.db import insert_row
-                    insert_row("pipeline_runs", {
-                        "id": run_id,
-                        "status": "completed",
-                        "stage": "enrich_capabilities",
-                        "config_json": __import__("json").dumps({"post_ids": post_ids}),
-                        "result_json": __import__("json").dumps(results),
-                    })
+
+                    insert_row(
+                        "pipeline_runs",
+                        {
+                            "id": run_id,
+                            "status": "completed",
+                            "stage": "enrich_capabilities",
+                            "config_json": __import__("json").dumps({"post_ids": post_ids}),
+                            "result_json": __import__("json").dumps(results),
+                        },
+                    )
                 except Exception:
                     pass
 
             t = threading.Thread(target=_run_batch, daemon=True)
             t.start()
-            return jsonify({
-                "status": "started",
-                "run_id": run_id,
-                "posts_queued": len(post_ids),
-                "post_ids": post_ids,
-            })
+            return jsonify(
+                {
+                    "status": "started",
+                    "run_id": run_id,
+                    "posts_queued": len(post_ids),
+                    "post_ids": post_ids,
+                }
+            )
         except Exception as e:
             return jsonify({"error": str(e)}), 500
-
 
     @app.route("/api/pulse/pipeline/run-full", methods=["POST"])
     @require_installed("pulse")
@@ -4462,8 +4818,10 @@ def create_app() -> Flask:
             auto_rewrite (bool): Whether to auto-rewrite via Sonnet (default true).
         """
         import threading
+
         try:
             from tools.pulse.db import init_db
+
             init_db()
             body = flask_request.get_json(silent=True) or {}
             topic = body.get("topic")
@@ -4477,21 +4835,29 @@ def create_app() -> Flask:
             def _run_bg(rid, t, tmpl, ar):
                 def _on_stage(stage):
                     _pulse_pipeline_runs[rid] = {
-                        "run_id": rid, "status": "running", "stage": stage,
+                        "run_id": rid,
+                        "status": "running",
+                        "stage": stage,
                     }
                     # SSE progress broadcast
                     try:
                         from tools.dashboard.sse_manager import emit_progress
+
                         idx = _PULSE_STAGES.index(stage) if stage in _PULSE_STAGES else 0
                         emit_progress(
-                            rid, "pulse_pipeline", stage,
-                            idx + 1, len(_PULSE_STAGES),
+                            rid,
+                            "pulse_pipeline",
+                            stage,
+                            idx + 1,
+                            len(_PULSE_STAGES),
                             detail=f"Pulse pipeline: {stage}",
                         )
                     except Exception:
                         pass
+
                 try:
                     from tools.pulse.engine.scheduler import run_full_pipeline
+
                     result = run_full_pipeline(
                         topic_override=t,
                         template_type=tmpl,
@@ -4501,8 +4867,10 @@ def create_app() -> Flask:
                     _pulse_pipeline_runs[rid] = result
                 except Exception as exc:
                     _pulse_pipeline_runs[rid] = {
-                        "run_id": rid, "status": "failed",
-                        "stage": "error", "error": str(exc),
+                        "run_id": rid,
+                        "status": "failed",
+                        "stage": "error",
+                        "error": str(exc),
                     }
 
             threading.Thread(
@@ -4514,7 +4882,6 @@ def create_app() -> Flask:
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
-
     @app.route("/api/pulse/pipeline/status/<run_id>")
     @require_installed("pulse")
     def api_pulse_pipeline_status(run_id):
@@ -4523,6 +4890,7 @@ def create_app() -> Flask:
             return jsonify(_pulse_pipeline_runs[run_id])
         try:
             from tools.pulse.db import get_row
+
             entry = get_row("schedule_log", run_id)
             if not entry:
                 return jsonify({"error": "Run not found"}), 404
@@ -4530,20 +4898,16 @@ def create_app() -> Flask:
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
-
     @app.route("/api/pulse/pipeline/history")
     @require_installed("pulse")
     def api_pulse_pipeline_history():
         """Get Pulse pipeline run history."""
         try:
             with _get_db() as conn:
-                rows = conn.execute(
-                    "SELECT * FROM pulse_schedule_log ORDER BY started_at DESC LIMIT 50"
-                ).fetchall()
+                rows = conn.execute("SELECT * FROM pulse_schedule_log ORDER BY started_at DESC LIMIT 50").fetchall()
                 return jsonify([dict(r) for r in rows])
         except Exception as e:
             return jsonify({"error": str(e)}), 500
-
 
     @app.route("/api/pulse/authors")
     @require_installed("pulse")
@@ -4551,11 +4915,11 @@ def create_app() -> Flask:
         """List Pulse authors."""
         try:
             from tools.pulse.db import query_rows
+
             rows = query_rows("authors", limit=100)
             return jsonify(rows)
         except Exception as e:
             return jsonify({"error": str(e)}), 500
-
 
     @app.route("/api/pulse/authors", methods=["POST"])
     @require_installed("pulse")
@@ -4563,6 +4927,7 @@ def create_app() -> Flask:
         """Create a Pulse author."""
         try:
             from tools.pulse.db import insert_row
+
             body = flask_request.get_json(silent=True) or {}
             name = body.get("name")
             if not name:
@@ -4582,13 +4947,13 @@ def create_app() -> Flask:
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
-
     @app.route("/api/pulse/stats")
     @require_installed("pulse")
     def api_pulse_stats():
         """Get Pulse pipeline statistics."""
         try:
             from tools.pulse.db import init_db
+
             init_db()
             with _get_db() as conn:
                 total = conn.execute("SELECT COUNT(*) FROM pulse_posts").fetchone()[0]
@@ -4599,29 +4964,34 @@ def create_app() -> Flask:
                 research_count = conn.execute("SELECT COUNT(*) FROM pulse_research_cache").fetchone()[0]
                 cluster_count = conn.execute("SELECT COUNT(*) FROM pulse_topic_clusters").fetchone()[0]
                 run_count = conn.execute("SELECT COUNT(*) FROM pulse_schedule_log").fetchone()[0]
-            return jsonify({
-                "total_posts": total,
-                "by_status": by_status,
-                "research_entries": research_count,
-                "clusters": cluster_count,
-                "pipeline_runs": run_count,
-            })
+            return jsonify(
+                {
+                    "total_posts": total,
+                    "by_status": by_status,
+                    "research_entries": research_count,
+                    "clusters": cluster_count,
+                    "pipeline_runs": run_count,
+                }
+            )
         except Exception as e:
             return jsonify({"error": str(e)}), 500
-
 
     @app.route("/api/llm/dual-model", methods=["GET"])
     def api_llm_dual_model_status():
         """Get current dual-model mode status."""
         try:
             from tools.llm.router import LLMRouter
+
             active = LLMRouter.get_dual_model()
-            return jsonify({
-                "dual_model": active,
-                "mode": "speed" if active else "quality",
-                "description": "1.7B text-only + Gemma3 (both VRAM-resident)" if active
+            return jsonify(
+                {
+                    "dual_model": active,
+                    "mode": "speed" if active else "quality",
+                    "description": "1.7B text-only + Gemma3 (both VRAM-resident)"
+                    if active
                     else "9B multimodal (single model, higher quality)",
-            })
+                }
+            )
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
@@ -4630,16 +5000,19 @@ def create_app() -> Flask:
         """Toggle dual-model mode. Body: {"enabled": true/false}."""
         try:
             from tools.llm.router import LLMRouter
+
             data = flask_request.get_json(silent=True) or {}
             enabled = data.get("enabled")
             if enabled is None:
                 # Toggle current state
                 enabled = not LLMRouter.get_dual_model()
             LLMRouter.set_dual_model(bool(enabled))
-            return jsonify({
-                "dual_model": LLMRouter.get_dual_model(),
-                "mode": "speed" if enabled else "quality",
-            })
+            return jsonify(
+                {
+                    "dual_model": LLMRouter.get_dual_model(),
+                    "mode": "speed" if enabled else "quality",
+                }
+            )
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
@@ -4649,16 +5022,15 @@ def create_app() -> Flask:
         """Get analytics for a Pulse post."""
         try:
             from tools.pulse.db import query_rows
+
             rows = query_rows("post_analytics", where="post_id = ?", params=(post_id,), limit=100)
             return jsonify(rows)
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
-
     # ── Pulse SAM Bridge ──────────────────────────────────────────────
 
     _sam_bridge_runs: dict[str, dict] = {}
-
 
     @app.route("/api/pulse/sam-bridge/run", methods=["POST"])
     @require_installed("pulse")
@@ -4670,40 +5042,47 @@ def create_app() -> Flask:
             max_articles (int): Max articles to generate (default 5).
         """
         import threading
+
         try:
             from tools.pulse.db import init_db
+
             init_db()
             body = flask_request.get_json(silent=True) or {}
             dry_run = body.get("dry_run", False)
             max_articles = body.get("max_articles", 5)
             run_id = f"sam-{uuid.uuid4().hex[:12]}"
             _sam_bridge_runs[run_id] = {
-                "run_id": run_id, "status": "running",
-                "stage": "scanning", "dry_run": dry_run,
+                "run_id": run_id,
+                "status": "running",
+                "stage": "scanning",
+                "dry_run": dry_run,
             }
 
             def _run_bg(rid, dr, ma):
                 try:
                     _sam_bridge_runs[rid]["stage"] = "extracting"
                     from tools.pulse.engine.sam_bridge import run_sam_to_pulse
+
                     result = run_sam_to_pulse(dry_run=dr, max_articles=ma)
                     result["run_id"] = rid
                     result["status"] = "completed"
                     _sam_bridge_runs[rid] = result
                 except Exception as exc:
                     _sam_bridge_runs[rid] = {
-                        "run_id": rid, "status": "failed",
-                        "stage": "error", "error": str(exc),
+                        "run_id": rid,
+                        "status": "failed",
+                        "stage": "error",
+                        "error": str(exc),
                     }
 
             threading.Thread(
-                target=_run_bg, args=(run_id, dry_run, max_articles),
+                target=_run_bg,
+                args=(run_id, dry_run, max_articles),
                 daemon=True,
             ).start()
             return jsonify({"run_id": run_id, "status": "started", "dry_run": dry_run})
         except Exception as e:
             return jsonify({"error": str(e)}), 500
-
 
     @app.route("/api/pulse/sam-bridge/status/<run_id>")
     @require_installed("pulse")
@@ -4713,29 +5092,25 @@ def create_app() -> Flask:
             return jsonify(_sam_bridge_runs[run_id])
         return jsonify({"error": "Run not found"}), 404
 
-
     @app.route("/api/pulse/sam-bridge/stats")
     @require_installed("pulse")
     def api_pulse_sam_bridge_stats():
         """Get SAM bridge pipeline statistics."""
         try:
             from tools.pulse.db import init_db
+
             init_db()
             with _get_db() as conn:
-                total = conn.execute(
-                    "SELECT COUNT(*) FROM pulse_sam_article_log"
-                ).fetchone()[0]
+                total = conn.execute("SELECT COUNT(*) FROM pulse_sam_article_log").fetchone()[0]
                 by_status = {}
                 status_rows = conn.execute(
-                    "SELECT pipeline_status, COUNT(*) as count "
-                    "FROM pulse_sam_article_log GROUP BY pipeline_status"
+                    "SELECT pipeline_status, COUNT(*) as count FROM pulse_sam_article_log GROUP BY pipeline_status"
                 ).fetchall()
                 for row in status_rows:
                     by_status[row["pipeline_status"]] = row["count"]
                 by_domain = {}
                 domain_rows = conn.execute(
-                    "SELECT domain_category, COUNT(*) as count "
-                    "FROM pulse_sam_article_log GROUP BY domain_category"
+                    "SELECT domain_category, COUNT(*) as count FROM pulse_sam_article_log GROUP BY domain_category"
                 ).fetchall()
                 for row in domain_rows:
                     by_domain[row["domain_category"] or "unknown"] = row["count"]
@@ -4744,15 +5119,16 @@ def create_app() -> Flask:
                     "pipeline_status, created_at FROM pulse_sam_article_log "
                     "ORDER BY created_at DESC LIMIT 10"
                 ).fetchall()
-            return jsonify({
-                "total": total,
-                "by_status": by_status,
-                "by_domain": by_domain,
-                "recent": [dict(r) for r in recent],
-            })
+            return jsonify(
+                {
+                    "total": total,
+                    "by_status": by_status,
+                    "by_domain": by_domain,
+                    "recent": [dict(r) for r in recent],
+                }
+            )
         except Exception as e:
             return jsonify({"error": str(e)}), 500
-
 
     @app.route("/api/pulse/demand-signals")
     @require_installed("pulse")
@@ -4760,22 +5136,19 @@ def create_app() -> Flask:
         """List demand signals, optionally filtered to high-demand only."""
         try:
             from tools.pulse.db import init_db
+
             init_db()
             high_only = flask_request.args.get("high_demand", "0") == "1"
             with _get_db() as conn:
                 if high_only:
                     rows = conn.execute(
-                        "SELECT * FROM pulse_demand_signals WHERE is_high_demand = 1 "
-                        "ORDER BY frequency DESC"
+                        "SELECT * FROM pulse_demand_signals WHERE is_high_demand = 1 ORDER BY frequency DESC"
                     ).fetchall()
                 else:
-                    rows = conn.execute(
-                        "SELECT * FROM pulse_demand_signals ORDER BY frequency DESC"
-                    ).fetchall()
+                    rows = conn.execute("SELECT * FROM pulse_demand_signals ORDER BY frequency DESC").fetchall()
             return jsonify({"signals": [dict(r) for r in rows], "count": len(rows)})
         except Exception as e:
             return jsonify({"error": str(e)}), 500
-
 
     @app.route("/api/pulse/demand-signals/aggregate")
     @require_installed("pulse")
@@ -4783,6 +5156,7 @@ def create_app() -> Flask:
         """Aggregate demand signal stats by domain."""
         try:
             from tools.pulse.db import init_db
+
             init_db()
             with _get_db() as conn:
                 rows = conn.execute(
@@ -4792,20 +5166,19 @@ def create_app() -> Flask:
                     "FROM pulse_demand_signals GROUP BY domain_category "
                     "ORDER BY count DESC"
                 ).fetchall()
-                total = conn.execute(
-                    "SELECT COUNT(*) FROM pulse_demand_signals"
-                ).fetchone()[0]
+                total = conn.execute("SELECT COUNT(*) FROM pulse_demand_signals").fetchone()[0]
                 high_total = conn.execute(
                     "SELECT COUNT(*) FROM pulse_demand_signals WHERE is_high_demand = 1"
                 ).fetchone()[0]
-            return jsonify({
-                "by_domain": [dict(r) for r in rows],
-                "total": total,
-                "high_demand_total": high_total,
-            })
+            return jsonify(
+                {
+                    "by_domain": [dict(r) for r in rows],
+                    "total": total,
+                    "high_demand_total": high_total,
+                }
+            )
         except Exception as e:
             return jsonify({"error": str(e)}), 500
-
 
     @app.route("/api/pulse/capability-graph")
     @require_installed("pulse")
@@ -4813,13 +5186,14 @@ def create_app() -> Flask:
         """Query capability graph edges, optionally filtered by capability slug."""
         try:
             from tools.pulse.db import init_db
+
             init_db()
             cap_slug = flask_request.args.get("capability")
             with _get_db() as conn:
                 if cap_slug:
                     rows = conn.execute(
-                        "SELECT * FROM pulse_capability_graph WHERE capability_slug = ? "
-                        "ORDER BY confidence DESC", (cap_slug,)
+                        "SELECT * FROM pulse_capability_graph WHERE capability_slug = ? ORDER BY confidence DESC",
+                        (cap_slug,),
                     ).fetchall()
                 else:
                     rows = conn.execute(
@@ -4829,19 +5203,18 @@ def create_app() -> Flask:
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
-
     @app.route("/api/pulse/capabilities")
     @require_installed("pulse")
     def api_pulse_capabilities():
         """List all ICDEV™ capabilities from the capability catalog."""
         try:
             from tools.pulse.engine.capability_scanner import load_domains
+
             domains = load_domains(include_capabilities=True)
             total = sum(d["capability_count"] for d in domains)
             return jsonify({"domains": domains, "total_capabilities": total, "total_domains": len(domains)})
         except Exception as e:
             return jsonify({"error": str(e)}), 500
-
 
     @app.route("/api/pulse/capabilities/match")
     @require_installed("pulse")
@@ -4849,6 +5222,7 @@ def create_app() -> Flask:
         """Match capabilities by keywords."""
         try:
             from tools.pulse.engine.capability_scanner import match_capabilities
+
             q = flask_request.args.get("q", "")
             top_n = int(flask_request.args.get("top_n", "5"))
             keywords = [kw for kw in q.split() if len(kw) > 2]
@@ -4859,11 +5233,11 @@ def create_app() -> Flask:
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
-
     @app.route("/api/pulse/hero-image/<post_id>")
     def api_pulse_hero_image(post_id):
         """Serve a Pulse post hero image from disk."""
         from flask import send_file
+
         try:
             conn = _get_db()
             row = conn.execute("SELECT hero_image_path FROM pulse_posts WHERE id = ?", (post_id,)).fetchone()
@@ -4883,6 +5257,7 @@ def create_app() -> Flask:
     def api_pulse_generate_image(post_id):
         """Generate a hero image for a Pulse post using SDXL Turbo (local GPU)."""
         import threading
+
         try:
             conn = _get_db()
             row = conn.execute("SELECT id, title, topic FROM pulse_posts WHERE id = ?", (post_id,)).fetchone()
@@ -4895,6 +5270,7 @@ def create_app() -> Flask:
             def _gen(pid, t, c):
                 try:
                     from tools.pulse.engine.image_generator import generate_hero_image
+
                     result = generate_hero_image(title=t, category=c)
                     if result.get("success"):
                         conn2 = _get_db()
@@ -4917,6 +5293,7 @@ def create_app() -> Flask:
     def api_pulse_generated_video(post_id):
         """Serve a Pulse post generated video from disk."""
         from flask import send_file
+
         try:
             conn = _get_db()
             row = conn.execute(
@@ -4943,6 +5320,7 @@ def create_app() -> Flask:
     def api_pulse_generate_video(post_id):
         """Generate a hero video for a Pulse post using LTX-Video 2B (local GPU)."""
         import threading
+
         try:
             conn = _get_db()
             row = conn.execute("SELECT id, title, topic FROM pulse_posts WHERE id = ?", (post_id,)).fetchone()
@@ -4955,6 +5333,7 @@ def create_app() -> Flask:
             def _gen(pid, t, c):
                 try:
                     from tools.pulse.engine.video_generator import generate_post_video
+
                     result = generate_post_video(title=t, category=c)
                     if result.get("success"):
                         conn2 = _get_db()
@@ -4978,10 +5357,16 @@ def create_app() -> Flask:
     @app.route("/filesync")
     def filesync_page():
         """File Sync — sync jobs, status, conflicts, activity log."""
-        stats = {"total_jobs": 0, "active_jobs": 0, "watching_jobs": 0,
-                 "completed_syncs": 0,
-                 "failed_syncs": 0, "pending_conflicts": 0, "total_bytes": 0,
-                 "total_bytes_display": "0 B"}
+        stats = {
+            "total_jobs": 0,
+            "active_jobs": 0,
+            "watching_jobs": 0,
+            "completed_syncs": 0,
+            "failed_syncs": 0,
+            "pending_conflicts": 0,
+            "total_bytes": 0,
+            "total_bytes_display": "0 B",
+        }
         jobs = []
         log_entries = []
         conn = _get_db()
@@ -5004,39 +5389,29 @@ def create_app() -> Flask:
             except Exception:
                 pass
             try:
-                row = conn.execute(
-                    "SELECT COUNT(*) as cnt FROM sync_jobs WHERE status = 'watching'"
-                ).fetchone()
+                row = conn.execute("SELECT COUNT(*) as cnt FROM sync_jobs WHERE status = 'watching'").fetchone()
                 stats["watching_jobs"] = row["cnt"]
             except Exception:
                 pass
             try:
-                row = conn.execute(
-                    "SELECT COUNT(*) as cnt FROM sync_log WHERE action = 'sync_completed'"
-                ).fetchone()
+                row = conn.execute("SELECT COUNT(*) as cnt FROM sync_log WHERE action = 'sync_completed'").fetchone()
                 stats["completed_syncs"] = row["cnt"]
             except Exception:
                 pass
             try:
-                row = conn.execute(
-                    "SELECT COUNT(*) as cnt FROM sync_log WHERE action = 'error'"
-                ).fetchone()
+                row = conn.execute("SELECT COUNT(*) as cnt FROM sync_log WHERE action = 'error'").fetchone()
                 stats["failed_syncs"] = row["cnt"]
             except Exception:
                 pass
             try:
-                row = conn.execute(
-                    "SELECT COUNT(*) as cnt FROM sync_conflicts WHERE resolution = 'pending'"
-                ).fetchone()
+                row = conn.execute("SELECT COUNT(*) as cnt FROM sync_conflicts WHERE resolution = 'pending'").fetchone()
                 stats["pending_conflicts"] = row["cnt"]
             except Exception:
                 pass
             # Skip SUM(bytes_transferred) over full sync_log — too expensive on millions of rows.
             # Use SUM from sync_jobs.bytes_transferred (per-job aggregate) as a fast proxy.
             try:
-                row = conn.execute(
-                    "SELECT COALESCE(SUM(bytes_transferred), 0) as total FROM sync_jobs"
-                ).fetchone()
+                row = conn.execute("SELECT COALESCE(SUM(bytes_transferred), 0) as total FROM sync_jobs").fetchone()
                 total_bytes = row["total"]
                 stats["total_bytes"] = total_bytes
                 if total_bytes >= 1073741824:
@@ -5050,16 +5425,12 @@ def create_app() -> Flask:
             except Exception:
                 pass
             try:
-                rows = conn.execute(
-                    "SELECT * FROM sync_jobs ORDER BY created_at DESC LIMIT 50"
-                ).fetchall()
+                rows = conn.execute("SELECT * FROM sync_jobs ORDER BY created_at DESC LIMIT 50").fetchall()
                 jobs = [dict(r) for r in rows]
             except Exception:
                 pass
             try:
-                rows = conn.execute(
-                    "SELECT * FROM sync_log ORDER BY created_at DESC LIMIT 30"
-                ).fetchall()
+                rows = conn.execute("SELECT * FROM sync_log ORDER BY created_at DESC LIMIT 30").fetchall()
                 log_entries = [dict(r) for r in rows]
             except Exception:
                 pass
@@ -5091,6 +5462,7 @@ def create_app() -> Flask:
     def api_cli_generator_generate():
         try:
             from tools.harness.cli_generator import generate
+
             data = flask_request.get_json(force=True)
             spec_path = data.get("spec_path", "")
             if not spec_path:
@@ -5105,7 +5477,6 @@ def create_app() -> Flask:
         except Exception as e:
             return jsonify({"status": "error", "error": str(e)}), 500
 
-
     # ═══════════════════════════════════════════════════════════════════════════
     # MCP Wrapper Generator (Phase 3)
     # ═══════════════════════════════════════════════════════════════════════════
@@ -5114,29 +5485,29 @@ def create_app() -> Flask:
     def mcp_wrapper_page():
         return render_template("mcp_wrapper.html", app_name="SparkPilot")
 
-
     @app.route("/api/mcp-wrapper/scan")
     def api_mcp_wrapper_scan():
         try:
             from tools.harness.mcp_wrapper_generator import scan_tools
+
             return jsonify(scan_tools())
         except Exception as e:
             return jsonify({"status": "error", "error": str(e), "discovered": [], "total": 0, "with_json_flag": 0})
-
 
     @app.route("/api/mcp-wrapper/list")
     def api_mcp_wrapper_list():
         try:
             from tools.harness.mcp_wrapper_generator import list_wrapped
+
             return jsonify(list_wrapped())
         except Exception as e:
             return jsonify({"wrappers": [], "count": 0, "error": str(e)})
-
 
     @app.route("/api/mcp-wrapper/wrap", methods=["POST"])
     def api_mcp_wrapper_wrap():
         try:
             from tools.harness.mcp_wrapper_generator import wrap_tool
+
             data = flask_request.get_json(force=True)
             tool_path = data.get("tool_path", "")
             if not tool_path:
@@ -5145,40 +5516,58 @@ def create_app() -> Flask:
         except Exception as e:
             return jsonify({"status": "error", "error": str(e)}), 500
 
-
     @app.route("/api/mcp-wrapper/wrap-all", methods=["POST"])
     def api_mcp_wrapper_wrap_all():
         try:
             from tools.harness.mcp_wrapper_generator import wrap_all
+
             data = flask_request.get_json(force=True) if flask_request.data else {}
-            return jsonify(wrap_all(
-                dry_run=data.get("dry_run", False),
-                limit=data.get("limit", 20),
-            ))
+            return jsonify(
+                wrap_all(
+                    dry_run=data.get("dry_run", False),
+                    limit=data.get("limit", 20),
+                )
+            )
         except Exception as e:
             return jsonify({"status": "error", "error": str(e)}), 500
-
 
     # ── Page Agent Copilot API ───────────────────────────────────────
     # Inspired by alibaba/page-agent: text-based DOM navigation + AI copilot
 
     _PAGE_AGENT_ROUTE_MAP = {
-        "home": "/", "dashboard": "/", "missions": "/missions",
-        "simulator": "/simulator", "fleet": "/devices", "devices": "/devices",
-        "firmware": "/firmware", "edge ai": "/edge-ai", "self-heal": "/crashes",
-        "agents": "/agents", "govcon": "/govcon", "writeguard": "/writeguard",
-        "pulse": "/pulse", "databridge": "/databridge",
-        "messaging": "/databridge/messaging", "cloudforge": "/cloudforge",
-        "knowledge": "/knowledge-graph", "knowledge graph": "/knowledge-graph",
-        "marketplace": "/marketplace", "research": "/research",
-        "harness": "/harness", "codelens": "/container-lens",
-        "forge studio": "/forge-studio", "dochub": "/dochub",
-        "resilience": "/resilience", "architecture": "/architecture",
-        "compliance": "/compliance-accel", "agent evolution": "/agent-evolution",
-        "intelligence": "/intelligence", "maturity": "/maturity",
-        "decisions": "/decisions", "security": "/security-scan",
+        "home": "/",
+        "dashboard": "/",
+        "missions": "/missions",
+        "simulator": "/simulator",
+        "fleet": "/devices",
+        "devices": "/devices",
+        "firmware": "/firmware",
+        "edge ai": "/edge-ai",
+        "self-heal": "/crashes",
+        "agents": "/agents",
+        "govcon": "/govcon",
+        "writeguard": "/writeguard",
+        "pulse": "/pulse",
+        "databridge": "/databridge",
+        "messaging": "/databridge/messaging",
+        "cloudforge": "/cloudforge",
+        "knowledge": "/knowledge-graph",
+        "knowledge graph": "/knowledge-graph",
+        "marketplace": "/marketplace",
+        "research": "/research",
+        "harness": "/harness",
+        "codelens": "/container-lens",
+        "forge studio": "/forge-studio",
+        "dochub": "/dochub",
+        "resilience": "/resilience",
+        "architecture": "/architecture",
+        "compliance": "/compliance-accel",
+        "agent evolution": "/agent-evolution",
+        "intelligence": "/intelligence",
+        "maturity": "/maturity",
+        "decisions": "/decisions",
+        "security": "/security-scan",
     }
-
 
     @app.route("/api/page-agent/message", methods=["POST"])
     def api_page_agent_message():
@@ -5209,14 +5598,16 @@ def create_app() -> Flask:
             # Navigation intent
             for prefix in ("go to ", "navigate to ", "show me ", "open "):
                 if lower.startswith(prefix):
-                    target = lower[len(prefix):].strip()
+                    target = lower[len(prefix) :].strip()
                     route = _PAGE_AGENT_ROUTE_MAP.get(target)
                     if route:
-                        return jsonify({
-                            "response": f"Navigating to **{target}**...",
-                            "action": "navigate",
-                            "route": route,
-                        })
+                        return jsonify(
+                            {
+                                "response": f"Navigating to **{target}**...",
+                                "action": "navigate",
+                                "route": route,
+                            }
+                        )
                     # Fuzzy match
                     best, best_score = None, 0
                     for key in _PAGE_AGENT_ROUTE_MAP:
@@ -5225,47 +5616,56 @@ def create_app() -> Flask:
                             best_score = score
                             best = key
                     if best:
-                        return jsonify({
-                            "response": f"Did you mean **{best}**? Navigating...",
-                            "action": "navigate",
-                            "route": _PAGE_AGENT_ROUTE_MAP[best],
-                        })
-                    return jsonify({
-                        "response": f"Page not found: `{target}`. Try asking `show pages`.",
-                        "suggestions": ["show pages", "help"],
-                    })
+                        return jsonify(
+                            {
+                                "response": f"Did you mean **{best}**? Navigating...",
+                                "action": "navigate",
+                                "route": _PAGE_AGENT_ROUTE_MAP[best],
+                            }
+                        )
+                    return jsonify(
+                        {
+                            "response": f"Page not found: `{target}`. Try asking `show pages`.",
+                            "suggestions": ["show pages", "help"],
+                        }
+                    )
 
             # Help
             if lower in ("help", "what can you do", "commands"):
-                return jsonify({
-                    "response": (
-                        "**Commands:** `go to <page>`, `search <text>`, "
-                        "`show pages`, `where am i`, `describe this page`, "
-                        "`scroll up/down`, `click <element>`, `fill <value> in <field>`"
-                    ),
-                    "suggestions": ["go to compliance", "show pages", "describe this page"],
-                })
+                return jsonify(
+                    {
+                        "response": (
+                            "**Commands:** `go to <page>`, `search <text>`, "
+                            "`show pages`, `where am i`, `describe this page`, "
+                            "`scroll up/down`, `click <element>`, `fill <value> in <field>`"
+                        ),
+                        "suggestions": ["go to compliance", "show pages", "describe this page"],
+                    }
+                )
 
             # Page listing
             if "show pages" in lower or "list pages" in lower or "list routes" in lower:
                 pages = sorted(_PAGE_AGENT_ROUTE_MAP.keys())
                 lines = [f"- `{p}` → {_PAGE_AGENT_ROUTE_MAP[p]}" for p in pages]
-                return jsonify({
-                    "response": f"**Available pages ({len(pages)}):**\n" + "\n".join(lines),
-                })
+                return jsonify(
+                    {
+                        "response": f"**Available pages ({len(pages)}):**\n" + "\n".join(lines),
+                    }
+                )
 
             # Context-aware suggestions based on current page
             suggestions = _page_suggestions(page)
-            return jsonify({
-                "response": (
-                    f"I understand your request: *{message}*. "
-                    "For best results, try specific commands like `go to agents` or `search <keyword>`."
-                ),
-                "suggestions": suggestions,
-            })
+            return jsonify(
+                {
+                    "response": (
+                        f"I understand your request: *{message}*. "
+                        "For best results, try specific commands like `go to agents` or `search <keyword>`."
+                    ),
+                    "suggestions": suggestions,
+                }
+            )
         except Exception as e:
             return jsonify({"error": str(e)}), 500
-
 
     def _bigram_similarity(a, b):
         """Bigram (Dice) similarity for fuzzy page matching."""
@@ -5275,16 +5675,15 @@ def create_app() -> Flask:
             return 0.0
         a_bigrams = {}
         for i in range(len(a) - 1):
-            bg = a[i:i+2]
+            bg = a[i : i + 2]
             a_bigrams[bg] = a_bigrams.get(bg, 0) + 1
         matches = 0
         for i in range(len(b) - 1):
-            bg = b[i:i+2]
+            bg = b[i : i + 2]
             if a_bigrams.get(bg, 0) > 0:
                 matches += 1
                 a_bigrams[bg] -= 1
         return (2.0 * matches) / (len(a) + len(b) - 2)
-
 
     def _page_suggestions(current_page):
         """Return contextual suggestions based on current page."""
@@ -5308,10 +5707,14 @@ def create_app() -> Flask:
         summary = {}
         try:
             import subprocess
+
             _utf8_env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
             result = subprocess.run(
                 [sys.executable, "tools/proposal_genesis/daemon.py", "--status", "--json"],
-                capture_output=True, text=True, timeout=15, cwd=BASE_DIR,
+                capture_output=True,
+                text=True,
+                timeout=15,
+                cwd=BASE_DIR,
                 env=_utf8_env,
             )
             stdout = result.stdout.strip()
@@ -5342,21 +5745,22 @@ def create_app() -> Flask:
             except Exception:
                 summary["drafts"] = 0
             try:
-                row = conn.execute("SELECT AVG(composite_score) as avg_score FROM pg_proposal_quality_scores").fetchone()
+                row = conn.execute(
+                    "SELECT AVG(composite_score) as avg_score FROM pg_proposal_quality_scores"
+                ).fetchone()
                 summary["avg_quality"] = round(row["avg_score"] or 0, 3)
             except Exception:
                 summary["avg_quality"] = 0
             try:
-                summary["pulse_links"] = conn.execute(
-                    "SELECT COUNT(*) as cnt FROM pg_pulse_proposal_links"
-                ).fetchone()["cnt"]
+                summary["pulse_links"] = conn.execute("SELECT COUNT(*) as cnt FROM pg_pulse_proposal_links").fetchone()[
+                    "cnt"
+                ]
             except Exception:
                 summary["pulse_links"] = 0
             conn.close()
         except Exception:
             pass
         return render_template("proposal_genesis.html", status=status, summary=summary)
-
 
     # ── Genesis v2.0 — Autonomous Research Lab Dashboard ──────────────────────
 
@@ -5427,14 +5831,24 @@ def create_app() -> Flask:
     def _genesis_run(app_key, args, timeout=15):
         """Run a Genesis daemon command for a given app."""
         import subprocess as _sp
+
         cfg = _genesis_app(app_key)
         app_root = cfg["root"]
         daemon_path = cfg["daemon"]
-        env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONPATH": app_root,
-               cfg["env_var"]: "true", "PYTHONUNBUFFERED": "1"}
+        env = {
+            **os.environ,
+            "PYTHONIOENCODING": "utf-8",
+            "PYTHONPATH": app_root,
+            cfg["env_var"]: "true",
+            "PYTHONUNBUFFERED": "1",
+        }
         result = _sp.run(
             [sys.executable, daemon_path] + args,
-            capture_output=True, text=True, timeout=timeout, cwd=app_root, env=env,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            cwd=app_root,
+            env=env,
         )
         stdout = result.stdout.strip()
         json_start = stdout.find("{")
@@ -5475,9 +5889,7 @@ def create_app() -> Flask:
                 return jsonify({"error": "Name and email are required"}), 400
 
             sub_id = f"lead-{uuid.uuid4().hex[:12]}"
-            now = __import__("datetime").datetime.now(
-                __import__("datetime").timezone.utc
-            ).isoformat()
+            now = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
 
             conn = _get_db()
             try:
@@ -5485,12 +5897,17 @@ def create_app() -> Flask:
                     "INSERT INTO contact_submissions "
                     "(id, name, email, organization, role, interest, message, status, created_at) "
                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (sub_id, name, email,
-                     (data.get("organization") or "").strip(),
-                     (data.get("role") or "").strip(),
-                     (data.get("interest") or "").strip(),
-                     (data.get("message") or "").strip(),
-                     "new", now),
+                    (
+                        sub_id,
+                        name,
+                        email,
+                        (data.get("organization") or "").strip(),
+                        (data.get("role") or "").strip(),
+                        (data.get("interest") or "").strip(),
+                        (data.get("message") or "").strip(),
+                        "new",
+                        now,
+                    ),
                 )
                 conn.commit()
             finally:
@@ -5507,9 +5924,7 @@ def create_app() -> Flask:
         """Contact form submissions dashboard."""
         conn = _get_db()
         try:
-            rows = conn.execute(
-                "SELECT * FROM contact_submissions ORDER BY created_at DESC LIMIT 100"
-            ).fetchall()
+            rows = conn.execute("SELECT * FROM contact_submissions ORDER BY created_at DESC LIMIT 100").fetchall()
             submissions = [dict(r) for r in rows]
             stats = {
                 "total": len(submissions),
@@ -5532,9 +5947,7 @@ def create_app() -> Flask:
         notes = data.get("notes", "")
         if new_status not in ("new", "contacted", "qualified", "closed"):
             return jsonify({"error": "Invalid status"}), 400
-        now = __import__("datetime").datetime.now(
-            __import__("datetime").timezone.utc
-        ).isoformat()
+        now = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
         conn = _get_db()
         try:
             conn.execute(
@@ -5553,6 +5966,7 @@ def create_app() -> Flask:
         """Notification Gateway — adapter config, delivery history, routing rules."""
         try:
             from tools.notifications.gateway import NotificationGateway
+
             gw = NotificationGateway()
             health = gw.health()
         except Exception:
@@ -5561,9 +5975,7 @@ def create_app() -> Flask:
         history = []
         try:
             conn = _get_db()
-            history = conn.execute(
-                "SELECT * FROM notification_log ORDER BY created_at DESC LIMIT 50"
-            ).fetchall()
+            history = conn.execute("SELECT * FROM notification_log ORDER BY created_at DESC LIMIT 50").fetchall()
             conn.close()
         except Exception:
             pass
@@ -5587,9 +5999,9 @@ def create_app() -> Flask:
                 all_status[key] = {"_name": cfg["name"], "_available": False, "error": "Directory not found"}
         # Active app status
         status = all_status.get(app_key, all_status.get("icdev", {}))
-        return render_template("genesis.html", status=status, all_apps=all_status,
-                               active_app=app_key, genesis_apps=GENESIS_APPS)
-
+        return render_template(
+            "genesis.html", status=status, all_apps=all_status, active_app=app_key, genesis_apps=GENESIS_APPS
+        )
 
     @app.route("/api/genesis/status", methods=["GET"])
     def api_genesis_status():
@@ -5606,11 +6018,12 @@ def create_app() -> Flask:
                 ).fetchone()
                 conn.close()
                 if row:
-                    return jsonify({"status": "cached", "app": app_key, "last_run": dict(row), "daemon_error": str(exc)})
+                    return jsonify(
+                        {"status": "cached", "app": app_key, "last_run": dict(row), "daemon_error": str(exc)}
+                    )
             except Exception:
                 pass
             return jsonify({"error": str(exc), "app": app_key}), 500
-
 
     @app.route("/api/genesis/all-status", methods=["GET"])
     def api_genesis_all_status():
@@ -5627,13 +6040,25 @@ def create_app() -> Flask:
                 results[key] = {"_name": cfg["name"], "error": "not_found"}
         return jsonify(results)
 
-
     @app.route("/api/genesis/reflex/<name>", methods=["POST"])
     def api_genesis_run_reflex(name):
         """Run a single Genesis reflex on-demand."""
         app_key = flask_request.args.get("app", "icdev")
-        allowed = ["research", "scout", "audit", "report", "comply", "ingest",
-                   "market", "publish", "test", "learn", "heal", "evolve", "docs"]
+        allowed = [
+            "research",
+            "scout",
+            "audit",
+            "report",
+            "comply",
+            "ingest",
+            "market",
+            "publish",
+            "test",
+            "learn",
+            "heal",
+            "evolve",
+            "docs",
+        ]
         if name not in allowed:
             return jsonify({"error": f"Unknown reflex: {name}"}), 400
         try:
@@ -5654,7 +6079,6 @@ def create_app() -> Flask:
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
 
-
     @app.route("/api/genesis/promoter/stats", methods=["GET"])
     def api_genesis_promoter_stats():
         app_key = flask_request.args.get("app", "icdev")
@@ -5666,7 +6090,9 @@ def create_app() -> Flask:
                 try:
                     total = conn.execute("SELECT COUNT(*) FROM genesis_gkp").fetchone()[0]
                     by_status = {}
-                    for row in conn.execute("SELECT promotion_status, COUNT(*) as cnt FROM genesis_gkp GROUP BY promotion_status").fetchall():
+                    for row in conn.execute(
+                        "SELECT promotion_status, COUNT(*) as cnt FROM genesis_gkp GROUP BY promotion_status"
+                    ).fetchall():
                         by_status[row[0]] = row[1]
                     return jsonify({"total_gkps": total, "by_status": by_status})
                 finally:
@@ -5675,10 +6101,14 @@ def create_app() -> Flask:
                 return jsonify({"total_gkps": 0, "by_status": {}, "note": str(exc)})
         try:
             import subprocess
+
             _utf8_env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONPATH": cfg["root"]}
             result = subprocess.run(
                 [sys.executable, cfg["promoter"], "--stats", "--json"],
-                capture_output=True, text=True, timeout=15, cwd=cfg["root"],
+                capture_output=True,
+                text=True,
+                timeout=15,
+                cwd=cfg["root"],
                 env=_utf8_env,
             )
             stdout = result.stdout.strip()
@@ -5689,13 +6119,13 @@ def create_app() -> Flask:
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
 
-
     def _gkp_hidden_sources():
         """Load source patterns marked hide_from_dashboard in genesis auto_promote rules."""
         try:
             cfg_path = BASE_DIR / "args" / "genesis_config.yaml"
             if cfg_path.exists():
                 import yaml
+
                 cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
                 rules = cfg.get("promoter", {}).get("auto_promote", [])
                 return [
@@ -5733,6 +6163,7 @@ def create_app() -> Flask:
                 if not show_hidden:
                     hidden = _gkp_hidden_sources()
                     if hidden:
+
                         def _is_hidden(g):
                             try:
                                 p = json.loads(g["payload"]) if isinstance(g["payload"], str) else (g["payload"] or {})
@@ -5740,6 +6171,7 @@ def create_app() -> Flask:
                                 return any(h in src for h in hidden)
                             except Exception:
                                 return False
+
                         gkps = [g for g in gkps if not _is_hidden(g)]
 
                 return jsonify({"gkps": gkps, "count": len(gkps)})
@@ -5747,7 +6179,6 @@ def create_app() -> Flask:
                 conn.close()
         except Exception as exc:
             return jsonify({"gkps": [], "count": 0, "note": str(exc)})
-
 
     @app.route("/api/genesis/gkps/<gkp_id>", methods=["GET"])
     def api_genesis_gkp_detail(gkp_id):
@@ -5765,7 +6196,6 @@ def create_app() -> Flask:
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
 
-
     @app.route("/api/genesis/gkps/<gkp_id>/promote", methods=["POST"])
     def api_genesis_promote_gkp(gkp_id):
         """Promote a GKP to v1.x."""
@@ -5776,7 +6206,10 @@ def create_app() -> Flask:
             try:
                 conn = _genesis_db(app_key)
                 try:
-                    conn.execute("UPDATE genesis_gkp SET promotion_status = 'promoted', promoted_at = datetime('now') WHERE id = ?", (gkp_id,))
+                    conn.execute(
+                        "UPDATE genesis_gkp SET promotion_status = 'promoted', promoted_at = datetime('now') WHERE id = ?",
+                        (gkp_id,),
+                    )
                     conn.commit()
                     return jsonify({"status": "promoted", "gkp_id": gkp_id})
                 finally:
@@ -5785,10 +6218,14 @@ def create_app() -> Flask:
                 return jsonify({"error": str(exc)}), 500
         try:
             import subprocess as _sp
+
             _utf8_env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONPATH": cfg["root"]}
             result = _sp.run(
                 [sys.executable, cfg["promoter"], "--promote", gkp_id, "--json"],
-                capture_output=True, text=True, timeout=30, cwd=cfg["root"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                cwd=cfg["root"],
                 env=_utf8_env,
             )
             stdout = result.stdout.strip()
@@ -5798,7 +6235,6 @@ def create_app() -> Flask:
             return jsonify({"error": result.stderr or "promote failed"}), 500
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
-
 
     @app.route("/api/genesis/gkps/<gkp_id>/reject", methods=["POST"])
     def api_genesis_reject_gkp(gkp_id):
@@ -5820,10 +6256,14 @@ def create_app() -> Flask:
                 return jsonify({"error": str(exc)}), 500
         try:
             import subprocess as _sp
+
             _utf8_env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONPATH": cfg["root"]}
             result = _sp.run(
                 [sys.executable, cfg["promoter"], "--reject", gkp_id, "--reason", reason, "--json"],
-                capture_output=True, text=True, timeout=30, cwd=cfg["root"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                cwd=cfg["root"],
                 env=_utf8_env,
             )
             stdout = result.stdout.strip()
@@ -5833,7 +6273,6 @@ def create_app() -> Flask:
             return jsonify({"error": result.stderr or "reject failed"}), 500
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
-
 
     @app.route("/api/genesis/gkps/auto-promote", methods=["POST"])
     def api_genesis_auto_promote():
@@ -5853,10 +6292,14 @@ def create_app() -> Flask:
                 return jsonify({"error": "No promoter configured for this app", "auto_promoted": 0}), 400
         try:
             import subprocess as _sp
+
             _utf8_env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONPATH": cfg["root"]}
             result = _sp.run(
                 [sys.executable, cfg["promoter"], "--auto-promote", "--json"],
-                capture_output=True, text=True, timeout=30, cwd=cfg["root"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                cwd=cfg["root"],
                 env=_utf8_env,
             )
             stdout = result.stdout.strip()
@@ -5867,14 +6310,17 @@ def create_app() -> Flask:
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
 
-
     @app.route("/api/genesis/feedback/priorities", methods=["GET"])
     def api_genesis_feedback_priorities():
         try:
             import subprocess
+
             result = subprocess.run(
                 [sys.executable, "tools/genesis/feedback_collector.py", "--priorities", "--json"],
-                capture_output=True, text=True, timeout=15, cwd=BASE_DIR,
+                capture_output=True,
+                text=True,
+                timeout=15,
+                cwd=BASE_DIR,
             )
             stdout = result.stdout.strip()
             json_start = stdout.find("{")
@@ -5883,8 +6329,6 @@ def create_app() -> Flask:
             return jsonify({"error": "parse_failed"}), 500
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
-
-
 
     # ---- Phase 67: Engineering Review Board ----
     @app.route("/review-board")
@@ -5900,9 +6344,7 @@ def create_app() -> Flask:
         try:
             # Reflex states
             try:
-                reflex_rows = conn.execute(
-                    "SELECT * FROM review_board_reflex_state ORDER BY reflex_name"
-                ).fetchall()
+                reflex_rows = conn.execute("SELECT * FROM review_board_reflex_state ORDER BY reflex_name").fetchall()
                 reflexes = [dict(r) for r in reflex_rows]
             except Exception:
                 reflexes = []
@@ -5910,8 +6352,7 @@ def create_app() -> Flask:
             # Recent findings
             try:
                 finding_rows = conn.execute(
-                    "SELECT * FROM review_board_findings "
-                    "ORDER BY created_at DESC LIMIT 100"
+                    "SELECT * FROM review_board_findings ORDER BY created_at DESC LIMIT 100"
                 ).fetchall()
                 findings = [dict(r) for r in finding_rows]
             except Exception:
@@ -5920,8 +6361,7 @@ def create_app() -> Flask:
             # Severity summary
             try:
                 severity_rows = conn.execute(
-                    "SELECT severity, COUNT(*) as cnt FROM review_board_findings "
-                    "GROUP BY severity"
+                    "SELECT severity, COUNT(*) as cnt FROM review_board_findings GROUP BY severity"
                 ).fetchall()
                 severity_summary = {r[0]: r[1] for r in severity_rows}
             except Exception:
@@ -5930,8 +6370,7 @@ def create_app() -> Flask:
             # Recent audit events
             try:
                 audit_rows = conn.execute(
-                    "SELECT * FROM review_board_audit "
-                    "ORDER BY created_at DESC LIMIT 20"
+                    "SELECT * FROM review_board_audit ORDER BY created_at DESC LIMIT 20"
                 ).fetchall()
                 audit_events = [dict(r) for r in audit_rows]
             except Exception:
@@ -5942,16 +6381,14 @@ def create_app() -> Flask:
             # Health score + trend
             try:
                 latest_health = conn.execute(
-                    "SELECT score, grade, trend FROM review_board_health_history "
-                    "ORDER BY created_at DESC LIMIT 1"
+                    "SELECT score, grade, trend FROM review_board_health_history ORDER BY created_at DESC LIMIT 1"
                 ).fetchone()
                 if latest_health:
                     health_score = latest_health[0]
                     health_grade = latest_health[1]
                     health_trend = latest_health[2]
                 trend_rows = conn.execute(
-                    "SELECT score, created_at FROM review_board_health_history "
-                    "ORDER BY created_at DESC LIMIT 20"
+                    "SELECT score, created_at FROM review_board_health_history ORDER BY created_at DESC LIMIT 20"
                 ).fetchall()
                 health_trend_data = [{"score": r[0], "created_at": r[1]} for r in reversed(list(trend_rows))]
             except Exception:
@@ -5960,6 +6397,7 @@ def create_app() -> Flask:
             # Correlation groups
             try:
                 from tools.review_board.correlator import correlate_findings
+
                 corr = correlate_findings()
                 correlation_groups = corr.get("groups", [])
             except Exception:
@@ -5976,25 +6414,33 @@ def create_app() -> Flask:
             except Exception:
                 pass
 
-            return render_template("review_board.html",
-                                   reflexes=reflexes,
-                                   findings=findings,
-                                   severity_summary=severity_summary,
-                                   total_findings=total_findings,
-                                   audit_events=audit_events,
-                                   health_score=health_score,
-                                   health_grade=health_grade,
-                                   health_trend=health_trend,
-                                   health_trend_data=health_trend_data,
-                                   correlation_groups=correlation_groups,
-                                   remediation_stats=remediation_stats)
+            return render_template(
+                "review_board.html",
+                reflexes=reflexes,
+                findings=findings,
+                severity_summary=severity_summary,
+                total_findings=total_findings,
+                audit_events=audit_events,
+                health_score=health_score,
+                health_grade=health_grade,
+                health_trend=health_trend,
+                health_trend_data=health_trend_data,
+                correlation_groups=correlation_groups,
+                remediation_stats=remediation_stats,
+            )
         except Exception as e:
             import traceback
+
             traceback.print_exc()
-            return render_template("review_board.html",
-                                   reflexes=[], findings=[],
-                                   severity_summary={}, total_findings=0,
-                                   audit_events=[], error=str(e))
+            return render_template(
+                "review_board.html",
+                reflexes=[],
+                findings=[],
+                severity_summary={},
+                total_findings=0,
+                audit_events=[],
+                error=str(e),
+            )
         finally:
             conn.close()
 
@@ -6003,10 +6449,14 @@ def create_app() -> Flask:
         """Review Board JSON status — daemon CLI with DB fallback."""
         try:
             import subprocess as _sp
+
             _utf8_env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
             result = _sp.run(
                 [sys.executable, "tools/review_board/daemon.py", "--status", "--json"],
-                capture_output=True, text=True, timeout=15, cwd=str(BASE_DIR),
+                capture_output=True,
+                text=True,
+                timeout=15,
+                cwd=str(BASE_DIR),
                 env=_utf8_env,
             )
             if result.returncode == 0 and result.stdout.strip():
@@ -6037,14 +6487,12 @@ def create_app() -> Flask:
         try:
             if severity:
                 rows = conn.execute(
-                    "SELECT * FROM review_board_findings "
-                    "WHERE severity = ? ORDER BY created_at DESC LIMIT ?",
+                    "SELECT * FROM review_board_findings WHERE severity = ? ORDER BY created_at DESC LIMIT ?",
                     (severity, limit),
                 ).fetchall()
             else:
                 rows = conn.execute(
-                    "SELECT * FROM review_board_findings "
-                    "ORDER BY created_at DESC LIMIT ?",
+                    "SELECT * FROM review_board_findings ORDER BY created_at DESC LIMIT ?",
                     (limit,),
                 ).fetchall()
             return jsonify({"findings": [dict(r) for r in rows], "count": len(rows)})
@@ -6061,10 +6509,14 @@ def create_app() -> Flask:
             return jsonify({"error": f"Unknown reflex: {name}"}), 400
         try:
             import subprocess as _sp
+
             _utf8_env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
             result = _sp.run(
                 [sys.executable, "tools/review_board/daemon.py", "--reflex", name, "--json"],
-                capture_output=True, text=True, timeout=300, cwd=str(BASE_DIR),
+                capture_output=True,
+                text=True,
+                timeout=300,
+                cwd=str(BASE_DIR),
                 env=_utf8_env,
             )
             # Log to audit trail
@@ -6097,15 +6549,9 @@ def create_app() -> Flask:
         """Get autoresearch summary stats."""
         try:
             conn = get_connection(db_path=str(DB_PATH))
-            total = conn.execute(
-                "SELECT COUNT(*) as cnt FROM experiment_results"
-            ).fetchone()
-            kept = conn.execute(
-                "SELECT COUNT(*) as cnt FROM experiment_results WHERE decision = 'keep'"
-            ).fetchone()
-            domains = conn.execute(
-                "SELECT DISTINCT domain FROM experiment_results"
-            ).fetchall()
+            total = conn.execute("SELECT COUNT(*) as cnt FROM experiment_results").fetchone()
+            kept = conn.execute("SELECT COUNT(*) as cnt FROM experiment_results WHERE decision = 'keep'").fetchone()
+            domains = conn.execute("SELECT DISTINCT domain FROM experiment_results").fetchall()
             best = conn.execute(
                 "SELECT MAX(improvement_pct) as best FROM experiment_results WHERE decision = 'keep'"
             ).fetchone()
@@ -6113,28 +6559,30 @@ def create_app() -> Flask:
 
             total_count = total["cnt"] if total else 0
             kept_count = kept["cnt"] if kept else 0
-            return jsonify({
-                "total_experiments": total_count,
-                "acceptance_rate": round(kept_count / max(total_count, 1) * 100, 1),
-                "active_domains": len(domains) if domains else 0,
-                "best_improvement": round(best["best"] or 0, 2) if best else 0,
-            })
+            return jsonify(
+                {
+                    "total_experiments": total_count,
+                    "acceptance_rate": round(kept_count / max(total_count, 1) * 100, 1),
+                    "active_domains": len(domains) if domains else 0,
+                    "best_improvement": round(best["best"] or 0, 2) if best else 0,
+                }
+            )
         except Exception:
-            return jsonify({
-                "total_experiments": 0,
-                "acceptance_rate": 0,
-                "active_domains": 0,
-                "best_improvement": 0,
-            })
+            return jsonify(
+                {
+                    "total_experiments": 0,
+                    "acceptance_rate": 0,
+                    "active_domains": 0,
+                    "best_improvement": 0,
+                }
+            )
 
     @app.route("/api/autoresearch/experiments", methods=["GET"])
     def api_autoresearch_experiments():
         """Get experiment results list."""
         try:
             conn = get_connection(db_path=str(DB_PATH))
-            rows = conn.execute(
-                "SELECT * FROM experiment_results ORDER BY created_at DESC LIMIT 100"
-            ).fetchall()
+            rows = conn.execute("SELECT * FROM experiment_results ORDER BY created_at DESC LIMIT 100").fetchall()
             conn.close()
             return jsonify({"experiments": [dict(r) for r in rows]})
         except Exception:
@@ -6149,6 +6597,7 @@ def create_app() -> Flask:
         """Return agent persona registry as JSON."""
         try:
             import yaml
+
             personas_path = BASE_DIR / "args" / "chat_personas.yaml"
             if personas_path.exists():
                 with open(personas_path, encoding="utf-8") as f:
@@ -6167,6 +6616,7 @@ def create_app() -> Flask:
         """Handle codebase assistant queries."""
         try:
             from tools.dashboard.assistant_manager import query
+
             data = flask_request.get_json(force=True, silent=True) or {}
             result = query(
                 question=data.get("question", ""),
@@ -6184,6 +6634,7 @@ def create_app() -> Flask:
         """Return codebase indexer status."""
         try:
             from tools.dashboard.assistant_manager import get_status
+
             return jsonify(get_status())
         except Exception as exc:
             return jsonify({"indexed_files": 0, "index_status": "unavailable", "error": str(exc)})
@@ -6193,6 +6644,7 @@ def create_app() -> Flask:
         """Set assistant scope to a specific module."""
         try:
             from tools.dashboard.assistant_config import files_in_scope
+
             data = flask_request.get_json(force=True, silent=True) or {}
             scope = data.get("scope", "")
             files = files_in_scope(scope) if scope else []
@@ -6205,14 +6657,19 @@ def create_app() -> Flask:
         """Return contextual question suggestions for the widget."""
         try:
             from tools.dashboard.assistant_manager import get_suggestions
+
             page_path = flask_request.args.get("page_path", "")
             return jsonify({"suggestions": get_suggestions(page_path)})
         except Exception:
-            return jsonify({"suggestions": [
-                "How is the ICDEV™ codebase structured?",
-                "What does the LLM router do?",
-                "How does the RAG retriever work?",
-            ]})
+            return jsonify(
+                {
+                    "suggestions": [
+                        "How is the ICDEV™ codebase structured?",
+                        "What does the LLM router do?",
+                        "How does the RAG retriever work?",
+                    ]
+                }
+            )
 
     # ── ClawHub Skill Browser (Phase 69) ───────────────────────────────
 
@@ -6223,15 +6680,24 @@ def create_app() -> Flask:
         enabled = os.environ.get("ICDEV_OPENCLAW_ENABLED", "").lower() in ("true", "1", "yes")
         try:
             from tools.marketplace.openclaw_bridge import list_quarantine
+
             result = list_quarantine()
             if result.get("success"):
                 imports = [
-                    (i.get("id",""), i.get("skill_name",""), i.get("author", i.get("openclaw_author","")),
-                     i.get("scan_status",""), i.get("status",""),
-                     i.get("trust_score",0.3), i.get("has_scripts", i.get("has_executable_content", False)),
-                     i.get("review_required",False), str(i.get("created_at",""))[:19],
-                     i.get("rejected_by",""), i.get("rejected_reason",""),
-                     i.get("failed_gates", []))
+                    (
+                        i.get("id", ""),
+                        i.get("skill_name", ""),
+                        i.get("author", i.get("openclaw_author", "")),
+                        i.get("scan_status", ""),
+                        i.get("status", ""),
+                        i.get("trust_score", 0.3),
+                        i.get("has_scripts", i.get("has_executable_content", False)),
+                        i.get("review_required", False),
+                        str(i.get("created_at", ""))[:19],
+                        i.get("rejected_by", ""),
+                        i.get("rejected_reason", ""),
+                        i.get("failed_gates", []),
+                    )
                     for i in result.get("imports", [])
                 ]
         except Exception:
@@ -6247,6 +6713,7 @@ def create_app() -> Flask:
             return jsonify({"error": "Missing 'q' parameter"})
         try:
             from tools.databridge.connectors.clawhub_connector import ClawHubConnector
+
             conn = ClawHubConnector()
             conn.connect({})
             results = conn.search_skills(query, limit=limit)
@@ -6260,6 +6727,7 @@ def create_app() -> Flask:
         """Get skill detail from ClawHub."""
         try:
             from tools.databridge.connectors.clawhub_connector import ClawHubConnector
+
             conn = ClawHubConnector()
             conn.connect({})
             detail = conn.get_skill(slug)
@@ -6279,6 +6747,7 @@ def create_app() -> Flask:
             return jsonify({"error": "Missing 'slug'"})
         try:
             from tools.marketplace.openclaw_bridge import fetch_and_import
+
             result = fetch_and_import(slug, tenant_id, imported_by)
             return jsonify(result)
         except Exception as exc:
@@ -6294,6 +6763,7 @@ def create_app() -> Flask:
             return jsonify({"error": "Missing 'import_id'"})
         try:
             from tools.marketplace.openclaw_bridge import promote_import, _get_db
+
             # Auto-approve review if not yet done (dashboard user = ISSO)
             conn = _get_db()
             try:
@@ -6315,9 +6785,12 @@ def create_app() -> Flask:
             if result.get("success"):
                 try:
                     import subprocess as _sp
+
                     _sp.Popen(
                         [sys.executable, "tools/dx/companion.py", "--sync", "--write", "--json"],
-                        cwd=str(BASE_DIR), stdout=_sp.DEVNULL, stderr=_sp.DEVNULL,
+                        cwd=str(BASE_DIR),
+                        stdout=_sp.DEVNULL,
+                        stderr=_sp.DEVNULL,
                     )
                 except Exception:
                     pass  # Non-blocking — sync failure doesn't fail promotion
@@ -6336,6 +6809,7 @@ def create_app() -> Flask:
             return jsonify({"error": "Missing 'import_id'"})
         try:
             from tools.marketplace.openclaw_bridge import reject_import
+
             return jsonify(reject_import(import_id, rejected_by, reason))
         except Exception as exc:
             return jsonify({"error": str(exc)})
@@ -6351,6 +6825,7 @@ def create_app() -> Flask:
             from tools.marketplace.openclaw_bridge import _get_db
             import re as _re
             import shutil as _shutil
+
             conn = _get_db()
             cur = conn.cursor()
             cur.execute("SELECT skill_name, quarantine_path, status FROM openclaw_imports WHERE id = %s", (import_id,))
@@ -6382,7 +6857,9 @@ def create_app() -> Flask:
                         _shutil.rmtree(dd)
                     _shutil.copytree(sd, dd)
             files = [str(f.relative_to(dest)) for f in dest.rglob("*") if f.is_file()]
-            return jsonify({"success": True, "installed_to": str(dest), "slug": slug, "files": files, "file_count": len(files)})
+            return jsonify(
+                {"success": True, "installed_to": str(dest), "slug": slug, "files": files, "file_count": len(files)}
+            )
         except Exception as exc:
             return jsonify({"error": str(exc)})
 
@@ -6394,6 +6871,7 @@ def create_app() -> Flask:
             return jsonify({"error": "Missing 'import_id'"})
         try:
             from tools.marketplace.openclaw_bridge import _get_db
+
             conn = _get_db()
             cur = conn.cursor()
             cur.execute("SELECT openclaw_slug, skill_version FROM openclaw_imports WHERE id = %s", (import_id,))
@@ -6404,6 +6882,7 @@ def create_app() -> Flask:
             slug = row[0] if not hasattr(row, "keys") else row["openclaw_slug"]
             current_ver = str(row[1] if not hasattr(row, "keys") else row["skill_version"])
             from tools.databridge.connectors.clawhub_connector import ClawHubConnector
+
             c = ClawHubConnector()
             c.connect({})
             detail = c.get_skill(slug)
@@ -6411,11 +6890,15 @@ def create_app() -> Flask:
             if not detail or not detail.get("latestVersion"):
                 return jsonify({"success": True, "update_available": False})
             latest_ver = detail["latestVersion"].get("version", "")
-            return jsonify({
-                "success": True, "current_version": current_ver, "latest_version": latest_ver,
-                "update_available": str(latest_ver) != str(current_ver),
-                "changelog": (detail["latestVersion"].get("changelog", "") or "")[:300],
-            })
+            return jsonify(
+                {
+                    "success": True,
+                    "current_version": current_ver,
+                    "latest_version": latest_ver,
+                    "update_available": str(latest_ver) != str(current_ver),
+                    "changelog": (detail["latestVersion"].get("changelog", "") or "")[:300],
+                }
+            )
         except Exception as exc:
             return jsonify({"error": str(exc)})
 
@@ -6432,12 +6915,28 @@ def create_app() -> Flask:
         for slug in slugs[:10]:  # Cap at 10
             try:
                 from tools.marketplace.openclaw_bridge import fetch_and_import
+
                 r = fetch_and_import(slug, tenant_id, imported_by)
-                results.append({"slug": slug, "success": r.get("success", False), "error": r.get("error"), "import_id": r.get("import_id")})
+                results.append(
+                    {
+                        "slug": slug,
+                        "success": r.get("success", False),
+                        "error": r.get("error"),
+                        "import_id": r.get("import_id"),
+                    }
+                )
             except Exception as exc:
                 results.append({"slug": slug, "success": False, "error": str(exc)})
         succeeded = sum(1 for r in results if r["success"])
-        return jsonify({"success": True, "total": len(results), "succeeded": succeeded, "failed": len(results) - succeeded, "results": results})
+        return jsonify(
+            {
+                "success": True,
+                "total": len(results),
+                "succeeded": succeeded,
+                "failed": len(results) - succeeded,
+                "results": results,
+            }
+        )
 
     @app.route("/api/clawhub/rate", methods=["POST"])
     def api_clawhub_rate():
@@ -6453,6 +6952,7 @@ def create_app() -> Flask:
                 return jsonify({"error": "Rating must be 1-5"})
             bump = {1: -0.05, 2: -0.02, 3: 0.0, 4: 0.03, 5: 0.05}[rating]
             from tools.marketplace.openclaw_bridge import _get_db
+
             conn = _get_db()
             conn.cursor().execute(
                 "UPDATE openclaw_imports SET trust_score = MIN(1.0, MAX(0.0, trust_score + ?)), updated_at = datetime('now') WHERE id = ?",
@@ -6472,6 +6972,7 @@ def create_app() -> Flask:
             return jsonify({"error": "Missing 'import_id'"})
         try:
             from tools.marketplace.openclaw_bridge import _get_db
+
             conn = _get_db()
             cur = conn.cursor()
             cur.execute("SELECT skill_name, quarantine_path FROM openclaw_imports WHERE id = %s", (import_id,))
@@ -6497,15 +6998,19 @@ def create_app() -> Flask:
             if context_dir.is_dir():
                 context_files = [f.name for f in sorted(context_dir.iterdir()) if f.is_file()]
 
-            return jsonify({
-                "success": True,
-                "skill_name": skill_name,
-                "import_id": import_id,
-                "content": content,
-                "content_length": len(content),
-                "pre_enrichment": (Path(qpath) / "_pre_enrichment.md").read_text(encoding="utf-8") if (Path(qpath) / "_pre_enrichment.md").exists() else None,
-                "context_files": context_files,
-            })
+            return jsonify(
+                {
+                    "success": True,
+                    "skill_name": skill_name,
+                    "import_id": import_id,
+                    "content": content,
+                    "content_length": len(content),
+                    "pre_enrichment": (Path(qpath) / "_pre_enrichment.md").read_text(encoding="utf-8")
+                    if (Path(qpath) / "_pre_enrichment.md").exists()
+                    else None,
+                    "context_files": context_files,
+                }
+            )
         except Exception as exc:
             return jsonify({"error": str(exc)})
 
@@ -6522,6 +7027,7 @@ def create_app() -> Flask:
             if trust_score < 0 or trust_score > 1.0:
                 return jsonify({"error": "Trust score must be between 0.0 and 1.0"})
             from tools.marketplace.openclaw_bridge import _get_db
+
             conn = _get_db()
             conn.cursor().execute(
                 "UPDATE openclaw_imports SET trust_score = ?, updated_at = datetime('now') WHERE id = ?",
@@ -6544,6 +7050,7 @@ def create_app() -> Flask:
             return jsonify({"error": "Missing 'import_id'"})
         try:
             from tools.marketplace.openclaw_bridge import revoke_import
+
             return jsonify(revoke_import(import_id, revoked_by, reason))
         except Exception as exc:
             return jsonify({"error": str(exc)})
@@ -6592,34 +7099,40 @@ def create_app() -> Flask:
         return render_template("platform_health.html")
 
     try:
-        from tools.dashboard.platform_health import get_platform_health, get_domain_health, _DOMAIN_SCORERS  # noqa: E402
+        from tools.dashboard.platform_health import get_platform_health, get_domain_health  # noqa: E402
 
         @app.route("/api/platform/health", methods=["GET"])
         def api_platform_health():
             """GET /api/platform/health — Composite platform health across 10 domains."""
             from tools.dashboard.platform_health import _invalidate_cache  # noqa: E402
-            if request.args.get("invalidate") == "1":
+
+            if request.args.get("invalidate") == "1":  # noqa: F821
                 _invalidate_cache()
             result = get_platform_health()
             # Shape domains for API response (omit all_findings for brevity)
-            return jsonify({
-                "composite_score": result["composite_score"],
-                "composite_status": result["composite_status"],
-                "cached_at": result.get("cached_at"),
-                "domains": result["domains"],
-            })
+            return jsonify(
+                {
+                    "composite_score": result["composite_score"],
+                    "composite_status": result["composite_status"],
+                    "cached_at": result.get("cached_at"),
+                    "domains": result["domains"],
+                }
+            )
 
         @app.route("/api/platform/health/<domain>", methods=["GET"])
         def api_platform_health_domain(domain: str):
             """GET /api/platform/health/<domain> — Detailed findings for one domain."""
             detail = get_domain_health(domain)
-            return jsonify({
-                "domain": domain,
-                **detail,
-            })
+            return jsonify(
+                {
+                    "domain": domain,
+                    **detail,
+                }
+            )
 
     except ImportError as _ph_err:
         import logging as _logging
+
         _logging.getLogger(__name__).warning("Platform health module unavailable: %s", _ph_err)
 
     return app

@@ -34,12 +34,14 @@ if str(PROJECT_ROOT) not in sys.path:
 
 try:
     from dotenv import load_dotenv
+
     load_dotenv(PROJECT_ROOT / ".env")
 except ImportError:
     pass
 
 try:
     import yaml
+
     _HAS_YAML = True
 except ImportError:
     _HAS_YAML = False
@@ -111,8 +113,7 @@ def _load_config() -> dict:
     return data.get("sam_gov", {}).get("rate_limit", {})
 
 
-def _log_event(event_type: str, requests_made: int, daily_limit: int,
-               details: str | None = None):
+def _log_event(event_type: str, requests_made: int, daily_limit: int, details: str | None = None):
     """Append to quota events audit trail."""
     try:
         with get_connection() as conn:
@@ -120,8 +121,7 @@ def _log_event(event_type: str, requests_made: int, daily_limit: int,
                 "INSERT INTO sam_gov_quota_events "
                 "(id, event_type, date, requests_made, daily_limit, details, created_at) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (f"qe-{uuid4().hex[:12]}", event_type, _today(),
-                 requests_made, daily_limit, details, _now()),
+                (f"qe-{uuid4().hex[:12]}", event_type, _today(), requests_made, daily_limit, details, _now()),
             )
             conn.commit()
     except Exception:
@@ -129,6 +129,7 @@ def _log_event(event_type: str, requests_made: int, daily_limit: int,
 
 
 # ── Core API ─────────────────────────────────────────────────────────
+
 
 def check_quota(buffer: int | None = None) -> dict:
     """Check if we have remaining quota for today.
@@ -150,8 +151,7 @@ def check_quota(buffer: int | None = None) -> dict:
 
     with get_connection() as conn:
         row = conn.execute(
-            "SELECT requests_made, daily_limit, last_429_reset "
-            "FROM sam_gov_api_quota WHERE date = ?",
+            "SELECT requests_made, daily_limit, last_429_reset FROM sam_gov_api_quota WHERE date = ?",
             (today,),
         ).fetchone()
 
@@ -207,8 +207,7 @@ def increment_quota(count: int = 1) -> dict:
         if row:
             new_count = row["requests_made"] + count
             conn.execute(
-                "UPDATE sam_gov_api_quota SET requests_made = ?, updated_at = ? "
-                "WHERE date = ?",
+                "UPDATE sam_gov_api_quota SET requests_made = ?, updated_at = ? WHERE date = ?",
                 (new_count, now, today),
             )
         else:
@@ -226,11 +225,9 @@ def increment_quota(count: int = 1) -> dict:
 
     # Log warning event if approaching limit
     if remaining <= 100 and remaining > 0:
-        _log_event("quota_warning", new_count, daily_limit,
-                    f"Only {remaining} requests remaining today")
+        _log_event("quota_warning", new_count, daily_limit, f"Only {remaining} requests remaining today")
     elif remaining <= 0:
-        _log_event("quota_exhausted", new_count, daily_limit,
-                    "Daily quota exhausted (with buffer)")
+        _log_event("quota_exhausted", new_count, daily_limit, "Daily quota exhausted (with buffer)")
 
     return {
         "requests_made": new_count,
@@ -239,8 +236,7 @@ def increment_quota(count: int = 1) -> dict:
     }
 
 
-def record_429(response_body: str | None = None,
-               reset_time: str | None = None) -> dict:
+def record_429(response_body: str | None = None, reset_time: str | None = None) -> dict:
     """Record a 429 rate-limit response from SAM.gov.
 
     Parses the response body for the reset time if not provided.
@@ -292,13 +288,11 @@ def record_429(response_body: str | None = None,
                 "(date, requests_made, daily_limit, buffer_remaining, "
                 "last_429_at, last_429_reset, last_429_body, updated_at) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (today, 0, daily_limit, DEFAULT_BUFFER,
-                 now, parsed_reset, response_body, now),
+                (today, 0, daily_limit, DEFAULT_BUFFER, now, parsed_reset, response_body, now),
             )
         conn.commit()
 
-    _log_event("rate_limited_429", requests_made, daily_limit,
-               f"SAM.gov returned 429. Reset: {parsed_reset}")
+    _log_event("rate_limited_429", requests_made, daily_limit, f"SAM.gov returned 429. Reset: {parsed_reset}")
 
     return {
         "status": "recorded",
@@ -323,8 +317,7 @@ def get_status() -> dict:
 
         # Last 7 days of usage
         history = conn.execute(
-            "SELECT date, requests_made, daily_limit, last_429_at "
-            "FROM sam_gov_api_quota ORDER BY date DESC LIMIT 7",
+            "SELECT date, requests_made, daily_limit, last_429_at FROM sam_gov_api_quota ORDER BY date DESC LIMIT 7",
         ).fetchall()
 
         # Recent events
@@ -371,15 +364,13 @@ def get_status() -> dict:
 
 # ── CLI ──────────────────────────────────────────────────────────────
 
+
 def main():
-    parser = argparse.ArgumentParser(
-        description="SAM.gov API Quota Tracker (CUI // SP-CTI)"
-    )
+    parser = argparse.ArgumentParser(description="SAM.gov API Quota Tracker (CUI // SP-CTI)")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--status", action="store_true", help="Show quota status")
     group.add_argument("--check", action="store_true", help="Check if quota allows a request")
-    group.add_argument("--reset", action="store_true",
-                       help="Reset today's counter (for testing)")
+    group.add_argument("--reset", action="store_true", help="Reset today's counter (for testing)")
 
     parser.add_argument("--json", action="store_true", help="JSON output")
     args = parser.parse_args()
@@ -393,7 +384,8 @@ def main():
         today = _today()
         with get_connection() as conn:
             conn.execute(
-                "DELETE FROM sam_gov_api_quota WHERE date = ?", (today,),
+                "DELETE FROM sam_gov_api_quota WHERE date = ?",
+                (today,),
             )
             conn.commit()
         _log_event("manual_reset", 0, DEFAULT_DAILY_LIMIT, "Counter reset manually")

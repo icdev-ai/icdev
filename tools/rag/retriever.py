@@ -44,6 +44,7 @@ def _load_rag_config() -> dict:
         return {}
     try:
         import yaml
+
         with open(config_path, "r") as f:
             return yaml.safe_load(f) or {}
     except Exception:
@@ -54,6 +55,7 @@ def _get_embedding_provider():
     """Get embedding provider."""
     try:
         from tools.llm import get_embedding_provider
+
         return get_embedding_provider()
     except Exception:
         return None
@@ -63,6 +65,7 @@ def _get_embedding_provider():
 # Fusion strategies (D-RAG-19)
 # ---------------------------------------------------------------------------
 
+
 def _compute_bm25_scores(query: str, results: List[SearchResult]) -> List[float]:
     """Compute raw BM25 scores for results (shared by both fusion methods)."""
     if not results:
@@ -70,6 +73,7 @@ def _compute_bm25_scores(query: str, results: List[SearchResult]) -> List[float]
     documents = [r.content for r in results]
     try:
         from rank_bm25 import BM25Okapi
+
         tokenized = [doc.lower().split() for doc in documents]
         bm25 = BM25Okapi(tokenized)
         scores = bm25.get_scores(query.lower().split())
@@ -85,7 +89,9 @@ def _compute_bm25_scores(query: str, results: List[SearchResult]) -> List[float]
 
 
 def _rrf_fusion(
-    query: str, results: List[SearchResult], k: int = 60,
+    query: str,
+    results: List[SearchResult],
+    k: int = 60,
 ) -> List[SearchResult]:
     """Reciprocal Rank Fusion of vector + BM25 rankings (D-RAG-19).
 
@@ -105,7 +111,9 @@ def _rrf_fusion(
     # Rank 2: BM25 keyword scoring
     bm25_scores = _compute_bm25_scores(query, results)
     bm25_sorted_indices = sorted(
-        range(len(results)), key=lambda i: bm25_scores[i], reverse=True,
+        range(len(results)),
+        key=lambda i: bm25_scores[i],
+        reverse=True,
     )
     bm25_ranks: Dict[str, int] = {}
     for rank, idx in enumerate(bm25_sorted_indices):
@@ -122,7 +130,9 @@ def _rrf_fusion(
 
 
 def _weighted_sum_fusion(
-    query: str, results: List[SearchResult], weight: float = 0.3,
+    query: str,
+    results: List[SearchResult],
+    weight: float = 0.3,
 ) -> List[SearchResult]:
     """Legacy weighted-sum BM25 boost (backward compat, pre-D-RAG-19).
 
@@ -181,8 +191,10 @@ def _time_decay_adjust(results: List[SearchResult]) -> List[SearchResult]:
 # Citation validation (D-RAG-21)
 # ---------------------------------------------------------------------------
 
+
 def validate_citations(
-    response_text: str, injected_count: int,
+    response_text: str,
+    injected_count: int,
 ) -> Dict[str, Any]:
     """Validate [SOURCE-N] citation tags in LLM response (D-RAG-21).
 
@@ -193,7 +205,7 @@ def validate_citations(
     Returns:
         Dict with citation_rate, cited/uncited/hallucinated source lists.
     """
-    cited = set(re.findall(r'\[SOURCE-(\d+)\]', response_text))
+    cited = set(re.findall(r"\[SOURCE-(\d+)\]", response_text))
     available = set(str(i + 1) for i in range(injected_count))
     return {
         "cited_count": len(cited & available),
@@ -208,6 +220,7 @@ def validate_citations(
 # RAGRetriever
 # ---------------------------------------------------------------------------
 
+
 class RAGRetriever:
     """Two-stage RAG retriever with RRF fusion and cross-encoder re-ranking."""
 
@@ -221,6 +234,7 @@ class RAGRetriever:
         # SEC: Warn when tenant_id is empty in multi-tenant environment
         if not tenant_id:
             import os
+
             if os.environ.get("ICDEV_MULTI_TENANT", "").lower() in ("true", "1", "yes"):
                 logger.warning(
                     "RAGRetriever initialized without tenant_id in multi-tenant mode. "
@@ -339,6 +353,7 @@ class RAGRetriever:
         if do_rerank and len(results) > final_top_k:
             try:
                 from tools.rag.reranker import rerank_results
+
                 results = rerank_results(
                     query=query,
                     results=results[:vector_top_k],
@@ -356,8 +371,14 @@ class RAGRetriever:
         duration_ms = int(time.time() * 1000) - start_ms
         top_score = results[0].final_score if results else 0.0
         self._log_retrieval(
-            query, len(results), top_score, duration_ms, retrieval_mode, project_id,
-            source_types=source_types, rerank_used=do_rerank,
+            query,
+            len(results),
+            top_score,
+            duration_ms,
+            retrieval_mode,
+            project_id,
+            source_types=source_types,
+            rerank_used=do_rerank,
         )
 
         # Step 7: Record provenance (optional)
@@ -383,6 +404,7 @@ class RAGRetriever:
         # Hash query by default (D282)
         query_hash = hashlib.sha256(query.encode("utf-8")).hexdigest()
         import os
+
         record_content = os.environ.get("ICDEV_CONTENT_TRACING_ENABLED", "").lower() == "true"
         query_text = query if record_content else ""
 
@@ -418,6 +440,7 @@ class RAGRetriever:
         """Record PROV-AGENT provenance for this retrieval (D-RAG-8)."""
         try:
             from tools.observability.provenance.prov_recorder import ProvRecorder
+
             recorder = ProvRecorder()
 
             # Create activity entity for the retrieval
@@ -479,8 +502,7 @@ def main():
             print("No results found.")
             return
         for r in results:
-            print(f"[{r.source_type}:{r.source_id}] (score:{r.final_score:.3f}) "
-                  f"{r.content[:120]}...")
+            print(f"[{r.source_type}:{r.source_id}] (score:{r.final_score:.3f}) {r.content[:120]}...")
 
 
 if __name__ == "__main__":

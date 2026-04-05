@@ -54,9 +54,7 @@ def correlate_findings() -> Dict[str, Any]:
     conn = _get_connection()
     try:
         rows = conn.execute(
-            "SELECT * FROM review_board_findings "
-            "WHERE fix_applied = 0 "
-            "ORDER BY created_at DESC LIMIT 200"
+            "SELECT * FROM review_board_findings WHERE fix_applied = 0 ORDER BY created_at DESC LIMIT 200"
         ).fetchall()
         findings = [dict(r) for r in rows]
     except Exception:
@@ -82,13 +80,17 @@ def correlate_findings() -> Dict[str, Any]:
     # Step 2: Keyword-based correlation for ungrouped findings
     ungrouped = [f for f in findings if f["id"] not in grouped_ids]
     for finding in ungrouped:
-        title_words = set(re.findall(r'\w+', ((finding.get("title") or "") + " " + (finding.get("description") or "")).lower()))
+        title_words = set(
+            re.findall(r"\w+", ((finding.get("title") or "") + " " + (finding.get("description") or "")).lower())
+        )
         best_match = None
         best_overlap = 0
 
         for group_name, group_findings in groups.items():
             for gf in group_findings:
-                gf_words = set(re.findall(r'\w+', ((gf.get("title") or "") + " " + (gf.get("description") or "")).lower()))
+                gf_words = set(
+                    re.findall(r"\w+", ((gf.get("title") or "") + " " + (gf.get("description") or "")).lower())
+                )
                 overlap = len(title_words & gf_words)
                 if overlap > best_overlap and overlap >= 3:
                     best_overlap = overlap
@@ -109,17 +111,24 @@ def correlate_findings() -> Dict[str, Any]:
         worst = min(severities, key=lambda s: severity_order.get(s, 5))
         personas = list(set(f.get("reflex_name", "") for f in group_findings))
 
-        result_groups.append({
-            "root_cause": group_name,
-            "severity": worst,
-            "finding_count": len(group_findings),
-            "personas_involved": personas,
-            "findings": [
-                {"id": f["id"], "severity": f["severity"], "reflex": f["reflex_name"],
-                 "title": f["title"], "category": f["category"]}
-                for f in group_findings
-            ],
-        })
+        result_groups.append(
+            {
+                "root_cause": group_name,
+                "severity": worst,
+                "finding_count": len(group_findings),
+                "personas_involved": personas,
+                "findings": [
+                    {
+                        "id": f["id"],
+                        "severity": f["severity"],
+                        "reflex": f["reflex_name"],
+                        "title": f["title"],
+                        "category": f["category"],
+                    }
+                    for f in group_findings
+                ],
+            }
+        )
 
     # Sort by severity then count
     result_groups.sort(key=lambda g: (severity_order.get(g["severity"], 5), -g["finding_count"]))
@@ -145,8 +154,10 @@ def main():
             print(json.dumps(result, indent=2))
         else:
             for g in result["groups"]:
-                print(f"\n  [{g['severity'].upper()}] Root cause: {g['root_cause']} "
-                      f"({g['finding_count']} findings across {', '.join(g['personas_involved'])})")
+                print(
+                    f"\n  [{g['severity'].upper()}] Root cause: {g['root_cause']} "
+                    f"({g['finding_count']} findings across {', '.join(g['personas_involved'])})"
+                )
                 for f in g["findings"][:5]:
                     print(f"    - [{f['severity']}] {f['reflex']}: {f['title']}")
             print(f"\n  Grouped: {result['total_grouped']}, Ungrouped: {result['ungrouped']}")

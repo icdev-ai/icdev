@@ -18,6 +18,7 @@ Architecture Decisions:
   D-GSD-2: Stub detection is advisory-only — never modifies source files (D110)
   D-GSD-3: Results stored in append-only stub_detection_results table (D6)
 """
+
 from __future__ import annotations
 
 import argparse
@@ -34,6 +35,7 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import get_connection  # noqa: E402
+
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 # ── Verification Levels ──────────────────────────────────────────────────────
@@ -60,8 +62,7 @@ STUB_PATTERNS = {
         # Empty class body
         (r"class\s+\w+.*:\s*\n\s+pass\s*$", "empty class body"),
         # return None / return {} / return [] without logic
-        (r"def\s+\w+\s*\([^)]*\)\s*(?:->.*)?:\s*\n\s+return\s+(None|\{\}|\[\])\s*$",
-         "trivial return stub"),
+        (r"def\s+\w+\s*\([^)]*\)\s*(?:->.*)?:\s*\n\s+return\s+(None|\{\}|\[\])\s*$", "trivial return stub"),
         # placeholder string returns
         (r'return\s+["\']placeholder["\']', "placeholder string return"),
         (r'return\s+["\']TODO["\']', "TODO string return"),
@@ -222,11 +223,13 @@ def check_substantive(file_path: Path) -> dict:
     for pattern, description in patterns:
         for i, line in enumerate(lines, 1):
             if re.search(pattern, line, re.IGNORECASE):
-                result["stubs_found"].append({
-                    "line": i,
-                    "pattern": description,
-                    "text": line.strip()[:120],
-                })
+                result["stubs_found"].append(
+                    {
+                        "line": i,
+                        "pattern": description,
+                        "text": line.strip()[:120],
+                    }
+                )
 
     # Python AST-based deeper analysis
     if language == "python":
@@ -236,9 +239,7 @@ def check_substantive(file_path: Path) -> dict:
 
     # Calculate stub ratio for Python (AST gives function count)
     if result["total_functions"] > 0:
-        result["stub_ratio"] = round(
-            result["stub_count"] / result["total_functions"], 2
-        )
+        result["stub_ratio"] = round(result["stub_count"] / result["total_functions"], 2)
 
     # Threshold: if >50% of functions are stubs, fail
     if result["total_functions"] > 0 and result["stub_ratio"] > 0.5:
@@ -248,9 +249,7 @@ def check_substantive(file_path: Path) -> dict:
             f"({result['stub_count']}/{result['total_functions']} functions)"
         )
     elif result["stub_count"] > 0:
-        result["details"].append(
-            f"Found {result['stub_count']} stub(s) — advisory"
-        )
+        result["details"].append(f"Found {result['stub_count']} stub(s) — advisory")
     else:
         result["details"].append("No stubs detected")
 
@@ -283,33 +282,39 @@ def _ast_stub_analysis(content: str, result: dict) -> dict:
 
             # pass-only
             if isinstance(stmt, ast.Pass):
-                result["stubs_found"].append({
-                    "line": func.lineno,
-                    "pattern": "pass-only function (AST)",
-                    "text": f"def {func.name}(...): pass",
-                })
+                result["stubs_found"].append(
+                    {
+                        "line": func.lineno,
+                        "pattern": "pass-only function (AST)",
+                        "text": f"def {func.name}(...): pass",
+                    }
+                )
 
             # Ellipsis-only
-            elif isinstance(stmt, ast.Expr) and isinstance(
-                getattr(stmt, "value", None), ast.Constant
-            ) and stmt.value.value is ...:
-                result["stubs_found"].append({
-                    "line": func.lineno,
-                    "pattern": "ellipsis-only function (AST)",
-                    "text": f"def {func.name}(...): ...",
-                })
+            elif (
+                isinstance(stmt, ast.Expr)
+                and isinstance(getattr(stmt, "value", None), ast.Constant)
+                and stmt.value.value is ...
+            ):
+                result["stubs_found"].append(
+                    {
+                        "line": func.lineno,
+                        "pattern": "ellipsis-only function (AST)",
+                        "text": f"def {func.name}(...): ...",
+                    }
+                )
 
             # raise NotImplementedError
-            elif isinstance(stmt, ast.Raise) and isinstance(
-                getattr(stmt, "exc", None), ast.Call
-            ):
+            elif isinstance(stmt, ast.Raise) and isinstance(getattr(stmt, "exc", None), ast.Call):
                 exc = stmt.exc
                 if isinstance(exc.func, ast.Name) and exc.func.id == "NotImplementedError":
-                    result["stubs_found"].append({
-                        "line": func.lineno,
-                        "pattern": "NotImplementedError (AST)",
-                        "text": f"def {func.name}(...): raise NotImplementedError",
-                    })
+                    result["stubs_found"].append(
+                        {
+                            "line": func.lineno,
+                            "pattern": "NotImplementedError (AST)",
+                            "text": f"def {func.name}(...): raise NotImplementedError",
+                        }
+                    )
 
     # Deduplicate stubs by line number
     seen_lines = set()
@@ -377,9 +382,7 @@ def check_wired(file_path: Path, project_dir: Path = None) -> dict:
 
     # Check if file is imported by other files (orphan detection)
     if project_dir and project_dir.is_dir():
-        result["connections"]["is_imported"] = _check_imported_by_others(
-            file_path, project_dir, language
-        )
+        result["connections"]["is_imported"] = _check_imported_by_others(file_path, project_dir, language)
 
     # Calculate connection score
     conns = result["connections"]
@@ -394,16 +397,13 @@ def check_wired(file_path: Path, project_dir: Path = None) -> dict:
         result["details"].append("File has no imports — likely disconnected")
     else:
         result["details"].append(
-            f"Connection score: {result['connection_score']:.0%} "
-            f"({connected}/{total_checks} checks passed)"
+            f"Connection score: {result['connection_score']:.0%} ({connected}/{total_checks} checks passed)"
         )
 
     return result
 
 
-def _check_imported_by_others(
-    file_path: Path, project_dir: Path, language: str
-) -> bool:
+def _check_imported_by_others(file_path: Path, project_dir: Path, language: str) -> bool:
     """Check if the file is imported/referenced by other files."""
     stem = file_path.stem
     if stem == "__init__":
@@ -435,9 +435,16 @@ def _check_imported_by_others(
             continue
         if candidate.suffix.lower() not in ext_set:
             continue
-        if any(p in str(candidate) for p in [
-            "__pycache__", "node_modules", ".git", ".tmp", "venv",
-        ]):
+        if any(
+            p in str(candidate)
+            for p in [
+                "__pycache__",
+                "node_modules",
+                ".git",
+                ".tmp",
+                "venv",
+            ]
+        ):
             continue
 
         count += 1
@@ -470,6 +477,7 @@ def check_functional(file_path: Path) -> dict:
 
     if ext == ".py":
         import py_compile
+
         try:
             py_compile.compile(str(file_path), doraise=True)
             result["details"].append("Python compilation successful")
@@ -477,9 +485,7 @@ def check_functional(file_path: Path) -> dict:
             result["passed"] = False
             result["details"].append(f"Compilation error: {e}")
     else:
-        result["details"].append(
-            f"Functional check for {ext} deferred to language-specific toolchain"
-        )
+        result["details"].append(f"Functional check for {ext} deferred to language-specific toolchain")
 
     return result
 
@@ -503,7 +509,7 @@ def verify_file(
         "failed_at_level": None,
     }
 
-    target_levels = LEVELS[:LEVELS.index(max_level) + 1]
+    target_levels = LEVELS[: LEVELS.index(max_level) + 1]
 
     for level in target_levels:
         if level == LEVEL_EXISTS:
@@ -551,8 +557,16 @@ def verify_directory(
     }
 
     skip_dirs = {
-        "__pycache__", "node_modules", ".git", ".tmp", "venv",
-        ".venv", "dist", "build", ".tox", ".pytest_cache",
+        "__pycache__",
+        "node_modules",
+        ".git",
+        ".tmp",
+        "venv",
+        ".venv",
+        "dist",
+        "build",
+        ".tox",
+        ".pytest_cache",
     }
 
     for file_path in sorted(project_dir.rglob("*")):
@@ -570,13 +584,13 @@ def verify_directory(
             results["files_passed"] += 1
         else:
             results["files_failed"] += 1
-            results["failures"].append({
-                "file": str(file_path),
-                "failed_at": file_result["failed_at_level"],
-                "details": file_result["levels"].get(
-                    file_result["failed_at_level"], {}
-                ).get("details", []),
-            })
+            results["failures"].append(
+                {
+                    "file": str(file_path),
+                    "failed_at": file_result["failed_at_level"],
+                    "details": file_result["levels"].get(file_result["failed_at_level"], {}).get("details", []),
+                }
+            )
 
         # Count stubs
         sub_result = file_result["levels"].get(LEVEL_SUBSTANTIVE, {})
@@ -641,66 +655,42 @@ def evaluate_gate(results: dict) -> dict:
     exists_failures = results["level_summary"].get(LEVEL_EXISTS, {}).get("failed", 0)
     if exists_failures > 0:
         gate["passed"] = False
-        gate["blocking_failures"].append(
-            f"{exists_failures} file(s) failed EXISTS verification"
-        )
+        gate["blocking_failures"].append(f"{exists_failures} file(s) failed EXISTS verification")
 
     # Blocking: any file >50% stubs (fails SUBSTANTIVE)
     sub_failures = results["level_summary"].get(LEVEL_SUBSTANTIVE, {}).get("failed", 0)
     if sub_failures > 0:
         gate["passed"] = False
-        gate["blocking_failures"].append(
-            f"{sub_failures} file(s) failed SUBSTANTIVE verification (>50% stubs)"
-        )
+        gate["blocking_failures"].append(f"{sub_failures} file(s) failed SUBSTANTIVE verification (>50% stubs)")
 
     # Warning: stubs found (even if under threshold)
     if results["stub_total"] > 0:
-        gate["warnings"].append(
-            f"{results['stub_total']} total stub(s) detected across project"
-        )
+        gate["warnings"].append(f"{results['stub_total']} total stub(s) detected across project")
 
     # Warning: wiring failures
     wired_failures = results["level_summary"].get(LEVEL_WIRED, {}).get("failed", 0)
     if wired_failures > 0:
-        gate["warnings"].append(
-            f"{wired_failures} file(s) failed WIRED verification (disconnected)"
-        )
+        gate["warnings"].append(f"{wired_failures} file(s) failed WIRED verification (disconnected)")
 
     return gate
 
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
 def main():
-    parser = argparse.ArgumentParser(
-        description="4-Level Verification & Stub Detection (GSD-adapted)"
-    )
-    parser.add_argument(
-        "--file", help="Verify a single file"
-    )
-    parser.add_argument(
-        "--project-dir", help="Verify all files in a directory"
-    )
-    parser.add_argument(
-        "--project-id", default="unknown", help="Project ID for DB storage"
-    )
+    parser = argparse.ArgumentParser(description="4-Level Verification & Stub Detection (GSD-adapted)")
+    parser.add_argument("--file", help="Verify a single file")
+    parser.add_argument("--project-dir", help="Verify all files in a directory")
+    parser.add_argument("--project-id", default="unknown", help="Project ID for DB storage")
     parser.add_argument(
         "--max-level",
         choices=LEVELS,
         default=LEVEL_FUNCTIONAL,
         help="Maximum verification level to check",
     )
-    parser.add_argument(
-        "--store", action="store_true", help="Store results in database"
-    )
-    parser.add_argument(
-        "--gate", action="store_true", help="Evaluate security gate"
-    )
-    parser.add_argument(
-        "--json", action="store_true", dest="json_output", help="JSON output"
-    )
-    parser.add_argument(
-        "--human", action="store_true", help="Human-readable output"
-    )
+    parser.add_argument("--store", action="store_true", help="Store results in database")
+    parser.add_argument("--gate", action="store_true", help="Evaluate security gate")
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
+    parser.add_argument("--human", action="store_true", help="Human-readable output")
     args = parser.parse_args()
 
     if args.file:
@@ -715,10 +705,7 @@ def main():
                     "files_checked": 1,
                     "files_passed": 1 if result["overall_passed"] else 0,
                     "files_failed": 0 if result["overall_passed"] else 1,
-                    "stub_total": sum(
-                        r.get("stub_count", 0)
-                        for r in result["levels"].values()
-                    ),
+                    "stub_total": sum(r.get("stub_count", 0) for r in result["levels"].values()),
                     "level_summary": {
                         level: {
                             "passed": 1 if check["passed"] else 0,

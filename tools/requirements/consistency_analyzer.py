@@ -31,6 +31,7 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 # Graceful audit import (air-gap safe)
 try:
     from tools.audit.audit_logger import log_event
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
@@ -43,9 +44,7 @@ def _get_connection(db_path=None):
     """Get database connection with dict-like row access."""
     path = db_path or DB_PATH
     if not path.exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py"
-        )
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
     conn = get_connection(db_path=str(path))
     return conn
 
@@ -59,13 +58,15 @@ def _generate_id(prefix="cst"):
 # Data structures
 # ---------------------------------------------------------------------------
 
+
 @dataclasses.dataclass
 class ConsistencyResult:
     """Result of a single consistency check."""
+
     check_id: str
     source_section: str
     target_section: str
-    status: str       # "consistent", "inconsistent", "warn"
+    status: str  # "consistent", "inconsistent", "warn"
     message: str
     suggestion: str = ""
 
@@ -76,6 +77,7 @@ class ConsistencyResult:
 # ---------------------------------------------------------------------------
 # Markdown parsing (shared logic with spec_quality_checker)
 # ---------------------------------------------------------------------------
+
 
 def _parse_spec_sections(spec_path: Path) -> dict:
     """Parse markdown by ``## Header`` into a dict.
@@ -125,22 +127,57 @@ def _extract_keywords(text: str, min_length: int = 4) -> set:
     words = re.findall(r"\b[a-zA-Z_][\w-]*\b", text.lower())
     # Filter stop words and short words
     stop_words = {
-        "that", "this", "with", "from", "have", "will", "been", "they",
-        "their", "which", "when", "where", "what", "there", "about",
-        "into", "more", "other", "some", "than", "them", "then", "these",
-        "could", "would", "should", "each", "make", "like", "just",
-        "over", "such", "take", "only", "come", "also", "after", "before",
-        "want", "because", "does", "must", "shall",
+        "that",
+        "this",
+        "with",
+        "from",
+        "have",
+        "will",
+        "been",
+        "they",
+        "their",
+        "which",
+        "when",
+        "where",
+        "what",
+        "there",
+        "about",
+        "into",
+        "more",
+        "other",
+        "some",
+        "than",
+        "them",
+        "then",
+        "these",
+        "could",
+        "would",
+        "should",
+        "each",
+        "make",
+        "like",
+        "just",
+        "over",
+        "such",
+        "take",
+        "only",
+        "come",
+        "also",
+        "after",
+        "before",
+        "want",
+        "because",
+        "does",
+        "must",
+        "shall",
     }
-    return {
-        w for w in words
-        if len(w) >= min_length and w not in stop_words
-    }
+    return {w for w in words if len(w) >= min_length and w not in stop_words}
 
 
 # ---------------------------------------------------------------------------
 # Consistency check functions
 # ---------------------------------------------------------------------------
+
 
 def _check_acceptance_vs_testing(sections: dict) -> list:
     """Check that each acceptance criterion has a corresponding test mention."""
@@ -151,23 +188,27 @@ def _check_acceptance_vs_testing(sections: dict) -> list:
 
     if not ac_content.strip() or not ts_content.strip():
         if not ac_content.strip():
-            results.append(ConsistencyResult(
-                check_id=_generate_id(),
-                source_section="acceptance criteria",
-                target_section="testing strategy",
-                status="warn",
-                message="Acceptance criteria section is missing; cannot cross-check against testing strategy.",
-                suggestion="Add '## Acceptance Criteria' section.",
-            ))
+            results.append(
+                ConsistencyResult(
+                    check_id=_generate_id(),
+                    source_section="acceptance criteria",
+                    target_section="testing strategy",
+                    status="warn",
+                    message="Acceptance criteria section is missing; cannot cross-check against testing strategy.",
+                    suggestion="Add '## Acceptance Criteria' section.",
+                )
+            )
         if not ts_content.strip():
-            results.append(ConsistencyResult(
-                check_id=_generate_id(),
-                source_section="testing strategy",
-                target_section="acceptance criteria",
-                status="warn",
-                message="Testing strategy section is missing; cannot verify test coverage for acceptance criteria.",
-                suggestion="Add '## Testing Strategy' section.",
-            ))
+            results.append(
+                ConsistencyResult(
+                    check_id=_generate_id(),
+                    source_section="testing strategy",
+                    target_section="acceptance criteria",
+                    status="warn",
+                    message="Testing strategy section is missing; cannot verify test coverage for acceptance criteria.",
+                    suggestion="Add '## Testing Strategy' section.",
+                )
+            )
         return results
 
     ac_items = _extract_list_items(ac_content)
@@ -181,25 +222,29 @@ def _check_acceptance_vs_testing(sections: dict) -> list:
             untested.append(item[:60])
 
     if untested:
-        results.append(ConsistencyResult(
-            check_id=_generate_id(),
-            source_section="acceptance criteria",
-            target_section="testing strategy",
-            status="warn",
-            message=(
-                f"{len(untested)} acceptance criteria have no apparent corresponding test mention: "
-                f"'{untested[0]}'{'...' if len(untested) > 1 else ''}."
-            ),
-            suggestion="Ensure testing strategy covers each acceptance criterion explicitly.",
-        ))
+        results.append(
+            ConsistencyResult(
+                check_id=_generate_id(),
+                source_section="acceptance criteria",
+                target_section="testing strategy",
+                status="warn",
+                message=(
+                    f"{len(untested)} acceptance criteria have no apparent corresponding test mention: "
+                    f"'{untested[0]}'{'...' if len(untested) > 1 else ''}."
+                ),
+                suggestion="Ensure testing strategy covers each acceptance criterion explicitly.",
+            )
+        )
     else:
-        results.append(ConsistencyResult(
-            check_id=_generate_id(),
-            source_section="acceptance criteria",
-            target_section="testing strategy",
-            status="consistent",
-            message=f"All {len(ac_items)} acceptance criteria appear referenced in testing strategy.",
-        ))
+        results.append(
+            ConsistencyResult(
+                check_id=_generate_id(),
+                source_section="acceptance criteria",
+                target_section="testing strategy",
+                status="consistent",
+                message=f"All {len(ac_items)} acceptance criteria appear referenced in testing strategy.",
+            )
+        )
 
     return results
 
@@ -213,23 +258,27 @@ def _check_phases_vs_tasks(sections: dict) -> list:
 
     if not plan_content.strip() or not tasks_content.strip():
         if not plan_content.strip():
-            results.append(ConsistencyResult(
-                check_id=_generate_id(),
-                source_section="implementation plan",
-                target_section="step by step tasks",
-                status="warn",
-                message="Implementation plan section is missing; cannot verify task coverage.",
-                suggestion="Add '## Implementation Plan' with phased approach.",
-            ))
+            results.append(
+                ConsistencyResult(
+                    check_id=_generate_id(),
+                    source_section="implementation plan",
+                    target_section="step by step tasks",
+                    status="warn",
+                    message="Implementation plan section is missing; cannot verify task coverage.",
+                    suggestion="Add '## Implementation Plan' with phased approach.",
+                )
+            )
         if not tasks_content.strip():
-            results.append(ConsistencyResult(
-                check_id=_generate_id(),
-                source_section="step by step tasks",
-                target_section="implementation plan",
-                status="warn",
-                message="Step by step tasks section is missing; cannot verify phase coverage.",
-                suggestion="Add '## Step by Step Tasks' section.",
-            ))
+            results.append(
+                ConsistencyResult(
+                    check_id=_generate_id(),
+                    source_section="step by step tasks",
+                    target_section="implementation plan",
+                    status="warn",
+                    message="Step by step tasks section is missing; cannot verify phase coverage.",
+                    suggestion="Add '## Step by Step Tasks' section.",
+                )
+            )
         return results
 
     # Extract phases: ### Phase N: Name  or  N. Phase Name
@@ -242,14 +291,16 @@ def _check_phases_vs_tasks(sections: dict) -> list:
         phases = numbered.findall(plan_content)
 
     if not phases:
-        results.append(ConsistencyResult(
-            check_id=_generate_id(),
-            source_section="implementation plan",
-            target_section="step by step tasks",
-            status="warn",
-            message="Could not extract phases from implementation plan.",
-            suggestion="Use '### Phase N: Name' format.",
-        ))
+        results.append(
+            ConsistencyResult(
+                check_id=_generate_id(),
+                source_section="implementation plan",
+                target_section="step by step tasks",
+                status="warn",
+                message="Could not extract phases from implementation plan.",
+                suggestion="Use '### Phase N: Name' format.",
+            )
+        )
         return results
 
     tasks_lower = tasks_content.lower()
@@ -271,22 +322,26 @@ def _check_phases_vs_tasks(sections: dict) -> list:
             uncovered.append(f"Phase {num}: {name_clean}")
 
     if uncovered:
-        results.append(ConsistencyResult(
-            check_id=_generate_id(),
-            source_section="implementation plan",
-            target_section="step by step tasks",
-            status="inconsistent",
-            message=f"{len(uncovered)} phase(s) missing from tasks: {'; '.join(uncovered[:3])}.",
-            suggestion="Add task entries for each implementation phase.",
-        ))
+        results.append(
+            ConsistencyResult(
+                check_id=_generate_id(),
+                source_section="implementation plan",
+                target_section="step by step tasks",
+                status="inconsistent",
+                message=f"{len(uncovered)} phase(s) missing from tasks: {'; '.join(uncovered[:3])}.",
+                suggestion="Add task entries for each implementation phase.",
+            )
+        )
     else:
-        results.append(ConsistencyResult(
-            check_id=_generate_id(),
-            source_section="implementation plan",
-            target_section="step by step tasks",
-            status="consistent",
-            message=f"All {len(phases)} phases have corresponding tasks.",
-        ))
+        results.append(
+            ConsistencyResult(
+                check_id=_generate_id(),
+                source_section="implementation plan",
+                target_section="step by step tasks",
+                status="consistent",
+                message=f"All {len(phases)} phases have corresponding tasks.",
+            )
+        )
 
     return results
 
@@ -326,35 +381,41 @@ def _check_files_exist(sections: dict, spec_base: Path) -> list:
     for fpath in existing_paths:
         resolved = BASE_DIR / fpath.lstrip("/")
         if resolved.exists():
-            results.append(ConsistencyResult(
-                check_id=_generate_id(),
-                source_section="relevant files",
-                target_section="filesystem",
-                status="consistent",
-                message=f"Referenced file exists: {fpath}",
-            ))
+            results.append(
+                ConsistencyResult(
+                    check_id=_generate_id(),
+                    source_section="relevant files",
+                    target_section="filesystem",
+                    status="consistent",
+                    message=f"Referenced file exists: {fpath}",
+                )
+            )
         else:
-            results.append(ConsistencyResult(
-                check_id=_generate_id(),
-                source_section="relevant files",
-                target_section="filesystem",
-                status="inconsistent",
-                message=f"Referenced file does not exist: {fpath}",
-                suggestion="Verify path or move to 'New Files' subsection if it will be created.",
-            ))
+            results.append(
+                ConsistencyResult(
+                    check_id=_generate_id(),
+                    source_section="relevant files",
+                    target_section="filesystem",
+                    status="inconsistent",
+                    message=f"Referenced file does not exist: {fpath}",
+                    suggestion="Verify path or move to 'New Files' subsection if it will be created.",
+                )
+            )
 
     # Warn about new files that already exist
     for fpath in new_paths:
         resolved = BASE_DIR / fpath.lstrip("/")
         if resolved.exists():
-            results.append(ConsistencyResult(
-                check_id=_generate_id(),
-                source_section="relevant files (new)",
-                target_section="filesystem",
-                status="warn",
-                message=f"File listed as 'new' already exists: {fpath}",
-                suggestion="Move to existing files section or verify this is intentional.",
-            ))
+            results.append(
+                ConsistencyResult(
+                    check_id=_generate_id(),
+                    source_section="relevant files (new)",
+                    target_section="filesystem",
+                    status="warn",
+                    message=f"File listed as 'new' already exists: {fpath}",
+                    suggestion="Move to existing files section or verify this is intentional.",
+                )
+            )
 
     return results
 
@@ -378,29 +439,33 @@ def _check_nist_vs_ato(sections: dict) -> list:
     nist_content.lower() if nist_content else ""
 
     if nist_controls and re.search(r"\bnone\b", ato_lower):
-        results.append(ConsistencyResult(
-            check_id=_generate_id(),
-            source_section="nist 800-53 controls",
-            target_section="ato impact assessment",
-            status="inconsistent",
-            message=(
-                f"NIST section lists controls ({', '.join(sorted(nist_controls)[:5])}) "
-                f"but ATO section indicates 'None'."
-            ),
-            suggestion="Reconcile: either remove controls from NIST section or update ATO impact.",
-        ))
+        results.append(
+            ConsistencyResult(
+                check_id=_generate_id(),
+                source_section="nist 800-53 controls",
+                target_section="ato impact assessment",
+                status="inconsistent",
+                message=(
+                    f"NIST section lists controls ({', '.join(sorted(nist_controls)[:5])}) "
+                    f"but ATO section indicates 'None'."
+                ),
+                suggestion="Reconcile: either remove controls from NIST section or update ATO impact.",
+            )
+        )
     elif not nist_controls and ato_controls:
-        results.append(ConsistencyResult(
-            check_id=_generate_id(),
-            source_section="ato impact assessment",
-            target_section="nist 800-53 controls",
-            status="warn",
-            message=(
-                f"ATO section references controls ({', '.join(sorted(ato_controls)[:5])}) "
-                f"but NIST section is empty."
-            ),
-            suggestion="Add referenced controls to the NIST 800-53 Controls section.",
-        ))
+        results.append(
+            ConsistencyResult(
+                check_id=_generate_id(),
+                source_section="ato impact assessment",
+                target_section="nist 800-53 controls",
+                status="warn",
+                message=(
+                    f"ATO section references controls ({', '.join(sorted(ato_controls)[:5])}) "
+                    f"but NIST section is empty."
+                ),
+                suggestion="Add referenced controls to the NIST 800-53 Controls section.",
+            )
+        )
     elif nist_controls and ato_controls:
         # Check for controls in one but not the other
         only_nist = nist_controls - ato_controls
@@ -411,31 +476,37 @@ def _check_nist_vs_ato(sections: dict) -> list:
                 parts.append(f"in NIST only: {', '.join(sorted(only_nist)[:3])}")
             if only_ato:
                 parts.append(f"in ATO only: {', '.join(sorted(only_ato)[:3])}")
-            results.append(ConsistencyResult(
+            results.append(
+                ConsistencyResult(
+                    check_id=_generate_id(),
+                    source_section="nist 800-53 controls",
+                    target_section="ato impact assessment",
+                    status="warn",
+                    message=f"Control ID mismatch between sections: {'; '.join(parts)}.",
+                    suggestion="Ensure both sections reference the same set of applicable controls.",
+                )
+            )
+        else:
+            results.append(
+                ConsistencyResult(
+                    check_id=_generate_id(),
+                    source_section="nist 800-53 controls",
+                    target_section="ato impact assessment",
+                    status="consistent",
+                    message=f"NIST and ATO sections reference consistent controls ({len(nist_controls)}).",
+                )
+            )
+    elif nist_controls and not ato_content.strip():
+        results.append(
+            ConsistencyResult(
                 check_id=_generate_id(),
                 source_section="nist 800-53 controls",
                 target_section="ato impact assessment",
                 status="warn",
-                message=f"Control ID mismatch between sections: {'; '.join(parts)}.",
-                suggestion="Ensure both sections reference the same set of applicable controls.",
-            ))
-        else:
-            results.append(ConsistencyResult(
-                check_id=_generate_id(),
-                source_section="nist 800-53 controls",
-                target_section="ato impact assessment",
-                status="consistent",
-                message=f"NIST and ATO sections reference consistent controls ({len(nist_controls)}).",
-            ))
-    elif nist_controls and not ato_content.strip():
-        results.append(ConsistencyResult(
-            check_id=_generate_id(),
-            source_section="nist 800-53 controls",
-            target_section="ato impact assessment",
-            status="warn",
-            message="NIST controls listed but no ATO Impact Assessment section found.",
-            suggestion="Add '## ATO Impact Assessment' with boundary tier and SSP impact.",
-        ))
+                message="NIST controls listed but no ATO Impact Assessment section found.",
+                suggestion="Add '## ATO Impact Assessment' with boundary tier and SSP impact.",
+            )
+        )
 
     return results
 
@@ -453,14 +524,16 @@ def _check_user_story_vs_acceptance(sections: dict) -> list:
     # Extract "I want" clause
     want_match = re.search(r"i want\s+(.+?)(?:so that|$)", us_content, re.IGNORECASE | re.DOTALL)
     if not want_match:
-        results.append(ConsistencyResult(
-            check_id=_generate_id(),
-            source_section="user story",
-            target_section="acceptance criteria",
-            status="warn",
-            message="Could not extract 'I want' clause from user story.",
-            suggestion="Use format: As a <role> I want <goal> So that <benefit>.",
-        ))
+        results.append(
+            ConsistencyResult(
+                check_id=_generate_id(),
+                source_section="user story",
+                target_section="acceptance criteria",
+                status="warn",
+                message="Could not extract 'I want' clause from user story.",
+                suggestion="Use format: As a <role> I want <goal> So that <benefit>.",
+            )
+        )
         return results
 
     want_text = want_match.group(1).strip()
@@ -474,28 +547,29 @@ def _check_user_story_vs_acceptance(sections: dict) -> list:
     matched = [kw for kw in want_keywords if kw in ac_lower]
 
     if matched:
-        results.append(ConsistencyResult(
-            check_id=_generate_id(),
-            source_section="user story",
-            target_section="acceptance criteria",
-            status="consistent",
-            message=(
-                f"User story keywords found in acceptance criteria: "
-                f"{', '.join(sorted(matched)[:5])}."
-            ),
-        ))
+        results.append(
+            ConsistencyResult(
+                check_id=_generate_id(),
+                source_section="user story",
+                target_section="acceptance criteria",
+                status="consistent",
+                message=(f"User story keywords found in acceptance criteria: {', '.join(sorted(matched)[:5])}."),
+            )
+        )
     else:
-        results.append(ConsistencyResult(
-            check_id=_generate_id(),
-            source_section="user story",
-            target_section="acceptance criteria",
-            status="warn",
-            message=(
-                f"User story 'I want' keywords ({', '.join(sorted(want_keywords)[:5])}) "
-                f"not found in acceptance criteria."
-            ),
-            suggestion="Ensure acceptance criteria validate the user story goal.",
-        ))
+        results.append(
+            ConsistencyResult(
+                check_id=_generate_id(),
+                source_section="user story",
+                target_section="acceptance criteria",
+                status="warn",
+                message=(
+                    f"User story 'I want' keywords ({', '.join(sorted(want_keywords)[:5])}) "
+                    f"not found in acceptance criteria."
+                ),
+                suggestion="Ensure acceptance criteria validate the user story goal.",
+            )
+        )
 
     return results
 
@@ -529,25 +603,29 @@ def _check_spec_directory_consistency(spec_path: Path) -> list:
                 similarity = len(overlap) / max(len(total_unique), 1)
 
                 if similarity < 0.2:
-                    results.append(ConsistencyResult(
-                        check_id=_generate_id(),
-                        source_section="plan.md",
-                        target_section="implementation plan",
-                        status="inconsistent",
-                        message=(
-                            f"Sibling plan.md and spec Implementation Plan section diverge "
-                            f"significantly (keyword overlap: {similarity:.0%})."
-                        ),
-                        suggestion="Synchronize plan.md with the spec's Implementation Plan section.",
-                    ))
+                    results.append(
+                        ConsistencyResult(
+                            check_id=_generate_id(),
+                            source_section="plan.md",
+                            target_section="implementation plan",
+                            status="inconsistent",
+                            message=(
+                                f"Sibling plan.md and spec Implementation Plan section diverge "
+                                f"significantly (keyword overlap: {similarity:.0%})."
+                            ),
+                            suggestion="Synchronize plan.md with the spec's Implementation Plan section.",
+                        )
+                    )
                 else:
-                    results.append(ConsistencyResult(
-                        check_id=_generate_id(),
-                        source_section="plan.md",
-                        target_section="implementation plan",
-                        status="consistent",
-                        message=f"plan.md aligns with Implementation Plan (keyword overlap: {similarity:.0%}).",
-                    ))
+                    results.append(
+                        ConsistencyResult(
+                            check_id=_generate_id(),
+                            source_section="plan.md",
+                            target_section="implementation plan",
+                            status="consistent",
+                            message=f"plan.md aligns with Implementation Plan (keyword overlap: {similarity:.0%}).",
+                        )
+                    )
 
     # Check tasks.md vs Step by Step Tasks section
     if tasks_path.exists():
@@ -564,25 +642,29 @@ def _check_spec_directory_consistency(spec_path: Path) -> list:
                 similarity = len(overlap) / max(len(total_unique), 1)
 
                 if similarity < 0.2:
-                    results.append(ConsistencyResult(
-                        check_id=_generate_id(),
-                        source_section="tasks.md",
-                        target_section="step by step tasks",
-                        status="inconsistent",
-                        message=(
-                            f"Sibling tasks.md and spec Step by Step Tasks section diverge "
-                            f"significantly (keyword overlap: {similarity:.0%})."
-                        ),
-                        suggestion="Synchronize tasks.md with the spec's Step by Step Tasks section.",
-                    ))
+                    results.append(
+                        ConsistencyResult(
+                            check_id=_generate_id(),
+                            source_section="tasks.md",
+                            target_section="step by step tasks",
+                            status="inconsistent",
+                            message=(
+                                f"Sibling tasks.md and spec Step by Step Tasks section diverge "
+                                f"significantly (keyword overlap: {similarity:.0%})."
+                            ),
+                            suggestion="Synchronize tasks.md with the spec's Step by Step Tasks section.",
+                        )
+                    )
                 else:
-                    results.append(ConsistencyResult(
-                        check_id=_generate_id(),
-                        source_section="tasks.md",
-                        target_section="step by step tasks",
-                        status="consistent",
-                        message=f"tasks.md aligns with Step by Step Tasks (keyword overlap: {similarity:.0%}).",
-                    ))
+                    results.append(
+                        ConsistencyResult(
+                            check_id=_generate_id(),
+                            source_section="tasks.md",
+                            target_section="step by step tasks",
+                            status="consistent",
+                            message=f"tasks.md aligns with Step by Step Tasks (keyword overlap: {similarity:.0%}).",
+                        )
+                    )
 
     return results
 
@@ -590,6 +672,7 @@ def _check_spec_directory_consistency(spec_path: Path) -> list:
 # ---------------------------------------------------------------------------
 # Main orchestrator
 # ---------------------------------------------------------------------------
+
 
 def analyze_spec_consistency(spec_path: Path, db_path=None) -> dict:
     """Run all consistency checks on a spec file.
@@ -617,13 +700,8 @@ def analyze_spec_consistency(spec_path: Path, db_path=None) -> dict:
 
     consistency_score = round((consistent / max(total, 1)) * 100.0, 1)
 
-    inconsistencies = [
-        r.to_dict() for r in all_results if r.status == "inconsistent"
-    ]
-    suggestions = [
-        r.suggestion for r in all_results
-        if r.suggestion and r.status in ("inconsistent", "warn")
-    ]
+    inconsistencies = [r.to_dict() for r in all_results if r.status == "inconsistent"]
+    suggestions = [r.suggestion for r in all_results if r.suggestion and r.status in ("inconsistent", "warn")]
 
     if _HAS_AUDIT:
         log_event(
@@ -655,6 +733,7 @@ def analyze_spec_consistency(spec_path: Path, db_path=None) -> dict:
 # ---------------------------------------------------------------------------
 # Human-readable output
 # ---------------------------------------------------------------------------
+
 
 def _format_human(result: dict, fix_suggestions: bool = False) -> str:
     """Format consistency results for terminal display."""
@@ -713,10 +792,9 @@ def _format_human(result: dict, fix_suggestions: bool = False) -> str:
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
-    parser = argparse.ArgumentParser(
-        description="ICDEV™ Cross-Artifact Consistency Analyzer"
-    )
+    parser = argparse.ArgumentParser(description="ICDEV™ Cross-Artifact Consistency Analyzer")
     parser.add_argument("--spec-file", type=str, help="Check a single spec markdown file")
     parser.add_argument("--spec-dir", type=str, help="Batch check all .md files in directory (recursive)")
     parser.add_argument("--fix-suggestions", action="store_true", help="Include detailed fix suggestions")
@@ -756,15 +834,9 @@ def main():
                     sum(r.get("consistency_score", 0) for r in all_results) / max(len(all_results), 1),
                     1,
                 ),
-                "specs_consistent": sum(
-                    1 for r in all_results if r.get("consistency_score", 0) >= 70
-                ),
-                "specs_inconsistent": sum(
-                    1 for r in all_results if r.get("consistency_score", 0) < 70
-                ),
-                "total_inconsistencies": sum(
-                    len(r.get("inconsistencies", [])) for r in all_results
-                ),
+                "specs_consistent": sum(1 for r in all_results if r.get("consistency_score", 0) >= 70),
+                "specs_inconsistent": sum(1 for r in all_results if r.get("consistency_score", 0) < 70),
+                "total_inconsistencies": sum(len(r.get("inconsistencies", [])) for r in all_results),
                 "results": all_results,
             }
 

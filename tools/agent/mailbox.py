@@ -39,8 +39,13 @@ HMAC_SECRET = os.environ.get("ICDEV_MAILBOX_SECRET", "icdev-default-hmac-key")
 
 # Valid message types matching the DB CHECK constraint
 VALID_MESSAGE_TYPES = (
-    "request", "response", "notification", "veto",
-    "escalation", "collaboration_invite", "memory_share",
+    "request",
+    "response",
+    "notification",
+    "veto",
+    "escalation",
+    "collaboration_invite",
+    "memory_share",
     "async_result",
 )
 
@@ -52,6 +57,7 @@ PRIORITY_NORMAL = 5
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
 except ImportError:
+
     def audit_log_event(**kwargs):
         logger.debug("audit_logger unavailable — skipping audit: %s", kwargs.get("action", ""))
 
@@ -59,6 +65,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _get_db(db_path=None) -> sqlite3.Connection:
     """Open a DB connection with row factory."""
@@ -97,9 +104,17 @@ def _compute_hmac(from_agent: str, to_agent: str, subject: str, body: str) -> st
 # Public API
 # ---------------------------------------------------------------------------
 
-def send(from_agent_id: str, to_agent_id: str, message_type: str,
-         subject: str, body: str, priority: int = 5,
-         in_reply_to: str = None, db_path=None) -> str:
+
+def send(
+    from_agent_id: str,
+    to_agent_id: str,
+    message_type: str,
+    subject: str,
+    body: str,
+    priority: int = 5,
+    in_reply_to: str = None,
+    db_path=None,
+) -> str:
     """Send a message from one agent to another.
 
     Creates an HMAC-signed message in the agent_mailbox table.
@@ -121,10 +136,7 @@ def send(from_agent_id: str, to_agent_id: str, message_type: str,
         ValueError: If message_type is not valid.
     """
     if message_type not in VALID_MESSAGE_TYPES:
-        raise ValueError(
-            f"Invalid message_type '{message_type}'. "
-            f"Valid: {VALID_MESSAGE_TYPES}"
-        )
+        raise ValueError(f"Invalid message_type '{message_type}'. Valid: {VALID_MESSAGE_TYPES}")
 
     message_id = str(uuid.uuid4())
     signature = _compute_hmac(from_agent_id, to_agent_id, subject, body)
@@ -136,12 +148,10 @@ def send(from_agent_id: str, to_agent_id: str, message_type: str,
                (id, from_agent_id, to_agent_id, message_type, subject, body,
                 priority, in_reply_to, hmac_signature)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (message_id, from_agent_id, to_agent_id, message_type,
-             subject, body, priority, in_reply_to, signature),
+            (message_id, from_agent_id, to_agent_id, message_type, subject, body, priority, in_reply_to, signature),
         )
         conn.commit()
-        logger.info("Message %s sent: %s -> %s [%s] %s",
-                     message_id, from_agent_id, to_agent_id, message_type, subject)
+        logger.info("Message %s sent: %s -> %s [%s] %s", message_id, from_agent_id, to_agent_id, message_type, subject)
     finally:
         conn.close()
 
@@ -162,9 +172,15 @@ def send(from_agent_id: str, to_agent_id: str, message_type: str,
     return message_id
 
 
-def broadcast(from_agent_id: str, to_agent_ids: List[str], message_type: str,
-              subject: str, body: str, priority: int = 5,
-              db_path=None) -> list:
+def broadcast(
+    from_agent_id: str,
+    to_agent_ids: List[str],
+    message_type: str,
+    subject: str,
+    body: str,
+    priority: int = 5,
+    db_path=None,
+) -> list:
     """Send the same message to multiple agents.
 
     Creates individual signed messages for each recipient.
@@ -194,14 +210,11 @@ def broadcast(from_agent_id: str, to_agent_ids: List[str], message_type: str,
         )
         message_ids.append(mid)
 
-    logger.info("Broadcast from %s to %d agents: %s",
-                from_agent_id, len(to_agent_ids), subject)
+    logger.info("Broadcast from %s to %d agents: %s", from_agent_id, len(to_agent_ids), subject)
     return message_ids
 
 
-def receive(agent_id: str, unread_only: bool = True,
-            message_type: str = None, limit: int = 50,
-            db_path=None) -> list:
+def receive(agent_id: str, unread_only: bool = True, message_type: str = None, limit: int = 50, db_path=None) -> list:
     """Get messages for an agent.
 
     Args:
@@ -277,9 +290,7 @@ def verify_signature(message_id: str, db_path=None) -> bool:
     """
     conn = _get_db(db_path)
     try:
-        row = conn.execute(
-            "SELECT * FROM agent_mailbox WHERE id = ?", (message_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM agent_mailbox WHERE id = ?", (message_id,)).fetchone()
 
         if not row:
             logger.error("Message %s not found for verification", message_id)
@@ -296,9 +307,10 @@ def verify_signature(message_id: str, db_path=None) -> bool:
 
         if not is_valid:
             logger.warning(
-                "TAMPER DETECTED: Message %s HMAC mismatch! "
-                "Expected %s, got %s",
-                message_id, expected[:16] + "...", row["hmac_signature"][:16] + "...",
+                "TAMPER DETECTED: Message %s HMAC mismatch! Expected %s, got %s",
+                message_id,
+                expected[:16] + "...",
+                row["hmac_signature"][:16] + "...",
             )
         else:
             logger.debug("Message %s signature verified OK", message_id)
@@ -308,10 +320,9 @@ def verify_signature(message_id: str, db_path=None) -> bool:
         conn.close()
 
 
-def send_async_result(from_agent_id: str, to_agent_id: str,
-                      subject: str, result_body: str,
-                      inject_next_turn: bool = True,
-                      db_path=None) -> str:
+def send_async_result(
+    from_agent_id: str, to_agent_id: str, subject: str, result_body: str, inject_next_turn: bool = True, db_path=None
+) -> str:
     """Send an async result that auto-injects into the recipient's next turn.
 
     Fire-and-forget pattern: a background agent delivers its result back
@@ -344,14 +355,19 @@ def send_async_result(from_agent_id: str, to_agent_id: str,
         db_path=db_path,
     )
 
-    logger.info("Async result %s sent: %s -> %s [inject=%s] %s",
-                message_id, from_agent_id, to_agent_id, inject_next_turn, subject)
+    logger.info(
+        "Async result %s sent: %s -> %s [inject=%s] %s",
+        message_id,
+        from_agent_id,
+        to_agent_id,
+        inject_next_turn,
+        subject,
+    )
 
     return message_id
 
 
-def collect_pending_injections(agent_id: str, auto_mark_read: bool = True,
-                               db_path=None) -> list:
+def collect_pending_injections(agent_id: str, auto_mark_read: bool = True, db_path=None) -> list:
     """Collect all pending async results for injection into next turn.
 
     Called by the orchestrator before each LLM invocation to pull
@@ -379,14 +395,16 @@ def collect_pending_injections(agent_id: str, auto_mark_read: bool = True,
 
         results = []
         for row in rows:
-            results.append({
-                "message_id": row["id"],
-                "from_agent": row["from_agent_id"],
-                "subject": row["subject"],
-                "body": row["body"],
-                "priority": row["priority"],
-                "created_at": row["created_at"],
-            })
+            results.append(
+                {
+                    "message_id": row["id"],
+                    "from_agent": row["from_agent_id"],
+                    "subject": row["subject"],
+                    "body": row["body"],
+                    "priority": row["priority"],
+                    "created_at": row["created_at"],
+                }
+            )
 
             if auto_mark_read:
                 conn.execute(
@@ -398,8 +416,7 @@ def collect_pending_injections(agent_id: str, auto_mark_read: bool = True,
             conn.commit()
 
         if results:
-            logger.info("Collected %d pending injections for %s",
-                        len(results), agent_id)
+            logger.info("Collected %d pending injections for %s", len(results), agent_id)
 
         return results
     finally:
@@ -425,9 +442,7 @@ def get_conversation(message_id: str, db_path=None) -> list:
         # Walk backward through replies
         while current_id and current_id not in visited:
             visited.add(current_id)
-            row = conn.execute(
-                "SELECT * FROM agent_mailbox WHERE id = ?", (current_id,)
-            ).fetchone()
+            row = conn.execute("SELECT * FROM agent_mailbox WHERE id = ?", (current_id,)).fetchone()
             if not row:
                 break
             thread.append(dict(row))
@@ -458,19 +473,17 @@ def get_conversation(message_id: str, db_path=None) -> list:
 # CLI entry point
 # ---------------------------------------------------------------------------
 
+
 def main():
     """CLI for agent mailbox operations."""
-    parser = argparse.ArgumentParser(
-        description="ICDEV™ Agent Mailbox — HMAC-signed inter-agent messaging"
-    )
+    parser = argparse.ArgumentParser(description="ICDEV™ Agent Mailbox — HMAC-signed inter-agent messaging")
     sub = parser.add_subparsers(dest="command", help="Mailbox command")
 
     # Send
     p_send = sub.add_parser("send", help="Send a message")
     p_send.add_argument("--from", dest="from_agent", required=True, help="Sender agent ID")
     p_send.add_argument("--to", dest="to_agent", required=True, help="Recipient agent ID")
-    p_send.add_argument("--type", required=True, choices=VALID_MESSAGE_TYPES,
-                        help="Message type")
+    p_send.add_argument("--type", required=True, choices=VALID_MESSAGE_TYPES, help="Message type")
     p_send.add_argument("--subject", required=True, help="Message subject")
     p_send.add_argument("--body", required=True, help="Message body")
     p_send.add_argument("--priority", type=int, default=5, help="Priority 1-10")
@@ -480,8 +493,7 @@ def main():
     p_inbox = sub.add_parser("inbox", help="Check inbox for an agent")
     p_inbox.add_argument("--agent-id", required=True, help="Agent ID")
     p_inbox.add_argument("--all", action="store_true", help="Include read messages")
-    p_inbox.add_argument("--type", dest="msg_type", choices=VALID_MESSAGE_TYPES,
-                         help="Filter by type")
+    p_inbox.add_argument("--type", dest="msg_type", choices=VALID_MESSAGE_TYPES, help="Filter by type")
     p_inbox.add_argument("--limit", type=int, default=50, help="Max messages")
 
     # Verify
@@ -495,10 +507,8 @@ def main():
     # Broadcast
     p_broadcast = sub.add_parser("broadcast", help="Send to multiple agents")
     p_broadcast.add_argument("--from", dest="from_agent", required=True, help="Sender agent ID")
-    p_broadcast.add_argument("--to", dest="to_agents", required=True,
-                             help="Comma-separated recipient agent IDs")
-    p_broadcast.add_argument("--type", required=True, choices=VALID_MESSAGE_TYPES,
-                             help="Message type")
+    p_broadcast.add_argument("--to", dest="to_agents", required=True, help="Comma-separated recipient agent IDs")
+    p_broadcast.add_argument("--type", required=True, choices=VALID_MESSAGE_TYPES, help="Message type")
     p_broadcast.add_argument("--subject", required=True, help="Message subject")
     p_broadcast.add_argument("--body", required=True, help="Message body")
     p_broadcast.add_argument("--priority", type=int, default=5, help="Priority 1-10")
@@ -541,18 +551,28 @@ def main():
     elif args.command == "verify":
         is_valid = verify_signature(args.message_id)
         status = "VALID" if is_valid else "TAMPERED"
-        print(json.dumps({
-            "message_id": args.message_id,
-            "signature_status": status,
-            "valid": is_valid,
-        }, indent=2))
+        print(
+            json.dumps(
+                {
+                    "message_id": args.message_id,
+                    "signature_status": status,
+                    "valid": is_valid,
+                },
+                indent=2,
+            )
+        )
 
     elif args.command == "read":
         success = mark_read(args.message_id)
-        print(json.dumps({
-            "message_id": args.message_id,
-            "marked_read": success,
-        }, indent=2))
+        print(
+            json.dumps(
+                {
+                    "message_id": args.message_id,
+                    "marked_read": success,
+                },
+                indent=2,
+            )
+        )
 
     elif args.command == "broadcast":
         to_agents = [a.strip() for a in args.to_agents.split(",")]
@@ -564,10 +584,15 @@ def main():
             body=args.body,
             priority=args.priority,
         )
-        print(json.dumps({
-            "message_ids": message_ids,
-            "recipient_count": len(to_agents),
-        }, indent=2))
+        print(
+            json.dumps(
+                {
+                    "message_ids": message_ids,
+                    "recipient_count": len(to_agents),
+                },
+                indent=2,
+            )
+        )
 
 
 if __name__ == "__main__":

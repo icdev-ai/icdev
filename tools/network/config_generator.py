@@ -13,6 +13,7 @@ Supported OS types (derived from node type or node 'os' property):
   eos         — Arista EOS (switches, routers)
   junos       — Juniper JunOS (all device types)
 """
+
 from __future__ import annotations
 
 import ipaddress
@@ -22,6 +23,7 @@ from typing import Any
 
 try:
     from jinja2 import Environment, BaseLoader
+
     _JINJA2_AVAILABLE = True
 except ImportError:
     _JINJA2_AVAILABLE = False
@@ -31,20 +33,27 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 # Device types that receive a generated config file
-_CONFIGURABLE_TYPES: frozenset[str] = frozenset({
-    "router", "switch-l2", "switch-l3", "firewall",
-    "wlc", "sd-wan-edge",
-})
+_CONFIGURABLE_TYPES: frozenset[str] = frozenset(
+    {
+        "router",
+        "switch-l2",
+        "switch-l3",
+        "firewall",
+        "wlc",
+        "sd-wan-edge",
+    }
+)
 
 # Default OS per device type  (can be overridden by node property "os")
 _DEFAULT_OS: dict[str, str] = {
-    "router":       "ios_router",
-    "switch-l2":    "ios_switch",
-    "switch-l3":    "ios_switch",
-    "firewall":     "ios_router",
-    "wlc":          "ios_switch",
-    "sd-wan-edge":  "ios_router",
+    "router": "ios_router",
+    "switch-l2": "ios_switch",
+    "switch-l3": "ios_switch",
+    "firewall": "ios_router",
+    "wlc": "ios_switch",
+    "sd-wan-edge": "ios_router",
 }
+
 
 # Interface name generators per OS
 def _ios_iface(index: int, is_loopback: bool = False) -> str:
@@ -52,21 +61,24 @@ def _ios_iface(index: int, is_loopback: bool = False) -> str:
         return f"Loopback{index}"
     return f"GigabitEthernet0/{index}"
 
+
 def _eos_iface(index: int, is_loopback: bool = False) -> str:
     if is_loopback:
         return f"Loopback{index}"
     return f"Ethernet{index + 1}"
+
 
 def _junos_iface(index: int, is_loopback: bool = False) -> str:
     if is_loopback:
         return "lo0"
     return f"ge-0/0/{index}"
 
+
 _IFACE_GEN: dict[str, Any] = {
     "ios_router": _ios_iface,
     "ios_switch": _ios_iface,
-    "eos":        _eos_iface,
-    "junos":      _junos_iface,
+    "eos": _eos_iface,
+    "junos": _junos_iface,
 }
 
 # ---------------------------------------------------------------------------
@@ -395,13 +407,14 @@ routing-options {
 _TEMPLATES: dict[str, str] = {
     "ios_router": _IOS_ROUTER_TEMPLATE,
     "ios_switch": _IOS_SWITCH_TEMPLATE,
-    "eos":        _EOS_TEMPLATE,
-    "junos":      _JUNOS_TEMPLATE,
+    "eos": _EOS_TEMPLATE,
+    "junos": _JUNOS_TEMPLATE,
 }
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _now_utc() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -456,18 +469,21 @@ def _ospf_networks_from_interfaces(interfaces: list[dict], area: str) -> list[di
     nets = []
     for iface in interfaces:
         if iface.get("network") and iface.get("wildcard"):
-            nets.append({
-                "address":    iface["network"],
-                "wildcard":   iface["wildcard"],
-                "prefix_len": iface.get("prefix_len", 24),
-                "area":       area,
-            })
+            nets.append(
+                {
+                    "address": iface["network"],
+                    "wildcard": iface["wildcard"],
+                    "prefix_len": iface.get("prefix_len", 24),
+                    "area": area,
+                }
+            )
     return nets
 
 
 # ---------------------------------------------------------------------------
 # Context builder
 # ---------------------------------------------------------------------------
+
 
 def _node_cfg(node: dict) -> dict:
     """Return the merged config dict for a node.
@@ -518,10 +534,7 @@ def _build_device_context(
     iface_gen = _IFACE_GEN.get(os_type, _ios_iface)
 
     # Collect connected edges
-    connected_edges = [
-        e for e in all_edges
-        if e.get("source") == nid or e.get("target") == nid
-    ]
+    connected_edges = [e for e in all_edges if e.get("source") == nid or e.get("target") == nid]
 
     interfaces: list[dict] = []
     vlan_set: set[int] = set()
@@ -531,19 +544,21 @@ def _build_device_context(
     if mgmt_ip_info["ip_addr"]:
         lo_name = iface_gen(0, is_loopback=True)
         junos_lo = "lo0"
-        interfaces.append({
-            "name":        lo_name,
-            "junos_name":  junos_lo,
-            "description": "Management Loopback",
-            "is_loopback": True,
-            "is_routed":   False,
-            "trunk":       False,
-            "allowed_vlans": "",
-            "vlan":        None,
-            "vrf":         cfg.get("vrf") or "",
-            "mtu":         None,
-            **mgmt_ip_info,
-        })
+        interfaces.append(
+            {
+                "name": lo_name,
+                "junos_name": junos_lo,
+                "description": "Management Loopback",
+                "is_loopback": True,
+                "is_routed": False,
+                "trunk": False,
+                "allowed_vlans": "",
+                "vlan": None,
+                "vrf": cfg.get("vrf") or "",
+                "mtu": None,
+                **mgmt_ip_info,
+            }
+        )
 
     router_id = mgmt_ip_info.get("ip_addr") or ""
 
@@ -575,19 +590,21 @@ def _build_device_context(
         is_trunk = bool(ecfg.get("trunk") or (not edge_vlan and not ip_info["ip_addr"]))
         is_routed = bool(ip_info["ip_addr"] and not edge_vlan)
 
-        interfaces.append({
-            "name":          iface_name,
-            "junos_name":    junos_name,
-            "description":   description,
-            "is_loopback":   False,
-            "is_routed":     is_routed,
-            "trunk":         is_trunk and not ip_info["ip_addr"],
-            "allowed_vlans": "",
-            "vlan":          edge_vlan,
-            "vrf":           ecfg.get("vrf") or "",
-            "mtu":           int(ecfg.get("mtu")) if ecfg.get("mtu") else None,
-            **ip_info,
-        })
+        interfaces.append(
+            {
+                "name": iface_name,
+                "junos_name": junos_name,
+                "description": description,
+                "is_loopback": False,
+                "is_routed": is_routed,
+                "trunk": is_trunk and not ip_info["ip_addr"],
+                "allowed_vlans": "",
+                "vlan": edge_vlan,
+                "vrf": ecfg.get("vrf") or "",
+                "mtu": int(ecfg.get("mtu")) if ecfg.get("mtu") else None,
+                **ip_info,
+            }
+        )
 
     # ── VLAN from node-level property ─────────────────────────────────────
     node_vlan = cfg.get("vlan")
@@ -607,9 +624,9 @@ def _build_device_context(
         nets = _ospf_networks_from_interfaces(interfaces, area)
         ospf_ctx = {
             "process_id": 1,
-            "router_id":  router_id or "0.0.0.0",  # nosec B104
-            "area":       area,
-            "networks":   nets,
+            "router_id": router_id or "0.0.0.0",  # nosec B104
+            "area": area,
+            "networks": nets,
         }
 
     # ── BGP context ───────────────────────────────────────────────────────
@@ -637,38 +654,41 @@ def _build_device_context(
                         peer_asn = int(peer_asn_raw)
                     except (ValueError, TypeError):
                         continue
-                    neighbors.append({
-                        "ip":          ip_info["ip_addr"],
-                        "asn":         peer_asn,
-                        "description": _safe_hostname(peer.get("label") or peer_id),
-                    })
+                    neighbors.append(
+                        {
+                            "ip": ip_info["ip_addr"],
+                            "asn": peer_asn,
+                            "description": _safe_hostname(peer.get("label") or peer_id),
+                        }
+                    )
 
             local_pref_raw = cfg.get("local_pref")
             bgp_ctx = {
-                "asn":        asn,
-                "router_id":  router_id or "0.0.0.0",  # nosec B104
+                "asn": asn,
+                "router_id": router_id or "0.0.0.0",  # nosec B104
                 "local_pref": int(local_pref_raw) if local_pref_raw else None,
-                "community":  cfg.get("community") or "",
-                "med":        int(cfg.get("med")) if cfg.get("med") else None,
-                "bfd":        bool(cfg.get("bfd") or cfg.get("bfd_enabled")),
-                "neighbors":  neighbors,
+                "community": cfg.get("community") or "",
+                "med": int(cfg.get("med")) if cfg.get("med") else None,
+                "bfd": bool(cfg.get("bfd") or cfg.get("bfd_enabled")),
+                "neighbors": neighbors,
             }
 
     return {
-        "hostname":      hostname,
-        "topo_name":     topo_name,
-        "generated_at":  _now_utc(),
-        "domain_name":   "",
-        "interfaces":    interfaces,
-        "vlans":         sorted_vlans,
-        "ospf":          ospf_ctx,
-        "bgp":           bgp_ctx,
+        "hostname": hostname,
+        "topo_name": topo_name,
+        "generated_at": _now_utc(),
+        "domain_name": "",
+        "interfaces": interfaces,
+        "vlans": sorted_vlans,
+        "ospf": ospf_ctx,
+        "bgp": bgp_ctx,
     }
 
 
 # ---------------------------------------------------------------------------
 # Rendering
 # ---------------------------------------------------------------------------
+
 
 def _render_config(ctx: dict, os_type: str) -> str:
     """Render a device config using the appropriate Jinja2 template."""
@@ -713,6 +733,7 @@ def _render_config(ctx: dict, os_type: str) -> str:
 # Public API
 # ---------------------------------------------------------------------------
 
+
 def generate_device_configs(graph: dict, topo_name: str) -> dict[str, str]:
     """Generate per-device config files from a topology graph.
 
@@ -749,8 +770,8 @@ def generate_device_configs(graph: dict, topo_name: str) -> dict[str, str]:
         _os_suffix = {
             "ios_router": "ios",
             "ios_switch": "ios",
-            "eos":        "eos",
-            "junos":      "junos",
+            "eos": "eos",
+            "junos": "junos",
         }.get(os_type, os_type)
         base = f"{ctx['hostname']}_{_os_suffix}.txt"
 
@@ -796,11 +817,13 @@ def list_configurable_nodes(graph: dict) -> list[dict]:
             continue
         cfg = _node_cfg(node)
         os_type = cfg.get("os") or _DEFAULT_OS.get(ntype, "ios_router")
-        result.append({
-            "id":       node["id"],
-            "label":    node.get("label", node["id"]),
-            "type":     ntype,
-            "os_type":  os_type,
-            "hostname": _safe_hostname(cfg.get("hostname") or node.get("label") or node["id"]),
-        })
+        result.append(
+            {
+                "id": node["id"],
+                "label": node.get("label", node["id"]),
+                "type": ntype,
+                "os_type": os_type,
+                "hostname": _safe_hostname(cfg.get("hostname") or node.get("label") or node["id"]),
+            }
+        )
     return result

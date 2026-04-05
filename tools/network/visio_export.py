@@ -8,6 +8,7 @@ Each canvas node becomes a Visio shape with:
 
 Export also generates companion CSV files for Ops teams.
 """
+
 from __future__ import annotations
 
 import csv
@@ -73,13 +74,32 @@ _PAGES_RELS_XML = """\
 
 # Metadata fields to embed as Visio shape properties
 _META_FIELDS = [
-    "hostname", "ip", "model", "serial", "asset_tag",
-    "slot", "port", "port_type", "bandwidth",
-    "site", "location", "rack",
-    "vlan", "vrf", "asn", "protocol", "mtu",
-    "peer_asn", "peer_ip", "peering_type",
-    "project_id", "circuit_id", "customer_id",
-    "ipam_block_id", "cable_id", "xconn_id",
+    "hostname",
+    "ip",
+    "model",
+    "serial",
+    "asset_tag",
+    "slot",
+    "port",
+    "port_type",
+    "bandwidth",
+    "site",
+    "location",
+    "rack",
+    "vlan",
+    "vrf",
+    "asn",
+    "protocol",
+    "mtu",
+    "peer_asn",
+    "peer_ip",
+    "peering_type",
+    "project_id",
+    "circuit_id",
+    "customer_id",
+    "ipam_block_id",
+    "cable_id",
+    "xconn_id",
     "notes",
 ]
 
@@ -117,9 +137,7 @@ def _build_shape_xml(shape_id: int, node: dict) -> str:
     for idx, field in enumerate(_META_FIELDS):
         val = _xml_escape(config.get(field, ""))
         prop_rows.append(
-            f'        <Row N="{field}" IX="{idx}">'
-            f'<Cell N="Value" V="{val}"/>'
-            f'<Cell N="Label" V="{field}"/></Row>'
+            f'        <Row N="{field}" IX="{idx}"><Cell N="Value" V="{val}"/><Cell N="Label" V="{field}"/></Row>'
         )
     props_section = "\n".join(prop_rows)
 
@@ -133,13 +151,12 @@ def _build_shape_xml(shape_id: int, node: dict) -> str:
         f'    <Cell N="Height" V="{h}"/>\n'
         f'    <Cell N="FillForegnd" V="{fill_color}"/>\n'
         f'    <Section N="Property">\n{props_section}\n    </Section>\n'
-        f'    <Text>{label}</Text>\n'
-        f'  </Shape>'
+        f"    <Text>{label}</Text>\n"
+        f"  </Shape>"
     )
 
 
-def _build_connector_xml(shape_id: int, edge: dict,
-                         node_id_to_shape: dict) -> str:
+def _build_connector_xml(shape_id: int, edge: dict, node_id_to_shape: dict) -> str:
     """Build a Visio connector <Shape> XML element for an edge."""
     label = _xml_escape(edge.get("label", ""))
     src_shape = node_id_to_shape.get(edge.get("source", ""), 0)
@@ -154,13 +171,12 @@ def _build_connector_xml(shape_id: int, edge: dict,
         f'    <Cell N="ConFixedCode" V="6"/>\n'
         f'    <Cell N="BegTrigger" V="2" F="_XFTRIGGER(Sheet.{src_shape}!EventXFMod)"/>\n'
         f'    <Cell N="EndTrigger" V="2" F="_XFTRIGGER(Sheet.{dst_shape}!EventXFMod)"/>\n'
-        f'    <Text>{label}</Text>\n'
-        f'  </Shape>'
+        f"    <Text>{label}</Text>\n"
+        f"  </Shape>"
     )
 
 
-def export_vsdx(topology_name: str, graph_json: dict,
-                enrichment: dict | None = None) -> bytes:
+def export_vsdx(topology_name: str, graph_json: dict, enrichment: dict | None = None) -> bytes:
     """Export topology to Visio .vsdx format.
 
     Args:
@@ -200,8 +216,8 @@ def export_vsdx(topology_name: str, graph_json: dict,
     page1_xml = (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
         '<PageContents xmlns="http://schemas.microsoft.com/office/visio/2012/main">\n'
-        f'{shapes_xml}\n'
-        '</PageContents>'
+        f"{shapes_xml}\n"
+        "</PageContents>"
     )
 
     safe_title = _xml_escape(topology_name)
@@ -222,6 +238,7 @@ def export_vsdx(topology_name: str, graph_json: dict,
 
 
 # ── CSV Ops Exports ───────────────────────────────────────────────────────────
+
 
 def _csv_string(rows: list[list[str]], header: list[str]) -> str:
     """Write rows with header to CSV string."""
@@ -244,7 +261,7 @@ def export_ops_csvs(topology_name: str, graph_json: dict) -> dict:
     """
     nodes = graph_json.get("nodes", [])
     edges = graph_json.get("edges", [])
-    safe = re.sub(r'[^a-zA-Z0-9_-]', '_', topology_name)
+    safe = re.sub(r"[^a-zA-Z0-9_-]", "_", topology_name)
 
     # Build node lookup
     node_map = {}
@@ -253,8 +270,16 @@ def export_ops_csvs(topology_name: str, graph_json: dict) -> dict:
 
     # 1. Device inventory
     dev_header = [
-        "hostname", "type", "model", "serial", "asset_tag",
-        "ip", "site", "location", "rack", "vendor",
+        "hostname",
+        "type",
+        "model",
+        "serial",
+        "asset_tag",
+        "ip",
+        "site",
+        "location",
+        "rack",
+        "vendor",
     ]
     dev_rows = []
     for n in nodes:
@@ -267,23 +292,30 @@ def export_ops_csvs(topology_name: str, graph_json: dict) -> dict:
         if model_val:
             parts = model_val.split(" ", 1)
             vendor = parts[0] if len(parts) > 1 else ""
-        dev_rows.append([
-            c.get("hostname", n.get("label", "")),
-            n.get("type", ""),
-            model_val,
-            c.get("serial", ""),
-            c.get("asset_tag", ""),
-            c.get("ip", ""),
-            c.get("site", ""),
-            c.get("location", ""),
-            c.get("rack", ""),
-            vendor,
-        ])
+        dev_rows.append(
+            [
+                c.get("hostname", n.get("label", "")),
+                n.get("type", ""),
+                model_val,
+                c.get("serial", ""),
+                c.get("asset_tag", ""),
+                c.get("ip", ""),
+                c.get("site", ""),
+                c.get("location", ""),
+                c.get("rack", ""),
+                vendor,
+            ]
+        )
 
     # 2. Circuit list (derived from edges with protocol info)
     circ_header = [
-        "circuit_id", "a_end_device", "z_end_device",
-        "bandwidth", "provider", "protocol", "status",
+        "circuit_id",
+        "a_end_device",
+        "z_end_device",
+        "bandwidth",
+        "provider",
+        "protocol",
+        "status",
     ]
     circ_rows = []
     for e in edges:
@@ -291,19 +323,26 @@ def export_ops_csvs(topology_name: str, graph_json: dict) -> dict:
         dst_node = node_map.get(e.get("target", ""), {})
         src_cfg = src_node.get("config", {})
         dst_cfg = dst_node.get("config", {})
-        circ_rows.append([
-            e.get("label", e.get("id", "")),
-            src_cfg.get("hostname", src_node.get("label", "")),
-            dst_cfg.get("hostname", dst_node.get("label", "")),
-            src_cfg.get("bandwidth", ""),
-            "",  # provider — not stored on edges
-            src_cfg.get("protocol", ""),
-            "active",
-        ])
+        circ_rows.append(
+            [
+                e.get("label", e.get("id", "")),
+                src_cfg.get("hostname", src_node.get("label", "")),
+                dst_cfg.get("hostname", dst_node.get("label", "")),
+                src_cfg.get("bandwidth", ""),
+                "",  # provider — not stored on edges
+                src_cfg.get("protocol", ""),
+                "active",
+            ]
+        )
 
     # 3. Cable schedule
     cable_header = [
-        "cable_id", "a_port", "z_port", "cable_type", "length", "pathway",
+        "cable_id",
+        "a_port",
+        "z_port",
+        "cable_type",
+        "length",
+        "pathway",
     ]
     cable_rows = []
     for e in edges:
@@ -314,18 +353,25 @@ def export_ops_csvs(topology_name: str, graph_json: dict) -> dict:
         a_port = src_cfg.get("port", "")
         z_port = dst_cfg.get("port", "")
         cable_type = src_cfg.get("port_type", dst_cfg.get("port_type", ""))
-        cable_rows.append([
-            e.get("id", ""),
-            f"{src_cfg.get('hostname', src_node.get('label', ''))}:{a_port}",
-            f"{dst_cfg.get('hostname', dst_node.get('label', ''))}:{z_port}",
-            cable_type,
-            "",  # length — not stored in config
-            "",  # pathway
-        ])
+        cable_rows.append(
+            [
+                e.get("id", ""),
+                f"{src_cfg.get('hostname', src_node.get('label', ''))}:{a_port}",
+                f"{dst_cfg.get('hostname', dst_node.get('label', ''))}:{z_port}",
+                cable_type,
+                "",  # length — not stored in config
+                "",  # pathway
+            ]
+        )
 
     # 4. IP allocation
     ip_header = [
-        "ip", "subnet", "vlan", "vrf", "assigned_to_device", "site",
+        "ip",
+        "subnet",
+        "vlan",
+        "vrf",
+        "assigned_to_device",
+        "site",
     ]
     ip_rows = []
     for n in nodes:
@@ -338,32 +384,40 @@ def export_ops_csvs(topology_name: str, graph_json: dict) -> dict:
             ip_part, subnet_part = ip_val.split("/", 1)
         else:
             ip_part, subnet_part = ip_val, ""
-        ip_rows.append([
-            ip_part,
-            subnet_part,
-            c.get("vlan", ""),
-            c.get("vrf", ""),
-            c.get("hostname", n.get("label", "")),
-            c.get("site", ""),
-        ])
+        ip_rows.append(
+            [
+                ip_part,
+                subnet_part,
+                c.get("vlan", ""),
+                c.get("vrf", ""),
+                c.get("hostname", n.get("label", "")),
+                c.get("site", ""),
+            ]
+        )
 
     # 5. Peering matrix
     peer_header = [
-        "local_device", "local_asn", "peer_asn", "peer_ip",
-        "peering_type", "protocol",
+        "local_device",
+        "local_asn",
+        "peer_asn",
+        "peer_ip",
+        "peering_type",
+        "protocol",
     ]
     peer_rows = []
     for n in nodes:
         c = n.get("config", {})
         if c.get("peer_asn") or c.get("peer_ip"):
-            peer_rows.append([
-                c.get("hostname", n.get("label", "")),
-                c.get("asn", ""),
-                c.get("peer_asn", ""),
-                c.get("peer_ip", ""),
-                c.get("peering_type", ""),
-                c.get("protocol", ""),
-            ])
+            peer_rows.append(
+                [
+                    c.get("hostname", n.get("label", "")),
+                    c.get("asn", ""),
+                    c.get("peer_asn", ""),
+                    c.get("peer_ip", ""),
+                    c.get("peering_type", ""),
+                    c.get("protocol", ""),
+                ]
+            )
 
     result = {}
     result[f"{safe}_device_inventory.csv"] = _csv_string(dev_rows, dev_header)

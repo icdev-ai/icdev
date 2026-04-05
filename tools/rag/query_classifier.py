@@ -94,6 +94,7 @@ Output format: {"label": "...", "reasoning": "..."}"""
 # Core classification logic
 # ---------------------------------------------------------------------------
 
+
 def _heuristic_classify(query: str, context: str = "") -> Dict[str, Any]:
     """Classify using deterministic heuristic rules (air-gap safe).
 
@@ -168,7 +169,7 @@ def _llm_classify(query: str, context: str = "") -> Optional[Dict[str, Any]]:
         user_content = (
             f"QUERY: {query}{context_section}\n\n"
             f"Classify into one of: {', '.join(TAXONOMY_LABELS)}.\n"
-            "Return JSON: {\"label\": \"...\", \"reasoning\": \"...\"}"
+            'Return JSON: {"label": "...", "reasoning": "..."}'
         )
 
         router = LLMRouter()
@@ -216,6 +217,7 @@ def _llm_classify(query: str, context: str = "") -> Optional[Dict[str, Any]]:
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def classify_query(query: str, context: str = "") -> Dict[str, Any]:
     """Classify a single query-context pair into a taxonomy label.
@@ -288,10 +290,7 @@ def classify_batch(
             return idx, classify_query(q, c)
 
         with ThreadPoolExecutor(max_workers=4) as executor:
-            futures = {
-                executor.submit(_classify_indexed, i, item): i
-                for i, item in enumerate(queries)
-            }
+            futures = {executor.submit(_classify_indexed, i, item): i for i, item in enumerate(queries)}
             for future in as_completed(futures):
                 try:
                     idx, result = future.result()
@@ -307,15 +306,13 @@ def classify_batch(
 
         return [r for r in results if r is not None]
 
-    return [
-        classify_query(item.get("query", ""), item.get("context", ""))
-        for item in queries
-    ]
+    return [classify_query(item.get("query", ""), item.get("context", "")) for item in queries]
 
 
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+
 
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(

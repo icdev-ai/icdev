@@ -10,6 +10,7 @@ For each detected language:
 
 CLI: python tools/maintenance/dependency_scanner.py --project-id <id> [--language <lang>] [--offline] [--json]
 """
+
 from __future__ import annotations
 
 import argparse
@@ -34,23 +35,19 @@ HTTP_TIMEOUT = 10
 # Standard ICDEV™ helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_connection(db_path=None):
     """Get a database connection with Row factory."""
     path = db_path or DB_PATH
     if not path.exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\n"
-            "Run: python tools/db/init_icdev_db.py"
-        )
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
     conn = get_connection(db_path=str(path))
     return conn
 
 
 def _get_project(conn, project_id):
     """Load project from projects table."""
-    row = conn.execute(
-        "SELECT * FROM projects WHERE id = ?", (project_id,)
-    ).fetchone()
+    row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
     if not row:
         raise ValueError(f"Project '{project_id}' not found in database.")
     return dict(row)
@@ -137,10 +134,12 @@ def _load_maintenance_config():
 # Language Detection
 # ---------------------------------------------------------------------------
 
+
 def _detect_project_languages(project_dir):
     """Detect languages using language_support module if available, else basic detection."""
     try:
         import importlib.util
+
         ls_path = BASE_DIR / "tools" / "builder" / "language_support.py"
         if ls_path.exists():
             spec = importlib.util.spec_from_file_location("language_support", ls_path)
@@ -171,6 +170,7 @@ def _detect_project_languages(project_dir):
 # Each returns List[Dict] with: package_name, current_version, dependency_file, scope, direct
 # ---------------------------------------------------------------------------
 
+
 def _parse_python_deps(project_dir):
     """Parse requirements.txt and pyproject.toml [project.dependencies]."""
     deps = []
@@ -185,28 +185,32 @@ def _parse_python_deps(project_dir):
                     continue
                 # Handle inline comments
                 if "#" in line:
-                    line = line[:line.index("#")].strip()
+                    line = line[: line.index("#")].strip()
                 # Match patterns: pkg==1.0, pkg>=1.0, pkg~=1.0, pkg!=1.0, pkg<=1.0, pkg<1.0, pkg>1.0
-                match = re.match(r'^([A-Za-z0-9_][A-Za-z0-9._-]*)\s*([><=!~]+)\s*([^\s,;]+)', line)
+                match = re.match(r"^([A-Za-z0-9_][A-Za-z0-9._-]*)\s*([><=!~]+)\s*([^\s,;]+)", line)
                 if match:
-                    deps.append({
-                        "package_name": match.group(1).strip(),
-                        "current_version": match.group(3).strip(),
-                        "dependency_file": str(req_file),
-                        "scope": "required",
-                        "direct": True,
-                    })
-                else:
-                    # Package without version specifier
-                    name_match = re.match(r'^([A-Za-z0-9_][A-Za-z0-9._-]*)\s*$', line)
-                    if name_match:
-                        deps.append({
-                            "package_name": name_match.group(1).strip(),
-                            "current_version": "unknown",
+                    deps.append(
+                        {
+                            "package_name": match.group(1).strip(),
+                            "current_version": match.group(3).strip(),
                             "dependency_file": str(req_file),
                             "scope": "required",
                             "direct": True,
-                        })
+                        }
+                    )
+                else:
+                    # Package without version specifier
+                    name_match = re.match(r"^([A-Za-z0-9_][A-Za-z0-9._-]*)\s*$", line)
+                    if name_match:
+                        deps.append(
+                            {
+                                "package_name": name_match.group(1).strip(),
+                                "current_version": "unknown",
+                                "dependency_file": str(req_file),
+                                "scope": "required",
+                                "direct": True,
+                            }
+                        )
         except Exception:
             pass
 
@@ -228,13 +232,15 @@ def _parse_python_deps(project_dir):
                             if item:
                                 m = re.match(r'^([A-Za-z0-9_][A-Za-z0-9._-]*)\s*([><=!~]+)\s*([^\s,;"\']+)', item)
                                 if m:
-                                    deps.append({
-                                        "package_name": m.group(1),
-                                        "current_version": m.group(3),
-                                        "dependency_file": str(pyproject),
-                                        "scope": "required",
-                                        "direct": True,
-                                    })
+                                    deps.append(
+                                        {
+                                            "package_name": m.group(1),
+                                            "current_version": m.group(3),
+                                            "dependency_file": str(pyproject),
+                                            "scope": "required",
+                                            "direct": True,
+                                        }
+                                    )
                         in_deps = False
                     continue
                 if in_deps:
@@ -246,13 +252,15 @@ def _parse_python_deps(project_dir):
                         if m:
                             # Avoid duplicates from requirements.txt
                             if not any(d["package_name"] == m.group(1) for d in deps):
-                                deps.append({
-                                    "package_name": m.group(1),
-                                    "current_version": m.group(3),
-                                    "dependency_file": str(pyproject),
-                                    "scope": "required",
-                                    "direct": True,
-                                })
+                                deps.append(
+                                    {
+                                        "package_name": m.group(1),
+                                        "current_version": m.group(3),
+                                        "dependency_file": str(pyproject),
+                                        "scope": "required",
+                                        "direct": True,
+                                    }
+                                )
         except Exception:
             pass
 
@@ -271,14 +279,16 @@ def _parse_javascript_deps(project_dir):
             section_data = content.get(section, {})
             for name, version_spec in section_data.items():
                 # Strip leading ^, ~, >=, etc. to get the base version
-                clean_version = re.sub(r'^[^0-9]*', '', version_spec)
-                deps.append({
-                    "package_name": name,
-                    "current_version": clean_version if clean_version else version_spec,
-                    "dependency_file": str(pkg_file),
-                    "scope": scope,
-                    "direct": True,
-                })
+                clean_version = re.sub(r"^[^0-9]*", "", version_spec)
+                deps.append(
+                    {
+                        "package_name": name,
+                        "current_version": clean_version if clean_version else version_spec,
+                        "dependency_file": str(pkg_file),
+                        "scope": scope,
+                        "direct": True,
+                    }
+                )
     except Exception:
         pass
     return deps
@@ -293,15 +303,12 @@ def _parse_java_deps(project_dir):
         try:
             content = pom.read_text(encoding="utf-8")
             # Simple regex-based XML parsing (no lxml dependency)
-            dep_blocks = re.findall(
-                r'<dependency>\s*(.*?)\s*</dependency>',
-                content, re.DOTALL
-            )
+            dep_blocks = re.findall(r"<dependency>\s*(.*?)\s*</dependency>", content, re.DOTALL)
             for block in dep_blocks:
-                group_match = re.search(r'<groupId>\s*([^<]+)\s*</groupId>', block)
-                artifact_match = re.search(r'<artifactId>\s*([^<]+)\s*</artifactId>', block)
-                version_match = re.search(r'<version>\s*([^<]+)\s*</version>', block)
-                scope_match = re.search(r'<scope>\s*([^<]+)\s*</scope>', block)
+                group_match = re.search(r"<groupId>\s*([^<]+)\s*</groupId>", block)
+                artifact_match = re.search(r"<artifactId>\s*([^<]+)\s*</artifactId>", block)
+                version_match = re.search(r"<version>\s*([^<]+)\s*</version>", block)
+                scope_match = re.search(r"<scope>\s*([^<]+)\s*</scope>", block)
                 if group_match and artifact_match:
                     pkg_name = f"{group_match.group(1).strip()}:{artifact_match.group(1).strip()}"
                     version = version_match.group(1).strip() if version_match else "unknown"
@@ -309,13 +316,15 @@ def _parse_java_deps(project_dir):
                     if version.startswith("${"):
                         version = "unknown"
                     scope = scope_match.group(1).strip() if scope_match else "compile"
-                    deps.append({
-                        "package_name": pkg_name,
-                        "current_version": version,
-                        "dependency_file": str(pom),
-                        "scope": scope,
-                        "direct": True,
-                    })
+                    deps.append(
+                        {
+                            "package_name": pkg_name,
+                            "current_version": version,
+                            "dependency_file": str(pom),
+                            "scope": scope,
+                            "direct": True,
+                        }
+                    )
         except Exception:
             pass
 
@@ -330,13 +339,15 @@ def _parse_java_deps(project_dir):
                 for match in re.finditer(pattern, content):
                     pkg_name = f"{match.group(1)}:{match.group(2)}"
                     version = match.group(3)
-                    deps.append({
-                        "package_name": pkg_name,
-                        "current_version": version,
-                        "dependency_file": str(gradle_file),
-                        "scope": "compile",
-                        "direct": True,
-                    })
+                    deps.append(
+                        {
+                            "package_name": pkg_name,
+                            "current_version": version,
+                            "dependency_file": str(gradle_file),
+                            "scope": "compile",
+                            "direct": True,
+                        }
+                    )
             except Exception:
                 pass
     return deps
@@ -361,27 +372,31 @@ def _parse_go_deps(project_dir):
                 continue
             # Single-line require: require github.com/foo/bar v1.2.3
             if stripped.startswith("require ") and "(" not in stripped:
-                parts = stripped[len("require "):].strip().split()
+                parts = stripped[len("require ") :].strip().split()
                 if len(parts) >= 2:
-                    deps.append({
-                        "package_name": parts[0],
-                        "current_version": parts[1],
-                        "dependency_file": str(gomod),
-                        "scope": "required",
-                        "direct": True,
-                    })
+                    deps.append(
+                        {
+                            "package_name": parts[0],
+                            "current_version": parts[1],
+                            "dependency_file": str(gomod),
+                            "scope": "required",
+                            "direct": True,
+                        }
+                    )
                 continue
             if in_require and stripped and not stripped.startswith("//"):
                 parts = stripped.split()
                 if len(parts) >= 2:
                     indirect = "// indirect" in stripped
-                    deps.append({
-                        "package_name": parts[0],
-                        "current_version": parts[1],
-                        "dependency_file": str(gomod),
-                        "scope": "required",
-                        "direct": not indirect,
-                    })
+                    deps.append(
+                        {
+                            "package_name": parts[0],
+                            "current_version": parts[1],
+                            "dependency_file": str(gomod),
+                            "scope": "required",
+                            "direct": not indirect,
+                        }
+                    )
     except Exception:
         pass
     return deps
@@ -399,7 +414,7 @@ def _parse_rust_deps(project_dir):
         for line in content.splitlines():
             stripped = line.strip()
             # Detect section headers
-            section_match = re.match(r'^\[([^\]]+)\]', stripped)
+            section_match = re.match(r"^\[([^\]]+)\]", stripped)
             if section_match:
                 current_section = section_match.group(1).strip()
                 continue
@@ -408,28 +423,32 @@ def _parse_rust_deps(project_dir):
                 # Simple form: name = "version"
                 simple_match = re.match(r'^([A-Za-z0-9_-]+)\s*=\s*"([^"]+)"', stripped)
                 if simple_match:
-                    deps.append({
-                        "package_name": simple_match.group(1),
-                        "current_version": simple_match.group(2),
-                        "dependency_file": str(cargo),
-                        "scope": scope,
-                        "direct": True,
-                    })
+                    deps.append(
+                        {
+                            "package_name": simple_match.group(1),
+                            "current_version": simple_match.group(2),
+                            "dependency_file": str(cargo),
+                            "scope": scope,
+                            "direct": True,
+                        }
+                    )
                     continue
                 # Table form: name = { version = "1.0", ... }
-                table_match = re.match(r'^([A-Za-z0-9_-]+)\s*=\s*\{(.*)\}', stripped)
+                table_match = re.match(r"^([A-Za-z0-9_-]+)\s*=\s*\{(.*)\}", stripped)
                 if table_match:
                     pkg_name = table_match.group(1)
                     inner = table_match.group(2)
                     ver_match = re.search(r'version\s*=\s*"([^"]+)"', inner)
                     version = ver_match.group(1) if ver_match else "unknown"
-                    deps.append({
-                        "package_name": pkg_name,
-                        "current_version": version,
-                        "dependency_file": str(cargo),
-                        "scope": scope,
-                        "direct": True,
-                    })
+                    deps.append(
+                        {
+                            "package_name": pkg_name,
+                            "current_version": version,
+                            "dependency_file": str(cargo),
+                            "scope": scope,
+                            "direct": True,
+                        }
+                    )
     except Exception:
         pass
     return deps
@@ -446,13 +465,15 @@ def _parse_csharp_deps(project_dir):
                 r'<PackageReference\s+Include="([^"]+)"\s+Version="([^"]+)"',
                 content,
             ):
-                deps.append({
-                    "package_name": match.group(1),
-                    "current_version": match.group(2),
-                    "dependency_file": str(csproj),
-                    "scope": "required",
-                    "direct": True,
-                })
+                deps.append(
+                    {
+                        "package_name": match.group(1),
+                        "current_version": match.group(2),
+                        "dependency_file": str(csproj),
+                        "scope": "required",
+                        "direct": True,
+                    }
+                )
         except Exception:
             pass
     # Also check nested directories (common in solution structures)
@@ -469,13 +490,15 @@ def _parse_csharp_deps(project_dir):
                 pkg_name = match.group(1)
                 # Avoid duplicates
                 if not any(d["package_name"] == pkg_name and d["dependency_file"] == str(csproj) for d in deps):
-                    deps.append({
-                        "package_name": pkg_name,
-                        "current_version": match.group(2),
-                        "dependency_file": str(csproj),
-                        "scope": "required",
-                        "direct": True,
-                    })
+                    deps.append(
+                        {
+                            "package_name": pkg_name,
+                            "current_version": match.group(2),
+                            "dependency_file": str(csproj),
+                            "scope": "required",
+                            "direct": True,
+                        }
+                    )
         except Exception:
             pass
     return deps
@@ -498,6 +521,7 @@ _LANGUAGE_PARSERS = {
 # Each returns (latest_version: str | None, release_date: str | None)
 # ---------------------------------------------------------------------------
 
+
 def _http_get_json(url, headers=None):
     """Perform an HTTP GET and return parsed JSON, or None on failure."""
     try:
@@ -507,8 +531,7 @@ def _http_get_json(url, headers=None):
                 req.add_header(key, val)
         with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT) as resp:  # nosec B310 -- URL scheme validated; internal/configured endpoints only
             return json.loads(resp.read().decode("utf-8"))
-    except (urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError,
-            OSError, ValueError, TimeoutError):
+    except (urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError, OSError, ValueError, TimeoutError):
         return None
 
 
@@ -545,10 +568,7 @@ def _check_npm_latest(package_name):
 
 def _check_maven_latest(group_id, artifact_id):
     """GET Maven Central search API -> parse response.docs[0].latestVersion"""
-    url = (
-        f"https://search.maven.org/solrsearch/select?"
-        f"q=g:{group_id}+AND+a:{artifact_id}&rows=1&wt=json"
-    )
+    url = f"https://search.maven.org/solrsearch/select?q=g:{group_id}+AND+a:{artifact_id}&rows=1&wt=json"
     data = _http_get_json(url)
     if data and "response" in data:
         docs = data["response"].get("docs", [])
@@ -637,6 +657,7 @@ def _check_latest_version(language, package_name):
 # Staleness Calculator
 # ---------------------------------------------------------------------------
 
+
 def _parse_version_tuple(version_str):
     """Parse a version string into a tuple of integers for comparison.
 
@@ -646,9 +667,9 @@ def _parse_version_tuple(version_str):
     if not version_str:
         return []
     parts = []
-    for segment in re.split(r'[.\-+]', version_str):
+    for segment in re.split(r"[.\-+]", version_str):
         # Take only the leading numeric portion
-        num_match = re.match(r'^(\d+)', segment)
+        num_match = re.match(r"^(\d+)", segment)
         if num_match:
             parts.append(int(num_match.group(1)))
     return parts
@@ -706,6 +727,7 @@ def _calculate_staleness(current_version, latest_version):
 # PURL Generation
 # ---------------------------------------------------------------------------
 
+
 def _generate_purl(language, package_name, version):
     """Generate a Package URL (PURL) for a dependency.
 
@@ -743,6 +765,7 @@ def _generate_purl(language, package_name, version):
 # Database Storage
 # ---------------------------------------------------------------------------
 
+
 def _store_dependency(conn, project_id, language, dep, latest_version, days_stale, purl):
     """INSERT OR REPLACE a dependency into the dependency_inventory table."""
     try:
@@ -777,6 +800,7 @@ def _store_dependency(conn, project_id, language, dep, latest_version, days_stal
 # Main Scanner
 # ---------------------------------------------------------------------------
 
+
 def scan_dependencies(project_id, language=None, offline=False, project_dir=None, db_path=None):
     """Scan all dependencies for a project, check latest versions, store in DB.
 
@@ -803,8 +827,7 @@ def scan_dependencies(project_id, language=None, offline=False, project_dir=None
             dir_path = project.get("directory_path", "")
             if not dir_path:
                 raise ValueError(
-                    f"Project '{project_id}' has no directory_path set and "
-                    "--project-dir was not provided."
+                    f"Project '{project_id}' has no directory_path set and --project-dir was not provided."
                 )
             proj_dir = Path(dir_path)
 
@@ -852,9 +875,7 @@ def scan_dependencies(project_id, language=None, offline=False, project_dir=None
 
                 if not offline:
                     try:
-                        latest_version, release_date = _check_latest_version(
-                            lang, dep["package_name"]
-                        )
+                        latest_version, release_date = _check_latest_version(lang, dep["package_name"])
                     except Exception:
                         latest_version = None
                         release_date = None
@@ -901,8 +922,13 @@ def scan_dependencies(project_id, language=None, offline=False, project_dir=None
 
                 # 7. Store in DB
                 _store_dependency(
-                    conn, project_id, lang, dep,
-                    latest_version, days_stale, purl,
+                    conn,
+                    project_id,
+                    lang,
+                    dep,
+                    latest_version,
+                    days_stale,
+                    purl,
                 )
 
         conn.commit()
@@ -915,7 +941,8 @@ def scan_dependencies(project_id, language=None, offline=False, project_dir=None
             "offline_mode": offline,
         }
         _log_audit_event(
-            conn, project_id,
+            conn,
+            project_id,
             f"Dependency scan completed: {len(all_deps)} deps across {len(scanned_languages)} languages",
             summary_details,
         )
@@ -938,10 +965,9 @@ def scan_dependencies(project_id, language=None, offline=False, project_dir=None
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
-    parser = argparse.ArgumentParser(
-        description="Scan project dependencies and check for updates"
-    )
+    parser = argparse.ArgumentParser(description="Scan project dependencies and check for updates")
     parser.add_argument("--project-id", required=True, help="Project ID in the database")
     parser.add_argument(
         "--language",

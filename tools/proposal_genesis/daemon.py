@@ -54,15 +54,33 @@ PID_FILE = BASE_DIR / ".tmp" / "proposal_genesis" / "daemon.pid"
 
 REFLEX_NAMES = [
     # Phase 1: CAPTURE
-    "discover", "scout", "shape", "engage",
-    "regulate", "vehicle", "talent", "team",
+    "discover",
+    "scout",
+    "shape",
+    "engage",
+    "regulate",
+    "vehicle",
+    "talent",
+    "team",
     # Phase 2: PROPOSE
-    "extract", "map", "draft", "polish", "decide",
-    "review", "price", "comply_cmmc", "trace",
+    "extract",
+    "map",
+    "draft",
+    "polish",
+    "decide",
+    "review",
+    "price",
+    "comply_cmmc",
+    "trace",
     # Phase 3: DELIVER
-    "monitor", "fulfill", "publish", "bridge",
+    "monitor",
+    "fulfill",
+    "publish",
+    "bridge",
     # Phase 4: LEARN
-    "analyze", "train", "adapt",
+    "analyze",
+    "train",
+    "adapt",
 ]
 
 # Phase groupings (original 14 + 11 new)
@@ -178,41 +196,56 @@ class ProposalGenesisDaemon(DaemonBase):
         finally:
             conn.close()
 
-    def log_audit(self, event_type: str, reflex_name: str = None,
-                  risk_tier: str = None, details: Dict = None,
-                  success: bool = None, duration_ms: int = None,
-                  metric_name: str = None, metric_value: float = None,
-                  opportunity_id: str = None, **kwargs) -> str:
+    def log_audit(
+        self,
+        event_type: str,
+        reflex_name: str = None,
+        risk_tier: str = None,
+        details: Dict = None,
+        success: bool = None,
+        duration_ms: int = None,
+        metric_name: str = None,
+        metric_value: float = None,
+        opportunity_id: str = None,
+        **kwargs,
+    ) -> str:
         audit_id = generate_id("pga")
         conn = get_connection()
         try:
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT INTO pg_proposal_genesis_audit
                     (id, event_type, reflex_name, risk_tier, opportunity_id,
                      details, success, duration_ms, metric_name, metric_value,
                      created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                audit_id, event_type, reflex_name, risk_tier, opportunity_id,
-                json.dumps(details) if details else None,
-                1 if success else (0 if success is False else None),
-                duration_ms, metric_name, metric_value,
-                utcnow_iso(),
-            ))
+            """,
+                (
+                    audit_id,
+                    event_type,
+                    reflex_name,
+                    risk_tier,
+                    opportunity_id,
+                    json.dumps(details) if details else None,
+                    1 if success else (0 if success is False else None),
+                    duration_ms,
+                    metric_name,
+                    metric_value,
+                    utcnow_iso(),
+                ),
+            )
             conn.commit()
         finally:
             conn.close()
         return audit_id
 
-    def create_reflex_state(self, name: str,
-                            config: Dict[str, Any]) -> ReflexStateBase:
+    def create_reflex_state(self, name: str, config: Dict[str, Any]) -> ReflexStateBase:
         return PGReflexState(name, config)
 
     def create_trust_kernel(self, config: Dict[str, Any]) -> TrustKernelBase:
         return PGTrustKernel(config)
 
-    def run_reflex_impl(self, name: str, config: Dict[str, Any],
-                        trust: TrustKernelBase) -> Tuple[bool, float, Dict]:
+    def run_reflex_impl(self, name: str, config: Dict[str, Any], trust: TrustKernelBase) -> Tuple[bool, float, Dict]:
         """Execute a single reflex via tools/proposal_genesis/reflexes/<name>.py."""
         risk_tier = config.get("risk_tier", RISK_GREEN)
         ok, reason = trust.can_execute(risk_tier)
@@ -220,8 +253,7 @@ class ProposalGenesisDaemon(DaemonBase):
             return False, 0.0, {"status": "blocked", "reason": reason}
 
         try:
-            module = importlib.import_module(
-                f"tools.proposal_genesis.reflexes.{name}")
+            module = importlib.import_module(f"tools.proposal_genesis.reflexes.{name}")
             if hasattr(module, "run"):
                 result = module.run(config, trust)
                 return (
@@ -234,10 +266,14 @@ class ProposalGenesisDaemon(DaemonBase):
         except Exception as e:
             return False, 0.0, {"error": str(e), "stage": "reflex_execution"}
 
-        return True, 0.0, {
-            "status": "stub",
-            "message": f"Reflex '{name}' not yet implemented -- stub mode",
-        }
+        return (
+            True,
+            0.0,
+            {
+                "status": "stub",
+                "message": f"Reflex '{name}' not yet implemented -- stub mode",
+            },
+        )
 
     def _get_audit_table(self) -> str:
         return "pg_proposal_genesis_audit"
@@ -246,12 +282,14 @@ class ProposalGenesisDaemon(DaemonBase):
     def run_pipeline(self, opportunity_id: str = None) -> List[Dict[str, Any]]:
         """Run the full discover->extract->map->draft->polish->decide pipeline."""
         results = []
-        self.log_audit("pg.pipeline.discover_to_decide", details={
-            "opportunity_id": opportunity_id,
-            "chain": list(PIPELINE_CHAIN.keys()) + ["decide"],
-        })
-        for reflex_name in ["discover", "extract", "map", "draft",
-                            "polish", "decide"]:
+        self.log_audit(
+            "pg.pipeline.discover_to_decide",
+            details={
+                "opportunity_id": opportunity_id,
+                "chain": list(PIPELINE_CHAIN.keys()) + ["decide"],
+            },
+        )
+        for reflex_name in ["discover", "extract", "map", "draft", "polish", "decide"]:
             if self._shutdown_event.is_set():
                 break
             print(f"  Pipeline: running '{reflex_name}'...")
@@ -262,16 +300,16 @@ class ProposalGenesisDaemon(DaemonBase):
                 break
         return results
 
-    def on_reflex_completed(self, name: str,
-                            result: Dict[str, Any]) -> None:
+    def on_reflex_completed(self, name: str, result: Dict[str, Any]) -> None:
         """Trigger pipeline chain when discover finds new opportunities."""
-        if (name == "discover" and result.get("status") == "success"):
+        if name == "discover" and result.get("status") == "success":
             new_opps = result.get("details", {}).get("new_opportunities", 0)
             if new_opps > 0:
-                print(f"INFO: Discover found {new_opps} new opportunities "
-                      f"-- triggering extract->map->draft->polish->decide chain")
-                for chain_reflex in ["extract", "map", "draft",
-                                     "polish", "decide"]:
+                print(
+                    f"INFO: Discover found {new_opps} new opportunities "
+                    f"-- triggering extract->map->draft->polish->decide chain"
+                )
+                for chain_reflex in ["extract", "map", "draft", "polish", "decide"]:
                     if self._shutdown_event.is_set():
                         break
                     chain_result = self.run_reflex(chain_reflex)
@@ -287,18 +325,14 @@ class ProposalGenesisDaemon(DaemonBase):
 
         conn = get_connection()
         try:
-            opp_row = conn.execute(
-                "SELECT COUNT(*) as cnt FROM proposal_opportunities"
-            ).fetchone()
+            opp_row = conn.execute("SELECT COUNT(*) as cnt FROM proposal_opportunities").fetchone()
             total_opps = opp_row["cnt"] if opp_row else 0
 
             quality_row = conn.execute(
-                "SELECT COUNT(*) as cnt, AVG(overall_score) as avg_score "
-                "FROM pg_proposal_quality_scores"
+                "SELECT COUNT(*) as cnt, AVG(overall_score) as avg_score FROM pg_proposal_quality_scores"
             ).fetchone()
             quality_count = quality_row["cnt"] if quality_row else 0
-            avg_quality = (round(quality_row["avg_score"], 1)
-                           if quality_row and quality_row["avg_score"] else 0)
+            avg_quality = round(quality_row["avg_score"], 1) if quality_row and quality_row["avg_score"] else 0
         except Exception:
             total_opps = 0
             quality_count = 0
@@ -322,34 +356,36 @@ class ProposalGenesisDaemon(DaemonBase):
         print(f"  Enabled: {d['enabled']}")
         if s:
             print(f"  Opportunities: {s.get('total_opportunities', 0)}")
-            print(f"  Quality Checks: {s.get('quality_checks', 0)} "
-                  f"(avg: {s.get('avg_quality_score', 0)})")
+            print(f"  Quality Checks: {s.get('quality_checks', 0)} (avg: {s.get('avg_quality_score', 0)})")
         print(f"  Audit events (24h): {status['audit']['events_last_24h']}")
         print()
-        print(f"{'Reflex':<12} {'Phase':<10} {'Tier':<8} {'Enabled':<9} "
-              f"{'CB':<5} {'Runs':<6} {'OK':<6} {'Fail':<6} {'Last Run'}")
+        print(
+            f"{'Reflex':<12} {'Phase':<10} {'Tier':<8} {'Enabled':<9} "
+            f"{'CB':<5} {'Runs':<6} {'OK':<6} {'Fail':<6} {'Last Run'}"
+        )
         print("-" * 100)
         for name, r in status["reflexes"].items():
             reflex_config = self.config.get("reflexes", {}).get(name, {})
             phase = reflex_config.get("phase", "unknown")
             cb = "OPEN" if r["circuit_breaker_open"] else "ok"
             last = r["last_run_at"][:16] if r["last_run_at"] else "never"
-            print(f"{name:<12} {phase:<10} {r['risk_tier']:<8} "
-                  f"{str(r['enabled']):<9} {cb:<5} "
-                  f"{r['total_runs']:<6} {r['total_successes']:<6} "
-                  f"{r['total_failures']:<6} {last}")
+            print(
+                f"{name:<12} {phase:<10} {r['risk_tier']:<8} "
+                f"{str(r['enabled']):<9} {cb:<5} "
+                f"{r['total_runs']:<6} {r['total_successes']:<6} "
+                f"{r['total_failures']:<6} {last}"
+            )
 
     # --- CLI extensions ---
     def add_cli_args(self, parser: argparse.ArgumentParser) -> None:
-        parser.add_argument("--pipeline", type=str, metavar="OPP_ID",
-                            nargs="?", const="all",
-                            help="Run full discover->polish pipeline")
+        parser.add_argument(
+            "--pipeline", type=str, metavar="OPP_ID", nargs="?", const="all", help="Run full discover->polish pipeline"
+        )
 
     def handle_cli_args(self, args: argparse.Namespace) -> Optional[bool]:
         if hasattr(args, "pipeline") and args.pipeline:
             self._init_states()
-            results = self.run_pipeline(
-                args.pipeline if args.pipeline != "all" else None)
+            results = self.run_pipeline(args.pipeline if args.pipeline != "all" else None)
             if args.json:
                 print(json.dumps(results, indent=2))
             else:
@@ -374,27 +410,42 @@ def _ensure_tables() -> None:
     daemon.ensure_tables()
 
 
-def _log_audit(event_type: str, reflex_name: str = None,
-               risk_tier: str = None, opportunity_id: str = None,
-               details: Dict = None, success: bool = None,
-               duration_ms: int = None, metric_name: str = None,
-               metric_value: float = None) -> str:
+def _log_audit(
+    event_type: str,
+    reflex_name: str = None,
+    risk_tier: str = None,
+    opportunity_id: str = None,
+    details: Dict = None,
+    success: bool = None,
+    duration_ms: int = None,
+    metric_name: str = None,
+    metric_value: float = None,
+) -> str:
     audit_id = generate_id("pga")
     conn = get_connection()
     try:
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO pg_proposal_genesis_audit
                 (id, event_type, reflex_name, risk_tier, opportunity_id,
                  details, success, duration_ms, metric_name, metric_value,
                  created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            audit_id, event_type, reflex_name, risk_tier, opportunity_id,
-            json.dumps(details) if details else None,
-            1 if success else (0 if success is False else None),
-            duration_ms, metric_name, metric_value,
-            utcnow_iso(),
-        ))
+        """,
+            (
+                audit_id,
+                event_type,
+                reflex_name,
+                risk_tier,
+                opportunity_id,
+                json.dumps(details) if details else None,
+                1 if success else (0 if success is False else None),
+                duration_ms,
+                metric_name,
+                metric_value,
+                utcnow_iso(),
+            ),
+        )
         conn.commit()
     finally:
         conn.close()
@@ -405,16 +456,17 @@ def _log_audit(event_type: str, reflex_name: str = None,
 ReflexState = PGReflexState
 TrustKernel = PGTrustKernel
 
+
 def _parse_schedule(s):
-    return __import__('tools.daemon.base', fromlist=['parse_schedule']).parse_schedule(s)
+    return __import__("tools.daemon.base", fromlist=["parse_schedule"]).parse_schedule(s)
 
 
 def _is_due(sched, last):
-    return __import__('tools.daemon.base', fromlist=['is_due']).is_due(sched, last)
+    return __import__("tools.daemon.base", fromlist=["is_due"]).is_due(sched, last)
 
 
 def _evaluate_metric(mc, v):
-    return __import__('tools.daemon.base', fromlist=['evaluate_metric']).evaluate_metric(mc, v)
+    return __import__("tools.daemon.base", fromlist=["evaluate_metric"]).evaluate_metric(mc, v)
 
 
 # ---------------------------------------------------------------------------

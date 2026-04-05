@@ -91,8 +91,16 @@ TOOL_MAP = {
 
 # ICDEV™ allowed tools (valid values for allowed-tools frontmatter)
 ICDEV_TOOLS = {
-    "Bash", "Read", "Write", "Edit", "Glob", "Grep",
-    "WebFetch", "WebSearch", "Agent", "TodoWrite",
+    "Bash",
+    "Read",
+    "Write",
+    "Edit",
+    "Glob",
+    "Grep",
+    "WebFetch",
+    "WebSearch",
+    "Agent",
+    "TodoWrite",
 }
 
 # OpenClaw capabilities that have NO ICDEV™ equivalent (incompatible)
@@ -127,13 +135,33 @@ NODE_PATTERNS = {
 # License compatibility for Gov/DoD environments
 # Permissive licenses are safe; copyleft licenses have distribution restrictions
 PERMISSIVE_LICENSES = {
-    "mit", "mit-0", "apache-2.0", "apache-2", "bsd-2-clause", "bsd-3-clause",
-    "isc", "unlicense", "cc0-1.0", "0bsd", "wtfpl", "zlib",
-    "usg-internal", "public-domain", "cc-by-4.0", "cc-by-sa-4.0",
+    "mit",
+    "mit-0",
+    "apache-2.0",
+    "apache-2",
+    "bsd-2-clause",
+    "bsd-3-clause",
+    "isc",
+    "unlicense",
+    "cc0-1.0",
+    "0bsd",
+    "wtfpl",
+    "zlib",
+    "usg-internal",
+    "public-domain",
+    "cc-by-4.0",
+    "cc-by-sa-4.0",
 }
 COPYLEFT_LICENSES = {
-    "gpl-2.0", "gpl-3.0", "agpl-3.0", "lgpl-2.1", "lgpl-3.0",
-    "mpl-2.0", "eupl-1.2", "osl-3.0", "cecill-2.1",
+    "gpl-2.0",
+    "gpl-3.0",
+    "agpl-3.0",
+    "lgpl-2.1",
+    "lgpl-3.0",
+    "mpl-2.0",
+    "eupl-1.2",
+    "osl-3.0",
+    "cecill-2.1",
 }
 # IL5/IL6 blocked (copyleft + gov distribution = legal risk)
 IL5_IL6_BLOCKED_LICENSES = COPYLEFT_LICENSES
@@ -150,14 +178,14 @@ class CompatibilityReport:
 
     def __init__(self, skill_path):
         self.skill_path = str(skill_path)
-        self.blockers = []       # Cannot import — must fix
-        self.warnings = []       # Can import but degraded
-        self.adaptations = []    # Auto-fixable differences
-        self.info = []           # Informational notes
-        self.tool_mapping = {}   # OpenClaw tool → ICDEV™ tool
-        self.unmapped_tools = [] # Tools with no ICDEV™ equivalent
+        self.blockers = []  # Cannot import — must fix
+        self.warnings = []  # Can import but degraded
+        self.adaptations = []  # Auto-fixable differences
+        self.info = []  # Informational notes
+        self.tool_mapping = {}  # OpenClaw tool → ICDEV™ tool
+        self.unmapped_tools = []  # Tools with no ICDEV™ equivalent
         self.node_patterns = []  # Node.js patterns found
-        self.score = 100         # Compatibility score (0-100)
+        self.score = 100  # Compatibility score (0-100)
 
     def add_blocker(self, code, message, detail=""):
         self.blockers.append({"code": code, "message": message, "detail": detail})
@@ -323,11 +351,13 @@ def check_compatibility(skill_path):
     for pattern, replacement in NODE_PATTERNS.items():
         matches = pattern.findall(body)
         if matches:
-            report.node_patterns.append({
-                "pattern": pattern.pattern,
-                "replacement": replacement,
-                "count": len(matches),
-            })
+            report.node_patterns.append(
+                {
+                    "pattern": pattern.pattern,
+                    "replacement": replacement,
+                    "count": len(matches),
+                }
+            )
             report.add_warning(
                 "NODE_001",
                 f"Node.js pattern found: {pattern.pattern} ({len(matches)}x)",
@@ -395,7 +425,8 @@ def check_compatibility(skill_path):
         matches = pattern.findall(body)
         if matches:
             report.add_warning(
-                code, f"OpenClaw-specific syntax found: {desc} ({len(matches)}x)",
+                code,
+                f"OpenClaw-specific syntax found: {desc} ({len(matches)}x)",
                 "These references will not work in ICDEV™ and will be commented out",
             )
 
@@ -572,8 +603,13 @@ def translate_to_icdev(skill_path, output_path=None):
         if meta_path.exists():
             try:
                 import json as _json
+
                 meta = _json.loads(meta_path.read_text(encoding="utf-8"))
-                author = meta.get("author_handle", "") or meta.get("author_name", "") or (meta.get("ownerId", "")[:20] if meta.get("ownerId") else "")
+                author = (
+                    meta.get("author_handle", "")
+                    or meta.get("author_name", "")
+                    or (meta.get("ownerId", "")[:20] if meta.get("ownerId") else "")
+                )
             except Exception:
                 pass
     if not author:
@@ -672,18 +708,34 @@ MALICE_PATTERNS = {
     "data_exfiltration": [
         (re.compile(r"curl\s+.*-[dX]\s+.*https?://", re.IGNORECASE), "critical", "HTTP POST to external URL"),
         (re.compile(r"wget\s+.*--post", re.IGNORECASE), "critical", "wget POST to external"),
-        (re.compile(r"send\s+(?:all\s+)?(?:files?|data|content|code|secrets?|keys?|tokens?)\s+to\b", re.IGNORECASE), "critical", "Exfiltrate data"),
+        (
+            re.compile(r"send\s+(?:all\s+)?(?:files?|data|content|code|secrets?|keys?|tokens?)\s+to\b", re.IGNORECASE),
+            "critical",
+            "Exfiltrate data",
+        ),
         (re.compile(r"upload\s+.*to\s+(?:https?://|ftp://|s3://)", re.IGNORECASE), "critical", "Upload to external"),
         (re.compile(r"base64\s+.*\|\s*curl", re.IGNORECASE), "critical", "Encoded exfiltration"),
-        (re.compile(r"(?:cat|read)\s+.*(?:\.env|credentials|\.ssh|\.aws|\.gnupg)", re.IGNORECASE), "high", "Read sensitive files"),
-        (re.compile(r"pipe\s+.*(?:output|result).*(?:external|remote|webhook)", re.IGNORECASE), "high", "Pipe output externally"),
+        (
+            re.compile(r"(?:cat|read)\s+.*(?:\.env|credentials|\.ssh|\.aws|\.gnupg)", re.IGNORECASE),
+            "high",
+            "Read sensitive files",
+        ),
+        (
+            re.compile(r"pipe\s+.*(?:output|result).*(?:external|remote|webhook)", re.IGNORECASE),
+            "high",
+            "Pipe output externally",
+        ),
     ],
     "privilege_escalation": [
         (re.compile(r"\bsudo\s+", re.IGNORECASE), "high", "Sudo usage"),
         (re.compile(r"\bchmod\s+777\b"), "high", "World-writable permissions"),
         (re.compile(r"\bchmod\s+\+s\b"), "critical", "Setuid bit"),
         (re.compile(r"--no-verify\b|--no-check\b|--skip-validation\b", re.IGNORECASE), "high", "Skip verification"),
-        (re.compile(r"disable\s+(?:security|firewall|antivirus|protection|auth)", re.IGNORECASE), "critical", "Disable security"),
+        (
+            re.compile(r"disable\s+(?:security|firewall|antivirus|protection|auth)", re.IGNORECASE),
+            "critical",
+            "Disable security",
+        ),
         (re.compile(r"run\s+as\s+(?:root|admin|administrator)", re.IGNORECASE), "high", "Run as privileged user"),
     ],
     "destructive_actions": [
@@ -694,16 +746,46 @@ MALICE_PATTERNS = {
         (re.compile(r"git\s+push\s+--force\s+(?:origin\s+)?main", re.IGNORECASE), "high", "Force push to main"),
     ],
     "social_engineering": [
-        (re.compile(r"don'?t\s+(?:tell|show|inform|alert)\s+(?:the\s+)?user", re.IGNORECASE), "critical", "Hide actions from user"),
-        (re.compile(r"(?:secretly|silently|quietly|covertly)\s+(?:run|execute|send|install)", re.IGNORECASE), "critical", "Covert execution"),
-        (re.compile(r"without\s+(?:the\s+)?user(?:'s)?\s+(?:knowledge|consent|knowing|approval)", re.IGNORECASE), "critical", "Without user consent"),
+        (
+            re.compile(r"don'?t\s+(?:tell|show|inform|alert)\s+(?:the\s+)?user", re.IGNORECASE),
+            "critical",
+            "Hide actions from user",
+        ),
+        (
+            re.compile(r"(?:secretly|silently|quietly|covertly)\s+(?:run|execute|send|install)", re.IGNORECASE),
+            "critical",
+            "Covert execution",
+        ),
+        (
+            re.compile(r"without\s+(?:the\s+)?user(?:'s)?\s+(?:knowledge|consent|knowing|approval)", re.IGNORECASE),
+            "critical",
+            "Without user consent",
+        ),
         (re.compile(r"pretend\s+(?:to\s+be|you\s+are)\b", re.IGNORECASE), "high", "Identity deception"),
     ],
     "bypass_instructions": [
-        (re.compile(r"ignore\s+(?:all\s+)?(?:previous|prior|above|system)\s+(?:instructions|rules|prompts)", re.IGNORECASE), "critical", "Override system prompt"),
-        (re.compile(r"bypass\s+(?:security|auth|validation|compliance|gate)", re.IGNORECASE), "critical", "Bypass security"),
-        (re.compile(r"override\s+(?:safety|security|restriction|permission|guard)", re.IGNORECASE), "critical", "Override safety"),
-        (re.compile(r"skip\s+(?:review|approval|audit|compliance|security\s+check)", re.IGNORECASE), "high", "Skip review/audit"),
+        (
+            re.compile(
+                r"ignore\s+(?:all\s+)?(?:previous|prior|above|system)\s+(?:instructions|rules|prompts)", re.IGNORECASE
+            ),
+            "critical",
+            "Override system prompt",
+        ),
+        (
+            re.compile(r"bypass\s+(?:security|auth|validation|compliance|gate)", re.IGNORECASE),
+            "critical",
+            "Bypass security",
+        ),
+        (
+            re.compile(r"override\s+(?:safety|security|restriction|permission|guard)", re.IGNORECASE),
+            "critical",
+            "Override safety",
+        ),
+        (
+            re.compile(r"skip\s+(?:review|approval|audit|compliance|security\s+check)", re.IGNORECASE),
+            "high",
+            "Skip review/audit",
+        ),
     ],
 }
 
@@ -727,14 +809,16 @@ def scan_content_intent(text):
         for pattern, severity, description in patterns:
             matches = pattern.findall(text)
             if matches:
-                cat_findings.append({
-                    "category": category,
-                    "severity": severity,
-                    "description": description,
-                    "pattern": pattern.pattern[:80],
-                    "match_count": len(matches),
-                    "sample": matches[0][:100] if matches else "",
-                })
+                cat_findings.append(
+                    {
+                        "category": category,
+                        "severity": severity,
+                        "description": description,
+                        "pattern": pattern.pattern[:80],
+                        "match_count": len(matches),
+                        "sample": matches[0][:100] if matches else "",
+                    }
+                )
         if cat_findings:
             findings.extend(cat_findings)
         categories[category] = len(cat_findings)
@@ -797,7 +881,9 @@ def validate_translated_skill(skill_path):
             has_name = bool(fm.get("name"))
             has_desc = bool(fm.get("description"))
             if has_name and has_desc:
-                findings.append({"check": "frontmatter", "pass": True, "detail": f"name='{fm['name']}', description present"})
+                findings.append(
+                    {"check": "frontmatter", "pass": True, "detail": f"name='{fm['name']}', description present"}
+                )
                 checks_passed += 1
             else:
                 missing = []
@@ -805,7 +891,9 @@ def validate_translated_skill(skill_path):
                     missing.append("name")
                 if not has_desc:
                     missing.append("description")
-                findings.append({"check": "frontmatter", "pass": False, "detail": f"Missing fields: {', '.join(missing)}"})
+                findings.append(
+                    {"check": "frontmatter", "pass": False, "detail": f"Missing fields: {', '.join(missing)}"}
+                )
         except yaml.YAMLError as exc:
             findings.append({"check": "frontmatter", "pass": False, "detail": f"YAML parse error: {exc}"})
             body = content
@@ -817,7 +905,13 @@ def validate_translated_skill(skill_path):
     # 3. Body has sections
     sections = re.findall(r"^##\s+.+$", body, re.MULTILINE)
     if sections:
-        findings.append({"check": "sections", "pass": True, "detail": f"{len(sections)} sections found: {[s.strip('# ') for s in sections[:5]]}"})
+        findings.append(
+            {
+                "check": "sections",
+                "pass": True,
+                "detail": f"{len(sections)} sections found: {[s.strip('# ') for s in sections[:5]]}",
+            }
+        )
         checks_passed += 1
     else:
         findings.append({"check": "sections", "pass": False, "detail": "No ## sections in body"})
@@ -828,7 +922,9 @@ def validate_translated_skill(skill_path):
         tools = [t.strip() for t in tools.split(",")]
     invalid_tools = [t for t in tools if t not in ICDEV_TOOLS]
     if not invalid_tools:
-        findings.append({"check": "tools_valid", "pass": True, "detail": f"All {len(tools)} tools are valid ICDEV™ tools"})
+        findings.append(
+            {"check": "tools_valid", "pass": True, "detail": f"All {len(tools)} tools are valid ICDEV™ tools"}
+        )
         checks_passed += 1
     else:
         findings.append({"check": "tools_valid", "pass": False, "detail": f"Invalid tools: {invalid_tools}"})
@@ -845,17 +941,23 @@ def validate_translated_skill(skill_path):
             issues.append("unclosed code block")
         if orphaned_links:
             issues.append(f"{orphaned_links} empty links")
-        findings.append({"check": "markdown_integrity", "pass": False, "detail": f"Broken markdown: {', '.join(issues)}"})
+        findings.append(
+            {"check": "markdown_integrity", "pass": False, "detail": f"Broken markdown: {', '.join(issues)}"}
+        )
 
     # 6. Non-trivial content
     # Strip headers and whitespace to measure actual instruction content
     stripped = re.sub(r"^#{1,6}\s+.*$", "", body, flags=re.MULTILINE).strip()
     stripped = re.sub(r"\s+", " ", stripped)
     if len(stripped) > 100:
-        findings.append({"check": "content_depth", "pass": True, "detail": f"{len(stripped)} chars of instruction content"})
+        findings.append(
+            {"check": "content_depth", "pass": True, "detail": f"{len(stripped)} chars of instruction content"}
+        )
         checks_passed += 1
     else:
-        findings.append({"check": "content_depth", "pass": False, "detail": f"Only {len(stripped)} chars of content (need >100)"})
+        findings.append(
+            {"check": "content_depth", "pass": False, "detail": f"Only {len(stripped)} chars of content (need >100)"}
+        )
 
     # 7. No OpenClaw syntax survived
     oc_survivors = []
@@ -866,7 +968,9 @@ def validate_translated_skill(skill_path):
         findings.append({"check": "no_openclaw_syntax", "pass": True, "detail": "No OpenClaw syntax in instructions"})
         checks_passed += 1
     else:
-        findings.append({"check": "no_openclaw_syntax", "pass": False, "detail": f"OpenClaw syntax survived: {oc_survivors}"})
+        findings.append(
+            {"check": "no_openclaw_syntax", "pass": False, "detail": f"OpenClaw syntax survived: {oc_survivors}"}
+        )
 
     # 8. CUI banner present
     if "CUI // SP-CTI" in content or "CUI //" in content:
@@ -893,15 +997,11 @@ def main():
         description="OpenClaw-to-ICDEV™ compatibility checker and translator",
     )
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--check", metavar="PATH",
-                       help="Check compatibility of an OpenClaw skill")
-    group.add_argument("--translate", metavar="PATH",
-                       help="Translate an OpenClaw skill to ICDEV™ format")
-    group.add_argument("--full", metavar="PATH",
-                       help="Full pipeline: check + translate")
+    group.add_argument("--check", metavar="PATH", help="Check compatibility of an OpenClaw skill")
+    group.add_argument("--translate", metavar="PATH", help="Translate an OpenClaw skill to ICDEV™ format")
+    group.add_argument("--full", metavar="PATH", help="Full pipeline: check + translate")
 
-    parser.add_argument("--output", "-o", metavar="PATH",
-                        help="Output directory for translated skill")
+    parser.add_argument("--output", "-o", metavar="PATH", help="Output directory for translated skill")
     parser.add_argument("--json", action="store_true", help="JSON output")
 
     args = parser.parse_args()

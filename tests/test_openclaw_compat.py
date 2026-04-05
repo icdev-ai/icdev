@@ -27,7 +27,8 @@ def clean_oc_skill(tmp_path):
     """Clean OpenClaw skill with standard format."""
     d = tmp_path / "my-skill"
     d.mkdir()
-    (d / "skill.md").write_text(textwrap.dedent("""\
+    (d / "skill.md").write_text(
+        textwrap.dedent("""\
         ---
         name: my-test-skill
         description: A useful skill for testing
@@ -50,7 +51,9 @@ def clean_oc_skill(tmp_path):
 
         ### 2. Search for patterns
         Use Grep to find matching content.
-    """), encoding="utf-8")
+    """),
+        encoding="utf-8",
+    )
     return d
 
 
@@ -59,7 +62,8 @@ def oc_skill_with_node(tmp_path):
     """OpenClaw skill with Node.js patterns."""
     d = tmp_path / "node-skill"
     d.mkdir()
-    (d / "skill.md").write_text(textwrap.dedent("""\
+    (d / "skill.md").write_text(
+        textwrap.dedent("""\
         ---
         name: node-helper
         description: A Node.js helper skill
@@ -76,7 +80,9 @@ def oc_skill_with_node(tmp_path):
         Run `npm install express` to set up the server.
         Then use `node server.js` to start.
         Check `console.log` output for errors.
-    """), encoding="utf-8")
+    """),
+        encoding="utf-8",
+    )
     return d
 
 
@@ -85,7 +91,8 @@ def oc_skill_with_js_scripts(tmp_path):
     """OpenClaw skill with JavaScript scripts (blocker)."""
     d = tmp_path / "js-skill"
     d.mkdir()
-    (d / "skill.md").write_text(textwrap.dedent("""\
+    (d / "skill.md").write_text(
+        textwrap.dedent("""\
         ---
         name: js-skill
         description: A skill with JS scripts
@@ -94,7 +101,9 @@ def oc_skill_with_js_scripts(tmp_path):
         ---
 
         # JS Skill
-    """), encoding="utf-8")
+    """),
+        encoding="utf-8",
+    )
     scripts = d / "scripts"
     scripts.mkdir()
     (scripts / "helper.js").write_text("console.log('hello');", encoding="utf-8")
@@ -106,7 +115,8 @@ def oc_skill_with_npm(tmp_path):
     """OpenClaw skill with package.json (blocker)."""
     d = tmp_path / "npm-skill"
     d.mkdir()
-    (d / "skill.md").write_text(textwrap.dedent("""\
+    (d / "skill.md").write_text(
+        textwrap.dedent("""\
         ---
         name: npm-skill
         description: Depends on npm
@@ -114,7 +124,9 @@ def oc_skill_with_npm(tmp_path):
         ---
 
         # NPM Skill
-    """), encoding="utf-8")
+    """),
+        encoding="utf-8",
+    )
     (d / "package.json").write_text('{"name": "npm-skill", "dependencies": {"axios": "^1.0.0"}}', encoding="utf-8")
     return d
 
@@ -124,7 +136,8 @@ def oc_skill_with_claw_syntax(tmp_path):
     """OpenClaw skill with OpenClaw-specific syntax."""
     d = tmp_path / "claw-skill"
     d.mkdir()
-    (d / "skill.md").write_text(textwrap.dedent("""\
+    (d / "skill.md").write_text(
+        textwrap.dedent("""\
         ---
         name: claw-skill
         description: Uses OpenClaw APIs
@@ -139,7 +152,9 @@ def oc_skill_with_claw_syntax(tmp_path):
         Ask @claw to browse the website.
         Use claw.memory to recall previous results.
         Then claw.run the analysis script.
-    """), encoding="utf-8")
+    """),
+        encoding="utf-8",
+    )
     return d
 
 
@@ -148,7 +163,8 @@ def oc_skill_incompatible_tools(tmp_path):
     """OpenClaw skill with incompatible capabilities."""
     d = tmp_path / "gui-skill"
     d.mkdir()
-    (d / "skill.md").write_text(textwrap.dedent("""\
+    (d / "skill.md").write_text(
+        textwrap.dedent("""\
         ---
         name: gui-automation
         description: GUI automation skill
@@ -163,7 +179,9 @@ def oc_skill_incompatible_tools(tmp_path):
         # GUI Automation
 
         Click the button and take a screenshot.
-    """), encoding="utf-8")
+    """),
+        encoding="utf-8",
+    )
     return d
 
 
@@ -172,12 +190,15 @@ def oc_skill_no_frontmatter(tmp_path):
     """OpenClaw skill with no YAML frontmatter."""
     d = tmp_path / "bare-skill"
     d.mkdir()
-    (d / "skill.md").write_text(textwrap.dedent("""\
+    (d / "skill.md").write_text(
+        textwrap.dedent("""\
         # Bare Skill
 
         This skill has no frontmatter.
         Just raw instructions.
-    """), encoding="utf-8")
+    """),
+        encoding="utf-8",
+    )
     return d
 
 
@@ -309,7 +330,9 @@ class TestTranslation:
 
         content = (out / "SKILL.md").read_text(encoding="utf-8")
         # Extract just the Instructions section (not Compatibility Notes which quotes originals)
-        instructions = content.split("## Instructions")[1].split("## Compatibility")[0] if "## Instructions" in content else ""
+        instructions = (
+            content.split("## Instructions")[1].split("## Compatibility")[0] if "## Instructions" in content else ""
+        )
         assert "@claw" not in instructions
         assert "Claude" in instructions  # @claw → Claude
         assert "claw.memory" not in instructions
@@ -369,7 +392,8 @@ class TestLicenseCompliance:
         """MIT-0 license is compatible with all ILs."""
         d = tmp_path / "mit-skill"
         d.mkdir()
-        (d / "skill.md").write_text(textwrap.dedent("""\
+        (d / "skill.md").write_text(
+            textwrap.dedent("""\
             ---
             name: mit-skill
             description: MIT licensed
@@ -377,7 +401,9 @@ class TestLicenseCompliance:
             ---
             # MIT Skill
             Do things.
-        """), encoding="utf-8")
+        """),
+            encoding="utf-8",
+        )
         report = check_compatibility(d)
         assert report.compatible is True
         assert not any(w["code"].startswith("LIC_001") for w in report.warnings)
@@ -386,7 +412,8 @@ class TestLicenseCompliance:
         """GPL license is warned for IL5/IL6."""
         d = tmp_path / "gpl-skill"
         d.mkdir()
-        (d / "skill.md").write_text(textwrap.dedent("""\
+        (d / "skill.md").write_text(
+            textwrap.dedent("""\
             ---
             name: gpl-skill
             description: GPL licensed
@@ -394,7 +421,9 @@ class TestLicenseCompliance:
             ---
             # GPL Skill
             Do things.
-        """), encoding="utf-8")
+        """),
+            encoding="utf-8",
+        )
         report = check_compatibility(d)
         assert any(w["code"] == "LIC_001" for w in report.warnings)
 
@@ -402,14 +431,17 @@ class TestLicenseCompliance:
         """Missing license is warned."""
         d = tmp_path / "no-lic"
         d.mkdir()
-        (d / "skill.md").write_text(textwrap.dedent("""\
+        (d / "skill.md").write_text(
+            textwrap.dedent("""\
             ---
             name: no-license-skill
             description: No license
             ---
             # No License
             Do things.
-        """), encoding="utf-8")
+        """),
+            encoding="utf-8",
+        )
         report = check_compatibility(d)
         assert any(w["code"] == "LIC_003" for w in report.warnings)
 
@@ -456,7 +488,8 @@ class TestSelfImprovingAgent:
         """Simulate the self-improving-agent skill from ClawHub."""
         d = tmp_path / "self-improving-agent"
         d.mkdir()
-        (d / "skill.md").write_text(textwrap.dedent("""\
+        (d / "skill.md").write_text(
+            textwrap.dedent("""\
             ---
             name: self-improving-agent
             description: "Captures learnings, errors, and corrections to enable continuous improvement"
@@ -514,12 +547,15 @@ class TestSelfImprovingAgent:
             ```bash
             git clone https://github.com/peterskoett/self-improving-agent.git
             ```
-        """), encoding="utf-8")
+        """),
+            encoding="utf-8",
+        )
 
         # Create scripts directory with shell scripts
         scripts = d / "scripts"
         scripts.mkdir()
-        (scripts / "activator.sh").write_text(textwrap.dedent("""\
+        (scripts / "activator.sh").write_text(
+            textwrap.dedent("""\
             #!/bin/bash
             # Activates the self-improving agent skill
             echo "Activating self-improving agent..."
@@ -527,12 +563,17 @@ class TestSelfImprovingAgent:
             touch .learnings/LEARNINGS.md
             touch .learnings/ERRORS.md
             touch .learnings/FEATURE_REQUESTS.md
-        """), encoding="utf-8")
-        (scripts / "error-detector.sh").write_text(textwrap.dedent("""\
+        """),
+            encoding="utf-8",
+        )
+        (scripts / "error-detector.sh").write_text(
+            textwrap.dedent("""\
             #!/bin/bash
             # Detects errors in the last command output
             echo "Checking for errors..."
-        """), encoding="utf-8")
+        """),
+            encoding="utf-8",
+        )
 
         # Create hooks directory with JS/TS hooks
         hooks = d / "hooks" / "openclaw"

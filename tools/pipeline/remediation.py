@@ -8,6 +8,7 @@ plans from compliance findings.
 No Flask dependency — takes findings list and returns remediation artifacts.
 No LLM dependency — all logic is deterministic.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -38,14 +39,12 @@ _REMEDIATION_STEPS = {
         "effort_hours": 2,
         "auto_fixable": True,
     },
-
     # Build Integrity
     "hermetic_build": {
         "step": "Configure hermetic (network-isolated) builds using Tekton or Bazel sandboxed execution. Block internet access during build phase. Pre-cache dependencies in local registry.",
         "effort_hours": 16,
         "auto_fixable": False,
     },
-
     # Supply Chain
     "sbom_generated": {
         "step": "Add SBOM generation stage using Syft or CycloneDX CLI after build. Output CycloneDX JSON format. Store alongside container image in OCI registry. Validate with sbom-scorecard.",
@@ -62,7 +61,6 @@ _REMEDIATION_STEPS = {
         "effort_hours": 8,
         "auto_fixable": False,
     },
-
     # Security Testing
     "sast_present": {
         "step": "Add SAST scanning stage: Semgrep (multi-language, free), SonarQube (enterprise), or CodeQL (GitHub). Run on every commit/MR. Block merge on high/critical findings. Configure language-specific rulesets.",
@@ -94,7 +92,6 @@ _REMEDIATION_STEPS = {
         "effort_hours": 8,
         "auto_fixable": False,
     },
-
     # Policy & Governance
     "vuln_threshold_gate": {
         "step": "Add vulnerability threshold gate before deployment: 0 critical, 0 high with known exploits, <=5 medium. Use Trivy exit-code or policy engine. Integrate with merge request approval flow.",
@@ -106,7 +103,6 @@ _REMEDIATION_STEPS = {
         "effort_hours": 12,
         "auto_fixable": False,
     },
-
     # Deployment Controls
     "prod_approval_gate": {
         "step": "Add manual approval gate before production deployment. Require at least 2 approvers (developer + lead/ISSO). Configure timeout (24h max). Enable audit logging of approval decisions.",
@@ -123,7 +119,6 @@ _REMEDIATION_STEPS = {
         "effort_hours": 40,
         "auto_fixable": False,
     },
-
     # Monitoring & Compliance
     "runtime_monitoring": {
         "step": "Deploy runtime security monitoring: Falco (free, eBPF-based) or NeuVector. Detect anomalous system calls, file access, network connections. Alert to SIEM/PagerDuty. Enable response playbooks.",
@@ -140,7 +135,6 @@ _REMEDIATION_STEPS = {
         "effort_hours": 4,
         "auto_fixable": True,
     },
-
     # Air-Gapped / Cross-Domain
     "airgap_vuln_mirror": {
         "step": "Configure offline vulnerability database mirror for air-gapped environments. Use Trivy --offline-scan with periodically updated DB (USB transfer or data diode). Schedule weekly DB refresh.",
@@ -152,7 +146,6 @@ _REMEDIATION_STEPS = {
         "effort_hours": 16,
         "auto_fixable": False,
     },
-
     # SRE
     "slo_defined": {
         "step": "Define Service Level Objectives (SLOs) for all production services: availability (e.g., 99.9%), latency P99 (e.g., < 200ms), error rate (e.g., < 0.1%). Implement burn-rate alerting with Sloth or OpenSLO.",
@@ -190,6 +183,7 @@ _DEFAULT_STEP = {
 
 
 # ── Plan Generation ─────────────────────────────────────────────────────────
+
 
 def generate_remediation_plan(findings: list, rules: list | None = None) -> dict:
     """Generate a phased remediation plan from compliance findings.
@@ -254,20 +248,22 @@ def generate_remediation_plan(findings: list, rules: list | None = None) -> dict
         p = phases[phase_num]
         if p["actions"]:
             priority = {1: "CRITICAL", 2: "HIGH", 3: "MEDIUM"}[phase_num]
-            phase_list.append({
-                "phase": phase_num,
-                "name": f"Phase {phase_num}: {p['label']}",
-                "priority": priority,
-                "description": {
-                    1: "CAT1 findings that deny or disrupt capability. Must resolve before ATO.",
-                    2: "CAT2 findings that degrade capability. Resolve for full compliance.",
-                    3: "CAT3 findings — minor. Track in POA&M for next review cycle.",
-                }[phase_num],
-                "deadline": p["deadline"],
-                "actions": p["actions"],
-                "total_effort_hours": sum(a["effort_hours"] for a in p["actions"]),
-                "auto_fixable_count": sum(1 for a in p["actions"] if a["auto_fixable"]),
-            })
+            phase_list.append(
+                {
+                    "phase": phase_num,
+                    "name": f"Phase {phase_num}: {p['label']}",
+                    "priority": priority,
+                    "description": {
+                        1: "CAT1 findings that deny or disrupt capability. Must resolve before ATO.",
+                        2: "CAT2 findings that degrade capability. Resolve for full compliance.",
+                        3: "CAT3 findings — minor. Track in POA&M for next review cycle.",
+                    }[phase_num],
+                    "deadline": p["deadline"],
+                    "actions": p["actions"],
+                    "total_effort_hours": sum(a["effort_hours"] for a in p["actions"]),
+                    "auto_fixable_count": sum(1 for a in p["actions"] if a["auto_fixable"]),
+                }
+            )
 
     total_actions = sum(len(p["actions"]) for p in phase_list)
     auto_fixable = sum(p["auto_fixable_count"] for p in phase_list)
@@ -291,6 +287,7 @@ def generate_remediation_plan(findings: list, rules: list | None = None) -> dict
 
 
 # ── Effort Estimation ───────────────────────────────────────────────────────
+
 
 def _estimate_effort(steps: list) -> str:
     """Sum effort hours from remediation steps and format as human-readable string."""

@@ -100,6 +100,7 @@ def _ensure_tables(conn) -> None:
 # Statistics helpers (pure Python, no scipy/numpy)
 # ---------------------------------------------------------------------------
 
+
 def _percentile(data: List[float], pct: float) -> float:
     """Return the pct-th percentile of *sorted* data (0-100 scale)."""
     if not data:
@@ -161,8 +162,7 @@ def _t_distribution_two_tailed_p(t: float, df: float) -> float:
     return max(0.0, min(1.0, p))
 
 
-def _regularized_incomplete_beta(x: float, a: float, b: float,
-                                  max_iter: int = 200, tol: float = 1e-12) -> float:
+def _regularized_incomplete_beta(x: float, a: float, b: float, max_iter: int = 200, tol: float = 1e-12) -> float:
     """Regularized incomplete beta function I_x(a, b) via Lentz continued fraction."""
     if x <= 0.0:
         return 0.0
@@ -174,9 +174,7 @@ def _regularized_incomplete_beta(x: float, a: float, b: float,
         return 1.0 - _regularized_incomplete_beta(1.0 - x, b, a, max_iter, tol)
 
     # Prefactor: x^a * (1-x)^b / (a * Beta(a,b))
-    ln_prefactor = (a * math.log(x) + b * math.log(1.0 - x)
-                    - math.log(a)
-                    - _log_beta(a, b))
+    ln_prefactor = a * math.log(x) + b * math.log(1.0 - x) - math.log(a) - _log_beta(a, b)
     prefactor = math.exp(ln_prefactor)
 
     # Lentz's algorithm for continued fraction
@@ -223,12 +221,17 @@ def _log_beta(a: float, b: float) -> float:
 # Core API
 # ---------------------------------------------------------------------------
 
-def record_quality_score(model_id: str, function_name: str, score: float,
-                         response_time_ms: Optional[int] = None,
-                         token_count: Optional[int] = None,
-                         method: str = "automated",
-                         evaluator: str = "automated-test",
-                         metadata: Optional[dict] = None) -> dict:
+
+def record_quality_score(
+    model_id: str,
+    function_name: str,
+    score: float,
+    response_time_ms: Optional[int] = None,
+    token_count: Optional[int] = None,
+    method: str = "automated",
+    evaluator: str = "automated-test",
+    metadata: Optional[dict] = None,
+) -> dict:
     """Record a single quality evaluation for a model+function pair."""
     if method not in ("automated", "human", "judge"):
         raise ValueError(f"Invalid evaluation_method: {method}")
@@ -246,8 +249,7 @@ def record_quality_score(model_id: str, function_name: str, score: float,
            (id, model_id, function_name, quality_score, response_time_ms,
             token_count, evaluation_method, evaluator, metadata_json, created_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (entry_id, model_id, function_name, score, response_time_ms,
-         token_count, method, evaluator, meta_json, now),
+        (entry_id, model_id, function_name, score, response_time_ms, token_count, method, evaluator, meta_json, now),
     )
     conn.commit()
 
@@ -261,8 +263,7 @@ def record_quality_score(model_id: str, function_name: str, score: float,
     }
 
 
-def get_baseline(model_id: str, function_name: str,
-                 baseline_days: int = 30) -> dict:
+def get_baseline(model_id: str, function_name: str, baseline_days: int = 30) -> dict:
     """Return baseline statistics for a model+function pair.
 
     Baseline = the first *baseline_days* days of recorded data, or all data
@@ -283,8 +284,7 @@ def get_baseline(model_id: str, function_name: str,
     if not earliest:
         return {"status": "no_data", "model_id": model_id, "function_name": function_name}
 
-    cutoff = (datetime.fromisoformat(earliest.replace("Z", "+00:00"))
-              + timedelta(days=baseline_days)).isoformat()
+    cutoff = (datetime.fromisoformat(earliest.replace("Z", "+00:00")) + timedelta(days=baseline_days)).isoformat()
 
     rows = conn.execute(
         """SELECT quality_score, response_time_ms, token_count
@@ -355,10 +355,9 @@ def reset_baseline(model_id: str, function_name: str) -> dict:
     }
 
 
-def detect_drift(model_id: Optional[str] = None,
-                 function_name: Optional[str] = None,
-                 window_days: int = 7,
-                 baseline_days: int = 30) -> List[dict]:
+def detect_drift(
+    model_id: Optional[str] = None, function_name: Optional[str] = None, window_days: int = 7, baseline_days: int = 30
+) -> List[dict]:
     """Detect statistical drift for model+function pairs.
 
     Compares a recent *window_days* window against the baseline period.
@@ -437,9 +436,16 @@ def detect_drift(model_id: Optional[str] = None,
                     if p_val < 0.05:
                         severity = "critical" if drop_pct > 25 else "warning"
                         evt = _record_drift_event(
-                            conn, mid, fname, "quality_degradation",
-                            base_mean, recent_mean, drop_pct,
-                            severity, window_start, window_end,
+                            conn,
+                            mid,
+                            fname,
+                            "quality_degradation",
+                            base_mean,
+                            recent_mean,
+                            drop_pct,
+                            severity,
+                            window_start,
+                            window_end,
                         )
                         drift_events.append(evt)
 
@@ -456,9 +462,16 @@ def detect_drift(model_id: Optional[str] = None,
                     if p_val < 0.05:
                         severity = "critical" if increase_pct > 50 else "warning"
                         evt = _record_drift_event(
-                            conn, mid, fname, "latency_increase",
-                            base_p95, recent_p95, increase_pct,
-                            severity, window_start, window_end,
+                            conn,
+                            mid,
+                            fname,
+                            "latency_increase",
+                            base_p95,
+                            recent_p95,
+                            increase_pct,
+                            severity,
+                            window_start,
+                            window_end,
                         )
                         drift_events.append(evt)
 
@@ -475,21 +488,35 @@ def detect_drift(model_id: Optional[str] = None,
                     if p_val < 0.05:
                         severity = "critical" if tok_pct > 40 else "warning"
                         evt = _record_drift_event(
-                            conn, mid, fname, "token_inflation",
-                            base_tok_mean, recent_tok_mean, tok_pct,
-                            severity, window_start, window_end,
+                            conn,
+                            mid,
+                            fname,
+                            "token_inflation",
+                            base_tok_mean,
+                            recent_tok_mean,
+                            tok_pct,
+                            severity,
+                            window_start,
+                            window_end,
                         )
                         drift_events.append(evt)
 
     return drift_events
 
 
-def _record_drift_event(conn, model_id: str, function_name: str,
-                        drift_type: str, baseline_value: float,
-                        current_value: float, deviation_pct: float,
-                        severity: str, window_start: str,
-                        window_end: str,
-                        action: str = "alert") -> dict:
+def _record_drift_event(
+    conn,
+    model_id: str,
+    function_name: str,
+    drift_type: str,
+    baseline_value: float,
+    current_value: float,
+    deviation_pct: float,
+    severity: str,
+    window_start: str,
+    window_end: str,
+    action: str = "alert",
+) -> dict:
     """Insert an append-only drift event and return it as a dict."""
     event_id = f"mdrift-{uuid.uuid4().hex[:12]}"
     now = datetime.now(timezone.utc).isoformat()
@@ -500,10 +527,20 @@ def _record_drift_event(conn, model_id: str, function_name: str,
             baseline_value, current_value, deviation_pct,
             severity, action_taken, window_start, window_end, created_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (event_id, model_id, function_name, drift_type,
-         round(baseline_value, 4), round(current_value, 4),
-         round(deviation_pct, 2), severity, action,
-         window_start, window_end, now),
+        (
+            event_id,
+            model_id,
+            function_name,
+            drift_type,
+            round(baseline_value, 4),
+            round(current_value, 4),
+            round(deviation_pct, 2),
+            severity,
+            action,
+            window_start,
+            window_end,
+            now,
+        ),
     )
     conn.commit()
 
@@ -623,7 +660,9 @@ def trigger_retrain(model_id: str, function_name: str, reason: str) -> dict:
     now = datetime.now(timezone.utc).isoformat()
 
     evt = _record_drift_event(
-        conn, model_id, function_name,
+        conn,
+        model_id,
+        function_name,
         drift_type="quality_degradation",
         baseline_value=0.0,
         current_value=0.0,
@@ -638,8 +677,7 @@ def trigger_retrain(model_id: str, function_name: str, reason: str) -> dict:
     return evt
 
 
-def get_drift_history(limit: int = 50,
-                      model_id: Optional[str] = None) -> List[dict]:
+def get_drift_history(limit: int = 50, model_id: Optional[str] = None) -> List[dict]:
     """Return recent drift events."""
     conn = get_connection()
     _ensure_tables(conn)
@@ -689,28 +727,20 @@ def run_gate() -> dict:
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Model Drift & Performance Monitor for ICDEV™",
     )
-    parser.add_argument("--record", action="store_true",
-                        help="Record a quality score")
-    parser.add_argument("--detect-drift", action="store_true",
-                        help="Run drift detection")
-    parser.add_argument("--health", action="store_true",
-                        help="Show model health status")
-    parser.add_argument("--baseline", action="store_true",
-                        help="Show baseline statistics")
-    parser.add_argument("--reset-baseline", action="store_true",
-                        help="Reset baseline for a model+function")
-    parser.add_argument("--drift-history", action="store_true",
-                        help="Show recent drift events")
-    parser.add_argument("--retrain", action="store_true",
-                        help="Trigger retrain request")
-    parser.add_argument("--gate", action="store_true",
-                        help="Gate check — exit 1 if critical drift")
-    parser.add_argument("--json", action="store_true",
-                        help="Output as JSON")
+    parser.add_argument("--record", action="store_true", help="Record a quality score")
+    parser.add_argument("--detect-drift", action="store_true", help="Run drift detection")
+    parser.add_argument("--health", action="store_true", help="Show model health status")
+    parser.add_argument("--baseline", action="store_true", help="Show baseline statistics")
+    parser.add_argument("--reset-baseline", action="store_true", help="Reset baseline for a model+function")
+    parser.add_argument("--drift-history", action="store_true", help="Show recent drift events")
+    parser.add_argument("--retrain", action="store_true", help="Trigger retrain request")
+    parser.add_argument("--gate", action="store_true", help="Gate check — exit 1 if critical drift")
+    parser.add_argument("--json", action="store_true", help="Output as JSON")
 
     # Record args
     parser.add_argument("--model", type=str, help="Model ID")
@@ -718,23 +748,19 @@ def main() -> None:
     parser.add_argument("--score", type=float, help="Quality score (0.0-1.0)")
     parser.add_argument("--response-time", type=int, help="Response time in ms")
     parser.add_argument("--tokens", type=int, help="Token count")
-    parser.add_argument("--method", type=str, default="automated",
-                        choices=["automated", "human", "judge"],
-                        help="Evaluation method")
-    parser.add_argument("--evaluator", type=str, default="automated-test",
-                        help="Evaluator identifier")
+    parser.add_argument(
+        "--method", type=str, default="automated", choices=["automated", "human", "judge"], help="Evaluation method"
+    )
+    parser.add_argument("--evaluator", type=str, default="automated-test", help="Evaluator identifier")
 
     # Drift detection args
-    parser.add_argument("--window-days", type=int, default=7,
-                        help="Recent window size in days (default: 7)")
+    parser.add_argument("--window-days", type=int, default=7, help="Recent window size in days (default: 7)")
 
     # History args
-    parser.add_argument("--limit", type=int, default=50,
-                        help="Limit for drift history (default: 50)")
+    parser.add_argument("--limit", type=int, default=50, help="Limit for drift history (default: 50)")
 
     # Retrain args
-    parser.add_argument("--reason", type=str,
-                        help="Reason for retrain trigger")
+    parser.add_argument("--reason", type=str, help="Reason for retrain trigger")
 
     args = parser.parse_args()
 
@@ -789,8 +815,7 @@ def main() -> None:
             print(json.dumps(result, indent=2))
         else:
             status = "PASSED" if result["passed"] else "FAILED"
-            print(f"Gate model_drift: {status} "
-                  f"(critical events 24h: {result['critical_drift_events_24h']})")
+            print(f"Gate model_drift: {status} (critical events 24h: {result['critical_drift_events_24h']})")
         sys.exit(0 if result["passed"] else 1)
 
     else:

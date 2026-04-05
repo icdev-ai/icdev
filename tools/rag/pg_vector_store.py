@@ -70,9 +70,7 @@ class PgVectorStore(VectorStoreProvider):
         try:
             conn = get_connection()
             try:
-                row = conn.execute(
-                    "SELECT 1 FROM pg_extension WHERE extname = 'vector'"
-                ).fetchone()
+                row = conn.execute("SELECT 1 FROM pg_extension WHERE extname = 'vector'").fetchone()
                 self._pgvector_available = row is not None
             finally:
                 conn.close()
@@ -113,21 +111,33 @@ class PgVectorStore(VectorStoreProvider):
                 vec_str = _embedding_to_pg_vector(chunk.embedding)
                 metadata_json = json.dumps(chunk.metadata) if chunk.metadata else "{}"
 
-                conn.execute("""
+                conn.execute(
+                    """
                     INSERT INTO rag_chunks
                         (id, content, content_hash, embedding, embedding_vec,
                          source_type, source_id, source_table, chunk_index,
                          total_chunks, metadata, tier, tenant_id, project_id,
                          classification)
                     VALUES (?, ?, ?, ?, ?::vector, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    chunk.chunk_id, chunk.content, chunk.content_hash,
-                    blob, vec_str,
-                    chunk.source_type, chunk.source_id, chunk.source_table,
-                    chunk.chunk_index, chunk.total_chunks,
-                    metadata_json, chunk.tier, chunk.tenant_id,
-                    chunk.project_id, chunk.classification,
-                ))
+                """,
+                    (
+                        chunk.chunk_id,
+                        chunk.content,
+                        chunk.content_hash,
+                        blob,
+                        vec_str,
+                        chunk.source_type,
+                        chunk.source_id,
+                        chunk.source_table,
+                        chunk.chunk_index,
+                        chunk.total_chunks,
+                        metadata_json,
+                        chunk.tier,
+                        chunk.tenant_id,
+                        chunk.project_id,
+                        chunk.classification,
+                    ),
+                )
                 inserted += 1
             conn.commit()
         finally:
@@ -173,7 +183,8 @@ class PgVectorStore(VectorStoreProvider):
 
             # pgvector cosine distance: 1 - (a <=> b) = cosine similarity
             # <=> is cosine distance (0 = identical, 2 = opposite)
-            rows = conn.execute(f"""
+            rows = conn.execute(
+                f"""
                 SELECT id, content, source_type, source_id, source_table,
                        chunk_index, metadata, tier, classification,
                        1 - (embedding_vec <=> ?::vector) AS score
@@ -181,22 +192,26 @@ class PgVectorStore(VectorStoreProvider):
                 WHERE {where_clause}
                 ORDER BY embedding_vec <=> ?::vector
                 LIMIT ?
-            """, params).fetchall()  # nosec B608 — where_clause from hardcoded parts
+            """,
+                params,
+            ).fetchall()  # nosec B608 — where_clause from hardcoded parts
 
             results = []
             for row in rows:
-                results.append(SearchResult(
-                    chunk_id=row["id"],
-                    content=row["content"],
-                    source_type=row["source_type"] or "",
-                    source_id=row["source_id"] or "",
-                    source_table=row["source_table"] or "",
-                    chunk_index=row["chunk_index"] or 0,
-                    score=float(row["score"]) if row["score"] else 0.0,
-                    metadata=json.loads(row["metadata"]) if row["metadata"] else {},
-                    tier=row["tier"] or "hot",
-                    classification=row["classification"] or "CUI",
-                ))
+                results.append(
+                    SearchResult(
+                        chunk_id=row["id"],
+                        content=row["content"],
+                        source_type=row["source_type"] or "",
+                        source_id=row["source_id"] or "",
+                        source_table=row["source_table"] or "",
+                        chunk_index=row["chunk_index"] or 0,
+                        score=float(row["score"]) if row["score"] else 0.0,
+                        metadata=json.loads(row["metadata"]) if row["metadata"] else {},
+                        tier=row["tier"] or "hot",
+                        classification=row["classification"] or "CUI",
+                    )
+                )
             return results
         finally:
             conn.close()
@@ -242,7 +257,8 @@ class PgVectorStore(VectorStoreProvider):
             params.extend([query_text, query_text, query_text, rrf_k, rrf_k, top_k])
 
             # Hybrid RRF query — vector + FTS in single pass
-            rows = conn.execute(f"""
+            rows = conn.execute(
+                f"""
                 WITH vector_ranked AS (
                     SELECT id, content, source_type, source_id, source_table,
                            chunk_index, metadata, tier, classification,
@@ -269,24 +285,28 @@ class PgVectorStore(VectorStoreProvider):
                 LEFT JOIN fts_ranked f ON v.id = f.id
                 ORDER BY rrf_score DESC
                 LIMIT ?
-            """, params).fetchall()  # nosec B608
+            """,
+                params,
+            ).fetchall()  # nosec B608
 
             results = []
             for row in rows:
-                results.append(SearchResult(
-                    chunk_id=row["id"],
-                    content=row["content"],
-                    source_type=row["source_type"] or "",
-                    source_id=row["source_id"] or "",
-                    source_table=row["source_table"] or "",
-                    chunk_index=row["chunk_index"] or 0,
-                    score=float(row["vec_score"]) if row["vec_score"] else 0.0,
-                    bm25_score=float(row["fts_score"]) if row["fts_score"] else 0.0,
-                    final_score=float(row["rrf_score"]) if row["rrf_score"] else 0.0,
-                    metadata=json.loads(row["metadata"]) if row["metadata"] else {},
-                    tier=row["tier"] or "hot",
-                    classification=row["classification"] or "CUI",
-                ))
+                results.append(
+                    SearchResult(
+                        chunk_id=row["id"],
+                        content=row["content"],
+                        source_type=row["source_type"] or "",
+                        source_id=row["source_id"] or "",
+                        source_table=row["source_table"] or "",
+                        chunk_index=row["chunk_index"] or 0,
+                        score=float(row["vec_score"]) if row["vec_score"] else 0.0,
+                        bm25_score=float(row["fts_score"]) if row["fts_score"] else 0.0,
+                        final_score=float(row["rrf_score"]) if row["rrf_score"] else 0.0,
+                        metadata=json.loads(row["metadata"]) if row["metadata"] else {},
+                        tier=row["tier"] or "hot",
+                        classification=row["classification"] or "CUI",
+                    )
+                )
             return results
         finally:
             conn.close()
@@ -352,18 +372,20 @@ class PgVectorStore(VectorStoreProvider):
 
             results = []
             for row, score in scored[:top_k]:
-                results.append(SearchResult(
-                    chunk_id=row["id"],
-                    content=row["content"],
-                    source_type=row["source_type"] or "",
-                    source_id=row["source_id"] or "",
-                    source_table=row["source_table"] or "",
-                    chunk_index=row["chunk_index"] or 0,
-                    score=score,
-                    metadata=json.loads(row["metadata"]) if row["metadata"] else {},
-                    tier=row["tier"] or "hot",
-                    classification=row["classification"] or "CUI",
-                ))
+                results.append(
+                    SearchResult(
+                        chunk_id=row["id"],
+                        content=row["content"],
+                        source_type=row["source_type"] or "",
+                        source_id=row["source_id"] or "",
+                        source_table=row["source_table"] or "",
+                        chunk_index=row["chunk_index"] or 0,
+                        score=score,
+                        metadata=json.loads(row["metadata"]) if row["metadata"] else {},
+                        tier=row["tier"] or "hot",
+                        classification=row["classification"] or "CUI",
+                    )
+                )
             return results
         finally:
             conn.close()

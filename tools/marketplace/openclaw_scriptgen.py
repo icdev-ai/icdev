@@ -159,7 +159,7 @@ def analyze_skill_steps(skill_path):
         for num, title in matches:
             # Get body between this header and next
             start = content.find(f"### {num}. {title}")
-            next_match = re.search(r"^###\s+\d+\.", content[start + len(f"### {num}. {title}"):], re.MULTILINE)
+            next_match = re.search(r"^###\s+\d+\.", content[start + len(f"### {num}. {title}") :], re.MULTILINE)
             end = start + len(f"### {num}. {title}") + next_match.start() if next_match else len(content)
             body = content[start:end]
             steps.append({"number": int(num), "title": title, "body": body})
@@ -191,13 +191,15 @@ def analyze_skill_steps(skill_path):
         elif action_types and is_reasoning:
             step_type = "mixed"  # Has both — script the action part, LLM does reasoning
 
-        classified.append({
-            "number": step.get("number"),
-            "title": step.get("title", "")[:100],
-            "type": step_type,
-            "action_types": action_types,
-            "preview": text[:150],
-        })
+        classified.append(
+            {
+                "number": step.get("number"),
+                "title": step.get("title", "")[:100],
+                "type": step_type,
+                "action_types": action_types,
+                "preview": text[:150],
+            }
+        )
 
     actionable_count = sum(1 for s in classified if s["type"] in ("actionable", "mixed"))
     reasoning_count = sum(1 for s in classified if s["type"] == "reasoning")
@@ -284,227 +286,263 @@ def generate_companion_script(skill_path):
 
     if "file_read" in action_types:
         func_map["read_file"] = True
-        script_lines.extend([
-            "",
-            "def read_file(path):",
-            '    """Read and return file contents."""',
-            "    p = Path(path)",
-            "    if not p.exists():",
-            '        return {"error": f"File not found: {path}"}',
-            "    content = p.read_text(encoding='utf-8', errors='replace')",
-            '    return {"success": True, "path": str(p), "lines": len(content.splitlines()), "content": content}',
-            "",
-        ])
+        script_lines.extend(
+            [
+                "",
+                "def read_file(path):",
+                '    """Read and return file contents."""',
+                "    p = Path(path)",
+                "    if not p.exists():",
+                '        return {"error": f"File not found: {path}"}',
+                "    content = p.read_text(encoding='utf-8', errors='replace')",
+                '    return {"success": True, "path": str(p), "lines": len(content.splitlines()), "content": content}',
+                "",
+            ]
+        )
 
     if "file_write" in action_types:
         func_map["write_file"] = True
-        script_lines.extend([
-            "",
-            "def write_file(path, content, append=False):",
-            '    """Write content to a file."""',
-            "    p = Path(path)",
-            "    p.parent.mkdir(parents=True, exist_ok=True)",
-            "    mode = 'a' if append else 'w'",
-            "    p.open(mode, encoding='utf-8').write(content)",
-            '    return {"success": True, "path": str(p), "bytes": len(content.encode("utf-8")), "mode": mode}',
-            "",
-        ])
+        script_lines.extend(
+            [
+                "",
+                "def write_file(path, content, append=False):",
+                '    """Write content to a file."""',
+                "    p = Path(path)",
+                "    p.parent.mkdir(parents=True, exist_ok=True)",
+                "    mode = 'a' if append else 'w'",
+                "    p.open(mode, encoding='utf-8').write(content)",
+                '    return {"success": True, "path": str(p), "bytes": len(content.encode("utf-8")), "mode": mode}',
+                "",
+            ]
+        )
 
     if "file_search" in action_types:
         func_map["search_files"] = True
-        script_lines.extend([
-            "",
-            "def search_files(directory, pattern, content_pattern=None):",
-            '    """Search for files by glob pattern, optionally grep content."""',
-            "    d = Path(directory)",
-            "    matches = []",
-            "    for f in sorted(d.rglob(pattern)):",
-            "        if f.is_file():",
-            "            entry = {'path': str(f), 'name': f.name}",
-            "            if content_pattern:",
-            "                import re",
-            "                text = f.read_text(encoding='utf-8', errors='replace')",
-            "                hits = re.findall(content_pattern, text)",
-            "                if hits:",
-            "                    entry['matches'] = len(hits)",
-            "                    matches.append(entry)",
-            "            else:",
-            "                matches.append(entry)",
-            '    return {"success": True, "count": len(matches), "matches": matches}',
-            "",
-        ])
+        script_lines.extend(
+            [
+                "",
+                "def search_files(directory, pattern, content_pattern=None):",
+                '    """Search for files by glob pattern, optionally grep content."""',
+                "    d = Path(directory)",
+                "    matches = []",
+                "    for f in sorted(d.rglob(pattern)):",
+                "        if f.is_file():",
+                "            entry = {'path': str(f), 'name': f.name}",
+                "            if content_pattern:",
+                "                import re",
+                "                text = f.read_text(encoding='utf-8', errors='replace')",
+                "                hits = re.findall(content_pattern, text)",
+                "                if hits:",
+                "                    entry['matches'] = len(hits)",
+                "                    matches.append(entry)",
+                "            else:",
+                "                matches.append(entry)",
+                '    return {"success": True, "count": len(matches), "matches": matches}',
+                "",
+            ]
+        )
 
     if "shell_command" in action_types:
         func_map["run_command"] = True
-        script_lines.extend([
-            "",
-            "def run_command(cmd, cwd=None, timeout=60):",
-            '    """Run a shell command and return output."""',
-            "    import subprocess",
-            "    try:",
-            "        result = subprocess.run(",
-            "            cmd, shell=True, capture_output=True, text=True,",
-            "            timeout=timeout, cwd=cwd,",
-            "        )",
-            "        return {",
-            '            "success": result.returncode == 0,',
-            '            "returncode": result.returncode,',
-            '            "stdout": result.stdout[:5000],',
-            '            "stderr": result.stderr[:2000],',
-            "        }",
-            "    except subprocess.TimeoutExpired:",
-            '        return {"success": False, "error": f"Timeout after {timeout}s"}',
-            "    except Exception as exc:",
-            '        return {"success": False, "error": str(exc)}',
-            "",
-        ])
+        script_lines.extend(
+            [
+                "",
+                "def run_command(cmd, cwd=None, timeout=60):",
+                '    """Run a shell command and return output."""',
+                "    import subprocess",
+                "    try:",
+                "        result = subprocess.run(",
+                "            cmd, shell=True, capture_output=True, text=True,",
+                "            timeout=timeout, cwd=cwd,",
+                "        )",
+                "        return {",
+                '            "success": result.returncode == 0,',
+                '            "returncode": result.returncode,',
+                '            "stdout": result.stdout[:5000],',
+                '            "stderr": result.stderr[:2000],',
+                "        }",
+                "    except subprocess.TimeoutExpired:",
+                '        return {"success": False, "error": f"Timeout after {timeout}s"}',
+                "    except Exception as exc:",
+                '        return {"success": False, "error": str(exc)}',
+                "",
+            ]
+        )
 
     if "data_transform" in action_types:
         func_map["transform_data"] = True
-        script_lines.extend([
-            "",
-            "def transform_data(input_path, output_format='json'):",
-            '    """Read data file and convert to specified format."""',
-            "    import csv",
-            "    p = Path(input_path)",
-            "    text = p.read_text(encoding='utf-8')",
-            "    if p.suffix == '.json':",
-            "        data = json.loads(text)",
-            "    elif p.suffix in ('.yaml', '.yml'):",
-            "        import yaml",
-            "        data = yaml.safe_load(text)",
-            "    elif p.suffix == '.csv':",
-            "        reader = csv.DictReader(text.splitlines())",
-            "        data = list(reader)",
-            "    else:",
-            "        data = text",
-            '    return {"success": True, "format": output_format, "data": data}',
-            "",
-        ])
+        script_lines.extend(
+            [
+                "",
+                "def transform_data(input_path, output_format='json'):",
+                '    """Read data file and convert to specified format."""',
+                "    import csv",
+                "    p = Path(input_path)",
+                "    text = p.read_text(encoding='utf-8')",
+                "    if p.suffix == '.json':",
+                "        data = json.loads(text)",
+                "    elif p.suffix in ('.yaml', '.yml'):",
+                "        import yaml",
+                "        data = yaml.safe_load(text)",
+                "    elif p.suffix == '.csv':",
+                "        reader = csv.DictReader(text.splitlines())",
+                "        data = list(reader)",
+                "    else:",
+                "        data = text",
+                '    return {"success": True, "format": output_format, "data": data}',
+                "",
+            ]
+        )
 
     if "api_call" in action_types:
         func_map["api_request"] = True
-        script_lines.extend([
-            "",
-            "def api_request(url, method='GET', headers=None, data=None, timeout=30):",
-            '    """Make an HTTP request."""',
-            "    from urllib.request import Request, urlopen",
-            "    from urllib.error import HTTPError, URLError",
-            "    req = Request(url, method=method)",
-            "    if headers:",
-            "        for k, v in headers.items():",
-            "            req.add_header(k, v)",
-            "    if data:",
-            "        req.data = json.dumps(data).encode('utf-8')",
-            "        req.add_header('Content-Type', 'application/json')",
-            "    try:",
-            "        with urlopen(req, timeout=timeout) as resp:",
-            "            body = resp.read().decode('utf-8')",
-            "        return {'success': True, 'status': 200, 'body': body[:5000]}",
-            "    except HTTPError as exc:",
-            "        return {'success': False, 'status': exc.code, 'error': exc.reason}",
-            "    except URLError as exc:",
-            "        return {'success': False, 'error': str(exc.reason)}",
-            "",
-        ])
+        script_lines.extend(
+            [
+                "",
+                "def api_request(url, method='GET', headers=None, data=None, timeout=30):",
+                '    """Make an HTTP request."""',
+                "    from urllib.request import Request, urlopen",
+                "    from urllib.error import HTTPError, URLError",
+                "    req = Request(url, method=method)",
+                "    if headers:",
+                "        for k, v in headers.items():",
+                "            req.add_header(k, v)",
+                "    if data:",
+                "        req.data = json.dumps(data).encode('utf-8')",
+                "        req.add_header('Content-Type', 'application/json')",
+                "    try:",
+                "        with urlopen(req, timeout=timeout) as resp:",
+                "            body = resp.read().decode('utf-8')",
+                "        return {'success': True, 'status': 200, 'body': body[:5000]}",
+                "    except HTTPError as exc:",
+                "        return {'success': False, 'status': exc.code, 'error': exc.reason}",
+                "    except URLError as exc:",
+                "        return {'success': False, 'error': str(exc.reason)}",
+                "",
+            ]
+        )
 
     if "directory_ops" in action_types:
         func_map["directory_ops"] = True
-        script_lines.extend([
-            "",
-            "def list_directory(path, pattern='*'):",
-            '    """List directory contents."""',
-            "    d = Path(path)",
-            "    if not d.is_dir():",
-            '        return {"error": f"Not a directory: {path}"}',
-            "    items = []",
-            "    for f in sorted(d.glob(pattern)):",
-            "        items.append({'name': f.name, 'type': 'dir' if f.is_dir() else 'file', 'size': f.stat().st_size if f.is_file() else 0})",
-            '    return {"success": True, "path": str(d), "count": len(items), "items": items}',
-            "",
-        ])
+        script_lines.extend(
+            [
+                "",
+                "def list_directory(path, pattern='*'):",
+                '    """List directory contents."""',
+                "    d = Path(path)",
+                "    if not d.is_dir():",
+                '        return {"error": f"Not a directory: {path}"}',
+                "    items = []",
+                "    for f in sorted(d.glob(pattern)):",
+                "        items.append({'name': f.name, 'type': 'dir' if f.is_dir() else 'file', 'size': f.stat().st_size if f.is_file() else 0})",
+                '    return {"success": True, "path": str(d), "count": len(items), "items": items}',
+                "",
+            ]
+        )
 
     # CLI dispatcher
-    script_lines.extend([
-        "",
-        "def main():",
-        f'    parser = argparse.ArgumentParser(description="Companion script for {skill_name}")',
-        "    sub = parser.add_subparsers(dest='action', required=True)",
-        "",
-    ])
+    script_lines.extend(
+        [
+            "",
+            "def main():",
+            f'    parser = argparse.ArgumentParser(description="Companion script for {skill_name}")',
+            "    sub = parser.add_subparsers(dest='action', required=True)",
+            "",
+        ]
+    )
 
     if "read_file" in func_map:
-        script_lines.extend([
-            "    p = sub.add_parser('read', help='Read a file')",
-            "    p.add_argument('path', help='File path')",
-            "",
-        ])
+        script_lines.extend(
+            [
+                "    p = sub.add_parser('read', help='Read a file')",
+                "    p.add_argument('path', help='File path')",
+                "",
+            ]
+        )
 
     if "write_file" in func_map:
-        script_lines.extend([
-            "    p = sub.add_parser('write', help='Write to a file')",
-            "    p.add_argument('path', help='File path')",
-            "    p.add_argument('--content', required=True, help='Content to write')",
-            "    p.add_argument('--append', action='store_true', help='Append mode')",
-            "",
-        ])
+        script_lines.extend(
+            [
+                "    p = sub.add_parser('write', help='Write to a file')",
+                "    p.add_argument('path', help='File path')",
+                "    p.add_argument('--content', required=True, help='Content to write')",
+                "    p.add_argument('--append', action='store_true', help='Append mode')",
+                "",
+            ]
+        )
 
     if "search_files" in func_map:
-        script_lines.extend([
-            "    p = sub.add_parser('search', help='Search files')",
-            "    p.add_argument('directory', help='Directory to search')",
-            "    p.add_argument('--pattern', default='*', help='Glob pattern')",
-            "    p.add_argument('--grep', help='Content pattern to match')",
-            "",
-        ])
+        script_lines.extend(
+            [
+                "    p = sub.add_parser('search', help='Search files')",
+                "    p.add_argument('directory', help='Directory to search')",
+                "    p.add_argument('--pattern', default='*', help='Glob pattern')",
+                "    p.add_argument('--grep', help='Content pattern to match')",
+                "",
+            ]
+        )
 
     if "run_command" in func_map:
-        script_lines.extend([
-            "    p = sub.add_parser('run', help='Run a shell command')",
-            "    p.add_argument('cmd', help='Command to run')",
-            "    p.add_argument('--cwd', help='Working directory')",
-            "    p.add_argument('--timeout', type=int, default=60, help='Timeout in seconds')",
-            "",
-        ])
+        script_lines.extend(
+            [
+                "    p = sub.add_parser('run', help='Run a shell command')",
+                "    p.add_argument('cmd', help='Command to run')",
+                "    p.add_argument('--cwd', help='Working directory')",
+                "    p.add_argument('--timeout', type=int, default=60, help='Timeout in seconds')",
+                "",
+            ]
+        )
 
     if "transform_data" in func_map:
-        script_lines.extend([
-            "    p = sub.add_parser('transform', help='Transform data file')",
-            "    p.add_argument('input', help='Input file path')",
-            "    p.add_argument('--format', default='json', help='Output format')",
-            "",
-        ])
+        script_lines.extend(
+            [
+                "    p = sub.add_parser('transform', help='Transform data file')",
+                "    p.add_argument('input', help='Input file path')",
+                "    p.add_argument('--format', default='json', help='Output format')",
+                "",
+            ]
+        )
 
     if "api_request" in func_map:
-        script_lines.extend([
-            "    p = sub.add_parser('api', help='Make API request')",
-            "    p.add_argument('url', help='URL to request')",
-            "    p.add_argument('--method', default='GET', help='HTTP method')",
-            "",
-        ])
+        script_lines.extend(
+            [
+                "    p = sub.add_parser('api', help='Make API request')",
+                "    p.add_argument('url', help='URL to request')",
+                "    p.add_argument('--method', default='GET', help='HTTP method')",
+                "",
+            ]
+        )
 
     if "directory_ops" in func_map:
-        script_lines.extend([
-            "    p = sub.add_parser('ls', help='List directory')",
-            "    p.add_argument('path', help='Directory path')",
-            "    p.add_argument('--pattern', default='*', help='Glob pattern')",
-            "",
-        ])
+        script_lines.extend(
+            [
+                "    p = sub.add_parser('ls', help='List directory')",
+                "    p.add_argument('path', help='Directory path')",
+                "    p.add_argument('--pattern', default='*', help='Glob pattern')",
+                "",
+            ]
+        )
 
     # Dispatch
-    script_lines.extend([
-        "    args = parser.parse_args()",
-        "    result = {}",
-        "",
-    ])
+    script_lines.extend(
+        [
+            "    args = parser.parse_args()",
+            "    result = {}",
+            "",
+        ]
+    )
 
     dispatch_lines = []
     if "read_file" in func_map:
         dispatch_lines.append("    if args.action == 'read': result = read_file(args.path)")
     if "write_file" in func_map:
-        dispatch_lines.append("    elif args.action == 'write': result = write_file(args.path, args.content, args.append)")
+        dispatch_lines.append(
+            "    elif args.action == 'write': result = write_file(args.path, args.content, args.append)"
+        )
     if "search_files" in func_map:
-        dispatch_lines.append("    elif args.action == 'search': result = search_files(args.directory, args.pattern, args.grep)")
+        dispatch_lines.append(
+            "    elif args.action == 'search': result = search_files(args.directory, args.pattern, args.grep)"
+        )
     if "run_command" in func_map:
         dispatch_lines.append("    elif args.action == 'run': result = run_command(args.cmd, args.cwd, args.timeout)")
     if "transform_data" in func_map:
@@ -519,15 +557,17 @@ def generate_companion_script(skill_path):
         dispatch_lines[0] = dispatch_lines[0].replace("    elif ", "    if ", 1)
 
     script_lines.extend(dispatch_lines)
-    script_lines.extend([
-        "",
-        "    print(json.dumps(result, indent=2, default=str))",
-        "",
-        "",
-        'if __name__ == "__main__":',
-        "    main()",
-        "",
-    ])
+    script_lines.extend(
+        [
+            "",
+            "    print(json.dumps(result, indent=2, default=str))",
+            "",
+            "",
+            'if __name__ == "__main__":',
+            "    main()",
+            "",
+        ]
+    )
 
     # Write the companion script
     scripts_dir = skill_path / "scripts"
@@ -545,7 +585,9 @@ def generate_companion_script(skill_path):
         md_content = skill_md.read_text(encoding="utf-8")
         if "## Companion Script" not in md_content:
             companion_section = "\n\n## Companion Script (LLM-Agnostic)\n\n"
-            companion_section += "A Python companion script is available for deterministic execution of actionable steps.\n"
+            companion_section += (
+                "A Python companion script is available for deterministic execution of actionable steps.\n"
+            )
             companion_section += "The LLM orchestrates; the script executes.\n\n"
             companion_section += "```bash\n"
             companion_section += "python scripts/companion.py --help\n"

@@ -51,13 +51,19 @@ def install(python_path: str = None) -> dict:
 
     # Create scheduled task: daily at 9:00 AM
     cmd = [
-        "schtasks", "/Create",
-        "/TN", TASK_NAME,
-        "/TR", task_cmd,
-        "/SC", "DAILY",
-        "/ST", "09:00",
-        "/RL", "LIMITED",          # Run with limited privileges
-        "/F",                       # Force overwrite if exists
+        "schtasks",
+        "/Create",
+        "/TN",
+        TASK_NAME,
+        "/TR",
+        task_cmd,
+        "/SC",
+        "DAILY",
+        "/ST",
+        "09:00",
+        "/RL",
+        "LIMITED",  # Run with limited privileges
+        "/F",  # Force overwrite if exists
     ]
 
     result = _run_cmd(cmd)

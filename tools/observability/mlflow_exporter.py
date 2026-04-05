@@ -30,6 +30,7 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 try:
     import mlflow
+
     HAS_MLFLOW = True
 except ImportError:
     HAS_MLFLOW = False
@@ -53,9 +54,8 @@ class MLflowExporter:
         self._experiment_name = experiment_name
 
         import os
-        self._tracking_uri = tracking_uri or os.environ.get(
-            "ICDEV_MLFLOW_TRACKING_URI", ""
-        )
+
+        self._tracking_uri = tracking_uri or os.environ.get("ICDEV_MLFLOW_TRACKING_URI", "")
 
         if HAS_MLFLOW and self._tracking_uri:
             mlflow.set_tracking_uri(self._tracking_uri)

@@ -49,13 +49,14 @@ def _get_recently_evolved(hours: int = 72) -> set:
     """Get files that were recently targeted by Evolve to avoid re-targeting."""
     conn = get_connection()
     try:
-        cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).strftime(
-            "%Y-%m-%dT%H:%M:%SZ"
-        )
-        rows = conn.execute("""
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        rows = conn.execute(
+            """
             SELECT payload FROM genesis_gkp
             WHERE genesis_reflex = 'evolve' AND created_at > ?
-        """, (cutoff,)).fetchall()
+        """,
+            (cutoff,),
+        ).fetchall()
         recently_evolved = set()
         for row in rows:
             payload_str = row["payload"] if isinstance(row, dict) else row[0]
@@ -78,10 +79,12 @@ def _refresh_file_metrics(file_path: str) -> Optional[Dict[str, Any]]:
     """Re-run code_analyzer on a single file to get fresh metrics."""
     try:
         result = subprocess.run(
-            [sys.executable, "tools/analysis/code_analyzer.py",
-             "--file", file_path, "--json"],
-            capture_output=True, text=True, timeout=60,
-            cwd=str(BASE_DIR), env={**os.environ, "PYTHONPATH": str(BASE_DIR)},
+            [sys.executable, "tools/analysis/code_analyzer.py", "--file", file_path, "--json"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            cwd=str(BASE_DIR),
+            env={**os.environ, "PYTHONPATH": str(BASE_DIR)},
         )
         stdout = result.stdout.strip()
         json_start = stdout.find("{")
@@ -234,11 +237,14 @@ def _select_most_failures(
             if not full_path.exists():
                 continue
             # Get quality metrics for the file
-            metrics_row = conn.execute("""
+            metrics_row = conn.execute(
+                """
                 SELECT cyclomatic_complexity, cognitive_complexity,
                        maintainability_score, smell_count, function_count
                 FROM code_quality_metrics WHERE file_path = ? LIMIT 1
-            """, (fp_norm,)).fetchone()
+            """,
+                (fp_norm,),
+            ).fetchone()
             return {
                 "file_path": fp_norm,
                 "full_path": str(full_path),
@@ -293,11 +299,14 @@ def _select_highest_churn(
             full_path = BASE_DIR / fp_norm
             if not full_path.exists():
                 continue
-            metrics_row = conn.execute("""
+            metrics_row = conn.execute(
+                """
                 SELECT cyclomatic_complexity, cognitive_complexity,
                        maintainability_score, smell_count, function_count
                 FROM code_quality_metrics WHERE file_path = ? LIMIT 1
-            """, (fp_norm,)).fetchone()
+            """,
+                (fp_norm,),
+            ).fetchone()
             return {
                 "file_path": fp_norm,
                 "full_path": str(full_path),
@@ -385,8 +394,9 @@ def _select_target(
     return target
 
 
-def _analyze_with_llm(file_path: str, file_content: str,
-                       metrics: Dict, variant_context: str = "") -> Optional[Dict[str, Any]]:
+def _analyze_with_llm(
+    file_path: str, file_content: str, metrics: Dict, variant_context: str = ""
+) -> Optional[Dict[str, Any]]:
     """Use scanner-tier LLM to propose improvement (phi4-reasoning).
 
     Args:
@@ -407,9 +417,9 @@ Previous mutation attempts on this file (learn from these):
 
 File: {file_path}
 Current metrics:
-- Cyclomatic complexity: {metrics.get('cyclomatic_complexity', '?')}
-- Smell count: {metrics.get('smell_count', '?')}
-- Maintainability score: {metrics.get('maintainability_score', '?')}
+- Cyclomatic complexity: {metrics.get("cyclomatic_complexity", "?")}
+- Smell count: {metrics.get("smell_count", "?")}
+- Maintainability score: {metrics.get("maintainability_score", "?")}
 {context_block}
 Code:
 ```python
@@ -498,9 +508,10 @@ def _run_tests_for_file(file_path: str, timeout: int = 120) -> Dict[str, Any]:
     # Run tests (targeted test discovery planned for future)
     try:
         result = subprocess.run(
-            [sys.executable, "-m", "pytest", "-x", "--tb=short", "-q",
-             "tests/"],
-            capture_output=True, text=True, timeout=timeout,
+            [sys.executable, "-m", "pytest", "-x", "--tb=short", "-q", "tests/"],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
             cwd=str(BASE_DIR),
             env={**os.environ, "PYTHONPATH": str(BASE_DIR)},
         )
@@ -730,18 +741,24 @@ def _meta_evolve_check(
     if cycle_count % evaluate_every != 0:
         return current_strategy
 
-    strategies = meta_cfg.get("strategies", [
-        "worst_code_quality", "most_failures", "highest_churn", "lowest_coverage",
-    ])
+    strategies = meta_cfg.get(
+        "strategies",
+        [
+            "worst_code_quality",
+            "most_failures",
+            "highest_churn",
+            "lowest_coverage",
+        ],
+    )
     min_acceptance_rate = meta_cfg.get("min_acceptance_rate", 0.20)
 
     # Compute acceptance rate for current strategy over the last N cycles
-    acceptance_rate = _compute_strategy_acceptance_rate(
-        current_strategy, evaluate_every
-    )
+    acceptance_rate = _compute_strategy_acceptance_rate(current_strategy, evaluate_every)
 
-    print(f"  Evolve: meta-evolve check — strategy='{current_strategy}', "
-          f"acceptance_rate={acceptance_rate:.2f}, min={min_acceptance_rate:.2f}")
+    print(
+        f"  Evolve: meta-evolve check — strategy='{current_strategy}', "
+        f"acceptance_rate={acceptance_rate:.2f}, min={min_acceptance_rate:.2f}"
+    )
 
     if acceptance_rate >= min_acceptance_rate:
         return current_strategy
@@ -754,8 +771,10 @@ def _meta_evolve_check(
     next_idx = (current_idx + 1) % len(strategies)
     new_strategy = strategies[next_idx]
 
-    print(f"  Evolve: meta-evolve ROTATING strategy '{current_strategy}' -> '{new_strategy}' "
-          f"(acceptance_rate {acceptance_rate:.2f} < {min_acceptance_rate:.2f})")
+    print(
+        f"  Evolve: meta-evolve ROTATING strategy '{current_strategy}' -> '{new_strategy}' "
+        f"(acceptance_rate {acceptance_rate:.2f} < {min_acceptance_rate:.2f})"
+    )
 
     # Log strategy switch to genesis_audit
     _log_strategy_switch(current_strategy, new_strategy, acceptance_rate, min_acceptance_rate)
@@ -767,12 +786,15 @@ def _compute_strategy_acceptance_rate(strategy: str, window: int) -> float:
     """Compute the acceptance rate for a strategy over the last `window` evolve cycles."""
     conn = get_connection()
     try:
-        rows = conn.execute("""
+        rows = conn.execute(
+            """
             SELECT payload FROM genesis_gkp
             WHERE genesis_reflex = 'evolve'
             ORDER BY created_at DESC
             LIMIT ?
-        """, (window,)).fetchall()
+        """,
+            (window,),
+        ).fetchall()
 
         if not rows:
             return 0.0
@@ -794,19 +816,23 @@ def _compute_strategy_acceptance_rate(strategy: str, window: int) -> float:
                 continue
 
         # Use genesis_audit for actual acceptance tracking
-        audit_rows = conn.execute("""
+        audit_rows = conn.execute(
+            """
             SELECT event_type FROM genesis_audit
             WHERE event_type IN ('genesis.evolve.mutation_accepted', 'genesis.evolve.mutation_rejected')
             ORDER BY created_at DESC
             LIMIT ?
-        """, (window,)).fetchall()
+        """,
+            (window,),
+        ).fetchall()
 
         if not audit_rows:
             return 0.0
 
         total = len(audit_rows)
         accepted = sum(
-            1 for r in audit_rows
+            1
+            for r in audit_rows
             if (r["event_type"] if isinstance(r, dict) else r[0]) == "genesis.evolve.mutation_accepted"
         )
         return accepted / total if total > 0 else 0.0
@@ -827,20 +853,25 @@ def _log_strategy_switch(
     """Log a strategy rotation to genesis_audit."""
     conn = get_connection()
     try:
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO genesis_audit (event_type, reflex_name, details, created_at)
             VALUES (?, ?, ?, ?)
-        """, (
-            "genesis.evolve.strategy_rotated",
-            "genesis-evolve",
-            json.dumps({
-                "old_strategy": old_strategy,
-                "new_strategy": new_strategy,
-                "acceptance_rate": round(acceptance_rate, 4),
-                "min_acceptance_rate": min_rate,
-            }),
-            _utcnow_iso(),
-        ))
+        """,
+            (
+                "genesis.evolve.strategy_rotated",
+                "genesis-evolve",
+                json.dumps(
+                    {
+                        "old_strategy": old_strategy,
+                        "new_strategy": new_strategy,
+                        "acceptance_rate": round(acceptance_rate, 4),
+                        "min_acceptance_rate": min_rate,
+                    }
+                ),
+                _utcnow_iso(),
+            ),
+        )
         conn.commit()
     except Exception as e:
         print(f"  WARN: Could not log strategy switch: {e}")
@@ -960,9 +991,15 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     - Peer-Review Gate: lightweight LLM review before full test suite
     """
     allowed_dirs = config.get("allowed_directories", ["tools/", "goals/"])
-    forbidden_files = config.get("forbidden_files", [
-        "CLAUDE.md", ".env", "tools/db/storage.py", "tools/genesis/daemon.py",
-    ])
+    forbidden_files = config.get(
+        "forbidden_files",
+        [
+            "CLAUDE.md",
+            ".env",
+            "tools/db/storage.py",
+            "tools/genesis/daemon.py",
+        ],
+    )
 
     # ── Meta-Evolve: check if strategy needs rotation ───────────────────────
     base_strategy = config.get("selection_strategy", "worst_code_quality")
@@ -979,8 +1016,10 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             "details": {"status": "no_files_need_improvement", "strategy": strategy},
         }
 
-    print(f"  Evolve: target = {target['file_path']} "
-          f"(smells={target['smell_count']}, complexity={target['cyclomatic_complexity']})")
+    print(
+        f"  Evolve: target = {target['file_path']} "
+        f"(smells={target['smell_count']}, complexity={target['cyclomatic_complexity']})"
+    )
 
     # Step 2: Read file
     try:
@@ -1001,7 +1040,9 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     # Step 3: Analyze with LLM (scanner-tier), including variant history
     print("  Evolve: analyzing with LLM...")
     analysis = _analyze_with_llm(
-        target["file_path"], file_content, target,
+        target["file_path"],
+        file_content,
+        target,
         variant_context=variant_context,
     )
     if not analysis:
@@ -1073,11 +1114,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             old_maint = target.get("maintainability_score", 0) or 0
             new_maint = fresh_metrics.get("maintainability_score", 0) or 0
             # Improvement = fewer smells OR lower complexity OR higher maintainability
-            metrics_improved = (
-                new_smells < old_smells
-                or new_cc < old_cc
-                or new_maint > old_maint
-            )
+            metrics_improved = new_smells < old_smells or new_cc < old_cc or new_maint > old_maint
 
     # Step 6: Compute quality-gated confidence
     confidence, rationale = _compute_confidence(risk, tests_passed, metrics_improved, sandbox_passed)
@@ -1106,7 +1143,9 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     # Step 7: Export as GKP proposal with computed confidence
     print(f"  Evolve: proposing -- {analysis.get('improvement', '?')[:80]}")
     gkp_id = _export_mutation_proposal(
-        target["file_path"], analysis, target,
+        target["file_path"],
+        analysis,
+        target,
         confidence=confidence,
         confidence_rationale=rationale,
         fresh_metrics=fresh_metrics,

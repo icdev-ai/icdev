@@ -43,13 +43,16 @@ def _load_config():
 
 _CFG = _load_config()
 
-HEALTH_WEIGHTS = _CFG.get("health_weights", {
-    "evm": 0.30,
-    "deliverables": 0.25,
-    "cpars": 0.20,
-    "negative_events": 0.15,
-    "funding": 0.10,
-})
+HEALTH_WEIGHTS = _CFG.get(
+    "health_weights",
+    {
+        "evm": 0.30,
+        "deliverables": 0.25,
+        "cpars": 0.20,
+        "negative_events": 0.15,
+        "funding": 0.10,
+    },
+)
 
 EVM_CFG = _CFG.get("evm", {})
 CPI_YELLOW = EVM_CFG.get("cpi_yellow_threshold", 0.95)
@@ -94,6 +97,7 @@ def _record_status_change(conn, entity_type, entity_id, old_status, new_status, 
 
 # ── Health Scoring ───────────────────────────────────────────────────
 
+
 def _score_evm(conn, contract_id):
     """EVM dimension: latest CPI and SPI → 0.0-1.0 score."""
     row = conn.execute(
@@ -114,9 +118,7 @@ def _score_evm(conn, contract_id):
 
 def _score_deliverables(conn, contract_id):
     """Deliverables dimension: ratio of on-time/accepted vs overdue/rejected."""
-    total = conn.execute(
-        "SELECT COUNT(*) FROM cpmp_deliverables WHERE contract_id = ?", (contract_id,)
-    ).fetchone()[0]
+    total = conn.execute("SELECT COUNT(*) FROM cpmp_deliverables WHERE contract_id = ?", (contract_id,)).fetchone()[0]
     if total == 0:
         return 1.0
 
@@ -136,8 +138,11 @@ def _score_deliverables(conn, contract_id):
 def _score_cpars(conn, contract_id):
     """CPARS dimension: latest overall rating or 1.0 if no assessment."""
     rating_scores = {
-        "exceptional": 1.0, "very_good": 0.85, "satisfactory": 0.65,
-        "marginal": 0.40, "unsatisfactory": 0.15,
+        "exceptional": 1.0,
+        "very_good": 0.85,
+        "satisfactory": 0.65,
+        "marginal": 0.40,
+        "unsatisfactory": 0.15,
     }
     row = conn.execute(
         "SELECT overall_rating FROM cpmp_cpars_assessments WHERE contract_id = ? ORDER BY period_end DESC LIMIT 1",
@@ -236,6 +241,7 @@ def compute_contract_health(contract_id):
 
 # ── Portfolio Summary ────────────────────────────────────────────────
 
+
 def get_portfolio_summary():
     """Aggregate portfolio statistics across all contracts."""
     conn = _get_db()
@@ -329,6 +335,7 @@ def get_portfolio_summary():
 
 # ── Proposal → Contract Transition Bridge (D-CPMP-9) ────────────────
 
+
 def transition_from_opportunity(opportunity_id, created_by=None):
     """Create a contract from a won proposal opportunity.
 
@@ -343,9 +350,7 @@ def transition_from_opportunity(opportunity_id, created_by=None):
     conn = _get_db()
 
     # 1. Load opportunity
-    opp = conn.execute(
-        "SELECT * FROM proposal_opportunities WHERE id = ?", (opportunity_id,)
-    ).fetchone()
+    opp = conn.execute("SELECT * FROM proposal_opportunities WHERE id = ?", (opportunity_id,)).fetchone()
     if not opp:
         conn.close()
         return {"status": "error", "message": f"Opportunity {opportunity_id} not found"}
@@ -354,9 +359,7 @@ def transition_from_opportunity(opportunity_id, created_by=None):
         return {"status": "error", "message": f"Opportunity status is '{opp['status']}', must be 'won'"}
 
     # Check not already transitioned
-    existing = conn.execute(
-        "SELECT id FROM cpmp_contracts WHERE opportunity_id = ?", (opportunity_id,)
-    ).fetchone()
+    existing = conn.execute("SELECT id FROM cpmp_contracts WHERE opportunity_id = ?", (opportunity_id,)).fetchone()
     if existing:
         conn.close()
         return {"status": "error", "message": f"Contract already exists for this opportunity: {existing['id']}"}
@@ -377,16 +380,23 @@ def transition_from_opportunity(opportunity_id, created_by=None):
             "FFP",  # default, user updates later
             "draft",
             opportunity_id,
-            _now(), _now(),
+            _now(),
+            _now(),
         ),
     )
-    _record_status_change(conn, "contract", contract_id, None, "draft", created_by or "system",
-                          f"Created from opportunity {opportunity_id}")
+    _record_status_change(
+        conn,
+        "contract",
+        contract_id,
+        None,
+        "draft",
+        created_by or "system",
+        f"Created from opportunity {opportunity_id}",
+    )
 
     # 3. Link opportunity → contract
     try:
-        conn.execute("UPDATE proposal_opportunities SET contract_id = ? WHERE id = ?",
-                      (contract_id, opportunity_id))
+        conn.execute("UPDATE proposal_opportunities SET contract_id = ? WHERE id = ?", (contract_id, opportunity_id))
     except Exception:
         pass  # column may not exist yet
 
@@ -396,10 +406,10 @@ def transition_from_opportunity(opportunity_id, created_by=None):
             "SELECT id FROM customer_deliveries WHERE opportunity_id = ?", (opportunity_id,)
         ).fetchone()
         if delivery:
-            conn.execute("UPDATE customer_deliveries SET contract_id = ? WHERE id = ?",
-                          (contract_id, delivery["id"]))
-            conn.execute("UPDATE cpmp_contracts SET customer_delivery_id = ? WHERE id = ?",
-                          (delivery["id"], contract_id))
+            conn.execute("UPDATE customer_deliveries SET contract_id = ? WHERE id = ?", (contract_id, delivery["id"]))
+            conn.execute(
+                "UPDATE cpmp_contracts SET customer_delivery_id = ? WHERE id = ?", (delivery["id"], contract_id)
+            )
     except Exception:
         pass
 
@@ -407,9 +417,8 @@ def transition_from_opportunity(opportunity_id, created_by=None):
     deliverables_seeded = 0
     try:
         cdrl_items = conn.execute(
-            "SELECT * FROM proposal_compliance_matrix "
-            "WHERE opportunity_id = ? AND requirement_type = 'cdrl'",
-            (opportunity_id,)
+            "SELECT * FROM proposal_compliance_matrix WHERE opportunity_id = ? AND requirement_type = 'cdrl'",
+            (opportunity_id,),
         ).fetchall()
         for item in cdrl_items:
             deliv_id = _uuid()
@@ -419,14 +428,20 @@ def transition_from_opportunity(opportunity_id, created_by=None):
                 "status, created_at, updated_at) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
-                    deliv_id, contract_id,
+                    deliv_id,
+                    contract_id,
                     item["requirement_id"] if "requirement_id" in item.keys() else None,
                     item["requirement_text"][:200] if "requirement_text" in item.keys() else "CDRL",
                     item["requirement_text"] if "requirement_text" in item.keys() else None,
-                    "cdrl", "not_started", _now(), _now(),
+                    "cdrl",
+                    "not_started",
+                    _now(),
+                    _now(),
                 ),
             )
-            _record_status_change(conn, "deliverable", deliv_id, None, "not_started", "system", "Seeded from compliance matrix")
+            _record_status_change(
+                conn, "deliverable", deliv_id, None, "not_started", "system", "Seeded from compliance matrix"
+            )
             deliverables_seeded += 1
     except Exception:
         pass  # compliance matrix may not exist
@@ -435,8 +450,7 @@ def transition_from_opportunity(opportunity_id, created_by=None):
     wbs_seeded = 0
     try:
         volumes = conn.execute(
-            "SELECT * FROM proposal_volumes WHERE opportunity_id = ? ORDER BY volume_number",
-            (opportunity_id,)
+            "SELECT * FROM proposal_volumes WHERE opportunity_id = ? ORDER BY volume_number", (opportunity_id,)
         ).fetchall()
         for vol in volumes:
             wbs_id = _uuid()
@@ -446,10 +460,14 @@ def transition_from_opportunity(opportunity_id, created_by=None):
                 "created_at, updated_at) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (
-                    wbs_id, contract_id,
+                    wbs_id,
+                    contract_id,
                     f"1.{vol['volume_number']}" if "volume_number" in vol.keys() else f"1.{wbs_seeded + 1}",
                     vol["title"] if "title" in vol.keys() else f"Volume {wbs_seeded + 1}",
-                    1, "not_started", _now(), _now(),
+                    1,
+                    "not_started",
+                    _now(),
+                    _now(),
                 ),
             )
             _record_status_change(conn, "wbs", wbs_id, None, "not_started", "system", "Seeded from proposal volume")
@@ -457,9 +475,12 @@ def transition_from_opportunity(opportunity_id, created_by=None):
     except Exception:
         pass
 
-    _audit(conn, "transition_from_opportunity",
-           f"Created contract {contract_id} from opportunity {opportunity_id}. "
-           f"Seeded {deliverables_seeded} deliverables, {wbs_seeded} WBS elements.")
+    _audit(
+        conn,
+        "transition_from_opportunity",
+        f"Created contract {contract_id} from opportunity {opportunity_id}. "
+        f"Seeded {deliverables_seeded} deliverables, {wbs_seeded} WBS elements.",
+    )
     conn.commit()
     conn.close()
 
@@ -473,6 +494,7 @@ def transition_from_opportunity(opportunity_id, created_by=None):
 
 
 # ── CLI ──────────────────────────────────────────────────────────────
+
 
 def main():
     parser = argparse.ArgumentParser(description="ICDEV™ GovProposal Portfolio Manager (Phase 60)")
@@ -520,4 +542,5 @@ def main():
 
 if __name__ == "__main__":
     import sys
+
     main()

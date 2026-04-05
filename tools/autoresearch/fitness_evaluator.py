@@ -69,9 +69,7 @@ def _extract_metric(data: dict, metric_path: str) -> float:
 
 def evaluate_compliance(project_id: str = "sparkpilot", **kwargs) -> dict:
     """Gate pass rate (0-1). Runs multi_regime_assessor."""
-    result = _run_tool(
-        f"tools/compliance/multi_regime_assessor.py --project-id {project_id} --json"
-    )
+    result = _run_tool(f"tools/compliance/multi_regime_assessor.py --project-id {project_id} --json")
     if not result["success"]:
         return {
             "domain": "compliance",
@@ -102,9 +100,7 @@ def evaluate_compliance(project_id: str = "sparkpilot", **kwargs) -> dict:
 
 def evaluate_code_quality(project_dir: str = "tools/", **kwargs) -> dict:
     """Maintainability score (0-1). Runs code_analyzer."""
-    result = _run_tool(
-        f"tools/analysis/code_analyzer.py --project-dir {project_dir} --json"
-    )
+    result = _run_tool(f"tools/analysis/code_analyzer.py --project-dir {project_dir} --json")
     if not result["success"]:
         return {
             "domain": "code_quality",
@@ -137,9 +133,7 @@ def evaluate_code_quality(project_dir: str = "tools/", **kwargs) -> dict:
 
 def evaluate_security(project_dir: str = "tools/", **kwargs) -> dict:
     """1 - vulnerability_density (0-1). Runs sast_runner."""
-    result = _run_tool(
-        f"tools/security/sast_runner.py --project-dir {project_dir} --json"
-    )
+    result = _run_tool(f"tools/security/sast_runner.py --project-dir {project_dir} --json")
     if not result["success"]:
         return {
             "domain": "security",
@@ -170,9 +164,7 @@ def evaluate_security(project_dir: str = "tools/", **kwargs) -> dict:
 
 def evaluate_rag(query_set: list = None, **kwargs) -> dict:
     """Avg retrieval relevance@5 (0-1). Runs RAG evaluator."""
-    result = _run_tool(
-        "tools/rag/evaluator.py --project-id sparkpilot --json"
-    )
+    result = _run_tool("tools/rag/evaluator.py --project-id sparkpilot --json")
     if not result["success"]:
         return {
             "domain": "rag_quality",
@@ -196,9 +188,7 @@ def evaluate_rag(query_set: list = None, **kwargs) -> dict:
 
 def evaluate_pulse(**kwargs) -> dict:
     """WriteGuard score (0-1). Runs quality_checker on latest post."""
-    result = _run_tool(
-        "tools/pulse/engine/quality_checker.py --latest --json"
-    )
+    result = _run_tool("tools/pulse/engine/quality_checker.py --latest --json")
     if not result["success"]:
         return {
             "domain": "pulse_quality",
@@ -260,6 +250,7 @@ def evaluate_skill(skill_name: str = None, assertions: list = None, **kwargs) ->
 def evaluate_proposal_quality(project_id: str = None, **kwargs) -> dict:
     """Proposal quality score (0-1). Queries quality scores + win/loss records."""
     from tools.autoresearch.fitness_proposal_quality import evaluate as _pq_evaluate
+
     return _pq_evaluate(project_id=project_id, **kwargs)
 
 
@@ -270,29 +261,24 @@ def evaluate_marketplace_asset_quality(**kwargs) -> dict:
     """
     try:
         from tools.db.storage import get_connection
+
         with get_connection() as conn:
             # Scan pass rate
-            total_scans = conn.execute(
-                "SELECT COUNT(*) as cnt FROM marketplace_scan_results"
-            ).fetchone()
+            total_scans = conn.execute("SELECT COUNT(*) as cnt FROM marketplace_scan_results").fetchone()
             passed_scans = conn.execute(
-                "SELECT COUNT(*) as cnt FROM marketplace_scan_results "
-                "WHERE status = 'pass'"
+                "SELECT COUNT(*) as cnt FROM marketplace_scan_results WHERE status = 'pass'"
             ).fetchone()
             total_s = total_scans["cnt"] if total_scans else 0
             passed_s = passed_scans["cnt"] if passed_scans else 0
             scan_rate = passed_s / max(total_s, 1)
 
             # Avg rating
-            avg_rating = conn.execute(
-                "SELECT AVG(rating) as avg_r FROM marketplace_ratings"
-            ).fetchone()
+            avg_rating = conn.execute("SELECT AVG(rating) as avg_r FROM marketplace_ratings").fetchone()
             rating = (avg_rating["avg_r"] or 0) / 5.0  # Normalize 0-5 to 0-1
 
             # Published assets count (higher = healthier ecosystem)
             published = conn.execute(
-                "SELECT COUNT(*) as cnt FROM marketplace_assets "
-                "WHERE status = 'published'"
+                "SELECT COUNT(*) as cnt FROM marketplace_assets WHERE status = 'published'"
             ).fetchone()
             pub_count = published["cnt"] if published else 0
             pub_score = min(1.0, pub_count / 50.0)  # Saturates at 50 assets
@@ -389,6 +375,7 @@ def health_check() -> dict:
 
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
+
 
 def main():
     parser = argparse.ArgumentParser(description="Fitness Evaluator — single-metric scorers")

@@ -39,17 +39,17 @@ from tools.db.storage import get_connection  # noqa: E402
 
 # Program-specific relationship types and their dimension impact
 CASCADE_RELATIONSHIPS = {
-    "DEPENDS_ON":        {"direction": "downstream", "dimensions": ["architecture", "schedule"]},
-    "IMPLEMENTS":        {"direction": "downstream", "dimensions": ["compliance"]},
-    "SATISFIES":         {"direction": "downstream", "dimensions": ["compliance"]},
-    "SUPPLIES_TO":       {"direction": "downstream", "dimensions": ["supply_chain"]},
-    "REQUIRES_RESOURCE": {"direction": "upstream",   "dimensions": ["supply_chain", "cost"]},
-    "CONSTRAINED_BY":    {"direction": "upstream",   "dimensions": ["schedule", "risk"]},
-    "ENABLES":           {"direction": "downstream", "dimensions": ["architecture", "cost"]},
-    "DEPLOYS_ON":        {"direction": "downstream", "dimensions": ["architecture", "supply_chain"]},
-    "REFERENCES":        {"direction": "downstream", "dimensions": ["compliance"]},
-    "RUNS":              {"direction": "downstream", "dimensions": ["architecture"]},
-    "PROTECTS":          {"direction": "downstream", "dimensions": ["compliance", "risk"]},
+    "DEPENDS_ON": {"direction": "downstream", "dimensions": ["architecture", "schedule"]},
+    "IMPLEMENTS": {"direction": "downstream", "dimensions": ["compliance"]},
+    "SATISFIES": {"direction": "downstream", "dimensions": ["compliance"]},
+    "SUPPLIES_TO": {"direction": "downstream", "dimensions": ["supply_chain"]},
+    "REQUIRES_RESOURCE": {"direction": "upstream", "dimensions": ["supply_chain", "cost"]},
+    "CONSTRAINED_BY": {"direction": "upstream", "dimensions": ["schedule", "risk"]},
+    "ENABLES": {"direction": "downstream", "dimensions": ["architecture", "cost"]},
+    "DEPLOYS_ON": {"direction": "downstream", "dimensions": ["architecture", "supply_chain"]},
+    "REFERENCES": {"direction": "downstream", "dimensions": ["compliance"]},
+    "RUNS": {"direction": "downstream", "dimensions": ["architecture"]},
+    "PROTECTS": {"direction": "downstream", "dimensions": ["compliance", "risk"]},
 }
 
 # Timing model: sprint-based delays per cascade level
@@ -65,14 +65,14 @@ LEVEL_TIMING = {
 
 # Entity type to simulation dimension mapping
 ENTITY_DIMENSION_MAP = {
-    "component":   "architecture",
-    "system":      "architecture",
-    "control":     "compliance",
-    "standard":    "compliance",
+    "component": "architecture",
+    "system": "architecture",
+    "control": "compliance",
+    "standard": "compliance",
     "requirement": "architecture",
-    "vendor":      "supply_chain",
-    "supplier":    "supply_chain",
-    "document":    "compliance",
+    "vendor": "supply_chain",
+    "supplier": "supply_chain",
+    "document": "compliance",
 }
 
 ALL_DIMENSIONS = ["architecture", "compliance", "supply_chain", "schedule", "cost", "risk"]
@@ -81,6 +81,7 @@ ALL_DIMENSIONS = ["architecture", "compliance", "supply_chain", "schedule", "cos
 # ---------------------------------------------------------------------------
 # Graph loading
 # ---------------------------------------------------------------------------
+
 
 def _load_simulation_kg(project_id: str, db_path: Optional[str] = None) -> Tuple[Dict, Dict]:
     """Load or build a simulation Knowledge Graph from project data.
@@ -200,9 +201,7 @@ def _load_simulation_kg(project_id: str, db_path: Optional[str] = None) -> Tuple
             for r in kg_edges:
                 src = f"kg:{r['source_id']}"
                 tgt = f"kg:{r['target_id']}"
-                adjacency.setdefault(src, []).append(
-                    (tgt, r["relationship"] or "DEPENDS_ON", r["weight"] or 0.5)
-                )
+                adjacency.setdefault(src, []).append((tgt, r["relationship"] or "DEPENDS_ON", r["weight"] or 0.5))
     except Exception:
         pass
 
@@ -213,6 +212,7 @@ def _load_simulation_kg(project_id: str, db_path: Optional[str] = None) -> Tuple
 # ---------------------------------------------------------------------------
 # BFS cascade
 # ---------------------------------------------------------------------------
+
 
 def run_cascade(
     project_id: str,
@@ -375,9 +375,7 @@ def _find_nodes_by_text(text: str, nodes: Dict) -> List[str]:
     return [m[0] for m in matches[:5]]  # Top 5 matches
 
 
-def _suggest_modifications(
-    dimension_impact: Dict[str, Dict], levels: Dict[int, List]
-) -> Dict[str, Any]:
+def _suggest_modifications(dimension_impact: Dict[str, Dict], levels: Dict[int, List]) -> Dict[str, Any]:
     """Auto-generate modification suggestions based on cascade discoveries."""
     mods: Dict[str, Any] = {}
     total_nodes = sum(d.get("node_count", 0) for d in dimension_impact.values())
@@ -426,8 +424,9 @@ def _build_mermaid(
 ) -> str:
     """Build a Mermaid flowchart from cascade levels."""
     lines = ["graph TD"]
+
     def safe(s):
-        return re.sub(r'[^a-zA-Z0-9_]', '_', str(s))[:30]
+        return re.sub(r"[^a-zA-Z0-9_]", "_", str(s))[:30]
 
     # Import re at function scope
     import re
@@ -435,7 +434,7 @@ def _build_mermaid(
     # Trigger node
     trigger_id = safe(trigger_label)
     lines.append(f'    {trigger_id}["{trigger_label}"]')
-    lines.append(f'    style {trigger_id} fill:#f44336,color:#fff')
+    lines.append(f"    style {trigger_id} fill:#f44336,color:#fff")
 
     # Color map by dimension
     dim_colors = {
@@ -460,10 +459,12 @@ def _build_mermaid(
             color = dim_colors.get(dim, "#607d8b")
             rel = entry.get("relationship", "DEPENDS_ON")
             source_label = entry.get("source", trigger_label)
-            source_id = safe(source_label) if safe(source_label) in seen_ids or safe(source_label) == trigger_id else trigger_id
+            source_id = (
+                safe(source_label) if safe(source_label) in seen_ids or safe(source_label) == trigger_id else trigger_id
+            )
 
             lines.append(f'    {source_id} -->|{rel}| {nid}["{label}"]')
-            lines.append(f'    style {nid} fill:{color},color:#fff')
+            lines.append(f"    style {nid} fill:{color},color:#fff")
 
     return "\n".join(lines)
 
@@ -471,6 +472,7 @@ def _build_mermaid(
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+
 
 def main():
     parser = argparse.ArgumentParser(description="Cascade-to-Simulation Bridge")

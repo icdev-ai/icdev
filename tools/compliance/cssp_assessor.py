@@ -24,23 +24,19 @@ CSSP_REQUIREMENTS_PATH = BASE_DIR / "context" / "compliance" / "dod_cssp_8530.js
 # Database helpers
 # ─────────────────────────────────────────────────────────────
 
+
 def _get_connection(db_path=None):
     """Get a database connection with Row factory."""
     path = db_path or DB_PATH
     if not path.exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\n"
-            "Run: python tools/db/init_icdev_db.py"
-        )
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
     conn = get_connection(db_path=str(path))
     return conn
 
 
 def _get_project(conn, project_id):
     """Load project data from the projects table."""
-    row = conn.execute(
-        "SELECT * FROM projects WHERE id = ?", (project_id,)
-    ).fetchone()
+    row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
     if not row:
         raise ValueError(f"Project '{project_id}' not found.")
     return dict(row)
@@ -50,11 +46,13 @@ def _get_project(conn, project_id):
 # Configuration helpers
 # ─────────────────────────────────────────────────────────────
 
+
 def _load_cui_config():
     """Load CUI marking configuration."""
     try:
         sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
         from cui_marker import load_cui_config
+
         return load_cui_config()
     except ImportError:
         return {
@@ -109,6 +107,7 @@ def _log_audit_event(conn, project_id, action, details, file_path=None):
 # ─────────────────────────────────────────────────────────────
 # Auto-check helper: walk project files matching extensions
 # ─────────────────────────────────────────────────────────────
+
 
 def _scan_files(project_dir, extensions, patterns, threshold=1):
     """Scan project files for regex patterns.
@@ -183,15 +182,14 @@ def _dir_or_file_exists(project_dir, dir_names=None, glob_patterns=None):
 #    "details": "specifics"}
 # ─────────────────────────────────────────────────────────────
 
+
 def _check_cui_markings(project_dir):
     """Scan Python and Markdown files for CUI marking strings.
 
     Returns satisfied if >80% of files contain CUI markings.
     """
     patterns = [r"CUI\s*//\s*SP-CTI", r"CONTROLLED UNCLASSIFIED INFORMATION", r"\(CUI\)"]
-    matched, total = _scan_files(
-        project_dir, (".py", ".md"), patterns
-    )
+    matched, total = _scan_files(project_dir, (".py", ".md"), patterns)
     if total == 0:
         return {
             "status": "not_satisfied",
@@ -363,22 +361,18 @@ def _check_stig_hardened(project_dir):
 
         checks = {
             "non_root_user": bool(re.search(r"USER\s+(?!root)\S+", content)),
-            "drop_capabilities": bool(re.search(
-                r"drop.*ALL|securityContext.*drop|cap_drop", content, re.IGNORECASE | re.DOTALL
-            )),
-            "read_only_rootfs": bool(re.search(
-                r"readOnlyRootFilesystem|read.only", content, re.IGNORECASE
-            )),
-            "minimal_base": bool(re.search(
-                r"FROM.*(:slim|:alpine|-slim|-minimal|distroless|hardened)", content, re.IGNORECASE
-            )),
+            "drop_capabilities": bool(
+                re.search(r"drop.*ALL|securityContext.*drop|cap_drop", content, re.IGNORECASE | re.DOTALL)
+            ),
+            "read_only_rootfs": bool(re.search(r"readOnlyRootFilesystem|read.only", content, re.IGNORECASE)),
+            "minimal_base": bool(
+                re.search(r"FROM.*(:slim|:alpine|-slim|-minimal|distroless|hardened)", content, re.IGNORECASE)
+            ),
         }
         passed = sum(checks.values())
         if passed >= 2:
             hardened_count += 1
-            hardening_evidence.append(
-                f"{os.path.basename(df_path)}: {passed}/4 hardening checks passed"
-            )
+            hardening_evidence.append(f"{os.path.basename(df_path)}: {passed}/4 hardening checks passed")
 
     if hardened_count == len(dockerfiles):
         return {
@@ -408,9 +402,7 @@ def _check_rbac_patterns(project_dir):
         r"RBAC|role.based.access|RoleBinding|ClusterRole",
         r"from\s+flask_login|from\s+django\.contrib\.auth",
     ]
-    matched, total = _scan_files(
-        project_dir, (".py", ".yaml", ".yml", ".js", ".ts", ".java"), patterns
-    )
+    matched, total = _scan_files(project_dir, (".py", ".yaml", ".yml", ".js", ".ts", ".java"), patterns)
     if matched:
         return {
             "status": "satisfied",
@@ -506,9 +498,7 @@ def _check_vuln_scan_results(project_dir):
     )
     # Also scan for SAST tool output patterns in JSON files
     sast_patterns = [r"bandit|safety|pip.audit|trivy|grype|snyk"]
-    matched, _ = _scan_files(
-        project_dir, (".json", ".xml"), sast_patterns
-    )
+    matched, _ = _scan_files(project_dir, (".json", ".xml"), sast_patterns)
     all_found = list(set(found_dirs + found_files + matched))
     if all_found:
         return {
@@ -579,6 +569,7 @@ AUTO_CHECKS = {
 # Core assessment function
 # ─────────────────────────────────────────────────────────────
 
+
 def run_cssp_assessment(
     project_id,
     functional_area="all",
@@ -611,10 +602,7 @@ def run_cssp_assessment(
 
         # Filter by functional area if specified
         if functional_area != "all":
-            requirements = [
-                r for r in requirements
-                if r["functional_area"] == functional_area
-            ]
+            requirements = [r for r in requirements if r["functional_area"] == functional_area]
             if not requirements:
                 raise ValueError(
                     f"No requirements found for functional area '{functional_area}'. "
@@ -672,10 +660,7 @@ def run_cssp_assessment(
                         status = check_result["status"]
                         evidence = check_result["evidence"]
                         details = check_result.get("details", "")
-                        notes = (
-                            "Semi-automated check completed. "
-                            "Manual review required to verify full compliance."
-                        )
+                        notes = "Semi-automated check completed. Manual review required to verify full compliance."
                     except Exception as e:
                         status = "not_assessed"
                         evidence = f"Partial auto-check error: {e}"
@@ -739,11 +724,14 @@ def run_cssp_assessment(
                         status,
                         evidence,
                         details if details else None,
-                        json.dumps({
-                            "automation_level": automation_level,
-                            "check_function": AUTO_CHECKS.get(req_id, lambda _: None).__name__
-                            if req_id in AUTO_CHECKS else None,
-                        }),
+                        json.dumps(
+                            {
+                                "automation_level": automation_level,
+                                "check_function": AUTO_CHECKS.get(req_id, lambda _: None).__name__
+                                if req_id in AUTO_CHECKS
+                                else None,
+                            }
+                        ),
                         notes if notes else None,
                         now.isoformat(),
                     ),
@@ -774,9 +762,13 @@ def run_cssp_assessment(
             area = r["functional_area"]
             if area not in summary:
                 summary[area] = {
-                    "total": 0, "satisfied": 0, "partially_satisfied": 0,
-                    "not_satisfied": 0, "not_assessed": 0,
-                    "not_applicable": 0, "risk_accepted": 0,
+                    "total": 0,
+                    "satisfied": 0,
+                    "partially_satisfied": 0,
+                    "not_satisfied": 0,
+                    "not_assessed": 0,
+                    "not_applicable": 0,
+                    "risk_accepted": 0,
                 }
             summary[area]["total"] += 1
             st = r["status"]
@@ -832,18 +824,20 @@ def run_cssp_assessment(
 
         # Summary table
         lines.append(
-            "| Functional Area | Total | Satisfied | Partial | Not Satisfied "
-            "| Not Assessed | N/A | Risk Accepted |"
+            "| Functional Area | Total | Satisfied | Partial | Not Satisfied | Not Assessed | N/A | Risk Accepted |"
         )
         lines.append(
-            "|-----------------|-------|-----------|---------|---------------"
-            "|--------------|-----|---------------|"
+            "|-----------------|-------|-----------|---------|---------------|--------------|-----|---------------|"
         )
 
         grand_total = {
-            "total": 0, "satisfied": 0, "partially_satisfied": 0,
-            "not_satisfied": 0, "not_assessed": 0,
-            "not_applicable": 0, "risk_accepted": 0,
+            "total": 0,
+            "satisfied": 0,
+            "partially_satisfied": 0,
+            "not_satisfied": 0,
+            "not_assessed": 0,
+            "not_applicable": 0,
+            "risk_accepted": 0,
         }
 
         for area in area_order:
@@ -869,14 +863,16 @@ def run_cssp_assessment(
         # Gate evaluation section
         if gate:
             gate_label = "PASS" if gate_result["passed"] else "**FAIL**"
-            lines.extend([
-                "## CSSP Gate Evaluation",
-                "",
-                f"**Gate Result:** {gate_label}",
-                "**Criteria:** 0 critical-priority requirements with status not_satisfied",
-                f"**Critical Failures:** {critical_not_satisfied}",
-                "",
-            ])
+            lines.extend(
+                [
+                    "## CSSP Gate Evaluation",
+                    "",
+                    f"**Gate Result:** {gate_label}",
+                    "**Criteria:** 0 critical-priority requirements with status not_satisfied",
+                    f"**Critical Failures:** {critical_not_satisfied}",
+                    "",
+                ]
+            )
             if critical_failures:
                 lines.append("**Failed Requirements:**")
                 for cf in critical_failures:
@@ -902,17 +898,19 @@ def run_cssp_assessment(
                 priority_display = r["priority"].upper()
                 nist_str = ", ".join(r["nist_controls"]) if r["nist_controls"] else "N/A"
 
-                lines.extend([
-                    f"#### {r['requirement_id']}: {r['title']}",
-                    "",
-                    f"**Priority:** {priority_display}  ",
-                    f"**Status:** {status_display}  ",
-                    f"**Automation Level:** {r['automation_level']}  ",
-                    f"**NIST Controls:** {nist_str}",
-                    "",
-                    f"**Evidence:** {r['evidence']}",
-                    "",
-                ])
+                lines.extend(
+                    [
+                        f"#### {r['requirement_id']}: {r['title']}",
+                        "",
+                        f"**Priority:** {priority_display}  ",
+                        f"**Status:** {status_display}  ",
+                        f"**Automation Level:** {r['automation_level']}  ",
+                        f"**NIST Controls:** {nist_str}",
+                        "",
+                        f"**Evidence:** {r['evidence']}",
+                        "",
+                    ]
+                )
                 if r["details"]:
                     lines.append(f"**Details:** {r['details']}")
                     lines.append("")
@@ -944,13 +942,19 @@ def run_cssp_assessment(
             f.write(content)
 
         # ── Log audit event ──
-        _log_audit_event(conn, project_id, f"CSSP assessment completed ({functional_area})", {
-            "functional_area": functional_area,
-            "requirements_assessed": len(results),
-            "summary": {k: v for k, v in grand_total.items()},
-            "gate_result": gate_result,
-            "output_file": str(out_file),
-        }, out_file)
+        _log_audit_event(
+            conn,
+            project_id,
+            f"CSSP assessment completed ({functional_area})",
+            {
+                "functional_area": functional_area,
+                "requirements_assessed": len(results),
+                "summary": {k: v for k, v in grand_total.items()},
+                "gate_result": gate_result,
+                "output_file": str(out_file),
+            },
+            out_file,
+        )
 
         # ── Console output ──
         print("CSSP assessment completed:")
@@ -988,9 +992,7 @@ def run_cssp_assessment(
 # ─────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Run CSSP assessment per DoD Instruction 8530.01"
-    )
+    parser = argparse.ArgumentParser(description="Run CSSP assessment per DoD Instruction 8530.01")
     parser.add_argument("--project-id", required=True, help="Project ID")
     parser.add_argument(
         "--functional-area",
@@ -1029,11 +1031,16 @@ if __name__ == "__main__":
             output_path=args.output_dir,
             db_path=args.db_path,
         )
-        print(json.dumps({
-            "output_file": result.get("output_file"),
-            "summary": result.get("summary"),
-            "gate_result": result.get("gate_result"),
-        }, indent=2))
+        print(
+            json.dumps(
+                {
+                    "output_file": result.get("output_file"),
+                    "summary": result.get("summary"),
+                    "gate_result": result.get("gate_result"),
+                },
+                indent=2,
+            )
+        )
 
         if args.gate and not result["gate_result"]["passed"]:
             sys.exit(1)

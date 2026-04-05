@@ -39,36 +39,86 @@ def _new_id(prefix: str = "auto") -> str:
 # ── Trigger, Condition, Action definitions ────────────────────────────
 
 TRIGGER_TYPES: list[dict[str, Any]] = [
-    {"id": "finding_detected", "label": "Finding Detected",
-     "description": "A compliance or security finding is created",
-     "icon": "!", "color": "#ef4444", "category": "compliance"},
-    {"id": "sla_breach", "label": "SLA Breach",
-     "description": "A case exceeds its SLA time limit",
-     "icon": "T", "color": "#f59e0b", "category": "cases"},
-    {"id": "scan_complete", "label": "Scan Complete",
-     "description": "A security or compliance scan finishes",
-     "icon": "S", "color": "#3b82f6", "category": "security"},
-    {"id": "deployment", "label": "Deployment Event",
-     "description": "A deployment starts, succeeds, or fails",
-     "icon": "D", "color": "#8b5cf6", "category": "operations"},
-    {"id": "form_submitted", "label": "Form Submitted",
-     "description": "A Studio form receives a submission",
-     "icon": "F", "color": "#22c55e", "category": "studio"},
-    {"id": "case_state_change", "label": "Case State Change",
-     "description": "A case transitions to a new state",
-     "icon": "C", "color": "#6366f1", "category": "cases"},
-    {"id": "poam_overdue", "label": "POA&M Overdue",
-     "description": "A POA&M item passes its due date",
-     "icon": "P", "color": "#ef4444", "category": "compliance"},
-    {"id": "sam_opportunity", "label": "SAM.gov Opportunity",
-     "description": "A new SAM.gov opportunity matches criteria",
-     "icon": "G", "color": "#f97316", "category": "govcon"},
-    {"id": "schedule", "label": "Scheduled",
-     "description": "Run on a recurring schedule (daily, weekly, etc.)",
-     "icon": "R", "color": "#64748b", "category": "system"},
-    {"id": "manual", "label": "Manual Trigger",
-     "description": "Triggered manually by a user",
-     "icon": "M", "color": "#94a3b8", "category": "system"},
+    {
+        "id": "finding_detected",
+        "label": "Finding Detected",
+        "description": "A compliance or security finding is created",
+        "icon": "!",
+        "color": "#ef4444",
+        "category": "compliance",
+    },
+    {
+        "id": "sla_breach",
+        "label": "SLA Breach",
+        "description": "A case exceeds its SLA time limit",
+        "icon": "T",
+        "color": "#f59e0b",
+        "category": "cases",
+    },
+    {
+        "id": "scan_complete",
+        "label": "Scan Complete",
+        "description": "A security or compliance scan finishes",
+        "icon": "S",
+        "color": "#3b82f6",
+        "category": "security",
+    },
+    {
+        "id": "deployment",
+        "label": "Deployment Event",
+        "description": "A deployment starts, succeeds, or fails",
+        "icon": "D",
+        "color": "#8b5cf6",
+        "category": "operations",
+    },
+    {
+        "id": "form_submitted",
+        "label": "Form Submitted",
+        "description": "A Studio form receives a submission",
+        "icon": "F",
+        "color": "#22c55e",
+        "category": "studio",
+    },
+    {
+        "id": "case_state_change",
+        "label": "Case State Change",
+        "description": "A case transitions to a new state",
+        "icon": "C",
+        "color": "#6366f1",
+        "category": "cases",
+    },
+    {
+        "id": "poam_overdue",
+        "label": "POA&M Overdue",
+        "description": "A POA&M item passes its due date",
+        "icon": "P",
+        "color": "#ef4444",
+        "category": "compliance",
+    },
+    {
+        "id": "sam_opportunity",
+        "label": "SAM.gov Opportunity",
+        "description": "A new SAM.gov opportunity matches criteria",
+        "icon": "G",
+        "color": "#f97316",
+        "category": "govcon",
+    },
+    {
+        "id": "schedule",
+        "label": "Scheduled",
+        "description": "Run on a recurring schedule (daily, weekly, etc.)",
+        "icon": "R",
+        "color": "#64748b",
+        "category": "system",
+    },
+    {
+        "id": "manual",
+        "label": "Manual Trigger",
+        "description": "Triggered manually by a user",
+        "icon": "M",
+        "color": "#94a3b8",
+        "category": "system",
+    },
 ]
 
 CONDITION_OPERATORS: list[dict[str, str]] = [
@@ -83,38 +133,78 @@ CONDITION_OPERATORS: list[dict[str, str]] = [
 ]
 
 ACTION_TYPES: list[dict[str, Any]] = [
-    {"id": "create_case", "label": "Create Case",
-     "description": "Create a new case in a case type",
-     "icon": "C", "color": "#6366f1", "category": "cases",
-     "params": ["case_type_id", "title_template", "priority"]},
-    {"id": "transition_case", "label": "Transition Case",
-     "description": "Move a case to a new state",
-     "icon": "T", "color": "#8b5cf6", "category": "cases",
-     "params": ["to_state"]},
-    {"id": "send_notification", "label": "Send Notification",
-     "description": "Send email, Slack, or dashboard notification",
-     "icon": "N", "color": "#3b82f6", "category": "notify",
-     "params": ["channel", "recipient", "message_template"]},
-    {"id": "run_tool", "label": "Run Tool",
-     "description": "Execute an ICDEV™ tool",
-     "icon": "R", "color": "#22c55e", "category": "execute",
-     "params": ["tool_path", "args"]},
-    {"id": "run_workflow", "label": "Run Workflow",
-     "description": "Execute a saved Studio workflow",
-     "icon": "W", "color": "#f59e0b", "category": "execute",
-     "params": ["workflow_id"]},
-    {"id": "update_field", "label": "Update Field",
-     "description": "Set a field value on the triggering entity",
-     "icon": "U", "color": "#64748b", "category": "data",
-     "params": ["field_name", "value"]},
-    {"id": "block_gate", "label": "Block Gate",
-     "description": "Block a deployment or merge gate",
-     "icon": "B", "color": "#ef4444", "category": "security",
-     "params": ["gate_name", "reason"]},
-    {"id": "log_event", "label": "Log Event",
-     "description": "Write to audit trail",
-     "icon": "L", "color": "#94a3b8", "category": "audit",
-     "params": ["event_type", "message"]},
+    {
+        "id": "create_case",
+        "label": "Create Case",
+        "description": "Create a new case in a case type",
+        "icon": "C",
+        "color": "#6366f1",
+        "category": "cases",
+        "params": ["case_type_id", "title_template", "priority"],
+    },
+    {
+        "id": "transition_case",
+        "label": "Transition Case",
+        "description": "Move a case to a new state",
+        "icon": "T",
+        "color": "#8b5cf6",
+        "category": "cases",
+        "params": ["to_state"],
+    },
+    {
+        "id": "send_notification",
+        "label": "Send Notification",
+        "description": "Send email, Slack, or dashboard notification",
+        "icon": "N",
+        "color": "#3b82f6",
+        "category": "notify",
+        "params": ["channel", "recipient", "message_template"],
+    },
+    {
+        "id": "run_tool",
+        "label": "Run Tool",
+        "description": "Execute an ICDEV™ tool",
+        "icon": "R",
+        "color": "#22c55e",
+        "category": "execute",
+        "params": ["tool_path", "args"],
+    },
+    {
+        "id": "run_workflow",
+        "label": "Run Workflow",
+        "description": "Execute a saved Studio workflow",
+        "icon": "W",
+        "color": "#f59e0b",
+        "category": "execute",
+        "params": ["workflow_id"],
+    },
+    {
+        "id": "update_field",
+        "label": "Update Field",
+        "description": "Set a field value on the triggering entity",
+        "icon": "U",
+        "color": "#64748b",
+        "category": "data",
+        "params": ["field_name", "value"],
+    },
+    {
+        "id": "block_gate",
+        "label": "Block Gate",
+        "description": "Block a deployment or merge gate",
+        "icon": "B",
+        "color": "#ef4444",
+        "category": "security",
+        "params": ["gate_name", "reason"],
+    },
+    {
+        "id": "log_event",
+        "label": "Log Event",
+        "description": "Write to audit trail",
+        "icon": "L",
+        "color": "#94a3b8",
+        "category": "audit",
+        "params": ["event_type", "message"],
+    },
 ]
 
 # ── Pre-built automation templates ────────────────────────────────────
@@ -127,9 +217,22 @@ AUTOMATION_TEMPLATES: list[dict[str, Any]] = [
         "trigger": {"type": "finding_detected", "filters": {"severity": "critical"}},
         "conditions": [{"field": "framework", "operator": "in_list", "value": "FedRAMP,CMMC,NIST"}],
         "actions": [
-            {"type": "create_case", "config": {"title_template": "Critical Finding: {{finding_id}}", "priority": "critical"}},
-            {"type": "send_notification", "config": {"channel": "dashboard", "recipient": "isso", "message_template": "Critical finding detected: {{finding_id}}"}},
-            {"type": "log_event", "config": {"event_type": "auto_response", "message": "Auto-created case for critical finding"}},
+            {
+                "type": "create_case",
+                "config": {"title_template": "Critical Finding: {{finding_id}}", "priority": "critical"},
+            },
+            {
+                "type": "send_notification",
+                "config": {
+                    "channel": "dashboard",
+                    "recipient": "isso",
+                    "message_template": "Critical finding detected: {{finding_id}}",
+                },
+            },
+            {
+                "type": "log_event",
+                "config": {"event_type": "auto_response", "message": "Auto-created case for critical finding"},
+            },
         ],
     },
     {
@@ -139,7 +242,14 @@ AUTOMATION_TEMPLATES: list[dict[str, Any]] = [
         "trigger": {"type": "poam_overdue"},
         "conditions": [{"field": "days_overdue", "operator": "greater_than", "value": "0"}],
         "actions": [
-            {"type": "send_notification", "config": {"channel": "dashboard", "recipient": "pm", "message_template": "POA&M item overdue: {{poam_id}}"}},
+            {
+                "type": "send_notification",
+                "config": {
+                    "channel": "dashboard",
+                    "recipient": "pm",
+                    "message_template": "POA&M item overdue: {{poam_id}}",
+                },
+            },
             {"type": "block_gate", "config": {"gate_name": "deployment", "reason": "Overdue POA&M item"}},
         ],
     },
@@ -150,8 +260,18 @@ AUTOMATION_TEMPLATES: list[dict[str, Any]] = [
         "trigger": {"type": "scan_complete"},
         "conditions": [],
         "actions": [
-            {"type": "run_tool", "config": {"tool_path": "tools/compliance/multi_regime_assessor.py", "args": "--json"}},
-            {"type": "send_notification", "config": {"channel": "dashboard", "recipient": "team", "message_template": "Scan complete — report generated"}},
+            {
+                "type": "run_tool",
+                "config": {"tool_path": "tools/compliance/multi_regime_assessor.py", "args": "--json"},
+            },
+            {
+                "type": "send_notification",
+                "config": {
+                    "channel": "dashboard",
+                    "recipient": "team",
+                    "message_template": "Scan complete — report generated",
+                },
+            },
         ],
     },
     {
@@ -161,7 +281,10 @@ AUTOMATION_TEMPLATES: list[dict[str, Any]] = [
         "trigger": {"type": "form_submitted"},
         "conditions": [],
         "actions": [
-            {"type": "create_case", "config": {"title_template": "Form: {{form_name}} by {{submitted_by}}", "priority": "medium"}},
+            {
+                "type": "create_case",
+                "config": {"title_template": "Form: {{form_name}} by {{submitted_by}}", "priority": "medium"},
+            },
         ],
     },
     {
@@ -171,8 +294,18 @@ AUTOMATION_TEMPLATES: list[dict[str, Any]] = [
         "trigger": {"type": "sam_opportunity"},
         "conditions": [{"field": "naics_match", "operator": "equals", "value": "true"}],
         "actions": [
-            {"type": "send_notification", "config": {"channel": "dashboard", "recipient": "bd_team", "message_template": "New opportunity: {{title}} — {{agency}}"}},
-            {"type": "log_event", "config": {"event_type": "opportunity_captured", "message": "SAM.gov opportunity matched"}},
+            {
+                "type": "send_notification",
+                "config": {
+                    "channel": "dashboard",
+                    "recipient": "bd_team",
+                    "message_template": "New opportunity: {{title}} — {{agency}}",
+                },
+            },
+            {
+                "type": "log_event",
+                "config": {"event_type": "opportunity_captured", "message": "SAM.gov opportunity matched"},
+            },
         ],
     },
 ]
@@ -196,6 +329,7 @@ def get_automation_templates() -> list[dict]:
 
 # ── Automation CRUD ───────────────────────────────────────────────────
 
+
 def create_automation(
     name: str,
     trigger: dict,
@@ -214,9 +348,16 @@ def create_automation(
                (automation_id, name, description, trigger_json, condition_json,
                 action_json, enabled, created_by, created_at)
                VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)""",
-            (auto_id, name, description,
-             json.dumps(trigger), json.dumps(conditions or []),
-             json.dumps(actions), created_by, _now_iso()),
+            (
+                auto_id,
+                name,
+                description,
+                json.dumps(trigger),
+                json.dumps(conditions or []),
+                json.dumps(actions),
+                created_by,
+                _now_iso(),
+            ),
         )
         conn.commit()
         return {"status": "ok", "automation_id": auto_id}
@@ -280,9 +421,7 @@ def toggle_automation(auto_id: str, enabled: bool) -> dict:
 def delete_automation(auto_id: str) -> dict:
     conn = get_connection()
     try:
-        cur = conn.execute(
-            "DELETE FROM studio_automations WHERE automation_id = ?", (auto_id,)
-        )
+        cur = conn.execute("DELETE FROM studio_automations WHERE automation_id = ?", (auto_id,))
         conn.commit()
         return {"status": "ok"} if cur.rowcount else {"status": "error", "error": "Not found"}
     finally:
@@ -290,6 +429,7 @@ def delete_automation(auto_id: str) -> dict:
 
 
 # ── Execution log (append-only) ───────────────────────────────────────
+
 
 def log_automation_run(
     automation_id: str,
@@ -309,8 +449,7 @@ def log_automation_run(
                (run_id, automation_id, trigger_event, status, result_json,
                 started_at, completed_at)
                VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (run_id, automation_id, trigger_event, status,
-             json.dumps(result or {}), now, completed),
+            (run_id, automation_id, trigger_event, status, json.dumps(result or {}), now, completed),
         )
         conn.commit()
         return {"status": "ok", "run_id": run_id}
@@ -340,6 +479,7 @@ def list_automation_runs(
 
 # ── Simulate execution (dry-run) ─────────────────────────────────────
 
+
 def simulate_automation(auto_id: str, test_event: dict | None = None) -> dict:
     """Simulate an automation without executing actions."""
     auto = get_automation(auto_id)
@@ -358,21 +498,28 @@ def simulate_automation(auto_id: str, test_event: dict | None = None) -> dict:
         actual = event.get(field, "")
 
         met = _evaluate_condition(actual, op, expected)
-        condition_results.append({
-            "field": field, "operator": op, "expected": expected,
-            "actual": str(actual), "met": met,
-        })
+        condition_results.append(
+            {
+                "field": field,
+                "operator": op,
+                "expected": expected,
+                "actual": str(actual),
+                "met": met,
+            }
+        )
         if not met:
             conditions_met = False
 
     # List actions that would fire
     actions_preview = []
     for action in auto.get("actions", []):
-        actions_preview.append({
-            "type": action.get("type", ""),
-            "config": action.get("config", {}),
-            "would_execute": conditions_met,
-        })
+        actions_preview.append(
+            {
+                "type": action.get("type", ""),
+                "config": action.get("config", {}),
+                "would_execute": conditions_met,
+            }
+        )
 
     return {
         "status": "ok",
@@ -417,6 +564,7 @@ def _evaluate_condition(actual: Any, operator: str, expected: str) -> bool:
 
 
 # ── CLI ───────────────────────────────────────────────────────────────
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="ICDEV™ Studio Automation Builder")

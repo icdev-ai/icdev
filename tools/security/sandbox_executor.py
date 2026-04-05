@@ -64,12 +64,14 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 # Config loader
 # ---------------------------------------------------------------------------
 
+
 def _load_config() -> Dict[str, Any]:
     """Load sandbox config from args/sandbox_config.yaml, fallback to defaults."""
     config_path = BASE_DIR / "args" / "sandbox_config.yaml"
     if config_path.exists():
         try:
             import yaml
+
             with open(config_path, "r", encoding="utf-8") as f:
                 cfg = yaml.safe_load(f) or {}
             loaded = cfg.get("sandbox", {})
@@ -90,6 +92,7 @@ def _load_config() -> Dict[str, Any]:
 # Dataclasses
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class SandboxResult:
     """Result of a sandboxed code execution."""
@@ -100,7 +103,7 @@ class SandboxResult:
     runtime_ms: int = 0
     artifacts: List[str] = field(default_factory=list)
     container_id: str = ""
-    status: str = "completed"   # completed | failed | timeout | disabled | unavailable
+    status: str = "completed"  # completed | failed | timeout | disabled | unavailable
     error: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
@@ -110,6 +113,7 @@ class SandboxResult:
 # ---------------------------------------------------------------------------
 # DB helpers
 # ---------------------------------------------------------------------------
+
 
 def _ensure_tables(conn: Any) -> None:
     """Create sandbox_execution_log table if it does not exist (D-SEC-10)."""
@@ -141,6 +145,7 @@ def _ensure_tables(conn: Any) -> None:
 # ---------------------------------------------------------------------------
 # Main class
 # ---------------------------------------------------------------------------
+
 
 class SandboxExecutor:
     """Container-isolated code execution engine (D-SEC-10).
@@ -226,22 +231,17 @@ class SandboxExecutor:
         # Resolve resource limits with config defaults and hard caps
         _timeout = int(
             min(
-                timeout_seconds if timeout_seconds is not None
-                else self._config.get("default_timeout_seconds", 30),
+                timeout_seconds if timeout_seconds is not None else self._config.get("default_timeout_seconds", 30),
                 self._config.get("max_timeout_seconds", 300),
             )
         )
         _memory = int(
             min(
-                max_memory_mb if max_memory_mb is not None
-                else self._config.get("default_max_memory_mb", 512),
+                max_memory_mb if max_memory_mb is not None else self._config.get("default_max_memory_mb", 512),
                 self._config.get("max_memory_mb", 2048),
             )
         )
-        _network = (
-            network_enabled if network_enabled is not None
-            else self._config.get("network_enabled", False)
-        )
+        _network = network_enabled if network_enabled is not None else self._config.get("network_enabled", False)
 
         exec_id = "sbx-" + uuid.uuid4().hex[:12]
         code_hash = hashlib.sha256(code.encode("utf-8")).hexdigest()
@@ -392,6 +392,7 @@ class SandboxExecutor:
         # Check llm-sandbox importable
         try:
             import llm_sandbox  # type: ignore[import] # noqa: F401
+
             health["llm_sandbox_installed"] = True
         except ImportError:
             health["error"] = "llm_sandbox package not installed (pip install llm-sandbox)"
@@ -400,6 +401,7 @@ class SandboxExecutor:
         # Check Docker reachable
         try:
             import docker  # type: ignore[import]
+
             client = docker.from_env()
             client.ping()
             health["docker_running"] = True
@@ -419,9 +421,7 @@ class SandboxExecutor:
                 health["smoke_test_passed"] = True
                 health["available"] = True
             else:
-                health["error"] = (
-                    f"Smoke test failed — status={result.status} error={result.error}"
-                )
+                health["error"] = f"Smoke test failed — status={result.status} error={result.error}"
         except Exception as exc:
             health["error"] = f"Smoke test exception: {exc}"
 
@@ -443,6 +443,7 @@ class SandboxExecutor:
         # Check Docker daemon reachable
         try:
             import docker  # type: ignore[import]
+
             client = docker.from_env()
             client.ping()
         except Exception as exc:
@@ -498,11 +499,24 @@ class SandboxExecutor:
                     ?, ?, ?, 'CUI', ?
                 )""",
                 (
-                    exec_id, executor_type, language, code_hash, runtime,
-                    exit_code, runtime_ms, stdout_preview, stderr_preview,
-                    network, memory, timeout,
-                    container_id, len(artifacts), status,
-                    actor, project_id, tenant_id,
+                    exec_id,
+                    executor_type,
+                    language,
+                    code_hash,
+                    runtime,
+                    exit_code,
+                    runtime_ms,
+                    stdout_preview,
+                    stderr_preview,
+                    network,
+                    memory,
+                    timeout,
+                    container_id,
+                    len(artifacts),
+                    status,
+                    actor,
+                    project_id,
+                    tenant_id,
                     datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
                 ),
             )
@@ -515,6 +529,7 @@ class SandboxExecutor:
 # Utilities
 # ---------------------------------------------------------------------------
 
+
 def _safe_str(value: Any) -> str:
     """Convert any value to str safely."""
     if value is None:
@@ -525,6 +540,7 @@ def _safe_str(value: Any) -> str:
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+
 
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(

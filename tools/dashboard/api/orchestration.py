@@ -38,7 +38,7 @@ def _get_db():
 
 def _is_pg(conn):
     """Check if connection is PostgreSQL."""
-    return getattr(conn, '_backend', None) == 'postgresql'
+    return getattr(conn, "_backend", None) == "postgresql"
 
 
 def _table_exists(conn, table_name):
@@ -46,8 +46,7 @@ def _table_exists(conn, table_name):
     try:
         if _is_pg(conn):
             row = conn.execute(
-                "SELECT COUNT(*) FROM information_schema.tables "
-                "WHERE table_schema='public' AND table_name=?",
+                "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public' AND table_name=?",
                 (table_name,),
             ).fetchone()
         else:

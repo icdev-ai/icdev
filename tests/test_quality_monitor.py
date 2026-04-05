@@ -47,19 +47,19 @@ def monitor_db():
 class TestMetricCollection:
     def test_collect_rag_metrics_empty(self, monitor_db):
         from tools.finetune.quality_monitor import _collect_rag_metrics
+
         metrics = _collect_rag_metrics(monitor_db)
         # Should return empty or zero metrics, not fail
         assert isinstance(metrics, dict)
 
     def test_collect_rag_metrics_with_data(self, monitor_db):
         from tools.finetune.quality_monitor import _collect_rag_metrics
+
         monitor_db.execute(
-            "INSERT INTO rag_retrieval_log (query_hash, top_score, created_at) "
-            "VALUES ('hash1', 0.8, datetime('now'))",
+            "INSERT INTO rag_retrieval_log (query_hash, top_score, created_at) VALUES ('hash1', 0.8, datetime('now'))",
         )
         monitor_db.execute(
-            "INSERT INTO rag_retrieval_log (query_hash, top_score, created_at) "
-            "VALUES ('hash2', 0.6, datetime('now'))",
+            "INSERT INTO rag_retrieval_log (query_hash, top_score, created_at) VALUES ('hash2', 0.6, datetime('now'))",
         )
         monitor_db.commit()
         metrics = _collect_rag_metrics(monitor_db)
@@ -71,6 +71,7 @@ class TestMetricCollection:
 class TestSnapshotRecording:
     def test_record_snapshot(self, monitor_db):
         from tools.finetune.quality_monitor import _record_snapshot, _ensure_tables
+
         _ensure_tables(monitor_db)
         _record_snapshot(monitor_db, "ndcg", 0.3, 0.5, True)
         row = monitor_db.execute("SELECT * FROM ft_quality_snapshots").fetchone()
@@ -81,6 +82,7 @@ class TestSnapshotRecording:
 
     def test_consecutive_failure_count(self, monitor_db):
         from tools.finetune.quality_monitor import _record_snapshot, _count_consecutive_failures, _ensure_tables
+
         _ensure_tables(monitor_db)
         # Record 3 failures then 1 success
         _record_snapshot(monitor_db, "ndcg", 0.3, 0.5, True)
@@ -91,6 +93,7 @@ class TestSnapshotRecording:
 
     def test_consecutive_resets_on_success(self, monitor_db):
         from tools.finetune.quality_monitor import _ensure_tables, _gen_id
+
         _ensure_tables(monitor_db)
         # Insert with explicit ordering via created_at timestamps
         for ts, below in [
@@ -106,6 +109,7 @@ class TestSnapshotRecording:
             )
         monitor_db.commit()
         from tools.finetune.quality_monitor import _count_consecutive_failures
+
         count = _count_consecutive_failures(monitor_db, "mrr")
         assert count == 1  # Only 1 since last success
 
@@ -113,12 +117,14 @@ class TestSnapshotRecording:
 class TestQualityCheck:
     def test_check_disabled(self):
         from tools.finetune.quality_monitor import check_quality
+
         with patch("tools.finetune.quality_monitor._get_config", return_value={"enabled": False}):
             result = check_quality()
             assert result["status"] == "disabled"
 
     def test_check_no_data(self, monitor_db):
         from tools.finetune.quality_monitor import check_quality
+
         with patch("tools.finetune.quality_monitor._get_db", return_value=monitor_db):
             result = check_quality(conn=monitor_db)
             assert result["status"] == "ok"
@@ -126,11 +132,12 @@ class TestQualityCheck:
 
     def test_check_with_low_scores(self, monitor_db):
         from tools.finetune.quality_monitor import check_quality
+
         # Seed retrieval log with low scores
         for i in range(5):
             monitor_db.execute(
-                "INSERT INTO rag_retrieval_log (query_hash, top_score, created_at) "
-                "VALUES (?, 0.2, datetime('now'))", (f"h{i}",),
+                "INSERT INTO rag_retrieval_log (query_hash, top_score, created_at) VALUES (?, 0.2, datetime('now'))",
+                (f"h{i}",),
             )
         monitor_db.commit()
         result = check_quality(conn=monitor_db)
@@ -143,6 +150,7 @@ class TestQualityCheck:
 class TestQualityStatus:
     def test_status_empty(self, monitor_db):
         from tools.finetune.quality_monitor import get_quality_status
+
         result = get_quality_status(conn=monitor_db)
         assert result["status"] == "ok"
         assert result["total_snapshots"] == 0

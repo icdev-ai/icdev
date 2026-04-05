@@ -17,31 +17,37 @@ import pytest
 
 # --- Module Import ---
 
+
 def test_ivv_report_generator_imports():
     """Verify module can be imported without errors."""
     try:
-        import tools.compliance.ivv_report_generator
+        import tools.compliance.ivv_report_generator  # noqa: F401
     except ImportError as e:
         pytest.skip(f"Import dependency missing: {e}")
 
 
 # --- Function Signature Tests ---
 
+
 def test_ivv_report_generator_generate_ivv_report_exists():
     """Verify generate_ivv_report exists and is callable."""
     try:
         from tools.compliance.ivv_report_generator import generate_ivv_report
-        assert callable(generate_ivv_report), 'generate_ivv_report is not callable'
+
+        assert callable(generate_ivv_report), "generate_ivv_report is not callable"
     except ImportError:
         pytest.skip("Module not importable")
+
 
 def test_ivv_report_generator_generate_ivv_report_signature():
     """Verify generate_ivv_report accepts expected parameters."""
     import inspect
+
     try:
         from tools.compliance.ivv_report_generator import generate_ivv_report
+
         sig = inspect.signature(generate_ivv_report)
         params = list(sig.parameters.keys())
-        assert "project_id" in params, f"Missing parameter \"project_id\" in {params}"
+        assert "project_id" in params, f'Missing parameter "project_id" in {params}'
     except ImportError:
         pytest.skip("Module not importable")

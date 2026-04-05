@@ -17,6 +17,7 @@ def fix_stale_docs(finding: Dict[str, Any]) -> Dict[str, Any]:
     evidence = finding.get("evidence", {})
     if isinstance(evidence, str):
         import json
+
         try:
             evidence = json.loads(evidence)
         except Exception:

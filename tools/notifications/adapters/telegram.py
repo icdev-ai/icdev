@@ -40,21 +40,23 @@ def send(
 
     # Format message with severity icon
     icons = {
-        "critical": "\U0001F6A8",
-        "warning": "\u26A0\uFE0F",
-        "info": "\u2139\uFE0F",
+        "critical": "\U0001f6a8",
+        "warning": "\u26a0\ufe0f",
+        "info": "\u2139\ufe0f",
         "success": "\u2705",
     }
-    icon = icons.get(severity, "\u2139\uFE0F")
+    icon = icons.get(severity, "\u2139\ufe0f")
     text = f"{icon} <b>{title}</b>\n\n{body}"
 
     url = f"https://api.telegram.org/bot{token}/sendMessage"
-    payload = json.dumps({
-        "chat_id": chat_id,
-        "text": text,
-        "parse_mode": "HTML",
-        "disable_web_page_preview": True,
-    }).encode("utf-8")
+    payload = json.dumps(
+        {
+            "chat_id": chat_id,
+            "text": text,
+            "parse_mode": "HTML",
+            "disable_web_page_preview": True,
+        }
+    ).encode("utf-8")
 
     req = urllib.request.Request(
         url,
@@ -68,9 +70,7 @@ def send(
             data = json.loads(resp.read().decode("utf-8"))
             return {
                 "status": "sent",
-                "message_id": data.get("result", {}).get(
-                    "message_id"
-                ),
+                "message_id": data.get("result", {}).get("message_id"),
             }
     except Exception as e:
         return {"status": "error", "message": str(e)}

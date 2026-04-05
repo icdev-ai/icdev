@@ -40,9 +40,7 @@ def _build_prompt(findings: List[dict]) -> str:
         prompt_parts.append(f"\n## {pillar.upper()} ({len(items)} findings)\n")
         for item in sorted(items, key=lambda x: x.get("relevance_score", 0), reverse=True)[:10]:
             score = item.get("relevance_score", 0)
-            prompt_parts.append(
-                f"- [{score:.2f}] {item['title']}: {item.get('description', '')[:150]}\n"
-            )
+            prompt_parts.append(f"- [{score:.2f}] {item['title']}: {item.get('description', '')[:150]}\n")
 
     return "".join(prompt_parts)
 
@@ -87,6 +85,7 @@ def synthesize(findings: List[dict], config: dict = None) -> Optional[str]:
 
         provider = OllamaProvider(base_url="http://localhost:11434")
         from tools.llm.provider import LLMRequest as LR
+
         req = LR(
             messages=[{"role": "user", "content": prompt}],
             max_tokens=max_tokens,

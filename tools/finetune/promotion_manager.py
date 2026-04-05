@@ -32,13 +32,13 @@ def _get_db(db_path: Optional[Path] = None) -> sqlite3.Connection:
     return conn
 
 
-
 def _load_thresholds() -> Dict[str, float]:
     """Load promotion thresholds from config."""
     config_path = BASE_DIR / "args" / "finetune_config.yaml"
     if config_path.exists():
         try:
             import yaml
+
             with open(config_path) as f:
                 cfg = yaml.safe_load(f) or {}
             promo = cfg.get("promotion", {})
@@ -134,16 +134,15 @@ def auto_promote(
     Checks eligibility first, then promotes via model_registry.
     """
     eligibility = check_promotion_eligibility(
-        model_version_id, function_name, db_path,
+        model_version_id,
+        function_name,
+        db_path,
     )
     if not eligibility.get("success"):
         return eligibility
 
     if not eligibility["eligible"]:
-        failed = [
-            k for k, v in eligibility["checks"].items()
-            if not v["pass"]
-        ]
+        failed = [k for k, v in eligibility["checks"].items() if not v["pass"]]
         return {
             "success": False,
             "error": f"Model does not meet auto-promotion thresholds. Failed: {', '.join(failed)}",
@@ -151,6 +150,7 @@ def auto_promote(
         }
 
     from tools.finetune.model_registry import promote_model
+
     result = promote_model(
         model_version_id=model_version_id,
         function_name=function_name,
@@ -171,10 +171,16 @@ def auto_promote(
                    (model_version_id, action, function_name, eval_score_summary,
                     reason, actor, tenant_id, project_id, created_at)
                    VALUES (?, 'auto_promoted', ?, ?, ?, ?, ?, ?, ?)""",
-                (model_version_id, function_name,
-                 json.dumps(eligibility["checks"]),
-                 "Auto-promoted: met all thresholds",
-                 activated_by, tenant_id, project_id, now_iso()),
+                (
+                    model_version_id,
+                    function_name,
+                    json.dumps(eligibility["checks"]),
+                    "Auto-promoted: met all thresholds",
+                    activated_by,
+                    tenant_id,
+                    project_id,
+                    now_iso(),
+                ),
             )
             conn.commit()
         except Exception:
@@ -200,6 +206,7 @@ def force_promote(
     Bypasses auto-promotion checks. Logs as 'override_promoted'.
     """
     from tools.finetune.model_registry import promote_model
+
     result = promote_model(
         model_version_id=model_version_id,
         function_name=function_name,
@@ -220,9 +227,15 @@ def force_promote(
                    (model_version_id, action, function_name,
                     reason, actor, tenant_id, project_id, created_at)
                    VALUES (?, 'override_promoted', ?, ?, ?, ?, ?, ?)""",
-                (model_version_id, function_name,
-                 f"Force-promoted: {reason}", activated_by,
-                 tenant_id, project_id, now_iso()),
+                (
+                    model_version_id,
+                    function_name,
+                    f"Force-promoted: {reason}",
+                    activated_by,
+                    tenant_id,
+                    project_id,
+                    now_iso(),
+                ),
             )
             conn.commit()
         except Exception:
@@ -255,22 +268,27 @@ def main():
 
     if args.check:
         result = check_promotion_eligibility(
-            args.model_version_id, args.function,
+            args.model_version_id,
+            args.function,
         )
     elif args.auto_promote:
         result = auto_promote(
-            args.model_version_id, args.function,
+            args.model_version_id,
+            args.function,
             routing_tier=args.routing_tier,
             activated_by=args.activated_by or "auto",
-            tenant_id=args.tenant_id, project_id=args.project_id,
+            tenant_id=args.tenant_id,
+            project_id=args.project_id,
         )
     elif args.force_promote:
         result = force_promote(
-            args.model_version_id, args.function,
+            args.model_version_id,
+            args.function,
             routing_tier=args.routing_tier,
             activated_by=args.activated_by,
             reason=args.reason,
-            tenant_id=args.tenant_id, project_id=args.project_id,
+            tenant_id=args.tenant_id,
+            project_id=args.project_id,
         )
     else:
         result = {"success": False, "error": "Specify --check, --auto-promote, or --force-promote"}

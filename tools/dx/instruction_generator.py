@@ -24,17 +24,20 @@ sys.path.insert(0, str(BASE_DIR))
 
 try:
     from jinja2 import Environment, BaseLoader
+
     _HAS_JINJA2 = True
 except ImportError:
     _HAS_JINJA2 = False
 
 try:
     import yaml as _yaml
+
     def _load_yaml(path):
         with open(path, encoding="utf-8") as f:
             return _yaml.safe_load(f)
 except ImportError:
     _yaml = None  # type: ignore[assignment]
+
     def _load_yaml(path):
         with open(path, encoding="utf-8") as f:
             return json.loads(f.read())
@@ -44,6 +47,7 @@ REGISTRY_PATH = BASE_DIR / "args" / "companion_registry.yaml"
 
 
 # ── Template Helpers ────────────────────────────────────────────────────
+
 
 def _render(template_str, data):
     """Render a Jinja2 template string, fallback to str.format for basics."""
@@ -57,6 +61,7 @@ def _render(template_str, data):
 
 
 # ── Project Data Collection ─────────────────────────────────────────────
+
 
 def collect_project_data(directory=None):
     """Collect universal project data for template rendering.
@@ -92,6 +97,7 @@ def collect_project_data(directory=None):
     # Try to load icdev.yaml via manifest_loader
     try:
         from tools.project.manifest_loader import load_manifest
+
         result = load_manifest(directory=str(directory))
         if result["valid"]:
             cfg = result["normalized"]
@@ -727,8 +733,8 @@ TEMPLATES = {
 
 # ── Generator ───────────────────────────────────────────────────────────
 
-def generate_instructions(directory=None, platforms=None, style="full",
-                          write=False, dry_run=False):
+
+def generate_instructions(directory=None, platforms=None, style="full", write=False, dry_run=False):
     """Generate instruction files for specified platforms.
 
     Args:
@@ -786,9 +792,7 @@ def generate_instructions(directory=None, platforms=None, style="full",
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Generate AI coding tool instruction files"
-    )
+    parser = argparse.ArgumentParser(description="Generate AI coding tool instruction files")
     parser.add_argument("--dir", help="Project directory")
     parser.add_argument("--platform", help="Comma-separated platform IDs")
     parser.add_argument("--all", action="store_true", help="All platforms")
@@ -798,9 +802,7 @@ def main():
     parser.add_argument("--json", action="store_true", help="Output JSON")
     args = parser.parse_args()
 
-    platforms = ["all"] if args.all else (
-        [p.strip() for p in args.platform.split(",")] if args.platform else None
-    )
+    platforms = ["all"] if args.all else ([p.strip() for p in args.platform.split(",")] if args.platform else None)
 
     results = generate_instructions(
         directory=args.dir,

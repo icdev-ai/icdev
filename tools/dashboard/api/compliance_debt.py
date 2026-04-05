@@ -16,9 +16,7 @@ from tools.db.storage import get_connection  # noqa: E402
 
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
-compliance_debt_api = Blueprint(
-    "compliance_debt_api", __name__, url_prefix="/api/compliance-debt"
-)
+compliance_debt_api = Blueprint("compliance_debt_api", __name__, url_prefix="/api/compliance-debt")
 
 # ── Severity weights ──────────────────────────────────────────
 POAM_WEIGHTS = {"critical": 10, "high": 5, "moderate": 2, "low": 1}
@@ -44,8 +42,7 @@ def _table_exists(conn, table_name: str) -> bool:
     try:
         if getattr(conn, "_backend", "sqlite") == "postgresql":
             row = conn.execute(
-                "SELECT 1 FROM information_schema.tables "
-                "WHERE table_schema = 'public' AND table_name = ?",
+                "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = ?",
                 (table_name,),
             ).fetchone()
             return row is not None
@@ -60,6 +57,7 @@ def _table_exists(conn, table_name: str) -> bool:
 
 # ── 1. Summary ────────────────────────────────────────────────
 
+
 @compliance_debt_api.route("/summary", methods=["GET"])
 def debt_summary():
     """Overall compliance debt score, optionally filtered by project_id."""
@@ -70,10 +68,7 @@ def debt_summary():
         # --- POAM debt ---
         poam_debt = 0
         if _table_exists(conn, "poam_items"):
-            q = (
-                "SELECT severity, COUNT(*) AS cnt FROM poam_items "
-                "WHERE status NOT IN ('completed','accepted_risk')"
-            )
+            q = "SELECT severity, COUNT(*) AS cnt FROM poam_items WHERE status NOT IN ('completed','accepted_risk')"
             params = []
             if project_id:
                 q += " AND project_id = ?"
@@ -100,10 +95,7 @@ def debt_summary():
         # --- STIG debt ---
         stig_debt = 0
         if _table_exists(conn, "stig_findings"):
-            q = (
-                "SELECT severity, COUNT(*) AS cnt FROM stig_findings "
-                "WHERE status = 'Open'"
-            )
+            q = "SELECT severity, COUNT(*) AS cnt FROM stig_findings WHERE status = 'Open'"
             params = []
             if project_id:
                 q += " AND project_id = ?"
@@ -173,16 +165,18 @@ def debt_summary():
             elif o > c:
                 trend = "worsening"
 
-        return jsonify({
-            "total_debt_points": total,
-            "debt_by_category": {
-                "poam": poam_debt,
-                "controls": control_debt,
-                "stig": stig_debt,
-                "ato": ato_debt,
-            },
-            "debt_trend": trend,
-        })
+        return jsonify(
+            {
+                "total_debt_points": total,
+                "debt_by_category": {
+                    "poam": poam_debt,
+                    "controls": control_debt,
+                    "stig": stig_debt,
+                    "ato": ato_debt,
+                },
+                "debt_trend": trend,
+            }
+        )
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
     finally:
@@ -190,6 +184,7 @@ def debt_summary():
 
 
 # ── 2. Burndown ───────────────────────────────────────────────
+
 
 @compliance_debt_api.route("/burndown", methods=["GET"])
 def debt_burndown():
@@ -227,9 +222,7 @@ def debt_burndown():
 
         q_opened = (
             f"SELECT {month_expr} AS month, COUNT(*) AS cnt "  # nosec B608 -- table/column names are internal constants, not user input
-            f"FROM poam_items WHERE created_at >= {date_window}"
-            + base_filter
-            + " GROUP BY month ORDER BY month"
+            f"FROM poam_items WHERE created_at >= {date_window}" + base_filter + " GROUP BY month ORDER BY month"
         )
         opened_rows = conn.execute(q_opened, window_params_opened).fetchall()
         opened_map = {r["month"]: r["cnt"] for r in opened_rows}
@@ -237,9 +230,7 @@ def debt_burndown():
         # Closed per month
         q_closed = (
             f"SELECT {month_expr_comp} AS month, COUNT(*) AS cnt "  # nosec B608 -- table/column names are internal constants, not user input
-            f"FROM poam_items WHERE completion_date >= {date_window}"
-            + base_filter
-            + " GROUP BY month ORDER BY month"
+            f"FROM poam_items WHERE completion_date >= {date_window}" + base_filter + " GROUP BY month ORDER BY month"
         )
         closed_rows = conn.execute(q_closed, window_params_closed).fetchall()
         closed_map = {r["month"]: r["cnt"] for r in closed_rows}
@@ -248,8 +239,7 @@ def debt_burndown():
         q_start = (
             "SELECT COUNT(*) AS cnt FROM poam_items "  # nosec B608 -- table/column names are internal constants, not user input
             "WHERE status NOT IN ('completed','accepted_risk') "
-            f"AND created_at < {date_window}"
-            + base_filter
+            f"AND created_at < {date_window}" + base_filter
         )
         start_row = conn.execute(q_start, window_params_start).fetchone()
         cumulative = start_row["cnt"] if start_row else 0
@@ -261,12 +251,14 @@ def debt_burndown():
             o = opened_map.get(m, 0)
             c = closed_map.get(m, 0)
             cumulative += o - c
-            result_months.append({
-                "month": m,
-                "opened": o,
-                "closed": c,
-                "cumulative_open": max(cumulative, 0),
-            })
+            result_months.append(
+                {
+                    "month": m,
+                    "opened": o,
+                    "closed": c,
+                    "cumulative_open": max(cumulative, 0),
+                }
+            )
 
         # Project future months based on avg close rate
         total_closed = sum(closed_map.values()) if closed_map else 0
@@ -280,10 +272,12 @@ def debt_burndown():
             y = today.year + (today.month + i - 1) // 12
             mo = (today.month + i - 1) % 12 + 1
             proj_cum = max(proj_cum - avg_net, 0)
-            projected.append({
-                "month": f"{y:04d}-{mo:02d}",
-                "projected_open": round(proj_cum),
-            })
+            projected.append(
+                {
+                    "month": f"{y:04d}-{mo:02d}",
+                    "projected_open": round(proj_cum),
+                }
+            )
 
         return jsonify({"months": result_months, "projected": projected})
     except Exception as exc:
@@ -293,6 +287,7 @@ def debt_burndown():
 
 
 # ── 3. POAMs ──────────────────────────────────────────────────
+
 
 @compliance_debt_api.route("/poams", methods=["GET"])
 def debt_poams():
@@ -343,8 +338,7 @@ def debt_poams():
             params.append(status)
         if overdue and overdue.lower() in ("true", "1", "yes"):
             q += (
-                " AND milestone_date IS NOT NULL AND milestone_date < ? "
-                "AND status NOT IN ('completed','accepted_risk')"
+                " AND milestone_date IS NOT NULL AND milestone_date < ? AND status NOT IN ('completed','accepted_risk')"
             )
             params.append(today)
 
@@ -359,12 +353,14 @@ def debt_poams():
 
         rows = conn.execute(q, params).fetchall()
 
-        return jsonify({
-            "poam_items": [dict(r) for r in rows],
-            "total": total,
-            "page": page,
-            "per_page": per_page,
-        })
+        return jsonify(
+            {
+                "poam_items": [dict(r) for r in rows],
+                "total": total,
+                "page": page,
+                "per_page": per_page,
+            }
+        )
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
     finally:
@@ -372,6 +368,7 @@ def debt_poams():
 
 
 # ── 4. Controls ───────────────────────────────────────────────
+
 
 @compliance_debt_api.route("/controls", methods=["GET"])
 def debt_controls():
@@ -430,23 +427,24 @@ def debt_controls():
                 families[fam][st] += 1
             # Include controls needing attention
             if st not in ("implemented", "not_applicable"):
-                families[fam]["controls"].append({
-                    "control_id": r["control_id"],
-                    "title": r["title"],
-                    "status": st,
-                    "last_assessed": r["last_assessed"],
-                })
+                families[fam]["controls"].append(
+                    {
+                        "control_id": r["control_id"],
+                        "title": r["title"],
+                        "status": st,
+                        "last_assessed": r["last_assessed"],
+                    }
+                )
 
         family_list = sorted(families.values(), key=lambda f: f["family"])
-        needing = sum(
-            f["planned"] + f["partially_implemented"] + f["compensating"]
-            for f in family_list
-        )
+        needing = sum(f["planned"] + f["partially_implemented"] + f["compensating"] for f in family_list)
 
-        return jsonify({
-            "families": family_list,
-            "total_needing_attention": needing,
-        })
+        return jsonify(
+            {
+                "families": family_list,
+                "total_needing_attention": needing,
+            }
+        )
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
     finally:
@@ -454,6 +452,7 @@ def debt_controls():
 
 
 # ── 5. Expiring ATOs ─────────────────────────────────────────
+
 
 @compliance_debt_api.route("/expiring-atos", methods=["GET"])
 def expiring_atos():
@@ -467,10 +466,7 @@ def expiring_atos():
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
         if _is_pg(conn):
-            days_expr = (
-                "CAST(EXTRACT(EPOCH FROM "
-                "(expiration_date::timestamp - NOW())) / 86400 AS INTEGER)"
-            )
+            days_expr = "CAST(EXTRACT(EPOCH FROM (expiration_date::timestamp - NOW())) / 86400 AS INTEGER)"
             date_upper = f"(CURRENT_DATE + INTERVAL '{days} days')"
             q = (
                 f"SELECT *, {days_expr} AS days_remaining "  # nosec B608 -- table/column names are internal constants, not user input
@@ -493,11 +489,13 @@ def expiring_atos():
             )
             rows = conn.execute(q, [today, today, today, str(days)]).fetchall()
 
-        return jsonify({
-            "expiring": [dict(r) for r in rows],
-            "total": len(rows),
-            "window_days": days,
-        })
+        return jsonify(
+            {
+                "expiring": [dict(r) for r in rows],
+                "total": len(rows),
+                "window_days": days,
+            }
+        )
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
     finally:
@@ -505,6 +503,7 @@ def expiring_atos():
 
 
 # ── 6. SLA Compliance ────────────────────────────────────────
+
 
 @compliance_debt_api.route("/sla", methods=["GET"])
 def sla_compliance():
@@ -529,77 +528,61 @@ def sla_compliance():
             proj_params = params[2:] if project_id else []
             completed_q = (
                 "SELECT COUNT(*) AS cnt FROM poam_items "  # nosec B608 -- table/column names are internal constants, not user input
-                "WHERE severity = ? AND status = 'completed'"
-                + base_filter
+                "WHERE severity = ? AND status = 'completed'" + base_filter
             )
             if _is_pg(conn):
                 days_diff_expr = (
-                    "CAST(EXTRACT(EPOCH FROM "
-                    "(completion_date::timestamp - created_at::timestamp)) "
-                    "/ 86400 AS INTEGER)"
+                    "CAST(EXTRACT(EPOCH FROM (completion_date::timestamp - created_at::timestamp)) / 86400 AS INTEGER)"
                 )
                 within_sla_q = (
                     "SELECT COUNT(*) AS cnt FROM poam_items "  # nosec B608 -- table/column names are internal constants, not user input
                     "WHERE severity = ? AND status = 'completed' "
                     "AND completion_date IS NOT NULL AND created_at IS NOT NULL "
-                    f"AND {days_diff_expr} <= ?"
-                    + base_filter
+                    f"AND {days_diff_expr} <= ?" + base_filter
                 )
-                open_days_expr = (
-                    "CAST(EXTRACT(EPOCH FROM "
-                    "(NOW() - created_at::timestamp)) / 86400 AS INTEGER)"
-                )
+                open_days_expr = "CAST(EXTRACT(EPOCH FROM (NOW() - created_at::timestamp)) / 86400 AS INTEGER)"
                 open_past_q = (
                     "SELECT COUNT(*) AS cnt FROM poam_items "  # nosec B608 -- table/column names are internal constants, not user input
                     "WHERE severity = ? AND status NOT IN ('completed','accepted_risk') "
                     "AND created_at IS NOT NULL "
-                    f"AND {open_days_expr} > ?"
-                    + base_filter
+                    f"AND {open_days_expr} > ?" + base_filter
                 )
             else:
                 within_sla_q = (
                     "SELECT COUNT(*) AS cnt FROM poam_items "  # nosec B608 -- table/column names are internal constants, not user input
                     "WHERE severity = ? AND status = 'completed' "
                     "AND completion_date IS NOT NULL AND created_at IS NOT NULL "
-                    "AND CAST(julianday(completion_date) - julianday(created_at) AS INTEGER) <= ?"
-                    + base_filter
+                    "AND CAST(julianday(completion_date) - julianday(created_at) AS INTEGER) <= ?" + base_filter
                 )
                 open_past_q = (
                     "SELECT COUNT(*) AS cnt FROM poam_items "  # nosec B608 -- table/column names are internal constants, not user input
                     "WHERE severity = ? AND status NOT IN ('completed','accepted_risk') "
                     "AND created_at IS NOT NULL "
-                    "AND CAST(julianday(?) - julianday(created_at) AS INTEGER) > ?"
-                    + base_filter
+                    "AND CAST(julianday(?) - julianday(created_at) AS INTEGER) > ?" + base_filter
                 )
 
-            total_completed = conn.execute(
-                completed_q, [sev] + proj_params
-            ).fetchone()["cnt"]
-            within = conn.execute(
-                within_sla_q, [sev, max_days] + proj_params
-            ).fetchone()["cnt"]
+            total_completed = conn.execute(completed_q, [sev] + proj_params).fetchone()["cnt"]
+            within = conn.execute(within_sla_q, [sev, max_days] + proj_params).fetchone()["cnt"]
 
             # Also count open ones that are already past SLA
             if _is_pg(conn):
-                open_past = conn.execute(
-                    open_past_q, [sev, max_days] + proj_params
-                ).fetchone()["cnt"]
+                open_past = conn.execute(open_past_q, [sev, max_days] + proj_params).fetchone()["cnt"]
             else:
-                open_past = conn.execute(
-                    open_past_q, [sev, today, max_days] + proj_params
-                ).fetchone()["cnt"]
+                open_past = conn.execute(open_past_q, [sev, today, max_days] + proj_params).fetchone()["cnt"]
 
             total_relevant = total_completed + open_past
             pct = round(within / total_relevant * 100, 1) if total_relevant > 0 else 100.0
 
-            results.append({
-                "severity": sev,
-                "sla_days": max_days,
-                "total_completed": total_completed,
-                "within_sla": within,
-                "open_past_sla": open_past,
-                "compliance_pct": pct,
-            })
+            results.append(
+                {
+                    "severity": sev,
+                    "sla_days": max_days,
+                    "total_completed": total_completed,
+                    "within_sla": within,
+                    "open_past_sla": open_past,
+                    "compliance_pct": pct,
+                }
+            )
 
         return jsonify({"sla": results})
     except Exception as exc:

@@ -39,6 +39,7 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 # Database helpers
 # ============================================================
 
+
 def _get_connection(db_path=None):
     """Get a database connection.
 
@@ -117,6 +118,7 @@ def _ensure_output_dir(project_id, output_dir=None):
 # ============================================================
 # Status mapping helpers
 # ============================================================
+
 
 def _map_impl_status(status):
     """Map ICDEV™ implementation status to eMASS-compatible value.
@@ -237,6 +239,7 @@ def _map_compliance_status(status):
 # Controls Export
 # ============================================================
 
+
 def export_controls_emass(project_id, output_dir=None, db_path=None):
     """Export control implementations to eMASS-compatible CSV format.
 
@@ -271,32 +274,41 @@ def export_controls_emass(project_id, output_dir=None, db_path=None):
         with open(out_file, "w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
             # eMASS bulk import header row
-            writer.writerow([
-                "Control Number",
-                "Control Name",
-                "Implementation Status",
-                "Responsible Entity",
-                "Implementation Description",
-                "Evidence Reference",
-                "Assessment Date",
-            ])
+            writer.writerow(
+                [
+                    "Control Number",
+                    "Control Name",
+                    "Implementation Status",
+                    "Responsible Entity",
+                    "Implementation Description",
+                    "Evidence Reference",
+                    "Assessment Date",
+                ]
+            )
             for row in controls:
                 r = dict(row)
-                writer.writerow([
-                    r.get("control_id", ""),
-                    r.get("control_name", r.get("control_id", "")),
-                    _map_impl_status(r.get("implementation_status", "")),
-                    r.get("responsible_role", r.get("responsible_entity", "")),
-                    r.get("implementation_description", "Planned"),
-                    r.get("evidence_reference", r.get("evidence_path", "")),
-                    r.get("assessment_date", datetime.now(timezone.utc).strftime("%Y-%m-%d")),
-                ])
+                writer.writerow(
+                    [
+                        r.get("control_id", ""),
+                        r.get("control_name", r.get("control_id", "")),
+                        _map_impl_status(r.get("implementation_status", "")),
+                        r.get("responsible_role", r.get("responsible_entity", "")),
+                        r.get("implementation_description", "Planned"),
+                        r.get("evidence_reference", r.get("evidence_path", "")),
+                        r.get("assessment_date", datetime.now(timezone.utc).strftime("%Y-%m-%d")),
+                    ]
+                )
 
-        _log_audit(conn, project_id, "export_controls_emass", {
-            "control_count": len(controls),
-            "output_file": str(out_file),
-            "format": "csv",
-        })
+        _log_audit(
+            conn,
+            project_id,
+            "export_controls_emass",
+            {
+                "control_count": len(controls),
+                "output_file": str(out_file),
+                "format": "csv",
+            },
+        )
 
         print(f"[eMASS Export] Controls CSV: {out_file} ({len(controls)} controls)")
         return str(out_file)
@@ -308,6 +320,7 @@ def export_controls_emass(project_id, output_dir=None, db_path=None):
 # ============================================================
 # POA&M Export
 # ============================================================
+
 
 def export_poam_emass(project_id, output_dir=None, db_path=None):
     """Export POA&M items in eMASS import format (CSV).
@@ -343,16 +356,18 @@ def export_poam_emass(project_id, output_dir=None, db_path=None):
         with open(out_file, "w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
             # eMASS POA&M import header row
-            writer.writerow([
-                "POAM ID",
-                "Weakness Name",
-                "Weakness Source",
-                "Severity",
-                "Scheduled Completion Date",
-                "Milestone Description",
-                "Status",
-                "Resources Required",
-            ])
+            writer.writerow(
+                [
+                    "POAM ID",
+                    "Weakness Name",
+                    "Weakness Source",
+                    "Severity",
+                    "Scheduled Completion Date",
+                    "Milestone Description",
+                    "Status",
+                    "Resources Required",
+                ]
+            )
             for row in items:
                 r = dict(row)
                 # Build a milestone description from corrective action or fallback
@@ -360,22 +375,29 @@ def export_poam_emass(project_id, output_dir=None, db_path=None):
                 if not milestone:
                     milestone = r.get("weakness_description", "Remediation planned")
 
-                writer.writerow([
-                    r.get("weakness_id", r.get("poam_id", "")),
-                    r.get("weakness_description", r.get("weakness_name", "")),
-                    r.get("source", ""),
-                    _map_severity(r.get("severity", "")),
-                    r.get("milestone_date", r.get("scheduled_completion_date", "")),
-                    milestone,
-                    _map_poam_status(r.get("status", "")),
-                    r.get("resources_required", ""),
-                ])
+                writer.writerow(
+                    [
+                        r.get("weakness_id", r.get("poam_id", "")),
+                        r.get("weakness_description", r.get("weakness_name", "")),
+                        r.get("source", ""),
+                        _map_severity(r.get("severity", "")),
+                        r.get("milestone_date", r.get("scheduled_completion_date", "")),
+                        milestone,
+                        _map_poam_status(r.get("status", "")),
+                        r.get("resources_required", ""),
+                    ]
+                )
 
-        _log_audit(conn, project_id, "export_poam_emass", {
-            "poam_count": len(items),
-            "output_file": str(out_file),
-            "format": "csv",
-        })
+        _log_audit(
+            conn,
+            project_id,
+            "export_poam_emass",
+            {
+                "poam_count": len(items),
+                "output_file": str(out_file),
+                "format": "csv",
+            },
+        )
 
         print(f"[eMASS Export] POA&M CSV: {out_file} ({len(items)} items)")
         return str(out_file)
@@ -387,6 +409,7 @@ def export_poam_emass(project_id, output_dir=None, db_path=None):
 # ============================================================
 # Artifacts Export (ZIP archive)
 # ============================================================
+
 
 def export_artifacts_emass(project_id, output_dir=None, db_path=None):
     """Package all compliance artifacts into a ZIP archive for eMASS upload.
@@ -424,12 +447,14 @@ def export_artifacts_emass(project_id, output_dir=None, db_path=None):
                 if fp.exists():
                     arc_name = f"ssp/{fp.name}"
                     zf.write(fp, arc_name)
-                    artifact_manifest.append({
-                        "filename": fp.name,
-                        "type": "System Security Plan",
-                        "category": "Authorization Package",
-                        "path": arc_name,
-                    })
+                    artifact_manifest.append(
+                        {
+                            "filename": fp.name,
+                            "type": "System Security Plan",
+                            "category": "Authorization Package",
+                            "path": arc_name,
+                        }
+                    )
                     file_count += 1
 
             # --- SBOM records ---
@@ -442,18 +467,19 @@ def export_artifacts_emass(project_id, output_dir=None, db_path=None):
                 if fp.exists():
                     arc_name = f"sbom/{fp.name}"
                     zf.write(fp, arc_name)
-                    artifact_manifest.append({
-                        "filename": fp.name,
-                        "type": "SBOM",
-                        "category": "Supply Chain",
-                        "path": arc_name,
-                    })
+                    artifact_manifest.append(
+                        {
+                            "filename": fp.name,
+                            "type": "SBOM",
+                            "category": "Supply Chain",
+                            "path": arc_name,
+                        }
+                    )
                     file_count += 1
 
             # --- STIG checklists ---
             stig_rows = conn.execute(
-                "SELECT DISTINCT stig_id, file_path FROM stig_findings "
-                "WHERE project_id = ? AND file_path IS NOT NULL",
+                "SELECT DISTINCT stig_id, file_path FROM stig_findings WHERE project_id = ? AND file_path IS NOT NULL",
                 (project_id,),
             ).fetchall()
             for row in stig_rows:
@@ -461,12 +487,14 @@ def export_artifacts_emass(project_id, output_dir=None, db_path=None):
                 if fp.exists():
                     arc_name = f"stig/{fp.name}"
                     zf.write(fp, arc_name)
-                    artifact_manifest.append({
-                        "filename": fp.name,
-                        "type": "STIG Checklist",
-                        "category": "Assessment Evidence",
-                        "path": arc_name,
-                    })
+                    artifact_manifest.append(
+                        {
+                            "filename": fp.name,
+                            "type": "STIG Checklist",
+                            "category": "Assessment Evidence",
+                            "path": arc_name,
+                        }
+                    )
                     file_count += 1
 
             # --- OSCAL files from compliance/emass-exports or xacta-exports ---
@@ -476,12 +504,14 @@ def export_artifacts_emass(project_id, output_dir=None, db_path=None):
                     for oscal_file in oscal_dir.glob("oscal-*.json"):
                         arc_name = f"oscal/{oscal_file.name}"
                         zf.write(oscal_file, arc_name)
-                        artifact_manifest.append({
-                            "filename": oscal_file.name,
-                            "type": "OSCAL Document",
-                            "category": "Machine-Readable Compliance",
-                            "path": arc_name,
-                        })
+                        artifact_manifest.append(
+                            {
+                                "filename": oscal_file.name,
+                                "type": "OSCAL Document",
+                                "category": "Machine-Readable Compliance",
+                                "path": arc_name,
+                            }
+                        )
                         file_count += 1
 
             # --- Classification marker (required for CUI handling) ---
@@ -490,7 +520,7 @@ def export_artifacts_emass(project_id, output_dir=None, db_path=None):
                 "CUI // SP-CTI\n"
                 "This artifact package contains Controlled Unclassified Information.\n"
                 "Handle in accordance with DoD CUI policy (DoDI 5200.48).\n"
-                "Dissemination is limited to authorized personnel only.\n"
+                "Dissemination is limited to authorized personnel only.\n",
             )
 
             # --- Package metadata / manifest ---
@@ -506,11 +536,16 @@ def export_artifacts_emass(project_id, output_dir=None, db_path=None):
             }
             zf.writestr("manifest.json", json.dumps(metadata, indent=2))
 
-        _log_audit(conn, project_id, "export_artifacts_emass", {
-            "artifact_count": file_count,
-            "output_file": str(zip_path),
-            "format": "zip",
-        })
+        _log_audit(
+            conn,
+            project_id,
+            "export_artifacts_emass",
+            {
+                "artifact_count": file_count,
+                "output_file": str(zip_path),
+                "format": "zip",
+            },
+        )
 
         print(f"[eMASS Export] Artifacts ZIP: {zip_path} ({file_count} artifacts)")
         return str(zip_path)
@@ -522,6 +557,7 @@ def export_artifacts_emass(project_id, output_dir=None, db_path=None):
 # ============================================================
 # Test Results Export
 # ============================================================
+
 
 def export_test_results_emass(project_id, output_dir=None, db_path=None):
     """Export scan results (SAST, dependency, container) in eMASS format.
@@ -571,54 +607,65 @@ def export_test_results_emass(project_id, output_dir=None, db_path=None):
         with open(out_file, "w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
             # eMASS test results import header row
-            writer.writerow([
-                "CCI",
-                "Test Date",
-                "Tested By",
-                "Description",
-                "Compliance Status",
-                "Scan Type",
-                "Severity",
-                "Finding ID",
-            ])
+            writer.writerow(
+                [
+                    "CCI",
+                    "Test Date",
+                    "Tested By",
+                    "Description",
+                    "Compliance Status",
+                    "Scan Type",
+                    "Severity",
+                    "Finding ID",
+                ]
+            )
 
             # Write STIG findings as test results
             for row in stig_findings:
                 r = dict(row)
-                writer.writerow([
-                    r.get("cci", r.get("control_id", r.get("rule_id", ""))),
-                    r.get("assessed_at", datetime.now(timezone.utc).strftime("%Y-%m-%d")),
-                    r.get("assessed_by", "ICDEV™ Compliance Engine"),
-                    r.get("title", r.get("description", "")),
-                    _map_compliance_status(r.get("status", "")),
-                    "STIG",
-                    _map_severity(r.get("severity", "")),
-                    r.get("finding_id", ""),
-                ])
+                writer.writerow(
+                    [
+                        r.get("cci", r.get("control_id", r.get("rule_id", ""))),
+                        r.get("assessed_at", datetime.now(timezone.utc).strftime("%Y-%m-%d")),
+                        r.get("assessed_by", "ICDEV™ Compliance Engine"),
+                        r.get("title", r.get("description", "")),
+                        _map_compliance_status(r.get("status", "")),
+                        "STIG",
+                        _map_severity(r.get("severity", "")),
+                        r.get("finding_id", ""),
+                    ]
+                )
                 result_count += 1
 
             # Write vulnerability scan results
             for row in vuln_scans:
                 r = dict(row)
-                writer.writerow([
-                    r.get("cci", r.get("control_id", "")),
-                    r.get("scan_date", datetime.now(timezone.utc).strftime("%Y-%m-%d")),
-                    r.get("scanner", r.get("scanned_by", "ICDEV™ Security Scanner")),
-                    r.get("description", r.get("scan_type", "Vulnerability Scan")),
-                    _map_compliance_status(r.get("status", r.get("result", ""))),
-                    r.get("scan_type", "Vulnerability"),
-                    _map_severity(r.get("severity", r.get("risk_level", ""))),
-                    r.get("finding_id", r.get("scan_id", "")),
-                ])
+                writer.writerow(
+                    [
+                        r.get("cci", r.get("control_id", "")),
+                        r.get("scan_date", datetime.now(timezone.utc).strftime("%Y-%m-%d")),
+                        r.get("scanner", r.get("scanned_by", "ICDEV™ Security Scanner")),
+                        r.get("description", r.get("scan_type", "Vulnerability Scan")),
+                        _map_compliance_status(r.get("status", r.get("result", ""))),
+                        r.get("scan_type", "Vulnerability"),
+                        _map_severity(r.get("severity", r.get("risk_level", ""))),
+                        r.get("finding_id", r.get("scan_id", "")),
+                    ]
+                )
                 result_count += 1
 
-        _log_audit(conn, project_id, "export_test_results_emass", {
-            "result_count": result_count,
-            "stig_findings": len(stig_findings),
-            "vuln_scans": len(vuln_scans),
-            "output_file": str(out_file),
-            "format": "csv",
-        })
+        _log_audit(
+            conn,
+            project_id,
+            "export_test_results_emass",
+            {
+                "result_count": result_count,
+                "stig_findings": len(stig_findings),
+                "vuln_scans": len(vuln_scans),
+                "output_file": str(out_file),
+                "format": "csv",
+            },
+        )
 
         print(f"[eMASS Export] Test Results CSV: {out_file} ({result_count} results)")
         return str(out_file)
@@ -630,6 +677,7 @@ def export_test_results_emass(project_id, output_dir=None, db_path=None):
 # ============================================================
 # Combined Export
 # ============================================================
+
 
 def export_all_emass(project_id, output_dir=None, db_path=None):
     """Run all eMASS exports for a project.
@@ -699,11 +747,16 @@ def export_all_emass(project_id, output_dir=None, db_path=None):
     try:
         conn = _get_connection(db_path)
         try:
-            _log_audit(conn, project_id, "export_all_emass", {
-                "status": results["status"],
-                "summary": results["summary"],
-                "errors": results["errors"] if results["errors"] else None,
-            })
+            _log_audit(
+                conn,
+                project_id,
+                "export_all_emass",
+                {
+                    "status": results["status"],
+                    "summary": results["summary"],
+                    "errors": results["errors"] if results["errors"] else None,
+                },
+            )
         finally:
             conn.close()
     except Exception:
@@ -716,26 +769,30 @@ def export_all_emass(project_id, output_dir=None, db_path=None):
 # CLI Entry Point
 # ============================================================
 
+
 def main():
     """CLI entry point for eMASS export tool."""
-    parser = argparse.ArgumentParser(
-        description="Export ICDEV™ compliance data in eMASS-compatible formats"
-    )
+    parser = argparse.ArgumentParser(description="Export ICDEV™ compliance data in eMASS-compatible formats")
     parser.add_argument(
-        "--project-id", required=True,
+        "--project-id",
+        required=True,
         help="ICDEV™ project ID",
     )
     parser.add_argument(
-        "--type", default="all",
+        "--type",
+        default="all",
         choices=["controls", "poam", "artifacts", "test-results", "all"],
         help="Export type (default: all)",
     )
     parser.add_argument(
-        "--output-dir", type=Path,
+        "--output-dir",
+        type=Path,
         help="Output directory (default: compliance/emass-exports/<project-id>)",
     )
     parser.add_argument(
-        "--db-path", type=Path, default=DB_PATH,
+        "--db-path",
+        type=Path,
+        default=DB_PATH,
         help="Database path (default: data/icdev.db)",
     )
     parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")

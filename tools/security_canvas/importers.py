@@ -56,6 +56,7 @@ def _now_iso() -> str:
 
 # ── Threat Dragon importer ────────────────────────────────────────────────────
 
+
 def import_threat_dragon(file_content: str) -> dict:
     """Parse an OWASP Threat Dragon v2 JSON file into SDC graph format.
 
@@ -98,44 +99,52 @@ def import_threat_dragon(file_content: str) -> dict:
             cell_threats = cell.get("threats") or []
             threat_list = []
             for t in cell_threats:
-                threat_list.append({
-                    "title": t.get("title", "Untitled Threat"),
-                    "type": t.get("type", ""),
-                    "status": t.get("status", "Open"),
-                    "severity": t.get("severity", "Medium"),
-                    "description": t.get("description", ""),
-                })
+                threat_list.append(
+                    {
+                        "title": t.get("title", "Untitled Threat"),
+                        "type": t.get("type", ""),
+                        "status": t.get("status", "Open"),
+                        "severity": t.get("severity", "Medium"),
+                        "description": t.get("description", ""),
+                    }
+                )
                 threats_imported += 1
 
             if sdc_type == "_edge":
                 # Flows become edges
-                edges.append({
-                    "id": _uid(),
-                    "source": cell.get("source", {}).get("id", ""),
-                    "target": cell.get("target", {}).get("id", ""),
-                    "label": label,
-                    "threats": threat_list,
-                })
+                edges.append(
+                    {
+                        "id": _uid(),
+                        "source": cell.get("source", {}).get("id", ""),
+                        "target": cell.get("target", {}).get("id", ""),
+                        "label": label,
+                        "threats": threat_list,
+                    }
+                )
             elif sdc_type.startswith("boundary-"):
-                boundaries.append({
-                    "id": cell.get("id") or _uid(),
-                    "type": sdc_type,
-                    "label": label,
-                    "x": x,
-                    "y": y,
-                    "width": cell.get("size", {}).get("width", 300),
-                    "height": cell.get("size", {}).get("height", 200),
-                })
+                boundaries.append(
+                    {
+                        "id": cell.get("id") or _uid(),
+                        "type": sdc_type,
+                        "label": label,
+                        "x": x,
+                        "y": y,
+                        "width": cell.get("size", {}).get("width", 300),
+                        "height": cell.get("size", {}).get("height", 200),
+                    }
+                )
             else:
-                nodes.append({
-                    "id": cell.get("id") or _uid(),
-                    "type": sdc_type,
-                    "label": label,
-                    "x": x,
-                    "y": y,
-                    "config": {},
-                    "threats": threat_list,
-                })
+                nodes.append(
+                    {
+                        "id": cell.get("id") or _uid(),
+                        "type": sdc_type,
+                        "label": label,
+                        "x": x,
+                        "y": y,
+                        "config": {},
+                        "threats": threat_list,
+                    }
+                )
 
     return {
         "design_name": design_name,
@@ -151,6 +160,7 @@ def import_threat_dragon(file_content: str) -> dict:
 
 
 # ── Microsoft TMT importer ───────────────────────────────────────────────────
+
 
 def import_tmt(file_content: str) -> dict:
     """Parse a Microsoft Threat Modeling Tool .tm7 XML file into SDC graph.
@@ -230,25 +240,29 @@ def import_tmt(file_content: str) -> dict:
                         h = int(float(h_el.text))
                     except ValueError:
                         pass
-                boundaries.append({
-                    "id": obj_id,
-                    "type": sdc_type,
-                    "label": label or "Trust Boundary",
-                    "x": x,
-                    "y": y,
-                    "width": w,
-                    "height": h,
-                })
+                boundaries.append(
+                    {
+                        "id": obj_id,
+                        "type": sdc_type,
+                        "label": label or "Trust Boundary",
+                        "x": x,
+                        "y": y,
+                        "width": w,
+                        "height": h,
+                    }
+                )
             else:
-                nodes.append({
-                    "id": obj_id,
-                    "type": sdc_type,
-                    "label": label or sdc_type,
-                    "x": x,
-                    "y": y,
-                    "config": {},
-                    "threats": [],
-                })
+                nodes.append(
+                    {
+                        "id": obj_id,
+                        "type": sdc_type,
+                        "label": label or sdc_type,
+                        "x": x,
+                        "y": y,
+                        "config": {},
+                        "threats": [],
+                    }
+                )
 
         # Lines → edges
         for line in surface.iter("Line"):
@@ -264,12 +278,14 @@ def import_tmt(file_content: str) -> dict:
             name_el3 = line.find("Name")
             if name_el3 is not None and name_el3.text:
                 label = name_el3.text
-            edges.append({
-                "id": _uid(),
-                "source": src,
-                "target": tgt,
-                "label": label,
-            })
+            edges.append(
+                {
+                    "id": _uid(),
+                    "source": src,
+                    "target": tgt,
+                    "label": label,
+                }
+            )
 
     # ── Parse threat instances ────────────────────────────────────────────
     threats_imported = 0
@@ -297,13 +313,15 @@ def import_tmt(file_content: str) -> dict:
         if nodes:
             if "threats" not in nodes[0]:
                 nodes[0]["threats"] = []
-            nodes[0]["threats"].append({
-                "title": threat_data["title"],
-                "type": threat_data["category"],
-                "status": threat_data["state"],
-                "severity": threat_data["priority"],
-                "description": "",
-            })
+            nodes[0]["threats"].append(
+                {
+                    "title": threat_data["title"],
+                    "type": threat_data["category"],
+                    "status": threat_data["state"],
+                    "severity": threat_data["priority"],
+                    "description": "",
+                }
+            )
 
     return {
         "design_name": design_name,
@@ -319,6 +337,7 @@ def import_tmt(file_content: str) -> dict:
 
 
 # ── Unified import entry point ────────────────────────────────────────────────
+
 
 def import_threat_model(file_content: str, format_hint: str = "auto") -> dict:
     """Import a threat model from Threat Dragon or TMT format.

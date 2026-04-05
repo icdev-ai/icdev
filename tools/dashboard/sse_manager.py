@@ -83,10 +83,16 @@ class SSEManager:
         self.broadcast(event_data, event_type)
 
     # --- Progress streaming (adapted from Agent Harness SSE pattern) ---
-    def broadcast_progress(self, operation_id: str, operation_type: str,
-                           phase: str, completed: int, total: int,
-                           status: str = "running",
-                           detail: str = None):
+    def broadcast_progress(
+        self,
+        operation_id: str,
+        operation_type: str,
+        phase: str,
+        completed: int,
+        total: int,
+        status: str = "running",
+        detail: str = None,
+    ):
         """Broadcast a structured progress event for long-running operations.
 
         Provides real-time workflow status updates to the dashboard, similar
@@ -123,14 +129,26 @@ class SSEManager:
 sse_manager = SSEManager()
 
 
-def emit_progress(operation_id: str, operation_type: str, phase: str,
-                  completed: int, total: int, status: str = "running",
-                  detail: str = None):
+def emit_progress(
+    operation_id: str,
+    operation_type: str,
+    phase: str,
+    completed: int,
+    total: int,
+    status: str = "running",
+    detail: str = None,
+):
     """Module-level convenience for broadcasting progress events.
 
     Safe to call from any tool/module — no-op if no SSE clients connected.
     Import: ``from tools.dashboard.sse_manager import emit_progress``
     """
     sse_manager.broadcast_progress(
-        operation_id, operation_type, phase, completed, total, status, detail,
+        operation_id,
+        operation_type,
+        phase,
+        completed,
+        total,
+        status,
+        detail,
     )

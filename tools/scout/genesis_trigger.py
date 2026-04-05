@@ -39,8 +39,13 @@ def _run_cmd(cmd: list, cwd: str = None, timeout: int = 300) -> dict:
     """Run a shell command, return result dict."""
     try:
         result = subprocess.run(
-            cmd, capture_output=True, text=True, cwd=cwd or str(BASE_DIR),
-            timeout=timeout, encoding="utf-8", errors="replace",
+            cmd,
+            capture_output=True,
+            text=True,
+            cwd=cwd or str(BASE_DIR),
+            timeout=timeout,
+            encoding="utf-8",
+            errors="replace",
         )
         return {
             "returncode": result.returncode,
@@ -60,8 +65,14 @@ def _assess_risk(finding: dict) -> str:
     severity = finding.get("severity", "medium")
 
     # GREEN: low-risk internal improvements
-    green_categories = {"test_coverage", "dead_code", "config_drift",
-                        "unused_tools", "cli_harmonization", "code_quality"}
+    green_categories = {
+        "test_coverage",
+        "dead_code",
+        "config_drift",
+        "unused_tools",
+        "cli_harmonization",
+        "code_quality",
+    }
     if category in green_categories:
         return "GREEN"
 
@@ -158,6 +169,7 @@ def _build_in_worktree(finding: dict, worktree_path: str, config: dict) -> dict:
     # Try to use solution_generator if available (generates from innovation_signals DB)
     try:
         from tools.innovation.solution_generator import generate_solution_spec
+
         # solution_generator works from signal IDs in the DB, not direct args
         # If the finding came from an innovation signal, use its ID
         signal_id = finding.get("metadata", {}).get("signal_id")
@@ -184,8 +196,7 @@ def _validate_worktree(worktree_path: str, config: dict) -> dict:
         if not diff["ok"]:
             # No commits yet on this branch — check untracked/modified files instead
             diff = _run_cmd(["git", "diff", "--name-only"], cwd=worktree_path)
-        py_files = [f for f in diff.get("stdout", "").strip().split("\n")
-                     if f.endswith(".py") and f.strip()]
+        py_files = [f for f in diff.get("stdout", "").strip().split("\n") if f.endswith(".py") and f.strip()]
         # Also check the build spec we wrote
         if not py_files:
             results["py_compile"] = "PASS"  # No .py files changed = nothing to compile
@@ -209,22 +220,25 @@ def _validate_worktree(worktree_path: str, config: dict) -> dict:
     if val_cfg.get("pytest", True):
         r = _run_cmd(
             ["python", "-m", "pytest", "tests/", "-q", "--tb=line", "-x", "--timeout=60"],
-            cwd=worktree_path, timeout=600,
+            cwd=worktree_path,
+            timeout=600,
         )
         results["pytest"] = "PASS" if r["ok"] else "FAIL"
 
     if val_cfg.get("bandit", True):
         r = _run_cmd(
             ["python", "-m", "bandit", "-r", "tools/", "--severity-level", "medium", "-q"],
-            cwd=worktree_path, timeout=120,
+            cwd=worktree_path,
+            timeout=120,
         )
         results["bandit"] = "PASS" if r["ok"] else "FAIL"
 
     # Overall pass/fail
-    results["overall"] = "PASS" if all(
-        v in ("PASS", "SKIP") for k, v in results.items()
-        if k not in ("overall",) and not k.endswith("_error")
-    ) else "FAIL"
+    results["overall"] = (
+        "PASS"
+        if all(v in ("PASS", "SKIP") for k, v in results.items() if k not in ("overall",) and not k.endswith("_error"))
+        else "FAIL"
+    )
 
     return results
 
@@ -330,6 +344,7 @@ def main() -> None:
 
     try:
         import yaml
+
         cfg_path = BASE_DIR / "args" / "scout_config.yaml"
         with open(cfg_path, "r", encoding="utf-8") as f:
             config = yaml.safe_load(f) or {}

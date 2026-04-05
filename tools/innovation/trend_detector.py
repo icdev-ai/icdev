@@ -252,7 +252,6 @@ def _get_db(db_path=None):
     return conn
 
 
-
 def _trend_id():
     """Generate unique trend ID."""
     return f"trend-{uuid.uuid4().hex[:12]}"

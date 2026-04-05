@@ -14,6 +14,7 @@ Pipeline: on_demand (triggered after R8 Polish).
 GREEN tier (read-only analysis, writes to pg_proposal_quality_scores).
 Scanner-tier only (zero Claude tokens — fully deterministic).
 """
+
 from __future__ import annotations
 
 import json
@@ -61,9 +62,11 @@ def _determine_review_type(opp_status: str, has_quality_scores: bool) -> str:
 # Deterministic review scoring
 # ---------------------------------------------------------------------------
 
+
 def _score_section_compliance(text: str) -> Dict[str, Any]:
     """Score section for compliance with RFP requirements (deterministic)."""
     import re
+
     issues = []
     word_count = len(text.split())
 
@@ -78,9 +81,7 @@ def _score_section_compliance(text: str) -> Dict[str, Any]:
         issues.append("No quantitative evidence (numbers, dates, metrics)")
 
     # Check for past performance references
-    perf_refs = len(re.findall(
-        r"\b(?:previously|delivered|completed|demonstrated|proven|awarded)\b", text, re.I
-    ))
+    perf_refs = len(re.findall(r"\b(?:previously|delivered|completed|demonstrated|proven|awarded)\b", text, re.I))
 
     score = max(0.0, 1.0 - len(issues) * 0.20)
     if perf_refs > 0:
@@ -114,11 +115,13 @@ def _simulate_review(opp_id: str, review_type: str) -> Dict[str, Any]:
     for draft in drafts:
         text = draft["section_text"] or ""
         if len(text.strip()) < 20:
-            findings.append({
-                "draft_id": draft["id"],
-                "severity": "critical",
-                "finding": "Section has insufficient content (< 20 chars)",
-            })
+            findings.append(
+                {
+                    "draft_id": draft["id"],
+                    "severity": "critical",
+                    "finding": "Section has insufficient content (< 20 chars)",
+                }
+            )
             continue
 
         result = _score_section_compliance(text)
@@ -127,12 +130,14 @@ def _simulate_review(opp_id: str, review_type: str) -> Dict[str, Any]:
         if result["score"] < config["threshold"]:
             severity = "critical" if result["score"] < 0.30 else "major"
             for issue in result["issues"]:
-                findings.append({
-                    "draft_id": draft["id"],
-                    "severity": severity,
-                    "finding": issue,
-                    "score": result["score"],
-                })
+                findings.append(
+                    {
+                        "draft_id": draft["id"],
+                        "severity": severity,
+                        "finding": issue,
+                        "score": result["score"],
+                    }
+                )
 
     avg_score = total_score / len(drafts) if drafts else 0.0
 
@@ -149,12 +154,14 @@ def _simulate_review(opp_id: str, review_type: str) -> Dict[str, Any]:
                 "review",
                 "green",
                 opp_id,
-                json.dumps({
-                    "review_type": review_type,
-                    "sections_reviewed": len(drafts),
-                    "findings_count": len(findings),
-                    "avg_score": round(avg_score, 3),
-                }),
+                json.dumps(
+                    {
+                        "review_type": review_type,
+                        "sections_reviewed": len(drafts),
+                        "findings_count": len(findings),
+                        "avg_score": round(avg_score, 3),
+                    }
+                ),
                 1,
                 _utcnow_iso(),
             ),
@@ -179,6 +186,7 @@ def _simulate_review(opp_id: str, review_type: str) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
+
 
 def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     """Execute the Review Reflex (R15).
@@ -213,8 +221,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         conn = get_connection()
         try:
             qs_row = conn.execute(
-                "SELECT COUNT(*) as cnt FROM pg_proposal_quality_scores "
-                "WHERE opportunity_id = ?",
+                "SELECT COUNT(*) as cnt FROM pg_proposal_quality_scores WHERE opportunity_id = ?",
                 (row["id"],),
             ).fetchone()
             has_quality = (qs_row["cnt"] or 0) > 0 if qs_row else False
@@ -227,13 +234,15 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         result = _simulate_review(row["id"], review_type)
         total_findings += result.get("findings", 0)
 
-        review_results.append({
-            "opportunity_id": row["id"],
-            "title": row["title"],
-            "review_type": result.get("review_type", review_type),
-            "findings": result.get("findings", 0),
-            "avg_score": result.get("avg_score", 0),
-        })
+        review_results.append(
+            {
+                "opportunity_id": row["id"],
+                "title": row["title"],
+                "review_type": result.get("review_type", review_type),
+                "findings": result.get("findings", 0),
+                "avg_score": result.get("avg_score", 0),
+            }
+        )
 
     return {
         "success": True,
@@ -244,4 +253,6 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             "review_results": review_results,
         },
     }
+
+
 # CUI // SP-CTI

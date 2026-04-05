@@ -165,8 +165,7 @@ class EgressPolicyManager:
     single resolved policy per agent.  Generates K8s NetworkPolicy YAML.
     """
 
-    def __init__(self, db_path: Optional[Path] = None,
-                 policy_dir: Optional[Path] = None):
+    def __init__(self, db_path: Optional[Path] = None, policy_dir: Optional[Path] = None):
         self._db_path = db_path or DB_PATH
         self._policy_dir = policy_dir or POLICY_DIR
         self._ensure_tables()
@@ -225,6 +224,7 @@ class EgressPolicyManager:
             return {"error": f"Unknown role: {role}", "known_roles": list(AGENT_ROLES.keys())}
 
         import copy
+
         merged = copy.deepcopy(BASE_POLICY)
         preset = self._load_preset(role)
         custom = self._load_custom_override(role)
@@ -244,8 +244,7 @@ class EgressPolicyManager:
 
         # Deny wins: remove allowed endpoints that match a deny rule
         denied_hosts = {ep.get("host", "") for ep in all_denied}
-        filtered_allowed = [ep for ep in all_allowed
-                            if ep.get("host", "") not in denied_hosts]
+        filtered_allowed = [ep for ep in all_allowed if ep.get("host", "") not in denied_hosts]
 
         merged["egress"]["allowed_endpoints"] = filtered_allowed
         merged["egress"]["denied_endpoints"] = all_denied
@@ -261,17 +260,20 @@ class EgressPolicyManager:
             """INSERT INTO egress_policy_audit
                (id, agent_role, policy_hash, action, diff_summary, created_at)
                VALUES (?, ?, ?, 'resolve', ?, ?)""",
-            (str(uuid.uuid4()), role, merged["policy_hash"],
-             f"{len(filtered_allowed)} allowed, {len(all_denied)} denied",
-             _now()),
+            (
+                str(uuid.uuid4()),
+                role,
+                merged["policy_hash"],
+                f"{len(filtered_allowed)} allowed, {len(all_denied)} denied",
+                _now(),
+            ),
         )
         conn.commit()
         conn.close()
 
         return merged
 
-    def generate_k8s_manifest(self, role: str,
-                              namespace: str = "icdev") -> Dict:
+    def generate_k8s_manifest(self, role: str, namespace: str = "icdev") -> Dict:
         """Generate a K8s NetworkPolicy manifest for an agent role."""
         policy = self.resolve_policy(role)
         if "error" in policy:
@@ -281,25 +283,30 @@ class EgressPolicyManager:
 
         # Allow DNS (UDP 53)
         if policy["egress"].get("allow_dns", True):
-            egress_rules.append({
-                "ports": [{"protocol": "UDP", "port": 53}],
-                "to": [{}],
-            })
+            egress_rules.append(
+                {
+                    "ports": [{"protocol": "UDP", "port": 53}],
+                    "to": [{}],
+                }
+            )
 
         # Allow internal mesh (all agent ports within namespace)
         if policy["egress"].get("allow_internal_mesh", True):
-            mesh_ports = [{"protocol": "TCP", "port": info["port"]}
-                          for info in AGENT_ROLES.values()]
+            mesh_ports = [{"protocol": "TCP", "port": info["port"]} for info in AGENT_ROLES.values()]
             # Add dashboard
             mesh_ports.append({"protocol": "TCP", "port": 5000})
-            egress_rules.append({
-                "ports": mesh_ports,
-                "to": [{
-                    "namespaceSelector": {
-                        "matchLabels": {"kubernetes.io/metadata.name": namespace},
-                    },
-                }],
-            })
+            egress_rules.append(
+                {
+                    "ports": mesh_ports,
+                    "to": [
+                        {
+                            "namespaceSelector": {
+                                "matchLabels": {"kubernetes.io/metadata.name": namespace},
+                            },
+                        }
+                    ],
+                }
+            )
 
         # Per-endpoint rules
         for ep in policy["egress"].get("allowed_endpoints", []):
@@ -346,8 +353,7 @@ class EgressPolicyManager:
             """INSERT INTO egress_policy_audit
                (id, agent_role, policy_hash, action, diff_summary, created_at)
                VALUES (?, ?, ?, 'generate', ?, ?)""",
-            (str(uuid.uuid4()), role, policy["policy_hash"],
-             f"k8s_manifest_{len(egress_rules)}_rules", _now()),
+            (str(uuid.uuid4()), role, policy["policy_hash"], f"k8s_manifest_{len(egress_rules)}_rules", _now()),
         )
         conn.commit()
         conn.close()
@@ -366,27 +372,33 @@ class EgressPolicyManager:
         # Check for overly permissive rules
         wildcard_rules = [ep for ep in allowed if ep.get("host") == "*"]
         if wildcard_rules:
-            issues.append({
-                "severity": "warning",
-                "message": f"{len(wildcard_rules)} wildcard host rules (host='*')",
-                "recommendation": "Restrict to specific hostnames where possible",
-            })
+            issues.append(
+                {
+                    "severity": "warning",
+                    "message": f"{len(wildcard_rules)} wildcard host rules (host='*')",
+                    "recommendation": "Restrict to specific hostnames where possible",
+                }
+            )
 
         # Check for port 22 (SSH) — suspicious for non-builder
         ssh_rules = [ep for ep in allowed if ep.get("port") == 22]
         if ssh_rules and role not in ("builder", "infrastructure"):
-            issues.append({
-                "severity": "high",
-                "message": "SSH (port 22) allowed for non-builder/infrastructure role",
-                "recommendation": f"Remove SSH access for {role} role",
-            })
+            issues.append(
+                {
+                    "severity": "high",
+                    "message": "SSH (port 22) allowed for non-builder/infrastructure role",
+                    "recommendation": f"Remove SSH access for {role} role",
+                }
+            )
 
         # Check for no allowed endpoints (fully isolated)
         if not allowed:
-            issues.append({
-                "severity": "info",
-                "message": "Fully isolated — no external egress allowed",
-            })
+            issues.append(
+                {
+                    "severity": "info",
+                    "message": "Fully isolated — no external egress allowed",
+                }
+            )
 
         valid = all(i["severity"] != "high" for i in issues)
         return {
@@ -432,13 +444,9 @@ class EgressPolicyManager:
 
     def list_roles(self) -> List[Dict]:
         """List all known agent roles with their tier and port."""
-        return [
-            {"role": role, "port": info["port"], "tier": info["tier"]}
-            for role, info in AGENT_ROLES.items()
-        ]
+        return [{"role": role, "port": info["port"], "tier": info["tier"]} for role, info in AGENT_ROLES.items()]
 
-    def get_audit_log(self, role: Optional[str] = None,
-                      limit: int = 50) -> List[Dict]:
+    def get_audit_log(self, role: Optional[str] = None, limit: int = 50) -> List[Dict]:
         """Get egress policy audit events."""
         conn = self._get_db()
         if role:
@@ -459,7 +467,8 @@ class EgressPolicyManager:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Egress Policy Manager — NemoClaw-adapted per-agent network policies (D-NC-2)")
+        description="Egress Policy Manager — NemoClaw-adapted per-agent network policies (D-NC-2)"
+    )
     parser.add_argument("--resolve", action="store_true", help="Resolve merged policy for role")
     parser.add_argument("--generate", action="store_true", help="Generate K8s NetworkPolicy manifest")
     parser.add_argument("--validate", action="store_true", help="Validate resolved policy")

@@ -46,10 +46,12 @@ class TestResult:
 
     def summary(self):
         total = len(self.passed) + len(self.failed)
-        rate = f"{len(self.passed)/total*100:.1f}%" if total else "0%"
+        rate = f"{len(self.passed) / total * 100:.1f}%" if total else "0%"
         return {
-            "total": total, "passed": len(self.passed),
-            "failed": len(self.failed), "pass_rate": rate,
+            "total": total,
+            "passed": len(self.passed),
+            "failed": len(self.failed),
+            "pass_rate": rate,
             "failures": self.failed,
         }
 
@@ -70,9 +72,7 @@ def check_js_errors(driver):
         for entry in driver.get_log("browser"):
             if entry.get("level") == "SEVERE":
                 msg = entry.get("message", "")
-                if any(x in msg.lower() for x in [
-                    "favicon", "401", "404", "failed to load resource"
-                ]):
+                if any(x in msg.lower() for x in ["favicon", "401", "404", "failed to load resource"]):
                     continue
                 errors.append(msg)
     except Exception:
@@ -127,15 +127,13 @@ def run_tests():
             assert len(d) >= 9, f"Expected 9+ patterns, got {len(d)}"
             builtin = [p for p in d if p.get("is_builtin")]
             assert len(builtin) >= 9
-            results.ok("list_patterns",
-                        f"{len(d)} total, {len(builtin)} built-in")
+            results.ok("list_patterns", f"{len(d)} total, {len(builtin)} built-in")
         except Exception as e:
             results.fail("list_patterns", e)
 
         # ── 2. Get single pattern ─────────────────────────────────────────
         try:
-            d = api(driver, "GET",
-                    "/network/api/design-patterns/pat-redundant-core")
+            d = api(driver, "GET", "/network/api/design-patterns/pat-redundant-core")
             assert d.get("name") == "Redundant Core"
             assert d.get("graph_json", {}).get("nodes")
             assert len(d["graph_json"]["nodes"]) == 2
@@ -145,8 +143,7 @@ def run_tests():
 
         # ── 3. Categories API ─────────────────────────────────────────────
         try:
-            d = api(driver, "GET",
-                    "/network/api/design-patterns/categories")
+            d = api(driver, "GET", "/network/api/design-patterns/categories")
             cats = [c["category"] for c in d]
             assert "routing" in cats
             assert "security" in cats
@@ -157,24 +154,24 @@ def run_tests():
 
         # ── 4. Create user pattern ────────────────────────────────────────
         try:
-            d = api(driver, "POST", "/network/api/design-patterns", {
-                "name": "E2E Custom Pattern",
-                "category": "custom",
-                "description": "Test user-defined pattern",
-                "graph_json": {
-                    "nodes": [
-                        {"id": "n1", "label": "R1", "type": "router",
-                         "x": 100, "y": 100},
-                        {"id": "n2", "label": "SW1", "type": "switch-l3",
-                         "x": 300, "y": 100},
-                    ],
-                    "edges": [
-                        {"id": "e1", "source": "n1", "target": "n2",
-                         "label": "10GbE", "protocol": "lacp"}
-                    ]
+            d = api(
+                driver,
+                "POST",
+                "/network/api/design-patterns",
+                {
+                    "name": "E2E Custom Pattern",
+                    "category": "custom",
+                    "description": "Test user-defined pattern",
+                    "graph_json": {
+                        "nodes": [
+                            {"id": "n1", "label": "R1", "type": "router", "x": 100, "y": 100},
+                            {"id": "n2", "label": "SW1", "type": "switch-l3", "x": 300, "y": 100},
+                        ],
+                        "edges": [{"id": "e1", "source": "n1", "target": "n2", "label": "10GbE", "protocol": "lacp"}],
+                    },
+                    "tags": ["e2e", "test"],
                 },
-                "tags": ["e2e", "test"],
-            })
+            )
             user_pat_id = d.get("id")
             assert user_pat_id
             results.ok("create_user_pattern", f"id={user_pat_id}")
@@ -184,14 +181,15 @@ def run_tests():
         # ── 5. Update user pattern ────────────────────────────────────────
         if user_pat_id:
             try:
-                d = api(driver, "PUT",
-                        f"/network/api/design-patterns/{user_pat_id}",
-                        {"name": "E2E Custom Pattern (Updated)",
-                         "tags": ["e2e", "updated"]})
+                d = api(
+                    driver,
+                    "PUT",
+                    f"/network/api/design-patterns/{user_pat_id}",
+                    {"name": "E2E Custom Pattern (Updated)", "tags": ["e2e", "updated"]},
+                )
                 assert d.get("ok")
                 # Verify
-                d2 = api(driver, "GET",
-                         f"/network/api/design-patterns/{user_pat_id}")
+                d2 = api(driver, "GET", f"/network/api/design-patterns/{user_pat_id}")
                 assert d2["name"] == "E2E Custom Pattern (Updated)"
                 results.ok("update_user_pattern")
             except Exception as e:
@@ -200,8 +198,7 @@ def run_tests():
         # ── 6. Delete user pattern ────────────────────────────────────────
         if user_pat_id:
             try:
-                d = api(driver, "DELETE",
-                        f"/network/api/design-patterns/{user_pat_id}")
+                d = api(driver, "DELETE", f"/network/api/design-patterns/{user_pat_id}")
                 assert d.get("ok")
                 results.ok("delete_user_pattern")
                 user_pat_id = None  # already deleted
@@ -210,8 +207,7 @@ def run_tests():
 
         # ── 7. Cannot delete built-in ─────────────────────────────────────
         try:
-            d = api(driver, "DELETE",
-                    "/network/api/design-patterns/pat-redundant-core")
+            d = api(driver, "DELETE", "/network/api/design-patterns/pat-redundant-core")
             assert d.get("error"), f"Expected error, got: {d}"
             results.ok("cannot_delete_builtin", d.get("error", ""))
         except Exception as e:
@@ -219,31 +215,30 @@ def run_tests():
 
         # ── 8. Save from selection ────────────────────────────────────────
         try:
-            d = api(driver, "POST",
-                    "/network/api/design-patterns/save-from-selection", {
-                        "name": "E2E Selection Pattern",
-                        "category": "custom",
-                        "graph_json": {
-                            "nodes": [
-                                {"id": "s1", "label": "FW1",
-                                 "type": "firewall", "x": 0, "y": 0}
-                            ],
-                            "edges": []
-                        }
-                    })
+            d = api(
+                driver,
+                "POST",
+                "/network/api/design-patterns/save-from-selection",
+                {
+                    "name": "E2E Selection Pattern",
+                    "category": "custom",
+                    "graph_json": {
+                        "nodes": [{"id": "s1", "label": "FW1", "type": "firewall", "x": 0, "y": 0}],
+                        "edges": [],
+                    },
+                },
+            )
             sel_id = d.get("id")
             assert sel_id
             # Cleanup
-            api(driver, "DELETE",
-                f"/network/api/design-patterns/{sel_id}")
+            api(driver, "DELETE", f"/network/api/design-patterns/{sel_id}")
             results.ok("save_from_selection")
         except Exception as e:
             results.fail("save_from_selection", e)
 
         # ── 9. Filter by category ─────────────────────────────────────────
         try:
-            d = api(driver, "GET",
-                    "/network/api/design-patterns?category=wan")
+            d = api(driver, "GET", "/network/api/design-patterns?category=wan")
             assert len(d) >= 2
             assert all(p["category"] == "wan" for p in d)
             results.ok("filter_by_category", f"{len(d)} wan patterns")
@@ -255,8 +250,7 @@ def run_tests():
         time.sleep(2)
         errs = check_js_errors(driver)
         if errs:
-            results.fail("js_errors",
-                          f"{len(errs)}: {errs[0][:80]}")
+            results.fail("js_errors", f"{len(errs)}: {errs[0][:80]}")
         else:
             results.ok("js_errors", "No SEVERE JS errors")
 
@@ -264,8 +258,7 @@ def run_tests():
         # Cleanup any remaining test patterns
         if user_pat_id:
             try:
-                api(driver, "DELETE",
-                    f"/network/api/design-patterns/{user_pat_id}")
+                api(driver, "DELETE", f"/network/api/design-patterns/{user_pat_id}")
             except Exception:
                 pass
         driver.quit()
@@ -280,8 +273,7 @@ if __name__ == "__main__":
     r = run_tests()
     summary = r.summary()
     print()
-    print(f"Results: {summary['passed']}/{summary['total']} passed "
-          f"({summary['pass_rate']})")
+    print(f"Results: {summary['passed']}/{summary['total']} passed ({summary['pass_rate']})")
     if summary["failures"]:
         print("Failures:")
         for f in summary["failures"]:

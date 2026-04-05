@@ -23,11 +23,28 @@ from tools.db.storage import get_connection  # noqa: E402
 logger = logging.getLogger(__name__)
 
 # Keywords that indicate compliance-related requirements (GraphRAG compliance profile)
-_COMPLIANCE_KEYWORDS = frozenset({
-    "fedramp", "nist", "cmmc", "stig", "ato", "compliance",
-    "rmf", "fisma", "fips", "cato", "poam", "ssp", "oscal",
-    "il4", "il5", "il6", "800-53", "800-171",
-})
+_COMPLIANCE_KEYWORDS = frozenset(
+    {
+        "fedramp",
+        "nist",
+        "cmmc",
+        "stig",
+        "ato",
+        "compliance",
+        "rmf",
+        "fisma",
+        "fips",
+        "cato",
+        "poam",
+        "ssp",
+        "oscal",
+        "il4",
+        "il5",
+        "il6",
+        "800-53",
+        "800-171",
+    }
+)
 
 
 def _utcnow_iso() -> str:
@@ -99,9 +116,7 @@ def _enrich_with_graphrag(opp_id: str, requirements: List[str]) -> Dict[str, Any
             # Extract control identifiers from context (e.g., "AC-2", "SC-7")
             context = result.get("context", "")
             if context:
-                controls = re.findall(
-                    r"\b([A-Z]{2}-\d{1,2}(?:\(\d+\))?)\b", context
-                )
+                controls = re.findall(r"\b([A-Z]{2}-\d{1,2}(?:\(\d+\))?)\b", context)
                 for ctrl in controls:
                     if ctrl not in seen_controls:
                         seen_controls.add(ctrl)
@@ -121,9 +136,7 @@ def _enrich_with_graphrag(opp_id: str, requirements: List[str]) -> Dict[str, Any
     }
 
 
-def _enrich_with_parallel_rag(
-    opp_id: str, patterns: List[str]
-) -> Dict[str, Any]:
+def _enrich_with_parallel_rag(opp_id: str, patterns: List[str]) -> Dict[str, Any]:
     """Enrich mapping with parallel multi-strategy retrieval (D-KARL-3).
 
     Fires RAG retriever + GraphRAG concurrently via ThreadPoolExecutor
@@ -143,12 +156,14 @@ def _enrich_with_parallel_rag(
 
     try:
         from tools.rag.retriever import RAGRetriever
+
         rag_retriever = RAGRetriever()
     except ImportError:
         pass
 
     try:
         from tools.knowledge_graph.graph_rag import retrieve as _gr
+
         graph_retrieve = _gr
     except ImportError:
         pass
@@ -176,7 +191,10 @@ def _enrich_with_parallel_rag(
             return {"source": "graphrag", "count": 0}
         try:
             result = graph_retrieve(
-                query=text, profile="compliance", top_k=3, compress=False,
+                query=text,
+                profile="compliance",
+                top_k=3,
+                compress=False,
             )
             return {"source": "graphrag", "count": result.get("nodes_returned", 0)}
         except Exception:
@@ -215,6 +233,7 @@ def _map_opportunity(opp_id: str) -> Dict[str, Any]:
     """
     try:
         from tools.govcon.capability_mapper import map_all_patterns, get_coverage
+
         map_all_patterns(opp_id)
         coverage = get_coverage(opp_id)
         result = coverage if isinstance(coverage, dict) else {"status": "ok"}
@@ -259,13 +278,12 @@ def _enrich_with_knowledge_base(opp_id: str) -> Dict[str, Any]:
     """Enrich capability mapping with knowledge base past performance (D-PG-4)."""
     try:
         from tools.govcon.knowledge_base import search_blocks
+
         conn = get_connection()
         try:
             # Get requirement patterns for this opportunity
             rows = conn.execute(
-                "SELECT pattern_text FROM rfp_requirement_patterns "
-                "WHERE opportunity_id = ? LIMIT 20",
-                (opp_id,)
+                "SELECT pattern_text FROM rfp_requirement_patterns WHERE opportunity_id = ? LIMIT 20", (opp_id,)
             ).fetchall()
         finally:
             conn.close()
@@ -335,8 +353,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         conn_pat = get_connection()
         try:
             pat_rows = conn_pat.execute(
-                "SELECT pattern_text FROM rfp_requirement_patterns "
-                "WHERE opportunity_id = ? LIMIT 20",
+                "SELECT pattern_text FROM rfp_requirement_patterns WHERE opportunity_id = ? LIMIT 20",
                 (opp_id,),
             ).fetchall()
         except Exception:
@@ -346,14 +363,16 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         patterns = [r["pattern_text"] for r in pat_rows if r.get("pattern_text")]
         parallel_rag = _enrich_with_parallel_rag(opp_id, patterns)
 
-        mapping_results.append({
-            "opportunity_id": opp_id,
-            "title": row["title"],
-            "coverage": result,
-            "kb_enrichment": kb_result,
-            "graphrag_enrichment": result.get("graphrag_enrichment", {}),
-            "parallel_rag_enrichment": parallel_rag,
-        })
+        mapping_results.append(
+            {
+                "opportunity_id": opp_id,
+                "title": row["title"],
+                "coverage": result,
+                "kb_enrichment": kb_result,
+                "graphrag_enrichment": result.get("graphrag_enrichment", {}),
+                "parallel_rag_enrichment": parallel_rag,
+            }
+        )
 
     avg_coverage = total_coverage / len(rows) if rows else 0
 

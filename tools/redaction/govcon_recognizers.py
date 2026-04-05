@@ -132,49 +132,59 @@ def list_recognizers(govcon_config: Dict[str, Any]) -> List[Dict[str, Any]]:
     result = []
 
     for pdef in govcon_config.get("contract_patterns", []) or []:
-        result.append({
-            "name": pdef.get("name", "unknown"),
-            "type": "pattern",
-            "entity": f"GOVCON_{pdef.get('name', '').upper()}",
-            "confidence": pdef.get("confidence", 0.8),
-            "context_words": pdef.get("context_words", []),
-        })
+        result.append(
+            {
+                "name": pdef.get("name", "unknown"),
+                "type": "pattern",
+                "entity": f"GOVCON_{pdef.get('name', '').upper()}",
+                "confidence": pdef.get("confidence", 0.8),
+                "context_words": pdef.get("context_words", []),
+            }
+        )
 
     for pdef in govcon_config.get("pricing_patterns", []) or []:
-        result.append({
-            "name": pdef.get("name", "pricing"),
-            "type": "pattern",
-            "entity": f"GOVCON_{pdef.get('name', '').upper()}",
-            "confidence": pdef.get("confidence", 0.8),
-            "context_words": pdef.get("context_words", []),
-        })
+        result.append(
+            {
+                "name": pdef.get("name", "pricing"),
+                "type": "pattern",
+                "entity": f"GOVCON_{pdef.get('name', '').upper()}",
+                "confidence": pdef.get("confidence", 0.8),
+                "context_words": pdef.get("context_words", []),
+            }
+        )
 
     programs = govcon_config.get("program_names", []) or []
     if programs:
-        result.append({
-            "name": "program_names",
-            "type": "deny_list",
-            "entity": "GOVCON_PROGRAM_NAME",
-            "term_count": len(programs),
-        })
+        result.append(
+            {
+                "name": "program_names",
+                "type": "deny_list",
+                "entity": "GOVCON_PROGRAM_NAME",
+                "term_count": len(programs),
+            }
+        )
 
     orgs = govcon_config.get("protected_organizations", []) or []
     if orgs:
-        result.append({
-            "name": "protected_orgs",
-            "type": "deny_list",
-            "entity": "GOVCON_PROTECTED_ORG",
-            "term_count": len(orgs),
-        })
+        result.append(
+            {
+                "name": "protected_orgs",
+                "type": "deny_list",
+                "entity": "GOVCON_PROTECTED_ORG",
+                "term_count": len(orgs),
+            }
+        )
 
     agencies = govcon_config.get("agency_surrogates", {}) or {}
     if agencies:
-        result.append({
-            "name": "agency_names",
-            "type": "deny_list",
-            "entity": "GOVCON_AGENCY_NAME",
-            "term_count": len(agencies),
-        })
+        result.append(
+            {
+                "name": "agency_names",
+                "type": "deny_list",
+                "entity": "GOVCON_AGENCY_NAME",
+                "term_count": len(agencies),
+            }
+        )
 
     return result
 
@@ -182,6 +192,7 @@ def list_recognizers(govcon_config: Dict[str, Any]) -> List[Dict[str, Any]]:
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+
 
 def main():
     parser = argparse.ArgumentParser(description="ICDEV™ GovCon Recognizers")
@@ -192,6 +203,7 @@ def main():
     # Load config
     try:
         import yaml
+
         config_path = BASE_DIR / "args" / "redaction_govcon.yaml"
         with open(config_path, encoding="utf-8") as f:
             govcon_config = yaml.safe_load(f) or {}

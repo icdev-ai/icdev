@@ -94,11 +94,9 @@ class TestSessionPurpose(unittest.TestCase):
     def test_get_active_latest(self):
         """Test that most recent active purpose is returned."""
         # Use explicit timestamps to avoid flaky timing under load
-        with patch("icdev.tools.agent.session_purpose._now",
-                   return_value="2026-01-01T00:00:00.000000Z"):
+        with patch("icdev.tools.agent.session_purpose._now", return_value="2026-01-01T00:00:00.000000Z"):
             declare(purpose="First", db_path=self.db_path)
-        with patch("icdev.tools.agent.session_purpose._now",
-                   return_value="2026-01-01T00:00:01.000000Z"):
+        with patch("icdev.tools.agent.session_purpose._now", return_value="2026-01-01T00:00:01.000000Z"):
             declare(purpose="Second", db_path=self.db_path)
         active = get_active(db_path=self.db_path)
         self.assertEqual(active["purpose"], "Second")

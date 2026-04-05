@@ -41,33 +41,39 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                 newest = backup_files[0]
                 age_hours = (datetime.now(timezone.utc).timestamp() - newest.stat().st_mtime) / 3600
                 if age_hours > max_age_hours:
-                    findings.append({
-                        "severity": "high",
-                        "category": "backup_freshness",
-                        "title": f"Backup is {age_hours:.0f}h old (threshold: {max_age_hours}h)",
-                        "description": f"Most recent backup: {newest.name}",
-                        "recommendation": "Run: python tools/db/backup.py --backup --all",
-                        "confidence": 0.9,
-                        "auto_fixable": False,
-                    })
+                    findings.append(
+                        {
+                            "severity": "high",
+                            "category": "backup_freshness",
+                            "title": f"Backup is {age_hours:.0f}h old (threshold: {max_age_hours}h)",
+                            "description": f"Most recent backup: {newest.name}",
+                            "recommendation": "Run: python tools/db/backup.py --backup --all",
+                            "confidence": 0.9,
+                            "auto_fixable": False,
+                        }
+                    )
             else:
-                findings.append({
-                    "severity": "critical",
-                    "category": "backup_freshness",
-                    "title": "No backup files found",
-                    "description": f"Backup directory exists but contains no .bak files: {backup_dir}",
-                    "recommendation": "Run: python tools/db/backup.py --backup --all",
-                    "confidence": 1.0,
-                    "auto_fixable": False,
-                })
+                findings.append(
+                    {
+                        "severity": "critical",
+                        "category": "backup_freshness",
+                        "title": "No backup files found",
+                        "description": f"Backup directory exists but contains no .bak files: {backup_dir}",
+                        "recommendation": "Run: python tools/db/backup.py --backup --all",
+                        "confidence": 1.0,
+                        "auto_fixable": False,
+                    }
+                )
         checks_completed += 1
     except Exception as e:
-        findings.append({
-            "severity": "low",
-            "category": "backup_freshness",
-            "title": f"Backup check failed: {e}",
-            "confidence": 0.5,
-        })
+        findings.append(
+            {
+                "severity": "low",
+                "category": "backup_freshness",
+                "title": f"Backup check failed: {e}",
+                "confidence": 0.5,
+            }
+        )
 
     # --- Check 2: Database file sizes ---
     try:
@@ -77,14 +83,16 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             for db_file in data_dir.glob("*.db"):
                 size_mb = db_file.stat().st_size / (1024 * 1024)
                 if size_mb > max_size_mb:
-                    findings.append({
-                        "severity": "high",
-                        "category": "disk_usage",
-                        "title": f"Database {db_file.name} is {size_mb:.1f}MB (threshold: {max_size_mb}MB)",
-                        "recommendation": "Consider archiving old data or running VACUUM",
-                        "confidence": 1.0,
-                        "auto_fixable": False,
-                    })
+                    findings.append(
+                        {
+                            "severity": "high",
+                            "category": "disk_usage",
+                            "title": f"Database {db_file.name} is {size_mb:.1f}MB (threshold: {max_size_mb}MB)",
+                            "recommendation": "Consider archiving old data or running VACUUM",
+                            "confidence": 1.0,
+                            "auto_fixable": False,
+                        }
+                    )
         checks_completed += 1
     except Exception:
         pass
@@ -101,23 +109,24 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                     "AND created_at > datetime('now', '-1 hour')"
                 ).fetchone()
                 total_count = conn.execute(
-                    "SELECT COUNT(*) FROM audit_trail "
-                    "WHERE created_at > datetime('now', '-1 hour')"
+                    "SELECT COUNT(*) FROM audit_trail WHERE created_at > datetime('now', '-1 hour')"
                 ).fetchone()
 
                 if total_count and total_count[0] > 0:
                     error_rate = (error_count[0] / total_count[0]) * 100
                     max_rate = thresholds.get("max_error_rate_pct", 1.0)
                     if error_rate > max_rate:
-                        findings.append({
-                            "severity": "critical" if error_rate > 5.0 else "high",
-                            "category": "error_rate",
-                            "title": f"Error rate {error_rate:.2f}% exceeds threshold ({max_rate}%)",
-                            "description": f"{error_count[0]} errors out of {total_count[0]} events in last hour",
-                            "recommendation": "Check tools/monitor/log_analyzer.py for root cause",
-                            "confidence": 0.95,
-                            "auto_fixable": False,
-                        })
+                        findings.append(
+                            {
+                                "severity": "critical" if error_rate > 5.0 else "high",
+                                "category": "error_rate",
+                                "title": f"Error rate {error_rate:.2f}% exceeds threshold ({max_rate}%)",
+                                "description": f"{error_count[0]} errors out of {total_count[0]} events in last hour",
+                                "recommendation": "Check tools/monitor/log_analyzer.py for root cause",
+                                "confidence": 0.95,
+                                "auto_fixable": False,
+                            }
+                        )
                 checks_completed += 1
             finally:
                 conn.close()
@@ -136,15 +145,17 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                         stmt = f"SELECT reflex_name, consecutive_failures FROM {state_table} WHERE circuit_breaker_open = 1"  # nosec B608
                         tripped = conn.execute(stmt).fetchall()
                         for row in tripped:
-                            findings.append({
-                                "severity": "high",
-                                "category": "circuit_breaker",
-                                "title": f"Circuit breaker OPEN: {row[0]} ({state_table})",
-                                "description": f"Consecutive failures: {row[1]}",
-                                "recommendation": f"Investigate and reset: python tools/review_board/daemon.py --reset {row[0]}",
-                                "confidence": 1.0,
-                                "auto_fixable": False,
-                            })
+                            findings.append(
+                                {
+                                    "severity": "high",
+                                    "category": "circuit_breaker",
+                                    "title": f"Circuit breaker OPEN: {row[0]} ({state_table})",
+                                    "description": f"Consecutive failures: {row[1]}",
+                                    "recommendation": f"Investigate and reset: python tools/review_board/daemon.py --reset {row[0]}",
+                                    "confidence": 1.0,
+                                    "auto_fixable": False,
+                                }
+                            )
                     except Exception:
                         pass  # Table may not exist
                 checks_completed += 1
@@ -164,15 +175,17 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                     "AND enabled = 1"
                 ).fetchall()
                 for row in stale:
-                    findings.append({
-                        "severity": "medium",
-                        "category": "heartbeat_stale",
-                        "title": f"Heartbeat check stale: {row[0]}",
-                        "description": f"Last checked: {row[1]}",
-                        "recommendation": "Restart heartbeat daemon: python tools/monitor/heartbeat_daemon.py --once",
-                        "confidence": 0.8,
-                        "auto_fixable": False,
-                    })
+                    findings.append(
+                        {
+                            "severity": "medium",
+                            "category": "heartbeat_stale",
+                            "title": f"Heartbeat check stale: {row[0]}",
+                            "description": f"Last checked: {row[1]}",
+                            "recommendation": "Restart heartbeat daemon: python tools/monitor/heartbeat_daemon.py --once",
+                            "confidence": 0.8,
+                            "auto_fixable": False,
+                        }
+                    )
                 checks_completed += 1
             except Exception:
                 checks_completed += 1

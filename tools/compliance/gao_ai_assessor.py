@@ -39,7 +39,9 @@ class GAOAIAssessor(BaseAssessor):
     CATALOG_FILENAME = "gao_ai_accountability.json"
 
     def get_automated_checks(
-        self, project: Dict, project_dir: Optional[str] = None,
+        self,
+        project: Dict,
+        project_dir: Optional[str] = None,
     ) -> Dict[str, str]:
         """GAO AI Accountability automated checks.
 
@@ -203,8 +205,7 @@ class GAOAIAssessor(BaseAssessor):
             for f in project_path.rglob("*.yaml"):
                 try:
                     content = f.read_text(encoding="utf-8", errors="ignore").lower()
-                    if ("agent" in content and "authority" in content) or \
-                       ("governance" in content and "ai" in content):
+                    if ("agent" in content and "authority" in content) or ("governance" in content and "ai" in content):
                         results["GAO-GOV-1"] = "satisfied"
                         break
                 except Exception:
@@ -214,8 +215,7 @@ class GAOAIAssessor(BaseAssessor):
             for f in project_path.rglob("*.yaml"):
                 try:
                     content = f.read_text(encoding="utf-8", errors="ignore").lower()
-                    if ("encrypt" in content or "fips" in content) and \
-                       ("data" in content or "secret" in content):
+                    if ("encrypt" in content or "fips" in content) and ("data" in content or "secret" in content):
                         results["GAO-DATA-3"] = "satisfied"
                         break
                 except Exception:

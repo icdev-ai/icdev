@@ -30,6 +30,7 @@ def _load_program(domain: str) -> dict:
         return {}
     try:
         import yaml
+
         with open(program_path, encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
     except ImportError:
@@ -42,8 +43,7 @@ def _content_hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
 
-def _template_hypotheses(domain: str, config: dict, max_hypotheses: int = 10,
-                         seed: int = 42) -> list:
+def _template_hypotheses(domain: str, config: dict, max_hypotheses: int = 10, seed: int = 42) -> list:
     """Deterministic template-based hypothesis generation (air-gap fallback).
 
     Reads example_hypotheses from program config and generates candidates.
@@ -59,48 +59,47 @@ def _template_hypotheses(domain: str, config: dict, max_hypotheses: int = 10,
         risk = cat_config.get("risk", "medium")
 
         for hypothesis_text in examples:
-            candidates.append({
-                "hypothesis": hypothesis_text,
-                "category": category_name,
-                "modifications": {},
-                "estimated_impact": "medium",
-                "risk_level": risk,
-                "source": "template",
-                "content_hash": _content_hash(hypothesis_text),
-            })
+            candidates.append(
+                {
+                    "hypothesis": hypothesis_text,
+                    "category": category_name,
+                    "modifications": {},
+                    "estimated_impact": "medium",
+                    "risk_level": risk,
+                    "source": "template",
+                    "content_hash": _content_hash(hypothesis_text),
+                }
+            )
 
     # Shuffle and limit
     rng.shuffle(candidates)
     return candidates[:max_hypotheses]
 
 
-def _llm_hypotheses(domain: str, config: dict, current_metric: float,
-                    max_hypotheses: int = 10) -> list:
+def _llm_hypotheses(domain: str, config: dict, current_metric: float, max_hypotheses: int = 10) -> list:
     """Generate hypotheses via scanner-tier LLM (qwen3.5)."""
     try:
         from tools.llm.router import LLMRouter
         from tools.llm.provider import LLMRequest
+
         router = LLMRouter()
     except (ImportError, Exception):
         return []
 
     categories = config.get("categories", {})
-    category_desc = "\n".join(
-        f"- {name}: {cat.get('description', '')}"
-        for name, cat in categories.items()
-    )
+    category_desc = "\n".join(f"- {name}: {cat.get('description', '')}" for name, cat in categories.items())
 
     prompt = f"""You are an autonomous research agent running experiments to improve
 the "{domain}" domain of an ICDEV™ compliance platform.
 
 Current metric value: {current_metric:.4f}
-Metric to optimize: {config.get('objective', {}).get('metric_name', 'unknown')}
-Direction: {config.get('objective', {}).get('direction', 'maximize')}
+Metric to optimize: {config.get("objective", {}).get("metric_name", "unknown")}
+Direction: {config.get("objective", {}).get("direction", "maximize")}
 
 Available experiment categories:
 {category_desc}
 
-Modifiable paths: {config.get('modifiable_paths', [])}
+Modifiable paths: {config.get("modifiable_paths", [])}
 
 Generate {max_hypotheses} specific, testable hypotheses for experiments.
 Each must target ONE specific change (Karpathy one-change rule).
@@ -131,30 +130,32 @@ Respond as JSON array:
         start = text.find("[")
         end = text.rfind("]")
         if start >= 0 and end > start:
-            text = text[start:end + 1]
+            text = text[start : end + 1]
         hypotheses = json.loads(text)
         candidates = []
         for h in hypotheses[:max_hypotheses]:
             hypothesis_text = h.get("hypothesis", "")
             if not hypothesis_text:
                 continue
-            candidates.append({
-                "hypothesis": hypothesis_text,
-                "category": h.get("category", ""),
-                "modifications": {},
-                "estimated_impact": h.get("estimated_impact", "medium"),
-                "risk_level": "medium",
-                "source": "llm_generated",
-                "content_hash": _content_hash(hypothesis_text),
-            })
+            candidates.append(
+                {
+                    "hypothesis": hypothesis_text,
+                    "category": h.get("category", ""),
+                    "modifications": {},
+                    "estimated_impact": h.get("estimated_impact", "medium"),
+                    "risk_level": "medium",
+                    "source": "llm_generated",
+                    "content_hash": _content_hash(hypothesis_text),
+                }
+            )
         return candidates
     except (json.JSONDecodeError, Exception):
         return []
 
 
-def generate_hypotheses(domain: str, max_hypotheses: int = 10,
-                        current_metric: float = 0.0, seed: int = 42,
-                        source_signals: list = None) -> dict:
+def generate_hypotheses(
+    domain: str, max_hypotheses: int = 10, current_metric: float = 0.0, seed: int = 42, source_signals: list = None
+) -> dict:
     """Generate experiment hypotheses for a domain.
 
     1. Load program config
@@ -211,16 +212,18 @@ def generate_from_signals(signals: list, domain: str) -> list:
         title = signal.get("title", "")
         description = signal.get("description", "")
         hypothesis_text = f"Integrate signal: {title} — {description[:200]}"
-        candidates.append({
-            "hypothesis": hypothesis_text,
-            "category": "architecture",
-            "modifications": {},
-            "estimated_impact": "medium",
-            "risk_level": "medium",
-            "source": signal.get("source_type", "innovation"),
-            "signal_id": signal.get("id"),
-            "content_hash": _content_hash(hypothesis_text),
-        })
+        candidates.append(
+            {
+                "hypothesis": hypothesis_text,
+                "category": "architecture",
+                "modifications": {},
+                "estimated_impact": "medium",
+                "risk_level": "medium",
+                "source": signal.get("source_type", "innovation"),
+                "signal_id": signal.get("id"),
+                "content_hash": _content_hash(hypothesis_text),
+            }
+        )
     return candidates
 
 
@@ -229,6 +232,7 @@ def health_check() -> dict:
     llm_available = False
     try:
         from tools.llm.router import LLMRouter
+
         LLMRouter()  # Verify instantiation
         llm_available = True
     except (ImportError, Exception):
@@ -248,6 +252,7 @@ def health_check() -> dict:
 
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
+
 
 def main():
     parser = argparse.ArgumentParser(description="Hypothesis Generator")

@@ -141,9 +141,9 @@ def _build_judge_prompt(
     if examples and bias.get("few_shot_anchoring", True):
         few_shot = "\n## Calibration Examples\n"
         for ex in examples[:3]:
-            few_shot += f'\nExample (score {ex["score"]}):\n'
+            few_shot += f"\nExample (score {ex['score']}):\n"
             few_shot += f'Text: "{ex["excerpt"]}"\n'
-            few_shot += f'Reasoning: {ex["reasoning"]}\n'
+            few_shot += f"Reasoning: {ex['reasoning']}\n"
 
     # Reference context (for proposal sections — RFP shall-statement)
     ref_section = ""
@@ -323,7 +323,7 @@ def _parse_judge_response(content: str, rubric: dict) -> dict:
         if score is None:
             idx = content_lower.find(dim_label)
             if idx >= 0:
-                nearby = content_lower[idx:idx + 200]
+                nearby = content_lower[idx : idx + 200]
                 nums = re.findall(r"(\d(?:\.\d)?)\s*/\s*5", nearby)
                 if nums:
                     score = float(nums[0])
@@ -331,7 +331,9 @@ def _parse_judge_response(content: str, rubric: dict) -> dict:
         # Final fallback: overall sentiment
         if score is None:
             # Look for overall score pattern anywhere
-            overall_match = re.search(r"(?:overall|total|final)\s*(?:score|rating)\s*[:\-]?\s*(\d(?:\.\d)?)", content_lower)
+            overall_match = re.search(
+                r"(?:overall|total|final)\s*(?:score|rating)\s*[:\-]?\s*(\d(?:\.\d)?)", content_lower
+            )
             if overall_match:
                 score = float(overall_match.group(1))
             else:
@@ -434,9 +436,7 @@ def evaluate(
     dimension_scores = parsed.get("dimension_scores", {})
     total_weight = sum(d["weight"] for d in dimension_scores.values())
     if total_weight > 0:
-        composite = sum(
-            d["score"] * d["weight"] for d in dimension_scores.values()
-        ) / total_weight
+        composite = sum(d["score"] * d["weight"] for d in dimension_scores.values()) / total_weight
     else:
         composite = 3.0
 
@@ -459,8 +459,7 @@ def evaluate(
         "status": "evaluated",
         "content_type": content_type,
         "dimension_scores": {
-            name: {"score": d["score"], "reasoning": d.get("reasoning", "")}
-            for name, d in dimension_scores.items()
+            name: {"score": d["score"], "reasoning": d.get("reasoning", "")} for name, d in dimension_scores.items()
         },
         "composite_score": composite,
         "color_rating": color,
@@ -508,7 +507,11 @@ def evaluate_and_store(
                     model_used, eval_ms, created_at
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
-                    entry_id, post_id, opportunity_id, section_id, content_type,
+                    entry_id,
+                    post_id,
+                    opportunity_id,
+                    section_id,
+                    content_type,
                     result["composite_score"],
                     result.get("combined_score"),
                     result["color_rating"]["color"],
@@ -627,9 +630,7 @@ def init_judge_db():
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="LLM-as-a-Judge — rubric-based semantic evaluation"
-    )
+    parser = argparse.ArgumentParser(description="LLM-as-a-Judge — rubric-based semantic evaluation")
     parser.add_argument("--evaluate", action="store_true", help="Evaluate text")
     parser.add_argument("--text", type=str, help="Text to evaluate")
     parser.add_argument("--file", type=str, help="File to evaluate")

@@ -7,6 +7,7 @@ PPS matrix generation, and gap detection against boundary design graphs.
 No Flask dependency — takes graph data and returns results.
 No LLM dependency — all checks are deterministic.
 """
+
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -19,6 +20,7 @@ from tools.boundary_canvas.constants import (
 
 try:
     import yaml as _yaml
+
     _HAS_YAML = True
 except ImportError:
     _HAS_YAML = False
@@ -38,6 +40,7 @@ _BDC_CONFIG = _load_config()
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
+
 
 def _node_types(nodes):
     """Return {node_id: node_type} dict."""
@@ -192,20 +195,23 @@ def _find_docs_near_interconnection(isa_node_id, nodes, edges):
 
 # ── Rule Check Functions ─────────────────────────────────────────────────────
 
+
 def _check_bnd_001(nodes, edges, boundaries):
     """BDC-BND-001: ATO boundary defined."""
     findings = []
     ato_boundaries = [b for b in boundaries if b.get("type") == "bnd-ato"]
     if not ato_boundaries:
-        findings.append({
-            "rule_id": "BDC-BND-001",
-            "severity": "CAT1",
-            "title": "No ATO boundary defined",
-            "description": "Design must have at least one ATO boundary to define scope of security assessment.",
-            "affected_entity": None,
-            "affected_type": "design",
-            "status": "open",
-        })
+        findings.append(
+            {
+                "rule_id": "BDC-BND-001",
+                "severity": "CAT1",
+                "title": "No ATO boundary defined",
+                "description": "Design must have at least one ATO boundary to define scope of security assessment.",
+                "affected_entity": None,
+                "affected_type": "design",
+                "status": "open",
+            }
+        )
     return findings
 
 
@@ -224,15 +230,17 @@ def _check_bnd_002(nodes, edges, boundaries):
     # Find unbounded systems
     unbounded = system_ids - bounded_systems
     for sid in unbounded:
-        findings.append({
-            "rule_id": "BDC-BND-002",
-            "severity": "CAT1",
-            "title": f"System '{labels.get(sid, sid)}' not inside any boundary",
-            "description": "Every system must reside within an authorization boundary.",
-            "affected_entity": sid,
-            "affected_type": "node",
-            "status": "open",
-        })
+        findings.append(
+            {
+                "rule_id": "BDC-BND-002",
+                "severity": "CAT1",
+                "title": f"System '{labels.get(sid, sid)}' not inside any boundary",
+                "description": "Every system must reside within an authorization boundary.",
+                "affected_entity": sid,
+                "affected_type": "node",
+                "status": "open",
+            }
+        )
     return findings
 
 
@@ -260,15 +268,17 @@ def _check_isa_001(nodes, edges, boundaries):
             docs = _find_docs_near_interconnection(isa_node["id"], nodes, edges)
             doc_types = {ntypes.get(d, "") for d in docs}
             if "doc-isa" not in doc_types:
-                findings.append({
-                    "rule_id": "BDC-ISA-001",
-                    "severity": "CAT1",
-                    "title": f"No ISA agreement for '{labels.get(isa_node['id'], isa_node['id'])}'",
-                    "description": "External interconnection requires an ISA document (NIST CA-3).",
-                    "affected_entity": isa_node["id"],
-                    "affected_type": "node",
-                    "status": "open",
-                })
+                findings.append(
+                    {
+                        "rule_id": "BDC-ISA-001",
+                        "severity": "CAT1",
+                        "title": f"No ISA agreement for '{labels.get(isa_node['id'], isa_node['id'])}'",
+                        "description": "External interconnection requires an ISA document (NIST CA-3).",
+                        "affected_entity": isa_node["id"],
+                        "affected_type": "node",
+                        "status": "open",
+                    }
+                )
     return findings
 
 
@@ -278,15 +288,17 @@ def _check_isa_002(nodes, edges, isa_tracker):
     for entry in isa_tracker:
         status = entry.get("status", "")
         if status in ("expired", "terminated"):
-            findings.append({
-                "rule_id": "BDC-ISA-002",
-                "severity": "CAT1",
-                "title": f"ISA '{entry.get('interconnection_id', '')}' is {status}",
-                "description": "Expired or terminated ISA agreements represent unauthorized connections.",
-                "affected_entity": entry.get("interconnection_id"),
-                "affected_type": "isa",
-                "status": "open",
-            })
+            findings.append(
+                {
+                    "rule_id": "BDC-ISA-002",
+                    "severity": "CAT1",
+                    "title": f"ISA '{entry.get('interconnection_id', '')}' is {status}",
+                    "description": "Expired or terminated ISA agreements represent unauthorized connections.",
+                    "affected_entity": entry.get("interconnection_id"),
+                    "affected_type": "isa",
+                    "status": "open",
+                }
+            )
     return findings
 
 
@@ -315,19 +327,21 @@ def _check_isa_003(nodes, edges, boundaries):
             src_type = ntypes.get(e["source"], "")
             tgt_type = ntypes.get(e["target"], "")
             if edge_type != "isa-cross-domain" and src_type != "isa-cross-domain" and tgt_type != "isa-cross-domain":
-                findings.append({
-                    "rule_id": "BDC-ISA-003",
-                    "severity": "CAT1",
-                    "title": "Cross-classification interconnection without CDS",
-                    "description": (
-                        f"Interconnection between '{labels.get(e['source'], e['source'])}' and "
-                        f"'{labels.get(e['target'], e['target'])}' crosses classification boundary "
-                        "without a cross-domain solution (NIST AC-4(21))."
-                    ),
-                    "affected_entity": e.get("id", f"{e['source']}->{e['target']}"),
-                    "affected_type": "edge",
-                    "status": "open",
-                })
+                findings.append(
+                    {
+                        "rule_id": "BDC-ISA-003",
+                        "severity": "CAT1",
+                        "title": "Cross-classification interconnection without CDS",
+                        "description": (
+                            f"Interconnection between '{labels.get(e['source'], e['source'])}' and "
+                            f"'{labels.get(e['target'], e['target'])}' crosses classification boundary "
+                            "without a cross-domain solution (NIST AC-4(21))."
+                        ),
+                        "affected_entity": e.get("id", f"{e['source']}->{e['target']}"),
+                        "affected_type": "edge",
+                        "status": "open",
+                    }
+                )
     return findings
 
 
@@ -341,15 +355,17 @@ def _check_ctl_001(nodes, edges, boundaries):
         controls = _find_controls_near_boundary(b["id"], nodes, edges)
         control_types = {ntypes.get(c, "") for c in controls}
         if "ctrl-firewall" not in control_types:
-            findings.append({
-                "rule_id": "BDC-CTL-001",
-                "severity": "CAT1",
-                "title": f"No firewall at boundary '{labels.get(b['id'], b['id'])}'",
-                "description": "Authorization boundary must have a firewall at its perimeter (NIST SC-7).",
-                "affected_entity": b["id"],
-                "affected_type": "node",
-                "status": "open",
-            })
+            findings.append(
+                {
+                    "rule_id": "BDC-CTL-001",
+                    "severity": "CAT1",
+                    "title": f"No firewall at boundary '{labels.get(b['id'], b['id'])}'",
+                    "description": "Authorization boundary must have a firewall at its perimeter (NIST SC-7).",
+                    "affected_entity": b["id"],
+                    "affected_type": "node",
+                    "status": "open",
+                }
+            )
     return findings
 
 
@@ -363,15 +379,17 @@ def _check_ctl_002(nodes, edges, boundaries):
         controls = _find_controls_near_boundary(b["id"], nodes, edges)
         control_types = {ntypes.get(c, "") for c in controls}
         if "ctrl-ids-ips" not in control_types:
-            findings.append({
-                "rule_id": "BDC-CTL-002",
-                "severity": "CAT2",
-                "title": f"No IDS/IPS at boundary '{labels.get(b['id'], b['id'])}'",
-                "description": "Boundary should have IDS/IPS for intrusion detection (NIST SI-4).",
-                "affected_entity": b["id"],
-                "affected_type": "node",
-                "status": "open",
-            })
+            findings.append(
+                {
+                    "rule_id": "BDC-CTL-002",
+                    "severity": "CAT2",
+                    "title": f"No IDS/IPS at boundary '{labels.get(b['id'], b['id'])}'",
+                    "description": "Boundary should have IDS/IPS for intrusion detection (NIST SI-4).",
+                    "affected_entity": b["id"],
+                    "affected_type": "node",
+                    "status": "open",
+                }
+            )
     return findings
 
 
@@ -382,15 +400,17 @@ def _check_ctl_003(nodes, edges, boundaries):
     # Check if any SIEM node exists anywhere in the graph
     siem_exists = any(ntypes.get(n["id"], "") == "ctrl-siem" for n in nodes)
     if not siem_exists and boundaries:
-        findings.append({
-            "rule_id": "BDC-CTL-003",
-            "severity": "CAT2",
-            "title": "No SIEM/SOC in design",
-            "description": "SIEM must monitor boundary traffic and interconnection activity (NIST AU-6, SI-4).",
-            "affected_entity": None,
-            "affected_type": "design",
-            "status": "open",
-        })
+        findings.append(
+            {
+                "rule_id": "BDC-CTL-003",
+                "severity": "CAT2",
+                "title": "No SIEM/SOC in design",
+                "description": "SIEM must monitor boundary traffic and interconnection activity (NIST AU-6, SI-4).",
+                "affected_entity": None,
+                "affected_type": "design",
+                "status": "open",
+            }
+        )
     return findings
 
 
@@ -412,15 +432,17 @@ def _check_ctl_004(nodes, edges, boundaries):
             if peer and _is_control(ntypes.get(peer, "")):
                 adj_controls.add(ntypes.get(peer, ""))
         if "ctrl-pps" not in adj_controls:
-            findings.append({
-                "rule_id": "BDC-CTL-004",
-                "severity": "CAT2",
-                "title": f"No PPS filter on '{labels.get(isa_node['id'], isa_node['id'])}'",
-                "description": "Interconnection should have PPS filter for ports/protocols restriction (NIST CM-7).",
-                "affected_entity": isa_node["id"],
-                "affected_type": "node",
-                "status": "open",
-            })
+            findings.append(
+                {
+                    "rule_id": "BDC-CTL-004",
+                    "severity": "CAT2",
+                    "title": f"No PPS filter on '{labels.get(isa_node['id'], isa_node['id'])}'",
+                    "description": "Interconnection should have PPS filter for ports/protocols restriction (NIST CM-7).",
+                    "affected_entity": isa_node["id"],
+                    "affected_type": "node",
+                    "status": "open",
+                }
+            )
     return findings
 
 
@@ -456,15 +478,17 @@ def _check_ctl_005(nodes, edges, boundaries):
                 if peer and _is_control(ntypes.get(peer, "")):
                     adj_controls.add(ntypes.get(peer, ""))
             if "ctrl-mfa" not in adj_controls:
-                findings.append({
-                    "rule_id": "BDC-CTL-005",
-                    "severity": "CAT1",
-                    "title": f"No MFA on external access '{labels.get(isa_node['id'], isa_node['id'])}'",
-                    "description": "External user access interconnections must require MFA (NIST IA-2(1)).",
-                    "affected_entity": isa_node["id"],
-                    "affected_type": "node",
-                    "status": "open",
-                })
+                findings.append(
+                    {
+                        "rule_id": "BDC-CTL-005",
+                        "severity": "CAT1",
+                        "title": f"No MFA on external access '{labels.get(isa_node['id'], isa_node['id'])}'",
+                        "description": "External user access interconnections must require MFA (NIST IA-2(1)).",
+                        "affected_entity": isa_node["id"],
+                        "affected_type": "node",
+                        "status": "open",
+                    }
+                )
     return findings
 
 
@@ -488,15 +512,17 @@ def _check_ctl_006(nodes, edges, boundaries):
             if peer and _is_control(ntypes.get(peer, "")):
                 adj_controls.add(ntypes.get(peer, ""))
         if "ctrl-certificate" not in adj_controls:
-            findings.append({
-                "rule_id": "BDC-CTL-006",
-                "severity": "CAT2",
-                "title": f"No mTLS on '{labels.get(isa_node['id'], isa_node['id'])}'",
-                "description": "System-to-system interconnections should use mutual TLS (NIST IA-3, SC-8).",
-                "affected_entity": isa_node["id"],
-                "affected_type": "node",
-                "status": "open",
-            })
+            findings.append(
+                {
+                    "rule_id": "BDC-CTL-006",
+                    "severity": "CAT2",
+                    "title": f"No mTLS on '{labels.get(isa_node['id'], isa_node['id'])}'",
+                    "description": "System-to-system interconnections should use mutual TLS (NIST IA-3, SC-8).",
+                    "affected_entity": isa_node["id"],
+                    "affected_type": "node",
+                    "status": "open",
+                }
+            )
     return findings
 
 
@@ -510,15 +536,17 @@ def _check_doc_001(nodes, edges, boundaries):
         docs = _find_docs_near_boundary(b["id"], nodes, edges)
         doc_types = {ntypes.get(d, "") for d in docs}
         if "doc-pps-matrix" not in doc_types:
-            findings.append({
-                "rule_id": "BDC-DOC-001",
-                "severity": "CAT2",
-                "title": f"No PPS matrix for boundary '{labels.get(b['id'], b['id'])}'",
-                "description": "Boundary must have a PPS matrix document listing allowed ports/protocols/services.",
-                "affected_entity": b["id"],
-                "affected_type": "node",
-                "status": "open",
-            })
+            findings.append(
+                {
+                    "rule_id": "BDC-DOC-001",
+                    "severity": "CAT2",
+                    "title": f"No PPS matrix for boundary '{labels.get(b['id'], b['id'])}'",
+                    "description": "Boundary must have a PPS matrix document listing allowed ports/protocols/services.",
+                    "affected_entity": b["id"],
+                    "affected_type": "node",
+                    "status": "open",
+                }
+            )
     return findings
 
 
@@ -532,15 +560,17 @@ def _check_doc_002(nodes, edges, boundaries):
         docs = _find_docs_near_boundary(b["id"], nodes, edges)
         doc_types = {ntypes.get(d, "") for d in docs}
         if "doc-dfd" not in doc_types:
-            findings.append({
-                "rule_id": "BDC-DOC-002",
-                "severity": "CAT2",
-                "title": f"No DFD for boundary '{labels.get(b['id'], b['id'])}'",
-                "description": "Boundary should have a data flow diagram showing data classification.",
-                "affected_entity": b["id"],
-                "affected_type": "node",
-                "status": "open",
-            })
+            findings.append(
+                {
+                    "rule_id": "BDC-DOC-002",
+                    "severity": "CAT2",
+                    "title": f"No DFD for boundary '{labels.get(b['id'], b['id'])}'",
+                    "description": "Boundary should have a data flow diagram showing data classification.",
+                    "affected_entity": b["id"],
+                    "affected_type": "node",
+                    "status": "open",
+                }
+            )
     return findings
 
 
@@ -558,15 +588,17 @@ def _check_fed_001(nodes, edges, boundaries):
             except (json.JSONDecodeError, TypeError):
                 props = {}
         if not props.get("fedramp_authorized"):
-            findings.append({
-                "rule_id": "BDC-FED-001",
-                "severity": "CAT1",
-                "title": f"SaaS '{labels.get(saas['id'], saas['id'])}' not FedRAMP authorized",
-                "description": "SaaS provider must be FedRAMP authorized at the appropriate impact level.",
-                "affected_entity": saas["id"],
-                "affected_type": "node",
-                "status": "open",
-            })
+            findings.append(
+                {
+                    "rule_id": "BDC-FED-001",
+                    "severity": "CAT1",
+                    "title": f"SaaS '{labels.get(saas['id'], saas['id'])}' not FedRAMP authorized",
+                    "description": "SaaS provider must be FedRAMP authorized at the appropriate impact level.",
+                    "affected_entity": saas["id"],
+                    "affected_type": "node",
+                    "status": "open",
+                }
+            )
     return findings
 
 
@@ -578,23 +610,24 @@ def _check_fed_002(nodes, edges, boundaries):
     if not cloud_nodes:
         return findings
     # Check if BCAP or CAP exists in the design
-    has_bcap_cap = any(
-        ntypes.get(n["id"], "") in ("ctrl-bcap", "ctrl-cap") for n in nodes
-    )
+    has_bcap_cap = any(ntypes.get(n["id"], "") in ("ctrl-bcap", "ctrl-cap") for n in nodes)
     if not has_bcap_cap:
-        findings.append({
-            "rule_id": "BDC-FED-002",
-            "severity": "CAT2",
-            "title": "No BCAP/CAP for cloud service traffic",
-            "description": "Cloud service interconnections should traverse a BCAP (DoD) or CAP (TIC 3.0).",
-            "affected_entity": None,
-            "affected_type": "design",
-            "status": "open",
-        })
+        findings.append(
+            {
+                "rule_id": "BDC-FED-002",
+                "severity": "CAT2",
+                "title": "No BCAP/CAP for cloud service traffic",
+                "description": "Cloud service interconnections should traverse a BCAP (DoD) or CAP (TIC 3.0).",
+                "affected_entity": None,
+                "affected_type": "design",
+                "status": "open",
+            }
+        )
     return findings
 
 
 # ── Main Assessment Functions ────────────────────────────────────────────────
+
 
 def assess_boundary_design(graph_data, isa_tracker=None):
     """Run all BOUNDARY_COMPLIANCE_RULES against a boundary design graph.
@@ -742,13 +775,21 @@ def _compute_nist_coverage(nodes, edges, boundaries):
     if "doc-isa" in doc_types:
         covered["CA-3"] = {"control": BOUNDARY_NIST_CONTROLS["CA-3"], "status": "covered", "covered_by": "doc-isa"}
     else:
-        covered.setdefault("CA-3", {"control": BOUNDARY_NIST_CONTROLS["CA-3"], "status": "not_covered", "covered_by": None})
+        covered.setdefault(
+            "CA-3", {"control": BOUNDARY_NIST_CONTROLS["CA-3"], "status": "not_covered", "covered_by": None}
+        )
 
     # Cross-domain nodes cover AC-4(21)
     if any(ntypes.get(n["id"], "") == "isa-cross-domain" for n in nodes):
-        covered["AC-4(21)"] = {"control": BOUNDARY_NIST_CONTROLS["AC-4(21)"], "status": "covered", "covered_by": "isa-cross-domain"}
+        covered["AC-4(21)"] = {
+            "control": BOUNDARY_NIST_CONTROLS["AC-4(21)"],
+            "status": "covered",
+            "covered_by": "isa-cross-domain",
+        }
     else:
-        covered.setdefault("AC-4(21)", {"control": BOUNDARY_NIST_CONTROLS["AC-4(21)"], "status": "not_covered", "covered_by": None})
+        covered.setdefault(
+            "AC-4(21)", {"control": BOUNDARY_NIST_CONTROLS["AC-4(21)"], "status": "not_covered", "covered_by": None}
+        )
 
     total = len(covered)
     covered_count = sum(1 for v in covered.values() if v["status"] == "covered")
@@ -793,28 +834,32 @@ def compute_isa_status(graph_data, isa_tracker=None):
         if nid in tracked:
             entry = tracked[nid]
             status = entry.get("status", "draft")
-            results.append({
-                "interconnection_id": nid,
-                "label": labels.get(nid, nid),
-                "type": ntypes.get(nid, ""),
-                "status": status,
-                "expiry_date": entry.get("expiry_date"),
-                "review_date": entry.get("review_date"),
-                "owner": entry.get("owner", ""),
-                "isa_doc_id": entry.get("isa_doc_id"),
-            })
+            results.append(
+                {
+                    "interconnection_id": nid,
+                    "label": labels.get(nid, nid),
+                    "type": ntypes.get(nid, ""),
+                    "status": status,
+                    "expiry_date": entry.get("expiry_date"),
+                    "review_date": entry.get("review_date"),
+                    "owner": entry.get("owner", ""),
+                    "isa_doc_id": entry.get("isa_doc_id"),
+                }
+            )
             by_status[status] = by_status.get(status, 0) + 1
         else:
-            results.append({
-                "interconnection_id": nid,
-                "label": labels.get(nid, nid),
-                "type": ntypes.get(nid, ""),
-                "status": "untracked",
-                "expiry_date": None,
-                "review_date": None,
-                "owner": "",
-                "isa_doc_id": None,
-            })
+            results.append(
+                {
+                    "interconnection_id": nid,
+                    "label": labels.get(nid, nid),
+                    "type": ntypes.get(nid, ""),
+                    "status": "untracked",
+                    "expiry_date": None,
+                    "review_date": None,
+                    "owner": "",
+                    "isa_doc_id": None,
+                }
+            )
             by_status["untracked"] += 1
 
     return {
@@ -874,27 +919,31 @@ def generate_pps_matrix(graph_data):
             if peer and _is_system(ntypes.get(peer, "")):
                 connected_systems.append(labels.get(peer, peer))
 
-        matrix.append({
-            "interconnection_id": nid,
-            "label": label,
-            "type": ntype,
-            "connected_systems": connected_systems,
-            "entries": entries,
-        })
+        matrix.append(
+            {
+                "interconnection_id": nid,
+                "label": label,
+                "type": ntype,
+                "connected_systems": connected_systems,
+                "entries": entries,
+            }
+        )
 
     # Build flat summary
     flat_rows = []
     for item in matrix:
         for entry in item["entries"]:
-            flat_rows.append({
-                "interconnection": item["label"],
-                "type": item["type"],
-                "port": entry.get("port", ""),
-                "protocol": entry.get("protocol", ""),
-                "service": entry.get("service", ""),
-                "direction": entry.get("direction", "bidirectional"),
-                "connected_systems": ", ".join(item["connected_systems"]),
-            })
+            flat_rows.append(
+                {
+                    "interconnection": item["label"],
+                    "type": item["type"],
+                    "port": entry.get("port", ""),
+                    "protocol": entry.get("protocol", ""),
+                    "service": entry.get("service", ""),
+                    "direction": entry.get("direction", "bidirectional"),
+                    "connected_systems": ", ".join(item["connected_systems"]),
+                }
+            )
 
     return {
         "matrix": matrix,
@@ -950,11 +999,13 @@ def detect_boundary_gaps(assessment_result):
     uncovered_nist = []
     for nist_id, info in controls.items():
         if info.get("status") == "not_covered":
-            uncovered_nist.append({
-                "control_id": nist_id,
-                "control_name": info.get("control", nist_id),
-                "recommendation": f"Add control or documentation to satisfy NIST {nist_id}.",
-            })
+            uncovered_nist.append(
+                {
+                    "control_id": nist_id,
+                    "control_name": info.get("control", nist_id),
+                    "recommendation": f"Add control or documentation to satisfy NIST {nist_id}.",
+                }
+            )
 
     return {
         "gaps": gaps,

@@ -40,14 +40,14 @@ def _load_config() -> Dict[str, Any]:
         return {}
     try:
         import yaml
+
         with open(CONFIG_PATH, "r", encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
     except ImportError:
         return {}
 
 
-def get_curated_tools(goal: str, phase: str,
-                      config: Dict[str, Any] = None) -> Optional[List[str]]:
+def get_curated_tools(goal: str, phase: str, config: Dict[str, Any] = None) -> Optional[List[str]]:
     """Return the list of allowed tools for a goal phase.
 
     Args:
@@ -71,8 +71,7 @@ def get_curated_tools(goal: str, phase: str,
     return tools
 
 
-def validate_tool(goal: str, phase: str, tool: str,
-                  config: Dict[str, Any] = None) -> Tuple[bool, str]:
+def validate_tool(goal: str, phase: str, tool: str, config: Dict[str, Any] = None) -> Tuple[bool, str]:
     """Check whether a tool is allowed for the given goal phase.
 
     Args:
@@ -100,8 +99,7 @@ def validate_tool(goal: str, phase: str, tool: str,
     return False, f"tool_not_in_curated_set_for_{goal}/{phase}"
 
 
-def get_phase_context(goal: str, phase: str,
-                      config: Dict[str, Any] = None) -> Dict[str, Any]:
+def get_phase_context(goal: str, phase: str, config: Dict[str, Any] = None) -> Dict[str, Any]:
     """Return full phase context including tools, description, and constraints.
 
     Args:
@@ -141,13 +139,15 @@ def list_goals(config: Dict[str, Any] = None) -> List[Dict[str, Any]]:
     result = []
     for goal_name, goal_cfg in goals.items():
         phases = goal_cfg.get("phases", {})
-        result.append({
-            "goal": goal_name,
-            "description": goal_cfg.get("description", ""),
-            "phase_count": len(phases),
-            "phases": list(phases.keys()),
-            "default_tools": goal_cfg.get("default_tools"),
-        })
+        result.append(
+            {
+                "goal": goal_name,
+                "description": goal_cfg.get("description", ""),
+                "phase_count": len(phases),
+                "phases": list(phases.keys()),
+                "default_tools": goal_cfg.get("default_tools"),
+            }
+        )
     return result
 
 
@@ -155,16 +155,12 @@ def list_goals(config: Dict[str, Any] = None) -> List[Dict[str, Any]]:
 # CLI
 # ---------------------------------------------------------------------------
 def main():
-    parser = argparse.ArgumentParser(
-        description="ICDEV™ Tool Curation Enforcement — phase-level tool restriction"
-    )
+    parser = argparse.ArgumentParser(description="ICDEV™ Tool Curation Enforcement — phase-level tool restriction")
     parser.add_argument("--goal", help="Goal name")
     parser.add_argument("--phase", help="Phase/step within the goal")
     parser.add_argument("--tool", help="Tool name to validate (with --validate)")
-    parser.add_argument("--validate", action="store_true",
-                        help="Validate whether a tool is allowed")
-    parser.add_argument("--list-goals", action="store_true",
-                        help="List all goals with curation defined")
+    parser.add_argument("--validate", action="store_true", help="Validate whether a tool is allowed")
+    parser.add_argument("--list-goals", action="store_true", help="List all goals with curation defined")
     parser.add_argument("--json", action="store_true", help="JSON output")
     args = parser.parse_args()
 
@@ -181,16 +177,23 @@ def main():
 
     if args.validate:
         if not all([args.goal, args.phase, args.tool]):
-            print("ERROR: --validate requires --goal, --phase, and --tool",
-                  file=sys.stderr)
+            print("ERROR: --validate requires --goal, --phase, and --tool", file=sys.stderr)
             sys.exit(1)
         allowed, reason = validate_tool(args.goal, args.phase, args.tool)
         if args.json:
-            print(json.dumps({
-                "allowed": allowed, "reason": reason,
-                "goal": args.goal, "phase": args.phase, "tool": args.tool,
-                "classification": "CUI",
-            }, indent=2))
+            print(
+                json.dumps(
+                    {
+                        "allowed": allowed,
+                        "reason": reason,
+                        "goal": args.goal,
+                        "phase": args.phase,
+                        "tool": args.tool,
+                        "classification": "CUI",
+                    },
+                    indent=2,
+                )
+            )
         else:
             status = "ALLOWED" if allowed else "BLOCKED"
             print(f"{status}: {args.tool} in {args.goal}/{args.phase} ({reason})")

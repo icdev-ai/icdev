@@ -46,10 +46,7 @@ DEFAULT_COST_PER_1K = {
 def _estimate_cost(model_id, input_tokens, output_tokens):
     """Estimate cost in USD from token counts."""
     rates = DEFAULT_COST_PER_1K.get(model_id, {"input": 0.003, "output": 0.015})
-    cost = (
-        (input_tokens / 1000.0) * rates["input"]
-        + (output_tokens / 1000.0) * rates["output"]
-    )
+    cost = (input_tokens / 1000.0) * rates["input"] + (output_tokens / 1000.0) * rates["output"]
     return round(cost, 6)
 
 

@@ -84,6 +84,7 @@ def _load_model_pricing() -> Dict:
     # Try LLM router first (covers all providers: Bedrock, OpenAI, Ollama, etc.)
     try:
         from tools.llm.router import LLMRouter
+
         router = LLMRouter()
         all_pricing = router.get_all_model_pricing()
         if all_pricing:
@@ -104,6 +105,7 @@ def _load_model_pricing() -> Dict:
         return {}
     try:
         import yaml  # noqa: E401 — optional dependency
+
         with open(yaml_path, "r", encoding="utf-8") as fh:
             data = yaml.safe_load(fh) or {}
         return data.get("models", {})
@@ -114,6 +116,7 @@ def _load_model_pricing() -> Dict:
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def log_usage(
     agent_id: str,
@@ -283,6 +286,7 @@ def _load_budget_config() -> Dict:
 
     try:
         import yaml
+
         with open(config_path, "r", encoding="utf-8") as fh:
             data = yaml.safe_load(fh) or {}
         _budget_config_cache = data.get("token_budgets", {})
@@ -486,10 +490,9 @@ class BudgetExceededError(Exception):
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Token usage, cost tracking, and budget enforcement for ICDEV™ agents"
-    )
+    parser = argparse.ArgumentParser(description="Token usage, cost tracking, and budget enforcement for ICDEV™ agents")
     parser.add_argument(
         "--action",
         choices=["summary", "cost", "check-budget", "budgets"],
@@ -499,12 +502,8 @@ def main() -> None:
     parser.add_argument("--project-id", default=None, help="Filter by project ID")
     parser.add_argument("--agent-id", default=None, help="Filter by agent ID")
     parser.add_argument("--since", default=None, help="Filter by ISO timestamp (>=)")
-    parser.add_argument(
-        "--json", action="store_true", dest="json_output", help="Output as JSON"
-    )
-    parser.add_argument(
-        "--gate", action="store_true", help="Exit 1 if any budget is blocked"
-    )
+    parser.add_argument("--json", action="store_true", dest="json_output", help="Output as JSON")
+    parser.add_argument("--gate", action="store_true", help="Exit 1 if any budget is blocked")
     args = parser.parse_args()
 
     if args.action == "summary":

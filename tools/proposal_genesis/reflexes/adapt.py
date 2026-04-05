@@ -79,8 +79,7 @@ def _get_team_size(opp_id: str) -> int:
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT COUNT(*) as cnt FROM pg_teaming_workshare "
-            "WHERE opportunity_id = ?",
+            "SELECT COUNT(*) as cnt FROM pg_teaming_workshare WHERE opportunity_id = ?",
             (opp_id,),
         ).fetchone()
         partners = row["cnt"] if row else 0
@@ -133,6 +132,7 @@ def _determine_process_level(opp: Dict, team_size: int) -> Dict[str, Any]:
 # Main entry point
 # ---------------------------------------------------------------------------
 
+
 def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     """Execute the Adapt Reflex (R21).
 
@@ -169,16 +169,18 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         level = recommendation["level"]
         level_counts[level] = level_counts.get(level, 0) + 1
 
-        adapt_results.append({
-            "opportunity_id": opp["id"],
-            "title": opp["title"],
-            "team_size": team_size,
-            "estimated_value": _estimate_value(opp),
-            "recommended_level": level,
-            "level_label": recommendation["label"],
-            "reviews": recommendation["reviews"],
-            "rationale": recommendation["rationale"],
-        })
+        adapt_results.append(
+            {
+                "opportunity_id": opp["id"],
+                "title": opp["title"],
+                "team_size": team_size,
+                "estimated_value": _estimate_value(opp),
+                "recommended_level": level,
+                "level_label": recommendation["label"],
+                "reviews": recommendation["reviews"],
+                "rationale": recommendation["rationale"],
+            }
+        )
 
     # Compute adaptation score: weighted average of levels (1.0 = all lite, 3.0 = all full)
     if adapt_results:
@@ -198,11 +200,13 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                 "process_adaptation",
                 "adapt",
                 "green",
-                json.dumps({
-                    "opportunities_assessed": len(opportunities),
-                    "level_distribution": level_counts,
-                    "avg_level": round(avg_level, 2),
-                }),
+                json.dumps(
+                    {
+                        "opportunities_assessed": len(opportunities),
+                        "level_distribution": level_counts,
+                        "avg_level": round(avg_level, 2),
+                    }
+                ),
                 1,
                 _utcnow_iso(),
             ),
@@ -223,4 +227,6 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             "adapt_results": adapt_results,
         },
     }
+
+
 # CUI // SP-CTI

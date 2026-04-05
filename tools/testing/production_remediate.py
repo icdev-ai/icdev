@@ -49,14 +49,15 @@ from tools.testing.production_audit import (  # noqa: E402
 # Data structures
 # ---------------------------------------------------------------------------
 
+
 @dataclasses.dataclass
 class RemediationAction:
     check_id: str
     check_name: str
     category: str
     confidence: float
-    tier: str               # auto_fix, suggest, escalate
-    status: str             # fixed, failed, suggested, escalated, skipped, dry_run
+    tier: str  # auto_fix, suggest, escalate
+    status: str  # fixed, failed, suggested, escalated, skipped, dry_run
     fix_strategy: str
     fix_command: Optional[str]
     message: str
@@ -94,6 +95,7 @@ class RemediationReport:
 # Each entry: check_id -> {confidence, tier, strategy, command, suggestion}
 # SEC-003 hardcoded to escalate (D297) — secrets MUST NEVER be auto-fixed.
 
+
 def _detect_project_id() -> str:
     """Detect an existing project ID from the database, or create a default."""
     try:
@@ -104,6 +106,7 @@ def _detect_project_id() -> str:
             return row[0]
         # No projects exist — create a default one for remediation
         from datetime import datetime, timezone as _tz
+
         pid = "icdev-platform"
         now = datetime.now(_tz.utc).isoformat()
         conn.execute(
@@ -138,8 +141,12 @@ REMEDIATION_REGISTRY: Dict[str, dict] = {
         "tier": "auto_fix",
         "strategy": "dep_version_bumps",
         "command_factory": lambda: [
-            sys.executable, str(PROJECT_ROOT / "tools" / "maintenance" / "remediation_engine.py"),
-            "--project-id", _get_project_id(), "--auto", "--json",
+            sys.executable,
+            str(PROJECT_ROOT / "tools" / "maintenance" / "remediation_engine.py"),
+            "--project-id",
+            _get_project_id(),
+            "--auto",
+            "--json",
         ],
         "suggestion": None,
     },
@@ -148,7 +155,8 @@ REMEDIATION_REGISTRY: Dict[str, dict] = {
         "tier": "auto_fix",
         "strategy": "rebuild_db_schema",
         "command": [
-            sys.executable, str(PROJECT_ROOT / "tools" / "db" / "init_icdev_db.py"),
+            sys.executable,
+            str(PROJECT_ROOT / "tools" / "db" / "init_icdev_db.py"),
         ],
         "suggestion": None,
     },
@@ -157,7 +165,8 @@ REMEDIATION_REGISTRY: Dict[str, dict] = {
         "tier": "auto_fix",
         "strategy": "apply_pending_migrations",
         "command": [
-            sys.executable, str(PROJECT_ROOT / "tools" / "db" / "migrate.py"),
+            sys.executable,
+            str(PROJECT_ROOT / "tools" / "db" / "migrate.py"),
             "--up",
         ],
         "suggestion": None,
@@ -167,20 +176,27 @@ REMEDIATION_REGISTRY: Dict[str, dict] = {
         "tier": "auto_fix",
         "strategy": "regenerate_sbom",
         "command": [
-            sys.executable, str(PROJECT_ROOT / "tools" / "compliance" / "sbom_generator.py"),
-            "--project-dir", str(PROJECT_ROOT),
+            sys.executable,
+            str(PROJECT_ROOT / "tools" / "compliance" / "sbom_generator.py"),
+            "--project-dir",
+            str(PROJECT_ROOT),
         ],
         "suggestion": None,
     },
-
     # --- AI Transparency (Phase 48) — auto-fix via dedicated tools ---
     "AI-001": {
         "confidence": 0.80,
         "tier": "auto_fix",
         "strategy": "populate_ai_inventory",
         "command_factory": lambda: [
-            sys.executable, str(PROJECT_ROOT / "tools" / "compliance" / "ai_inventory_manager.py"),
-            "--project-id", _get_project_id(), "--register", "--name", "default", "--json",
+            sys.executable,
+            str(PROJECT_ROOT / "tools" / "compliance" / "ai_inventory_manager.py"),
+            "--project-id",
+            _get_project_id(),
+            "--register",
+            "--name",
+            "default",
+            "--json",
         ],
         "suggestion": None,
     },
@@ -189,8 +205,13 @@ REMEDIATION_REGISTRY: Dict[str, dict] = {
         "tier": "auto_fix",
         "strategy": "generate_model_cards",
         "command_factory": lambda: [
-            sys.executable, str(PROJECT_ROOT / "tools" / "compliance" / "model_card_generator.py"),
-            "--project-id", _get_project_id(), "--model-name", "default", "--json",
+            sys.executable,
+            str(PROJECT_ROOT / "tools" / "compliance" / "model_card_generator.py"),
+            "--project-id",
+            _get_project_id(),
+            "--model-name",
+            "default",
+            "--json",
         ],
         "suggestion": None,
     },
@@ -199,12 +220,14 @@ REMEDIATION_REGISTRY: Dict[str, dict] = {
         "tier": "auto_fix",
         "strategy": "run_ai_transparency_audit",
         "command_factory": lambda: [
-            sys.executable, str(PROJECT_ROOT / "tools" / "compliance" / "ai_transparency_audit.py"),
-            "--project-id", _get_project_id(), "--json",
+            sys.executable,
+            str(PROJECT_ROOT / "tools" / "compliance" / "ai_transparency_audit.py"),
+            "--project-id",
+            _get_project_id(),
+            "--json",
         ],
         "suggestion": None,
     },
-
     # --- Suggest (confidence 0.3-0.7) ---
     "SEC-001": {
         "confidence": 0.50,
@@ -298,7 +321,6 @@ REMEDIATION_REGISTRY: Dict[str, dict] = {
             "add missing conftest.py fixtures, resolve import errors."
         ),
     },
-
     # --- Escalate (confidence < 0.3, human required) ---
     "SEC-003": {
         "confidence": 0.10,
@@ -317,8 +339,7 @@ REMEDIATION_REGISTRY: Dict[str, dict] = {
         "strategy": "python_version_upgrade",
         "command": None,
         "suggestion": (
-            "Python version below minimum required (3.9). "
-            "Coordinate with ops team for system-level Python upgrade."
+            "Python version below minimum required (3.9). Coordinate with ops team for system-level Python upgrade."
         ),
     },
     "PLT-003": {
@@ -327,8 +348,7 @@ REMEDIATION_REGISTRY: Dict[str, dict] = {
         "strategy": "os_stdlib_modules",
         "command": None,
         "suggestion": (
-            "Missing required stdlib modules. "
-            "Coordinate with ops team — may indicate broken Python installation."
+            "Missing required stdlib modules. Coordinate with ops team — may indicate broken Python installation."
         ),
     },
     "INT-001": {
@@ -349,13 +369,12 @@ REMEDIATION_REGISTRY: Dict[str, dict] = {
 # Core remediation engine
 # ---------------------------------------------------------------------------
 
+
 def _get_latest_audit() -> Optional[dict]:
     """Retrieve the most recent audit report from DB."""
     try:
         conn = _get_db()
-        row = conn.execute(
-            "SELECT id, report_json FROM production_audits ORDER BY id DESC LIMIT 1"
-        ).fetchone()
+        row = conn.execute("SELECT id, report_json FROM production_audits ORDER BY id DESC LIMIT 1").fetchone()
         conn.close()
         if row:
             report = json.loads(row["report_json"] if isinstance(row, sqlite3.Row) else row[1])
@@ -387,7 +406,9 @@ def _run_auto_fix(
 
     Returns (status, message, details).
     """
-    cmd = registry_entry.get("command") or (registry_entry["command_factory"]() if "command_factory" in registry_entry else None)
+    cmd = registry_entry.get("command") or (
+        registry_entry["command_factory"]() if "command_factory" in registry_entry else None
+    )
     if not cmd:
         return "failed", "No command configured", {}
 
@@ -400,9 +421,21 @@ def _run_auto_fix(
     rc, stdout, stderr = _run_subprocess(cmd, timeout=180)
 
     if rc == 0:
-        return "fixed", "Auto-fix succeeded (exit 0)", {"stdout_tail": stdout[-500:] if stdout else "", "stderr_tail": stderr[-200:] if stderr else ""}
+        return (
+            "fixed",
+            "Auto-fix succeeded (exit 0)",
+            {"stdout_tail": stdout[-500:] if stdout else "", "stderr_tail": stderr[-200:] if stderr else ""},
+        )
     else:
-        return "failed", f"Auto-fix failed (exit {rc}): {stderr[:300]}", {"returncode": rc, "stdout_tail": stdout[-500:] if stdout else "", "stderr_tail": stderr[-500:] if stderr else ""}
+        return (
+            "failed",
+            f"Auto-fix failed (exit {rc}): {stderr[:300]}",
+            {
+                "returncode": rc,
+                "stdout_tail": stdout[-500:] if stdout else "",
+                "stderr_tail": stderr[-500:] if stderr else "",
+            },
+        )
 
 
 def _verify_fix(check_id: str, stream: bool = False) -> Optional[AuditCheck]:
@@ -439,7 +472,9 @@ def _timed_check(fn):
     return result, elapsed
 
 
-def _store_remediation(action: RemediationAction, source_audit_id: Optional[int], dry_run: bool, report_json: Optional[str] = None):
+def _store_remediation(
+    action: RemediationAction, source_audit_id: Optional[int], dry_run: bool, report_json: Optional[str] = None
+):
     """Store remediation action in remediation_audit_log (append-only, D299)."""
     try:
         conn = _get_db()
@@ -480,6 +515,7 @@ def _store_remediation(action: RemediationAction, source_audit_id: Optional[int]
 # ---------------------------------------------------------------------------
 # Main remediation runner
 # ---------------------------------------------------------------------------
+
 
 def run_remediation(
     auto: bool = False,
@@ -582,8 +618,13 @@ def run_remediation(
             continue
 
         if stream:
-            tier_label = {"auto_fix": "AUTO-FIX", "suggest": "SUGGEST", "escalate": "ESCALATE"}.get(reg["tier"], "UNKNOWN")
-            print(f"\n  [{tier_label}] {cid}: {check.get('check_name', '')} (confidence={reg['confidence']:.2f})", file=sys.stderr)
+            tier_label = {"auto_fix": "AUTO-FIX", "suggest": "SUGGEST", "escalate": "ESCALATE"}.get(
+                reg["tier"], "UNKNOWN"
+            )
+            print(
+                f"\n  [{tier_label}] {cid}: {check.get('check_name', '')} (confidence={reg['confidence']:.2f})",
+                file=sys.stderr,
+            )
 
         action_start = time.time()
 
@@ -603,7 +644,13 @@ def run_remediation(
                 tier=reg["tier"],
                 status=status,
                 fix_strategy=reg["strategy"],
-                fix_command=" ".join(str(c) for c in (reg.get("command") or (reg["command_factory"]() if "command_factory" in reg else None) or [])) or None,
+                fix_command=" ".join(
+                    str(c)
+                    for c in (
+                        reg.get("command") or (reg["command_factory"]() if "command_factory" in reg else None) or []
+                    )
+                )
+                or None,
                 message=message,
                 details=details,
             )
@@ -726,6 +773,7 @@ def run_remediation(
 # Output formatters
 # ---------------------------------------------------------------------------
 
+
 def _format_human(report: RemediationReport) -> str:
     """Format remediation report for human-readable terminal output."""
     lines = []
@@ -753,7 +801,12 @@ def _format_human(report: RemediationReport) -> str:
     lines.append("")
 
     # Actions by tier
-    for tier_name, tier_label in [("auto_fix", "AUTO-FIXED"), ("suggest", "SUGGESTIONS"), ("escalate", "ESCALATED"), ("unknown", "SKIPPED")]:
+    for tier_name, tier_label in [
+        ("auto_fix", "AUTO-FIXED"),
+        ("suggest", "SUGGESTIONS"),
+        ("escalate", "ESCALATED"),
+        ("unknown", "SKIPPED"),
+    ]:
         tier_actions = [a for a in report.actions if a.get("tier") == tier_name]
         if not tier_actions:
             continue
@@ -761,8 +814,12 @@ def _format_human(report: RemediationReport) -> str:
         lines.append(f"  --- {tier_label} ---")
         for a in tier_actions:
             status_icon = {
-                "fixed": "[OK]", "dry_run": "[DRY]", "suggested": "[??]",
-                "escalated": "[!!]", "skipped": "[--]", "failed": "[XX]",
+                "fixed": "[OK]",
+                "dry_run": "[DRY]",
+                "suggested": "[??]",
+                "escalated": "[!!]",
+                "skipped": "[--]",
+                "failed": "[XX]",
             }.get(a.get("status", ""), "[??]")
             lines.append(f"    {status_icon} {a['check_id']}: {a['check_name']}")
             lines.append(f"          {a['message'][:120]}")
@@ -773,7 +830,9 @@ def _format_human(report: RemediationReport) -> str:
         lines.append("")
 
     # Remaining skipped (no remediation)
-    no_reg = [a for a in report.actions if a.get("tier") == "unknown" or a.get("fix_strategy") == "no_remediation_registered"]
+    no_reg = [
+        a for a in report.actions if a.get("tier") == "unknown" or a.get("fix_strategy") == "no_remediation_registered"
+    ]
     if no_reg:
         lines.append("  --- NO REMEDIATION REGISTERED ---")
         for a in no_reg:
@@ -798,10 +857,9 @@ def _format_human(report: RemediationReport) -> str:
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
-    parser = argparse.ArgumentParser(
-        description="ICDEV™ Production Remediation — auto-fix audit blockers"
-    )
+    parser = argparse.ArgumentParser(description="ICDEV™ Production Remediation — auto-fix audit blockers")
     parser.add_argument("--auto", action="store_true", help="Execute auto-fix commands without prompting")
     parser.add_argument("--dry-run", action="store_true", help="Preview what would be fixed without executing")
     parser.add_argument("--check-id", type=str, help="Target a specific check ID (e.g. SEC-002)")

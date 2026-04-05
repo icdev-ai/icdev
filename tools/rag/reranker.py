@@ -72,10 +72,7 @@ def rerank_results(
             result = results[idx]
             result.rerank_score = raw_score / max_rerank
             # Weighted blend (D-RAG-20): configurable instead of naive average
-            result.final_score = (
-                (1.0 - rerank_weight) * result.final_score
-                + rerank_weight * result.rerank_score
-            )
+            result.final_score = (1.0 - rerank_weight) * result.final_score + rerank_weight * result.rerank_score
             reranked.append(result)
 
         # D-BT-6: Teaching-dimension diversity boost
@@ -86,8 +83,11 @@ def rerank_results(
 
         logger.debug(
             "Re-ranked %d→%d results via %s (weight=%.2f, bt=%.2f)",
-            len(results), len(reranked), provider.provider_name,
-            rerank_weight, teaching_boost,
+            len(results),
+            len(reranked),
+            provider.provider_name,
+            rerank_weight,
+            teaching_boost,
         )
         return reranked
 
@@ -112,11 +112,7 @@ def _apply_teaching_diversity(
         return results
 
     def _word_set(text: str) -> set:
-        return {
-            w.lower().strip(".,;:!?()[]{}\"'")
-            for w in (text or "").split()
-            if len(w) > 3
-        }
+        return {w.lower().strip(".,;:!?()[]{}\"'") for w in (text or "").split() if len(w) > 3}
 
     selected_words: list = []
     for result in results:
@@ -140,10 +136,7 @@ def _apply_teaching_diversity(
         # Diversity score: 1.0 = unique, 0.0 = identical to existing
         diversity = 1.0 - max_overlap
         # Blend: reduce score of redundant chunks
-        result.final_score = (
-            (1.0 - boost_weight) * result.final_score
-            + boost_weight * diversity
-        )
+        result.final_score = (1.0 - boost_weight) * result.final_score + boost_weight * diversity
         selected_words.append(words)
 
     # Re-sort after diversity adjustment

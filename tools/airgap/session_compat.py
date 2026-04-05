@@ -61,10 +61,13 @@ class SessionManager:
     def start(cls, source: str = "airgap") -> "SessionManager":
         """Create and start a new session."""
         session = cls(source=source)
-        session._store_event("session_start", {
-            "source": source,
-            "started_at": session.started_at.isoformat(),
-        })
+        session._store_event(
+            "session_start",
+            {
+                "source": source,
+                "started_at": session.started_at.isoformat(),
+            },
+        )
         logger.info("Session started: %s (source=%s)", session.session_id, source)
         return session
 
@@ -81,17 +84,22 @@ class SessionManager:
         self.ended_at = datetime.now(timezone.utc)
         duration_s = (self.ended_at - self.started_at).total_seconds()
 
-        self._store_event("session_end", {
-            "duration_seconds": round(duration_s, 1),
-            "event_count": len(self.events),
-        })
+        self._store_event(
+            "session_end",
+            {
+                "duration_seconds": round(duration_s, 1),
+                "event_count": len(self.events),
+            },
+        )
 
         # Write transcript to .tmp/
         self._write_transcript()
 
         logger.info(
             "Session ended: %s (duration=%.1fs, events=%d)",
-            self.session_id, duration_s, len(self.events),
+            self.session_id,
+            duration_s,
+            len(self.events),
         )
 
         return {
@@ -103,11 +111,14 @@ class SessionManager:
     def log_prompt(self, role: str, content: str) -> None:
         """Log a user or assistant prompt."""
         self._transcript_lines.append(f"[{role}] {content[:500]}")
-        self._store_event("prompt", {
-            "role": role,
-            "content_length": len(content),
-            "content_preview": content[:200],
-        })
+        self._store_event(
+            "prompt",
+            {
+                "role": role,
+                "content_length": len(content),
+                "content_preview": content[:200],
+            },
+        )
 
     def log_tool_use(
         self,
@@ -117,14 +128,15 @@ class SessionManager:
         success: bool = True,
     ) -> None:
         """Log a tool invocation."""
-        self._transcript_lines.append(
-            f"[tool:{tool_name}] {'OK' if success else 'FAIL'} ({duration_ms}ms)"
+        self._transcript_lines.append(f"[tool:{tool_name}] {'OK' if success else 'FAIL'} ({duration_ms}ms)")
+        self._store_event(
+            "tool_use",
+            {
+                "tool_name": tool_name,
+                "duration_ms": duration_ms,
+                "success": success,
+            },
         )
-        self._store_event("tool_use", {
-            "tool_name": tool_name,
-            "duration_ms": duration_ms,
-            "success": success,
-        })
 
     def _store_event(self, event_type: str, payload: Dict) -> None:
         """Store event in memory and in DB."""
@@ -138,8 +150,10 @@ class SessionManager:
         # Best-effort DB storage
         try:
             from tools.airgap.hook_compat import store_event
+
             store_event(
-                self.session_id, event_type,
+                self.session_id,
+                event_type,
                 payload=payload,
             )
         except Exception:
@@ -173,7 +187,6 @@ class SessionManager:
 
 # ── CLI ────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-
     session = SessionManager.start(source="cli")
     print(json.dumps(session.to_dict(), indent=2))
 

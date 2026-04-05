@@ -53,9 +53,11 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 # Result types (follows ClaudeConfigCheck pattern from claude_dir_validator.py)
 # ---------------------------------------------------------------------------
 
+
 @dataclasses.dataclass
 class GotchaCheck:
     """Result of a single FORGE compliance check."""
+
     check_id: str
     check_name: str
     layer: str  # "goals", "orchestration", "tools", "context", "hardprompts", "args", "meta"
@@ -76,6 +78,7 @@ class GotchaCheck:
 @dataclasses.dataclass
 class GotchaReport:
     """Aggregate FORGE compliance validation report."""
+
     overall_pass: bool
     timestamp: str
     project_dir: str
@@ -106,6 +109,7 @@ class GotchaReport:
 # Check implementations
 # ---------------------------------------------------------------------------
 
+
 def _check_goals(project_dir: Path) -> List[GotchaCheck]:
     """Check Layer 1: Goals — workflow definitions exist."""
     checks = []
@@ -113,83 +117,95 @@ def _check_goals(project_dir: Path) -> List[GotchaCheck]:
 
     # Check goals directory exists
     if not goals_dir.is_dir():
-        checks.append(GotchaCheck(
-            check_id="FORGE-01",
-            check_name="Goals directory exists",
-            layer="goals",
-            status="fail",
-            expected="goals/ directory with workflow definitions",
-            actual="Directory not found",
-            fix_suggestion="Create goals/ and add workflow files (build_app.md, manifest.md)",
-            message="FORGE Layer 1 (Goals) missing: no goals/ directory",
-        ))
+        checks.append(
+            GotchaCheck(
+                check_id="FORGE-01",
+                check_name="Goals directory exists",
+                layer="goals",
+                status="fail",
+                expected="goals/ directory with workflow definitions",
+                actual="Directory not found",
+                fix_suggestion="Create goals/ and add workflow files (build_app.md, manifest.md)",
+                message="FORGE Layer 1 (Goals) missing: no goals/ directory",
+            )
+        )
         return checks
 
     # Check for manifest
     manifest = goals_dir / "manifest.md"
     if manifest.exists():
-        checks.append(GotchaCheck(
-            check_id="FORGE-01a",
-            check_name="Goals manifest exists",
-            layer="goals",
-            status="pass",
-            expected="goals/manifest.md",
-            actual="Present",
-            fix_suggestion="",
-            message="Goals manifest found",
-        ))
+        checks.append(
+            GotchaCheck(
+                check_id="FORGE-01a",
+                check_name="Goals manifest exists",
+                layer="goals",
+                status="pass",
+                expected="goals/manifest.md",
+                actual="Present",
+                fix_suggestion="",
+                message="Goals manifest found",
+            )
+        )
     else:
-        checks.append(GotchaCheck(
-            check_id="FORGE-01a",
-            check_name="Goals manifest exists",
-            layer="goals",
-            status="warn",
-            expected="goals/manifest.md",
-            actual="Missing",
-            fix_suggestion="Create goals/manifest.md listing all goal workflows",
-            message="Goals manifest missing — create manifest.md indexing all goals",
-        ))
+        checks.append(
+            GotchaCheck(
+                check_id="FORGE-01a",
+                check_name="Goals manifest exists",
+                layer="goals",
+                status="warn",
+                expected="goals/manifest.md",
+                actual="Missing",
+                fix_suggestion="Create goals/manifest.md listing all goal workflows",
+                message="Goals manifest missing — create manifest.md indexing all goals",
+            )
+        )
 
     # Check for at least 1 goal file (not counting manifest)
     goal_files = [f for f in goals_dir.glob("*.md") if f.name != "manifest.md"]
     if goal_files:
-        checks.append(GotchaCheck(
-            check_id="FORGE-01b",
-            check_name="Goal workflow files present",
-            layer="goals",
-            status="pass",
-            expected="At least 1 goal workflow file",
-            actual=f"{len(goal_files)} goal file(s): {', '.join(f.name for f in goal_files[:5])}",
-            fix_suggestion="",
-            message=f"{len(goal_files)} goal workflow(s) found",
-        ))
+        checks.append(
+            GotchaCheck(
+                check_id="FORGE-01b",
+                check_name="Goal workflow files present",
+                layer="goals",
+                status="pass",
+                expected="At least 1 goal workflow file",
+                actual=f"{len(goal_files)} goal file(s): {', '.join(f.name for f in goal_files[:5])}",
+                fix_suggestion="",
+                message=f"{len(goal_files)} goal workflow(s) found",
+            )
+        )
     else:
-        checks.append(GotchaCheck(
-            check_id="FORGE-01b",
-            check_name="Goal workflow files present",
-            layer="goals",
-            status="fail",
-            expected="At least 1 goal workflow file (e.g., build_app.md)",
-            actual="0 goal files (empty directory)",
-            fix_suggestion="Add goal files: build_app.md (ANVIL), tdd_workflow.md, compliance_workflow.md",
-            message="FORGE Layer 1 (Goals) empty: no workflow definitions found",
-        ))
+        checks.append(
+            GotchaCheck(
+                check_id="FORGE-01b",
+                check_name="Goal workflow files present",
+                layer="goals",
+                status="fail",
+                expected="At least 1 goal workflow file (e.g., build_app.md)",
+                actual="0 goal files (empty directory)",
+                fix_suggestion="Add goal files: build_app.md (ANVIL), tdd_workflow.md, compliance_workflow.md",
+                message="FORGE Layer 1 (Goals) empty: no workflow definitions found",
+            )
+        )
 
     # FORGE-01c: Goal content quality — files must have substance
     for gf in goal_files:
         try:
             content = gf.read_text(encoding="utf-8")
             if len(content.strip()) < 100:
-                checks.append(GotchaCheck(
-                    check_id="FORGE-01c",
-                    check_name="Goal content quality",
-                    layer="goals",
-                    status="warn",
-                    expected="Goal file with >=100 chars of content",
-                    actual=f"{gf.name}: {len(content.strip())} chars (stub)",
-                    fix_suggestion=f"Add workflow steps and acceptance criteria to {gf.name}",
-                    message=f"Goal file {gf.name} appears to be a stub ({len(content.strip())} chars)",
-                ))
+                checks.append(
+                    GotchaCheck(
+                        check_id="FORGE-01c",
+                        check_name="Goal content quality",
+                        layer="goals",
+                        status="warn",
+                        expected="Goal file with >=100 chars of content",
+                        actual=f"{gf.name}: {len(content.strip())} chars (stub)",
+                        fix_suggestion=f"Add workflow steps and acceptance criteria to {gf.name}",
+                        message=f"Goal file {gf.name} appears to be a stub ({len(content.strip())} chars)",
+                    )
+                )
         except Exception:
             pass
 
@@ -211,50 +227,58 @@ def _check_orchestration(project_dir: Path) -> List[GotchaCheck]:
 
     if has_cards:
         card_count = len(list(agent_cards_dir.glob("*.json")))
-        checks.append(GotchaCheck(
-            check_id="FORGE-02a",
-            check_name="Agent cards present",
-            layer="orchestration",
-            status="pass",
-            expected="Agent card JSON files in tools/agent/cards/",
-            actual=f"{card_count} agent card(s) found",
-            fix_suggestion="",
-            message=f"Orchestration: {card_count} agent card(s) found",
-        ))
+        checks.append(
+            GotchaCheck(
+                check_id="FORGE-02a",
+                check_name="Agent cards present",
+                layer="orchestration",
+                status="pass",
+                expected="Agent card JSON files in tools/agent/cards/",
+                actual=f"{card_count} agent card(s) found",
+                fix_suggestion="",
+                message=f"Orchestration: {card_count} agent card(s) found",
+            )
+        )
     elif has_config:
-        checks.append(GotchaCheck(
-            check_id="FORGE-02a",
-            check_name="Agent config present",
-            layer="orchestration",
-            status="pass",
-            expected="Agent cards or args/agent_config.yaml",
-            actual="args/agent_config.yaml found",
-            fix_suggestion="",
-            message="Orchestration: agent_config.yaml found (no individual cards)",
-        ))
+        checks.append(
+            GotchaCheck(
+                check_id="FORGE-02a",
+                check_name="Agent config present",
+                layer="orchestration",
+                status="pass",
+                expected="Agent cards or args/agent_config.yaml",
+                actual="args/agent_config.yaml found",
+                fix_suggestion="",
+                message="Orchestration: agent_config.yaml found (no individual cards)",
+            )
+        )
     elif has_claude_md:
         # CLAUDE.md exists — orchestration is implicit (Claude is the orchestrator)
-        checks.append(GotchaCheck(
-            check_id="FORGE-02a",
-            check_name="Orchestration layer present",
-            layer="orchestration",
-            status="warn",
-            expected="Agent cards in tools/agent/cards/ or args/agent_config.yaml",
-            actual="Only CLAUDE.md found (implicit orchestration)",
-            fix_suggestion="Add agent cards or agent_config.yaml for explicit agent definitions",
-            message="Orchestration: only CLAUDE.md found — consider adding agent definitions",
-        ))
+        checks.append(
+            GotchaCheck(
+                check_id="FORGE-02a",
+                check_name="Orchestration layer present",
+                layer="orchestration",
+                status="warn",
+                expected="Agent cards in tools/agent/cards/ or args/agent_config.yaml",
+                actual="Only CLAUDE.md found (implicit orchestration)",
+                fix_suggestion="Add agent cards or agent_config.yaml for explicit agent definitions",
+                message="Orchestration: only CLAUDE.md found — consider adding agent definitions",
+            )
+        )
     else:
-        checks.append(GotchaCheck(
-            check_id="FORGE-02a",
-            check_name="Orchestration layer present",
-            layer="orchestration",
-            status="fail",
-            expected="Agent cards, agent_config.yaml, or CLAUDE.md",
-            actual="None found",
-            fix_suggestion="Run child_app_generator.py or create agent definitions manually",
-            message="FORGE Layer 2 (Orchestration) missing: no agent definitions or CLAUDE.md",
-        ))
+        checks.append(
+            GotchaCheck(
+                check_id="FORGE-02a",
+                check_name="Orchestration layer present",
+                layer="orchestration",
+                status="fail",
+                expected="Agent cards, agent_config.yaml, or CLAUDE.md",
+                actual="None found",
+                fix_suggestion="Run child_app_generator.py or create agent definitions manually",
+                message="FORGE Layer 2 (Orchestration) missing: no agent definitions or CLAUDE.md",
+            )
+        )
 
     return checks
 
@@ -265,70 +289,80 @@ def _check_tools(project_dir: Path) -> List[GotchaCheck]:
     tools_dir = project_dir / "tools"
 
     if not tools_dir.is_dir():
-        checks.append(GotchaCheck(
-            check_id="FORGE-03",
-            check_name="Tools directory exists",
-            layer="tools",
-            status="fail",
-            expected="tools/ directory with deterministic Python scripts",
-            actual="Directory not found",
-            fix_suggestion="Create tools/ and add deterministic scripts (one job each)",
-            message="FORGE Layer 3 (Tools) missing: no tools/ directory",
-        ))
+        checks.append(
+            GotchaCheck(
+                check_id="FORGE-03",
+                check_name="Tools directory exists",
+                layer="tools",
+                status="fail",
+                expected="tools/ directory with deterministic Python scripts",
+                actual="Directory not found",
+                fix_suggestion="Create tools/ and add deterministic scripts (one job each)",
+                message="FORGE Layer 3 (Tools) missing: no tools/ directory",
+            )
+        )
         return checks
 
     # Check for minimum tool subdirectories
     min_tool_dirs = {"db", "memory", "mcp"}
     tool_subdirs = {d.name for d in tools_dir.iterdir() if d.is_dir()}
     if len(tool_subdirs) >= 3:
-        checks.append(GotchaCheck(
-            check_id="FORGE-03a",
-            check_name="Tool subdirectories present",
-            layer="tools",
-            status="pass",
-            expected="At least 3 tool subdirectories",
-            actual=f"{len(tool_subdirs)} subdirectories: {', '.join(sorted(tool_subdirs)[:8])}",
-            fix_suggestion="",
-            message=f"Tools: {len(tool_subdirs)} tool package(s) found",
-        ))
+        checks.append(
+            GotchaCheck(
+                check_id="FORGE-03a",
+                check_name="Tool subdirectories present",
+                layer="tools",
+                status="pass",
+                expected="At least 3 tool subdirectories",
+                actual=f"{len(tool_subdirs)} subdirectories: {', '.join(sorted(tool_subdirs)[:8])}",
+                fix_suggestion="",
+                message=f"Tools: {len(tool_subdirs)} tool package(s) found",
+            )
+        )
     else:
         missing = min_tool_dirs - tool_subdirs
-        checks.append(GotchaCheck(
-            check_id="FORGE-03a",
-            check_name="Tool subdirectories present",
-            layer="tools",
-            status="fail" if len(tool_subdirs) == 0 else "warn",
-            expected=f"At least 3 tool subdirectories (recommended: {', '.join(sorted(min_tool_dirs))})",
-            actual=f"{len(tool_subdirs)} subdirectory(ies)",
-            fix_suggestion=f"Add missing tool directories: {', '.join(sorted(missing))}",
-            message=f"Tools: only {len(tool_subdirs)} subdirectory(ies) — expected at least 3",
-        ))
+        checks.append(
+            GotchaCheck(
+                check_id="FORGE-03a",
+                check_name="Tool subdirectories present",
+                layer="tools",
+                status="fail" if len(tool_subdirs) == 0 else "warn",
+                expected=f"At least 3 tool subdirectories (recommended: {', '.join(sorted(min_tool_dirs))})",
+                actual=f"{len(tool_subdirs)} subdirectory(ies)",
+                fix_suggestion=f"Add missing tool directories: {', '.join(sorted(missing))}",
+                message=f"Tools: only {len(tool_subdirs)} subdirectory(ies) — expected at least 3",
+            )
+        )
 
     # Check for Python files in tools
     py_files = list(tools_dir.rglob("*.py"))
     py_files = [f for f in py_files if "__pycache__" not in str(f)]
     if py_files:
-        checks.append(GotchaCheck(
-            check_id="FORGE-03b",
-            check_name="Tool scripts present",
-            layer="tools",
-            status="pass",
-            expected="Python scripts in tools/",
-            actual=f"{len(py_files)} Python file(s)",
-            fix_suggestion="",
-            message=f"Tools: {len(py_files)} Python script(s) found",
-        ))
+        checks.append(
+            GotchaCheck(
+                check_id="FORGE-03b",
+                check_name="Tool scripts present",
+                layer="tools",
+                status="pass",
+                expected="Python scripts in tools/",
+                actual=f"{len(py_files)} Python file(s)",
+                fix_suggestion="",
+                message=f"Tools: {len(py_files)} Python script(s) found",
+            )
+        )
     else:
-        checks.append(GotchaCheck(
-            check_id="FORGE-03b",
-            check_name="Tool scripts present",
-            layer="tools",
-            status="fail",
-            expected="At least 1 Python script in tools/",
-            actual="0 Python files",
-            fix_suggestion="Add deterministic Python tools following FORGE pattern",
-            message="FORGE Layer 3 (Tools) empty: no Python scripts in tools/",
-        ))
+        checks.append(
+            GotchaCheck(
+                check_id="FORGE-03b",
+                check_name="Tool scripts present",
+                layer="tools",
+                status="fail",
+                expected="At least 1 Python script in tools/",
+                actual="0 Python files",
+                fix_suggestion="Add deterministic Python tools following FORGE pattern",
+                message="FORGE Layer 3 (Tools) empty: no Python scripts in tools/",
+            )
+        )
 
     return checks
 
@@ -339,16 +373,18 @@ def _check_args(project_dir: Path) -> List[GotchaCheck]:
     args_dir = project_dir / "args"
 
     if not args_dir.is_dir():
-        checks.append(GotchaCheck(
-            check_id="FORGE-04",
-            check_name="Args directory exists",
-            layer="args",
-            status="fail",
-            expected="args/ directory with YAML/JSON config files",
-            actual="Directory not found",
-            fix_suggestion="Create args/ and add config files (project_defaults.yaml, etc.)",
-            message="FORGE Layer 6 (Args) missing: no args/ directory",
-        ))
+        checks.append(
+            GotchaCheck(
+                check_id="FORGE-04",
+                check_name="Args directory exists",
+                layer="args",
+                status="fail",
+                expected="args/ directory with YAML/JSON config files",
+                actual="Directory not found",
+                fix_suggestion="Create args/ and add config files (project_defaults.yaml, etc.)",
+                message="FORGE Layer 6 (Args) missing: no args/ directory",
+            )
+        )
         return checks
 
     yaml_files = list(args_dir.glob("*.yaml")) + list(args_dir.glob("*.yml"))
@@ -356,27 +392,31 @@ def _check_args(project_dir: Path) -> List[GotchaCheck]:
     all_config = yaml_files + json_files
 
     if all_config:
-        checks.append(GotchaCheck(
-            check_id="FORGE-04a",
-            check_name="Args config files present",
-            layer="args",
-            status="pass",
-            expected="At least 1 YAML/JSON config file",
-            actual=f"{len(all_config)} config file(s): {', '.join(f.name for f in all_config[:5])}",
-            fix_suggestion="",
-            message=f"Args: {len(all_config)} config file(s) found",
-        ))
+        checks.append(
+            GotchaCheck(
+                check_id="FORGE-04a",
+                check_name="Args config files present",
+                layer="args",
+                status="pass",
+                expected="At least 1 YAML/JSON config file",
+                actual=f"{len(all_config)} config file(s): {', '.join(f.name for f in all_config[:5])}",
+                fix_suggestion="",
+                message=f"Args: {len(all_config)} config file(s) found",
+            )
+        )
     else:
-        checks.append(GotchaCheck(
-            check_id="FORGE-04a",
-            check_name="Args config files present",
-            layer="args",
-            status="fail",
-            expected="At least 1 YAML/JSON config file",
-            actual="0 config files",
-            fix_suggestion="Add args/project_defaults.yaml, args/security_gates.yaml, etc.",
-            message="FORGE Layer 6 (Args) empty: no config files found",
-        ))
+        checks.append(
+            GotchaCheck(
+                check_id="FORGE-04a",
+                check_name="Args config files present",
+                layer="args",
+                status="fail",
+                expected="At least 1 YAML/JSON config file",
+                actual="0 config files",
+                fix_suggestion="Add args/project_defaults.yaml, args/security_gates.yaml, etc.",
+                message="FORGE Layer 6 (Args) empty: no config files found",
+            )
+        )
 
     return checks
 
@@ -387,45 +427,50 @@ def _check_context(project_dir: Path) -> List[GotchaCheck]:
     context_dir = project_dir / "context"
 
     if not context_dir.is_dir():
-        checks.append(GotchaCheck(
-            check_id="FORGE-05",
-            check_name="Context directory exists",
-            layer="context",
-            status="fail",
-            expected="context/ directory with reference material",
-            actual="Directory not found",
-            fix_suggestion="Create context/ and add reference material (compliance catalogs, patterns)",
-            message="FORGE Layer 5 (Context) missing: no context/ directory",
-        ))
+        checks.append(
+            GotchaCheck(
+                check_id="FORGE-05",
+                check_name="Context directory exists",
+                layer="context",
+                status="fail",
+                expected="context/ directory with reference material",
+                actual="Directory not found",
+                fix_suggestion="Create context/ and add reference material (compliance catalogs, patterns)",
+                message="FORGE Layer 5 (Context) missing: no context/ directory",
+            )
+        )
         return checks
 
     # Check for at least 1 subdirectory with content
     context_subdirs = [d for d in context_dir.iterdir() if d.is_dir()]
-    non_empty_subdirs = [d for d in context_subdirs
-                         if any(d.rglob("*")) and any(f.is_file() for f in d.rglob("*"))]
+    non_empty_subdirs = [d for d in context_subdirs if any(d.rglob("*")) and any(f.is_file() for f in d.rglob("*"))]
 
     if non_empty_subdirs:
-        checks.append(GotchaCheck(
-            check_id="FORGE-05a",
-            check_name="Context subdirectories with content",
-            layer="context",
-            status="pass",
-            expected="At least 1 context subdirectory with files",
-            actual=f"{len(non_empty_subdirs)} context package(s): {', '.join(d.name for d in non_empty_subdirs[:5])}",
-            fix_suggestion="",
-            message=f"Context: {len(non_empty_subdirs)} reference package(s) found",
-        ))
+        checks.append(
+            GotchaCheck(
+                check_id="FORGE-05a",
+                check_name="Context subdirectories with content",
+                layer="context",
+                status="pass",
+                expected="At least 1 context subdirectory with files",
+                actual=f"{len(non_empty_subdirs)} context package(s): {', '.join(d.name for d in non_empty_subdirs[:5])}",
+                fix_suggestion="",
+                message=f"Context: {len(non_empty_subdirs)} reference package(s) found",
+            )
+        )
     else:
-        checks.append(GotchaCheck(
-            check_id="FORGE-05a",
-            check_name="Context subdirectories with content",
-            layer="context",
-            status="fail",
-            expected="At least 1 context subdirectory with files",
-            actual="0 non-empty subdirectories",
-            fix_suggestion="Add context/compliance/, context/languages/, or domain-specific reference material",
-            message="FORGE Layer 5 (Context) empty: no reference material found",
-        ))
+        checks.append(
+            GotchaCheck(
+                check_id="FORGE-05a",
+                check_name="Context subdirectories with content",
+                layer="context",
+                status="fail",
+                expected="At least 1 context subdirectory with files",
+                actual="0 non-empty subdirectories",
+                fix_suggestion="Add context/compliance/, context/languages/, or domain-specific reference material",
+                message="FORGE Layer 5 (Context) empty: no reference material found",
+            )
+        )
 
     return checks
 
@@ -436,41 +481,47 @@ def _check_hardprompts(project_dir: Path) -> List[GotchaCheck]:
     hp_dir = project_dir / "hardprompts"
 
     if not hp_dir.is_dir():
-        checks.append(GotchaCheck(
-            check_id="FORGE-06",
-            check_name="Hard Prompts directory exists",
-            layer="hardprompts",
-            status="fail",
-            expected="hardprompts/ directory with LLM instruction templates",
-            actual="Directory not found",
-            fix_suggestion="Create hardprompts/ and add LLM instruction templates (.md files)",
-            message="FORGE Layer 4 (Hard Prompts) missing: no hardprompts/ directory",
-        ))
+        checks.append(
+            GotchaCheck(
+                check_id="FORGE-06",
+                check_name="Hard Prompts directory exists",
+                layer="hardprompts",
+                status="fail",
+                expected="hardprompts/ directory with LLM instruction templates",
+                actual="Directory not found",
+                fix_suggestion="Create hardprompts/ and add LLM instruction templates (.md files)",
+                message="FORGE Layer 4 (Hard Prompts) missing: no hardprompts/ directory",
+            )
+        )
         return checks
 
     md_files = list(hp_dir.rglob("*.md"))
     if md_files:
-        checks.append(GotchaCheck(
-            check_id="FORGE-06a",
-            check_name="Hard prompt templates present",
-            layer="hardprompts",
-            status="pass",
-            expected="At least 1 .md template in hardprompts/",
-            actual=f"{len(md_files)} template(s): {', '.join(f.name for f in md_files[:5])}",
-            fix_suggestion="",
-            message=f"Hard Prompts: {len(md_files)} template(s) found",
-        ))
+        checks.append(
+            GotchaCheck(
+                check_id="FORGE-06a",
+                check_name="Hard prompt templates present",
+                layer="hardprompts",
+                status="pass",
+                expected="At least 1 .md template in hardprompts/",
+                actual=f"{len(md_files)} template(s): {', '.join(f.name for f in md_files[:5])}",
+                fix_suggestion="",
+                message=f"Hard Prompts: {len(md_files)} template(s) found",
+            )
+        )
     else:
-        checks.append(GotchaCheck(
-            check_id="FORGE-06a",
-            check_name="Hard prompt templates present",
-            layer="hardprompts",
-            status="fail",
-            expected="At least 1 .md template in hardprompts/",
-            actual="0 templates (empty directory)",
-            fix_suggestion="Add LLM instruction templates: hardprompts/agent/architect.md, etc.",
-            message="FORGE Layer 4 (Hard Prompts) empty: no instruction templates found",
-        ))
+        checks.append(
+            GotchaCheck(
+                check_id="FORGE-06a",
+                check_name="Hard prompt templates present",
+                layer="hardprompts",
+                status="fail",
+                expected="At least 1 .md template in hardprompts/",
+                actual="0 templates (empty directory)",
+                fix_suggestion="Add LLM instruction templates: hardprompts/agent/architect.md, etc.",
+                message="FORGE Layer 4 (Hard Prompts) empty: no instruction templates found",
+            )
+        )
 
     return checks
 
@@ -481,43 +532,49 @@ def _check_claude_md(project_dir: Path) -> List[GotchaCheck]:
     claude_md = project_dir / "CLAUDE.md"
 
     if not claude_md.exists():
-        checks.append(GotchaCheck(
-            check_id="FORGE-07",
-            check_name="CLAUDE.md exists",
-            layer="meta",
-            status="fail",
-            expected="CLAUDE.md with project documentation",
-            actual="Not found",
-            fix_suggestion="Generate CLAUDE.md using claude_md_generator.py or create manually",
-            message="CLAUDE.md missing — project lacks AI orchestration documentation",
-        ))
+        checks.append(
+            GotchaCheck(
+                check_id="FORGE-07",
+                check_name="CLAUDE.md exists",
+                layer="meta",
+                status="fail",
+                expected="CLAUDE.md with project documentation",
+                actual="Not found",
+                fix_suggestion="Generate CLAUDE.md using claude_md_generator.py or create manually",
+                message="CLAUDE.md missing — project lacks AI orchestration documentation",
+            )
+        )
         return checks
 
     content = claude_md.read_text(encoding="utf-8", errors="replace")
     has_gotcha = "FORGE" in content or "gotcha" in content.lower()
 
     if has_gotcha:
-        checks.append(GotchaCheck(
-            check_id="FORGE-07",
-            check_name="CLAUDE.md references FORGE",
-            layer="meta",
-            status="pass",
-            expected="CLAUDE.md mentioning FORGE framework",
-            actual="FORGE reference found",
-            fix_suggestion="",
-            message="CLAUDE.md found with FORGE framework reference",
-        ))
+        checks.append(
+            GotchaCheck(
+                check_id="FORGE-07",
+                check_name="CLAUDE.md references FORGE",
+                layer="meta",
+                status="pass",
+                expected="CLAUDE.md mentioning FORGE framework",
+                actual="FORGE reference found",
+                fix_suggestion="",
+                message="CLAUDE.md found with FORGE framework reference",
+            )
+        )
     else:
-        checks.append(GotchaCheck(
-            check_id="FORGE-07",
-            check_name="CLAUDE.md references FORGE",
-            layer="meta",
-            status="warn",
-            expected="CLAUDE.md mentioning FORGE framework",
-            actual="CLAUDE.md exists but no FORGE reference",
-            fix_suggestion="Add FORGE framework section to CLAUDE.md documenting the 6-layer structure",
-            message="CLAUDE.md exists but does not reference FORGE framework",
-        ))
+        checks.append(
+            GotchaCheck(
+                check_id="FORGE-07",
+                check_name="CLAUDE.md references FORGE",
+                layer="meta",
+                status="warn",
+                expected="CLAUDE.md mentioning FORGE framework",
+                actual="CLAUDE.md exists but no FORGE reference",
+                fix_suggestion="Add FORGE framework section to CLAUDE.md documenting the 6-layer structure",
+                message="CLAUDE.md exists but does not reference FORGE framework",
+            )
+        )
 
     return checks
 
@@ -528,27 +585,31 @@ def _check_memory(project_dir: Path) -> List[GotchaCheck]:
     memory_md = project_dir / "memory" / "MEMORY.md"
 
     if memory_md.exists():
-        checks.append(GotchaCheck(
-            check_id="FORGE-08",
-            check_name="Memory system present",
-            layer="meta",
-            status="pass",
-            expected="memory/MEMORY.md",
-            actual="Present",
-            fix_suggestion="",
-            message="Memory system found (memory/MEMORY.md)",
-        ))
+        checks.append(
+            GotchaCheck(
+                check_id="FORGE-08",
+                check_name="Memory system present",
+                layer="meta",
+                status="pass",
+                expected="memory/MEMORY.md",
+                actual="Present",
+                fix_suggestion="",
+                message="Memory system found (memory/MEMORY.md)",
+            )
+        )
     else:
-        checks.append(GotchaCheck(
-            check_id="FORGE-08",
-            check_name="Memory system present",
-            layer="meta",
-            status="warn",
-            expected="memory/MEMORY.md",
-            actual="Not found",
-            fix_suggestion="Create memory/MEMORY.md with project identity and preferences",
-            message="Memory system missing — create memory/MEMORY.md for long-term context",
-        ))
+        checks.append(
+            GotchaCheck(
+                check_id="FORGE-08",
+                check_name="Memory system present",
+                layer="meta",
+                status="warn",
+                expected="memory/MEMORY.md",
+                actual="Not found",
+                fix_suggestion="Create memory/MEMORY.md with project identity and preferences",
+                message="Memory system missing — create memory/MEMORY.md for long-term context",
+            )
+        )
 
     return checks
 
@@ -559,41 +620,47 @@ def _check_database(project_dir: Path) -> List[GotchaCheck]:
     db_dir = project_dir / "tools" / "db"
 
     if not db_dir.is_dir():
-        checks.append(GotchaCheck(
-            check_id="FORGE-09",
-            check_name="Database init script present",
-            layer="meta",
-            status="warn",
-            expected="tools/db/ with database init script",
-            actual="tools/db/ directory not found",
-            fix_suggestion="Create tools/db/init_db.py with schema initialization",
-            message="Database layer missing — no tools/db/ directory",
-        ))
+        checks.append(
+            GotchaCheck(
+                check_id="FORGE-09",
+                check_name="Database init script present",
+                layer="meta",
+                status="warn",
+                expected="tools/db/ with database init script",
+                actual="tools/db/ directory not found",
+                fix_suggestion="Create tools/db/init_db.py with schema initialization",
+                message="Database layer missing — no tools/db/ directory",
+            )
+        )
         return checks
 
     init_scripts = [f for f in db_dir.glob("init*.py")]
     if init_scripts:
-        checks.append(GotchaCheck(
-            check_id="FORGE-09",
-            check_name="Database init script present",
-            layer="meta",
-            status="pass",
-            expected="Database init script in tools/db/",
-            actual=f"Found: {', '.join(f.name for f in init_scripts)}",
-            fix_suggestion="",
-            message=f"Database init script found: {init_scripts[0].name}",
-        ))
+        checks.append(
+            GotchaCheck(
+                check_id="FORGE-09",
+                check_name="Database init script present",
+                layer="meta",
+                status="pass",
+                expected="Database init script in tools/db/",
+                actual=f"Found: {', '.join(f.name for f in init_scripts)}",
+                fix_suggestion="",
+                message=f"Database init script found: {init_scripts[0].name}",
+            )
+        )
     else:
-        checks.append(GotchaCheck(
-            check_id="FORGE-09",
-            check_name="Database init script present",
-            layer="meta",
-            status="warn",
-            expected="init_*.py in tools/db/",
-            actual="No init scripts found",
-            fix_suggestion="Add tools/db/init_db.py (or init_<appname>_db.py)",
-            message="Database init script missing — add init script to tools/db/",
-        ))
+        checks.append(
+            GotchaCheck(
+                check_id="FORGE-09",
+                check_name="Database init script present",
+                layer="meta",
+                status="warn",
+                expected="init_*.py in tools/db/",
+                actual="No init scripts found",
+                fix_suggestion="Add tools/db/init_db.py (or init_<appname>_db.py)",
+                message="Database init script missing — add init script to tools/db/",
+            )
+        )
 
     return checks
 
@@ -606,27 +673,31 @@ def _check_atlas(project_dir: Path) -> List[GotchaCheck]:
     if build_app.exists():
         content = build_app.read_text(encoding="utf-8", errors="replace")
         has_atlas = "ANVIL" in content
-        checks.append(GotchaCheck(
-            check_id="FORGE-10",
-            check_name="ANVIL workflow present",
-            layer="meta",
-            status="pass" if has_atlas else "warn",
-            expected="goals/build_app.md with ANVIL workflow",
-            actual="Present" + (" with ANVIL reference" if has_atlas else " but no ANVIL reference"),
-            fix_suggestion="" if has_atlas else "Ensure build_app.md documents the ANVIL workflow",
-            message="ANVIL workflow " + ("found" if has_atlas else "file exists but ANVIL not referenced"),
-        ))
+        checks.append(
+            GotchaCheck(
+                check_id="FORGE-10",
+                check_name="ANVIL workflow present",
+                layer="meta",
+                status="pass" if has_atlas else "warn",
+                expected="goals/build_app.md with ANVIL workflow",
+                actual="Present" + (" with ANVIL reference" if has_atlas else " but no ANVIL reference"),
+                fix_suggestion="" if has_atlas else "Ensure build_app.md documents the ANVIL workflow",
+                message="ANVIL workflow " + ("found" if has_atlas else "file exists but ANVIL not referenced"),
+            )
+        )
     else:
-        checks.append(GotchaCheck(
-            check_id="FORGE-10",
-            check_name="ANVIL workflow present",
-            layer="meta",
-            status="warn",
-            expected="goals/build_app.md with ANVIL workflow definition",
-            actual="Not found",
-            fix_suggestion="Copy build_app.md from ICDEV™ or create ANVIL workflow documentation",
-            message="ANVIL workflow missing — no goals/build_app.md",
-        ))
+        checks.append(
+            GotchaCheck(
+                check_id="FORGE-10",
+                check_name="ANVIL workflow present",
+                layer="meta",
+                status="warn",
+                expected="goals/build_app.md with ANVIL workflow definition",
+                actual="Not found",
+                fix_suggestion="Copy build_app.md from ICDEV™ or create ANVIL workflow documentation",
+                message="ANVIL workflow missing — no goals/build_app.md",
+            )
+        )
 
     return checks
 
@@ -640,43 +711,50 @@ def _check_coherence(project_dir: Path) -> List[GotchaCheck]:
         sys.path.insert(0, str(project_dir))
         try:
             from tools.workflow.coherence_checker import run_checks
+
             report = run_checks()
         finally:
             sys.path[:] = saved_path
 
         if report.overall_pass:
-            checks.append(GotchaCheck(
+            checks.append(
+                GotchaCheck(
+                    check_id="FORGE-11",
+                    check_name="Coherence Validation",
+                    layer="meta",
+                    status="pass",
+                    expected="All coherence checks pass",
+                    actual=f"{report.passed_checks}/{report.total_checks} passed",
+                    fix_suggestion="",
+                    message=f"Coherence: {report.passed_checks}/{report.total_checks} checks passed",
+                )
+            )
+        else:
+            checks.append(
+                GotchaCheck(
+                    check_id="FORGE-11",
+                    check_name="Coherence Validation",
+                    layer="meta",
+                    status="fail",
+                    expected="All coherence checks pass",
+                    actual=f"{report.failed_checks} failures, {report.warned_checks} warnings",
+                    fix_suggestion="Run: python tools/workflow/coherence_checker.py --all --fix --json",
+                    message=f"Coherence failures: {report.failed_checks} failed, {report.warned_checks} warned",
+                )
+            )
+    except Exception as e:
+        checks.append(
+            GotchaCheck(
                 check_id="FORGE-11",
                 check_name="Coherence Validation",
                 layer="meta",
                 status="pass",
-                expected="All coherence checks pass",
-                actual=f"{report.passed_checks}/{report.total_checks} passed",
+                expected="Coherence checker available",
+                actual=f"Skipped (not available): {e}",
                 fix_suggestion="",
-                message=f"Coherence: {report.passed_checks}/{report.total_checks} checks passed",
-            ))
-        else:
-            checks.append(GotchaCheck(
-                check_id="FORGE-11",
-                check_name="Coherence Validation",
-                layer="meta",
-                status="fail",
-                expected="All coherence checks pass",
-                actual=f"{report.failed_checks} failures, {report.warned_checks} warnings",
-                fix_suggestion="Run: python tools/workflow/coherence_checker.py --all --fix --json",
-                message=f"Coherence failures: {report.failed_checks} failed, {report.warned_checks} warned",
-            ))
-    except Exception as e:
-        checks.append(GotchaCheck(
-            check_id="FORGE-11",
-            check_name="Coherence Validation",
-            layer="meta",
-            status="pass",
-            expected="Coherence checker available",
-            actual=f"Skipped (not available): {e}",
-            fix_suggestion="",
-            message=f"Coherence check skipped: {e}",
-        ))
+                message=f"Coherence check skipped: {e}",
+            )
+        )
 
     return checks
 
@@ -704,6 +782,7 @@ CHECK_REGISTRY = {
 # Main validation function
 # ---------------------------------------------------------------------------
 
+
 def validate(
     project_dir: str | Path,
     checks: Optional[List[str]] = None,
@@ -729,16 +808,18 @@ def validate(
                 results = check_fn(project_path)
                 all_checks.extend(results)
             except Exception as e:
-                all_checks.append(GotchaCheck(
-                    check_id=f"FORGE-ERR-{check_name}",
-                    check_name=f"Error running {check_name}",
-                    layer=check_name,
-                    status="fail",
-                    expected="Check to run without errors",
-                    actual=str(e),
-                    fix_suggestion="Investigate the error and fix the underlying issue",
-                    message=f"Check {check_name} raised an error: {e}",
-                ))
+                all_checks.append(
+                    GotchaCheck(
+                        check_id=f"FORGE-ERR-{check_name}",
+                        check_name=f"Error running {check_name}",
+                        layer=check_name,
+                        status="fail",
+                        expected="Check to run without errors",
+                        actual=str(e),
+                        fix_suggestion="Investigate the error and fix the underlying issue",
+                        message=f"Check {check_name} raised an error: {e}",
+                    )
+                )
 
     # Compute summary
     passed = sum(1 for c in all_checks if c.status == "pass")
@@ -777,6 +858,7 @@ def validate(
 # ---------------------------------------------------------------------------
 # Human-readable output
 # ---------------------------------------------------------------------------
+
 
 def _format_human(report: GotchaReport) -> str:
     """Format report as colored terminal output."""
@@ -831,6 +913,7 @@ def _format_human(report: GotchaReport) -> str:
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
     """CLI entry point."""
     parser = argparse.ArgumentParser(
@@ -844,16 +927,13 @@ def main():
             "  python tools/builder/forge_validator.py --project-dir . --check goals --json\n"
         ),
     )
-    parser.add_argument("--project-dir", required=True,
-                        help="Path to the project directory to validate")
-    parser.add_argument("--json", action="store_true",
-                        help="Output results as JSON")
-    parser.add_argument("--human", action="store_true",
-                        help="Output results as human-readable text")
-    parser.add_argument("--gate", action="store_true",
-                        help="Exit with code 1 if any checks fail (for CI/CD gates)")
-    parser.add_argument("--check", choices=list(CHECK_REGISTRY.keys()) + ["all"],
-                        help="Run a specific check (default: all)")
+    parser.add_argument("--project-dir", required=True, help="Path to the project directory to validate")
+    parser.add_argument("--json", action="store_true", help="Output results as JSON")
+    parser.add_argument("--human", action="store_true", help="Output results as human-readable text")
+    parser.add_argument("--gate", action="store_true", help="Exit with code 1 if any checks fail (for CI/CD gates)")
+    parser.add_argument(
+        "--check", choices=list(CHECK_REGISTRY.keys()) + ["all"], help="Run a specific check (default: all)"
+    )
 
     args = parser.parse_args()
 

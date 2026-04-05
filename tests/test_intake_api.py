@@ -22,6 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 def _init_test_db(db_path):
     """Create tables using the real init script for full schema compatibility."""
     import subprocess
+
     subprocess.run(
         [sys.executable, "tools/db/init_icdev_db.py", "--db-path", str(db_path)],
         cwd=str(Path(__file__).resolve().parent.parent),
@@ -138,15 +139,18 @@ def chat_app(tmp_path):
         c.row_factory = sqlite3.Row
         return c
 
-    with patch.dict(os.environ, {"ICDEV_DB_PATH": str(db_path)}), \
-         patch("tools.dashboard.config.DB_PATH", str(db_path)), \
-         patch("tools.dashboard.auth._get_db", side_effect=lambda: _make_conn()), \
-         patch("tools.dashboard.api.projects._get_db", side_effect=lambda: _make_conn()), \
-         patch("tools.dashboard.api.intake._get_db", side_effect=lambda: _make_conn()), \
-         patch("tools.dashboard.api.intake.DB_PATH", db_path), \
-         patch("tools.requirements.intake_engine.DB_PATH", db_path), \
-         patch("tools.requirements.intake_engine._HAS_LLM", False):
+    with (
+        patch.dict(os.environ, {"ICDEV_DB_PATH": str(db_path)}),
+        patch("tools.dashboard.config.DB_PATH", str(db_path)),
+        patch("tools.dashboard.auth._get_db", side_effect=lambda: _make_conn()),
+        patch("tools.dashboard.api.projects._get_db", side_effect=lambda: _make_conn()),
+        patch("tools.dashboard.api.intake._get_db", side_effect=lambda: _make_conn()),
+        patch("tools.dashboard.api.intake.DB_PATH", db_path),
+        patch("tools.requirements.intake_engine.DB_PATH", db_path),
+        patch("tools.requirements.intake_engine._HAS_LLM", False),
+    ):
         from tools.dashboard.app import create_app
+
         app = create_app()
         app.config["TESTING"] = True
         yield app
@@ -297,9 +301,7 @@ class TestFrameworksAndPersona:
         assert resp.status_code == 200
         data = resp.get_json()
         assert "session_id" in data
-        assert data.get("wizard_context", {}).get("frameworks") == [
-            "fedramp_high", "cmmc_l2", "nist_800_171"
-        ]
+        assert data.get("wizard_context", {}).get("frameworks") == ["fedramp_high", "cmmc_l2", "nist_800_171"]
 
     def test_create_session_with_custom_role(self, client):
         """Custom role name and description are passed to backend."""

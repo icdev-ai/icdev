@@ -118,7 +118,22 @@ def execute_ruff_lint(project_dir: str | None = None) -> dict:
     Dimension: code_quality
     """
     target = project_dir or str(ICDEV_ROOT / "tools")
-    result = _run_tool([sys.executable, "-m", "ruff", "check", target, "--select", "E,F,W", "--ignore", "E402,E501,E731,E741", "--statistics", "--output-format", "json"])  # noqa: E501
+    result = _run_tool(
+        [
+            sys.executable,
+            "-m",
+            "ruff",
+            "check",
+            target,
+            "--select",
+            "E,F,W",
+            "--ignore",
+            "E402,E501,E731,E741",
+            "--statistics",
+            "--output-format",
+            "json",
+        ]
+    )  # noqa: E501
 
     findings = []
     if result["exit_code"] == 0:
@@ -128,7 +143,15 @@ def execute_ruff_lint(project_dir: str | None = None) -> dict:
         status = "fail"
         parsed = _parse_json_output(result["stdout"])
         if isinstance(parsed, list):
-            findings = [{"code": f.get("code", ""), "message": f.get("message", ""), "file": f.get("filename", ""), "line": f.get("location", {}).get("row", 0)} for f in parsed[:50]]  # noqa: E501
+            findings = [
+                {
+                    "code": f.get("code", ""),
+                    "message": f.get("message", ""),
+                    "file": f.get("filename", ""),
+                    "line": f.get("location", {}).get("row", 0),
+                }
+                for f in parsed[:50]
+            ]  # noqa: E501
         score = max(0.0, 100.0 - len(findings) * 2)
 
     return {
@@ -164,7 +187,15 @@ def execute_bandit_sast(project_dir: str | None = None) -> dict:
                     high += 1
                 elif sev == "MEDIUM":
                     medium += 1
-                findings.append({"severity": sev, "test_id": r.get("test_id", ""), "message": r.get("issue_text", ""), "file": r.get("filename", ""), "line": r.get("line_number", 0)})  # noqa: E501
+                findings.append(
+                    {
+                        "severity": sev,
+                        "test_id": r.get("test_id", ""),
+                        "message": r.get("issue_text", ""),
+                        "file": r.get("filename", ""),
+                        "line": r.get("line_number", 0),
+                    }
+                )  # noqa: E501
 
     status = "pass" if (critical == 0 and high == 0) else "fail"
     score = max(0.0, 100.0 - critical * 30 - high * 15 - medium * 5)
@@ -190,7 +221,9 @@ def execute_mypy_typecheck(project_dir: str | None = None) -> dict:
     Dimension: code_quality
     """
     target = project_dir or str(ICDEV_ROOT / "tools" / "qdc_canvas")
-    result = _run_tool([sys.executable, "-m", "mypy", target, "--ignore-missing-imports", "--no-error-summary", "--show-error-codes"])  # noqa: E501
+    result = _run_tool(
+        [sys.executable, "-m", "mypy", target, "--ignore-missing-imports", "--no-error-summary", "--show-error-codes"]
+    )  # noqa: E501
 
     error_count = 0
     if result["exit_code"] != 0:
@@ -262,12 +295,14 @@ def execute_radon_complexity(project_dir: str | None = None) -> dict:
             for filepath, blocks in parsed.items():
                 if isinstance(blocks, list):
                     for b in blocks:
-                        complex_funcs.append({
-                            "file": filepath,
-                            "name": b.get("name", ""),
-                            "complexity": b.get("complexity", 0),
-                            "rank": b.get("rank", "?"),
-                        })
+                        complex_funcs.append(
+                            {
+                                "file": filepath,
+                                "name": b.get("name", ""),
+                                "complexity": b.get("complexity", 0),
+                                "rank": b.get("rank", "?"),
+                            }
+                        )
 
     high_complexity = [f for f in complex_funcs if f.get("complexity", 0) > 15]
     status = "pass" if len(high_complexity) == 0 else "fail"
@@ -373,7 +408,14 @@ def execute_pip_audit() -> dict:
             deps = parsed.get("dependencies", [])
             for d in deps:
                 for v in d.get("vulns", []):
-                    vulns.append({"package": d.get("name", ""), "version": d.get("version", ""), "vuln_id": v.get("id", ""), "fix_versions": v.get("fix_versions", [])})  # noqa: E501
+                    vulns.append(
+                        {
+                            "package": d.get("name", ""),
+                            "version": d.get("version", ""),
+                            "vuln_id": v.get("id", ""),
+                            "fix_versions": v.get("fix_versions", []),
+                        }
+                    )  # noqa: E501
 
     critical = sum(1 for v in vulns if "CRITICAL" in str(v.get("vuln_id", "")).upper())
     high = sum(1 for v in vulns if "HIGH" in str(v.get("vuln_id", "")).upper())
@@ -401,9 +443,20 @@ def execute_pytest_coverage(project_dir: str | None = None) -> dict:
     """
     target = project_dir or str(ICDEV_ROOT)
     result = _run_tool(
-        [sys.executable, "-m", "pytest", "tests/", "-q", "--tb=no", "--no-header", "-x",
-         "--ignore=tests/e2e", "--ignore=tests/genesis_auto",
-         f"--cov={target}/tools/qdc_canvas", f"--cov-report=json:{os.devnull}"],
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "tests/",
+            "-q",
+            "--tb=no",
+            "--no-header",
+            "-x",
+            "--ignore=tests/e2e",
+            "--ignore=tests/genesis_auto",
+            f"--cov={target}/tools/qdc_canvas",
+            f"--cov-report=json:{os.devnull}",
+        ],
         timeout=180,
         cwd=target,
     )
@@ -540,7 +593,12 @@ def auto_fix(gate_result: dict, project_dir: str | None = None) -> dict:
             result = _run_tool([sys.executable, "-m", "pyupgrade", "--py311-plus", str(py_file)])
             if result["exit_code"] == 0:
                 fixed_files.append(str(py_file))
-        return {"gate_id": gate_id, "action": "pyupgrade --py311-plus", "fixed_files": fixed_files, "fixed_at": _utcnow()}
+        return {
+            "gate_id": gate_id,
+            "action": "pyupgrade --py311-plus",
+            "fixed_files": fixed_files,
+            "fixed_at": _utcnow(),
+        }
 
     return {"gate_id": gate_id, "action": "none", "reason": "No auto-fix available for this gate"}
 

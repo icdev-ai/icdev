@@ -27,19 +27,20 @@ class SlackAdapter(NotificationAdapter):
         self.webhook_url = os.environ.get(url_env, "")
         self.channel = config.get("channel", "")
 
-    def send(self, title: str, body: str, severity: str = "info",
-             metadata: Optional[Dict] = None) -> bool:
+    def send(self, title: str, body: str, severity: str = "info", metadata: Optional[Dict] = None) -> bool:
         if not self.webhook_url:
             return False
 
         color = SEVERITY_COLORS.get(severity, "#36a64f")
         payload = {
-            "attachments": [{
-                "color": color,
-                "title": f"[ICDEV™ {severity.upper()}] {title}",
-                "text": body[:3000],
-                "footer": "ICDEV™ Notification Gateway",
-            }]
+            "attachments": [
+                {
+                    "color": color,
+                    "title": f"[ICDEV™ {severity.upper()}] {title}",
+                    "text": body[:3000],
+                    "footer": "ICDEV™ Notification Gateway",
+                }
+            ]
         }
         if self.channel:
             payload["channel"] = self.channel

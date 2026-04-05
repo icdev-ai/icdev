@@ -20,8 +20,13 @@ from functools import wraps
 from pathlib import Path
 
 from flask import (
-    Blueprint, jsonify, redirect, render_template,
-    request, session, g,
+    Blueprint,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    session,
+    g,
 )
 
 logger = logging.getLogger("icdev.pipeline")
@@ -32,9 +37,14 @@ _TEMPLATE_DIR = _ICDEV_ROOT / "tools" / "dashboard" / "templates"
 
 # ── Import pipeline constants ─────────────────────────────────────────────────
 from tools.pipeline.constants import (  # noqa: E402
-    PIPELINE_STAGES, PIPELINE_OBJECTS, CSP_SERVICE_EQUIVALENCE,
-    PIPELINE_COMPLIANCE_FRAMEWORKS, PIPELINE_COMPLIANCE_RULES,
-    compute_owasp_coverage, estimate_pipeline_cost, estimate_execution_time,
+    PIPELINE_STAGES,
+    PIPELINE_OBJECTS,
+    CSP_SERVICE_EQUIVALENCE,
+    PIPELINE_COMPLIANCE_FRAMEWORKS,
+    PIPELINE_COMPLIANCE_RULES,
+    compute_owasp_coverage,
+    estimate_pipeline_cost,
+    estimate_execution_time,
 )
 from tools.common.helpers import row_to_dict, now_isoformat  # noqa: E402
 from tools.pipeline.db.init_db import get_connection, init_db  # noqa: E402
@@ -51,6 +61,7 @@ except ImportError:
 
 try:
     import yaml
+
     _config_path = _ICDEV_ROOT / "args" / "pipeline_canvas_config.yaml"
     if _config_path.exists():
         with open(_config_path, encoding="utf-8") as f:
@@ -69,10 +80,8 @@ def _audit(action, entity_type, entity_id, details="", user_id=None):
     try:
         conn = get_connection()
         conn.execute(
-            "INSERT INTO pc_audit (action, entity_type, entity_id, details, user_id, ts) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (action, entity_type, entity_id, details,
-             user_id or session.get("user_id", "system"), now_isoformat()),
+            "INSERT INTO pc_audit (action, entity_type, entity_id, details, user_id, ts) VALUES (?, ?, ?, ?, ?, ?)",
+            (action, entity_type, entity_id, details, user_id or session.get("user_id", "system"), now_isoformat()),
         )
         conn.commit()
         conn.close()
@@ -81,6 +90,7 @@ def _audit(action, entity_type, entity_id, details="", user_id=None):
 
 
 # ── Blueprint Factory ─────────────────────────────────────────────────────────
+
 
 def create_pipeline_blueprint():
     """Create and return the Pipeline Design Canvas Blueprint.
@@ -113,6 +123,7 @@ def create_pipeline_blueprint():
                     return jsonify({"error": "Authentication required"}), 401
                 return redirect("/login")
             return f(*args, **kwargs)
+
         return decorated
 
     # ── Context processor ─────────────────────────────────────────────────
@@ -136,18 +147,25 @@ def create_pipeline_blueprint():
     @pc_login_required
     def pc_index():
         conn = get_connection()
-        pipelines = [row_to_dict(r) for r in conn.execute(
-            "SELECT id, name, description, classification, target_csp, "
-            "created_at, updated_at FROM pipelines ORDER BY updated_at DESC LIMIT 20"
-        ).fetchall()]
-        templates = [row_to_dict(r) for r in conn.execute(
-            "SELECT id, name, category, description, tags "
-            "FROM pc_templates ORDER BY category, name"
-        ).fetchall()]
-        snippets = [row_to_dict(r) for r in conn.execute(
-            "SELECT id, name, category, description, tags "
-            "FROM pc_snippets ORDER BY category, name"
-        ).fetchall()]
+        pipelines = [
+            row_to_dict(r)
+            for r in conn.execute(
+                "SELECT id, name, description, classification, target_csp, "
+                "created_at, updated_at FROM pipelines ORDER BY updated_at DESC LIMIT 20"
+            ).fetchall()
+        ]
+        templates = [
+            row_to_dict(r)
+            for r in conn.execute(
+                "SELECT id, name, category, description, tags FROM pc_templates ORDER BY category, name"
+            ).fetchall()
+        ]
+        snippets = [
+            row_to_dict(r)
+            for r in conn.execute(
+                "SELECT id, name, category, description, tags FROM pc_snippets ORDER BY category, name"
+            ).fetchall()
+        ]
         conn.close()
         return render_template(
             "pipeline/index.html",
@@ -220,10 +238,16 @@ def create_pipeline_blueprint():
         conn.execute(
             "INSERT INTO pipelines (id, name, description, graph_json, classification, "
             "target_csp, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)",
-            (pipe_id, name, data.get("description", ""),
-             data.get("graph_json", '{"nodes":[],"edges":[]}'),
-             data.get("classification", "public"),
-             data.get("target_csp", "generic"), now_isoformat(), now_isoformat()),
+            (
+                pipe_id,
+                name,
+                data.get("description", ""),
+                data.get("graph_json", '{"nodes":[],"edges":[]}'),
+                data.get("classification", "public"),
+                data.get("target_csp", "generic"),
+                now_isoformat(),
+                now_isoformat(),
+            ),
         )
         conn.commit()
         conn.close()
@@ -251,9 +275,15 @@ def create_pipeline_blueprint():
         conn.execute(
             "UPDATE pipelines SET name=?, description=?, graph_json=?, "
             "classification=?, target_csp=?, updated_at=? WHERE id=?",
-            (data.get("name", ""), data.get("description", ""),
-             data.get("graph_json", "{}"), data.get("classification", "public"),
-             data.get("target_csp", "generic"), now_isoformat(), pipe_id),
+            (
+                data.get("name", ""),
+                data.get("description", ""),
+                data.get("graph_json", "{}"),
+                data.get("classification", "public"),
+                data.get("target_csp", "generic"),
+                now_isoformat(),
+                pipe_id,
+            ),
         )
         conn.commit()
         conn.close()
@@ -261,6 +291,7 @@ def create_pipeline_blueprint():
         # Hook: notify Security Design Canvas of pipeline change
         try:
             from tools.security_canvas.agent import on_pdc_pipeline_saved
+
             graph_raw = data.get("graph_json", "{}")
             graph = json.loads(graph_raw) if isinstance(graph_raw, str) else graph_raw
             on_pdc_pipeline_saved(pipe_id, graph)
@@ -269,6 +300,7 @@ def create_pipeline_blueprint():
         # Incremental KG update: re-extract only if graph_json changed
         try:
             from tools.canvas.kg_builder import rebuild_canvas_kg
+
             rebuild_canvas_kg("pdc", pipe_id)
         except Exception:
             pass
@@ -294,8 +326,7 @@ def create_pipeline_blueprint():
     def pc_api_list_templates():
         conn = get_connection()
         rows = conn.execute(
-            "SELECT id, name, category, description, tags "
-            "FROM pc_templates ORDER BY category, name"
+            "SELECT id, name, category, description, tags FROM pc_templates ORDER BY category, name"
         ).fetchall()
         conn.close()
         result = []
@@ -336,8 +367,15 @@ def create_pipeline_blueprint():
         conn.execute(
             "INSERT INTO pipelines (id, name, description, graph_json, template_id, "
             "created_at, updated_at) VALUES (?,?,?,?,?,?,?)",
-            (pipe_id, f"{tpl['name']} (copy)", tpl.get("description", ""),
-             tpl["graph_json"], tpl_id, now_isoformat(), now_isoformat()),
+            (
+                pipe_id,
+                f"{tpl['name']} (copy)",
+                tpl.get("description", ""),
+                tpl["graph_json"],
+                tpl_id,
+                now_isoformat(),
+                now_isoformat(),
+            ),
         )
         conn.commit()
         conn.close()
@@ -392,9 +430,15 @@ def create_pipeline_blueprint():
         conn.execute(
             "INSERT INTO pipelines (id, name, description, graph_json, classification, "
             "created_at, updated_at) VALUES (?,?,?,?,?,?,?)",
-            (pipe_id, f"{snip['name']} (copy)", snip.get("description", ""),
-             snip["graph_json"], snip.get("classification_level", "CUI"),
-             now_isoformat(), now_isoformat()),
+            (
+                pipe_id,
+                f"{snip['name']} (copy)",
+                snip.get("description", ""),
+                snip["graph_json"],
+                snip.get("classification_level", "CUI"),
+                now_isoformat(),
+                now_isoformat(),
+            ),
         )
         conn.commit()
         conn.close()
@@ -474,6 +518,7 @@ def create_pipeline_blueprint():
         elif analysis_type == "antipatterns":
             try:
                 from tools.pipeline.antipattern_detector import detect_antipatterns
+
                 result = {"findings": detect_antipatterns(nodes, edges), "total": 0}
                 result["total"] = len(result["findings"])
             except Exception as exc:
@@ -507,8 +552,15 @@ def create_pipeline_blueprint():
         conn.execute(
             "INSERT INTO pc_compliance_checks (id, pipeline_id, check_type, passed, failed, findings_json, ran_at) "
             "VALUES (?,?,?,?,?,?,?)",
-            (check_id, pipe_id, "full_audit", result["passed"], result["failed"],
-             json.dumps(result["findings"]), now_isoformat()),
+            (
+                check_id,
+                pipe_id,
+                "full_audit",
+                result["passed"],
+                result["failed"],
+                json.dumps(result["findings"]),
+                now_isoformat(),
+            ),
         )
         conn.commit()
         conn.close()
@@ -525,7 +577,8 @@ def create_pipeline_blueprint():
         conn = get_connection()
         rows = conn.execute(
             "SELECT id, version_num, label, created_by, notes, created_at "
-            "FROM pc_versions WHERE pipeline_id=? ORDER BY version_num DESC", (pipe_id,)
+            "FROM pc_versions WHERE pipeline_id=? ORDER BY version_num DESC",
+            (pipe_id,),
         ).fetchall()
         conn.close()
         return jsonify([row_to_dict(r) for r in rows])
@@ -546,9 +599,16 @@ def create_pipeline_blueprint():
         conn.execute(
             "INSERT INTO pc_versions (id, pipeline_id, version_num, label, graph_json, created_by, notes, created_at) "
             "VALUES (?,?,?,?,?,?,?,?)",
-            (ver_id, pipe_id, max_ver + 1, data.get("label", f"v{max_ver + 1}"),
-             row["graph_json"], session.get("user_id", "system"),
-             data.get("notes", ""), now_isoformat()),
+            (
+                ver_id,
+                pipe_id,
+                max_ver + 1,
+                data.get("label", f"v{max_ver + 1}"),
+                row["graph_json"],
+                session.get("user_id", "system"),
+                data.get("notes", ""),
+                now_isoformat(),
+            ),
         )
         conn.commit()
         conn.close()
@@ -562,9 +622,7 @@ def create_pipeline_blueprint():
     @pc_login_required
     def pc_api_list_boundaries(pipe_id):
         conn = get_connection()
-        rows = conn.execute(
-            "SELECT * FROM pc_boundaries WHERE pipeline_id=?", (pipe_id,)
-        ).fetchall()
+        rows = conn.execute("SELECT * FROM pc_boundaries WHERE pipeline_id=?", (pipe_id,)).fetchall()
         conn.close()
         return jsonify([row_to_dict(r) for r in rows])
 
@@ -578,13 +636,20 @@ def create_pipeline_blueprint():
             "INSERT INTO pc_boundaries (id, pipeline_id, label, classification, color, "
             "fill_opacity, node_ids, boundary_type, pos_x, pos_y, width, height) "
             "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-            (bid, pipe_id, data.get("label", "Stage Boundary"),
-             data.get("classification", "CUI"), data.get("color", "#e94560"),
-             data.get("fill_opacity", 0.08),
-             json.dumps(data.get("node_ids", [])),
-             data.get("boundary_type", "security_zone"),
-             data.get("pos_x", 0), data.get("pos_y", 0),
-             data.get("width", 400), data.get("height", 300)),
+            (
+                bid,
+                pipe_id,
+                data.get("label", "Stage Boundary"),
+                data.get("classification", "CUI"),
+                data.get("color", "#e94560"),
+                data.get("fill_opacity", 0.08),
+                json.dumps(data.get("node_ids", [])),
+                data.get("boundary_type", "security_zone"),
+                data.get("pos_x", 0),
+                data.get("pos_y", 0),
+                data.get("width", 400),
+                data.get("height", 300),
+            ),
         )
         conn.commit()
         conn.close()
@@ -620,9 +685,14 @@ def create_pipeline_blueprint():
 
         try:
             from tools.pipeline.export import export_pipeline
+
             result = export_pipeline(graph, pipe["name"], fmt)
         except ImportError:
-            result = {"format": fmt, "content": f"# Export format '{fmt}' — module not yet loaded", "filename": f"pipeline.{fmt}"}
+            result = {
+                "format": fmt,
+                "content": f"# Export format '{fmt}' — module not yet loaded",
+                "filename": f"pipeline.{fmt}",
+            }
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
 
@@ -649,8 +719,10 @@ def create_pipeline_blueprint():
 
         try:
             from tools.pipeline.iac_validator import validate_deploy_bundle_from_generator
+
             result = validate_deploy_bundle_from_generator(
-                graph, pipe["name"],
+                graph,
+                pipe["name"],
                 target_csp=data.get("target_csp", "auto"),
                 max_layer=int(data.get("max_layer", 3)),
             )
@@ -680,8 +752,10 @@ def create_pipeline_blueprint():
 
         try:
             from tools.pipeline.deploy_generator import generate_deploy_bundle
+
             result = generate_deploy_bundle(
-                graph, pipe["name"],
+                graph,
+                pipe["name"],
                 target_csp=data.get("target_csp", "auto"),
                 options=data.get("options", {}),
             )
@@ -695,12 +769,14 @@ def create_pipeline_blueprint():
         if data.get("format") == "zip":
             import io
             import zipfile
+
             buf = io.BytesIO()
             with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
                 for f in result["files"]:
                     zf.writestr(f"devops-deploy/{f['path']}", f["content"])
             buf.seek(0)
             from flask import send_file
+
             safe = pipe["name"].replace(" ", "-").lower()[:30]
             return send_file(
                 buf,
@@ -709,12 +785,14 @@ def create_pipeline_blueprint():
                 download_name=f"{safe}-deploy-bundle.zip",
             )
 
-        return jsonify({
-            "summary": result["summary"],
-            "files": [f["path"] for f in result["files"]],
-            "manifest": result["manifest"],
-            "file_contents": {f["path"]: f["content"] for f in result["files"]},
-        })
+        return jsonify(
+            {
+                "summary": result["summary"],
+                "files": [f["path"] for f in result["files"]],
+                "manifest": result["manifest"],
+                "file_contents": {f["path"]: f["content"] for f in result["files"]},
+            }
+        )
 
     # ══════════════════════════════════════════════════════════════════════
     # API — HEATMAP DATA
@@ -761,8 +839,7 @@ def create_pipeline_blueprint():
     def pc_api_list_crs(pipe_id):
         conn = get_connection()
         rows = conn.execute(
-            "SELECT * FROM pc_change_requests WHERE pipeline_id=? ORDER BY created_at DESC",
-            (pipe_id,)
+            "SELECT * FROM pc_change_requests WHERE pipeline_id=? ORDER BY created_at DESC", (pipe_id,)
         ).fetchall()
         conn.close()
         return jsonify([row_to_dict(r) for r in rows])
@@ -776,10 +853,17 @@ def create_pipeline_blueprint():
         conn.execute(
             "INSERT INTO pc_change_requests (id, pipeline_id, cr_number, cr_type, status, "
             "markup_json, created_by, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)",
-            (cr_id, pipe_id, data.get("cr_number", f"CR-{cr_id[:4]}"),
-             data.get("cr_type", "modify"), "draft",
-             json.dumps(data.get("markup", [])),
-             session.get("user_id", "system"), now_isoformat(), now_isoformat()),
+            (
+                cr_id,
+                pipe_id,
+                data.get("cr_number", f"CR-{cr_id[:4]}"),
+                data.get("cr_type", "modify"),
+                "draft",
+                json.dumps(data.get("markup", [])),
+                session.get("user_id", "system"),
+                now_isoformat(),
+                now_isoformat(),
+            ),
         )
         conn.commit()
         conn.close()
@@ -850,6 +934,7 @@ def create_pipeline_blueprint():
         # Anti-pattern detection
         try:
             from tools.pipeline.antipattern_detector import detect_antipatterns
+
             antipatterns = detect_antipatterns(nodes, edges)
         except Exception:
             antipatterns = []
@@ -889,7 +974,9 @@ def create_pipeline_blueprint():
         evidence = {
             "build_process_documented": any(t.startswith("cicd-") or t.startswith("build-") for t in node_types),
             "version_controlled_source": any(t.startswith("scm-") for t in node_types),
-            "build_service_authenticated": any(t in ("cicd-tekton", "gcp-cloudbuild", "cicd-gitlab") for t in node_types),
+            "build_service_authenticated": any(
+                t in ("cicd-tekton", "gcp-cloudbuild", "cicd-gitlab") for t in node_types
+            ),
             "build_as_code": any(t in ("cicd-tekton", "cicd-gitlab", "cicd-github-actions") for t in node_types),
             "ephemeral_environment": any(t in ("cicd-tekton", "gcp-cloudbuild") for t in node_types),
             "isolated_builds": any(t in ("build-kaniko", "build-buildah", "cicd-tekton") for t in node_types),
@@ -939,28 +1026,84 @@ def create_pipeline_blueprint():
             "hermetic_build": any(t in ("build-bazel", "build-kaniko") for t in node_types),
             "sbom_generated": any(t.startswith("sbom-") for t in node_types),
             "provenance_attestation": any(t in ("attest-slsa-gen", "attest-in-toto") for t in node_types),
-            "sast_present": any("sast" in t or t in ("scan-sonarqube", "scan-semgrep", "scan-codeql", "scan-bandit", "scan-spotbugs", "aws-codeguru") for t in node_types),
-            "sca_present": any(t in ("scan-sca", "scan-trivy", "scan-grype", "scan-snyk", "scan-dep-check") for t in node_types),
-            "container_scan_before_push": any(t in ("scan-container", "scan-trivy", "scan-anchore", "scan-neuvector", "aws-inspector", "az-defender", "gcp-artifact-analysis", "ibm-vuln-advisor") for t in node_types),
-            "secret_detection_present": any(t in ("scan-secret", "scan-gitleaks", "scan-trufflehog", "scan-detect-secrets") for t in node_types),
+            "sast_present": any(
+                "sast" in t
+                or t
+                in ("scan-sonarqube", "scan-semgrep", "scan-codeql", "scan-bandit", "scan-spotbugs", "aws-codeguru")
+                for t in node_types
+            ),
+            "sca_present": any(
+                t in ("scan-sca", "scan-trivy", "scan-grype", "scan-snyk", "scan-dep-check") for t in node_types
+            ),
+            "container_scan_before_push": any(
+                t
+                in (
+                    "scan-container",
+                    "scan-trivy",
+                    "scan-anchore",
+                    "scan-neuvector",
+                    "aws-inspector",
+                    "az-defender",
+                    "gcp-artifact-analysis",
+                    "ibm-vuln-advisor",
+                )
+                for t in node_types
+            ),
+            "secret_detection_present": any(
+                t in ("scan-secret", "scan-gitleaks", "scan-trufflehog", "scan-detect-secrets") for t in node_types
+            ),
             "iac_scan_present": any(t in ("scan-iac", "scan-checkov", "scan-tfsec", "scan-kics") for t in node_types),
             "dast_present": any(t in ("scan-dast", "scan-zap", "scan-nuclei", "scan-burp") for t in node_types),
             "image_signing": any(t.startswith("sign-") for t in node_types),
             "vuln_threshold_gate": any(t in ("gate-vuln-threshold", "gate-automated") for t in node_types),
-            "admission_controller": any(t in ("policy-opa", "policy-kyverno", "policy-gatekeeper", "policy-kubewarden", "gcp-binary-auth", "ibm-portieris") for t in node_types),
+            "admission_controller": any(
+                t
+                in (
+                    "policy-opa",
+                    "policy-kyverno",
+                    "policy-gatekeeper",
+                    "policy-kubewarden",
+                    "gcp-binary-auth",
+                    "ibm-portieris",
+                )
+                for t in node_types
+            ),
             "prod_approval_gate": any(t in ("gate-manual", "gate-deploy-window") for t in node_types),
-            "progressive_delivery": any(t in ("deploy-canary", "deploy-bluegreen", "deploy-feature-flag") for t in node_types),
-            "cds_for_cross_domain": not any(t.startswith("boundary-") for t in node_types) or any(t.startswith("cds-") for t in node_types),
-            "runtime_monitoring": any(t.startswith("mon-") or t in ("aws-cloudwatch", "az-monitor", "gcp-monitoring", "aws-guardduty", "gcp-scc") for t in node_types),
+            "progressive_delivery": any(
+                t in ("deploy-canary", "deploy-bluegreen", "deploy-feature-flag") for t in node_types
+            ),
+            "cds_for_cross_domain": not any(t.startswith("boundary-") for t in node_types)
+            or any(t.startswith("cds-") for t in node_types),
+            "runtime_monitoring": any(
+                t.startswith("mon-")
+                or t in ("aws-cloudwatch", "az-monitor", "gcp-monitoring", "aws-guardduty", "gcp-scc")
+                for t in node_types
+            ),
             "evidence_collection": any(t in ("comp-evidence", "comp-oscal") for t in node_types),
             "audit_logging": True,  # Pipeline canvas itself provides audit
-            "airgap_vuln_mirror": not any(t.startswith("pipeline-sipr") or t.startswith("pipeline-jwics") for t in node_types) or "vuln-db-mirror" in node_types,
-            "airgap_package_mirror": not any(t.startswith("pipeline-sipr") or t.startswith("pipeline-jwics") for t in node_types) or "package-mirror" in node_types,
+            "airgap_vuln_mirror": not any(
+                t.startswith("pipeline-sipr") or t.startswith("pipeline-jwics") for t in node_types
+            )
+            or "vuln-db-mirror" in node_types,
+            "airgap_package_mirror": not any(
+                t.startswith("pipeline-sipr") or t.startswith("pipeline-jwics") for t in node_types
+            )
+            or "package-mirror" in node_types,
             # SRE checks
-            "slo_defined": any(t.startswith("sre-slo") or t in ("sre-openslo", "sre-sloth", "sre-pyrra", "aws-cw-slo", "gcp-service-mon") for t in node_types),
-            "incident_mgmt_present": any(t.startswith("sre-incident") or t in ("sre-pagerduty", "sre-grafana-oncall", "sre-opsgenie", "aws-incident-mgr") for t in node_types),
+            "slo_defined": any(
+                t.startswith("sre-slo")
+                or t in ("sre-openslo", "sre-sloth", "sre-pyrra", "aws-cw-slo", "gcp-service-mon")
+                for t in node_types
+            ),
+            "incident_mgmt_present": any(
+                t.startswith("sre-incident")
+                or t in ("sre-pagerduty", "sre-grafana-oncall", "sre-opsgenie", "aws-incident-mgr")
+                for t in node_types
+            ),
             "runbooks_present": any(t in ("sre-runbook", "sre-self-heal") for t in node_types),
-            "chaos_present": any(t in ("sre-chaos", "sre-chaos-litmus", "aws-fis", "az-chaos-studio") for t in node_types),
+            "chaos_present": any(
+                t in ("sre-chaos", "sre-chaos-litmus", "aws-fis", "az-chaos-studio") for t in node_types
+            ),
             "dora_tracked": any(t.startswith("sre-dora") for t in node_types),
         }
 
@@ -970,13 +1113,15 @@ def create_pipeline_blueprint():
                 passed += 1
             else:
                 failed += 1
-                findings.append({
-                    "rule_id": rule["id"],
-                    "title": rule["title"],
-                    "severity": rule["severity"],
-                    "category": rule["category"],
-                    "frameworks": rule["frameworks"],
-                })
+                findings.append(
+                    {
+                        "rule_id": rule["id"],
+                        "title": rule["title"],
+                        "severity": rule["severity"],
+                        "category": rule["category"],
+                        "frameworks": rule["frameworks"],
+                    }
+                )
 
         return {"passed": passed, "failed": failed, "findings": findings, "total": passed + failed}
 
@@ -1061,9 +1206,7 @@ def create_pipeline_blueprint():
         from tools.pipeline.remediation import generate_remediation_plan
 
         conn = get_connection()
-        row = conn.execute(
-            "SELECT graph_json FROM pipelines WHERE id=?", (pipeline_id,)
-        ).fetchone()
+        row = conn.execute("SELECT graph_json FROM pipelines WHERE id=?", (pipeline_id,)).fetchone()
         if not row:
             conn.close()
             return jsonify({"error": "Not found"}), 404
@@ -1078,24 +1221,31 @@ def create_pipeline_blueprint():
 
         if not findings:
             conn.close()
-            return jsonify({
-                "phases": [],
-                "total_actions": 0,
-                "auto_fixable": 0,
-                "summary": "No compliance findings — pipeline is fully compliant.",
-                "created_at": now_isoformat(),
-            })
+            return jsonify(
+                {
+                    "phases": [],
+                    "total_actions": 0,
+                    "auto_fixable": 0,
+                    "summary": "No compliance findings — pipeline is fully compliant.",
+                    "created_at": now_isoformat(),
+                }
+            )
 
         plan = generate_remediation_plan(findings, rules=PIPELINE_COMPLIANCE_RULES)
 
-        _audit("REMEDIATION_PLAN", "pipeline", pipeline_id,
-               f"actions={plan['total_actions']}, auto_fixable={plan['auto_fixable']}")
+        _audit(
+            "REMEDIATION_PLAN",
+            "pipeline",
+            pipeline_id,
+            f"actions={plan['total_actions']}, auto_fixable={plan['auto_fixable']}",
+        )
         conn.close()
         return jsonify(plan)
 
     # ── Collaboration (Task 18) ───────────────────────────────────────────────
     import uuid as _uuid_mod
     from tools.canvas.collaboration import CanvasCollabManager as _PDCCollabMgr
+
     _pdc_collab = _PDCCollabMgr("pc")
 
     @bp.route("/api/collab/<design_id>/join", methods=["POST"])

@@ -18,6 +18,7 @@ from typing import Any, Dict, List
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+
 def _count_syllables(word: str) -> int:
     word = word.lower().strip(".,!?;:'\"")
     if not word:
@@ -89,17 +90,34 @@ def _tone_check(text: str) -> Dict[str, Any]:
     text_lower = text.lower()
 
     informal = [
-        "gonna", "wanna", "gotta", "kinda", "sorta", "ain't",
-        "stuff", "things", "basically", "obviously", "super",
-        "pretty much", "a lot of", "tons of",
+        "gonna",
+        "wanna",
+        "gotta",
+        "kinda",
+        "sorta",
+        "ain't",
+        "stuff",
+        "things",
+        "basically",
+        "obviously",
+        "super",
+        "pretty much",
+        "a lot of",
+        "tons of",
     ]
     found = [w for w in informal if w in text_lower]
     if found:
         issues.append(f"informal language: {', '.join(found[:5])}")
 
     weak = [
-        "we think", "we believe", "we hope", "we feel",
-        "maybe", "perhaps", "possibly", "try to",
+        "we think",
+        "we believe",
+        "we hope",
+        "we feel",
+        "maybe",
+        "perhaps",
+        "possibly",
+        "try to",
     ]
     found_weak = [w for w in weak if w in text_lower]
     if found_weak:
@@ -118,7 +136,7 @@ def _ai_detection(text: str) -> Dict[str, Any]:
     lengths = [len(s.split()) for s in sentences]
     mean_len = sum(lengths) / len(lengths)
     variance = sum((length - mean_len) ** 2 for length in lengths) / len(lengths)
-    burstiness = (variance ** 0.5) / mean_len if mean_len > 0 else 0
+    burstiness = (variance**0.5) / mean_len if mean_len > 0 else 0
 
     # Higher burstiness = more sentence length variation = more human-like
     # Lower burstiness = uniform sentence lengths = more AI-like
@@ -184,6 +202,7 @@ def _ngrams(text: str, n: int) -> set:
 # Public API
 # ---------------------------------------------------------------------------
 
+
 def analyze(
     text: str,
     mode: str = "inline",
@@ -248,9 +267,7 @@ def analyze(
         "plagiarism": 0.15,
         "ai_detection": 0.15,
     }
-    quality_score = round(
-        sum(checks[k]["score"] * w for k, w in weights.items()), 3
-    )
+    quality_score = round(sum(checks[k]["score"] * w for k, w in weights.items()), 3)
 
     # Collect findings
     findings: List[Dict[str, Any]] = []

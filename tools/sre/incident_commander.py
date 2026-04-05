@@ -27,8 +27,7 @@ CONFIG_PATH = BASE_DIR / "args" / "sre_config.yaml"
 
 SEVERITIES = ("sev1", "sev2", "sev3", "sev4")
 INCIDENT_STATUSES = ("detected", "triaging", "mitigating", "resolved", "postmortem", "closed")
-EVENT_TYPES = ("created", "triaged", "escalated", "mitigated", "resolved",
-               "postmortem_added", "closed", "note_added")
+EVENT_TYPES = ("created", "triaged", "escalated", "mitigated", "resolved", "postmortem_added", "closed", "note_added")
 
 
 def _load_config() -> dict:
@@ -47,9 +46,15 @@ def _get_incident_config() -> dict:
         "auto_escalate_sev1": cfg.get("auto_escalate_sev1", True),
         "escalation_timeout_minutes": cfg.get("escalation_timeout_minutes", 15),
         "postmortem_required_severity": cfg.get("postmortem_required_severity", ["sev1", "sev2"]),
-        "mttr_targets": cfg.get("mttr_targets", {
-            "sev1": 900, "sev2": 3600, "sev3": 14400, "sev4": 86400,
-        }),
+        "mttr_targets": cfg.get(
+            "mttr_targets",
+            {
+                "sev1": 900,
+                "sev2": 3600,
+                "sev3": 14400,
+                "sev4": 86400,
+            },
+        ),
     }
 
 
@@ -89,8 +94,9 @@ def init_tables(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
-def _add_event(conn: sqlite3.Connection, incident_id: str, event_type: str,
-               description: str, actor: str = "system") -> str:
+def _add_event(
+    conn: sqlite3.Connection, incident_id: str, event_type: str, description: str, actor: str = "system"
+) -> str:
     """Add an event to an incident's event log (append-only).
 
     Returns:
@@ -114,13 +120,15 @@ def _add_event(conn: sqlite3.Connection, incident_id: str, event_type: str,
 
     if timeline:
         tl = json.loads(timeline[0]) if timeline[0] else []
-        tl.append({
-            "event_id": event_id,
-            "event_type": event_type,
-            "description": description,
-            "actor": actor,
-            "timestamp": now,
-        })
+        tl.append(
+            {
+                "event_id": event_id,
+                "event_type": event_type,
+                "description": description,
+                "actor": actor,
+                "timestamp": now,
+            }
+        )
         conn.execute(
             "UPDATE sre_incidents SET timeline_json = ? WHERE id = ?",
             (json.dumps(tl), incident_id),
@@ -129,8 +137,7 @@ def _add_event(conn: sqlite3.Connection, incident_id: str, event_type: str,
     return event_id
 
 
-def create_incident(title: str, severity: str, service: str,
-                    alert_source: str = None) -> dict:
+def create_incident(title: str, severity: str, service: str, alert_source: str = None) -> dict:
     """Create a new incident.
 
     Args:
@@ -152,12 +159,16 @@ def create_incident(title: str, severity: str, service: str,
     conn = get_connection()
     init_tables(conn)
 
-    initial_timeline = json.dumps([{
-        "event_type": "created",
-        "description": f"Incident created: {title}",
-        "actor": "system",
-        "timestamp": now,
-    }])
+    initial_timeline = json.dumps(
+        [
+            {
+                "event_type": "created",
+                "description": f"Incident created: {title}",
+                "actor": "system",
+                "timestamp": now,
+            }
+        ]
+    )
 
     conn.execute(
         """INSERT INTO sre_incidents
@@ -167,8 +178,7 @@ def create_incident(title: str, severity: str, service: str,
         (incident_id, title, severity, service, alert_source, initial_timeline, now),
     )
 
-    _add_event(conn, incident_id, "created",
-               f"Incident created: {title} (severity={severity}, service={service})")
+    _add_event(conn, incident_id, "created", f"Incident created: {title} (severity={severity}, service={service})")
 
     # Auto-escalate sev1 if configured
     escalated = False
@@ -177,8 +187,7 @@ def create_incident(title: str, severity: str, service: str,
             "UPDATE sre_incidents SET escalated = 1 WHERE id = ?",
             (incident_id,),
         )
-        _add_event(conn, incident_id, "escalated",
-                    "Auto-escalated: sev1 incident")
+        _add_event(conn, incident_id, "escalated", "Auto-escalated: sev1 incident")
         escalated = True
 
     conn.commit()
@@ -323,8 +332,7 @@ def resolve_incident(incident_id: str, mitigation_steps: list) -> dict:
     )
 
     steps_desc = "; ".join(mitigation_steps) if mitigation_steps else "No steps recorded"
-    _add_event(conn, incident_id, "resolved",
-               f"Resolved (MTTR: {mttr_seconds}s). Steps: {steps_desc}")
+    _add_event(conn, incident_id, "resolved", f"Resolved (MTTR: {mttr_seconds}s). Steps: {steps_desc}")
     conn.commit()
 
     logger.info("Resolved incident %s (MTTR: %ds)", incident_id, mttr_seconds)
@@ -363,8 +371,7 @@ def add_postmortem(incident_id: str, url: str, lessons_learned: str) -> dict:
         "UPDATE sre_incidents SET status = 'postmortem', postmortem_url = ? WHERE id = ?",
         (url, incident_id),
     )
-    _add_event(conn, incident_id, "postmortem_added",
-               f"Postmortem added: {url}. Lessons: {lessons_learned}")
+    _add_event(conn, incident_id, "postmortem_added", f"Postmortem added: {url}. Lessons: {lessons_learned}")
     conn.commit()
 
     logger.info("Added postmortem to incident %s", incident_id)
@@ -426,10 +433,25 @@ def get_incident(incident_id: str) -> dict:
     conn = get_connection()
     init_tables(conn)
 
-    cols = ["id", "title", "severity", "status", "service_name", "alert_source",
-            "alert_id", "root_cause", "mitigation_steps", "timeline_json",
-            "assigned_to", "escalated", "mttr_seconds", "postmortem_url",
-            "created_at", "resolved_at", "closed_at"]
+    cols = [
+        "id",
+        "title",
+        "severity",
+        "status",
+        "service_name",
+        "alert_source",
+        "alert_id",
+        "root_cause",
+        "mitigation_steps",
+        "timeline_json",
+        "assigned_to",
+        "escalated",
+        "mttr_seconds",
+        "postmortem_url",
+        "created_at",
+        "resolved_at",
+        "closed_at",
+    ]
 
     row = conn.execute(
         f"SELECT {', '.join(cols)} FROM sre_incidents WHERE id = ?",  # nosec B608
@@ -477,8 +499,17 @@ def list_incidents(status_filter: str = None) -> list:
     conn = get_connection()
     init_tables(conn)
 
-    cols = ["id", "title", "severity", "status", "service_name",
-            "escalated", "mttr_seconds", "created_at", "resolved_at"]
+    cols = [
+        "id",
+        "title",
+        "severity",
+        "status",
+        "service_name",
+        "escalated",
+        "mttr_seconds",
+        "created_at",
+        "resolved_at",
+    ]
 
     query = f"SELECT {', '.join(cols)} FROM sre_incidents"  # nosec B608
     params = []
@@ -549,9 +580,7 @@ def get_mttr_stats() -> dict:
             }
 
     # Overall pass/fail
-    any_missing_target = any(
-        not s["meeting_target"] for s in stats.values() if s["count"] > 0
-    )
+    any_missing_target = any(not s["meeting_target"] for s in stats.values() if s["count"] > 0)
 
     return {
         "status": "ok",
@@ -582,24 +611,28 @@ def check_incident_health() -> dict:
 
     failing = []
     for row in open_high:
-        failing.append({
-            "incident_id": row[0],
-            "title": row[1],
-            "severity": row[2],
-            "status": row[3],
-            "created_at": row[4],
-        })
+        failing.append(
+            {
+                "incident_id": row[0],
+                "title": row[1],
+                "severity": row[2],
+                "status": row[3],
+                "created_at": row[4],
+            }
+        )
 
     # Check MTTR targets
     mttr = get_mttr_stats()
     mttr_issues = []
     for sev, data in mttr.get("mttr_by_severity", {}).items():
         if data["count"] > 0 and not data["meeting_target"]:
-            mttr_issues.append({
-                "severity": sev,
-                "avg_mttr_seconds": data["avg_seconds"],
-                "target_seconds": data["target_seconds"],
-            })
+            mttr_issues.append(
+                {
+                    "severity": sev,
+                    "avg_mttr_seconds": data["avg_seconds"],
+                    "target_seconds": data["target_seconds"],
+                }
+            )
 
     passed = len(failing) == 0 and len(mttr_issues) == 0
     return {
@@ -658,7 +691,9 @@ def main():
             if result["mttr_issues"]:
                 print("  MTTR target issues:")
                 for issue in result["mttr_issues"]:
-                    print(f"    - {issue['severity']}: avg {issue['avg_mttr_seconds']}s > target {issue['target_seconds']}s")
+                    print(
+                        f"    - {issue['severity']}: avg {issue['avg_mttr_seconds']}s > target {issue['target_seconds']}s"
+                    )
         if not result["passed"]:
             sys.exit(1)
 
@@ -753,7 +788,9 @@ def main():
             for sev, data in result["mttr_by_severity"].items():
                 if data["count"] > 0:
                     met = "MET" if data["meeting_target"] else "MISSED"
-                    print(f"  {sev}: avg={data['avg_seconds']}s, target={data['target_seconds']}s [{met}] (n={data['count']})")
+                    print(
+                        f"  {sev}: avg={data['avg_seconds']}s, target={data['target_seconds']}s [{met}] (n={data['count']})"
+                    )
                 else:
                     print(f"  {sev}: no resolved incidents")
 

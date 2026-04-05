@@ -27,6 +27,7 @@ logger = logging.getLogger("icdev.extensions.rag_context_chat")
 # Hook handler
 # ---------------------------------------------------------------------------
 
+
 def handle(context: dict) -> dict:
     """chat_message_after handler — inject RAG source attribution."""
     # Only assistant responses
@@ -51,10 +52,7 @@ def handle(context: dict) -> dict:
     result["rag_advisory"] = {
         "gap_id": "rag_sources_used",
         "severity": "info",
-        "message": (
-            f"This response was enriched with {len(rag_sources)} knowledge source(s):\n"
-            f"{sources_text}"
-        ),
+        "message": (f"This response was enriched with {len(rag_sources)} knowledge source(s):\n{sources_text}"),
         "action": "",
         "source_count": len(rag_sources),
     }

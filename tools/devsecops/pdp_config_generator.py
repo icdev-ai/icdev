@@ -44,6 +44,7 @@ except ImportError:
 # Config and DB helpers
 # ---------------------------------------------------------------------------
 
+
 def _load_config() -> dict:
     """Load ZTA config from args/zta_config.yaml (reads pdp_references section)."""
     config_path = BASE_DIR / "args" / "zta_config.yaml"
@@ -110,10 +111,7 @@ def _get_profile(project_id: str) -> dict:
     """Retrieve DevSecOps profile for a project."""
     conn = _get_db()
     try:
-        row = conn.execute(
-            "SELECT * FROM devsecops_profiles WHERE project_id = ?",
-            (project_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM devsecops_profiles WHERE project_id = ?", (project_id,)).fetchone()
         if not row:
             return {}
         return {
@@ -130,8 +128,7 @@ def _get_project_info(project_id: str) -> dict:
     conn = _get_db()
     try:
         row = conn.execute(
-            "SELECT name, classification, impact_level FROM projects WHERE id = ?",
-            (project_id,)
+            "SELECT name, classification, impact_level FROM projects WHERE id = ?", (project_id,)
         ).fetchone()
         if row:
             return dict(row)
@@ -151,6 +148,7 @@ def _find_pdp_reference(config: dict, pdp_type: str) -> dict:
 # ---------------------------------------------------------------------------
 # PDP reference generation (D124: ICDEV™ documents but does NOT implement PDP)
 # ---------------------------------------------------------------------------
+
 
 def generate_pdp_reference(project_id: str, pdp_type: str) -> dict:
     """Document external PDP integration point for a project.
@@ -172,8 +170,12 @@ def generate_pdp_reference(project_id: str, pdp_type: str) -> dict:
         documentation, deployment_notes.
     """
     valid_types = [
-        "disa_icam", "zscaler", "palo_alto_prisma",
-        "crowdstrike", "microsoft_entra", "custom",
+        "disa_icam",
+        "zscaler",
+        "palo_alto_prisma",
+        "crowdstrike",
+        "microsoft_entra",
+        "custom",
     ]
     if pdp_type not in valid_types:
         return {
@@ -358,9 +360,9 @@ def _build_pdp_documentation(pdp_type: str, ref: dict, project: dict) -> dict:
     docs = {
         "disa_icam": {
             "summary": "DISA ICAM (Identity, Credential, and Access Management) provides DoD-wide identity services. "
-                       "ICDEV™ generates Istio/Linkerd PEP configurations that delegate authorization decisions "
-                       "to the DISA ICAM ext_authz gRPC service. The DISA ICAM service evaluates OIDC tokens "
-                       "and CAC/PIV certificates to grant or deny access.",
+            "ICDEV™ generates Istio/Linkerd PEP configurations that delegate authorization decisions "
+            "to the DISA ICAM ext_authz gRPC service. The DISA ICAM service evaluates OIDC tokens "
+            "and CAC/PIV certificates to grant or deny access.",
             "customer_responsibilities": [
                 "Deploy DISA ICAM ext_authz gRPC sidecar or service in the cluster",
                 "Configure OIDC relying party registration with DISA ICAM",
@@ -381,9 +383,9 @@ def _build_pdp_documentation(pdp_type: str, ref: dict, project: dict) -> dict:
         },
         "zscaler": {
             "summary": "Zscaler Private Access (ZPA) provides Zero Trust Network Access. "
-                       "ICDEV™ generates K8s Connector DaemonSet manifests and PEP network policies "
-                       "that route traffic through Zscaler's cloud enforcement points. "
-                       "Policy decisions occur in the Zscaler cloud — not within the cluster.",
+            "ICDEV™ generates K8s Connector DaemonSet manifests and PEP network policies "
+            "that route traffic through Zscaler's cloud enforcement points. "
+            "Policy decisions occur in the Zscaler cloud — not within the cluster.",
             "customer_responsibilities": [
                 "Provision Zscaler ZPA tenant and configure app segments",
                 "Generate provisioning key for App Connector",
@@ -404,9 +406,9 @@ def _build_pdp_documentation(pdp_type: str, ref: dict, project: dict) -> dict:
         },
         "palo_alto_prisma": {
             "summary": "Palo Alto Prisma Access combines ZTNA and cloud-delivered NGFW. "
-                       "Prisma Cloud Defender provides runtime container security. "
-                       "ICDEV™ generates Defender DaemonSet manifests and PEP policies. "
-                       "Policy enforcement occurs in Prisma Access cloud.",
+            "Prisma Cloud Defender provides runtime container security. "
+            "ICDEV™ generates Defender DaemonSet manifests and PEP policies. "
+            "Policy enforcement occurs in Prisma Access cloud.",
             "customer_responsibilities": [
                 "Provision Palo Alto Prisma Access tenant",
                 "Configure application onboarding in Panorama",
@@ -427,9 +429,9 @@ def _build_pdp_documentation(pdp_type: str, ref: dict, project: dict) -> dict:
         },
         "crowdstrike": {
             "summary": "CrowdStrike Falcon provides device trust and endpoint detection. "
-                       "ICDEV™ generates Falcon Sensor DaemonSet manifests and device posture "
-                       "check configurations. The Falcon API is called at admission time to "
-                       "verify device ZTA score before granting access.",
+            "ICDEV™ generates Falcon Sensor DaemonSet manifests and device posture "
+            "check configurations. The Falcon API is called at admission time to "
+            "verify device ZTA score before granting access.",
             "customer_responsibilities": [
                 "Provision CrowdStrike Falcon subscription with Zero Trust Assessment module",
                 "Generate API credentials (Client ID + Secret) for posture checks",
@@ -450,9 +452,9 @@ def _build_pdp_documentation(pdp_type: str, ref: dict, project: dict) -> dict:
         },
         "microsoft_entra": {
             "summary": "Microsoft Entra ID (formerly Azure AD) provides cloud identity and conditional access. "
-                       "ICDEV™ generates Istio/Linkerd PEP configurations that validate Entra ID JWT tokens "
-                       "and enforce conditional access policies. Phishing-resistant MFA and device compliance "
-                       "checks are enforced through Entra conditional access — not by ICDEV™.",
+            "ICDEV™ generates Istio/Linkerd PEP configurations that validate Entra ID JWT tokens "
+            "and enforce conditional access policies. Phishing-resistant MFA and device compliance "
+            "checks are enforced through Entra conditional access — not by ICDEV™.",
             "customer_responsibilities": [
                 "Register application in Microsoft Entra ID tenant",
                 "Configure conditional access policies (MFA, device compliance, risk-based)",
@@ -473,8 +475,8 @@ def _build_pdp_documentation(pdp_type: str, ref: dict, project: dict) -> dict:
         },
         "custom": {
             "summary": "Customer-provided PDP integration. ICDEV™ generates PEP configurations "
-                       "with placeholder endpoints that the customer must update. The PDP must "
-                       "implement the Envoy ext_authz v3 gRPC API to integrate with Istio/Linkerd.",
+            "with placeholder endpoints that the customer must update. The PDP must "
+            "implement the Envoy ext_authz v3 gRPC API to integrate with Istio/Linkerd.",
             "customer_responsibilities": [
                 "Implement or deploy a PDP that exposes Envoy ext_authz v3 gRPC API",
                 "Update placeholder endpoint in generated Istio AuthorizationPolicy",
@@ -566,6 +568,7 @@ def _build_deployment_notes(pdp_type: str, ref: dict, project: dict) -> list:
 # PEP config generation (Istio and Linkerd)
 # ---------------------------------------------------------------------------
 
+
 def generate_pep_config(project_id: str, mesh: str = "istio", pdp_type: str = "disa_icam") -> dict:
     """Generate PEP (Policy Enforcement Point) configurations for the service mesh.
 
@@ -591,8 +594,12 @@ def generate_pep_config(project_id: str, mesh: str = "istio", pdp_type: str = "d
         }
 
     valid_pdp_types = [
-        "disa_icam", "zscaler", "palo_alto_prisma",
-        "crowdstrike", "microsoft_entra", "custom",
+        "disa_icam",
+        "zscaler",
+        "palo_alto_prisma",
+        "crowdstrike",
+        "microsoft_entra",
+        "custom",
     ]
     if pdp_type not in valid_pdp_types:
         return {
@@ -889,6 +896,7 @@ def _get_grpc_service(pdp_type: str) -> str:
 # Device trust config generation
 # ---------------------------------------------------------------------------
 
+
 def generate_device_trust_config(project_id: str, mdm_type: str = "crowdstrike") -> dict:
     """Generate device posture checking integration config.
 
@@ -1172,10 +1180,9 @@ def _build_posture_policy(mdm_type: str, project: dict) -> dict:
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
-    parser = argparse.ArgumentParser(
-        description="PDP/PEP Configuration Generator for ZTA (ADR D124)"
-    )
+    parser = argparse.ArgumentParser(description="PDP/PEP Configuration Generator for ZTA (ADR D124)")
     parser.add_argument("--project-id", required=True, help="Project identifier")
     parser.add_argument(
         "--pdp-type",

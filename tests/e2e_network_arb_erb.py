@@ -52,10 +52,12 @@ class TestResult:
 
     def summary(self):
         total = len(self.passed) + len(self.failed)
-        rate = f"{len(self.passed)/total*100:.1f}%" if total else "0%"
+        rate = f"{len(self.passed) / total * 100:.1f}%" if total else "0%"
         return {
-            "total": total, "passed": len(self.passed),
-            "failed": len(self.failed), "pass_rate": rate,
+            "total": total,
+            "passed": len(self.passed),
+            "failed": len(self.failed),
+            "pass_rate": rate,
             "failures": self.failed,
         }
 
@@ -76,9 +78,7 @@ def check_js_errors(driver):
         for entry in driver.get_log("browser"):
             if entry.get("level") == "SEVERE":
                 msg = entry.get("message", "")
-                if any(x in msg.lower() for x in [
-                    "favicon", "401", "404", "failed to load resource"
-                ]):
+                if any(x in msg.lower() for x in ["favicon", "401", "404", "failed to load resource"]):
                     continue
                 errors.append(msg)
     except Exception:
@@ -128,96 +128,130 @@ def run_tests():
         time.sleep(2)
 
         # Setup: create project + topology for testing
-        d = api(driver, "POST", "/network/api/projects", {
-            "name": "E2E ARB/ERB Test", "status": "draft", "owner": "e2e"
-        })
+        d = api(
+            driver, "POST", "/network/api/projects", {"name": "E2E ARB/ERB Test", "status": "draft", "owner": "e2e"}
+        )
         pid = d.get("id")
 
         # Create a topology for clear-all regression test
-        topo_d = api(driver, "POST", "/network/api/topologies", {
-            "name": "E2E ClearAll Test Topo",
-            "graph_json": {"nodes": [{"id": "n1", "label": "R1",
-                           "type": "router", "x": 0, "y": 0}], "edges": []}
-        })
-        test_topo_id = topo_d.get("id")
+        topo_d = api(
+            driver,
+            "POST",
+            "/network/api/topologies",
+            {
+                "name": "E2E ClearAll Test Topo",
+                "graph_json": {"nodes": [{"id": "n1", "label": "R1", "type": "router", "x": 0, "y": 0}], "edges": []},
+            },
+        )
+        topo_d.get("id")
 
         # ── 1. Alternatives: criteria + options ───────────────────────────
         try:
-            api(driver, "POST",
+            api(
+                driver,
+                "POST",
                 f"/network/api/projects/{pid}/alternatives/criteria",
-                {"name": "Cost", "weight_pct": 30, "sort_order": 1})
-            api(driver, "POST",
+                {"name": "Cost", "weight_pct": 30, "sort_order": 1},
+            )
+            api(
+                driver,
+                "POST",
                 f"/network/api/projects/{pid}/alternatives/criteria",
-                {"name": "Performance", "weight_pct": 25, "sort_order": 2})
-            api(driver, "POST",
+                {"name": "Performance", "weight_pct": 25, "sort_order": 2},
+            )
+            api(
+                driver,
+                "POST",
                 f"/network/api/projects/{pid}/alternatives/criteria",
-                {"name": "Redundancy", "weight_pct": 20, "sort_order": 3})
-            r = api(driver, "POST",
-                    f"/network/api/projects/{pid}/alternatives/options",
-                    {"option_name": "SD-WAN", "description": "Software-defined WAN",
-                     "is_recommended": True,
-                     "scores": {"Cost": {"score": 7}, "Performance": {"score": 8},
-                                "Redundancy": {"score": 9}}})
-            assert r.get("id")
-            api(driver, "POST",
+                {"name": "Redundancy", "weight_pct": 20, "sort_order": 3},
+            )
+            r = api(
+                driver,
+                "POST",
                 f"/network/api/projects/{pid}/alternatives/options",
-                {"option_name": "MPLS", "description": "Traditional MPLS",
-                 "scores": {"Cost": {"score": 4}, "Performance": {"score": 9},
-                            "Redundancy": {"score": 7}}})
+                {
+                    "option_name": "SD-WAN",
+                    "description": "Software-defined WAN",
+                    "is_recommended": True,
+                    "scores": {"Cost": {"score": 7}, "Performance": {"score": 8}, "Redundancy": {"score": 9}},
+                },
+            )
+            assert r.get("id")
+            api(
+                driver,
+                "POST",
+                f"/network/api/projects/{pid}/alternatives/options",
+                {
+                    "option_name": "MPLS",
+                    "description": "Traditional MPLS",
+                    "scores": {"Cost": {"score": 4}, "Performance": {"score": 9}, "Redundancy": {"score": 7}},
+                },
+            )
             results.ok("alternatives_create")
         except Exception as e:
             results.fail("alternatives_create", e)
 
         # ── 2. Weighted total ─────────────────────────────────────────────
         try:
-            d = api(driver, "GET",
-                    f"/network/api/projects/{pid}/alternatives")
+            d = api(driver, "GET", f"/network/api/projects/{pid}/alternatives")
             opts = d.get("options", [])
             assert len(opts) >= 2
             sdwan = next(o for o in opts if o["option_name"] == "SD-WAN")
             assert sdwan["total_score"] > 0
-            results.ok("alternatives_weighted_score",
-                        f"SD-WAN={sdwan['total_score']}")
+            results.ok("alternatives_weighted_score", f"SD-WAN={sdwan['total_score']}")
         except Exception as e:
             results.fail("alternatives_weighted_score", e)
 
         # ── 3. Risk Register CRUD ─────────────────────────────────────────
         try:
-            r = api(driver, "POST",
-                    f"/network/api/projects/{pid}/risks",
-                    {"title": "Circuit lead time delay",
-                     "category": "schedule", "probability": "high",
-                     "impact": "high", "mitigation": "Order early",
-                     "owner": "PM"})
+            r = api(
+                driver,
+                "POST",
+                f"/network/api/projects/{pid}/risks",
+                {
+                    "title": "Circuit lead time delay",
+                    "category": "schedule",
+                    "probability": "high",
+                    "impact": "high",
+                    "mitigation": "Order early",
+                    "owner": "PM",
+                },
+            )
             risk_id = r.get("id")
             assert risk_id
-            api(driver, "PUT", f"/network/api/risks/{risk_id}",
-                {"status": "mitigated"})
+            api(driver, "PUT", f"/network/api/risks/{risk_id}", {"status": "mitigated"})
             results.ok("risk_register_crud")
         except Exception as e:
             results.fail("risk_register_crud", e)
 
         # ── 4. Risk score auto-computed ───────────────────────────────────
         try:
-            risks = api(driver, "GET",
-                        f"/network/api/projects/{pid}/risks")
+            risks = api(driver, "GET", f"/network/api/projects/{pid}/risks")
             assert len(risks) >= 1
             r = risks[0]
             assert r.get("risk_score") == 9  # high(3) * high(3)
-            results.ok("risk_score_computed",
-                        f"score={r['risk_score']}")
+            results.ok("risk_score_computed", f"score={r['risk_score']}")
         except Exception as e:
             results.fail("risk_score_computed", e)
 
         # ── 5. Enhanced BOM CRUD ──────────────────────────────────────────
         try:
-            r = api(driver, "POST",
-                    f"/network/api/projects/{pid}/bom-items",
-                    {"category": "hardware", "vendor": "Cisco",
-                     "model": "ASR1001-X", "part_number": "ASR1001-X=",
-                     "quantity": 2, "unit_cost": 15000,
-                     "annual_maint": 3000, "lead_time_days": 30,
-                     "contract_vehicle": "GSA"})
+            r = api(
+                driver,
+                "POST",
+                f"/network/api/projects/{pid}/bom-items",
+                {
+                    "category": "hardware",
+                    "vendor": "Cisco",
+                    "model": "ASR1001-X",
+                    "part_number": "ASR1001-X=",
+                    "quantity": 2,
+                    "unit_cost": 15000,
+                    "annual_maint": 3000,
+                    "lead_time_days": 30,
+                    "contract_vehicle": "GSA",
+                },
+            )
             bom_id = r.get("id")
             assert bom_id
             results.ok("bom_item_create")
@@ -226,87 +260,97 @@ def run_tests():
 
         # ── 6. BOM totals ─────────────────────────────────────────────────
         try:
-            d = api(driver, "GET",
-                    f"/network/api/projects/{pid}/bom-items")
+            d = api(driver, "GET", f"/network/api/projects/{pid}/bom-items")
             assert d.get("totals", {}).get("hardware") == 30000
             assert d["totals"]["annual_maint"] == 3000
-            results.ok("bom_totals",
-                        f"hw=${d['totals']['hardware']}, "
-                        f"maint=${d['totals']['annual_maint']}")
+            results.ok("bom_totals", f"hw=${d['totals']['hardware']}, maint=${d['totals']['annual_maint']}")
         except Exception as e:
             results.fail("bom_totals", e)
 
         # ── 7. Lab Test Results ───────────────────────────────────────────
         try:
-            r = api(driver, "POST",
-                    f"/network/api/projects/{pid}/lab-tests",
-                    {"test_name": "OSPF Convergence",
-                     "category": "failover",
-                     "methodology": "Kill primary link, measure convergence",
-                     "result": "pass",
-                     "measurements": {"convergence_ms": 450,
-                                      "throughput_mbps": 9200},
-                     "tested_by": "e2e-tester"})
+            r = api(
+                driver,
+                "POST",
+                f"/network/api/projects/{pid}/lab-tests",
+                {
+                    "test_name": "OSPF Convergence",
+                    "category": "failover",
+                    "methodology": "Kill primary link, measure convergence",
+                    "result": "pass",
+                    "measurements": {"convergence_ms": 450, "throughput_mbps": 9200},
+                    "tested_by": "e2e-tester",
+                },
+            )
             assert r.get("id")
-            tests = api(driver, "GET",
-                        f"/network/api/projects/{pid}/lab-tests")
+            tests = api(driver, "GET", f"/network/api/projects/{pid}/lab-tests")
             assert len(tests) >= 1
-            results.ok("lab_tests_crud",
-                        f"result={tests[0]['result']}")
+            results.ok("lab_tests_crud", f"result={tests[0]['result']}")
         except Exception as e:
             results.fail("lab_tests_crud", e)
 
         # ── 8. Migration Plan ─────────────────────────────────────────────
         try:
-            r1 = api(driver, "POST",
-                     f"/network/api/projects/{pid}/migration-phases",
-                     {"phase_num": 1, "title": "Pre-staging",
-                      "duration_days": 5, "rollback_criteria": "N/A"})
-            r2 = api(driver, "POST",
-                     f"/network/api/projects/{pid}/migration-phases",
-                     {"phase_num": 2, "title": "Cutover",
-                      "duration_days": 1, "parallel_run": True,
-                      "rollback_criteria": "Revert BGP to old path",
-                      "dependencies": [r1.get("id")]})
+            r1 = api(
+                driver,
+                "POST",
+                f"/network/api/projects/{pid}/migration-phases",
+                {"phase_num": 1, "title": "Pre-staging", "duration_days": 5, "rollback_criteria": "N/A"},
+            )
+            r2 = api(
+                driver,
+                "POST",
+                f"/network/api/projects/{pid}/migration-phases",
+                {
+                    "phase_num": 2,
+                    "title": "Cutover",
+                    "duration_days": 1,
+                    "parallel_run": True,
+                    "rollback_criteria": "Revert BGP to old path",
+                    "dependencies": [r1.get("id")],
+                },
+            )
             assert r2.get("id")
-            phases = api(driver, "GET",
-                         f"/network/api/projects/{pid}/migration-phases")
+            phases = api(driver, "GET", f"/network/api/projects/{pid}/migration-phases")
             assert len(phases) >= 2
-            results.ok("migration_plan_crud",
-                        f"{len(phases)} phases")
+            results.ok("migration_plan_crud", f"{len(phases)} phases")
         except Exception as e:
             results.fail("migration_plan_crud", e)
 
         # ── 9. Capacity Projections ───────────────────────────────────────
         try:
-            r = api(driver, "POST",
-                    f"/network/api/projects/{pid}/capacity-projections",
-                    {"metric_name": "bandwidth_gbps",
-                     "current_value": 10, "growth_rate_pct": 25})
+            r = api(
+                driver,
+                "POST",
+                f"/network/api/projects/{pid}/capacity-projections",
+                {"metric_name": "bandwidth_gbps", "current_value": 10, "growth_rate_pct": 25},
+            )
             assert r.get("id")
-            caps = api(driver, "GET",
-                       f"/network/api/projects/{pid}/capacity-projections")
+            caps = api(driver, "GET", f"/network/api/projects/{pid}/capacity-projections")
             assert len(caps) >= 1
             c = caps[0]
             # 10 * 1.25 = 12.5 year 1
             assert float(c["year1_value"]) == 12.5
             # 10 * 1.25^5 ≈ 30.52
             assert float(c["year5_value"]) > 30
-            results.ok("capacity_projections",
-                        f"y1={c['year1_value']}, y5={c['year5_value']}")
+            results.ok("capacity_projections", f"y1={c['year1_value']}, y5={c['year5_value']}")
         except Exception as e:
             results.fail("capacity_projections", e)
 
         # ── 10. Standards Alignment ───────────────────────────────────────
         try:
-            r = api(driver, "POST",
-                    f"/network/api/projects/{pid}/standards-checks",
-                    {"standard": "Enterprise Reference Architecture",
-                     "check_item": "Uses approved vendor list",
-                     "status": "compliant"})
+            r = api(
+                driver,
+                "POST",
+                f"/network/api/projects/{pid}/standards-checks",
+                {
+                    "standard": "Enterprise Reference Architecture",
+                    "check_item": "Uses approved vendor list",
+                    "status": "compliant",
+                },
+            )
             assert r.get("id")
-            checks = api(driver, "GET",
-                         f"/network/api/projects/{pid}/standards-checks")
+            checks = api(driver, "GET", f"/network/api/projects/{pid}/standards-checks")
             assert len(checks) >= 1
             results.ok("standards_alignment")
         except Exception as e:
@@ -314,29 +358,41 @@ def run_tests():
 
         # ── 11. Resource Plan ─────────────────────────────────────────────
         try:
-            api(driver, "POST",
+            api(
+                driver,
+                "POST",
                 f"/network/api/projects/{pid}/resource-plan",
-                {"phase": "implementation", "role": "Network Engineer",
-                 "name": "Jane Doe", "hours": 40, "rate_per_hour": 150})
-            api(driver, "POST",
+                {
+                    "phase": "implementation",
+                    "role": "Network Engineer",
+                    "name": "Jane Doe",
+                    "hours": 40,
+                    "rate_per_hour": 150,
+                },
+            )
+            api(
+                driver,
+                "POST",
                 f"/network/api/projects/{pid}/resource-plan",
-                {"phase": "implementation", "role": "Security Analyst",
-                 "name": "John Smith", "hours": 16, "rate_per_hour": 175,
-                 "is_contractor": True})
-            d = api(driver, "GET",
-                    f"/network/api/projects/{pid}/resource-plan")
+                {
+                    "phase": "implementation",
+                    "role": "Security Analyst",
+                    "name": "John Smith",
+                    "hours": 16,
+                    "rate_per_hour": 175,
+                    "is_contractor": True,
+                },
+            )
+            d = api(driver, "GET", f"/network/api/projects/{pid}/resource-plan")
             assert d.get("total_hours") == 56
             assert d.get("total_labor_cost") == 8800  # 40*150 + 16*175
-            results.ok("resource_plan",
-                        f"hours={d['total_hours']}, "
-                        f"cost=${d['total_labor_cost']}")
+            results.ok("resource_plan", f"hours={d['total_hours']}, cost=${d['total_labor_cost']}")
         except Exception as e:
             results.fail("resource_plan", e)
 
         # ── 12. Business Case Generator ───────────────────────────────────
         try:
-            bc = api(driver, "GET",
-                     f"/network/api/projects/{pid}/business-case")
+            bc = api(driver, "GET", f"/network/api/projects/{pid}/business-case")
             assert bc.get("project", {}).get("name") == "E2E ARB/ERB Test"
             assert bc.get("alternatives_analysis", {}).get("options")
             assert bc.get("risk_register")
@@ -347,24 +403,29 @@ def run_tests():
             assert bc.get("standards_alignment")
             assert bc.get("resource_plan", {}).get("resources")
             assert bc.get("generated_at")
-            results.ok("business_case_generator",
-                        f"sections: {len([k for k in bc if bc[k]])}")
+            results.ok("business_case_generator", f"sections: {len([k for k in bc if bc[k]])}")
         except Exception as e:
             results.fail("business_case_generator", e)
 
         # ── 13. Milestone dependencies ────────────────────────────────────
         try:
-            m1 = api(driver, "POST",
-                     f"/network/api/projects/{pid}/milestones",
-                     {"title": "Equipment Ordered", "due_date": "2026-04-01"})
-            m2 = api(driver, "POST",
-                     f"/network/api/projects/{pid}/milestones",
-                     {"title": "Equipment Received", "due_date": "2026-05-01"})
+            m1 = api(
+                driver,
+                "POST",
+                f"/network/api/projects/{pid}/milestones",
+                {"title": "Equipment Ordered", "due_date": "2026-04-01"},
+            )
+            m2 = api(
+                driver,
+                "POST",
+                f"/network/api/projects/{pid}/milestones",
+                {"title": "Equipment Received", "due_date": "2026-05-01"},
+            )
             # Update m2 to depend on m1 (via PUT)
-            api(driver, "PUT", f"/network/api/milestones/{m2['id']}",
-                {"predecessor_id": m1["id"]})  # uses existing update API
-            ms = api(driver, "GET",
-                     f"/network/api/projects/{pid}/milestones")
+            api(
+                driver, "PUT", f"/network/api/milestones/{m2['id']}", {"predecessor_id": m1["id"]}
+            )  # uses existing update API
+            ms = api(driver, "GET", f"/network/api/projects/{pid}/milestones")
             assert len(ms) >= 2
             results.ok("milestone_dependencies")
         except Exception as e:
@@ -372,25 +433,20 @@ def run_tests():
 
         # ── 14. Export Markdown ────────────────────────────────────────────
         try:
-            d = api(driver, "POST",
-                    f"/network/api/projects/{pid}/business-case/export",
-                    {"format": "markdown"})
+            d = api(driver, "POST", f"/network/api/projects/{pid}/business-case/export", {"format": "markdown"})
             assert d.get("format") == "markdown"
             assert d.get("filename", "").endswith(".md")
             content = d.get("content", "")
             assert "# Business Case:" in content
             assert "## Risk Register" in content
             assert "## Bill of Materials" in content
-            results.ok("export_markdown",
-                        f"{len(content)} chars")
+            results.ok("export_markdown", f"{len(content)} chars")
         except Exception as e:
             results.fail("export_markdown", e)
 
         # ── 15. Export HTML ───────────────────────────────────────────────
         try:
-            d = api(driver, "POST",
-                    f"/network/api/projects/{pid}/business-case/export",
-                    {"format": "html"})
+            d = api(driver, "POST", f"/network/api/projects/{pid}/business-case/export", {"format": "html"})
             assert d.get("format") == "html"
             assert d.get("filename", "").endswith(".html")
             content = d.get("content", "")
@@ -402,22 +458,18 @@ def run_tests():
 
         # ── 16. Export DOCX ───────────────────────────────────────────────
         try:
-            d = api(driver, "POST",
-                    f"/network/api/projects/{pid}/business-case/export",
-                    {"format": "docx"})
+            d = api(driver, "POST", f"/network/api/projects/{pid}/business-case/export", {"format": "docx"})
             assert d.get("format") == "docx"
             assert d.get("filename", "").endswith(".docx")
             assert d.get("content_b64"), "No DOCX content"
             assert d.get("size_bytes", 0) > 1000, "DOCX too small"
-            results.ok("export_docx",
-                        f"{d['size_bytes']} bytes")
+            results.ok("export_docx", f"{d['size_bytes']} bytes")
         except Exception as e:
             results.fail("export_docx", e)
 
         # ── Clear All Topologies regression ───────────────────────────────
         try:
-            d = api(driver, "DELETE",
-                    "/network/api/topologies/clear-all")
+            d = api(driver, "DELETE", "/network/api/topologies/clear-all")
             assert d.get("cleared") == "topologies", f"Got: {d}"
             # Verify empty
             topos = api(driver, "GET", "/network/api/topologies")
@@ -428,8 +480,7 @@ def run_tests():
 
         # ── 15. Clear All Simulations regression ──────────────────────────
         try:
-            d = api(driver, "DELETE",
-                    "/network/api/simulations/clear-all")
+            d = api(driver, "DELETE", "/network/api/simulations/clear-all")
             assert d.get("cleared") == "simulations"
             results.ok("clear_all_simulations_regression")
         except Exception as e:
@@ -437,22 +488,25 @@ def run_tests():
 
         # Restore a topology so other test suites don't break
         try:
-            api(driver, "POST", "/network/api/topologies", {
-                "name": "Restored After ClearAll",
-                "graph_json": {"nodes": [
-                    {"id": "r1", "label": "Core-R1", "type": "router",
-                     "x": 100, "y": 100},
-                    {"id": "r2", "label": "Core-R2", "type": "router",
-                     "x": 300, "y": 100},
-                    {"id": "fw1", "label": "FW-1", "type": "firewall",
-                     "x": 200, "y": 250},
-                ], "edges": [
-                    {"id": "e1", "source": "r1", "target": "r2",
-                     "label": "OSPF", "protocol": "ospf"},
-                    {"id": "e2", "source": "r1", "target": "fw1",
-                     "label": "10GbE", "protocol": ""},
-                ]}
-            })
+            api(
+                driver,
+                "POST",
+                "/network/api/topologies",
+                {
+                    "name": "Restored After ClearAll",
+                    "graph_json": {
+                        "nodes": [
+                            {"id": "r1", "label": "Core-R1", "type": "router", "x": 100, "y": 100},
+                            {"id": "r2", "label": "Core-R2", "type": "router", "x": 300, "y": 100},
+                            {"id": "fw1", "label": "FW-1", "type": "firewall", "x": 200, "y": 250},
+                        ],
+                        "edges": [
+                            {"id": "e1", "source": "r1", "target": "r2", "label": "OSPF", "protocol": "ospf"},
+                            {"id": "e2", "source": "r1", "target": "fw1", "label": "10GbE", "protocol": ""},
+                        ],
+                    },
+                },
+            )
         except Exception:
             pass
 
@@ -486,8 +540,7 @@ if __name__ == "__main__":
     r = run_tests()
     summary = r.summary()
     print()
-    print(f"Results: {summary['passed']}/{summary['total']} passed "
-          f"({summary['pass_rate']})")
+    print(f"Results: {summary['passed']}/{summary['total']} passed ({summary['pass_rate']})")
     if summary["failures"]:
         print("Failures:")
         for f in summary["failures"]:

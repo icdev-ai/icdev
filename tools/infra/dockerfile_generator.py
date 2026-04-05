@@ -22,11 +22,7 @@ def _classification_header(classification: str = "public") -> str:
         resolver = ClassificationResolver(classification)
         if resolver.file_header_enabled and resolver.file_header_text:
             ts = datetime.now(timezone.utc).isoformat()
-            return (
-                f"{resolver.file_header_text}\n"
-                f"# Generated: {ts}\n"
-                f"# Generator: ICDev Dockerfile Generator\n"
-            )
+            return f"{resolver.file_header_text}\n# Generated: {ts}\n# Generator: ICDev Dockerfile Generator\n"
     return f"# Generated: {datetime.now(timezone.utc).isoformat()}\n"
 
 

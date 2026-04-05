@@ -40,9 +40,7 @@ class EUAIActClassifier(BaseAssessor):
     TABLE_NAME = "eu_ai_act_assessments"
     CATALOG_FILENAME = "eu_ai_act_annex_iii.json"
 
-    def get_automated_checks(
-        self, project: Dict, project_dir: Optional[str] = None
-    ) -> Dict[str, str]:
+    def get_automated_checks(self, project: Dict, project_dir: Optional[str] = None) -> Dict[str, str]:
         """Check EU AI Act requirements against existing ICDEV™ evidence.
 
         Maps 12 requirements to existing ICDEV™ controls and data:
@@ -68,14 +66,10 @@ class EUAIActClassifier(BaseAssessor):
                 project_id = project.get("id", "")
 
                 # EUAI-01: Risk Classification — AI inventory registered
-                results.update(self._check_table_count(
-                    conn, "ai_use_case_inventory", project_id, "EUAI-01"
-                ))
+                results.update(self._check_table_count(conn, "ai_use_case_inventory", project_id, "EUAI-01"))
 
                 # EUAI-02: Data Governance — model cards exist with data docs
-                results.update(self._check_table_count(
-                    conn, "model_cards", project_id, "EUAI-02"
-                ))
+                results.update(self._check_table_count(conn, "model_cards", project_id, "EUAI-02"))
 
                 # EUAI-03: Technical Documentation — model + system cards
                 mc = self._count_records(conn, "model_cards", project_id)
@@ -100,9 +94,7 @@ class EUAIActClassifier(BaseAssessor):
                         results["EUAI-05"] = "satisfied"
                         break
                 if "EUAI-05" not in results:
-                    results.update(self._check_table_count(
-                        conn, "nist_ai_600_1_assessments", project_id, "EUAI-05"
-                    ))
+                    results.update(self._check_table_count(conn, "nist_ai_600_1_assessments", project_id, "EUAI-05"))
 
                 # EUAI-06: Human Oversight — oversight plans + CAIO
                 op = self._count_records(conn, "ai_oversight_plans", project_id)
@@ -113,34 +105,22 @@ class EUAIActClassifier(BaseAssessor):
                     results["EUAI-06"] = "partially_satisfied"
 
                 # EUAI-07: Accuracy/Robustness — SAST + dep audit
-                results.update(self._check_table_count(
-                    conn, "stig_results", project_id, "EUAI-07"
-                ))
+                results.update(self._check_table_count(conn, "stig_results", project_id, "EUAI-07"))
 
                 # EUAI-08: Risk Management — NIST AI RMF assessment
-                results.update(self._check_table_count(
-                    conn, "nist_ai_rmf_assessments", project_id, "EUAI-08"
-                ))
+                results.update(self._check_table_count(conn, "nist_ai_rmf_assessments", project_id, "EUAI-08"))
 
                 # EUAI-09: Conformity Assessment — production audits
-                results.update(self._check_table_count(
-                    conn, "production_audits", project_id, "EUAI-09"
-                ))
+                results.update(self._check_table_count(conn, "production_audits", project_id, "EUAI-09"))
 
                 # EUAI-10: Post-Market Monitoring — cATO evidence or heartbeat
-                results.update(self._check_table_count(
-                    conn, "cato_evidence", project_id, "EUAI-10"
-                ))
+                results.update(self._check_table_count(conn, "cato_evidence", project_id, "EUAI-10"))
 
                 # EUAI-11: Incident Reporting — AI incident log
-                results.update(self._check_table_count(
-                    conn, "ai_incident_log", project_id, "EUAI-11"
-                ))
+                results.update(self._check_table_count(conn, "ai_incident_log", project_id, "EUAI-11"))
 
                 # EUAI-12: Fundamental Rights Impact — ethics reviews
-                results.update(self._check_table_count(
-                    conn, "ai_ethics_reviews", project_id, "EUAI-12"
-                ))
+                results.update(self._check_table_count(conn, "ai_ethics_reviews", project_id, "EUAI-12"))
 
         except Exception:
             pass
@@ -150,18 +130,14 @@ class EUAIActClassifier(BaseAssessor):
 
         return results
 
-    def _check_table_count(
-        self, conn: sqlite3.Connection, table: str, project_id: str, req_id: str
-    ) -> Dict[str, str]:
+    def _check_table_count(self, conn: sqlite3.Connection, table: str, project_id: str, req_id: str) -> Dict[str, str]:
         """Check if a table has records for a project, return satisfied/empty."""
         cnt = self._count_records(conn, table, project_id)
         if cnt > 0:
             return {req_id: "satisfied"}
         return {}
 
-    def _count_records(
-        self, conn: sqlite3.Connection, table: str, project_id: str
-    ) -> int:
+    def _count_records(self, conn: sqlite3.Connection, table: str, project_id: str) -> int:
         """Count records for a project in a table. Returns 0 if table missing."""
         try:
             # Check table exists

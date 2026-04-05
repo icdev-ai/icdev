@@ -124,9 +124,7 @@ def get_or_create_context(context_id: str | None = None) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _rag_retrieve(
-    query_text: str, scope: str | None = None, top_k: int = 5
-) -> list[dict[str, Any]]:
+def _rag_retrieve(query_text: str, scope: str | None = None, top_k: int = 5) -> list[dict[str, Any]]:
     """Retrieve relevant code chunks for the question.
 
     Attempts the full RAG retriever first; falls back to simple FTS on
@@ -315,9 +313,7 @@ def query(
         # Cache hit — increment counters and return
         now = datetime.now(timezone.utc).isoformat()
         cur.execute(
-            "UPDATE codebase_qa_cache "
-            "SET hit_count = hit_count + 1, last_hit_at = ? "
-            "WHERE id = ?",
+            "UPDATE codebase_qa_cache SET hit_count = hit_count + 1, last_hit_at = ? WHERE id = ?",
             (now, cache_row[0]),
         )
         conn.commit()
@@ -423,9 +419,7 @@ def query(
 
     # Update context activity
     cur.execute(
-        "UPDATE chat_contexts "
-        "SET message_count = message_count + 2, "
-        "last_activity_at = ?, updated_at = ? WHERE id = ?",
+        "UPDATE chat_contexts SET message_count = message_count + 2, last_activity_at = ?, updated_at = ? WHERE id = ?",
         (now, now, ctx),
     )
     conn.commit()
@@ -464,8 +458,14 @@ def query(
                         created_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
-                    cache_id, q_hash, scope, question,
-                    answer, cit_json, occurrence_count, now,
+                    cache_id,
+                    q_hash,
+                    scope,
+                    question,
+                    answer,
+                    cit_json,
+                    occurrence_count,
+                    now,
                 ),
             )
     conn.commit()
@@ -487,9 +487,7 @@ def query(
 # ---------------------------------------------------------------------------
 
 
-def get_suggestions(
-    page_path: str, scope: str | None = None
-) -> list[str]:
+def get_suggestions(page_path: str, scope: str | None = None) -> list[str]:
     """Generate 3-5 contextual question suggestions for the current page.
 
     Reads the ``codebase_index`` table for files in scope and extracts
@@ -588,18 +586,11 @@ def get_status() -> dict[str, Any]:
         cur.execute("SELECT COUNT(*) FROM codebase_index")
         indexed_files = cur.fetchone()[0]
 
-        cur.execute(
-            "SELECT MAX(last_indexed_at) FROM codebase_index"
-        )
+        cur.execute("SELECT MAX(last_indexed_at) FROM codebase_index")
         last_row = cur.fetchone()
-        last_indexed_at = (
-            last_row[0] if last_row and last_row[0] else None
-        )
+        last_indexed_at = last_row[0] if last_row and last_row[0] else None
 
-        cur.execute(
-            "SELECT DISTINCT module FROM codebase_index "
-            "WHERE module IS NOT NULL AND module != ''"
-        )
+        cur.execute("SELECT DISTINCT module FROM codebase_index WHERE module IS NOT NULL AND module != ''")
         available_modules = sorted(row[0] for row in cur.fetchall())
 
         index_status = "ready" if indexed_files > 0 else "empty"

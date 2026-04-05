@@ -95,13 +95,16 @@ def notify_remediation(remediation_result: Dict[str, Any]) -> Dict[str, Any]:
 
 def notify_health_score(score: float, trend: str, details: Dict) -> None:
     """Push health score update to dashboard."""
-    _broadcast_sse({
-        "source": "review_board.health",
-        "score": score,
-        "trend": trend,
-        "text": f"Codebase health: {score:.0f}/100 ({trend})",
-        "details": details,
-    }, "health_update")
+    _broadcast_sse(
+        {
+            "source": "review_board.health",
+            "score": score,
+            "trend": trend,
+            "text": f"Codebase health: {score:.0f}/100 ({trend})",
+            "details": details,
+        },
+        "health_update",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -114,8 +117,7 @@ def _build_summary(level: str, findings: List[Dict], reflex_name: str) -> Dict:
         "source": f"review_board.{reflex_name}" if reflex_name else "review_board",
         "level": level,
         "count": len(findings),
-        "text": f"[{level}] {len(findings)} finding(s) from {reflex_name or 'review board'}: "
-                + "; ".join(titles[:3]),
+        "text": f"[{level}] {len(findings)} finding(s) from {reflex_name or 'review board'}: " + "; ".join(titles[:3]),
         "findings": [
             {"severity": f.get("severity"), "title": f.get("title"), "category": f.get("category")}
             for f in findings[:10]
@@ -127,11 +129,15 @@ def _broadcast_sse(data: Dict, severity: str) -> None:
     """Push event to dashboard SSE stream."""
     try:
         from tools.dashboard.sse_manager import sse_manager
-        sse_manager.broadcast({
-            "event": "review_board_finding",
-            "severity": severity,
-            **data,
-        }, event_type="review_board_update")
+
+        sse_manager.broadcast(
+            {
+                "event": "review_board_finding",
+                "severity": severity,
+                **data,
+            },
+            event_type="review_board_update",
+        )
     except Exception:
         pass  # Dashboard may not be running
 
@@ -140,6 +146,7 @@ def _send_mailbox(data: Dict, priority: int = 5) -> None:
     """Send notification via agent mailbox → gateway channels."""
     try:
         from tools.agent.mailbox import send
+
         send(
             from_agent_id="review-board-daemon",
             to_agent_id="gateway-agent",
@@ -159,14 +166,14 @@ def _send_toast(title: str, message: str) -> None:
     try:
         # Use PowerShell BurntToast module or fallback to basic toast
         ps_script = (
-            f'Add-Type -AssemblyName System.Windows.Forms; '
-            f'$n = New-Object System.Windows.Forms.NotifyIcon; '
-            f'$n.Icon = [System.Drawing.SystemIcons]::Information; '
-            f'$n.Visible = $true; '
+            f"Add-Type -AssemblyName System.Windows.Forms; "
+            f"$n = New-Object System.Windows.Forms.NotifyIcon; "
+            f"$n.Icon = [System.Drawing.SystemIcons]::Information; "
+            f"$n.Visible = $true; "
             f'$n.ShowBalloonTip(5000, "{_escape_ps(title)}", '
             f'"{_escape_ps(message)}", '
-            f'[System.Windows.Forms.ToolTipIcon]::Warning); '
-            f'Start-Sleep -Seconds 6; $n.Dispose()'
+            f"[System.Windows.Forms.ToolTipIcon]::Warning); "
+            f"Start-Sleep -Seconds 6; $n.Dispose()"
         )
         subprocess.Popen(
             ["powershell", "-WindowStyle", "Hidden", "-Command", ps_script],

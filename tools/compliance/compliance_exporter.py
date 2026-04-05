@@ -72,6 +72,7 @@ _DEFAULT_EXEC_TEMPLATE = """\
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_connection(db_path=None):
     path = db_path or DB_PATH
     if not path.exists():
@@ -84,10 +85,16 @@ def _log_audit(project_id, action, details, affected_file=None):
     """Best-effort audit trail logging."""
     try:
         from tools.audit.audit_logger import log_event
-        log_event(event_type="compliance_check", actor="icdev-compliance-exporter",
-                  action=action, project_id=project_id, details=details,
-                  affected_files=[affected_file] if affected_file else None,
-                  classification="CUI")
+
+        log_event(
+            event_type="compliance_check",
+            actor="icdev-compliance-exporter",
+            action=action,
+            project_id=project_id,
+            details=details,
+            affected_files=[affected_file] if affected_file else None,
+            classification="CUI",
+        )
     except Exception:
         pass
 
@@ -96,6 +103,7 @@ def _render_template(template_str, context):
     """Render Jinja2 template with graceful fallback to basic substitution."""
     try:
         from jinja2 import Template
+
         return Template(template_str).render(**context)
     except ImportError:
         result = template_str
@@ -127,9 +135,11 @@ def _build_recommendations(data):
         recs.append("Coverage below 80%. Prioritize AC, IA, SC, AU families.")
     return recs or ["Maintain current compliance posture through continuous monitoring."]
 
+
 # ---------------------------------------------------------------------------
 # Export functions
 # ---------------------------------------------------------------------------
+
 
 def export_control_matrix(assessment_data: Dict, output_path: str) -> str:
     """Export CSV control matrix. Columns: control_id, title, status,
@@ -142,22 +152,26 @@ def export_control_matrix(assessment_data: Dict, output_path: str) -> str:
         w = csv.DictWriter(fh, fieldnames=fields)
         w.writeheader()
         for item in assessment_data.get("results", []):
-            w.writerow({
-                "control_id": _get(item, "requirement_id", "control_id"),
-                "title": _get(item, "title", "requirement_title"),
-                "status": item.get("status", "not_assessed"),
-                "implementation_detail": _get(item, "implementation_detail", "automation_result"),
-                "evidence": _get(item, "evidence", "evidence_description"),
-                "last_assessed": item.get("last_assessed", adate),
-            })
-    _log_audit(assessment_data.get("project_id", "unknown"),
-               f"Exported control matrix CSV: {out.name}",
-               {"format": "csv", "rows": len(assessment_data.get("results", []))}, str(out))
+            w.writerow(
+                {
+                    "control_id": _get(item, "requirement_id", "control_id"),
+                    "title": _get(item, "title", "requirement_title"),
+                    "status": item.get("status", "not_assessed"),
+                    "implementation_detail": _get(item, "implementation_detail", "automation_result"),
+                    "evidence": _get(item, "evidence", "evidence_description"),
+                    "last_assessed": item.get("last_assessed", adate),
+                }
+            )
+    _log_audit(
+        assessment_data.get("project_id", "unknown"),
+        f"Exported control matrix CSV: {out.name}",
+        {"format": "csv", "rows": len(assessment_data.get("results", []))},
+        str(out),
+    )
     return str(out.resolve())
 
 
-def export_executive_summary(assessment_data: Dict, output_path: str,
-                             template_path: Optional[str] = None) -> str:
+def export_executive_summary(assessment_data: Dict, output_path: str, template_path: Optional[str] = None) -> str:
     """Export Markdown executive summary using Jinja2 (with built-in fallback)."""
     out = Path(output_path)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -182,9 +196,12 @@ def export_executive_summary(assessment_data: Dict, output_path: str,
     }
     with open(str(out), "w", encoding="utf-8") as fh:
         fh.write(_render_template(tmpl, ctx))
-    _log_audit(assessment_data.get("project_id", "unknown"),
-               f"Exported executive summary: {out.name}",
-               {"format": "executive_summary", "template": template_path or "built-in"}, str(out))
+    _log_audit(
+        assessment_data.get("project_id", "unknown"),
+        f"Exported executive summary: {out.name}",
+        {"format": "executive_summary", "template": template_path or "built-in"},
+        str(out),
+    )
     return str(out.resolve())
 
 
@@ -197,16 +214,31 @@ def export_evidence_package(assessment_data: Dict, output_path: str) -> str:
     adate = assessment_data.get("assessment_date", datetime.now(timezone.utc).isoformat())
     results = assessment_data.get("results", [])
 
-    lines = [f"# Evidence Package — {fw}", "",
-             f"**Project:** {pid}", f"**Date:** {adate}",
-             "**Classification:** CUI // SP-CTI", "", "---", ""]
+    lines = [
+        f"# Evidence Package — {fw}",
+        "",
+        f"**Project:** {pid}",
+        f"**Date:** {adate}",
+        "**Classification:** CUI // SP-CTI",
+        "",
+        "---",
+        "",
+    ]
 
     # Group by status, present non-compliant first
     grouped: Dict[str, List] = {}
     for item in results:
         grouped.setdefault(item.get("status", "not_assessed"), []).append(item)
-    order = ["not_satisfied", "non_compliant", "partially_satisfied", "not_assessed",
-             "risk_accepted", "not_applicable", "satisfied", "compliant"]
+    order = [
+        "not_satisfied",
+        "non_compliant",
+        "partially_satisfied",
+        "not_assessed",
+        "risk_accepted",
+        "not_applicable",
+        "satisfied",
+        "compliant",
+    ]
     seen = set()
     for s in order + list(grouped.keys()):
         if s in grouped and s not in seen:
@@ -233,8 +265,12 @@ def export_evidence_package(assessment_data: Dict, output_path: str) -> str:
 
     with open(str(out), "w", encoding="utf-8") as fh:
         fh.write("\n".join(lines))
-    _log_audit(pid, f"Exported evidence package: {out.name}",
-               {"format": "evidence_package", "findings": len(results)}, str(out))
+    _log_audit(
+        pid,
+        f"Exported evidence package: {out.name}",
+        {"format": "evidence_package", "findings": len(results)},
+        str(out),
+    )
     return str(out.resolve())
 
 
@@ -245,15 +281,21 @@ def export_poam_csv(assessment_data: Dict, output_path: str) -> str:
     out.parent.mkdir(parents=True, exist_ok=True)
     adate = assessment_data.get("assessment_date", datetime.now(timezone.utc).isoformat())
     risk_map = {"not_satisfied": "high", "non_compliant": "high", "partially_satisfied": "moderate"}
-    poam_items = [r for r in assessment_data.get("results", [])
-                  if r.get("status") in risk_map]
+    poam_items = [r for r in assessment_data.get("results", []) if r.get("status") in risk_map]
     try:
         base_dt = datetime.fromisoformat(adate.replace("Z", ""))
     except (ValueError, TypeError):
         base_dt = datetime.now(timezone.utc)
 
-    fields = ["poam_id", "control_id", "finding", "risk_level",
-              "scheduled_completion", "milestone", "responsible_party"]
+    fields = [
+        "poam_id",
+        "control_id",
+        "finding",
+        "risk_level",
+        "scheduled_completion",
+        "milestone",
+        "responsible_party",
+    ]
     cnt = 0
     with open(str(out), "w", newline="", encoding="utf-8") as fh:
         w = csv.DictWriter(fh, fieldnames=fields)
@@ -264,13 +306,23 @@ def export_poam_csv(assessment_data: Dict, output_path: str) -> str:
             cid = _get(item, "requirement_id", "control_id")
             title = _get(item, "title", "requirement_title")
             sched = (base_dt + timedelta(days=REMEDIATION_WINDOWS.get(rl, 90))).strftime("%Y-%m-%d")
-            w.writerow({"poam_id": f"POAM-{cnt:04d}", "control_id": cid,
-                         "finding": f"{cid} — {title}: {item.get('status', '')}",
-                         "risk_level": rl, "scheduled_completion": sched,
-                         "milestone": f"Remediate {cid} to satisfied",
-                         "responsible_party": item.get("responsible_party", "ISSO")})
-    _log_audit(assessment_data.get("project_id", "unknown"),
-               f"Exported POAM CSV: {out.name}", {"format": "poam", "items": cnt}, str(out))
+            w.writerow(
+                {
+                    "poam_id": f"POAM-{cnt:04d}",
+                    "control_id": cid,
+                    "finding": f"{cid} — {title}: {item.get('status', '')}",
+                    "risk_level": rl,
+                    "scheduled_completion": sched,
+                    "milestone": f"Remediate {cid} to satisfied",
+                    "responsible_party": item.get("responsible_party", "ISSO"),
+                }
+            )
+    _log_audit(
+        assessment_data.get("project_id", "unknown"),
+        f"Exported POAM CSV: {out.name}",
+        {"format": "poam", "items": cnt},
+        str(out),
+    )
     return str(out.resolve())
 
 
@@ -285,33 +337,47 @@ def export_all(assessment_data: Dict, output_dir: str, framework: str = "nist") 
         "poam": export_poam_csv(assessment_data, str(d / f"{framework}_poam.csv")),
     }
 
+
 # ---------------------------------------------------------------------------
 # Database loader
 # ---------------------------------------------------------------------------
 
 _TABLE_MAP = {
-    "cjis": "cjis_assessments", "hipaa": "hipaa_assessments",
-    "hitrust": "hitrust_assessments", "soc2": "soc2_assessments",
-    "pci_dss": "pci_dss_assessments", "iso_27001": "iso27001_assessments",
-    "nist_800_207": "nist_800_207_assessments", "mosa": "mosa_assessments",
-    "fedramp": "fedramp_assessments", "cmmc": "cmmc_assessments",
+    "cjis": "cjis_assessments",
+    "hipaa": "hipaa_assessments",
+    "hitrust": "hitrust_assessments",
+    "soc2": "soc2_assessments",
+    "pci_dss": "pci_dss_assessments",
+    "iso_27001": "iso27001_assessments",
+    "nist_800_207": "nist_800_207_assessments",
+    "mosa": "mosa_assessments",
+    "fedramp": "fedramp_assessments",
+    "cmmc": "cmmc_assessments",
 }
 _FW_NAMES = {
-    "nist": "NIST 800-53 Rev 5", "cjis": "FBI CJIS Security Policy",
-    "hipaa": "HIPAA Security Rule", "hitrust": "HITRUST CSF v11",
-    "soc2": "SOC 2 Type II", "pci_dss": "PCI DSS v4.0",
-    "iso_27001": "ISO/IEC 27001:2022", "nist_800_207": "NIST SP 800-207 (ZTA)",
-    "mosa": "DoD MOSA (10 U.S.C. 4401)", "fedramp": "FedRAMP", "cmmc": "CMMC",
+    "nist": "NIST 800-53 Rev 5",
+    "cjis": "FBI CJIS Security Policy",
+    "hipaa": "HIPAA Security Rule",
+    "hitrust": "HITRUST CSF v11",
+    "soc2": "SOC 2 Type II",
+    "pci_dss": "PCI DSS v4.0",
+    "iso_27001": "ISO/IEC 27001:2022",
+    "nist_800_207": "NIST SP 800-207 (ZTA)",
+    "mosa": "DoD MOSA (10 U.S.C. 4401)",
+    "fedramp": "FedRAMP",
+    "cmmc": "CMMC",
 }
 _STATUS_NORM = {
-    "implemented": "satisfied", "partially_implemented": "partially_satisfied",
-    "planned": "not_assessed", "not_implemented": "not_satisfied",
-    "alternative": "risk_accepted", "not_applicable": "not_applicable",
+    "implemented": "satisfied",
+    "partially_implemented": "partially_satisfied",
+    "planned": "not_assessed",
+    "not_implemented": "not_satisfied",
+    "alternative": "risk_accepted",
+    "not_applicable": "not_applicable",
 }
 
 
-def load_assessment_from_db(project_id: str, framework: str = "nist",
-                            db_path: Optional[Path] = None) -> Dict:
+def load_assessment_from_db(project_id: str, framework: str = "nist", db_path: Optional[Path] = None) -> Dict:
     """Load assessment data from icdev.db for a project and framework."""
     conn = _get_connection(db_path)
     try:
@@ -320,17 +386,20 @@ def load_assessment_from_db(project_id: str, framework: str = "nist",
             try:
                 rows = conn.execute(
                     f"SELECT * FROM {_TABLE_MAP[framework]} WHERE project_id = ?",  # nosec B608 -- table/column names are internal constants, not user input
-                    (project_id,)).fetchall()
+                    (project_id,),
+                ).fetchall()
                 for r in rows:
                     d = dict(r)
-                    results.append({
-                        "requirement_id": d.get("requirement_id", ""),
-                        "title": d.get("requirement_title", ""),
-                        "status": d.get("status", "not_assessed"),
-                        "evidence": d.get("evidence_description", ""),
-                        "implementation_detail": d.get("automation_result", ""),
-                        "last_assessed": d.get("assessment_date", ""),
-                    })
+                    results.append(
+                        {
+                            "requirement_id": d.get("requirement_id", ""),
+                            "title": d.get("requirement_title", ""),
+                            "status": d.get("status", "not_assessed"),
+                            "evidence": d.get("evidence_description", ""),
+                            "implementation_detail": d.get("automation_result", ""),
+                            "last_assessed": d.get("assessment_date", ""),
+                        }
+                    )
             except sqlite3.OperationalError:
                 pass
         if not results and framework in ("nist", "nist_800_53"):
@@ -338,17 +407,22 @@ def load_assessment_from_db(project_id: str, framework: str = "nist",
                 rows = conn.execute(
                     "SELECT control_id, implementation_status, implementation_details, "
                     "last_assessed FROM project_controls WHERE project_id = ?",
-                    (project_id,)).fetchall()
+                    (project_id,),
+                ).fetchall()
                 for r in rows:
                     d = dict(r)
-                    results.append({
-                        "requirement_id": d.get("control_id", ""),
-                        "title": d.get("control_id", ""),
-                        "status": _STATUS_NORM.get(d.get("implementation_status", ""), d.get("implementation_status", "")),
-                        "evidence": "",
-                        "implementation_detail": d.get("implementation_details", ""),
-                        "last_assessed": d.get("last_assessed", ""),
-                    })
+                    results.append(
+                        {
+                            "requirement_id": d.get("control_id", ""),
+                            "title": d.get("control_id", ""),
+                            "status": _STATUS_NORM.get(
+                                d.get("implementation_status", ""), d.get("implementation_status", "")
+                            ),
+                            "evidence": "",
+                            "implementation_detail": d.get("implementation_details", ""),
+                            "last_assessed": d.get("last_assessed", ""),
+                        }
+                    )
             except sqlite3.OperationalError:
                 pass
         # Compute summary
@@ -363,30 +437,49 @@ def load_assessment_from_db(project_id: str, framework: str = "nist",
         ns = sc.get("not_satisfied", 0)
         gate = "unknown"
         if total:
-            gate = "compliant" if cov >= 100.0 else ("non_compliant" if ns else ("in_progress" if cov > 0 else "not_started"))
-        return {"framework_id": framework, "framework_name": _FW_NAMES.get(framework, framework),
-                "project_id": project_id, "assessment_date": datetime.now(timezone.utc).isoformat(),
-                "total_requirements": total, "status_counts": sc, "coverage_pct": cov,
-                "gate_status": gate, "results": results}
+            gate = (
+                "compliant"
+                if cov >= 100.0
+                else ("non_compliant" if ns else ("in_progress" if cov > 0 else "not_started"))
+            )
+        return {
+            "framework_id": framework,
+            "framework_name": _FW_NAMES.get(framework, framework),
+            "project_id": project_id,
+            "assessment_date": datetime.now(timezone.utc).isoformat(),
+            "total_requirements": total,
+            "status_counts": sc,
+            "coverage_pct": cov,
+            "gate_status": gate,
+            "results": results,
+        }
     finally:
         conn.close()
+
 
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
     p = argparse.ArgumentParser(description="Export ICDEV™ compliance assessments to auditor-friendly formats.")
     p.add_argument("--project-id", required=True, help="Project identifier in icdev.db")
     p.add_argument("--framework", default="nist", help="Framework to export (nist, fedramp, cmmc, cjis, hipaa, etc.)")
-    p.add_argument("--format", dest="export_format", default="all",
-                   choices=["csv", "executive_summary", "evidence_package", "poam", "all"],
-                   help="Export format (default: all)")
+    p.add_argument(
+        "--format",
+        dest="export_format",
+        default="all",
+        choices=["csv", "executive_summary", "evidence_package", "poam", "all"],
+        help="Export format (default: all)",
+    )
     p.add_argument("--output-dir", default=None, help="Output directory")
     p.add_argument("--json", action="store_true", help="Print result summary as JSON")
     args = p.parse_args()
 
-    output_dir = Path(args.output_dir) if args.output_dir else BASE_DIR / ".tmp" / "compliance_exports" / args.project_id
+    output_dir = (
+        Path(args.output_dir) if args.output_dir else BASE_DIR / ".tmp" / "compliance_exports" / args.project_id
+    )
     try:
         data = load_assessment_from_db(args.project_id, args.framework)
     except FileNotFoundError as e:
@@ -401,16 +494,28 @@ def main():
     fmt = args.export_format
     dispatch = {
         "csv": lambda: {"csv": export_control_matrix(data, str(output_dir / f"{args.framework}_control_matrix.csv"))},
-        "executive_summary": lambda: {"executive_summary": export_executive_summary(data, str(output_dir / f"{args.framework}_executive_summary.md"))},
-        "evidence_package": lambda: {"evidence_package": export_evidence_package(data, str(output_dir / f"{args.framework}_evidence_package.md"))},
+        "executive_summary": lambda: {
+            "executive_summary": export_executive_summary(
+                data, str(output_dir / f"{args.framework}_executive_summary.md")
+            )
+        },
+        "evidence_package": lambda: {
+            "evidence_package": export_evidence_package(data, str(output_dir / f"{args.framework}_evidence_package.md"))
+        },
         "poam": lambda: {"poam": export_poam_csv(data, str(output_dir / f"{args.framework}_poam.csv"))},
         "all": lambda: export_all(data, str(output_dir), args.framework),
     }
     result = dispatch[fmt]()
 
-    output = {"project_id": args.project_id, "framework": args.framework, "format": fmt,
-              "exports": result, "total_requirements": data.get("total_requirements", 0),
-              "coverage_pct": data.get("coverage_pct", 0), "gate_status": data.get("gate_status", "unknown")}
+    output = {
+        "project_id": args.project_id,
+        "framework": args.framework,
+        "format": fmt,
+        "exports": result,
+        "total_requirements": data.get("total_requirements", 0),
+        "coverage_pct": data.get("coverage_pct", 0),
+        "gate_status": data.get("gate_status", "unknown"),
+    }
     if args.json:
         print(json.dumps(output, indent=2))
     else:

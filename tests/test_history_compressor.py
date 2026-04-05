@@ -166,8 +166,7 @@ class TestCompression:
             )
             for i in range(1, 21)
         ]
-        with patch.object(compressor, "_summarize_topic",
-                          return_value="[summary of topic segment]"):
+        with patch.object(compressor, "_summarize_topic", return_value="[summary of topic segment]"):
             result = compressor.compress(messages, budget_tokens=200)
         total_original = sum(len(m["content"]) for m in messages)
         total_compressed = sum(len(m.get("content", "")) for m in result)
@@ -215,8 +214,7 @@ class TestSummarization:
         # The test imports from icdev.tools, so patch that namespace.
         # _summarize_topic falls back to truncation when the LLM is unavailable.
         messages = [_msg(1, "Hello"), _msg(2, "World")]
-        with patch("icdev.tools.llm.router.LLMRouter.invoke",
-                   side_effect=RuntimeError("LLM unavailable in test")):
+        with patch("icdev.tools.llm.router.LLMRouter.invoke", side_effect=RuntimeError("LLM unavailable in test")):
             result = compressor._summarize_topic(messages, max_tokens=100)
         assert len(result) > 0
 

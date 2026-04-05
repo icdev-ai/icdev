@@ -33,8 +33,13 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 VALID_REVIEW_TYPES = (
-    "bias_testing_policy", "impact_assessment", "ethics_framework",
-    "legal_compliance", "pre_deployment", "annual_review", "other",
+    "bias_testing_policy",
+    "impact_assessment",
+    "ethics_framework",
+    "legal_compliance",
+    "pre_deployment",
+    "annual_review",
+    "other",
 )
 VALID_FREQUENCIES = ("quarterly", "semi_annual", "annual", "biennial")
 VALID_APPEAL_STATUSES = ("submitted", "under_review", "resolved", "dismissed")
@@ -105,34 +110,35 @@ def _ensure_tables(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
-def _audit_log(conn: sqlite3.Connection, project_id: str, event_type: str,
-               actor: str, action: str) -> None:
+def _audit_log(conn: sqlite3.Connection, project_id: str, event_type: str, actor: str, action: str) -> None:
     """Write to audit_trail if it exists."""
     try:
         conn.execute(
-            "INSERT INTO audit_trail (project_id, event_type, actor, action, created_at) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (project_id, event_type, actor, action,
-             datetime.now(timezone.utc).isoformat()),
+            "INSERT INTO audit_trail (project_id, event_type, actor, action, created_at) VALUES (?, ?, ?, ?, ?)",
+            (project_id, event_type, actor, action, datetime.now(timezone.utc).isoformat()),
         )
         conn.commit()
     except sqlite3.OperationalError:
         pass  # audit_trail table may not exist yet
 
 
-def register_oversight_plan(conn: sqlite3.Connection, project_id: str,
-                            plan_name: str, description: str = "",
-                            created_by: str = "") -> Dict:
+def register_oversight_plan(
+    conn: sqlite3.Connection, project_id: str, plan_name: str, description: str = "", created_by: str = ""
+) -> Dict:
     """Register a human oversight plan for an AI system."""
     cur = conn.execute(
-        "INSERT INTO ai_oversight_plans (project_id, plan_name, description, created_by) "
-        "VALUES (?, ?, ?, ?)",
+        "INSERT INTO ai_oversight_plans (project_id, plan_name, description, created_by) VALUES (?, ?, ?, ?)",
         (project_id, plan_name, description, created_by),
     )
     conn.commit()
     plan_id = cur.lastrowid
-    _audit_log(conn, project_id, "accountability.oversight_plan",
-               created_by or "system", f"Registered oversight plan: {plan_name}")
+    _audit_log(
+        conn,
+        project_id,
+        "accountability.oversight_plan",
+        created_by or "system",
+        f"Registered oversight plan: {plan_name}",
+    )
     return {
         "plan_id": plan_id,
         "project_id": project_id,
@@ -142,18 +148,16 @@ def register_oversight_plan(conn: sqlite3.Connection, project_id: str,
     }
 
 
-def designate_caio(conn: sqlite3.Connection, project_id: str,
-                   name: str, role: str = "CAIO",
-                   organization: str = "") -> Dict:
+def designate_caio(
+    conn: sqlite3.Connection, project_id: str, name: str, role: str = "CAIO", organization: str = ""
+) -> Dict:
     """Designate a Chief AI Officer or responsible individual."""
     cur = conn.execute(
-        "INSERT INTO ai_caio_registry (project_id, name, role, organization) "
-        "VALUES (?, ?, ?, ?)",
+        "INSERT INTO ai_caio_registry (project_id, name, role, organization) VALUES (?, ?, ?, ?)",
         (project_id, name, role, organization),
     )
     conn.commit()
-    _audit_log(conn, project_id, "accountability.caio_designation",
-               name, f"Designated {role}: {name}")
+    _audit_log(conn, project_id, "accountability.caio_designation", name, f"Designated {role}: {name}")
     return {
         "caio_id": cur.lastrowid,
         "project_id": project_id,
@@ -163,18 +167,14 @@ def designate_caio(conn: sqlite3.Connection, project_id: str,
     }
 
 
-def file_appeal(conn: sqlite3.Connection, project_id: str,
-                appellant: str, ai_system: str,
-                grievance: str = "") -> Dict:
+def file_appeal(conn: sqlite3.Connection, project_id: str, appellant: str, ai_system: str, grievance: str = "") -> Dict:
     """File an appeal against an AI system decision."""
     cur = conn.execute(
-        "INSERT INTO ai_accountability_appeals "
-        "(project_id, appellant, ai_system, grievance) VALUES (?, ?, ?, ?)",
+        "INSERT INTO ai_accountability_appeals (project_id, appellant, ai_system, grievance) VALUES (?, ?, ?, ?)",
         (project_id, appellant, ai_system, grievance),
     )
     conn.commit()
-    _audit_log(conn, project_id, "accountability.appeal_filed",
-               appellant, f"Appeal filed against {ai_system}")
+    _audit_log(conn, project_id, "accountability.appeal_filed", appellant, f"Appeal filed against {ai_system}")
     return {
         "appeal_id": cur.lastrowid,
         "project_id": project_id,
@@ -184,31 +184,33 @@ def file_appeal(conn: sqlite3.Connection, project_id: str,
     }
 
 
-def resolve_appeal(conn: sqlite3.Connection, appeal_id: int,
-                   resolution: str, status: str = "resolved") -> Dict:
+def resolve_appeal(conn: sqlite3.Connection, appeal_id: int, resolution: str, status: str = "resolved") -> Dict:
     """Resolve a pending appeal."""
     if status not in VALID_APPEAL_STATUSES:
         return {"error": f"Invalid status. Must be one of {VALID_APPEAL_STATUSES}"}
     now = datetime.now(timezone.utc).isoformat()
     conn.execute(
-        "UPDATE ai_accountability_appeals SET resolution=?, status=?, resolved_at=? "
-        "WHERE id=?",
+        "UPDATE ai_accountability_appeals SET resolution=?, status=?, resolved_at=? WHERE id=?",
         (resolution, status, now, appeal_id),
     )
     conn.commit()
-    row = conn.execute("SELECT * FROM ai_accountability_appeals WHERE id=?",
-                       (appeal_id,)).fetchone()
+    row = conn.execute("SELECT * FROM ai_accountability_appeals WHERE id=?", (appeal_id,)).fetchone()
     if not row:
         return {"error": f"Appeal {appeal_id} not found"}
-    _audit_log(conn, row["project_id"], "accountability.appeal_resolved",
-               "system", f"Appeal {appeal_id} resolved as {status}")
+    _audit_log(
+        conn, row["project_id"], "accountability.appeal_resolved", "system", f"Appeal {appeal_id} resolved as {status}"
+    )
     return dict(row)
 
 
-def submit_ethics_review(conn: sqlite3.Connection, project_id: str,
-                         review_type: str, summary: str = "",
-                         findings: str = "",
-                         recommendation: str = "") -> Dict:
+def submit_ethics_review(
+    conn: sqlite3.Connection,
+    project_id: str,
+    review_type: str,
+    summary: str = "",
+    findings: str = "",
+    recommendation: str = "",
+) -> Dict:
     """Submit an ethics review for an AI project."""
     if review_type not in VALID_REVIEW_TYPES:
         return {"error": f"Invalid review_type. Must be one of {VALID_REVIEW_TYPES}"}
@@ -219,8 +221,7 @@ def submit_ethics_review(conn: sqlite3.Connection, project_id: str,
         (project_id, review_type, summary, findings, recommendation),
     )
     conn.commit()
-    _audit_log(conn, project_id, "accountability.ethics_review",
-               "system", f"Ethics review submitted: {review_type}")
+    _audit_log(conn, project_id, "accountability.ethics_review", "system", f"Ethics review submitted: {review_type}")
     return {
         "review_id": cur.lastrowid,
         "project_id": project_id,
@@ -229,13 +230,18 @@ def submit_ethics_review(conn: sqlite3.Connection, project_id: str,
     }
 
 
-def schedule_reassessment(conn: sqlite3.Connection, project_id: str,
-                          ai_system: str, frequency: str = "annual",
-                          last_assessed: Optional[str] = None) -> Dict:
+def schedule_reassessment(
+    conn: sqlite3.Connection,
+    project_id: str,
+    ai_system: str,
+    frequency: str = "annual",
+    last_assessed: Optional[str] = None,
+) -> Dict:
     """Schedule periodic reassessment for an AI system."""
     if frequency not in VALID_FREQUENCIES:
         return {"error": f"Invalid frequency. Must be one of {VALID_FREQUENCIES}"}
     from datetime import timedelta
+
     freq_days = {"quarterly": 90, "semi_annual": 182, "annual": 365, "biennial": 730}
     base = last_assessed or datetime.now(timezone.utc).strftime("%Y-%m-%d")
     try:
@@ -250,8 +256,13 @@ def schedule_reassessment(conn: sqlite3.Connection, project_id: str,
         (project_id, ai_system, frequency, base, next_due),
     )
     conn.commit()
-    _audit_log(conn, project_id, "accountability.reassessment_scheduled",
-               "system", f"Reassessment scheduled for {ai_system}: {frequency}")
+    _audit_log(
+        conn,
+        project_id,
+        "accountability.reassessment_scheduled",
+        "system",
+        f"Reassessment scheduled for {ai_system}: {frequency}",
+    )
     return {
         "schedule_id": cur.lastrowid,
         "project_id": project_id,
@@ -261,8 +272,7 @@ def schedule_reassessment(conn: sqlite3.Connection, project_id: str,
     }
 
 
-def get_accountability_summary(conn: sqlite3.Connection,
-                               project_id: str) -> Dict:
+def get_accountability_summary(conn: sqlite3.Connection, project_id: str) -> Dict:
     """Return a consolidated accountability summary for a project."""
     plans = conn.execute(
         "SELECT * FROM ai_oversight_plans WHERE project_id=?",
@@ -351,33 +361,51 @@ def main() -> None:
         result = get_accountability_summary(conn, args.project_id)
     elif args.register_oversight:
         result = register_oversight_plan(
-            conn, args.project_id, args.plan_name,
-            args.description, args.created_by,
+            conn,
+            args.project_id,
+            args.plan_name,
+            args.description,
+            args.created_by,
         )
     elif args.designate_caio:
         result = designate_caio(
-            conn, args.project_id, args.name,
-            args.role, args.organization,
+            conn,
+            args.project_id,
+            args.name,
+            args.role,
+            args.organization,
         )
     elif args.file_appeal:
         result = file_appeal(
-            conn, args.project_id, args.appellant,
-            args.ai_system, args.grievance,
+            conn,
+            args.project_id,
+            args.appellant,
+            args.ai_system,
+            args.grievance,
         )
     elif args.resolve_appeal_id is not None:
         result = resolve_appeal(
-            conn, args.resolve_appeal_id,
-            args.resolution, args.appeal_status,
+            conn,
+            args.resolve_appeal_id,
+            args.resolution,
+            args.appeal_status,
         )
     elif args.submit_ethics_review:
         result = submit_ethics_review(
-            conn, args.project_id, args.review_type,
-            args.description, args.findings, args.recommendation,
+            conn,
+            args.project_id,
+            args.review_type,
+            args.description,
+            args.findings,
+            args.recommendation,
         )
     elif args.schedule_reassessment:
         result = schedule_reassessment(
-            conn, args.project_id, args.ai_system,
-            args.frequency, args.last_assessed,
+            conn,
+            args.project_id,
+            args.ai_system,
+            args.frequency,
+            args.last_assessed,
         )
     else:
         result = {"error": "No action specified. Use --summary, --register-oversight, etc."}

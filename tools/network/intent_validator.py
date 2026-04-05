@@ -8,6 +8,7 @@ isolation policies, latency bounds, encryption mandates).
 Extends the compliance engine with custom, topology-specific policies
 that users define through the UI. No Flask dependency.
 """
+
 from collections import deque
 
 
@@ -69,29 +70,65 @@ CONSTRAINT_TYPES = {
 # ── Node type sets (mirrored from compliance.py for independence) ─────────────
 
 _FIREWALL_TYPES = {
-    "firewall", "aws-nfw", "az-fw", "gcp-armor", "oci-waf", "aws-waf",
+    "firewall",
+    "aws-nfw",
+    "az-fw",
+    "gcp-armor",
+    "oci-waf",
+    "aws-waf",
 }
 _ENCRYPTOR_TYPES = {
-    "fips-140-l1", "fips-140-l2", "fips-140-l3", "fips-140-l4",
-    "hsm", "type1-encryptor", "kg-175d", "kg-175g", "kg-250",
-    "kg-340", "kg-245x", "kg-255", "macsec",
+    "fips-140-l1",
+    "fips-140-l2",
+    "fips-140-l3",
+    "fips-140-l4",
+    "hsm",
+    "type1-encryptor",
+    "kg-175d",
+    "kg-175g",
+    "kg-250",
+    "kg-340",
+    "kg-245x",
+    "kg-255",
+    "macsec",
 }
 _TYPE1_TYPES = {
-    "type1-encryptor", "kg-175d", "kg-175g", "kg-250", "kg-340",
-    "kg-245x", "kg-255",
+    "type1-encryptor",
+    "kg-175d",
+    "kg-175g",
+    "kg-250",
+    "kg-340",
+    "kg-245x",
+    "kg-255",
 }
 _WAN_TYPES = {
-    "cloud", "aws-dx", "az-er", "gcp-ic", "oci-fc", "ibm-dl",
-    "aws-vpn", "az-vpn-gw", "gcp-vpn", "ibm-vpn", "sdwan-overlay",
+    "cloud",
+    "aws-dx",
+    "az-er",
+    "gcp-ic",
+    "oci-fc",
+    "ibm-dl",
+    "aws-vpn",
+    "az-vpn-gw",
+    "gcp-vpn",
+    "ibm-vpn",
+    "sdwan-overlay",
     "internet-exchange",
 }
 _CORE_TYPES = {"router", "switch-l3", "mpls-pe", "mpls-p", "route-reflector"}
 _ENCRYPTED_PROTOS = {
-    "ipsec", "ipsec esp", "gre/ipsec", "mtls", "tls", "dtls", "macsec",
+    "ipsec",
+    "ipsec esp",
+    "gre/ipsec",
+    "mtls",
+    "tls",
+    "dtls",
+    "macsec",
 }
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
 
 def _parse_bandwidth_label(label: str) -> int:
     """Extract bandwidth in Mbps from an edge label like '10G', '100M'."""
@@ -176,8 +213,8 @@ def _path_has_firewall(adj: dict, node_types: dict, src: str, dst: str) -> bool:
 
 # ── Per-constraint-type validators ────────────────────────────────────────────
 
-def _check_bandwidth(rule: dict, nodes: list, edges: list,
-                     node_types: dict, adj: dict, label_map: dict) -> list:
+
+def _check_bandwidth(rule: dict, nodes: list, edges: list, node_types: dict, adj: dict, label_map: dict) -> list:
     """Validate bandwidth threshold constraint."""
     violations = []
     min_bw = rule.get("min_bandwidth_mbps", 0)
@@ -195,29 +232,32 @@ def _check_bandwidth(rule: dict, nodes: list, edges: list,
         if link_bw == 0:
             # Unknown bandwidth — flag if we can't determine
             link_bw_str = e.get("label", "") or "unlabeled"
-            violations.append({
-                "constraint_type": "bandwidth",
-                "severity": "CAT3",
-                "message": f"Link {label_map.get(src, src)} \u2014 {label_map.get(tgt, tgt)} "
-                           f"has no parseable bandwidth label ({link_bw_str}), "
-                           f"required \u2265{min_bw} Mbps",
-                "affected_entity": f"{label_map.get(src, src)} \u2014 {label_map.get(tgt, tgt)}",
-                "affected_type": "edge",
-            })
+            violations.append(
+                {
+                    "constraint_type": "bandwidth",
+                    "severity": "CAT3",
+                    "message": f"Link {label_map.get(src, src)} \u2014 {label_map.get(tgt, tgt)} "
+                    f"has no parseable bandwidth label ({link_bw_str}), "
+                    f"required \u2265{min_bw} Mbps",
+                    "affected_entity": f"{label_map.get(src, src)} \u2014 {label_map.get(tgt, tgt)}",
+                    "affected_type": "edge",
+                }
+            )
         elif link_bw < min_bw:
-            violations.append({
-                "constraint_type": "bandwidth",
-                "severity": "CAT2",
-                "message": f"Link {label_map.get(src, src)} \u2014 {label_map.get(tgt, tgt)} "
-                           f"bandwidth {link_bw} Mbps < required {min_bw} Mbps",
-                "affected_entity": f"{label_map.get(src, src)} \u2014 {label_map.get(tgt, tgt)}",
-                "affected_type": "edge",
-            })
+            violations.append(
+                {
+                    "constraint_type": "bandwidth",
+                    "severity": "CAT2",
+                    "message": f"Link {label_map.get(src, src)} \u2014 {label_map.get(tgt, tgt)} "
+                    f"bandwidth {link_bw} Mbps < required {min_bw} Mbps",
+                    "affected_entity": f"{label_map.get(src, src)} \u2014 {label_map.get(tgt, tgt)}",
+                    "affected_type": "edge",
+                }
+            )
     return violations
 
 
-def _check_redundancy(rule: dict, nodes: list, edges: list,
-                      node_types: dict, adj: dict, label_map: dict) -> list:
+def _check_redundancy(rule: dict, nodes: list, edges: list, node_types: dict, adj: dict, label_map: dict) -> list:
     """Validate redundancy requirement constraint."""
     violations = []
     min_links = rule.get("min_links", 2)
@@ -228,19 +268,20 @@ def _check_redundancy(rule: dict, nodes: list, edges: list,
             continue
         link_count = len(adj.get(n["id"], set()))
         if link_count < min_links:
-            violations.append({
-                "constraint_type": "redundancy",
-                "severity": "CAT1" if link_count == 0 else "CAT2",
-                "message": f"{label_map.get(n['id'], n['id'])} has {link_count} link(s), "
-                           f"required \u2265{min_links}",
-                "affected_entity": label_map.get(n["id"], n["id"]),
-                "affected_type": "node",
-            })
+            violations.append(
+                {
+                    "constraint_type": "redundancy",
+                    "severity": "CAT1" if link_count == 0 else "CAT2",
+                    "message": f"{label_map.get(n['id'], n['id'])} has {link_count} link(s), "
+                    f"required \u2265{min_links}",
+                    "affected_entity": label_map.get(n["id"], n["id"]),
+                    "affected_type": "node",
+                }
+            )
     return violations
 
 
-def _check_isolation(rule: dict, nodes: list, edges: list,
-                     node_types: dict, adj: dict, label_map: dict) -> list:
+def _check_isolation(rule: dict, nodes: list, edges: list, node_types: dict, adj: dict, label_map: dict) -> list:
     """Validate isolation policy constraint."""
     violations = []
     zone_a = rule.get("zone_a", "")
@@ -263,32 +304,35 @@ def _check_isolation(rule: dict, nodes: list, edges: list,
             if b_id in adj.get(a_id, set()):
                 if require_fw:
                     # Direct link with no firewall in between
-                    violations.append({
-                        "constraint_type": "isolation",
-                        "severity": "CAT1",
-                        "message": f"Direct link between {label_map.get(a_id, a_id)} "
-                                   f"(zone: {zone_a}) and {label_map.get(b_id, b_id)} "
-                                   f"(zone: {zone_b}) without firewall",
-                        "affected_entity": f"{label_map.get(a_id, a_id)} \u2014 {label_map.get(b_id, b_id)}",
-                        "affected_type": "edge",
-                    })
+                    violations.append(
+                        {
+                            "constraint_type": "isolation",
+                            "severity": "CAT1",
+                            "message": f"Direct link between {label_map.get(a_id, a_id)} "
+                            f"(zone: {zone_a}) and {label_map.get(b_id, b_id)} "
+                            f"(zone: {zone_b}) without firewall",
+                            "affected_entity": f"{label_map.get(a_id, a_id)} \u2014 {label_map.get(b_id, b_id)}",
+                            "affected_type": "edge",
+                        }
+                    )
             elif adj.get(a_id) and adj.get(b_id):
                 # Multi-hop path — check if firewall is in the path
                 if require_fw and not _path_has_firewall(adj, node_types, a_id, b_id):
-                    violations.append({
-                        "constraint_type": "isolation",
-                        "severity": "CAT1",
-                        "message": f"Path from {label_map.get(a_id, a_id)} (zone: {zone_a}) "
-                                   f"to {label_map.get(b_id, b_id)} (zone: {zone_b}) "
-                                   f"has no firewall",
-                        "affected_entity": f"{label_map.get(a_id, a_id)} \u2014 {label_map.get(b_id, b_id)}",
-                        "affected_type": "edge",
-                    })
+                    violations.append(
+                        {
+                            "constraint_type": "isolation",
+                            "severity": "CAT1",
+                            "message": f"Path from {label_map.get(a_id, a_id)} (zone: {zone_a}) "
+                            f"to {label_map.get(b_id, b_id)} (zone: {zone_b}) "
+                            f"has no firewall",
+                            "affected_entity": f"{label_map.get(a_id, a_id)} \u2014 {label_map.get(b_id, b_id)}",
+                            "affected_type": "edge",
+                        }
+                    )
     return violations
 
 
-def _check_latency(rule: dict, nodes: list, edges: list,
-                   node_types: dict, adj: dict, label_map: dict) -> list:
+def _check_latency(rule: dict, nodes: list, edges: list, node_types: dict, adj: dict, label_map: dict) -> list:
     """Validate latency bound (max hop count) constraint."""
     violations = []
     max_hops = rule.get("max_hops", 5)
@@ -309,28 +353,30 @@ def _check_latency(rule: dict, nodes: list, edges: list,
             checked.add(pair)
             hops = _shortest_hop_count(adj, s, t)
             if hops < 0:
-                violations.append({
-                    "constraint_type": "latency",
-                    "severity": "CAT1",
-                    "message": f"No path between {label_map.get(s, s)} and "
-                               f"{label_map.get(t, t)} (unreachable)",
-                    "affected_entity": f"{label_map.get(s, s)} \u2014 {label_map.get(t, t)}",
-                    "affected_type": "edge",
-                })
+                violations.append(
+                    {
+                        "constraint_type": "latency",
+                        "severity": "CAT1",
+                        "message": f"No path between {label_map.get(s, s)} and {label_map.get(t, t)} (unreachable)",
+                        "affected_entity": f"{label_map.get(s, s)} \u2014 {label_map.get(t, t)}",
+                        "affected_type": "edge",
+                    }
+                )
             elif hops > max_hops:
-                violations.append({
-                    "constraint_type": "latency",
-                    "severity": "CAT2",
-                    "message": f"Path {label_map.get(s, s)} \u2192 {label_map.get(t, t)} "
-                               f"is {hops} hops (max {max_hops})",
-                    "affected_entity": f"{label_map.get(s, s)} \u2014 {label_map.get(t, t)}",
-                    "affected_type": "edge",
-                })
+                violations.append(
+                    {
+                        "constraint_type": "latency",
+                        "severity": "CAT2",
+                        "message": f"Path {label_map.get(s, s)} \u2192 {label_map.get(t, t)} "
+                        f"is {hops} hops (max {max_hops})",
+                        "affected_entity": f"{label_map.get(s, s)} \u2014 {label_map.get(t, t)}",
+                        "affected_type": "edge",
+                    }
+                )
     return violations
 
 
-def _check_encryption(rule: dict, nodes: list, edges: list,
-                      node_types: dict, adj: dict, label_map: dict) -> list:
+def _check_encryption(rule: dict, nodes: list, edges: list, node_types: dict, adj: dict, label_map: dict) -> list:
     """Validate encryption mandate constraint."""
     violations = []
     selector = rule.get("selector", "all_wan")
@@ -345,54 +391,57 @@ def _check_encryption(rule: dict, nodes: list, edges: list,
         # Determine if this edge matches the selector
         match = False
         if selector == "all_wan":
-            match = (node_types.get(src) in _WAN_TYPES or node_types.get(tgt) in _WAN_TYPES)
+            match = node_types.get(src) in _WAN_TYPES or node_types.get(tgt) in _WAN_TYPES
         elif selector == "all_cross_zone":
             # Different node types = different zones (simplified)
             match = node_types.get(src) != node_types.get(tgt)
         elif selector == "all":
             match = True
         else:
-            match = (_matches_selector(
+            match = _matches_selector(
                 {"id": src, "label": label_map.get(src, src)}, selector, node_types
-            ) or _matches_selector(
-                {"id": tgt, "label": label_map.get(tgt, tgt)}, selector, node_types
-            ))
+            ) or _matches_selector({"id": tgt, "label": label_map.get(tgt, tgt)}, selector, node_types)
 
         if not match:
             continue
 
         has_enc_proto = proto in _ENCRYPTED_PROTOS
         has_enc_device = src in enc_node_ids or tgt in enc_node_ids
-        has_adjacent_enc = bool(
-            (adj.get(src, set()) & enc_node_ids) or (adj.get(tgt, set()) & enc_node_ids)
-        )
+        has_adjacent_enc = bool((adj.get(src, set()) & enc_node_ids) or (adj.get(tgt, set()) & enc_node_ids))
 
         if not has_enc_proto and not has_enc_device and not has_adjacent_enc:
-            violations.append({
-                "constraint_type": "encryption",
-                "severity": "CAT1",
-                "message": f"Link {label_map.get(src, src)} \u2014 {label_map.get(tgt, tgt)} "
-                           f"is not encrypted (selector: {selector})",
-                "affected_entity": f"{label_map.get(src, src)} \u2014 {label_map.get(tgt, tgt)}",
-                "affected_type": "edge",
-            })
-        elif min_level == "type1" and has_enc_device:
-            # Check if the encryptor is Type 1
-            relevant = (enc_node_ids & {src, tgt}) or (enc_node_ids & adj.get(src, set())) or (enc_node_ids & adj.get(tgt, set()))
-            if relevant and not any(node_types.get(eid) in _TYPE1_TYPES for eid in relevant):
-                violations.append({
+            violations.append(
+                {
                     "constraint_type": "encryption",
-                    "severity": "CAT2",
+                    "severity": "CAT1",
                     "message": f"Link {label_map.get(src, src)} \u2014 {label_map.get(tgt, tgt)} "
-                               f"encryption is not Type 1 (required by policy)",
+                    f"is not encrypted (selector: {selector})",
                     "affected_entity": f"{label_map.get(src, src)} \u2014 {label_map.get(tgt, tgt)}",
                     "affected_type": "edge",
-                })
+                }
+            )
+        elif min_level == "type1" and has_enc_device:
+            # Check if the encryptor is Type 1
+            relevant = (
+                (enc_node_ids & {src, tgt})
+                or (enc_node_ids & adj.get(src, set()))
+                or (enc_node_ids & adj.get(tgt, set()))
+            )
+            if relevant and not any(node_types.get(eid) in _TYPE1_TYPES for eid in relevant):
+                violations.append(
+                    {
+                        "constraint_type": "encryption",
+                        "severity": "CAT2",
+                        "message": f"Link {label_map.get(src, src)} \u2014 {label_map.get(tgt, tgt)} "
+                        f"encryption is not Type 1 (required by policy)",
+                        "affected_entity": f"{label_map.get(src, src)} \u2014 {label_map.get(tgt, tgt)}",
+                        "affected_type": "edge",
+                    }
+                )
     return violations
 
 
-def _check_custom(rule: dict, nodes: list, edges: list,
-                  node_types: dict, adj: dict, label_map: dict) -> list:
+def _check_custom(rule: dict, nodes: list, edges: list, node_types: dict, adj: dict, label_map: dict) -> list:
     """Validate custom constraint (built-in named checks)."""
     violations = []
     check = rule.get("check", "")
@@ -419,39 +468,44 @@ def _check_custom(rule: dict, nodes: list, edges: list,
                         visited.add(nb)
                         queue.append(nb)
             if visited != remaining:
-                violations.append({
-                    "constraint_type": "custom",
-                    "severity": "CAT1",
-                    "message": f"{label_map.get(nid, nid)} is a single point of failure "
-                               f"(removing it disconnects the topology)",
-                    "affected_entity": label_map.get(nid, nid),
-                    "affected_type": "node",
-                })
+                violations.append(
+                    {
+                        "constraint_type": "custom",
+                        "severity": "CAT1",
+                        "message": f"{label_map.get(nid, nid)} is a single point of failure "
+                        f"(removing it disconnects the topology)",
+                        "affected_entity": label_map.get(nid, nid),
+                        "affected_type": "node",
+                    }
+                )
 
     elif check == "max_node_count":
         max_count = params.get("max", 50)
         if len(nodes) > max_count:
-            violations.append({
-                "constraint_type": "custom",
-                "severity": "CAT3",
-                "message": f"Topology has {len(nodes)} nodes (max {max_count})",
-                "affected_entity": "topology",
-                "affected_type": "topology",
-            })
+            violations.append(
+                {
+                    "constraint_type": "custom",
+                    "severity": "CAT3",
+                    "message": f"Topology has {len(nodes)} nodes (max {max_count})",
+                    "affected_entity": "topology",
+                    "affected_type": "topology",
+                }
+            )
 
     elif check == "required_node_type":
         required_type = params.get("type", "")
         min_count = params.get("min_count", 1)
         actual = sum(1 for n in nodes if node_types.get(n["id"]) == required_type)
         if actual < min_count:
-            violations.append({
-                "constraint_type": "custom",
-                "severity": "CAT2",
-                "message": f"Topology has {actual} node(s) of type '{required_type}' "
-                           f"(required \u2265{min_count})",
-                "affected_entity": "topology",
-                "affected_type": "topology",
-            })
+            violations.append(
+                {
+                    "constraint_type": "custom",
+                    "severity": "CAT2",
+                    "message": f"Topology has {actual} node(s) of type '{required_type}' (required \u2265{min_count})",
+                    "affected_entity": "topology",
+                    "affected_type": "topology",
+                }
+            )
 
     return violations
 
@@ -469,6 +523,7 @@ _CHECKERS = {
 
 
 # ── Main validation entry point ──────────────────────────────────────────────
+
 
 def validate_intent_policy(
     topology_id: str,
@@ -506,6 +561,7 @@ def validate_intent_policy(
         rule = constraint.get("rule_json", {})
         if isinstance(rule, str):
             import json
+
             try:
                 rule = json.loads(rule)
             except Exception:

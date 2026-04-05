@@ -47,11 +47,11 @@ CONFIG_PATH = BASE_DIR / "args" / "appforge_config.yaml"
 PID_FILE = BASE_DIR / ".tmp" / "appforge" / "daemon.pid"
 
 REFLEX_NAMES = [
-    "discover",   # Scan innovation + creative + research for challenges
-    "evaluate",   # Score and select best challenge
+    "discover",  # Scan innovation + creative + research for challenges
+    "evaluate",  # Score and select best challenge
     "architect",  # Generate app blueprint
-    "build",      # Create child app
-    "publish",    # Write and publish Pulse article
+    "build",  # Create child app
+    "publish",  # Write and publish Pulse article
 ]
 
 
@@ -145,41 +145,54 @@ class AppForgeDaemon(DaemonBase):
         finally:
             conn.close()
 
-    def log_audit(self, event_type: str, reflex_name: str = None,
-                  risk_tier: str = None, details: Dict = None,
-                  success: bool = None, duration_ms: int = None,
-                  metric_name: str = None, metric_value: float = None,
-                  **kwargs) -> str:
+    def log_audit(
+        self,
+        event_type: str,
+        reflex_name: str = None,
+        risk_tier: str = None,
+        details: Dict = None,
+        success: bool = None,
+        duration_ms: int = None,
+        metric_name: str = None,
+        metric_value: float = None,
+        **kwargs,
+    ) -> str:
         """Append-only audit logging."""
         audit_id = generate_id("afg-aud")
         conn = get_connection()
         try:
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT INTO appforge_audit
                     (id, event_type, reflex_name, risk_tier, details, success,
                      duration_ms, metric_name, metric_value, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                audit_id, event_type, reflex_name, risk_tier,
-                json.dumps(details) if details else None,
-                1 if success else (0 if success is False else None),
-                duration_ms, metric_name, metric_value,
-                utcnow_iso(),
-            ))
+            """,
+                (
+                    audit_id,
+                    event_type,
+                    reflex_name,
+                    risk_tier,
+                    json.dumps(details) if details else None,
+                    1 if success else (0 if success is False else None),
+                    duration_ms,
+                    metric_name,
+                    metric_value,
+                    utcnow_iso(),
+                ),
+            )
             conn.commit()
         finally:
             conn.close()
         return audit_id
 
-    def create_reflex_state(self, name: str,
-                            config: Dict[str, Any]) -> ReflexStateBase:
+    def create_reflex_state(self, name: str, config: Dict[str, Any]) -> ReflexStateBase:
         return AppForgeReflexState(name, config)
 
     def create_trust_kernel(self, config: Dict[str, Any]) -> TrustKernelBase:
         return AppForgeTrustKernel(config)
 
-    def run_reflex_impl(self, name: str, config: Dict[str, Any],
-                        trust: TrustKernelBase) -> Tuple[bool, float, Dict]:
+    def run_reflex_impl(self, name: str, config: Dict[str, Any], trust: TrustKernelBase) -> Tuple[bool, float, Dict]:
         """Execute a single reflex via tools/appforge/reflexes/<name>.py."""
         try:
             module = importlib.import_module(f"tools.appforge.reflexes.{name}")
@@ -195,10 +208,14 @@ class AppForgeDaemon(DaemonBase):
         except Exception as e:
             return False, 0.0, {"error": str(e), "stage": "reflex_execution"}
 
-        return True, 0.0, {
-            "status": "stub",
-            "message": f"Reflex '{name}' not yet implemented — stub mode",
-        }
+        return (
+            True,
+            0.0,
+            {
+                "status": "stub",
+                "message": f"Reflex '{name}' not yet implemented — stub mode",
+            },
+        )
 
 
 # ---------------------------------------------------------------------------

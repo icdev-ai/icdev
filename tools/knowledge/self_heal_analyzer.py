@@ -17,6 +17,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import get_connection  # noqa: E402
+
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 # Thresholds
@@ -30,6 +31,7 @@ _PER_PROJECT_ALPHA = 0.6
 
 try:
     import yaml as _yaml
+
     _pp_cfg_path = Path(__file__).resolve().parent.parent.parent / "args" / "evolution_config.yaml"
     if _pp_cfg_path.exists():
         with open(_pp_cfg_path, encoding="utf-8") as _f:
@@ -229,6 +231,7 @@ def _coherence_fix(context: dict) -> dict:
     """Run coherence checker with auto-fix for schema/config drift."""
     try:
         from tools.workflow.coherence_checker import run_checks
+
         report = run_checks(autofix=True)
         return {
             "action": "coherence_fix",
@@ -263,7 +266,8 @@ def _get_project_effectiveness(pattern_id, project_id: str, db_path: Path = None
         row = conn.execute(
             """SELECT effectiveness, attempts FROM self_heal_project_patterns
                WHERE pattern_signature = ? AND project_id = ?""",
-            (str(pattern_id), project_id)).fetchone()
+            (str(pattern_id), project_id),
+        ).fetchone()
         if row and row["attempts"] >= 3:
             return row["effectiveness"]
         return None
@@ -273,15 +277,15 @@ def _get_project_effectiveness(pattern_id, project_id: str, db_path: Path = None
         conn.close()
 
 
-def _record_project_outcome(pattern_id, project_id: str, success: bool,
-                            db_path: Path = None) -> None:
+def _record_project_outcome(pattern_id, project_id: str, success: bool, db_path: Path = None) -> None:
     """Record per-project healing outcome for blending (D-EVO-8)."""
     if not pattern_id or not project_id or not _PER_PROJECT_ENABLED:
         return
     conn = _get_db(db_path)
     try:
         now = datetime.now(timezone.utc).isoformat()
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO self_heal_project_patterns
                 (pattern_signature, project_id, attempts, successes, failures,
                  effectiveness, last_attempt_at)
@@ -292,11 +296,20 @@ def _record_project_outcome(pattern_id, project_id: str, success: bool,
                 failures = failures + ?,
                 effectiveness = CAST((successes + ?) AS REAL) / (attempts + 1),
                 last_attempt_at = ?
-        """, (str(pattern_id), project_id,
-              1 if success else 0, 0 if success else 1,
-              1.0 if success else 0.0, now,
-              1 if success else 0, 0 if success else 1,
-              1 if success else 0, now))
+        """,
+            (
+                str(pattern_id),
+                project_id,
+                1 if success else 0,
+                0 if success else 1,
+                1.0 if success else 0.0,
+                now,
+                1 if success else 0,
+                0 if success else 1,
+                1 if success else 0,
+                now,
+            ),
+        )
         conn.commit()
     except Exception:
         pass
@@ -349,11 +362,9 @@ def analyze_and_heal(failure_data: dict, dry_run: bool = False, db_path: Path = 
     confidence = top_match["combined_score"]
     project_id = failure_data.get("project_id")
     if project_id and _PER_PROJECT_ENABLED:
-        project_effectiveness = _get_project_effectiveness(
-            top_match.get("pattern_id"), project_id, db_path)
+        project_effectiveness = _get_project_effectiveness(top_match.get("pattern_id"), project_id, db_path)
         if project_effectiveness is not None:
-            confidence = (_PER_PROJECT_ALPHA * confidence
-                          + (1 - _PER_PROJECT_ALPHA) * project_effectiveness)
+            confidence = _PER_PROJECT_ALPHA * confidence + (1 - _PER_PROJECT_ALPHA) * project_effectiveness
             result["project_blended"] = True
             result["project_effectiveness"] = round(project_effectiveness, 3)
     auto_healable = top_match.get("auto_healable", False)
@@ -544,8 +555,8 @@ def record_outcome(
             # Fetch project_id from the event's failure context
             try:
                 evt_details = conn.execute(
-                    "SELECT trigger_source FROM self_healing_events WHERE id = ?",
-                    (healing_event_id,)).fetchone()
+                    "SELECT trigger_source FROM self_healing_events WHERE id = ?", (healing_event_id,)
+                ).fetchone()
                 if evt_details:
                     trigger = evt_details["trigger_source"] or ""
                     try:
@@ -554,9 +565,7 @@ def record_outcome(
                     except (json.JSONDecodeError, TypeError):
                         pid = None
                     if pid:
-                        _record_project_outcome(
-                            event["pattern_id"], pid,
-                            outcome == "success", db_path)
+                        _record_project_outcome(event["pattern_id"], pid, outcome == "success", db_path)
             except Exception:
                 pass
 

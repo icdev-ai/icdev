@@ -1,6 +1,7 @@
 # [TEMPLATE: CUI // SP-CTI]
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 """Tests for SaaS tenant LLM key management (Phase 32 -- D141).
@@ -16,7 +17,8 @@ import sqlite3
 import pytest
 
 try:
-    from icdev.tools.saas.tenant_llm_keys import VALID_PROVIDERS
+    from icdev.tools.saas.tenant_llm_keys import VALID_PROVIDERS  # noqa: F401
+
     _IMPORT_OK = True
 except ImportError:
     _IMPORT_OK = False
@@ -93,8 +95,7 @@ def platform_db(tmp_path, monkeypatch):
         (USER_ID, TENANT_PRO, "admin@pro.mil", "tenant_admin"),
     )
     conn.execute(
-        "INSERT INTO subscriptions (id, tenant_id, tier, status) "
-        "VALUES (?, ?, ?, ?)",
+        "INSERT INTO subscriptions (id, tenant_id, tier, status) VALUES (?, ?, ?, ?)",
         ("sub-pro", TENANT_PRO, "professional", "active"),
     )
 
@@ -104,8 +105,7 @@ def platform_db(tmp_path, monkeypatch):
         (TENANT_STARTER, "Starter Org", "starter-org", "starter"),
     )
     conn.execute(
-        "INSERT INTO subscriptions (id, tenant_id, tier, status) "
-        "VALUES (?, ?, ?, ?)",
+        "INSERT INTO subscriptions (id, tenant_id, tier, status) VALUES (?, ?, ?, ?)",
         ("sub-starter", TENANT_STARTER, "starter", "active"),
     )
 
@@ -118,13 +118,12 @@ def platform_db(tmp_path, monkeypatch):
         c.row_factory = sqlite3.Row
         return c
 
-    monkeypatch.setattr(
-        "icdev.tools.saas.platform_db.get_platform_connection", _mock_conn
-    )
+    monkeypatch.setattr("icdev.tools.saas.platform_db.get_platform_connection", _mock_conn)
     # Also patch the bare-module path used by local imports inside
     # tenant_llm_keys._get_conn() (``from tools.saas.platform_db import …``)
     try:
         import tools.saas.platform_db as _bare_pdb
+
         monkeypatch.setattr(_bare_pdb, "get_platform_connection", _mock_conn)
     except (ImportError, AttributeError):
         pass
@@ -154,7 +153,11 @@ class TestStoreTenantLlmKey:
         from icdev.tools.saas.tenant_llm_keys import store_tenant_llm_key
 
         result = store_tenant_llm_key(
-            TENANT_PRO, "anthropic", TEST_KEY, "My Claude Key", USER_ID,
+            TENANT_PRO,
+            "anthropic",
+            TEST_KEY,
+            "My Claude Key",
+            USER_ID,
         )
         assert result["provider"] == "anthropic"
         assert result["key_label"] == "My Claude Key"
@@ -188,7 +191,10 @@ class TestStoreTenantLlmKey:
 
         with pytest.raises(ValueError, match="Professional or Enterprise"):
             store_tenant_llm_key(
-                TENANT_STARTER, "anthropic", TEST_KEY, "Blocked",
+                TENANT_STARTER,
+                "anthropic",
+                TEST_KEY,
+                "Blocked",
             )
 
 
@@ -232,7 +238,10 @@ class TestRevokeTenantLlmKey:
         )
 
         result = store_tenant_llm_key(
-            TENANT_PRO, "anthropic", TEST_KEY, "Revocable",
+            TENANT_PRO,
+            "anthropic",
+            TEST_KEY,
+            "Revocable",
         )
         assert revoke_tenant_llm_key(TENANT_PRO, result["id"]) is True
 
@@ -246,7 +255,10 @@ class TestRevokeTenantLlmKey:
         )
 
         result = store_tenant_llm_key(
-            TENANT_PRO, "anthropic", TEST_KEY, "Pro Key",
+            TENANT_PRO,
+            "anthropic",
+            TEST_KEY,
+            "Pro Key",
         )
         # Try to revoke from a different tenant
         assert revoke_tenant_llm_key(TENANT_STARTER, result["id"]) is False
@@ -276,7 +288,10 @@ class TestGetActiveKeyForProvider:
         )
 
         result = store_tenant_llm_key(
-            TENANT_PRO, "openai", TEST_KEY, "Revoked Key",
+            TENANT_PRO,
+            "openai",
+            TEST_KEY,
+            "Revoked Key",
         )
         revoke_tenant_llm_key(TENANT_PRO, result["id"])
         key = get_active_key_for_provider(TENANT_PRO, "openai")

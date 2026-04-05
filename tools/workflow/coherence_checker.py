@@ -124,6 +124,7 @@ def _load_config() -> Dict[str, Any]:
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _read_text(path: Path) -> str:
     try:
         return path.read_text(encoding="utf-8")
@@ -293,6 +294,7 @@ def _extract_function_calls(source: str) -> List[Tuple[str, int, int, List[str]]
 # Check 1: Schema-Code Coherence
 # ---------------------------------------------------------------------------
 
+
 def check_schema_code(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
     """Verify CREATE TABLE columns match INSERT statements in tools."""
     schema_path = PROJECT_ROOT / "tools" / "db" / "init_icdev_db.py"
@@ -339,7 +341,8 @@ def check_schema_code(changed_files: Optional[List[Path]] = None) -> CoherenceCh
             status="fail",
             expected=["All INSERT columns exist in CREATE TABLE"],
             actual=mismatches,
-            missing=[], extra=mismatches,
+            missing=[],
+            extra=mismatches,
             message=f"{len(mismatches)} schema-code mismatch(es) found",
         )
 
@@ -349,7 +352,8 @@ def check_schema_code(changed_files: Optional[List[Path]] = None) -> CoherenceCh
         status="pass",
         expected=["All INSERT columns exist in CREATE TABLE"],
         actual=[f"Checked {len(checked_files)} files"],
-        missing=[], extra=[],
+        missing=[],
+        extra=[],
         message="All INSERT columns match schema definitions",
     )
 
@@ -358,12 +362,18 @@ def check_schema_code(changed_files: Optional[List[Path]] = None) -> CoherenceCh
 # Check 2: Config-Code Coherence
 # ---------------------------------------------------------------------------
 
+
 def check_config_code(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
     """Verify YAML config keys are referenced in code that loads them."""
     if not _HAS_YAML:
         return CoherenceCheck(
-            check_id="config_code", check_name="Config-Code Coherence",
-            status="warn", expected=[], actual=[], missing=[], extra=[],
+            check_id="config_code",
+            check_name="Config-Code Coherence",
+            status="warn",
+            expected=[],
+            actual=[],
+            missing=[],
+            extra=[],
             message="PyYAML not available — skipping config-code check",
         )
 
@@ -414,7 +424,8 @@ def check_config_code(changed_files: Optional[List[Path]] = None) -> CoherenceCh
         status="pass",
         expected=["Config keys referenced in code"],
         actual=[f"Checked {configs_checked} config files"],
-        missing=mismatches, extra=[],
+        missing=mismatches,
+        extra=[],
         message=f"Checked {configs_checked} configs" + (f", {len(mismatches)} issues" if mismatches else ""),
     )
 
@@ -422,6 +433,7 @@ def check_config_code(changed_files: Optional[List[Path]] = None) -> CoherenceCh
 # ---------------------------------------------------------------------------
 # Check 3: Signature-Call Coherence
 # ---------------------------------------------------------------------------
+
 
 def check_signature_call(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
     """Check that functions with many params are called with keyword args in tests."""
@@ -476,7 +488,8 @@ def check_signature_call(changed_files: Optional[List[Path]] = None) -> Coherenc
             status="warn",
             expected=["Functions with 4+ params use keyword args in tests"],
             actual=warnings,
-            missing=[], extra=warnings,
+            missing=[],
+            extra=warnings,
             message=f"{len(warnings)} positional call warning(s) — risk of parameter order bugs",
         )
 
@@ -486,7 +499,8 @@ def check_signature_call(changed_files: Optional[List[Path]] = None) -> Coherenc
         status="pass",
         expected=["Functions with 4+ params use keyword args in tests"],
         actual=[f"Checked {len(test_files)} test files"],
-        missing=[], extra=[],
+        missing=[],
+        extra=[],
         message="No positional-arg risks detected",
     )
 
@@ -494,6 +508,7 @@ def check_signature_call(changed_files: Optional[List[Path]] = None) -> Coherenc
 # ---------------------------------------------------------------------------
 # Check 4: Test Fixture-Schema Coherence
 # ---------------------------------------------------------------------------
+
 
 def check_fixture_schema(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
     """Verify test fixture CREATE TABLE has columns that the test actually uses.
@@ -557,7 +572,8 @@ def check_fixture_schema(changed_files: Optional[List[Path]] = None) -> Coherenc
             status="fail",
             expected=["Test fixtures match init_icdev_db.py schema"],
             actual=mismatches,
-            missing=mismatches, extra=[],
+            missing=mismatches,
+            extra=[],
             message=f"{len(mismatches)} fixture-schema mismatch(es) — tests will fail on missing columns",
         )
 
@@ -567,7 +583,8 @@ def check_fixture_schema(changed_files: Optional[List[Path]] = None) -> Coherenc
         status="pass",
         expected=["Test fixtures match init_icdev_db.py schema"],
         actual=[f"Checked {checked} fixture tables"],
-        missing=[], extra=[],
+        missing=[],
+        extra=[],
         message=f"All {checked} fixture tables match schema",
     )
 
@@ -576,13 +593,19 @@ def check_fixture_schema(changed_files: Optional[List[Path]] = None) -> Coherenc
 # Check 5: Manifest Coherence
 # ---------------------------------------------------------------------------
 
+
 def check_manifest() -> CoherenceCheck:
     """Verify tool Python files are documented in tools/manifest.md."""
     manifest_path = PROJECT_ROOT / "tools" / "manifest.md"
     if not manifest_path.exists():
         return CoherenceCheck(
-            check_id="manifest", check_name="Manifest Coherence",
-            status="warn", expected=[], actual=[], missing=[], extra=[],
+            check_id="manifest",
+            check_name="Manifest Coherence",
+            status="warn",
+            expected=[],
+            actual=[],
+            missing=[],
+            extra=[],
             message="tools/manifest.md not found",
         )
 
@@ -629,7 +652,8 @@ def check_manifest() -> CoherenceCheck:
         status="pass",
         expected=["Tool files documented in manifest"],
         actual=[f"Checked {checked} files"],
-        missing=[], extra=[],
+        missing=[],
+        extra=[],
         message=f"Manifest coverage adequate ({checked} tools checked)",
     )
 
@@ -638,6 +662,7 @@ def check_manifest() -> CoherenceCheck:
 # Check 6: Append-Only Table Coherence (delegates to claude_dir_validator)
 # ---------------------------------------------------------------------------
 
+
 def check_append_only() -> CoherenceCheck:
     """Verify append-only tables in init_icdev_db.py are protected in pre_tool_use.py."""
     schema_path = PROJECT_ROOT / "tools" / "db" / "init_icdev_db.py"
@@ -645,8 +670,13 @@ def check_append_only() -> CoherenceCheck:
 
     if not schema_path.exists() or not hook_path.exists():
         return CoherenceCheck(
-            check_id="append_only", check_name="Append-Only Table Protection",
-            status="warn", expected=[], actual=[], missing=[], extra=[],
+            check_id="append_only",
+            check_name="Append-Only Table Protection",
+            status="warn",
+            expected=[],
+            actual=[],
+            missing=[],
+            extra=[],
             message="Required files not found",
         )
 
@@ -697,7 +727,8 @@ def check_append_only() -> CoherenceCheck:
         status="pass",
         expected=[f"{len(append_only_in_schema)} append-only tables"],
         actual=[f"{len(protected)} protected"],
-        missing=[], extra=[],
+        missing=[],
+        extra=[],
         message="All append-only tables are protected",
     )
 
@@ -706,13 +737,19 @@ def check_append_only() -> CoherenceCheck:
 # Check 7: Import Usage Coherence
 # ---------------------------------------------------------------------------
 
+
 def check_import_usage(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
     """Check for unused imports in changed files (lightweight pre-ruff catch)."""
     files_to_check = changed_files or []
     if not files_to_check:
         return CoherenceCheck(
-            check_id="import_usage", check_name="Import Usage",
-            status="pass", expected=[], actual=[], missing=[], extra=[],
+            check_id="import_usage",
+            check_name="Import Usage",
+            status="pass",
+            expected=[],
+            actual=[],
+            missing=[],
+            extra=[],
             message="No files specified — use --changed-files",
         )
 
@@ -745,7 +782,8 @@ def check_import_usage(changed_files: Optional[List[Path]] = None) -> CoherenceC
             status="warn",
             expected=["All imports used"],
             actual=unused,
-            missing=[], extra=unused,
+            missing=[],
+            extra=unused,
             message=f"{len(unused)} unused import(s) — will fail ruff",
         )
 
@@ -755,7 +793,8 @@ def check_import_usage(changed_files: Optional[List[Path]] = None) -> CoherenceC
         status="pass",
         expected=["All imports used"],
         actual=[f"Checked {len(py_files)} files"],
-        missing=[], extra=[],
+        missing=[],
+        extra=[],
         message="No unused imports detected",
     )
 
@@ -772,7 +811,7 @@ _DB_CALL_PATTERNS = re.compile(
     r"|\.read\(|\.query\("
     r"|open\(|Path\("
     r"|from\s+\S+\s+import\s+"  # lazy imports inside function
-    r"|subprocess\.run\("       # tool dispatch via subprocess
+    r"|subprocess\.run\("  # tool dispatch via subprocess
     r"|import\s+\S*(?:db|storage|connector|model)"
     r")",
     re.IGNORECASE,
@@ -816,10 +855,7 @@ def check_api_wiring(
                         scan_dirs.append(p)
 
     if changed_files:
-        py_files = [
-            f for f in changed_files
-            if f.suffix == ".py" and f.exists()
-        ]
+        py_files = [f for f in changed_files if f.suffix == ".py" and f.exists()]
     else:
         py_files = []
         for d in scan_dirs:
@@ -853,9 +889,7 @@ def check_api_wiring(
                 continue
 
             # Get function body source
-            func_lines = source.splitlines()[
-                node.lineno - 1: node.end_lineno
-            ]
+            func_lines = source.splitlines()[node.lineno - 1 : node.end_lineno]
             func_body = "\n".join(func_lines)
 
             # Skip small health/version endpoints (< 5 lines)
@@ -866,21 +900,11 @@ def check_api_wiring(
             has_db_call = bool(_DB_CALL_PATTERNS.search(func_body))
 
             # Check: does it return jsonify with a literal?
-            has_literal_return = bool(
-                _HARDCODED_RETURN.search(func_body)
-            )
+            has_literal_return = bool(_HARDCODED_RETURN.search(func_body))
 
             if has_literal_return and not has_db_call:
-                rel = (
-                    py_path.relative_to(PROJECT_ROOT)
-                    if py_path.is_relative_to(PROJECT_ROOT)
-                    else py_path
-                )
-                hardcoded_apis.append(
-                    f"{rel}:{node.lineno}: "
-                    f"{node.name}() returns hardcoded data "
-                    f"(no DB/storage call)"
-                )
+                rel = py_path.relative_to(PROJECT_ROOT) if py_path.is_relative_to(PROJECT_ROOT) else py_path
+                hardcoded_apis.append(f"{rel}:{node.lineno}: {node.name}() returns hardcoded data (no DB/storage call)")
 
     if hardcoded_apis:
         return CoherenceCheck(
@@ -932,26 +956,38 @@ CHECK_REGISTRY = {
 
 # Fix tiers: auto (safe, no behavior change), suggest (needs review), skip (risky)
 _FIX_REGISTRY: Dict[str, str] = {
-    "import_usage": "auto",      # ruff --fix --select F401,F811,F841
-    "append_only": "auto",       # add table name to APPEND_ONLY_TABLES
-    "manifest": "auto",           # auto-append missing tools to manifest.md
-    "schema_code": "suggest",    # suggest ALTER TABLE DDL
-    "config_code": "suggest",    # suggest YAML additions
-    "fixture_schema": "suggest", # suggest test fixture DDL
-    "signature_call": "skip",    # too risky to auto-modify call sites
-    "api_wiring": "suggest",     # suggest DB integration for hardcoded APIs
+    "import_usage": "auto",  # ruff --fix --select F401,F811,F841
+    "append_only": "auto",  # add table name to APPEND_ONLY_TABLES
+    "manifest": "auto",  # auto-append missing tools to manifest.md
+    "schema_code": "suggest",  # suggest ALTER TABLE DDL
+    "config_code": "suggest",  # suggest YAML additions
+    "fixture_schema": "suggest",  # suggest test fixture DDL
+    "signature_call": "skip",  # too risky to auto-modify call sites
+    "api_wiring": "suggest",  # suggest DB integration for hardcoded APIs
 }
 
 
 def _autofix_imports(check: CoherenceCheck) -> List[str]:
     """Auto-fix unused imports via ruff."""
     import subprocess
+
     fixes = []
     try:
         result = subprocess.run(
-            [sys.executable, "-m", "ruff", "check", str(PROJECT_ROOT / "tools"),
-             "--fix", "--select", "F401,F811,F841", "--quiet"],
-            capture_output=True, text=True, timeout=60,
+            [
+                sys.executable,
+                "-m",
+                "ruff",
+                "check",
+                str(PROJECT_ROOT / "tools"),
+                "--fix",
+                "--select",
+                "F401,F811,F841",
+                "--quiet",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
         )
         if result.returncode == 0:
             fixes.append("ruff auto-fixed unused imports/variables in tools/")
@@ -1003,28 +1039,17 @@ def _autofix_manifest(check: CoherenceCheck) -> List[str]:
         p = Path(tool_path)
         name = p.stem.replace("_", " ").title()
         desc = f"Auto-registered: {p.parent.name}/{p.name}"
-        lines.append(
-            f"| {name} | {tool_path} | {desc} "
-            f"| --json | JSON |"
-        )
+        lines.append(f"| {name} | {tool_path} | {desc} | --json | JSON |")
 
     if lines:
         with open(manifest_path, "a", encoding="utf-8") as f:
             f.write("\n\n## Auto-Registered (Coherence Fix)\n")
-            f.write(
-                "| Tool | File | Description "
-                "| Input | Output |\n"
-            )
-            f.write(
-                "|------|------|-------------|"
-                "-------|--------|\n"
-            )
+            f.write("| Tool | File | Description | Input | Output |\n")
+            f.write("|------|------|-------------|-------|--------|\n")
             for line in lines:
                 f.write(line + "\n")
 
-    return [
-        f"Appended {len(lines)} tools to manifest.md"
-    ]
+    return [f"Appended {len(lines)} tools to manifest.md"]
 
 
 _AUTOFIX_HANDLERS: Dict[str, Any] = {
@@ -1068,16 +1093,24 @@ def run_checks(
     for check_id in checks_to_run:
         func = CHECK_REGISTRY.get(check_id)
         if not func:
-            results.append(CoherenceCheck(
-                check_id=check_id, check_name=f"Unknown: {check_id}",
-                status="warn", expected=[], actual=[], missing=[], extra=[],
-                message=f"Unknown check: {check_id}",
-            ))
+            results.append(
+                CoherenceCheck(
+                    check_id=check_id,
+                    check_name=f"Unknown: {check_id}",
+                    status="warn",
+                    expected=[],
+                    actual=[],
+                    missing=[],
+                    extra=[],
+                    message=f"Unknown check: {check_id}",
+                )
+            )
             continue
 
         try:
             # Pass changed_files to checks that accept it
             import inspect
+
             sig = inspect.signature(func)
             if "changed_files" in sig.parameters:
                 result = func(changed_files=changed_files)
@@ -1091,11 +1124,18 @@ def run_checks(
 
             results.append(result)
         except Exception as exc:
-            results.append(CoherenceCheck(
-                check_id=check_id, check_name=check_id,
-                status="warn", expected=[], actual=[], missing=[], extra=[],
-                message=f"Check error: {exc}",
-            ))
+            results.append(
+                CoherenceCheck(
+                    check_id=check_id,
+                    check_name=check_id,
+                    status="warn",
+                    expected=[],
+                    actual=[],
+                    missing=[],
+                    extra=[],
+                    message=f"Check error: {exc}",
+                )
+            )
 
     passed = sum(1 for r in results if r.status == "pass")
     failed = sum(1 for r in results if r.status == "fail")
@@ -1116,6 +1156,7 @@ def run_checks(
 # ---------------------------------------------------------------------------
 # Output formatters
 # ---------------------------------------------------------------------------
+
 
 def _format_human(report: CoherenceReport) -> str:
     lines = [
@@ -1146,13 +1187,15 @@ def _format_human(report: CoherenceReport) -> str:
             for fix in c.fixes_applied:
                 lines.append(f"      - {fix}")
 
-    lines.extend([
-        "",
-        f"  Total: {report.total_checks}  Pass: {report.passed_checks}  "
-        f"Fail: {report.failed_checks}  Warn: {report.warned_checks}"
-        + (f"  Fixed: {report.total_fixes}" if report.total_fixes else ""),
-        "",
-    ])
+    lines.extend(
+        [
+            "",
+            f"  Total: {report.total_checks}  Pass: {report.passed_checks}  "
+            f"Fail: {report.failed_checks}  Warn: {report.warned_checks}"
+            + (f"  Fixed: {report.total_fixes}" if report.total_fixes else ""),
+            "",
+        ]
+    )
     return "\n".join(lines)
 
 
@@ -1160,19 +1203,16 @@ def _format_human(report: CoherenceReport) -> str:
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Implementation Coherence Checker — internal consistency validation"
-    )
+    parser = argparse.ArgumentParser(description="Implementation Coherence Checker — internal consistency validation")
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--human", action="store_true", help="Human-readable output")
     parser.add_argument("--gate", action="store_true", help="Exit 0=pass, 1=fail")
     parser.add_argument("--fix", action="store_true", help="Auto-fix safe issues (imports, append-only)")
     parser.add_argument("--all", action="store_true", help="Run all checks")
-    parser.add_argument("--check", type=str, default="",
-                        help=f"Specific check: {', '.join(CHECK_REGISTRY.keys())}")
-    parser.add_argument("--changed-files", type=str, default="",
-                        help="Comma-separated list of changed file paths")
+    parser.add_argument("--check", type=str, default="", help=f"Specific check: {', '.join(CHECK_REGISTRY.keys())}")
+    parser.add_argument("--changed-files", type=str, default="", help="Comma-separated list of changed file paths")
 
     args = parser.parse_args()
 

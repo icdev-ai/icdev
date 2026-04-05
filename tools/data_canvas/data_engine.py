@@ -7,6 +7,7 @@ gap detection, and control mapping against data design graphs.
 No Flask dependency — takes graph data and returns results.
 No LLM dependency — all checks are deterministic.
 """
+
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -17,6 +18,7 @@ from tools.data_canvas.constants import (
 
 try:
     import yaml as _yaml
+
     _HAS_YAML = True
 except ImportError:
     _HAS_YAML = False
@@ -36,6 +38,7 @@ _DDC_CONFIG = _load_config()
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
+
 
 def _node_types(nodes):
     """Return {node_id: node_type} dict."""
@@ -158,6 +161,7 @@ def _posture_grade(risk_score):
 
 # ── Individual Check Functions ───────────────────────────────────────────────
 
+
 def _check_cui_encrypted_at_rest(nodes, edges, boundaries, ntypes, labels, adj):
     """DDC-ENC-001: CUI entities must have encryption control connected."""
     findings = []
@@ -169,10 +173,12 @@ def _check_cui_encrypted_at_rest(nodes, edges, boundaries, ntypes, labels, adj):
         neighbors = adj.get(ent["id"], set())
         has_enc = any(ntypes.get(nb, "") == "ctrl-encryption" for nb in neighbors)
         if not has_enc:
-            findings.append({
-                "affected_entity": labels.get(ent["id"], ent["id"]),
-                "affected_type": "node",
-            })
+            findings.append(
+                {
+                    "affected_entity": labels.get(ent["id"], ent["id"]),
+                    "affected_type": "node",
+                }
+            )
     return findings
 
 
@@ -190,10 +196,12 @@ def _check_secret_encryption(nodes, edges, boundaries, ntypes, labels, adj):
         neighbors = adj.get(ent["id"], set())
         has_enc = any(ntypes.get(nb, "") == "ctrl-encryption" for nb in neighbors)
         if not has_enc:
-            findings.append({
-                "affected_entity": labels.get(ent["id"], ent["id"]),
-                "affected_type": "node",
-            })
+            findings.append(
+                {
+                    "affected_entity": labels.get(ent["id"], ent["id"]),
+                    "affected_type": "node",
+                }
+            )
     return findings
 
 
@@ -213,10 +221,12 @@ def _check_cross_domain_guard(nodes, edges, boundaries, ntypes, labels, adj):
         # Flow crosses classification — must be a cross-domain flow type
         edge_type = e.get("type", "")
         if edge_type != "flow-cross-domain":
-            findings.append({
-                "affected_entity": f"{labels.get(e['source'], '')} -> {labels.get(e['target'], '')}",
-                "affected_type": "edge",
-            })
+            findings.append(
+                {
+                    "affected_entity": f"{labels.get(e['source'], '')} -> {labels.get(e['target'], '')}",
+                    "affected_type": "edge",
+                }
+            )
     return findings
 
 
@@ -231,10 +241,12 @@ def _check_pii_masking(nodes, edges, boundaries, ntypes, labels, adj):
         neighbors = adj.get(ent["id"], set())
         has_mask = any(ntypes.get(nb, "") == "ctrl-masking" for nb in neighbors)
         if not has_mask:
-            findings.append({
-                "affected_entity": labels.get(ent["id"], ent["id"]),
-                "affected_type": "node",
-            })
+            findings.append(
+                {
+                    "affected_entity": labels.get(ent["id"], ent["id"]),
+                    "affected_type": "node",
+                }
+            )
     return findings
 
 
@@ -248,10 +260,12 @@ def _check_rbac_enforced(nodes, edges, boundaries, ntypes, labels, adj):
         neighbors = adj.get(ent["id"], set())
         has_rbac = bool(neighbors & rbac_ids)
         if not has_rbac:
-            findings.append({
-                "affected_entity": labels.get(ent["id"], ent["id"]),
-                "affected_type": "node",
-            })
+            findings.append(
+                {
+                    "affected_entity": labels.get(ent["id"], ent["id"]),
+                    "affected_type": "node",
+                }
+            )
     return findings
 
 
@@ -273,10 +287,12 @@ def _check_audit_logging_classified(nodes, edges, boundaries, ntypes, labels, ad
         neighbors = adj.get(ent["id"], set())
         has_audit = bool(neighbors & audit_log_ids)
         if not has_audit:
-            findings.append({
-                "affected_entity": labels.get(ent["id"], ent["id"]),
-                "affected_type": "node",
-            })
+            findings.append(
+                {
+                    "affected_entity": labels.get(ent["id"], ent["id"]),
+                    "affected_type": "node",
+                }
+            )
     return findings
 
 
@@ -287,10 +303,12 @@ def _check_audit_columns_present(nodes, edges, boundaries, ntypes, labels, adj):
     for ent in entities:
         has_audit_col = _entity_has_column_type(ent["id"], "col-audit", edges, ntypes)
         if not has_audit_col:
-            findings.append({
-                "affected_entity": labels.get(ent["id"], ent["id"]),
-                "affected_type": "node",
-            })
+            findings.append(
+                {
+                    "affected_entity": labels.get(ent["id"], ent["id"]),
+                    "affected_type": "node",
+                }
+            )
     return findings
 
 
@@ -303,10 +321,12 @@ def _check_retention_policy(nodes, edges, boundaries, ntypes, labels, adj):
         neighbors = adj.get(ent["id"], set())
         has_ret = bool(neighbors & retention_ids)
         if not has_ret:
-            findings.append({
-                "affected_entity": labels.get(ent["id"], ent["id"]),
-                "affected_type": "node",
-            })
+            findings.append(
+                {
+                    "affected_entity": labels.get(ent["id"], ent["id"]),
+                    "affected_type": "node",
+                }
+            )
     return findings
 
 
@@ -319,10 +339,12 @@ def _check_backup_policy(nodes, edges, boundaries, ntypes, labels, adj):
         neighbors = adj.get(ent["id"], set())
         has_bak = bool(neighbors & backup_ids)
         if not has_bak:
-            findings.append({
-                "affected_entity": labels.get(ent["id"], ent["id"]),
-                "affected_type": "node",
-            })
+            findings.append(
+                {
+                    "affected_entity": labels.get(ent["id"], ent["id"]),
+                    "affected_type": "node",
+                }
+            )
     return findings
 
 
@@ -333,10 +355,12 @@ def _check_entity_classified(nodes, edges, boundaries, ntypes, labels, adj):
     for ent in entities:
         in_zone = _entity_in_boundary(ent["id"], boundaries, "bnd-classification")
         if not in_zone:
-            findings.append({
-                "affected_entity": labels.get(ent["id"], ent["id"]),
-                "affected_type": "node",
-            })
+            findings.append(
+                {
+                    "affected_entity": labels.get(ent["id"], ent["id"]),
+                    "affected_type": "node",
+                }
+            )
     return findings
 
 
@@ -352,10 +376,12 @@ def _check_data_residency(nodes, edges, boundaries, ntypes, labels, adj):
             continue
         in_region = _entity_in_boundary(ent["id"], boundaries, "bnd-region")
         if not in_region:
-            findings.append({
-                "affected_entity": labels.get(ent["id"], ent["id"]),
-                "affected_type": "node",
-            })
+            findings.append(
+                {
+                    "affected_entity": labels.get(ent["id"], ent["id"]),
+                    "affected_type": "node",
+                }
+            )
     return findings
 
 
@@ -370,10 +396,12 @@ def _check_dlp_on_egress(nodes, edges, boundaries, ntypes, labels, adj):
         edge_type = e.get("type", "")
         if edge_type in ("flow-export", "flow-api"):
             if _flow_crosses_classification(e, boundaries):
-                findings.append({
-                    "affected_entity": f"{labels.get(e['source'], '')} -> {labels.get(e['target'], '')}",
-                    "affected_type": "edge",
-                })
+                findings.append(
+                    {
+                        "affected_entity": f"{labels.get(e['source'], '')} -> {labels.get(e['target'], '')}",
+                        "affected_type": "edge",
+                    }
+                )
     return findings
 
 
@@ -395,6 +423,7 @@ _CHECK_DISPATCH = {
 
 
 # ── Main Assessment ──────────────────────────────────────────────────────────
+
 
 def assess_data_design(design_id, graph_data, rules=None):
     """Evaluate data compliance rules against a data design.
@@ -425,15 +454,17 @@ def assess_data_design(design_id, graph_data, rules=None):
             continue
         rule_findings = check_fn(nodes, edges, boundaries, ntypes, labels, adj)
         for rf in rule_findings:
-            findings.append({
-                "rule_id": rule["id"],
-                "title": rule["title"],
-                "severity": rule["severity"],
-                "category": rule["category"],
-                "description": rule["description"],
-                "affected_entity": rf["affected_entity"],
-                "affected_type": rf["affected_type"],
-            })
+            findings.append(
+                {
+                    "rule_id": rule["id"],
+                    "title": rule["title"],
+                    "severity": rule["severity"],
+                    "category": rule["category"],
+                    "description": rule["description"],
+                    "affected_entity": rf["affected_entity"],
+                    "affected_type": rf["affected_type"],
+                }
+            )
 
     # Compute scores per category
     total_rules = len(rules)
@@ -469,6 +500,7 @@ def assess_data_design(design_id, graph_data, rules=None):
 
 
 # ── Classification Coverage ──────────────────────────────────────────────────
+
 
 def compute_classification_coverage(graph_data):
     """Compute what percentage of entities are inside classification zones.
@@ -506,12 +538,14 @@ def compute_classification_coverage(graph_data):
         contained = b.get("contained_nodes", [])
         zone_entities = [eid for eid in contained if _is_entity(ntypes.get(eid, ""))]
         classified_ids.update(zone_entities)
-        zone_breakdown.append({
-            "zone_id": b["id"],
-            "zone_label": b.get("label", b["id"]),
-            "entity_count": len(zone_entities),
-            "entities": [labels.get(eid, eid) for eid in zone_entities],
-        })
+        zone_breakdown.append(
+            {
+                "zone_id": b["id"],
+                "zone_label": b.get("label", b["id"]),
+                "entity_count": len(zone_entities),
+                "entities": [labels.get(eid, eid) for eid in zone_entities],
+            }
+        )
 
     classified_count = len(classified_ids)
     unclassified_ids = [ent["id"] for ent in entities if ent["id"] not in classified_ids]
@@ -527,6 +561,7 @@ def compute_classification_coverage(graph_data):
 
 
 # ── Gap Detection ────────────────────────────────────────────────────────────
+
 
 def detect_data_gaps(assessment_result):
     """Identify missing controls and gaps from an assessment result.
@@ -564,20 +599,23 @@ def detect_data_gaps(assessment_result):
             continue
         seen_rules.add(rule_id)
         rec = _RULE_RECOMMENDATIONS.get(rule_id, ("", ""))
-        gaps.append({
-            "gap_type": "missing_control" if rec[0].startswith("ctrl-") else "missing_boundary",
-            "rule_id": rule_id,
-            "severity": f["severity"],
-            "description": f.get("description", f["title"]),
-            "affected": f["affected_entity"],
-            "recommended_control": rec[0],
-            "recommendation": rec[1],
-        })
+        gaps.append(
+            {
+                "gap_type": "missing_control" if rec[0].startswith("ctrl-") else "missing_boundary",
+                "rule_id": rule_id,
+                "severity": f["severity"],
+                "description": f.get("description", f["title"]),
+                "affected": f["affected_entity"],
+                "recommended_control": rec[0],
+                "recommendation": rec[1],
+            }
+        )
 
     return gaps
 
 
 # ── NIST Coverage ────────────────────────────────────────────────────────────
+
 
 def compute_nist_coverage(graph_data):
     """Compute NIST 800-53 control family coverage for data design.
@@ -595,14 +633,14 @@ def compute_nist_coverage(graph_data):
 
     # Map control types to NIST families they cover
     _CTRL_FAMILY_MAP = {
-        "ctrl-encryption":      [("SC", 40), ("MP", 20)],
-        "ctrl-masking":         [("PT", 40), ("MP", 20)],
-        "ctrl-dlp":             [("MP", 40), ("SI", 15)],
-        "ctrl-rbac":            [("AC", 50), ("IA", 15)],
-        "ctrl-audit-log":       [("AU", 50)],
-        "ctrl-retention":       [("MP", 20), ("SI", 15)],
-        "ctrl-classification":  [("MP", 30), ("AC", 10)],
-        "ctrl-backup-policy":   [("CP", 50)],
+        "ctrl-encryption": [("SC", 40), ("MP", 20)],
+        "ctrl-masking": [("PT", 40), ("MP", 20)],
+        "ctrl-dlp": [("MP", 40), ("SI", 15)],
+        "ctrl-rbac": [("AC", 50), ("IA", 15)],
+        "ctrl-audit-log": [("AU", 50)],
+        "ctrl-retention": [("MP", 20), ("SI", 15)],
+        "ctrl-classification": [("MP", 30), ("AC", 10)],
+        "ctrl-backup-policy": [("CP", 50)],
     }
 
     family_coverage = {}
@@ -613,9 +651,7 @@ def compute_nist_coverage(graph_data):
         if ctrl_type in type_set:
             for fam_code, pct_add in mappings:
                 if fam_code in family_coverage:
-                    family_coverage[fam_code]["pct"] = min(
-                        100, family_coverage[fam_code]["pct"] + pct_add
-                    )
+                    family_coverage[fam_code]["pct"] = min(100, family_coverage[fam_code]["pct"] + pct_add)
                     family_coverage[fam_code]["controls"].append(ctrl_type)
 
     # Edges contribute: authenticated flows boost IA, encrypted edges boost SC
@@ -640,12 +676,14 @@ def compute_nist_coverage(graph_data):
     families = []
     for fam_code, fam_name in DATA_NIST_FAMILIES.items():
         fc = family_coverage.get(fam_code, {"pct": 0, "controls": []})
-        families.append({
-            "code": fam_code,
-            "name": fam_name,
-            "coverage_pct": fc["pct"],
-            "controls": fc["controls"],
-        })
+        families.append(
+            {
+                "code": fam_code,
+                "name": fam_name,
+                "coverage_pct": fc["pct"],
+                "controls": fc["controls"],
+            }
+        )
 
     return {
         "families": families,

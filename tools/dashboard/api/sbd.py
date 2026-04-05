@@ -53,8 +53,7 @@ def _table_exists(conn, name):
     try:
         if getattr(conn, "_backend", "sqlite") == "postgresql":
             row = conn.execute(
-                "SELECT 1 FROM information_schema.tables "
-                "WHERE table_schema = 'public' AND table_name = ?",
+                "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = ?",
                 (name,),
             ).fetchone()
             return row is not None
@@ -74,34 +73,31 @@ def sbd_stats():
     try:
         conn = _get_db()
         if not _table_exists(conn, "sbd_assessments"):
-            return jsonify({
-                "total": 0,
-                "by_status": {},
-                "by_domain": {},
-                "posture_score": 0.0,
-                "domain_scores": {},
-            })
+            return jsonify(
+                {
+                    "total": 0,
+                    "by_status": {},
+                    "by_domain": {},
+                    "posture_score": 0.0,
+                    "domain_scores": {},
+                }
+            )
 
         # Total
         total = conn.execute("SELECT COUNT(*) FROM sbd_assessments").fetchone()[0]
 
         # By status
-        rows = conn.execute(
-            "SELECT status, COUNT(*) FROM sbd_assessments GROUP BY status"
-        ).fetchall()
+        rows = conn.execute("SELECT status, COUNT(*) FROM sbd_assessments GROUP BY status").fetchall()
         by_status = {r[0]: r[1] for r in rows}
 
         # By domain
-        rows = conn.execute(
-            "SELECT domain, COUNT(*) FROM sbd_assessments GROUP BY domain"
-        ).fetchall()
+        rows = conn.execute("SELECT domain, COUNT(*) FROM sbd_assessments GROUP BY domain").fetchall()
         by_domain = {r[0]: r[1] for r in rows}
 
         # Overall posture score
         if total > 0:
             passing = conn.execute(
-                "SELECT COUNT(*) FROM sbd_assessments "
-                "WHERE status IN ('satisfied', 'partially_satisfied')"
+                "SELECT COUNT(*) FROM sbd_assessments WHERE status IN ('satisfied', 'partially_satisfied')"
             ).fetchone()[0]
             posture_score = round(passing / total * 100, 1)
         else:
@@ -119,13 +115,15 @@ def sbd_stats():
             domain_name, dom_total, dom_passing = r[0], r[1], r[2]
             domain_scores[domain_name] = round(dom_passing / dom_total * 100, 1) if dom_total > 0 else 0.0
 
-        return jsonify({
-            "total": total,
-            "by_status": by_status,
-            "by_domain": by_domain,
-            "posture_score": posture_score,
-            "domain_scores": domain_scores,
-        })
+        return jsonify(
+            {
+                "total": total,
+                "by_status": by_status,
+                "by_domain": by_domain,
+                "posture_score": posture_score,
+                "domain_scores": domain_scores,
+            }
+        )
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
     finally:
@@ -171,7 +169,8 @@ def sbd_assessments():
 
         # Total matching
         total = conn.execute(
-            f"SELECT COUNT(*) FROM sbd_assessments {where}", params  # nosec B608 -- table/column names are internal constants, not user input
+            f"SELECT COUNT(*) FROM sbd_assessments {where}",
+            params,  # nosec B608 -- table/column names are internal constants, not user input
         ).fetchone()[0]
 
         # Fetch page
@@ -184,18 +183,31 @@ def sbd_assessments():
         ).fetchall()
 
         columns = [
-            "id", "project_id", "assessment_date", "assessor", "domain",
-            "requirement_id", "status", "evidence_description", "evidence_path",
-            "automation_result", "cisa_commitment", "notes", "created_at", "updated_at",
+            "id",
+            "project_id",
+            "assessment_date",
+            "assessor",
+            "domain",
+            "requirement_id",
+            "status",
+            "evidence_description",
+            "evidence_path",
+            "automation_result",
+            "cisa_commitment",
+            "notes",
+            "created_at",
+            "updated_at",
         ]
         assessments = [dict(zip(columns, row)) for row in rows]
 
-        return jsonify({
-            "assessments": assessments,
-            "total": total,
-            "page": page,
-            "per_page": per_page,
-        })
+        return jsonify(
+            {
+                "assessments": assessments,
+                "total": total,
+                "page": page,
+                "per_page": per_page,
+            }
+        )
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
     finally:
@@ -210,16 +222,9 @@ def sbd_domains():
     try:
         conn = _get_db()
         if not _table_exists(conn, "sbd_assessments"):
-            return jsonify({
-                "domains": [
-                    {"domain": d, "total": 0, "by_status": {}} for d in SBD_DOMAINS
-                ]
-            })
+            return jsonify({"domains": [{"domain": d, "total": 0, "by_status": {}} for d in SBD_DOMAINS]})
 
-        rows = conn.execute(
-            "SELECT domain, status, COUNT(*) "
-            "FROM sbd_assessments GROUP BY domain, status"
-        ).fetchall()
+        rows = conn.execute("SELECT domain, status, COUNT(*) FROM sbd_assessments GROUP BY domain, status").fetchall()
 
         # Build nested structure
         domain_map = {d: {} for d in SBD_DOMAINS}
@@ -232,11 +237,13 @@ def sbd_domains():
         for d in SBD_DOMAINS:
             status_counts = domain_map.get(d, {})
             total = sum(status_counts.values())
-            domains.append({
-                "domain": d,
-                "total": total,
-                "by_status": status_counts,
-            })
+            domains.append(
+                {
+                    "domain": d,
+                    "total": total,
+                    "by_status": status_counts,
+                }
+            )
 
         return jsonify({"domains": domains})
     except Exception as exc:
@@ -277,14 +284,10 @@ def sbd_exceptions():
 
         if _is_pg(conn):
             days_expr = (
-                "CAST(EXTRACT(EPOCH FROM (NOW() - assessment_date::timestamp)) "
-                "/ 86400 AS INTEGER) AS days_since"
+                "CAST(EXTRACT(EPOCH FROM (NOW() - assessment_date::timestamp)) / 86400 AS INTEGER) AS days_since"
             )
         else:
-            days_expr = (
-                "CAST(julianday('now') - julianday(assessment_date) "
-                "AS INTEGER) AS days_since"
-            )
+            days_expr = "CAST(julianday('now') - julianday(assessment_date) AS INTEGER) AS days_since"
         rows = conn.execute(
             f"SELECT id, project_id, assessment_date, assessor, domain, requirement_id, "  # nosec B608 -- table/column names are internal constants, not user input
             f"evidence_description, evidence_path, notes, created_at, updated_at, "
@@ -294,9 +297,18 @@ def sbd_exceptions():
         ).fetchall()
 
         columns = [
-            "id", "project_id", "assessment_date", "assessor", "domain",
-            "requirement_id", "evidence_description", "evidence_path",
-            "notes", "created_at", "updated_at", "days_since",
+            "id",
+            "project_id",
+            "assessment_date",
+            "assessor",
+            "domain",
+            "requirement_id",
+            "evidence_description",
+            "evidence_path",
+            "notes",
+            "created_at",
+            "updated_at",
+            "days_since",
         ]
         exceptions = []
         for row in rows:

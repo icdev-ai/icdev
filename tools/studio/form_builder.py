@@ -57,10 +57,20 @@ FORM_TEMPLATES: list[dict[str, Any]] = [
         "category": "compliance",
         "fields": [
             {"id": "f1", "type": "text", "label": "System Name", "required": True},
-            {"id": "f2", "type": "select", "label": "Impact Level",
-             "options": ["IL2", "IL4", "IL5", "IL6"], "required": True},
-            {"id": "f3", "type": "select", "label": "Risk Level",
-             "options": ["Critical", "High", "Medium", "Low"], "required": True},
+            {
+                "id": "f2",
+                "type": "select",
+                "label": "Impact Level",
+                "options": ["IL2", "IL4", "IL5", "IL6"],
+                "required": True,
+            },
+            {
+                "id": "f3",
+                "type": "select",
+                "label": "Risk Level",
+                "options": ["Critical", "High", "Medium", "Low"],
+                "required": True,
+            },
             {"id": "f4", "type": "textarea", "label": "Risk Description", "required": True},
             {"id": "f5", "type": "textarea", "label": "Mitigation Plan"},
             {"id": "f6", "type": "date", "label": "Target Remediation Date"},
@@ -74,10 +84,20 @@ FORM_TEMPLATES: list[dict[str, Any]] = [
         "category": "operations",
         "fields": [
             {"id": "f1", "type": "text", "label": "Change Title", "required": True},
-            {"id": "f2", "type": "select", "label": "Change Type",
-             "options": ["Standard", "Normal", "Emergency"], "required": True},
-            {"id": "f3", "type": "select", "label": "Priority",
-             "options": ["Critical", "High", "Medium", "Low"], "required": True},
+            {
+                "id": "f2",
+                "type": "select",
+                "label": "Change Type",
+                "options": ["Standard", "Normal", "Emergency"],
+                "required": True,
+            },
+            {
+                "id": "f3",
+                "type": "select",
+                "label": "Priority",
+                "options": ["Critical", "High", "Medium", "Low"],
+                "required": True,
+            },
             {"id": "f4", "type": "textarea", "label": "Description", "required": True},
             {"id": "f5", "type": "textarea", "label": "Impact Analysis"},
             {"id": "f6", "type": "textarea", "label": "Rollback Plan"},
@@ -110,10 +130,20 @@ FORM_TEMPLATES: list[dict[str, Any]] = [
         "category": "security",
         "fields": [
             {"id": "f1", "type": "text", "label": "Incident Title", "required": True},
-            {"id": "f2", "type": "select", "label": "Severity",
-             "options": ["Critical", "High", "Medium", "Low"], "required": True},
-            {"id": "f3", "type": "select", "label": "Category",
-             "options": ["Security", "Availability", "Performance", "Data", "Other"], "required": True},
+            {
+                "id": "f2",
+                "type": "select",
+                "label": "Severity",
+                "options": ["Critical", "High", "Medium", "Low"],
+                "required": True,
+            },
+            {
+                "id": "f3",
+                "type": "select",
+                "label": "Category",
+                "options": ["Security", "Availability", "Performance", "Data", "Other"],
+                "required": True,
+            },
             {"id": "f4", "type": "textarea", "label": "Description", "required": True},
             {"id": "f5", "type": "textarea", "label": "Impact Assessment"},
             {"id": "f6", "type": "textarea", "label": "Root Cause"},
@@ -133,6 +163,7 @@ def get_form_templates() -> list[dict]:
 
 
 # ── Form CRUD ─────────────────────────────────────────────────────────
+
 
 def _fields_to_json_schema(fields: list[dict]) -> dict:
     """Convert field list to JSON Schema (draft-07)."""
@@ -188,8 +219,7 @@ def create_form(
                (form_id, name, description, schema_json, created_by,
                 created_at, updated_at, status)
                VALUES (?, ?, ?, ?, ?, ?, ?, 'draft')""",
-            (form_id, name, description, json.dumps(schema), created_by,
-             _now_iso(), _now_iso()),
+            (form_id, name, description, json.dumps(schema), created_by, _now_iso(), _now_iso()),
         )
         conn.commit()
         return {"status": "ok", "form_id": form_id, "schema": schema}
@@ -215,9 +245,7 @@ def list_forms(*, status: str | None = None) -> list[dict]:
 def get_form(form_id: str) -> dict | None:
     conn = get_connection()
     try:
-        row = conn.execute(
-            "SELECT * FROM studio_forms WHERE form_id = ?", (form_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM studio_forms WHERE form_id = ?", (form_id,)).fetchone()
         return dict(row) if row else None
     finally:
         conn.close()
@@ -285,6 +313,7 @@ def delete_form(form_id: str) -> dict:
 
 # ── Submissions ───────────────────────────────────────────────────────
 
+
 def submit_form(form_id: str, data: dict, *, submitted_by: str = "user") -> dict:
     form = get_form(form_id)
     if not form:
@@ -318,6 +347,7 @@ def list_submissions(form_id: str) -> list[dict]:
 
 
 # ── CLI ───────────────────────────────────────────────────────────────
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="ICDEV™ Studio Form Builder")

@@ -24,6 +24,7 @@ from tools.rag.crag_evaluator import (
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture()
 def scorer() -> CRAGScorer:
     return CRAGScorer()
@@ -37,6 +38,7 @@ def runner() -> CRAGBenchmarkRunner:
 # ---------------------------------------------------------------------------
 # Scoring tests
 # ---------------------------------------------------------------------------
+
 
 class TestCRAGScorer:
     def test_score_exact_match(self, scorer: CRAGScorer) -> None:
@@ -152,6 +154,7 @@ class TestCRAGScorer:
 # Question-type classification tests
 # ---------------------------------------------------------------------------
 
+
 class TestQuestionTypeClassification:
     def test_classify_comparison(self, scorer: CRAGScorer) -> None:
         """'Compare X and Y' must classify as comparison."""
@@ -182,25 +185,19 @@ class TestQuestionTypeClassification:
 
     def test_classify_multi_hop_multi_question(self, scorer: CRAGScorer) -> None:
         """Question with two '?' markers must classify as multi_hop."""
-        result = scorer.classify_question_type(
-            "What is AC-2? What are its enhancements?"
-        )
+        result = scorer.classify_question_type("What is AC-2? What are its enhancements?")
         assert result["question_type"] == "multi_hop"
         assert result["method"] == "heuristic"
 
     def test_classify_condition(self, scorer: CRAGScorer) -> None:
         """Conditional question must classify as simple_condition."""
-        result = scorer.classify_question_type(
-            "If an organization is at IL4, what encryption standard is required?"
-        )
+        result = scorer.classify_question_type("If an organization is at IL4, what encryption standard is required?")
         assert result["question_type"] == "simple_condition"
         assert result["method"] == "heuristic"
 
     def test_classify_post_processing(self, scorer: CRAGScorer) -> None:
         """Post-processing question must classify as post_processing."""
-        result = scorer.classify_question_type(
-            "Sort the following controls by priority: AC-2, AC-3, AU-1."
-        )
+        result = scorer.classify_question_type("Sort the following controls by priority: AC-2, AC-3, AU-1.")
         assert result["question_type"] == "post_processing"
         assert result["method"] == "heuristic"
 
@@ -220,15 +217,14 @@ class TestQuestionTypeClassification:
 
     def test_classify_count(self, scorer: CRAGScorer) -> None:
         """'Count' keyword must classify as aggregation."""
-        result = scorer.classify_question_type(
-            "Count the number of privacy controls in NIST 800-53."
-        )
+        result = scorer.classify_question_type("Count the number of privacy controls in NIST 800-53.")
         assert result["question_type"] == "aggregation"
 
 
 # ---------------------------------------------------------------------------
 # Constants integrity tests
 # ---------------------------------------------------------------------------
+
 
 class TestConstants:
     def test_question_types_constant(self) -> None:
@@ -260,12 +256,7 @@ class TestConstants:
 
     def test_crag_scores_ordering(self) -> None:
         """Scores must be strictly ordered: incorrect < missing < acceptable < perfect."""
-        assert (
-            CRAG_SCORES["incorrect"]
-            < CRAG_SCORES["missing"]
-            < CRAG_SCORES["acceptable"]
-            < CRAG_SCORES["perfect"]
-        )
+        assert CRAG_SCORES["incorrect"] < CRAG_SCORES["missing"] < CRAG_SCORES["acceptable"] < CRAG_SCORES["perfect"]
 
     def test_all_question_types_are_strings(self) -> None:
         """All QUESTION_TYPES entries must be non-empty strings."""
@@ -277,10 +268,9 @@ class TestConstants:
 # CRAGBenchmarkRunner tests
 # ---------------------------------------------------------------------------
 
+
 class TestCRAGBenchmarkRunner:
-    def test_benchmark_runner_empty_list(
-        self, runner: CRAGBenchmarkRunner, tmp_path: Path
-    ) -> None:
+    def test_benchmark_runner_empty_list(self, runner: CRAGBenchmarkRunner, tmp_path: Path) -> None:
         """Empty test set must return a valid dict with zero cases and score 0.0."""
         empty_file = tmp_path / "empty.json"
         empty_file.write_text("[]", encoding="utf-8")
@@ -301,9 +291,7 @@ class TestCRAGBenchmarkRunner:
         assert result["total_cases"] == 0
         assert result["status"] == "completed"
 
-    def test_benchmark_runner_single_perfect(
-        self, runner: CRAGBenchmarkRunner, tmp_path: Path
-    ) -> None:
+    def test_benchmark_runner_single_perfect(self, runner: CRAGBenchmarkRunner, tmp_path: Path) -> None:
         """Single perfect-match case must yield aggregate score of 1.0."""
         test_set = [
             {
@@ -324,9 +312,7 @@ class TestCRAGBenchmarkRunner:
         assert result["aggregate_crag_score"] == 1.0
         assert result["label_distribution"]["perfect"] == 1
 
-    def test_benchmark_runner_single_incorrect(
-        self, runner: CRAGBenchmarkRunner, tmp_path: Path
-    ) -> None:
+    def test_benchmark_runner_single_incorrect(self, runner: CRAGBenchmarkRunner, tmp_path: Path) -> None:
         """Single incorrect answer must yield aggregate score of -1.0."""
         test_set = [
             {
@@ -347,9 +333,7 @@ class TestCRAGBenchmarkRunner:
         assert result["aggregate_crag_score"] == -1.0
         assert result["label_distribution"]["incorrect"] == 1
 
-    def test_benchmark_runner_mixed_scores(
-        self, runner: CRAGBenchmarkRunner, tmp_path: Path
-    ) -> None:
+    def test_benchmark_runner_mixed_scores(self, runner: CRAGBenchmarkRunner, tmp_path: Path) -> None:
         """Mixed scores (1.0, -1.0) must average to 0.0."""
         test_set = [
             {
@@ -377,9 +361,7 @@ class TestCRAGBenchmarkRunner:
         assert result["total_cases"] == 2
         assert result["aggregate_crag_score"] == pytest.approx(0.0)
 
-    def test_benchmark_runner_by_question_type_keys(
-        self, runner: CRAGBenchmarkRunner, tmp_path: Path
-    ) -> None:
+    def test_benchmark_runner_by_question_type_keys(self, runner: CRAGBenchmarkRunner, tmp_path: Path) -> None:
         """by_question_type dict must use valid QUESTION_TYPES as keys."""
         test_set = [
             {
@@ -399,9 +381,7 @@ class TestCRAGBenchmarkRunner:
         for key in result.get("by_question_type", {}):
             assert key in QUESTION_TYPES
 
-    def test_benchmark_runner_by_entity_popularity_keys(
-        self, runner: CRAGBenchmarkRunner, tmp_path: Path
-    ) -> None:
+    def test_benchmark_runner_by_entity_popularity_keys(self, runner: CRAGBenchmarkRunner, tmp_path: Path) -> None:
         """by_entity_popularity dict must use valid ENTITY_POPULARITY_TIERS as keys."""
         test_set = [
             {
@@ -421,9 +401,7 @@ class TestCRAGBenchmarkRunner:
         for key in result.get("by_entity_popularity", {}):
             assert key in ENTITY_POPULARITY_TIERS
 
-    def test_benchmark_runner_false_premise_campaign(
-        self, runner: CRAGBenchmarkRunner, tmp_path: Path
-    ) -> None:
+    def test_benchmark_runner_false_premise_campaign(self, runner: CRAGBenchmarkRunner, tmp_path: Path) -> None:
         """False-premise case where answer abstains must score 1.0."""
         test_set = [
             {
@@ -443,9 +421,7 @@ class TestCRAGBenchmarkRunner:
         assert result["aggregate_crag_score"] == pytest.approx(1.0)
         assert result["label_distribution"]["perfect"] == 1
 
-    def test_benchmark_runner_invalid_json(
-        self, runner: CRAGBenchmarkRunner, tmp_path: Path
-    ) -> None:
+    def test_benchmark_runner_invalid_json(self, runner: CRAGBenchmarkRunner, tmp_path: Path) -> None:
         """Malformed JSON test set must return empty result, not raise."""
         bad_file = tmp_path / "bad.json"
         bad_file.write_text("{not valid json}", encoding="utf-8")
@@ -455,9 +431,7 @@ class TestCRAGBenchmarkRunner:
         assert isinstance(result, dict)
         assert result["total_cases"] == 0
 
-    def test_benchmark_runner_invalid_question_type(
-        self, runner: CRAGBenchmarkRunner, tmp_path: Path
-    ) -> None:
+    def test_benchmark_runner_invalid_question_type(self, runner: CRAGBenchmarkRunner, tmp_path: Path) -> None:
         """Unknown question_type in test set must default to 'simple', not raise."""
         test_set = [
             {

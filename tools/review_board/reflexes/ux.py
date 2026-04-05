@@ -37,32 +37,32 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                     continue
                 total_templates += 1
                 content = html_file.read_text(encoding="utf-8")
-                has_aria = bool(re.search(r'(aria-|role=)', content))
+                has_aria = bool(re.search(r"(aria-|role=)", content))
                 if has_aria:
                     templates_with_aria += 1
                 else:
-                    templates_missing_aria.append(
-                        str(html_file.relative_to(templates_dir))
-                    )
+                    templates_missing_aria.append(str(html_file.relative_to(templates_dir)))
 
             if total_templates > 0:
                 coverage = (templates_with_aria / total_templates) * 100
                 min_coverage = thresholds.get("min_aria_coverage_pct", 80)
                 if coverage < min_coverage:
-                    findings.append({
-                        "severity": "medium",
-                        "category": "aria_coverage",
-                        "title": f"ARIA coverage {coverage:.0f}% below threshold ({min_coverage}%)",
-                        "description": f"Missing ARIA: {', '.join(templates_missing_aria[:10])}",
-                        "recommendation": "Add role= and aria-label attributes to templates",
-                        "evidence": {
-                            "total": total_templates,
-                            "with_aria": templates_with_aria,
-                            "missing": templates_missing_aria[:20],
-                        },
-                        "confidence": 0.8,
-                        "auto_fixable": False,
-                    })
+                    findings.append(
+                        {
+                            "severity": "medium",
+                            "category": "aria_coverage",
+                            "title": f"ARIA coverage {coverage:.0f}% below threshold ({min_coverage}%)",
+                            "description": f"Missing ARIA: {', '.join(templates_missing_aria[:10])}",
+                            "recommendation": "Add role= and aria-label attributes to templates",
+                            "evidence": {
+                                "total": total_templates,
+                                "with_aria": templates_with_aria,
+                                "missing": templates_missing_aria[:20],
+                            },
+                            "confidence": 0.8,
+                            "auto_fixable": False,
+                        }
+                    )
         checks_completed += 1
     except Exception:
         checks_completed += 1
@@ -87,29 +87,27 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                     # Check for inline styles (prefer CSS classes)
                     inline_count = len(re.findall(r'style="[^"]{50,}"', content))
                     if inline_count > 3:
-                        quality_issues.append(
-                            f"{rel_path}: {inline_count} long inline styles"
-                        )
+                        quality_issues.append(f"{rel_path}: {inline_count} long inline styles")
 
                     # Check for hardcoded colors (should use CSS variables)
-                    hardcoded_colors = re.findall(r'color:\s*#[0-9a-fA-F]{3,6}', content)
+                    hardcoded_colors = re.findall(r"color:\s*#[0-9a-fA-F]{3,6}", content)
                     if len(hardcoded_colors) > 5:
-                        quality_issues.append(
-                            f"{rel_path}: {len(hardcoded_colors)} hardcoded colors"
-                        )
+                        quality_issues.append(f"{rel_path}: {len(hardcoded_colors)} hardcoded colors")
                 except Exception:
                     pass
 
         if quality_issues:
-            findings.append({
-                "severity": "low",
-                "category": "template_quality",
-                "title": f"{len(quality_issues)} template quality issues",
-                "description": "; ".join(quality_issues[:5]),
-                "evidence": {"issues": quality_issues},
-                "confidence": 0.7,
-                "auto_fixable": False,
-            })
+            findings.append(
+                {
+                    "severity": "low",
+                    "category": "template_quality",
+                    "title": f"{len(quality_issues)} template quality issues",
+                    "description": "; ".join(quality_issues[:5]),
+                    "evidence": {"issues": quality_issues},
+                    "confidence": 0.7,
+                    "auto_fixable": False,
+                }
+            )
         checks_completed += 1
     except Exception:
         checks_completed += 1
@@ -120,14 +118,16 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         if base_template.exists():
             content = base_template.read_text(encoding="utf-8")
             if "skip-to-content" not in content and "skip-link" not in content:
-                findings.append({
-                    "severity": "medium",
-                    "category": "accessibility",
-                    "title": "Missing skip-to-content link in base template",
-                    "recommendation": "Add <a href='#main' class='skip-link'>Skip to content</a>",
-                    "confidence": 0.9,
-                    "auto_fixable": True,
-                })
+                findings.append(
+                    {
+                        "severity": "medium",
+                        "category": "accessibility",
+                        "title": "Missing skip-to-content link in base template",
+                        "recommendation": "Add <a href='#main' class='skip-link'>Skip to content</a>",
+                        "confidence": 0.9,
+                        "auto_fixable": True,
+                    }
+                )
         checks_completed += 1
     except Exception:
         checks_completed += 1
@@ -142,25 +142,27 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                     content = html_file.read_text(encoding="utf-8")
                     rel_path = str(html_file.relative_to(templates_dir))
                     # Find <input> without associated <label> or aria-label
-                    inputs = re.findall(r'<input[^>]*>', content)
+                    inputs = re.findall(r"<input[^>]*>", content)
                     for inp in inputs:
                         if 'type="hidden"' in inp or 'type="submit"' in inp:
                             continue
-                        if 'aria-label' not in inp and 'id=' not in inp:
+                        if "aria-label" not in inp and "id=" not in inp:
                             form_issues.append(f"{rel_path}: input without label/aria-label")
                             break  # One per file is enough
                 except Exception:
                     pass
 
         if form_issues:
-            findings.append({
-                "severity": "medium",
-                "category": "form_accessibility",
-                "title": f"{len(form_issues)} forms with unlabeled inputs",
-                "description": "; ".join(form_issues[:5]),
-                "confidence": 0.7,
-                "auto_fixable": False,
-            })
+            findings.append(
+                {
+                    "severity": "medium",
+                    "category": "form_accessibility",
+                    "title": f"{len(form_issues)} forms with unlabeled inputs",
+                    "description": "; ".join(form_issues[:5]),
+                    "confidence": 0.7,
+                    "auto_fixable": False,
+                }
+            )
         checks_completed += 1
     except Exception:
         checks_completed += 1

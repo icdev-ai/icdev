@@ -16,8 +16,7 @@ class NotificationAdapter(ABC):
         self.enabled = config.get("enabled", False)
 
     @abstractmethod
-    def send(self, title: str, body: str, severity: str = "info",
-             metadata: Optional[Dict] = None) -> bool:
+    def send(self, title: str, body: str, severity: str = "info", metadata: Optional[Dict] = None) -> bool:
         """Send a notification.
 
         Args:

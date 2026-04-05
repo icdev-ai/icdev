@@ -32,6 +32,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import get_connection  # noqa: E402
+
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 CONFIG_PATH = BASE_DIR / "args" / "deviation_rules_config.yaml"
 
@@ -39,9 +40,15 @@ CONFIG_PATH = BASE_DIR / "args" / "deviation_rules_config.yaml"
 FALLBACK_CATEGORIES = {
     "security_vulnerability": {
         "keywords": [
-            "CVE-", "sql injection", "xss", "command injection",
-            "authentication bypass", "hardcoded secret", "bandit",
-            "sast finding", "privilege escalation",
+            "CVE-",
+            "sql injection",
+            "xss",
+            "command injection",
+            "authentication bypass",
+            "hardcoded secret",
+            "bandit",
+            "sast finding",
+            "privilege escalation",
         ],
         "min_confidence_override": 0.5,
         "max_auto_heals_per_hour": 10,
@@ -50,9 +57,12 @@ FALLBACK_CATEGORIES = {
     },
     "critical_functionality": {
         "keywords": [
-            "missing error handling", "unhandled exception",
-            "input validation", "missing auth check",
-            "rate limiting missing", "resource leak",
+            "missing error handling",
+            "unhandled exception",
+            "input validation",
+            "missing auth check",
+            "rate limiting missing",
+            "resource leak",
         ],
         "min_confidence_override": 0.6,
         "max_auto_heals_per_hour": 5,
@@ -61,9 +71,15 @@ FALLBACK_CATEGORIES = {
     },
     "blocking_issue": {
         "keywords": [
-            "import error", "module not found", "missing dependency",
-            "syntax error", "indentation error", "name error",
-            "connection refused", "file not found", "compile error",
+            "import error",
+            "module not found",
+            "missing dependency",
+            "syntax error",
+            "indentation error",
+            "name error",
+            "connection refused",
+            "file not found",
+            "compile error",
             "type error",
         ],
         "min_confidence_override": 0.5,
@@ -73,9 +89,14 @@ FALLBACK_CATEGORIES = {
     },
     "architectural_change": {
         "keywords": [
-            "schema change", "migration", "api contract",
-            "breaking change", "new dependency", "architecture change",
-            "framework upgrade", "data model change",
+            "schema change",
+            "migration",
+            "api contract",
+            "breaking change",
+            "new dependency",
+            "architecture change",
+            "framework upgrade",
+            "data model change",
         ],
         "min_confidence_override": 1.0,
         "max_auto_heals_per_hour": 0,
@@ -84,9 +105,16 @@ FALLBACK_CATEGORIES = {
     },
     "compliance_violation": {
         "keywords": [
-            "cui marking", "classification", "nist control",
-            "ato boundary", "fedramp", "cmmc", "stig finding",
-            "compliance gap", "audit trail", "append-only",
+            "cui marking",
+            "classification",
+            "nist control",
+            "ato boundary",
+            "fedramp",
+            "cmmc",
+            "stig finding",
+            "compliance gap",
+            "audit trail",
+            "append-only",
         ],
         "min_confidence_override": 1.0,
         "max_auto_heals_per_hour": 0,
@@ -111,6 +139,7 @@ def load_config() -> dict:
     if CONFIG_PATH.exists():
         try:
             import yaml
+
             with open(CONFIG_PATH, encoding="utf-8") as f:
                 config = yaml.safe_load(f) or {}
             return config.get("categories", FALLBACK_CATEGORIES)
@@ -134,13 +163,15 @@ def classify_failure(failure_data: dict) -> dict:
     categories = load_config()
 
     # Build searchable text from failure data
-    search_text = " ".join([
-        str(failure_data.get("error_type", "")),
-        str(failure_data.get("error_message", "")),
-        str(failure_data.get("description", "")),
-        str(failure_data.get("source", "")),
-        str(failure_data.get("context", "")),
-    ]).lower()
+    search_text = " ".join(
+        [
+            str(failure_data.get("error_type", "")),
+            str(failure_data.get("error_message", "")),
+            str(failure_data.get("description", "")),
+            str(failure_data.get("source", "")),
+            str(failure_data.get("context", "")),
+        ]
+    ).lower()
 
     matches = []
 
@@ -153,15 +184,17 @@ def classify_failure(failure_data: dict) -> dict:
                 matched_keywords.append(keyword)
 
         if matched_keywords:
-            matches.append({
-                "category": cat_name,
-                "priority": cat_config.get("priority", 99),
-                "decision_override": cat_config.get("decision", "suggest"),
-                "min_confidence": cat_config.get("min_confidence_override", 0.7),
-                "max_auto_heals_per_hour": cat_config.get("max_auto_heals_per_hour", 5),
-                "matched_keywords": matched_keywords,
-                "match_count": len(matched_keywords),
-            })
+            matches.append(
+                {
+                    "category": cat_name,
+                    "priority": cat_config.get("priority", 99),
+                    "decision_override": cat_config.get("decision", "suggest"),
+                    "min_confidence": cat_config.get("min_confidence_override", 0.7),
+                    "max_auto_heals_per_hour": cat_config.get("max_auto_heals_per_hour", 5),
+                    "matched_keywords": matched_keywords,
+                    "match_count": len(matched_keywords),
+                }
+            )
 
     if not matches:
         return {
@@ -240,10 +273,7 @@ def apply_deviation_rules(
     if decision_override == "escalate":
         result["final_decision"] = "escalate"
         result["category_overrode"] = True
-        result["reason"] = (
-            f"Category '{category}' requires human approval "
-            f"regardless of confidence ({confidence:.2f})"
-        )
+        result["reason"] = f"Category '{category}' requires human approval regardless of confidence ({confidence:.2f})"
         _log_deviation_event(result, db_path)
         return result
 
@@ -253,25 +283,16 @@ def apply_deviation_rules(
         max_per_hour = classification.get("max_auto_heals_per_hour", 5)
         if _check_category_rate_limit(category, max_per_hour, db_path):
             result["final_decision"] = "auto_heal"
-            result["category_overrode"] = (
-                result["original_decision"] != "auto_heal"
-            )
+            result["category_overrode"] = result["original_decision"] != "auto_heal"
             result["reason"] = (
-                f"Category '{category}' allows auto-heal at "
-                f"confidence {confidence:.2f} >= {min_confidence}"
+                f"Category '{category}' allows auto-heal at confidence {confidence:.2f} >= {min_confidence}"
             )
         else:
             result["final_decision"] = "suggest"
-            result["reason"] = (
-                f"Category '{category}' rate limit exceeded "
-                f"({max_per_hour}/hr)"
-            )
+            result["reason"] = f"Category '{category}' rate limit exceeded ({max_per_hour}/hr)"
     elif decision_override == "auto_heal" and confidence < min_confidence:
         result["final_decision"] = "suggest"
-        result["reason"] = (
-            f"Category '{category}' matched but confidence "
-            f"{confidence:.2f} < {min_confidence}"
-        )
+        result["reason"] = f"Category '{category}' matched but confidence {confidence:.2f} < {min_confidence}"
     else:
         result["final_decision"] = result["original_decision"]
         result["reason"] = f"Category '{category}' matched, no override needed"
@@ -290,9 +311,7 @@ def _confidence_decision(confidence: float, auto_healable: bool) -> str:
         return "suggest"
 
 
-def _check_category_rate_limit(
-    category: str, max_per_hour: int, db_path: Path = None
-) -> bool:
+def _check_category_rate_limit(category: str, max_per_hour: int, db_path: Path = None) -> bool:
     """Check if we've exceeded the category-specific rate limit."""
     if max_per_hour <= 0:
         return False
@@ -328,9 +347,7 @@ def _log_deviation_event(result: dict, db_path: Path = None):
                 result["original_decision"],
                 result["final_decision"],
                 1 if result["category_overrode"] else 0,
-                json.dumps(
-                    result["classification"].get("matched_keywords", [])
-                ),
+                json.dumps(result["classification"].get("matched_keywords", [])),
                 result["reason"],
                 _now(),
             ),
@@ -356,9 +373,7 @@ def get_stats(db_path: Path = None) -> dict:
         }
 
         # Total events
-        row = conn.execute(
-            "SELECT COUNT(*) FROM deviation_rule_events"
-        ).fetchone()
+        row = conn.execute("SELECT COUNT(*) FROM deviation_rule_events").fetchone()
         stats["total_events"] = row[0] if row else 0
 
         if stats["total_events"] == 0:
@@ -381,9 +396,7 @@ def get_stats(db_path: Path = None) -> dict:
         override_count = conn.execute(
             "SELECT COUNT(*) FROM deviation_rule_events WHERE category_overrode = 1"
         ).fetchone()[0]
-        stats["override_rate"] = round(
-            override_count / stats["total_events"], 2
-        ) if stats["total_events"] > 0 else 0.0
+        stats["override_rate"] = round(override_count / stats["total_events"], 2) if stats["total_events"] > 0 else 0.0
 
         # Decision distribution
         for decision in ["auto_heal", "suggest", "escalate"]:
@@ -402,29 +415,22 @@ def get_stats(db_path: Path = None) -> dict:
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
 def main():
-    parser = argparse.ArgumentParser(
-        description="Category-Based Deviation Rules Engine (GSD-adapted)"
-    )
+    parser = argparse.ArgumentParser(description="Category-Based Deviation Rules Engine (GSD-adapted)")
+    parser.add_argument("--classify", help="Classify failure data (JSON string)")
+    parser.add_argument("--apply", help="Apply deviation rules to failure (JSON string)")
     parser.add_argument(
-        "--classify", help="Classify failure data (JSON string)"
-    )
-    parser.add_argument(
-        "--apply", help="Apply deviation rules to failure (JSON string)"
-    )
-    parser.add_argument(
-        "--confidence", type=float, default=0.5,
+        "--confidence",
+        type=float,
+        default=0.5,
         help="Confidence score (for --apply)",
     )
+    parser.add_argument("--stats", action="store_true", help="Show deviation rule statistics")
     parser.add_argument(
-        "--stats", action="store_true", help="Show deviation rule statistics"
-    )
-    parser.add_argument(
-        "--list-categories", action="store_true",
+        "--list-categories",
+        action="store_true",
         help="List all deviation categories",
     )
-    parser.add_argument(
-        "--json", action="store_true", dest="json_output", help="JSON output"
-    )
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 
     if args.classify:

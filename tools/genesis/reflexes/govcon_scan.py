@@ -30,6 +30,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     # Step 1: Incremental SAM.gov scan
     try:
         from tools.govcon.sam_scanner import scan_sam_gov
+
         scan = scan_sam_gov()
         new = scan.get("new_count", 0)
         updated = scan.get("updated_count", 0)
@@ -41,11 +42,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             "skipped": skipped,
             "errors": scan_errors,
         }
-        print(
-            f"  GovCon: SAM.gov scan — {new} new, "
-            f"{updated} updated, {skipped} skipped, "
-            f"{scan_errors} errors"
-        )
+        print(f"  GovCon: SAM.gov scan — {new} new, {updated} updated, {skipped} skipped, {scan_errors} errors")
         if scan.get("error"):
             print(f"  GovCon: SAM.gov error — {scan['error']}")
     except Exception as e:
@@ -59,6 +56,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             aggregate_demand_signals,
             get_high_demand_signals,
         )
+
         # Aggregate from all sources (SAM.gov, existing pain points)
         agg = aggregate_demand_signals()
         high = get_high_demand_signals()
@@ -68,11 +66,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             "high_demand": len(high) if high else 0,
             "pending_articles": len(new_high),
         }
-        print(
-            f"  GovCon: Demand signals — "
-            f"{len(high) if high else 0} high demand, "
-            f"{len(new_high)} pending articles"
-        )
+        print(f"  GovCon: Demand signals — {len(high) if high else 0} high demand, {len(new_high)} pending articles")
     except Exception as e:
         errors += 1
         print(f"  GovCon: Demand detection failed — {e}")
@@ -89,11 +83,8 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                 continue
             try:
                 from tools.pulse.scheduler import run_pipeline_from_draft
-                article_topic = (
-                    f"How ICDEV™ Solves: {topic[:80]}"
-                    if not topic.startswith("How")
-                    else topic
-                )
+
+                article_topic = f"How ICDEV™ Solves: {topic[:80]}" if not topic.startswith("How") else topic
                 body = (
                     f"Federal agencies face a critical challenge: {topic}. "
                     f"Keywords: {keywords}. "
@@ -108,10 +99,10 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                 # Mark signal as article_generated
                 try:
                     from tools.db.storage import get_connection
+
                     conn = get_connection()
                     conn.execute(
-                        "UPDATE pulse_demand_signals SET article_generated = 1 "
-                        "WHERE id = %s",
+                        "UPDATE pulse_demand_signals SET article_generated = 1 WHERE id = %s",
                         (signal.get("id"),),
                     )
                     conn.commit()
@@ -126,10 +117,10 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         # Telegram notification
         try:
             from tools.notifications.adapters.telegram import send
+
             send(
                 "GovCon → Pulse Bridge",
-                f"{articles_created} article(s) created from demand signals. "
-                f"{pending - articles_created} remaining.",
+                f"{articles_created} article(s) created from demand signals. {pending - articles_created} remaining.",
                 severity="success",
             )
         except Exception:

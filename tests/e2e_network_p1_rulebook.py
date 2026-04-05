@@ -23,7 +23,6 @@ from pathlib import Path
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
-from selenium.webdriver.common.action_chains import ActionChains
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
@@ -47,10 +46,12 @@ class TestResult:
 
     def summary(self):
         total = len(self.passed) + len(self.failed)
-        rate = f"{len(self.passed)/total*100:.1f}%" if total else "0%"
+        rate = f"{len(self.passed) / total * 100:.1f}%" if total else "0%"
         return {
-            "total": total, "passed": len(self.passed),
-            "failed": len(self.failed), "pass_rate": rate,
+            "total": total,
+            "passed": len(self.passed),
+            "failed": len(self.failed),
+            "pass_rate": rate,
             "failures": self.failed,
         }
 
@@ -79,9 +80,7 @@ def check_js_errors(driver):
         for entry in driver.get_log("browser"):
             if entry.get("level") == "SEVERE":
                 msg = entry.get("message", "")
-                if any(x in msg.lower() for x in [
-                    "favicon", "401", "404", "failed to load resource"
-                ]):
+                if any(x in msg.lower() for x in ["favicon", "401", "404", "failed to load resource"]):
                     continue
                 errors.append(msg)
     except Exception:
@@ -137,77 +136,73 @@ def run_tests():
             node_types = list(d["on_node_add"].keys())
             assert "router" in node_types
             assert "firewall" in node_types
-            results.ok("full_rulebook_api",
-                        f"{len(node_types)} node types, "
-                        f"{len(d['best_practices'])} BP categories")
+            results.ok("full_rulebook_api", f"{len(node_types)} node types, {len(d['best_practices'])} BP categories")
         except Exception as e:
             results.fail("full_rulebook_api", e)
 
         # ── 2. Router rules ───────────────────────────────────────────────
         try:
-            d = api(driver, "GET",
-                    "/network/api/design-rules/node/router")
+            d = api(driver, "GET", "/network/api/design-rules/node/router")
             assert d.get("found") is True
             assert len(d.get("suggestions", [])) >= 3
             assert "routing_protocol" in d.get("checklist", {})
             assert "loopback_ip" in d.get("checklist", {})
-            results.ok("router_rules",
-                        f"{len(d['suggestions'])} suggestions, "
-                        f"{len(d['checklist'])} checklist items")
+            results.ok("router_rules", f"{len(d['suggestions'])} suggestions, {len(d['checklist'])} checklist items")
         except Exception as e:
             results.fail("router_rules", e)
 
         # ── 3. Firewall rules ─────────────────────────────────────────────
         try:
-            d = api(driver, "GET",
-                    "/network/api/design-rules/node/firewall")
+            d = api(driver, "GET", "/network/api/design-rules/node/firewall")
             assert d.get("found") is True
             assert "ha_mode" in d.get("checklist", {})
             assert "default_policy" in d.get("checklist", {})
-            results.ok("firewall_rules",
-                        f"{len(d['suggestions'])} suggestions")
+            results.ok("firewall_rules", f"{len(d['suggestions'])} suggestions")
         except Exception as e:
             results.fail("firewall_rules", e)
 
         # ── 4. Best practices API ─────────────────────────────────────────
         try:
-            d = api(driver, "GET",
-                    "/network/api/design-rules/best-practices")
+            d = api(driver, "GET", "/network/api/design-rules/best-practices")
             assert "routing" in d
             assert "redundancy" in d
             assert "security" in d
             assert len(d["routing"]) >= 3
-            results.ok("best_practices_api",
-                        f"{len(d)} categories")
+            results.ok("best_practices_api", f"{len(d)} categories")
         except Exception as e:
             results.fail("best_practices_api", e)
 
         # ── 5. Suggest with context ───────────────────────────────────────
         try:
-            d = api(driver, "POST", "/network/api/design-suggest", {
-                "node_type": "router",
-                "x": 200, "y": 200,
-                "existing_nodes": [
-                    {"id": "sw1", "type": "switch-l3",
-                     "label": "Dist-SW1", "x": 300, "y": 250},
-                    {"id": "fw1", "type": "firewall",
-                     "label": "FW-1", "x": 150, "y": 350},
-                ]
-            })
+            d = api(
+                driver,
+                "POST",
+                "/network/api/design-suggest",
+                {
+                    "node_type": "router",
+                    "x": 200,
+                    "y": 200,
+                    "existing_nodes": [
+                        {"id": "sw1", "type": "switch-l3", "label": "Dist-SW1", "x": 300, "y": 250},
+                        {"id": "fw1", "type": "firewall", "label": "FW-1", "x": 150, "y": 350},
+                    ],
+                },
+            )
             assert len(d.get("suggestions", [])) >= 3
             conns = d.get("connection_suggestions", [])
             assert len(conns) >= 1, f"Expected nearby matches: {conns}"
-            results.ok("suggest_with_context",
-                        f"{len(conns)} connection suggestions")
+            results.ok("suggest_with_context", f"{len(conns)} connection suggestions")
         except Exception as e:
             results.fail("suggest_with_context", e)
 
         # ── 6. Unknown type returns empty ─────────────────────────────────
         try:
-            d = api(driver, "POST", "/network/api/design-suggest", {
-                "node_type": "nonexistent-device",
-                "x": 0, "y": 0, "existing_nodes": []
-            })
+            d = api(
+                driver,
+                "POST",
+                "/network/api/design-suggest",
+                {"node_type": "nonexistent-device", "x": 0, "y": 0, "existing_nodes": []},
+            )
             assert d.get("suggestions") == []
             assert d.get("checklist") == {}
             results.ok("unknown_type_empty")
@@ -216,22 +211,23 @@ def run_tests():
 
         # ── 7. Firewall warns on no HA peer ───────────────────────────────
         try:
-            d = api(driver, "POST", "/network/api/design-suggest", {
-                "node_type": "firewall",
-                "x": 200, "y": 200,
-                "existing_nodes": [
-                    {"id": "r1", "type": "router",
-                     "label": "R1", "x": 300, "y": 200},
-                ]
-            })
-            warnings = d.get("warnings", [])
-            has_ha_warn = any(
-                "HA" in w.get("message", "") or "peer" in w.get("message", "").lower()
-                for w in warnings
+            d = api(
+                driver,
+                "POST",
+                "/network/api/design-suggest",
+                {
+                    "node_type": "firewall",
+                    "x": 200,
+                    "y": 200,
+                    "existing_nodes": [
+                        {"id": "r1", "type": "router", "label": "R1", "x": 300, "y": 200},
+                    ],
+                },
             )
+            warnings = d.get("warnings", [])
+            has_ha_warn = any("HA" in w.get("message", "") or "peer" in w.get("message", "").lower() for w in warnings)
             assert has_ha_warn, f"Expected HA peer warning: {warnings}"
-            results.ok("firewall_ha_warning",
-                        f"{len(warnings)} warnings")
+            results.ok("firewall_ha_warning", f"{len(warnings)} warnings")
         except Exception as e:
             results.fail("firewall_ha_warning", e)
 
@@ -240,8 +236,7 @@ def run_tests():
             # Open canvas with existing topology
             topos = api(driver, "GET", "/network/api/topologies")
             if topos:
-                driver.get(
-                    f"{BASE_URL}/network/canvas/{topos[0]['id']}")
+                driver.get(f"{BASE_URL}/network/canvas/{topos[0]['id']}")
                 time.sleep(3)
                 # Simulate a drop by calling the JS function directly
                 driver.execute_script("""
@@ -251,15 +246,12 @@ def run_tests():
                 """)
                 time.sleep(2)
                 screenshot(driver, "design-guidance-toast")
-                toast = driver.find_elements(
-                    By.ID, "design-guidance-toast")
+                toast = driver.find_elements(By.ID, "design-guidance-toast")
                 if toast:
-                    results.ok("canvas_guidance_toast",
-                                "Toast appeared after drop")
+                    results.ok("canvas_guidance_toast", "Toast appeared after drop")
                 else:
                     # Toast may have auto-dismissed or API returned empty
-                    results.ok("canvas_guidance_toast",
-                                "Function exists, toast timing ok")
+                    results.ok("canvas_guidance_toast", "Function exists, toast timing ok")
             else:
                 results.ok("canvas_guidance_toast", "No topos to test")
         except Exception as e:
@@ -286,8 +278,7 @@ def run_tests():
             if toast:
                 text = toast[0].text
                 assert "Suggestion" in text or "suggestion" in text.lower()
-                results.ok("toast_content",
-                            f"Contains: {text[:60]}...")
+                results.ok("toast_content", f"Contains: {text[:60]}...")
             else:
                 results.ok("toast_content", "Toast function tested")
         except Exception as e:
@@ -296,8 +287,7 @@ def run_tests():
         # ── 10. JS errors ─────────────────────────────────────────────────
         errs = check_js_errors(driver)
         if errs:
-            results.fail("js_errors_canvas",
-                          f"{len(errs)}: {errs[0][:80]}")
+            results.fail("js_errors_canvas", f"{len(errs)}: {errs[0][:80]}")
         else:
             results.ok("js_errors_canvas", "No SEVERE JS errors")
 
@@ -314,8 +304,7 @@ if __name__ == "__main__":
     r = run_tests()
     summary = r.summary()
     print()
-    print(f"Results: {summary['passed']}/{summary['total']} passed "
-          f"({summary['pass_rate']})")
+    print(f"Results: {summary['passed']}/{summary['total']} passed ({summary['pass_rate']})")
     if summary["failures"]:
         print("Failures:")
         for f in summary["failures"]:

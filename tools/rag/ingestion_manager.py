@@ -43,6 +43,7 @@ def _get_embedding_provider():
     """Get embedding provider via LLM router (D-RAG-10)."""
     try:
         from tools.llm import get_embedding_provider
+
         return get_embedding_provider()
     except Exception:
         return None
@@ -55,15 +56,13 @@ def _embed_chunks(chunks, provider) -> int:
     embedded = 0
     batch_size = 20
     for i in range(0, len(chunks), batch_size):
-        batch = chunks[i:i + batch_size]
+        batch = chunks[i : i + batch_size]
         for chunk in batch:
             try:
                 if hasattr(provider, "embed"):
                     chunk.embedding = provider.embed(chunk.content)
                 else:
-                    resp = provider.embeddings.create(
-                        input=chunk.content, model="nomic-embed-text"
-                    )
+                    resp = provider.embeddings.create(input=chunk.content, model="nomic-embed-text")
                     chunk.embedding = resp.data[0].embedding
                 embedded += 1
             except Exception:
@@ -94,8 +93,19 @@ def _log_ingestion(
             content_hash, ingestion_mode, tenant_id, project_id, agent_id,
             correlation_id, classification)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'CUI')""",
-        (source_type, source_id, source_table, chunks_created, chunks_skipped,
-         content_hash, mode, tenant_id, project_id, agent_id, correlation_id),
+        (
+            source_type,
+            source_id,
+            source_table,
+            chunks_created,
+            chunks_skipped,
+            content_hash,
+            mode,
+            tenant_id,
+            project_id,
+            agent_id,
+            correlation_id,
+        ),
     )
     conn.commit()
     conn.close()
@@ -145,6 +155,7 @@ def ingest_source(
 
     # SEC: Whitelist validation — only allow identifiers from SOURCE_REGISTRY
     import re
+
     _IDENT_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]{0,63}$")
     for ident in [table, pk] + content_cols + metadata_cols:
         if not _IDENT_RE.match(ident):
@@ -332,9 +343,7 @@ def get_status(tenant_id: str = "") -> Dict[str, Any]:
         try:
             conn = get_connection()
             conn.execute("PRAGMA busy_timeout=5000")
-            row = conn.execute(
-                "SELECT MAX(created_at) FROM rag_ingestion_log"
-            ).fetchone()
+            row = conn.execute("SELECT MAX(created_at) FROM rag_ingestion_log").fetchone()
             if row and row[0]:
                 last_ingestion = row[0]
             conn.close()

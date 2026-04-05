@@ -169,6 +169,7 @@ def _load_thresholds() -> Dict[str, Any]:
         return thresholds
     try:
         import yaml  # type: ignore
+
         with open(gates_path, encoding="utf-8") as f:
             cfg = yaml.safe_load(f) or {}
         cc_cfg = cfg.get("complexity_compliance", {}).get("thresholds", {})
@@ -197,11 +198,12 @@ def _load_thresholds() -> Dict[str, Any]:
 # Finding builder
 # ---------------------------------------------------------------------------
 
+
 def _finding(
     finding_id: str,
     control_id: str,
     severity: str,  # "blocking" | "warning"
-    status: str,    # "fail" | "warn" | "pass"
+    status: str,  # "fail" | "warn" | "pass"
     summary: str,
     evidence: Dict[str, Any],
 ) -> Dict[str, Any]:
@@ -225,10 +227,12 @@ def _finding(
 # Metric collection
 # ---------------------------------------------------------------------------
 
+
 def _collect_metrics(project_dir: Optional[str] = None) -> List[Dict[str, Any]]:
     """Run CodeAnalyzer and return per-function metrics."""
     sys.path.insert(0, str(PROJECT_ROOT))
     from tools.analysis.code_analyzer import CodeAnalyzer  # noqa: PLC0415
+
     scan_dir = Path(project_dir) if project_dir else PROJECT_ROOT / "tools"
     analyzer = CodeAnalyzer(project_dir=str(scan_dir))
     result = analyzer.scan_directory()
@@ -241,6 +245,7 @@ def _collect_trend(project_id: str = "icdev") -> List[Dict[str, Any]]:
     """Return historical scan aggregates for trend analysis."""
     sys.path.insert(0, str(PROJECT_ROOT))
     from tools.analysis.code_analyzer import CodeAnalyzer  # noqa: PLC0415
+
     db_path = PROJECT_ROOT / "data" / "icdev.db"
     analyzer = CodeAnalyzer()
     try:
@@ -253,12 +258,16 @@ def _collect_trend(project_id: str = "icdev") -> List[Dict[str, Any]]:
 # SA-11 evaluators
 # ---------------------------------------------------------------------------
 
+
 def evaluate_sa11_1(fn_metrics: List[Dict], thresholds: Dict) -> Dict[str, Any]:
     """SA-11(1): Static Code Analysis — high cyclomatic CC per function."""
     threshold = thresholds["sa11_1_max_cyclomatic_per_function"]
     violators = [
-        {"function": m.get("function_name"), "file": m.get("file_path"),
-         "cyclomatic_complexity": m.get("cyclomatic_complexity", 0)}
+        {
+            "function": m.get("function_name"),
+            "file": m.get("file_path"),
+            "cyclomatic_complexity": m.get("cyclomatic_complexity", 0),
+        }
         for m in fn_metrics
         if m.get("cyclomatic_complexity", 0) > threshold
     ]
@@ -318,8 +327,8 @@ def evaluate_sa11_3(fn_metrics: List[Dict], thresholds: Dict) -> Dict[str, Any]:
             f"{len(high_cc)}/{len(fn_metrics)} functions ({pct}%) exceed CC>{cc_threshold}. "
             + (
                 f"Exceeds {max_pct}% threshold — IV&V scope at risk (SA-11(3))."
-                if exceeds else
-                f"Within {max_pct}% IV&V threshold. SA-11(3) satisfied."
+                if exceeds
+                else f"Within {max_pct}% IV&V threshold. SA-11(3) satisfied."
             )
         ),
         evidence={
@@ -329,10 +338,16 @@ def evaluate_sa11_3(fn_metrics: List[Dict], thresholds: Dict) -> Dict[str, Any]:
             "total_functions": len(fn_metrics),
             "high_cc_pct": pct,
             "top_high_cc": sorted(
-                [{"function": m.get("function_name"), "file": m.get("file_path"),
-                  "cyclomatic_complexity": m.get("cyclomatic_complexity", 0)}
-                 for m in high_cc],
-                key=lambda x: x["cyclomatic_complexity"], reverse=True
+                [
+                    {
+                        "function": m.get("function_name"),
+                        "file": m.get("file_path"),
+                        "cyclomatic_complexity": m.get("cyclomatic_complexity", 0),
+                    }
+                    for m in high_cc
+                ],
+                key=lambda x: x["cyclomatic_complexity"],
+                reverse=True,
             )[:10],
         },
     )
@@ -342,8 +357,11 @@ def evaluate_sa11_8(fn_metrics: List[Dict], thresholds: Dict) -> Dict[str, Any]:
     """SA-11(8): Dynamic Code Analysis — high cognitive CC per function."""
     threshold = thresholds["sa11_8_max_cognitive_per_function"]
     violators = [
-        {"function": m.get("function_name"), "file": m.get("file_path"),
-         "cognitive_complexity": m.get("cognitive_complexity", 0)}
+        {
+            "function": m.get("function_name"),
+            "file": m.get("file_path"),
+            "cognitive_complexity": m.get("cognitive_complexity", 0),
+        }
         for m in fn_metrics
         if m.get("cognitive_complexity", 0) > threshold
     ]
@@ -382,6 +400,7 @@ def evaluate_sa11_8(fn_metrics: List[Dict], thresholds: Dict) -> Dict[str, Any]:
 # SA-15 evaluators
 # ---------------------------------------------------------------------------
 
+
 def evaluate_sa15_1(fn_metrics: List[Dict], thresholds: Dict) -> Dict[str, Any]:
     """SA-15(1): Quality Metrics — avg cyclomatic complexity project-wide."""
     max_avg = thresholds["sa15_1_max_avg_cyclomatic"]
@@ -405,8 +424,8 @@ def evaluate_sa15_1(fn_metrics: List[Dict], thresholds: Dict) -> Dict[str, Any]:
             f"Average cyclomatic complexity = {avg_cc} across {len(fn_metrics)} functions. "
             + (
                 f"Exceeds SA-15(1) quality metric threshold of {max_avg}."
-                if exceeds else
-                f"Within SA-15(1) quality metric threshold ({max_avg}). Compliant."
+                if exceeds
+                else f"Within SA-15(1) quality metric threshold ({max_avg}). Compliant."
             )
         ),
         evidence={
@@ -440,8 +459,8 @@ def evaluate_sa15_7(fn_metrics: List[Dict], thresholds: Dict) -> Dict[str, Any]:
             f"Average cognitive complexity = {avg_cog} across {len(fn_metrics)} functions. "
             + (
                 f"Exceeds SA-15(7) security testing readability threshold of {max_avg}."
-                if exceeds else
-                f"Within SA-15(7) security testing threshold ({max_avg}). Compliant."
+                if exceeds
+                else f"Within SA-15(7) security testing threshold ({max_avg}). Compliant."
             )
         ),
         evidence={
@@ -481,8 +500,8 @@ def evaluate_sa15_11(trend: List[Dict], thresholds: Dict) -> Dict[str, Any]:
             f"(latest={latest_cog}, previous={prev_cog}). "
             + (
                 f"Degrading beyond SA-15(11) lifecycle threshold ({min_delta:+.1f})."
-                if degrading else
-                "Stable or improving. SA-15(11) lifecycle signal satisfied."
+                if degrading
+                else "Stable or improving. SA-15(11) lifecycle signal satisfied."
             )
         ),
         evidence={
@@ -501,6 +520,7 @@ def evaluate_sa15_11(trend: List[Dict], thresholds: Dict) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Main evaluator
 # ---------------------------------------------------------------------------
+
 
 def run_complexity_compliance(
     project_dir: Optional[str] = None,
@@ -589,6 +609,7 @@ def run_complexity_compliance(
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Complexity Compliance Signal — NIST SA-11/SA-15 mapping for PDC.",
@@ -609,9 +630,7 @@ def main() -> None:
     )
 
     if args.control:
-        result["findings"] = [
-            f for f in result["findings"] if f["control_id"] == args.control
-        ]
+        result["findings"] = [f for f in result["findings"] if f["control_id"] == args.control]
 
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
     if args.json:

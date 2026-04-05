@@ -96,15 +96,21 @@ def _scan_id() -> str:
     return f"scout-{uuid.uuid4().hex[:12]}"
 
 
-def _audit(event_type: str, details: str = "", pillar: str = "",
-           success: bool = True, duration_ms: int = 0) -> None:
+def _audit(event_type: str, details: str = "", pillar: str = "", success: bool = True, duration_ms: int = 0) -> None:
     try:
         conn = get_connection()
         conn.execute(
             """INSERT INTO scout_audit (id, event_type, pillar, details, success, duration_ms, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (f"saud-{uuid.uuid4().hex[:12]}", event_type, pillar,
-             details[:2000], 1 if success else 0, duration_ms, _now()),
+            (
+                f"saud-{uuid.uuid4().hex[:12]}",
+                event_type,
+                pillar,
+                details[:2000],
+                1 if success else 0,
+                duration_ms,
+                _now(),
+            ),
         )
         conn.commit()
         conn.close()
@@ -115,6 +121,7 @@ def _audit(event_type: str, details: str = "", pillar: str = "",
 def _load_config() -> dict:
     try:
         import yaml
+
         cfg_path = BASE_DIR / "args" / "scout_config.yaml"
         with open(cfg_path, "r", encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
@@ -177,8 +184,7 @@ def _update_heartbeat(config: dict, findings_count: int, duration_ms: int) -> No
                    status = 'healthy',
                    duration_ms = excluded.duration_ms,
                    details = excluded.details""",
-            (check_name, now, now, duration_ms,
-             json.dumps({"findings": findings_count, "scan_date": now[:10]})),
+            (check_name, now, now, duration_ms, json.dumps({"findings": findings_count, "scan_date": now[:10]})),
         )
         conn.commit()
         conn.close()
@@ -189,6 +195,7 @@ def _update_heartbeat(config: dict, findings_count: int, duration_ms: int) -> No
 # ---------------------------------------------------------------------------
 # Main Orchestrator
 # ---------------------------------------------------------------------------
+
 
 def run_scout(config: dict = None) -> dict:
     """Main orchestrator: preflight → pillars → digest → config → genesis."""
@@ -202,6 +209,7 @@ def run_scout(config: dict = None) -> dict:
 
     # Step 0: Preflight
     from tools.scout.preflight import check_all
+
     ok, reason, pf_details = check_all(config)
     result["preflight"] = {"ok": ok, "reason": reason, "details": pf_details}
 
@@ -218,6 +226,7 @@ def run_scout(config: dict = None) -> dict:
     # Step 1: Pillar 1 — Introspect
     try:
         from tools.scout.pillars.introspect import scan as introspect_scan
+
         p1 = introspect_scan(config)
         result["introspect"] = {
             "finding_count": p1.get("finding_count", 0),
@@ -232,6 +241,7 @@ def run_scout(config: dict = None) -> dict:
     # Step 2: Pillar 2 — Trending
     try:
         from tools.scout.pillars.trending import scan as trending_scan
+
         p2 = trending_scan(config)
         result["trending"] = {
             "finding_count": p2.get("finding_count", 0),
@@ -247,6 +257,7 @@ def run_scout(config: dict = None) -> dict:
     trending_findings = [f for f in all_findings if f.get("pillar") == "trending"]
     try:
         from tools.scout.pillars.competitive import scan as competitive_scan
+
         p3 = competitive_scan(config, trending_findings)
         result["competitive"] = {
             "finding_count": p3.get("finding_count", 0),
@@ -264,6 +275,7 @@ def run_scout(config: dict = None) -> dict:
     if ollama_ok:
         try:
             from tools.scout.llm_summarizer import synthesize
+
             synthesis = synthesize(all_findings, config)
             result["synthesis"] = "generated" if synthesis else "skipped"
         except Exception:
@@ -274,6 +286,7 @@ def run_scout(config: dict = None) -> dict:
     # Step 5: Config updates (add new repos)
     try:
         from tools.scout.config_updater import update_from_findings
+
         comp_findings = [f for f in all_findings if f.get("pillar") == "competitive"]
         config_result = update_from_findings(comp_findings, config)
         result["config_updates"] = config_result
@@ -293,6 +306,7 @@ def run_scout(config: dict = None) -> dict:
     if config.get("genesis_trigger", {}).get("enabled", True) and all_findings:
         try:
             from tools.scout.genesis_trigger import trigger_build
+
             genesis_result = trigger_build(all_findings, config)
             result["genesis"] = {
                 "status": genesis_result.get("status"),
@@ -315,6 +329,7 @@ def run_scout(config: dict = None) -> dict:
 
     try:
         from tools.scout.digest import generate
+
         digest_path = generate(
             date_str=date_str,
             findings=all_findings,
@@ -338,12 +353,15 @@ def run_scout(config: dict = None) -> dict:
                 duration_ms, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                scan_id, date_str,
-                json.dumps({
-                    "introspect": result.get("introspect", {}),
-                    "trending": result.get("trending", {}),
-                    "competitive": result.get("competitive", {}),
-                }),
+                scan_id,
+                date_str,
+                json.dumps(
+                    {
+                        "introspect": result.get("introspect", {}),
+                        "trending": result.get("trending", {}),
+                        "competitive": result.get("competitive", {}),
+                    }
+                ),
                 result.get("digest_path"),
                 len(all_findings),
                 signals_fed,
@@ -386,6 +404,7 @@ def run_with_retry(config: dict = None) -> dict:
 
         # Check if still within operating window
         from tools.scout.preflight import check_operating_window
+
         ok, _ = check_operating_window(config)
         if not ok:
             result["status"] = "window_closed"
@@ -406,9 +425,7 @@ def get_status() -> dict:
     _ensure_tables()
     try:
         conn = get_connection()
-        row = conn.execute(
-            """SELECT * FROM scout_scans ORDER BY created_at DESC LIMIT 1"""
-        ).fetchone()
+        row = conn.execute("""SELECT * FROM scout_scans ORDER BY created_at DESC LIMIT 1""").fetchone()
         conn.close()
         if row:
             return dict(row)
@@ -423,12 +440,15 @@ def run_single_pillar(pillar_name: str, config: dict = None) -> dict:
 
     if pillar_name == "introspect":
         from tools.scout.pillars.introspect import scan
+
         return scan(config)
     elif pillar_name == "trending":
         from tools.scout.pillars.trending import scan
+
         return scan(config)
     elif pillar_name == "competitive":
         from tools.scout.pillars.competitive import scan
+
         return scan(config)
     else:
         return {"error": f"Unknown pillar: {pillar_name}"}
@@ -438,17 +458,12 @@ def run_single_pillar(pillar_name: str, config: dict = None) -> dict:
 # CLI
 # ---------------------------------------------------------------------------
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Scout Daemon — Daily Autonomous ICDEV™ Self-Improvement Scanner"
-    )
-    parser.add_argument("--once", action="store_true",
-                        help="Single scan pass (Task Scheduler mode, with retry)")
-    parser.add_argument("--run", action="store_true",
-                        help="Single scan pass (no retry)")
+    parser = argparse.ArgumentParser(description="Scout Daemon — Daily Autonomous ICDEV™ Self-Improvement Scanner")
+    parser.add_argument("--once", action="store_true", help="Single scan pass (Task Scheduler mode, with retry)")
+    parser.add_argument("--run", action="store_true", help="Single scan pass (no retry)")
     parser.add_argument("--status", action="store_true", help="Show last scan results")
     parser.add_argument("--digest", metavar="DATE", help="View past digest (YYYY-MM-DD)")
-    parser.add_argument("--pillar", choices=["introspect", "trending", "competitive"],
-                        help="Run a single pillar")
+    parser.add_argument("--pillar", choices=["introspect", "trending", "competitive"], help="Run a single pillar")
     parser.add_argument("--json", action="store_true", dest="json_output")
     args = parser.parse_args()
 
@@ -456,6 +471,7 @@ def main() -> None:
 
     # Check master switch
     import os
+
     env_key = config.get("env_override", "ICDEV_SCOUT_ENABLED")
     env_val = os.environ.get(env_key, "").lower()
     if env_val in ("false", "0", "no"):
@@ -473,6 +489,7 @@ def main() -> None:
         result = get_status()
     elif args.digest:
         from tools.scout.digest import get_digest
+
         content = get_digest(args.digest, config)
         if content:
             print(content)

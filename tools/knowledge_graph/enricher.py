@@ -43,6 +43,7 @@ logger = logging.getLogger("icdev.knowledge_graph.enricher")
 # Config
 # ---------------------------------------------------------------------------
 
+
 def _load_config() -> Dict[str, Any]:
     """Load enrichment config from knowledge_graph_config.yaml."""
     config_path = BASE_DIR / "args" / "knowledge_graph_config.yaml"
@@ -50,6 +51,7 @@ def _load_config() -> Dict[str, Any]:
         return {}
     try:
         import yaml
+
         with open(config_path, "r", encoding="utf-8") as f:
             cfg = yaml.safe_load(f) or {}
         return cfg.get("enrichment", {})
@@ -74,8 +76,10 @@ DEFAULT_CONFIG = {
 # Database
 # ---------------------------------------------------------------------------
 
+
 def _get_db():
     from tools.db.storage import get_connection
+
     conn = get_connection()
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
@@ -88,6 +92,7 @@ def _now() -> str:
 # ---------------------------------------------------------------------------
 # Centrality Computation (deterministic, no LLM)
 # ---------------------------------------------------------------------------
+
 
 def _build_adjacency(nodes: List[Dict], edges: List[Dict]) -> Dict[str, Set[str]]:
     """Build undirected adjacency list."""
@@ -165,7 +170,8 @@ def _betweenness_centrality(adj: Dict[str, Set[str]], max_nodes: int = 500) -> D
 
 
 def compute_centrality(
-    graph_id: str, conn: Optional[sqlite3.Connection] = None,
+    graph_id: str,
+    conn: Optional[sqlite3.Connection] = None,
 ) -> Dict[str, Any]:
     """Compute and persist centrality scores for a graph (D-KARL-7).
 
@@ -180,13 +186,21 @@ def compute_centrality(
     if conn is None:
         conn = _get_db()
 
-    nodes = [dict(r) for r in conn.execute(
-        "SELECT id, label, entity_type FROM kg_nodes WHERE graph_id = ?", (graph_id,),
-    ).fetchall()]
+    nodes = [
+        dict(r)
+        for r in conn.execute(
+            "SELECT id, label, entity_type FROM kg_nodes WHERE graph_id = ?",
+            (graph_id,),
+        ).fetchall()
+    ]
 
-    edges = [dict(r) for r in conn.execute(
-        "SELECT id, source_id, target_id FROM kg_edges WHERE graph_id = ?", (graph_id,),
-    ).fetchall()]
+    edges = [
+        dict(r)
+        for r in conn.execute(
+            "SELECT id, source_id, target_id FROM kg_edges WHERE graph_id = ?",
+            (graph_id,),
+        ).fetchall()
+    ]
 
     if not nodes:
         if close_conn:
@@ -210,14 +224,16 @@ def compute_centrality(
     # Build result
     node_scores = []
     for n in nodes:
-        node_scores.append({
-            "id": n["id"],
-            "label": n["label"],
-            "entity_type": n["entity_type"],
-            "centrality": round(centrality.get(n["id"], 0), 6),
-            "degree": round(degree.get(n["id"], 0), 6),
-            "betweenness": round(betweenness.get(n["id"], 0), 6),
-        })
+        node_scores.append(
+            {
+                "id": n["id"],
+                "label": n["label"],
+                "entity_type": n["entity_type"],
+                "centrality": round(centrality.get(n["id"], 0), 6),
+                "degree": round(degree.get(n["id"], 0), 6),
+                "betweenness": round(betweenness.get(n["id"], 0), 6),
+            }
+        )
 
     node_scores.sort(key=lambda x: x["centrality"], reverse=True)
 
@@ -237,13 +253,15 @@ def compute_centrality(
 # Embedding Computation
 # ---------------------------------------------------------------------------
 
+
 def _float_list_to_blob(floats: List[float]) -> bytes:
     """Pack float list into binary BLOB for SQLite storage."""
     return struct.pack(f"{len(floats)}f", *floats)
 
 
 def compute_embeddings(
-    graph_id: str, conn: Optional[sqlite3.Connection] = None,
+    graph_id: str,
+    conn: Optional[sqlite3.Connection] = None,
 ) -> Dict[str, Any]:
     """Compute and persist entity embeddings for a graph (D-KARL-7).
 
@@ -259,9 +277,13 @@ def compute_embeddings(
     if conn is None:
         conn = _get_db()
 
-    nodes = [dict(r) for r in conn.execute(
-        "SELECT id, label, entity_type FROM kg_nodes WHERE graph_id = ?", (graph_id,),
-    ).fetchall()]
+    nodes = [
+        dict(r)
+        for r in conn.execute(
+            "SELECT id, label, entity_type FROM kg_nodes WHERE graph_id = ?",
+            (graph_id,),
+        ).fetchall()
+    ]
 
     if not nodes:
         if close_conn:
@@ -271,6 +293,7 @@ def compute_embeddings(
     # Get embedding provider
     try:
         from tools.llm import get_embedding_provider
+
         provider = get_embedding_provider()
         if provider is None:
             if close_conn:
@@ -286,7 +309,7 @@ def compute_embeddings(
 
     # Process in batches
     for i in range(0, len(nodes), batch_size):
-        batch = nodes[i:i + batch_size]
+        batch = nodes[i : i + batch_size]
         for node in batch:
             text = f"{node['entity_type']}: {node['label']}"
             try:
@@ -320,8 +343,11 @@ def compute_embeddings(
 # Combined enrichment
 # ---------------------------------------------------------------------------
 
+
 def enrich_graph(
-    graph_id: str, centrality: bool = True, embeddings: bool = True,
+    graph_id: str,
+    centrality: bool = True,
+    embeddings: bool = True,
 ) -> Dict[str, Any]:
     """Run full enrichment pipeline on a graph."""
     results: Dict[str, Any] = {"graph_id": graph_id, "status": "ok"}
@@ -338,6 +364,7 @@ def enrich_graph(
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+
 
 def main():
     parser = argparse.ArgumentParser(

@@ -55,21 +55,27 @@ if str(BASE_DIR) not in sys.path:
 DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db")))
 
 from tools.marketplace.catalog_manager import (  # noqa: E402
-    register_asset, add_version, update_status,
+    register_asset,
+    add_version,
+    update_status,
 )
 from tools.marketplace.asset_scanner import run_full_scan  # noqa: E402
 
 # Graceful imports
 try:
     from tools.audit.audit_logger import log_event as audit_log_event  # noqa: E402
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
+
     def audit_log_event(**kwargs):
         return -1
 
+
 try:
     from tools.saas.artifacts.signer import sign_artifact
+
     _HAS_SIGNER = True
 except ImportError:
     _HAS_SIGNER = False
@@ -105,13 +111,15 @@ def _gen_id(prefix="pub"):
     return f"{prefix}-{uuid.uuid4().hex[:12]}"
 
 
-
 def _audit(event_type, actor, action, details=None):
     if _HAS_AUDIT:
         try:
             audit_log_event(
-                event_type=event_type, actor=actor,
-                action=action, details=details, db_path=DB_PATH,
+                event_type=event_type,
+                actor=actor,
+                action=action,
+                details=details,
+                db_path=DB_PATH,
             )
         except Exception:
             pass
@@ -120,6 +128,7 @@ def _audit(event_type, actor, action, details=None):
 # ---------------------------------------------------------------------------
 # Metadata parsing
 # ---------------------------------------------------------------------------
+
 
 def parse_skill_md(file_path):
     """Parse SKILL.md YAML frontmatter + body."""
@@ -134,6 +143,7 @@ def parse_skill_md(file_path):
             body = parts[2].strip()
             try:
                 import yaml
+
                 metadata = yaml.safe_load(frontmatter) or {}
             except ImportError:
                 # Fallback: basic key:value parsing
@@ -158,6 +168,7 @@ def parse_yaml_metadata(file_path):
     """Parse YAML metadata file."""
     try:
         import yaml
+
         with open(file_path) as f:
             return yaml.safe_load(f) or {}
     except ImportError:
@@ -167,6 +178,7 @@ def parse_yaml_metadata(file_path):
 # ---------------------------------------------------------------------------
 # Validation
 # ---------------------------------------------------------------------------
+
 
 def validate_asset_structure(asset_path, asset_type):
     """Validate that the asset directory has the expected structure.
@@ -213,7 +225,7 @@ def validate_asset_structure(asset_path, asset_type):
         errors.append("Missing required field: description")
 
     # Validate name format
-    if name and not re.match(r'^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$', name):
+    if name and not re.match(r"^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$", name):
         errors.append(f"Invalid name format: '{name}'. Must be lowercase, hyphens, 3-64 chars")
 
     # Check for scripts directory (skills)
@@ -233,10 +245,20 @@ def validate_asset_structure(asset_path, asset_type):
 # Pipeline
 # ---------------------------------------------------------------------------
 
-def publish_asset(asset_path, asset_type, tenant_id, publisher_user,
-                  publisher_org=None, target_tier="tenant_local",
-                  asset_id=None, new_version=None, changelog=None,
-                  signing_key_path=None, db_path=None):
+
+def publish_asset(
+    asset_path,
+    asset_type,
+    tenant_id,
+    publisher_user,
+    publisher_org=None,
+    target_tier="tenant_local",
+    asset_id=None,
+    new_version=None,
+    changelog=None,
+    signing_key_path=None,
+    db_path=None,
+):
     """Execute the full publish pipeline.
 
     Steps:
@@ -253,11 +275,13 @@ def publish_asset(asset_path, asset_type, tenant_id, publisher_user,
 
     # Step 1: Validate structure
     is_valid, errors, metadata = validate_asset_structure(asset_path, asset_type)
-    steps.append({
-        "step": "validate_structure",
-        "status": "pass" if is_valid else "fail",
-        "errors": errors,
-    })
+    steps.append(
+        {
+            "step": "validate_structure",
+            "status": "pass" if is_valid else "fail",
+            "errors": errors,
+        }
+    )
     if not is_valid:
         return {
             "pipeline_id": pipeline_id,
@@ -276,63 +300,84 @@ def publish_asset(asset_path, asset_type, tenant_id, publisher_user,
     compliance_controls = metadata.get("compliance_controls")
     tags = metadata.get("tags")
 
-    steps.append({
-        "step": "parse_metadata",
-        "status": "pass",
-        "metadata": {
-            "name": name, "version": version,
-            "impact_level": impact_level, "classification": classification,
-        },
-    })
+    steps.append(
+        {
+            "step": "parse_metadata",
+            "status": "pass",
+            "metadata": {
+                "name": name,
+                "version": version,
+                "impact_level": impact_level,
+                "classification": classification,
+            },
+        }
+    )
 
     # Step 3: Register or add version
     if asset_id:
         # Adding new version to existing asset
         version_result = add_version(
-            asset_id=asset_id, version=version,
-            changelog=changelog, file_path=str(asset_path),
-            published_by=publisher_user, db_path=db_path,
+            asset_id=asset_id,
+            version=version,
+            changelog=changelog,
+            file_path=str(asset_path),
+            published_by=publisher_user,
+            db_path=db_path,
         )
         version_id = version_result["version_id"]
         steps.append({"step": "add_version", "status": "pass", "version_id": version_id})
     else:
         # New asset registration
         reg_result = register_asset(
-            name=name, asset_type=asset_type,
-            description=description, version=version,
-            impact_level=impact_level, classification=classification,
-            tenant_id=tenant_id, publisher_org=publisher_org,
-            publisher_user=publisher_user, tags=tags,
-            compliance_controls=compliance_controls, db_path=db_path,
+            name=name,
+            asset_type=asset_type,
+            description=description,
+            version=version,
+            impact_level=impact_level,
+            classification=classification,
+            tenant_id=tenant_id,
+            publisher_org=publisher_org,
+            publisher_user=publisher_user,
+            tags=tags,
+            compliance_controls=compliance_controls,
+            db_path=db_path,
         )
         asset_id = reg_result["asset_id"]
         version_result = add_version(
-            asset_id=asset_id, version=version,
-            changelog=changelog, file_path=str(asset_path),
-            published_by=publisher_user, db_path=db_path,
+            asset_id=asset_id,
+            version=version,
+            changelog=changelog,
+            file_path=str(asset_path),
+            published_by=publisher_user,
+            db_path=db_path,
         )
         version_id = version_result["version_id"]
-        steps.append({
-            "step": "register_asset",
-            "status": "pass",
-            "asset_id": asset_id,
-            "version_id": version_id,
-        })
+        steps.append(
+            {
+                "step": "register_asset",
+                "status": "pass",
+                "asset_id": asset_id,
+                "version_id": version_id,
+            }
+        )
 
     # Step 4: Security scanning
     update_status(asset_id, "scanning", db_path)
     scan_result = run_full_scan(
-        asset_id=asset_id, version_id=version_id,
+        asset_id=asset_id,
+        version_id=version_id,
         asset_path=str(asset_path),
         expected_classification=classification,
         db_path=db_path,
     )
-    steps.append({
-        "step": "security_scan",
-        "status": scan_result["overall_status"],
-        "blocking_gates_pass": scan_result["blocking_gates_pass"],
-        "gates_scanned": scan_result["gates_scanned"],
-    })
+    steps.append(
+        {
+            "step": "security_scan",
+            "status": scan_result["overall_status"],
+            "blocking_gates_pass": scan_result["blocking_gates_pass"],
+            "gates_scanned": scan_result["gates_scanned"],
+        }
+    )
 
     if not scan_result["blocking_gates_pass"]:
         update_status(asset_id, "draft", db_path)
@@ -355,6 +400,7 @@ def publish_asset(asset_path, asset_type, tenant_id, publisher_user,
         sys.path.insert(0, str(asset_path))
         try:
             from tools.workflow.coherence_checker import run_checks as _coh_run  # noqa: F811
+
             coherence_report = _coh_run()
             coherence_pass = coherence_report.overall_pass
             coherence_msg = (
@@ -368,11 +414,13 @@ def publish_asset(asset_path, asset_type, tenant_id, publisher_user,
         coherence_pass = True  # Non-blocking — skip gracefully
         coherence_msg = f"Skipped: {e}"
 
-    steps.append({
-        "step": "coherence_validation",
-        "status": "pass" if coherence_pass else "warn",
-        "message": coherence_msg,
-    })
+    steps.append(
+        {
+            "step": "coherence_validation",
+            "status": "pass" if coherence_pass else "warn",
+            "message": coherence_msg,
+        }
+    )
 
     # Step 5: Digital signature
     signature_info = {"signed": False}
@@ -400,12 +448,14 @@ def publish_asset(asset_path, asset_type, tenant_id, publisher_user,
         )
         conn.commit()
         conn.close()
-        steps.append({
-            "step": "submit_review",
-            "status": "pass",
-            "review_id": review_id,
-            "message": "Submitted for ISSO/security officer review",
-        })
+        steps.append(
+            {
+                "step": "submit_review",
+                "status": "pass",
+                "review_id": review_id,
+                "message": "Submitted for ISSO/security officer review",
+            }
+        )
         final_status = "pending_review"
     else:
         # Auto-publish to tenant-local catalog
@@ -456,13 +506,13 @@ def main():
     parser.add_argument("--db-path", type=Path, default=None)
 
     parser.add_argument("--asset-path", required=True, help="Path to asset directory")
-    parser.add_argument("--asset-type", required=True,
-                        choices=["skill", "goal", "hardprompt", "context", "args", "compliance"])
+    parser.add_argument(
+        "--asset-type", required=True, choices=["skill", "goal", "hardprompt", "context", "args", "compliance"]
+    )
     parser.add_argument("--tenant-id", required=True, help="Publisher tenant ID")
     parser.add_argument("--publisher-user", required=True, help="Publisher identity")
     parser.add_argument("--publisher-org", help="Publisher organization")
-    parser.add_argument("--target-tier", choices=["tenant_local", "central_vetted"],
-                        default="tenant_local")
+    parser.add_argument("--target-tier", choices=["tenant_local", "central_vetted"], default="tenant_local")
     parser.add_argument("--asset-id", help="Existing asset ID (for new version)")
     parser.add_argument("--new-version", help="Version string for update")
     parser.add_argument("--changelog", help="Version changelog")

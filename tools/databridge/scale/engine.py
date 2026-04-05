@@ -56,6 +56,7 @@ class ScaleEngine:
         # PG handles concurrent writes natively (MVCC) — increase defaults
         try:
             from tools.db.storage import get_backend
+
             _is_pg = get_backend() == "postgresql"
         except ImportError:
             _is_pg = False

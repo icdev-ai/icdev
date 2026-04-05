@@ -39,6 +39,7 @@ def _load_config() -> Dict[str, Any]:
     config_path = BASE_DIR / "args" / "redaction_config.yaml"
     try:
         import yaml
+
         with open(config_path, encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
     except Exception:
@@ -49,6 +50,7 @@ def _load_govcon_config() -> Dict[str, Any]:
     config_path = BASE_DIR / "args" / "redaction_govcon.yaml"
     try:
         import yaml
+
         with open(config_path, encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
     except Exception:
@@ -59,13 +61,18 @@ def _load_govcon_config() -> Dict[str, Any]:
 # Anonymization result
 # ---------------------------------------------------------------------------
 
+
 class AnonymizationResult:
     """Result of anonymizing a text."""
 
-    def __init__(self, original_length: int, anonymized_text: str,
-                 detections: List[DetectionResult],
-                 replacements: List[Dict[str, Any]],
-                 session_id: str):
+    def __init__(
+        self,
+        original_length: int,
+        anonymized_text: str,
+        detections: List[DetectionResult],
+        replacements: List[Dict[str, Any]],
+        session_id: str,
+    ):
         self.original_length = original_length
         self.anonymized_text = anonymized_text
         self.detections = detections
@@ -87,12 +94,13 @@ class AnonymizationResult:
 # Anonymizer Engine
 # ---------------------------------------------------------------------------
 
+
 class RedactionAnonymizer:
     """Anonymization engine with IL-aware operator selection."""
 
-    def __init__(self, config: Optional[Dict] = None,
-                 govcon_config: Optional[Dict] = None,
-                 session_id: Optional[str] = None):
+    def __init__(
+        self, config: Optional[Dict] = None, govcon_config: Optional[Dict] = None, session_id: Optional[str] = None
+    ):
         self._config = config or _load_config()
         self._govcon_config = govcon_config or _load_govcon_config()
         self._detector = RedactionDetector(self._config, self._govcon_config)
@@ -108,8 +116,9 @@ class RedactionAnonymizer:
     def session_id(self) -> str:
         return self._registry.session_id
 
-    def anonymize(self, text: str, impact_level: str = "IL4",
-                  entities: Optional[List[str]] = None) -> AnonymizationResult:
+    def anonymize(
+        self, text: str, impact_level: str = "IL4", entities: Optional[List[str]] = None
+    ) -> AnonymizationResult:
         """Detect and anonymize PII in text.
 
         Args:
@@ -124,8 +133,7 @@ class RedactionAnonymizer:
             return AnonymizationResult(0, text, [], [], self.session_id)
 
         # Detect
-        detections = self._detector.detect(text, entities=entities,
-                                            impact_level=impact_level)
+        detections = self._detector.detect(text, entities=entities, impact_level=impact_level)
 
         if not detections:
             return AnonymizationResult(len(text), text, [], [], self.session_id)
@@ -136,13 +144,15 @@ class RedactionAnonymizer:
         for det in sorted(detections, key=lambda d: -d.start):
             treatment = self._get_treatment(det.entity_type, impact_level)
             replacement = self._apply_treatment(treatment, det)
-            anonymized = anonymized[:det.start] + replacement + anonymized[det.end:]
-            replacements.append({
-                "entity_type": det.entity_type,
-                "treatment": treatment,
-                "original_length": det.end - det.start,
-                "replacement_length": len(replacement),
-            })
+            anonymized = anonymized[: det.start] + replacement + anonymized[det.end :]
+            replacements.append(
+                {
+                    "entity_type": det.entity_type,
+                    "treatment": treatment,
+                    "original_length": det.end - det.start,
+                    "replacement_length": len(replacement),
+                }
+            )
 
         # Audit
         if self._audit_enabled:
@@ -180,9 +190,14 @@ class RedactionAnonymizer:
                 return pdef.get("treatment", "redact")
 
         # Deny-list entities default to surrogate
-        if entity_type in ("GOVCON_PROGRAM_NAME", "GOVCON_PROTECTED_ORG",
-                           "GOVCON_AGENCY_NAME", "PROGRAM_NAME",
-                           "PROTECTED_ORG", "AGENCY_NAME"):
+        if entity_type in (
+            "GOVCON_PROGRAM_NAME",
+            "GOVCON_PROTECTED_ORG",
+            "GOVCON_AGENCY_NAME",
+            "PROGRAM_NAME",
+            "PROTECTED_ORG",
+            "AGENCY_NAME",
+        ):
             return "surrogate"
 
         # Default
@@ -193,21 +208,18 @@ class RedactionAnonymizer:
         real_value = detection.text
 
         if treatment == "surrogate":
-            return self._registry.get_or_create_surrogate(
-                detection.entity_type, real_value)
+            return self._registry.get_or_create_surrogate(detection.entity_type, real_value)
 
         if treatment == "redact":
             # Check for custom placeholder
-            placeholder = self._config.get("anonymization", {}).get(
-                "redact", {}).get("placeholder", "[{entity_type}]")
+            placeholder = self._config.get("anonymization", {}).get("redact", {}).get("placeholder", "[{entity_type}]")
             return placeholder.format(entity_type=detection.entity_type)
 
         if treatment == "mask":
             mask_cfg = self._config.get("anonymization", {}).get("mask", {})
             char = mask_cfg.get("masking_char", "*")
             # Show last N chars
-            std_cfg = self._config.get("detection", {}).get(
-                "standard_entities", {}).get(detection.entity_type, {})
+            std_cfg = self._config.get("detection", {}).get("standard_entities", {}).get(detection.entity_type, {})
             show_chars = std_cfg.get("mask_chars", 4)
             if len(real_value) <= show_chars:
                 return char * len(real_value)
@@ -227,11 +239,11 @@ class RedactionAnonymizer:
         # Unknown treatment — redact
         return f"[{detection.entity_type}]"
 
-    def _log_audit(self, text: str, detections: List[DetectionResult],
-                   impact_level: str) -> None:
+    def _log_audit(self, text: str, detections: List[DetectionResult], impact_level: str) -> None:
         """Log anonymization event to audit table."""
         try:
             from tools.db.storage import get_connection
+
             conn = get_connection()
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS redaction_audit (
@@ -257,7 +269,7 @@ class RedactionAnonymizer:
                     len(detections),
                     json.dumps(list(set(d.entity_type for d in detections))),
                     impact_level,
-                )
+                ),
             )
             conn.commit()
             conn.close()
@@ -282,16 +294,16 @@ class RedactionAnonymizer:
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
     parser = argparse.ArgumentParser(description="ICDEV™ Redaction Anonymizer")
     parser.add_argument("--anonymize", type=str, help="Anonymize text")
     parser.add_argument("--anonymize-file", type=str, help="Anonymize file contents")
-    parser.add_argument("--il", type=str, default="IL4",
-                        choices=["IL2", "IL4", "IL5", "IL6"],
-                        help="Impact level (default: IL4)")
+    parser.add_argument(
+        "--il", type=str, default="IL4", choices=["IL2", "IL4", "IL5", "IL6"], help="Impact level (default: IL4)"
+    )
     parser.add_argument("--session", type=str, default=None, help="Session ID")
-    parser.add_argument("--show-text", action="store_true",
-                        help="Show anonymized text (default: metadata only)")
+    parser.add_argument("--show-text", action="store_true", help="Show anonymized text (default: metadata only)")
     parser.add_argument("--health", action="store_true", help="Health check")
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--gate", action="store_true", help="Exit non-zero if unhealthy")

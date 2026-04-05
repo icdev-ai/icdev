@@ -72,6 +72,7 @@ CREATE TABLE IF NOT EXISTS ft_hp_trials (
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
+
 def _get_db(db_path: Optional[str] = None) -> sqlite3.Connection:
     conn = get_connection(db_path=db_path)
     conn.execute("PRAGMA journal_mode=WAL")
@@ -99,6 +100,7 @@ def _load_config() -> Dict[str, Any]:
     if config_path.exists():
         try:
             import yaml
+
             with open(config_path, encoding="utf-8") as f:
                 cfg = yaml.safe_load(f) or {}
             return cfg.get("hyperparam_search", {})
@@ -136,6 +138,7 @@ def _generate_random(
 
 # ── Core Functions ───────────────────────────────────────────────────
 
+
 def create_search(
     dataset_id: str,
     method: Optional[str] = None,
@@ -150,10 +153,13 @@ def create_search(
     if method not in ("grid", "random"):
         return {"success": False, "error": f"Invalid method: {method}. Must be 'grid' or 'random'."}
 
-    search_space = search_space or cfg.get("search_space", {
-        "lora_rank": [8, 16, 32],
-        "learning_rate": [0.0001, 0.0002, 0.0005],
-    })
+    search_space = search_space or cfg.get(
+        "search_space",
+        {
+            "lora_rank": [8, 16, 32],
+            "learning_rate": [0.0001, 0.0002, 0.0005],
+        },
+    )
     max_trials = max_trials or cfg.get("max_trials", 9)
 
     # Generate trial parameter sets
@@ -172,8 +178,7 @@ def create_search(
                (id, dataset_id, method, search_space, max_trials,
                 completed_trials, best_params, status, created_at, updated_at)
                VALUES (?, ?, ?, ?, ?, 0, '{}', 'pending', ?, ?)""",
-            (search_id, dataset_id, method, json.dumps(search_space),
-             len(trial_params), now, now),
+            (search_id, dataset_id, method, json.dumps(search_space), len(trial_params), now, now),
         )
 
         for idx, params in enumerate(trial_params, start=1):
@@ -210,9 +215,7 @@ def run_next_trial(
     conn = _get_db(db_path)
     try:
         # Validate search exists
-        search = conn.execute(
-            "SELECT * FROM ft_hp_searches WHERE id = ?", (search_id,)
-        ).fetchone()
+        search = conn.execute("SELECT * FROM ft_hp_searches WHERE id = ?", (search_id,)).fetchone()
         if not search:
             return {"success": False, "error": f"Search not found: {search_id}"}
 
@@ -294,9 +297,7 @@ def record_trial_result(
     """Record evaluation results for a completed trial."""
     conn = _get_db(db_path)
     try:
-        trial = conn.execute(
-            "SELECT * FROM ft_hp_trials WHERE id = ?", (trial_id,)
-        ).fetchone()
+        trial = conn.execute("SELECT * FROM ft_hp_trials WHERE id = ?", (trial_id,)).fetchone()
         if not trial:
             return {"success": False, "error": f"Trial not found: {trial_id}"}
 
@@ -314,16 +315,11 @@ def record_trial_result(
         )
 
         # Update search — increment completed, check for new best
-        search = conn.execute(
-            "SELECT * FROM ft_hp_searches WHERE id = ?", (search_id,)
-        ).fetchone()
+        search = conn.execute("SELECT * FROM ft_hp_searches WHERE id = ?", (search_id,)).fetchone()
         search_dict = dict(search)
 
         new_completed = search_dict["completed_trials"] + 1
-        is_new_best = (
-            search_dict["best_score"] is None
-            or eval_score > search_dict["best_score"]
-        )
+        is_new_best = search_dict["best_score"] is None or eval_score > search_dict["best_score"]
 
         updates = {
             "completed_trials": new_completed,
@@ -380,9 +376,7 @@ def get_search_status(
     """Return full search status with all trials, best params, progress."""
     conn = _get_db(db_path)
     try:
-        search = conn.execute(
-            "SELECT * FROM ft_hp_searches WHERE id = ?", (search_id,)
-        ).fetchone()
+        search = conn.execute("SELECT * FROM ft_hp_searches WHERE id = ?", (search_id,)).fetchone()
         if not search:
             return {"success": False, "error": f"Search not found: {search_id}"}
 
@@ -451,6 +445,7 @@ def list_searches(
 
 
 # ── CLI ──────────────────────────────────────────────────────────────
+
 
 def main():
     parser = argparse.ArgumentParser(description="Hyperparameter search orchestrator")

@@ -59,7 +59,7 @@ ICDEV™'s AppForge Daemon is an autonomous engine that continuously scans acros
 
 Here's what AppForge did for {vertical}:
 
-1. **Discovery** — Scanned innovation signals, creative engine gaps, and research intelligence to identify this challenge as high-value (score: {challenge.get('score', 0.85):.0%})
+1. **Discovery** — Scanned innovation signals, creative engine gaps, and research intelligence to identify this challenge as high-value (score: {challenge.get("score", 0.85):.0%})
 2. **Architecture** — Designed a complete application blueprint with entity models, knowledge graph schema, and UI wireframes
 3. **Build** — Generated a standalone Flask application with:
    - Professional dark-themed dashboard with stat cards and charts
@@ -154,11 +154,13 @@ def _capture_screenshots(challenge: dict, port: int) -> list[dict]:
                     filename = f"{app_slug}-{name}-desktop.png"
                     filepath = screenshots_dir / filename
                     driver.save_screenshot(str(filepath))
-                    captured.append({
-                        "name": name,
-                        "filename": filename,
-                        "abs_path": str(filepath),
-                    })
+                    captured.append(
+                        {
+                            "name": name,
+                            "filename": filename,
+                            "abs_path": str(filepath),
+                        }
+                    )
                 except Exception:
                     continue
         finally:
@@ -265,8 +267,7 @@ def run(config: Dict[str, Any], trust) -> Dict[str, Any]:
     try:
         # Find built challenge without a published article
         challenge = conn.execute(
-            "SELECT * FROM appforge_challenges "
-            "WHERE status = 'built' AND pulse_post_id IS NULL LIMIT 1"
+            "SELECT * FROM appforge_challenges WHERE status = 'built' AND pulse_post_id IS NULL LIMIT 1"
         ).fetchone()
         if not challenge:
             return {
@@ -291,6 +292,7 @@ def run(config: Dict[str, Any], trust) -> Dict[str, Any]:
         quality_score = 0.0
         try:
             from tools.pulse.engine.scheduler import run_pipeline_from_draft
+
             result = run_pipeline_from_draft(
                 topic=f"{challenge['title']} — Built Autonomously by AppForge",
                 body_markdown=article,
@@ -315,8 +317,7 @@ def run(config: Dict[str, Any], trust) -> Dict[str, Any]:
             status = "review_needed"
 
         conn.execute(
-            "UPDATE appforge_challenges SET status = ?, pulse_post_id = ?, published_at = ? "
-            "WHERE challenge_id = ?",
+            "UPDATE appforge_challenges SET status = ?, pulse_post_id = ?, published_at = ? WHERE challenge_id = ?",
             (status, post_id, utcnow_iso(), challenge["challenge_id"]),
         )
         conn.commit()

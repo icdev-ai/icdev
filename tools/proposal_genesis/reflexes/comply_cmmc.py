@@ -41,6 +41,7 @@ def _generate_id(prefix: str = "pgcmmc") -> str:
 # CMMC validation checks
 # ---------------------------------------------------------------------------
 
+
 def _get_opportunities_needing_cmmc() -> List[Dict]:
     """Find opportunities in tracking/drafting with CMMC requirements."""
     conn = get_connection()
@@ -64,9 +65,7 @@ def _check_teaming_cmmc(opp_id: str) -> Dict[str, Any]:
     conn = get_connection()
     try:
         partners = conn.execute(
-            "SELECT id, partner_name, role, cmmc_level, sprs_score "
-            "FROM pg_teaming_workshare "
-            "WHERE opportunity_id = ?",
+            "SELECT id, partner_name, role, cmmc_level, sprs_score FROM pg_teaming_workshare WHERE opportunity_id = ?",
             (opp_id,),
         ).fetchall()
     except Exception:
@@ -94,14 +93,16 @@ def _check_teaming_cmmc(opp_id: str) -> Dict[str, Any]:
             issues.append("No CMMC level or SPRS score on record")
 
         if issues:
-            non_compliant.append({
-                "partner_id": partner["id"],
-                "partner_name": partner["partner_name"],
-                "role": partner["role"],
-                "cmmc_level": cmmc_level,
-                "sprs_score": sprs_score,
-                "issues": issues,
-            })
+            non_compliant.append(
+                {
+                    "partner_id": partner["id"],
+                    "partner_name": partner["partner_name"],
+                    "role": partner["role"],
+                    "cmmc_level": cmmc_level,
+                    "sprs_score": sprs_score,
+                    "issues": issues,
+                }
+            )
 
     return {
         "partners_checked": len(partners),
@@ -115,9 +116,7 @@ def _check_ai_clause_compliance(opp_id: str) -> Dict[str, Any]:
     conn = get_connection()
     try:
         rows = conn.execute(
-            "SELECT clause_id, clause_title, compliance_status "
-            "FROM pg_ai_clause_compliance "
-            "WHERE opportunity_id = ?",
+            "SELECT clause_id, clause_title, compliance_status FROM pg_ai_clause_compliance WHERE opportunity_id = ?",
             (opp_id,),
         ).fetchall()
     except Exception:
@@ -126,8 +125,7 @@ def _check_ai_clause_compliance(opp_id: str) -> Dict[str, Any]:
         conn.close()
 
     non_compliant = sum(
-        1 for r in rows
-        if (r["compliance_status"] or "").lower() not in ("compliant", "not_applicable")
+        1 for r in rows if (r["compliance_status"] or "").lower() not in ("compliant", "not_applicable")
     )
     return {"clauses_checked": len(rows), "non_compliant": non_compliant}
 
@@ -135,6 +133,7 @@ def _check_ai_clause_compliance(opp_id: str) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
+
 
 def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     """Execute the Comply_CMMC Reflex (R18).
@@ -164,15 +163,17 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
 
         total_non_compliant += nc_count
 
-        validation_results.append({
-            "opportunity_id": opp_id,
-            "title": opp["title"],
-            "partners_checked": team_result["partners_checked"],
-            "non_compliant_partners": team_result["non_compliant_count"],
-            "ai_clauses_checked": ai_result["clauses_checked"],
-            "ai_clauses_non_compliant": ai_result["non_compliant"],
-            "total_issues": nc_count,
-        })
+        validation_results.append(
+            {
+                "opportunity_id": opp_id,
+                "title": opp["title"],
+                "partners_checked": team_result["partners_checked"],
+                "non_compliant_partners": team_result["non_compliant_count"],
+                "ai_clauses_checked": ai_result["clauses_checked"],
+                "ai_clauses_non_compliant": ai_result["non_compliant"],
+                "total_issues": nc_count,
+            }
+        )
 
     # Audit
     conn = get_connection()
@@ -186,10 +187,12 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                 "cmmc_validation",
                 "comply_cmmc",
                 "green",
-                json.dumps({
-                    "opportunities_checked": len(opportunities),
-                    "total_non_compliant": total_non_compliant,
-                }),
+                json.dumps(
+                    {
+                        "opportunities_checked": len(opportunities),
+                        "total_non_compliant": total_non_compliant,
+                    }
+                ),
                 1,
                 _utcnow_iso(),
             ),
@@ -209,4 +212,6 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             "validation_results": validation_results,
         },
     }
+
+
 # CUI // SP-CTI

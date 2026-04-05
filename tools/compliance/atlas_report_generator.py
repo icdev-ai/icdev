@@ -49,6 +49,7 @@ OWASP_PATH = CATALOG_DIR / "owasp_llm_top10.json"
 try:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from classification_manager import ClassificationManager
+
     _cm = ClassificationManager()
 except Exception:
     _cm = None
@@ -68,8 +69,12 @@ CATEGORY_NAMES = {c["code"]: c["name"] for c in MITIGATION_CATEGORIES}
 
 # Valid assessment statuses (BaseAssessor pattern)
 VALID_STATUSES = (
-    "not_assessed", "satisfied", "partially_satisfied",
-    "not_satisfied", "not_applicable", "risk_accepted",
+    "not_assessed",
+    "satisfied",
+    "partially_satisfied",
+    "not_satisfied",
+    "not_applicable",
+    "risk_accepted",
 )
 
 # OWASP LLM Top 10 to ATLAS mitigation mapping
@@ -160,23 +165,23 @@ REPORT_TEMPLATE = """{{cui_banner_top}}
 # Helper functions
 # ---------------------------------------------------------------------------
 
+
 def _get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
     """Get a database connection with Row factory."""
     path = db_path or DB_PATH
     if not Path(path).exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\n"
-            "Run: python tools/db/init_icdev_db.py"
-        )
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
     conn = get_connection(db_path=str(path))
     return conn
 
 
 def _substitute_variables(template: str, variables: Dict) -> str:
     """Replace {{variable_name}} placeholders in the template."""
+
     def replacer(match):
         key = match.group(1).strip()
         return str(variables.get(key, match.group(0)))
+
     return re.sub(r"\{\{(\w+)\}\}", replacer, template)
 
 
@@ -197,6 +202,7 @@ def _load_cui_config() -> Dict:
     # Fallback to cui_marker import
     try:
         from tools.compliance.cui_marker import load_cui_config as _load
+
         return _load()
     except Exception:
         pass
@@ -221,6 +227,7 @@ def _load_cui_config() -> Dict:
 # ---------------------------------------------------------------------------
 # Data loading
 # ---------------------------------------------------------------------------
+
 
 def _load_catalog(catalog_path: Path) -> List[Dict]:
     """Load a JSON catalog file. Returns empty list if unavailable."""
@@ -254,6 +261,7 @@ def _load_owasp_catalog() -> List[Dict]:
 # ATLASReportGenerator class
 # ---------------------------------------------------------------------------
 
+
 class ATLASReportGenerator:
     """Generate MITRE ATLAS compliance reports from assessment data."""
 
@@ -272,13 +280,9 @@ class ATLASReportGenerator:
         """Load project data from database."""
         conn = self._get_connection()
         try:
-            row = conn.execute(
-                "SELECT * FROM projects WHERE id = ?", (project_id,)
-            ).fetchone()
+            row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
             if not row:
-                raise ValueError(
-                    f"Project '{project_id}' not found in database."
-                )
+                raise ValueError(f"Project '{project_id}' not found in database.")
             return dict(row)
         finally:
             conn.close()
@@ -340,7 +344,9 @@ class ATLASReportGenerator:
     # -----------------------------------------------------------------
 
     def _build_executive_summary(
-        self, assessments: List[Dict], project: Dict,
+        self,
+        assessments: List[Dict],
+        project: Dict,
     ) -> str:
         """Build executive summary section."""
         total = len(assessments)
@@ -416,9 +422,7 @@ class ATLASReportGenerator:
             return "*No assessment data available.*"
 
         mitigations_catalog = self._load_catalog("atlas_mitigations.json")
-        catalog_by_id = {
-            m["id"]: m for m in mitigations_catalog if "id" in m
-        }
+        catalog_by_id = {m["id"]: m for m in mitigations_catalog if "id" in m}
 
         # Group assessments by category
         by_category: Dict[str, List[Dict]] = {}
@@ -445,28 +449,14 @@ class ATLASReportGenerator:
                 continue
 
             cat_total = len(items)
-            cat_satisfied = sum(
-                1 for i in items if i.get("status") == "satisfied"
-            )
-            cat_partial = sum(
-                1 for i in items if i.get("status") == "partially_satisfied"
-            )
-            cat_not = sum(
-                1 for i in items if i.get("status") == "not_satisfied"
-            )
-            na = sum(
-                1 for i in items if i.get("status") == "not_applicable"
-            )
+            cat_satisfied = sum(1 for i in items if i.get("status") == "satisfied")
+            cat_partial = sum(1 for i in items if i.get("status") == "partially_satisfied")
+            cat_not = sum(1 for i in items if i.get("status") == "not_satisfied")
+            na = sum(1 for i in items if i.get("status") == "not_applicable")
             assessable = cat_total - na
-            cov = (
-                f"{100.0 * (cat_satisfied + cat_partial * 0.5) / assessable:.0f}%"
-                if assessable > 0 else "N/A"
-            )
+            cov = f"{100.0 * (cat_satisfied + cat_partial * 0.5) / assessable:.0f}%" if assessable > 0 else "N/A"
 
-            lines.append(
-                f"| {name} | {cat_total} | {cat_satisfied} "
-                f"| {cat_partial} | {cat_not} | {cov} |"
-            )
+            lines.append(f"| {name} | {cat_total} | {cat_satisfied} | {cat_partial} | {cat_not} | {cov} |")
             total_all += cat_total
             satisfied_all += cat_satisfied
 
@@ -474,25 +464,11 @@ class ATLASReportGenerator:
         uncategorized = by_category.get("uncategorized", [])
         if uncategorized:
             uc_total = len(uncategorized)
-            uc_sat = sum(
-                1 for i in uncategorized if i.get("status") == "satisfied"
-            )
-            uc_partial = sum(
-                1 for i in uncategorized
-                if i.get("status") == "partially_satisfied"
-            )
-            uc_not = sum(
-                1 for i in uncategorized
-                if i.get("status") == "not_satisfied"
-            )
-            uc_cov = (
-                f"{100.0 * (uc_sat + uc_partial * 0.5) / uc_total:.0f}%"
-                if uc_total > 0 else "N/A"
-            )
-            lines.append(
-                f"| Other | {uc_total} | {uc_sat} "
-                f"| {uc_partial} | {uc_not} | {uc_cov} |"
-            )
+            uc_sat = sum(1 for i in uncategorized if i.get("status") == "satisfied")
+            uc_partial = sum(1 for i in uncategorized if i.get("status") == "partially_satisfied")
+            uc_not = sum(1 for i in uncategorized if i.get("status") == "not_satisfied")
+            uc_cov = f"{100.0 * (uc_sat + uc_partial * 0.5) / uc_total:.0f}%" if uc_total > 0 else "N/A"
+            lines.append(f"| Other | {uc_total} | {uc_sat} | {uc_partial} | {uc_not} | {uc_cov} |")
             total_all += uc_total
             satisfied_all += uc_sat
 
@@ -500,12 +476,8 @@ class ATLASReportGenerator:
         lines.append("")
         lines.append("### Detailed Mitigation Status")
         lines.append("")
-        lines.append(
-            "| Mitigation ID | Name | Status | Category |"
-        )
-        lines.append(
-            "|---------------|------|--------|----------|"
-        )
+        lines.append("| Mitigation ID | Name | Status | Category |")
+        lines.append("|---------------|------|--------|----------|")
 
         for a in sorted(assessments, key=lambda x: x.get("requirement_id", "")):
             req_id = a.get("requirement_id", "N/A")
@@ -514,9 +486,7 @@ class ATLASReportGenerator:
             if len(name) > 50:
                 name = name[:47] + "..."
             status = a.get("status", "not_assessed")
-            category = CATEGORY_NAMES.get(
-                catalog_entry.get("category", ""), "Other"
-            )
+            category = CATEGORY_NAMES.get(catalog_entry.get("category", ""), "Other")
             lines.append(f"| {req_id} | {name} | {status} | {category} |")
 
         return "\n".join(lines)
@@ -528,9 +498,7 @@ class ATLASReportGenerator:
         based on the mitigation status from assessments.
         """
         mitigations_catalog = self._load_catalog("atlas_mitigations.json")
-        {
-            m["id"]: m for m in mitigations_catalog if "id" in m
-        }
+        {m["id"]: m for m in mitigations_catalog if "id" in m}
 
         # Build map: technique -> list of mitigations that address it
         technique_mitigations: Dict[str, List[str]] = {}
@@ -556,14 +524,9 @@ class ATLASReportGenerator:
 
         for tech_id in sorted(technique_mitigations.keys()):
             mit_ids = technique_mitigations[tech_id]
-            statuses = [
-                status_by_mitigation.get(mid, "not_assessed")
-                for mid in mit_ids
-            ]
+            statuses = [status_by_mitigation.get(mid, "not_assessed") for mid in mit_ids]
             satisfied_count = sum(1 for s in statuses if s == "satisfied")
-            partial_count = sum(
-                1 for s in statuses if s == "partially_satisfied"
-            )
+            partial_count = sum(1 for s in statuses if s == "partially_satisfied")
 
             if satisfied_count == len(mit_ids):
                 mitigated.append(tech_id)
@@ -589,10 +552,7 @@ class ATLASReportGenerator:
             for tech_id in exposed:
                 mit_ids = technique_mitigations[tech_id]
                 mit_str = ", ".join(mit_ids)
-                status_str = ", ".join(
-                    f"{mid}={status_by_mitigation.get(mid, 'not_assessed')}"
-                    for mid in mit_ids
-                )
+                status_str = ", ".join(f"{mid}={status_by_mitigation.get(mid, 'not_assessed')}" for mid in mit_ids)
                 lines.append(f"| {tech_id} | {mit_str} | {status_str} |")
             lines.append("")
 
@@ -603,13 +563,8 @@ class ATLASReportGenerator:
             lines.append("|--------------|----------------------|-------------------|")
             for tech_id in partially_mitigated:
                 mit_ids = technique_mitigations[tech_id]
-                sat_count = sum(
-                    1 for mid in mit_ids
-                    if status_by_mitigation.get(mid) == "satisfied"
-                )
-                lines.append(
-                    f"| {tech_id} | {sat_count} | {len(mit_ids)} |"
-                )
+                sat_count = sum(1 for mid in mit_ids if status_by_mitigation.get(mid) == "satisfied")
+                lines.append(f"| {tech_id} | {sat_count} | {len(mit_ids)} |")
 
         return "\n".join(lines)
 
@@ -632,9 +587,7 @@ class ATLASReportGenerator:
             "|---|---------------|-------------------|----------|",
         ]
 
-        for idx, (owasp_code, atlas_mits) in enumerate(
-            OWASP_TO_ATLAS_MAP.items(), 1
-        ):
+        for idx, (owasp_code, atlas_mits) in enumerate(OWASP_TO_ATLAS_MAP.items(), 1):
             # Find OWASP name from catalog
             owasp_name = owasp_code.replace("_", " ").title()
             for cat in owasp_catalog:
@@ -643,14 +596,8 @@ class ATLASReportGenerator:
                     break
 
             # Check coverage
-            satisfied = sum(
-                1 for mid in atlas_mits
-                if status_by_mitigation.get(mid) == "satisfied"
-            )
-            partial = sum(
-                1 for mid in atlas_mits
-                if status_by_mitigation.get(mid) == "partially_satisfied"
-            )
+            satisfied = sum(1 for mid in atlas_mits if status_by_mitigation.get(mid) == "satisfied")
+            partial = sum(1 for mid in atlas_mits if status_by_mitigation.get(mid) == "partially_satisfied")
             total = len(atlas_mits)
 
             if satisfied == total:
@@ -661,51 +608,34 @@ class ATLASReportGenerator:
                 coverage = "Exposed"
 
             mit_str = ", ".join(atlas_mits)
-            lines.append(
-                f"| {idx} | {owasp_name} | {mit_str} | {coverage} |"
-            )
+            lines.append(f"| {idx} | {owasp_name} | {mit_str} | {coverage} |")
 
         # Summary
         covered_count = sum(
-            1 for _, mits in OWASP_TO_ATLAS_MAP.items()
-            if all(
-                status_by_mitigation.get(mid) == "satisfied"
-                for mid in mits
-            )
+            1
+            for _, mits in OWASP_TO_ATLAS_MAP.items()
+            if all(status_by_mitigation.get(mid) == "satisfied" for mid in mits)
         )
         lines.append("")
-        lines.append(
-            f"**OWASP LLM Coverage:** {covered_count} / "
-            f"{len(OWASP_TO_ATLAS_MAP)} risks fully covered"
-        )
+        lines.append(f"**OWASP LLM Coverage:** {covered_count} / {len(OWASP_TO_ATLAS_MAP)} risks fully covered")
 
         return "\n".join(lines)
 
     def _build_gap_analysis(self, assessments: List[Dict]) -> str:
         """Build gap analysis for unmitigated or not-satisfied items."""
         mitigations_catalog = self._load_catalog("atlas_mitigations.json")
-        catalog_by_id = {
-            m["id"]: m for m in mitigations_catalog if "id" in m
-        }
+        catalog_by_id = {m["id"]: m for m in mitigations_catalog if "id" in m}
 
-        gaps = [
-            a for a in assessments
-            if a.get("status") in ("not_satisfied", "not_assessed")
-        ]
+        gaps = [a for a in assessments if a.get("status") in ("not_satisfied", "not_assessed")]
 
         if not gaps:
-            return (
-                "*No gaps identified. All assessed mitigations are "
-                "satisfied or not applicable.*"
-            )
+            return "*No gaps identified. All assessed mitigations are satisfied or not applicable.*"
 
         lines = [
             f"**Total Gaps:** {len(gaps)}",
             "",
-            "| Mitigation ID | Name | Status | Category | "
-            "Techniques at Risk |",
-            "|---------------|------|--------|----------"
-            "|-------------------|",
+            "| Mitigation ID | Name | Status | Category | Techniques at Risk |",
+            "|---------------|------|--------|----------|-------------------|",
         ]
 
         for g in sorted(gaps, key=lambda x: x.get("requirement_id", "")):
@@ -715,41 +645,27 @@ class ATLASReportGenerator:
             if len(name) > 40:
                 name = name[:37] + "..."
             status = g.get("status", "not_assessed")
-            category = CATEGORY_NAMES.get(
-                catalog_entry.get("category", ""), "Other"
-            )
+            category = CATEGORY_NAMES.get(catalog_entry.get("category", ""), "Other")
             techniques = catalog_entry.get("techniques_addressed", [])
             tech_str = ", ".join(techniques[:3])
             if len(techniques) > 3:
                 tech_str += f" (+{len(techniques) - 3})"
 
-            lines.append(
-                f"| {req_id} | {name} | {status} | {category} | {tech_str} |"
-            )
+            lines.append(f"| {req_id} | {name} | {status} | {category} | {tech_str} |")
 
         return "\n".join(lines)
 
     def _build_remediation_recommendations(
-        self, assessments: List[Dict],
+        self,
+        assessments: List[Dict],
     ) -> str:
         """Build prioritized remediation recommendations."""
         mitigations_catalog = self._load_catalog("atlas_mitigations.json")
-        catalog_by_id = {
-            m["id"]: m for m in mitigations_catalog if "id" in m
-        }
+        catalog_by_id = {m["id"]: m for m in mitigations_catalog if "id" in m}
 
-        not_satisfied = [
-            a for a in assessments
-            if a.get("status") == "not_satisfied"
-        ]
-        partial = [
-            a for a in assessments
-            if a.get("status") == "partially_satisfied"
-        ]
-        not_assessed = [
-            a for a in assessments
-            if a.get("status") == "not_assessed"
-        ]
+        not_satisfied = [a for a in assessments if a.get("status") == "not_satisfied"]
+        partial = [a for a in assessments if a.get("status") == "partially_satisfied"]
+        not_assessed = [a for a in assessments if a.get("status") == "not_assessed"]
 
         lines = []
 
@@ -758,19 +674,12 @@ class ATLASReportGenerator:
             # Sort by number of techniques addressed (most impactful first)
             prioritized = sorted(
                 not_satisfied,
-                key=lambda a: len(
-                    catalog_by_id.get(
-                        a.get("requirement_id", ""), {}
-                    ).get("techniques_addressed", [])
-                ),
+                key=lambda a: len(catalog_by_id.get(a.get("requirement_id", ""), {}).get("techniques_addressed", [])),
                 reverse=True,
             )
             lines.append("### Priority 1: Critical Gaps (Not Satisfied)")
             lines.append("")
-            lines.append(
-                "These mitigations are not satisfied and leave the system "
-                "exposed to adversarial ML attacks:"
-            )
+            lines.append("These mitigations are not satisfied and leave the system exposed to adversarial ML attacks:")
             lines.append("")
             for a in prioritized:
                 req_id = a.get("requirement_id", "N/A")
@@ -779,19 +688,10 @@ class ATLASReportGenerator:
                 desc = catalog_entry.get("description", "")
                 if len(desc) > 120:
                     desc = desc[:117] + "..."
-                tech_count = len(
-                    catalog_entry.get("techniques_addressed", [])
-                )
-                nist = ", ".join(
-                    catalog_entry.get("nist_controls", [])[:4]
-                )
-                lines.append(
-                    f"- **{req_id} ({name})**: {desc}"
-                )
-                lines.append(
-                    f"  - Techniques addressed: {tech_count} | "
-                    f"NIST controls: {nist or 'N/A'}"
-                )
+                tech_count = len(catalog_entry.get("techniques_addressed", []))
+                nist = ", ".join(catalog_entry.get("nist_controls", [])[:4])
+                lines.append(f"- **{req_id} ({name})**: {desc}")
+                lines.append(f"  - Techniques addressed: {tech_count} | NIST controls: {nist or 'N/A'}")
             lines.append("")
 
         # Priority 2: Partially satisfied
@@ -822,10 +722,7 @@ class ATLASReportGenerator:
             lines.append("")
 
         if not lines:
-            return (
-                "*No recommendations at this time. All mitigations are "
-                "satisfied or not applicable.*"
-            )
+            return "*No recommendations at this time. All mitigations are satisfied or not applicable.*"
 
         return "\n".join(lines)
 
@@ -836,15 +733,10 @@ class ATLASReportGenerator:
         controls from the catalog.
         """
         mitigations_catalog = self._load_catalog("atlas_mitigations.json")
-        catalog_by_id = {
-            m["id"]: m for m in mitigations_catalog if "id" in m
-        }
+        catalog_by_id = {m["id"]: m for m in mitigations_catalog if "id" in m}
 
         if not catalog_by_id:
-            return (
-                "*NIST 800-53 mapping unavailable "
-                "(mitigations catalog not loaded).*"
-            )
+            return "*NIST 800-53 mapping unavailable (mitigations catalog not loaded).*"
 
         # Build mapping table
         status_by_id = {}
@@ -872,20 +764,17 @@ class ATLASReportGenerator:
             lines.append(f"| {mid} | {name} | {nist_str} | {status} |")
 
         lines.append("")
-        lines.append(
-            f"**Total Unique NIST 800-53 Controls Referenced:** "
-            f"{len(all_nist)}"
-        )
+        lines.append(f"**Total Unique NIST 800-53 Controls Referenced:** {len(all_nist)}")
         if all_nist:
             sorted_nist = sorted(all_nist)
-            lines.append(
-                f"**Controls:** {', '.join(sorted_nist)}"
-            )
+            lines.append(f"**Controls:** {', '.join(sorted_nist)}")
 
         return "\n".join(lines)
 
     def _apply_markings(
-        self, report_text: str, impact_level: str,
+        self,
+        report_text: str,
+        impact_level: str,
     ) -> str:
         """Apply CUI markings to the report text."""
         cui_config = _load_cui_config()
@@ -899,8 +788,11 @@ class ATLASReportGenerator:
         return f"{header}\n\n{report_text.strip()}\n\n{footer}\n"
 
     def _log_audit_event(
-        self, conn: sqlite3.Connection, project_id: str,
-        action: str, details: Dict,
+        self,
+        conn: sqlite3.Connection,
+        project_id: str,
+        action: str,
+        details: Dict,
     ) -> None:
         """Log an audit trail event for ATLAS report generation."""
         try:
@@ -955,40 +847,16 @@ class ATLASReportGenerator:
 
             # 3. Calculate overall metrics
             total = len(assessments)
-            satisfied = sum(
-                1 for a in assessments
-                if a.get("status") == "satisfied"
-            )
-            not_satisfied = sum(
-                1 for a in assessments
-                if a.get("status") == "not_satisfied"
-            )
-            partial = sum(
-                1 for a in assessments
-                if a.get("status") == "partially_satisfied"
-            )
-            na_count = sum(
-                1 for a in assessments
-                if a.get("status") == "not_applicable"
-            )
-            not_assessed = sum(
-                1 for a in assessments
-                if a.get("status") == "not_assessed"
-            )
+            satisfied = sum(1 for a in assessments if a.get("status") == "satisfied")
+            not_satisfied = sum(1 for a in assessments if a.get("status") == "not_satisfied")
+            partial = sum(1 for a in assessments if a.get("status") == "partially_satisfied")
+            na_count = sum(1 for a in assessments if a.get("status") == "not_applicable")
+            not_assessed = sum(1 for a in assessments if a.get("status") == "not_assessed")
 
             assessable = total - na_count
-            coverage = (
-                round(
-                    100.0 * (satisfied + partial * 0.5) / assessable, 1
-                )
-                if assessable > 0 else 0.0
-            )
+            coverage = round(100.0 * (satisfied + partial * 0.5) / assessable, 1) if assessable > 0 else 0.0
 
-            gate_result = (
-                "PASS"
-                if not_satisfied == 0 and coverage >= 80.0
-                else "FAIL"
-            )
+            gate_result = "PASS" if not_satisfied == 0 and coverage >= 80.0 else "FAIL"
 
             if coverage >= 90:
                 posture = "Strong"
@@ -1000,9 +868,7 @@ class ATLASReportGenerator:
                 posture = "Weak"
 
             # 4. Build all report sections
-            executive_summary = self._build_executive_summary(
-                assessments, project
-            )
+            executive_summary = self._build_executive_summary(assessments, project)
             mitigation_coverage = self._build_mitigation_coverage(assessments)
             technique_exposure = self._build_technique_exposure(assessments)
             owasp_crossref = self._build_owasp_crossref(assessments)
@@ -1020,9 +886,7 @@ class ATLASReportGenerator:
                    AND action LIKE '%report%'""",
                 (project_id,),
             ).fetchone()
-            report_count = (
-                report_count_row["cnt"] if report_count_row else 0
-            )
+            report_count = report_count_row["cnt"] if report_count_row else 0
             new_version = f"{report_count + 1}.0"
 
             now = datetime.now(timezone.utc)
@@ -1054,9 +918,7 @@ class ATLASReportGenerator:
             }
 
             # 8. Apply template substitution
-            report_content = _substitute_variables(
-                REPORT_TEMPLATE, variables
-            )
+            report_content = _substitute_variables(REPORT_TEMPLATE, variables)
 
             # 9. Apply CUI markings
             report_content = self._apply_markings(
@@ -1067,13 +929,9 @@ class ATLASReportGenerator:
             # 10. Determine output path
             if output_path:
                 out_path = Path(output_path)
-                if out_path.is_dir() or str(output_path).endswith(
-                    ("/", "\\")
-                ):
+                if out_path.is_dir() or str(output_path).endswith(("/", "\\")):
                     out_dir = out_path
-                    out_file = (
-                        out_dir / f"atlas-report-v{new_version}.md"
-                    )
+                    out_file = out_dir / f"atlas-report-v{new_version}.md"
                 else:
                     out_file = out_path
             else:
@@ -1081,9 +939,7 @@ class ATLASReportGenerator:
                 if dir_path:
                     out_dir = Path(dir_path) / "compliance"
                 else:
-                    out_dir = (
-                        BASE_DIR / "projects" / project_name / "compliance"
-                    )
+                    out_dir = BASE_DIR / "projects" / project_name / "compliance"
                 out_file = out_dir / f"atlas-report-v{new_version}.md"
 
             out_file.parent.mkdir(parents=True, exist_ok=True)
@@ -1106,7 +962,8 @@ class ATLASReportGenerator:
                 "output_file": str(out_file),
             }
             self._log_audit_event(
-                conn, project_id,
+                conn,
+                project_id,
                 f"ATLAS report v{new_version} generated",
                 audit_details,
             )
@@ -1164,11 +1021,10 @@ class ATLASReportGenerator:
 
     def run_cli(self) -> None:
         """Standard CLI entry point."""
-        parser = argparse.ArgumentParser(
-            description="Generate MITRE ATLAS compliance report"
-        )
+        parser = argparse.ArgumentParser(description="Generate MITRE ATLAS compliance report")
         parser.add_argument(
-            "--project-id", required=True,
+            "--project-id",
+            required=True,
             help="Project ID",
         )
         parser.add_argument(
@@ -1176,15 +1032,19 @@ class ATLASReportGenerator:
             help="Output directory or file path",
         )
         parser.add_argument(
-            "--json", action="store_true",
+            "--json",
+            action="store_true",
             help="JSON output",
         )
         parser.add_argument(
-            "--human", action="store_true",
+            "--human",
+            action="store_true",
             help="Human-readable colored output",
         )
         parser.add_argument(
-            "--db-path", type=Path, default=None,
+            "--db-path",
+            type=Path,
+            default=None,
             help="Database path override",
         )
         args = parser.parse_args()

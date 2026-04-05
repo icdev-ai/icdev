@@ -120,10 +120,7 @@ def get_db_connection(
     """
     path = get_icdev_db_path(db_path)
     if validate and not path.exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\n"
-            "Run: python tools/db/init_icdev_db.py"
-        )
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
     conn = get_connection()
     if row_factory:
         pass  # get_connection() handles row_factory internally

@@ -127,12 +127,14 @@ def check_sql_injection(source: str, file_path: str) -> Dict:
     for i, line in enumerate(source.splitlines(), 1):
         for pattern, desc, severity in _SQL_INJECTION_PATTERNS:
             if re.search(pattern, line):
-                findings.append({
-                    "line": i,
-                    "text": line.strip()[:200],
-                    "description": desc,
-                    "severity": severity,
-                })
+                findings.append(
+                    {
+                        "line": i,
+                        "text": line.strip()[:200],
+                        "description": desc,
+                        "severity": severity,
+                    }
+                )
     return {
         "check_name": "sql_injection_immunity",
         "check_category": "security",
@@ -176,6 +178,7 @@ def check_cui_markings(source: str, file_path: str) -> Dict:
 # Check 3: Input Validation Coverage (Python AST)
 # ---------------------------------------------------------------------------
 
+
 def check_input_validation(source: str, file_path: str) -> Dict:
     """Check that public functions validate their inputs.
 
@@ -184,9 +187,13 @@ def check_input_validation(source: str, file_path: str) -> Dict:
     """
     if not file_path.endswith(".py"):
         return {
-            "check_name": "input_validation", "check_category": "security",
-            "passed": True, "severity": "info", "finding_count": 0,
-            "findings": [], "score": 1.0,
+            "check_name": "input_validation",
+            "check_category": "security",
+            "passed": True,
+            "severity": "info",
+            "finding_count": 0,
+            "findings": [],
+            "score": 1.0,
         }
 
     findings = []
@@ -194,15 +201,29 @@ def check_input_validation(source: str, file_path: str) -> Dict:
         tree = ast.parse(source)
     except SyntaxError:
         return {
-            "check_name": "input_validation", "check_category": "security",
-            "passed": False, "severity": "warning", "finding_count": 1,
+            "check_name": "input_validation",
+            "check_category": "security",
+            "passed": False,
+            "severity": "warning",
+            "finding_count": 1,
             "findings": [{"description": "Syntax error — cannot analyze"}],
             "score": 0.0,
         }
 
     # External input parameter patterns
-    external_params = {"request", "params", "args", "kwargs", "data", "payload",
-                       "body", "input", "query", "form_data", "user_input"}
+    external_params = {
+        "request",
+        "params",
+        "args",
+        "kwargs",
+        "data",
+        "payload",
+        "body",
+        "input",
+        "query",
+        "form_data",
+        "user_input",
+    }
 
     for node in ast.walk(tree):
         if isinstance(node, ast.FunctionDef):
@@ -227,13 +248,15 @@ def check_input_validation(source: str, file_path: str) -> Dict:
                         has_validation = True
 
                 if not has_validation:
-                    findings.append({
-                        "line": node.lineno,
-                        "function": node.name,
-                        "params": sorted(has_external),
-                        "description": f"Function '{node.name}' accepts external params without validation",
-                        "severity": "warning",
-                    })
+                    findings.append(
+                        {
+                            "line": node.lineno,
+                            "function": node.name,
+                            "params": sorted(has_external),
+                            "description": f"Function '{node.name}' accepts external params without validation",
+                            "severity": "warning",
+                        }
+                    )
 
     return {
         "check_name": "input_validation",
@@ -250,6 +273,7 @@ def check_input_validation(source: str, file_path: str) -> Dict:
 # Check 4: Invariant Detection
 # ---------------------------------------------------------------------------
 
+
 def check_invariants(source: str, file_path: str) -> Dict:
     """Detect implicit invariants and verify they're enforced.
 
@@ -258,9 +282,13 @@ def check_invariants(source: str, file_path: str) -> Dict:
     """
     if not file_path.endswith(".py"):
         return {
-            "check_name": "invariant_detection", "check_category": "correctness",
-            "passed": True, "severity": "info", "finding_count": 0,
-            "findings": [], "score": 1.0,
+            "check_name": "invariant_detection",
+            "check_category": "correctness",
+            "passed": True,
+            "severity": "info",
+            "finding_count": 0,
+            "findings": [],
+            "score": 1.0,
         }
 
     findings = []
@@ -270,9 +298,13 @@ def check_invariants(source: str, file_path: str) -> Dict:
         tree = ast.parse(source)
     except SyntaxError:
         return {
-            "check_name": "invariant_detection", "check_category": "correctness",
-            "passed": False, "severity": "warning", "finding_count": 1,
-            "findings": [{"description": "Syntax error"}], "score": 0.0,
+            "check_name": "invariant_detection",
+            "check_category": "correctness",
+            "passed": False,
+            "severity": "warning",
+            "finding_count": 1,
+            "findings": [{"description": "Syntax error"}],
+            "score": 0.0,
         }
 
     for node in ast.walk(tree):
@@ -296,10 +328,12 @@ def check_invariants(source: str, file_path: str) -> Dict:
 
     # Low invariant density is a finding
     if line_count > 50 and density < 1.0:
-        findings.append({
-            "description": f"Low invariant density: {density:.1f}% ({invariants_found} invariants in {line_count} lines)",
-            "severity": "info",
-        })
+        findings.append(
+            {
+                "description": f"Low invariant density: {density:.1f}% ({invariants_found} invariants in {line_count} lines)",
+                "severity": "info",
+            }
+        )
 
     return {
         "check_name": "invariant_detection",
@@ -320,16 +354,16 @@ def check_invariants(source: str, file_path: str) -> Dict:
 # ---------------------------------------------------------------------------
 
 _DANGEROUS_PATTERNS = [
-    (r'\beval\s*\(', "eval() usage", "critical"),
-    (r'\bexec\s*\(', "exec() usage", "critical"),
-    (r'\b__import__\s*\(', "dynamic import", "high"),
-    (r'os\.system\s*\(', "os.system() usage", "critical"),
-    (r'subprocess\.call\s*\(.*shell\s*=\s*True', "subprocess with shell=True", "high"),
-    (r'pickle\.loads?\s*\(', "pickle deserialization", "high"),
-    (r'yaml\.load\s*\((?!.*Loader)', "yaml.load without safe Loader", "high"),
-    (r'marshal\.loads?\s*\(', "marshal deserialization", "high"),
-    (r'hashlib\.md5\s*\(', "MD5 for hashing (use SHA-256)", "warning"),
-    (r'datetime\.utcnow\s*\(', "deprecated utcnow (use now(timezone.utc))", "warning"),
+    (r"\beval\s*\(", "eval() usage", "critical"),
+    (r"\bexec\s*\(", "exec() usage", "critical"),
+    (r"\b__import__\s*\(", "dynamic import", "high"),
+    (r"os\.system\s*\(", "os.system() usage", "critical"),
+    (r"subprocess\.call\s*\(.*shell\s*=\s*True", "subprocess with shell=True", "high"),
+    (r"pickle\.loads?\s*\(", "pickle deserialization", "high"),
+    (r"yaml\.load\s*\((?!.*Loader)", "yaml.load without safe Loader", "high"),
+    (r"marshal\.loads?\s*\(", "marshal deserialization", "high"),
+    (r"hashlib\.md5\s*\(", "MD5 for hashing (use SHA-256)", "warning"),
+    (r"datetime\.utcnow\s*\(", "deprecated utcnow (use now(timezone.utc))", "warning"),
 ]
 
 
@@ -346,12 +380,14 @@ def check_dangerous_patterns(source: str, file_path: str) -> Dict:
             continue
         for pattern, desc, severity in _DANGEROUS_PATTERNS:
             if re.search(pattern, line):
-                findings.append({
-                    "line": i,
-                    "text": stripped[:200],
-                    "description": desc,
-                    "severity": severity,
-                })
+                findings.append(
+                    {
+                        "line": i,
+                        "text": stripped[:200],
+                        "description": desc,
+                        "severity": severity,
+                    }
+                )
 
     critical = [f for f in findings if f["severity"] == "critical"]
     return {
@@ -369,6 +405,7 @@ def check_dangerous_patterns(source: str, file_path: str) -> Dict:
 # Check 6: Property-Based Test Suggestions
 # ---------------------------------------------------------------------------
 
+
 def generate_property_suggestions(source: str, file_path: str) -> Dict:
     """Generate suggestions for hypothesis property-based tests.
 
@@ -377,9 +414,14 @@ def generate_property_suggestions(source: str, file_path: str) -> Dict:
     """
     if not file_path.endswith(".py"):
         return {
-            "check_name": "property_suggestions", "check_category": "testing",
-            "passed": True, "severity": "info", "finding_count": 0,
-            "findings": [], "score": 1.0, "suggestions": [],
+            "check_name": "property_suggestions",
+            "check_category": "testing",
+            "passed": True,
+            "severity": "info",
+            "finding_count": 0,
+            "findings": [],
+            "score": 1.0,
+            "suggestions": [],
         }
 
     suggestions = []
@@ -387,9 +429,14 @@ def generate_property_suggestions(source: str, file_path: str) -> Dict:
         tree = ast.parse(source)
     except SyntaxError:
         return {
-            "check_name": "property_suggestions", "check_category": "testing",
-            "passed": True, "severity": "info", "finding_count": 0,
-            "findings": [], "score": 1.0, "suggestions": [],
+            "check_name": "property_suggestions",
+            "check_category": "testing",
+            "passed": True,
+            "severity": "info",
+            "finding_count": 0,
+            "findings": [],
+            "score": 1.0,
+            "suggestions": [],
         }
 
     for node in ast.walk(tree):
@@ -527,8 +574,20 @@ def verify_project(
     """Run formal verification on all Python files in a project."""
     project_dir = str(Path(project_dir).resolve())
     exclude_dirs = {
-        "venv", ".venv", "env", "node_modules", ".git", "__pycache__",
-        "build", "dist", ".tox", ".eggs", "vendor", "target", ".tmp", "playwright",
+        "venv",
+        ".venv",
+        "env",
+        "node_modules",
+        ".git",
+        "__pycache__",
+        "build",
+        "dist",
+        ".tox",
+        ".eggs",
+        "vendor",
+        "target",
+        ".tmp",
+        "playwright",
     }
 
     files = []
@@ -568,13 +627,15 @@ def verify_project(
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
     parser = argparse.ArgumentParser(description="Formal Verification Gate (LeanStral-adapted)")
     parser.add_argument("--file", help="Single file to verify")
     parser.add_argument("--project-dir", help="Project directory to verify")
     parser.add_argument("--project-id", default="", help="ICDEV™ project ID")
-    parser.add_argument("--generate-properties", action="store_true",
-                        help="Generate hypothesis property-based test suggestions")
+    parser.add_argument(
+        "--generate-properties", action="store_true", help="Generate hypothesis property-based test suggestions"
+    )
     parser.add_argument("--gate", action="store_true", help="Gate evaluation (exit 0=pass, 1=fail)")
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--human", action="store_true", help="Human-readable output")
@@ -602,26 +663,26 @@ def main():
 def _print_human(result: Dict):
     """Human-readable output."""
     if "file_results" in result:
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"  Formal Verification — {result['project_dir']}")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
         print(f"  Files:    {result['files_checked']}")
         print(f"  Critical: {result['total_critical']}")
         print(f"  High:     {result['total_high']}")
         print(f"  Score:    {result['average_score']:.3f}")
         print(f"  Gate:     {'PASS' if result['gate_passed'] else 'FAIL'}")
-        print(f"{'='*60}\n")
+        print(f"{'=' * 60}\n")
     else:
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"  Formal Verification — {Path(result.get('file', '')).name}")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
         for r in result.get("check_results", []):
             icon = "+" if r.get("passed") else "!"
             print(f"  [{icon}] {r['check_name']:30s} score={r.get('score', 0):.2f}  ({r.get('severity', 'info')})")
             for f in r.get("findings", [])[:3]:
                 print(f"      {f.get('description', '')[:80]}")
         print(f"\n  Gate: {'PASS' if result['gate_passed'] else 'FAIL'}")
-        print(f"{'='*60}\n")
+        print(f"{'=' * 60}\n")
 
 
 if __name__ == "__main__":

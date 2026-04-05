@@ -32,6 +32,7 @@ from tools.security.sandbox_executor import (  # noqa: E402
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def tmp_db(tmp_path):
     """Return a path to a temporary SQLite DB (does not yet have tables)."""
@@ -73,6 +74,7 @@ def mock_no_sandbox(monkeypatch):
 # Dataclass tests
 # ---------------------------------------------------------------------------
 
+
 class TestSandboxResultDataclass:
     """SandboxResult has correct fields and defaults."""
 
@@ -110,8 +112,7 @@ class TestSandboxResultDataclass:
         assert d["exit_code"] == 0
         assert d["status"] == "completed"
         # All fields present
-        for field in ("stdout", "stderr", "exit_code", "runtime_ms", "artifacts",
-                      "container_id", "status", "error"):
+        for field in ("stdout", "stderr", "exit_code", "runtime_ms", "artifacts", "container_id", "status", "error"):
             assert field in d
 
     def test_sandbox_result_mutable_artifacts(self):
@@ -126,15 +127,24 @@ class TestSandboxResultDataclass:
 # Config tests
 # ---------------------------------------------------------------------------
 
+
 class TestDefaultConfig:
     """DEFAULT_CONFIG has the expected structure."""
 
     def test_default_config_keys(self):
         expected = {
-            "enabled", "runtime", "default_timeout_seconds",
-            "max_timeout_seconds", "default_max_memory_mb", "max_memory_mb",
-            "default_cpu_count", "network_enabled", "images",
-            "cleanup_containers", "max_concurrent_sessions", "audit_all_executions",
+            "enabled",
+            "runtime",
+            "default_timeout_seconds",
+            "max_timeout_seconds",
+            "default_max_memory_mb",
+            "max_memory_mb",
+            "default_cpu_count",
+            "network_enabled",
+            "images",
+            "cleanup_containers",
+            "max_concurrent_sessions",
+            "audit_all_executions",
         }
         assert expected.issubset(set(DEFAULT_CONFIG.keys()))
 
@@ -161,6 +171,7 @@ class TestDefaultConfig:
 # ---------------------------------------------------------------------------
 # Executor init tests
 # ---------------------------------------------------------------------------
+
 
 class TestExecutorInit:
     """SandboxExecutor initializes without error in all conditions."""
@@ -201,6 +212,7 @@ class TestExecutorInit:
 # ---------------------------------------------------------------------------
 # Unavailable / disabled execution tests
 # ---------------------------------------------------------------------------
+
 
 class TestExecuteUnavailable:
     """When llm_sandbox is not importable, execute() returns graceful error."""
@@ -258,6 +270,7 @@ class TestExecuteDisabled:
 # Health check tests
 # ---------------------------------------------------------------------------
 
+
 class TestHealthCheckStructure:
     """health_check() returns a dict with expected keys."""
 
@@ -268,8 +281,13 @@ class TestHealthCheckStructure:
     def test_health_check_required_keys(self, executor_no_docker):
         health = executor_no_docker.health_check()
         required = {
-            "available", "enabled", "docker_running",
-            "llm_sandbox_installed", "smoke_test_passed", "runtime", "languages",
+            "available",
+            "enabled",
+            "docker_running",
+            "llm_sandbox_installed",
+            "smoke_test_passed",
+            "runtime",
+            "languages",
         }
         assert required.issubset(set(health.keys()))
 
@@ -301,6 +319,7 @@ class TestHealthCheckStructure:
 # ---------------------------------------------------------------------------
 # Supported languages tests
 # ---------------------------------------------------------------------------
+
 
 class TestSupportedLanguages:
     """python, javascript, java, go are configured with container images."""
@@ -342,6 +361,7 @@ class TestSupportedLanguages:
 # Code hash determinism tests
 # ---------------------------------------------------------------------------
 
+
 class TestCodeHashDeterministic:
     """Same code always produces the same SHA-256 hash."""
 
@@ -377,6 +397,7 @@ class TestCodeHashDeterministic:
 # DB table creation tests
 # ---------------------------------------------------------------------------
 
+
 class TestLogTableCreation:
     """_ensure_tables creates sandbox_execution_log with correct schema."""
 
@@ -396,11 +417,26 @@ class TestLogTableCreation:
         info = conn.execute("PRAGMA table_info(sandbox_execution_log)").fetchall()
         col_names = {row[1] for row in info}
         required_cols = {
-            "id", "executor_type", "language", "code_hash", "runtime",
-            "exit_code", "runtime_ms", "stdout_preview", "stderr_preview",
-            "network_enabled", "memory_limit_mb", "timeout_seconds",
-            "container_id", "artifact_count", "status",
-            "actor", "project_id", "tenant_id", "classification", "created_at",
+            "id",
+            "executor_type",
+            "language",
+            "code_hash",
+            "runtime",
+            "exit_code",
+            "runtime_ms",
+            "stdout_preview",
+            "stderr_preview",
+            "network_enabled",
+            "memory_limit_mb",
+            "timeout_seconds",
+            "container_id",
+            "artifact_count",
+            "status",
+            "actor",
+            "project_id",
+            "tenant_id",
+            "classification",
+            "created_at",
         }
         assert required_cols.issubset(col_names)
         conn.close()
@@ -422,9 +458,7 @@ class TestLogTableCreation:
                VALUES ('test-1', 'test', 'python', 'abc', 'docker', 'completed')"""
         )
         conn.commit()
-        row = conn.execute(
-            "SELECT classification FROM sandbox_execution_log WHERE id='test-1'"
-        ).fetchone()
+        row = conn.execute("SELECT classification FROM sandbox_execution_log WHERE id='test-1'").fetchone()
         assert row[0] == "CUI"
         conn.close()
 
@@ -432,12 +466,13 @@ class TestLogTableCreation:
         """IDs should follow 'sbx-' prefix convention."""
         exec_id = "sbx-" + __import__("uuid").uuid4().hex[:12]
         assert exec_id.startswith("sbx-")
-        assert len(exec_id) == 16   # 'sbx-' (4) + 12 hex chars
+        assert len(exec_id) == 16  # 'sbx-' (4) + 12 hex chars
 
 
 # ---------------------------------------------------------------------------
 # execute_file tests
 # ---------------------------------------------------------------------------
+
 
 class TestExecuteFileReadsContent:
     """execute_file reads the file and passes content to execute()."""
@@ -502,6 +537,7 @@ class TestExecuteFileReadsContent:
 # Safe string utility tests
 # ---------------------------------------------------------------------------
 
+
 class TestSafeStr:
     def test_none_returns_empty_string(self):
         assert _safe_str(None) == ""
@@ -520,6 +556,7 @@ class TestSafeStr:
 # ---------------------------------------------------------------------------
 # Resource limit tests
 # ---------------------------------------------------------------------------
+
 
 class TestResourceLimits:
     """Verify timeout and memory limits are capped by config maximums."""

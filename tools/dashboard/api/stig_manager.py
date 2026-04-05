@@ -14,9 +14,7 @@ from tools.db.storage import get_connection  # noqa: E402
 
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
-stig_manager_api = Blueprint(
-    "stig_manager_api", __name__, url_prefix="/api/stig-manager"
-)
+stig_manager_api = Blueprint("stig_manager_api", __name__, url_prefix="/api/stig-manager")
 
 CREATE_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS stig_findings (
@@ -51,8 +49,7 @@ def _table_exists(conn, table_name: str) -> bool:
     try:
         if getattr(conn, "_backend", "sqlite") == "postgresql":
             row = conn.execute(
-                "SELECT 1 FROM information_schema.tables "
-                "WHERE table_schema = 'public' AND table_name = ?",
+                "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = ?",
                 (table_name,),
             ).fetchone()
             return row is not None
@@ -71,15 +68,17 @@ def stats():
     conn = _get_db()
     try:
         if not _table_exists(conn, "stig_findings"):
-            return jsonify({
-                "total": 0,
-                "by_severity": {"CAT1": 0, "CAT2": 0, "CAT3": 0},
-                "by_status": {"Open": 0, "NotAFinding": 0, "Not_Applicable": 0, "Not_Reviewed": 0},
-                "coverage": 0.0,
-                "benchmarks_loaded": 0,
-                "targets_assessed": 0,
-                "cat1_open": 0,
-            })
+            return jsonify(
+                {
+                    "total": 0,
+                    "by_severity": {"CAT1": 0, "CAT2": 0, "CAT3": 0},
+                    "by_status": {"Open": 0, "NotAFinding": 0, "Not_Applicable": 0, "Not_Reviewed": 0},
+                    "coverage": 0.0,
+                    "benchmarks_loaded": 0,
+                    "targets_assessed": 0,
+                    "cat1_open": 0,
+                }
+            )
 
         project_id = request.args.get("project_id")
         where = ""
@@ -90,7 +89,8 @@ def stats():
 
         # Total
         row = conn.execute(
-            f"SELECT COUNT(*) FROM stig_findings{where}", params  # nosec B608 -- table/column names are internal constants, not user input
+            f"SELECT COUNT(*) FROM stig_findings{where}",
+            params,  # nosec B608 -- table/column names are internal constants, not user input
         ).fetchone()
         total = row[0]
 
@@ -120,13 +120,15 @@ def stats():
 
         # Benchmarks loaded (distinct stig_id)
         row = conn.execute(
-            f"SELECT COUNT(DISTINCT stig_id) FROM stig_findings{where}", params  # nosec B608 -- table/column names are internal constants, not user input
+            f"SELECT COUNT(DISTINCT stig_id) FROM stig_findings{where}",
+            params,  # nosec B608 -- table/column names are internal constants, not user input
         ).fetchone()
         benchmarks_loaded = row[0]
 
         # Targets assessed (distinct target_type)
         row = conn.execute(
-            f"SELECT COUNT(DISTINCT target_type) FROM stig_findings{where}", params  # nosec B608 -- table/column names are internal constants, not user input
+            f"SELECT COUNT(DISTINCT target_type) FROM stig_findings{where}",
+            params,  # nosec B608 -- table/column names are internal constants, not user input
         ).fetchone()
         targets_assessed = row[0]
 
@@ -140,15 +142,17 @@ def stats():
         ).fetchone()
         cat1_open = row[0]
 
-        return jsonify({
-            "total": total,
-            "by_severity": by_severity,
-            "by_status": by_status,
-            "coverage": coverage,
-            "benchmarks_loaded": benchmarks_loaded,
-            "targets_assessed": targets_assessed,
-            "cat1_open": cat1_open,
-        })
+        return jsonify(
+            {
+                "total": total,
+                "by_severity": by_severity,
+                "by_status": by_status,
+                "coverage": coverage,
+                "benchmarks_loaded": benchmarks_loaded,
+                "targets_assessed": targets_assessed,
+                "cat1_open": cat1_open,
+            }
+        )
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
     finally:
@@ -190,18 +194,20 @@ def benchmarks():
         for r in rows:
             applicable = r["total"] - r["na"]
             coverage = round(r["naf"] / applicable * 100, 1) if applicable > 0 else 0.0
-            benchmarks_list.append({
-                "stig_id": r["stig_id"],
-                "total": r["total"],
-                "cat1": r["cat1"],
-                "cat2": r["cat2"],
-                "cat3": r["cat3"],
-                "open": r["open_count"],
-                "not_a_finding": r["naf"],
-                "not_applicable": r["na"],
-                "not_reviewed": r["nr"],
-                "coverage": coverage,
-            })
+            benchmarks_list.append(
+                {
+                    "stig_id": r["stig_id"],
+                    "total": r["total"],
+                    "cat1": r["cat1"],
+                    "cat2": r["cat2"],
+                    "cat3": r["cat3"],
+                    "open": r["open_count"],
+                    "not_a_finding": r["naf"],
+                    "not_applicable": r["na"],
+                    "not_reviewed": r["nr"],
+                    "coverage": coverage,
+                }
+            )
 
         return jsonify({"benchmarks": benchmarks_list})
     except Exception as exc:
@@ -250,7 +256,8 @@ def findings():
 
         # Total count
         row = conn.execute(
-            f"SELECT COUNT(*) FROM stig_findings{where}", params  # nosec B608 -- table/column names are internal constants, not user input
+            f"SELECT COUNT(*) FROM stig_findings{where}",
+            params,  # nosec B608 -- table/column names are internal constants, not user input
         ).fetchone()
         total = row[0]
 
@@ -268,12 +275,14 @@ def findings():
             params + [per_page, offset],
         ).fetchall()
 
-        return jsonify({
-            "findings": [dict(r) for r in rows],
-            "total": total,
-            "page": page,
-            "per_page": per_page,
-        })
+        return jsonify(
+            {
+                "findings": [dict(r) for r in rows],
+                "total": total,
+                "page": page,
+                "per_page": per_page,
+            }
+        )
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
     finally:
@@ -349,16 +358,18 @@ def coverage():
         for tt in sorted(targets):
             row_data = {"target_type": tt}
             for sev in ["CAT1", "CAT2", "CAT3"]:
-                row_data[sev] = grid.get(tt, {}).get(sev, {
-                    "total": 0, "not_a_finding": 0, "not_applicable": 0, "coverage": 0.0
-                })
+                row_data[sev] = grid.get(tt, {}).get(
+                    sev, {"total": 0, "not_a_finding": 0, "not_applicable": 0, "coverage": 0.0}
+                )
             coverage_list.append(row_data)
 
-        return jsonify({
-            "coverage": coverage_list,
-            "targets": sorted(targets),
-            "severities": ["CAT1", "CAT2", "CAT3"],
-        })
+        return jsonify(
+            {
+                "coverage": coverage_list,
+                "targets": sorted(targets),
+                "severities": ["CAT1", "CAT2", "CAT3"],
+            }
+        )
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
     finally:
@@ -389,10 +400,12 @@ def cat1():
             params,
         ).fetchall()
 
-        return jsonify({
-            "findings": [dict(r) for r in rows],
-            "count": len(rows),
-        })
+        return jsonify(
+            {
+                "findings": [dict(r) for r in rows],
+                "count": len(rows),
+            }
+        )
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
     finally:
@@ -424,9 +437,7 @@ def assess():
             return jsonify({"error": f"Invalid status. Must be one of: {valid_statuses}"}), 400
 
         # Verify finding exists
-        row = conn.execute(
-            "SELECT id FROM stig_findings WHERE id = ?", (finding_id,)
-        ).fetchone()
+        row = conn.execute("SELECT id FROM stig_findings WHERE id = ?", (finding_id,)).fetchone()
         if not row:
             return jsonify({"error": "Finding not found"}), 404
 

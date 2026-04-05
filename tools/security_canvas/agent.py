@@ -22,26 +22,16 @@ logger = logging.getLogger("icdev.security_canvas.agent")
 
 # ── IaC Security Scan Rules ──────────────────────────────────────────────────
 _IAC_CHECKS = [
-    ("0.0.0.0/0", "IaC-001",
-     "Overly permissive CIDR (0.0.0.0/0) detected", "CAT1"),
-    ("public-read", "IaC-002",
-     "Public read access enabled on storage", "CAT1"),
-    ("encrypted = false", "IaC-003",
-     "Encryption explicitly disabled", "CAT1"),
-    ("encrypted  = false", "IaC-003",
-     "Encryption explicitly disabled", "CAT1"),
-    ("skip_final_snapshot = true", "IaC-004",
-     "Database final snapshot disabled", "CAT2"),
-    ("enable_logging = false", "IaC-005",
-     "Logging explicitly disabled", "CAT2"),
-    ("password", "IaC-006",
-     "Potential hardcoded password detected", "CAT2"),
-    ("secret_key", "IaC-007",
-     "Potential hardcoded secret key", "CAT1"),
-    ("multi_az = false", "IaC-008",
-     "Multi-AZ disabled — single point of failure", "CAT3"),
-    ("versioning { enabled = false", "IaC-009",
-     "S3 versioning disabled — no rollback", "CAT2"),
+    ("0.0.0.0/0", "IaC-001", "Overly permissive CIDR (0.0.0.0/0) detected", "CAT1"),
+    ("public-read", "IaC-002", "Public read access enabled on storage", "CAT1"),
+    ("encrypted = false", "IaC-003", "Encryption explicitly disabled", "CAT1"),
+    ("encrypted  = false", "IaC-003", "Encryption explicitly disabled", "CAT1"),
+    ("skip_final_snapshot = true", "IaC-004", "Database final snapshot disabled", "CAT2"),
+    ("enable_logging = false", "IaC-005", "Logging explicitly disabled", "CAT2"),
+    ("password", "IaC-006", "Potential hardcoded password detected", "CAT2"),
+    ("secret_key", "IaC-007", "Potential hardcoded secret key", "CAT1"),
+    ("multi_az = false", "IaC-008", "Multi-AZ disabled — single point of failure", "CAT3"),
+    ("versioning { enabled = false", "IaC-009", "S3 versioning disabled — no rollback", "CAT2"),
 ]
 
 
@@ -71,9 +61,7 @@ def on_ndc_topology_saved(topology_id: str) -> dict:
             if not row:
                 return {"status": "skipped", "reason": "No graph data"}
 
-            graph = (
-                json.loads(row[0]) if isinstance(row[0], str) else row[0]
-            )
+            graph = json.loads(row[0]) if isinstance(row[0], str) else row[0]
             assessment = run_security_assessment(design_id, graph)
 
             # Persist assessment
@@ -86,20 +74,26 @@ def on_ndc_topology_saved(topology_id: str) -> dict:
                 "risk_score, posture_grade, findings_json, "
                 "recommendations_json, ran_at) "
                 "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-                (assess_id, design_id, "auto_stride", "ndc_save",
-                 topology_id,
-                 assessment.get("total_threats", 0),
-                 assessment.get("total_controls", 0),
-                 assessment.get("risk_score", 0),
-                 assessment.get("posture_grade", "F"),
-                 json.dumps(assessment.get("findings", [])),
-                 json.dumps(assessment.get("recommendations", [])),
-                 now),
+                (
+                    assess_id,
+                    design_id,
+                    "auto_stride",
+                    "ndc_save",
+                    topology_id,
+                    assessment.get("total_threats", 0),
+                    assessment.get("total_controls", 0),
+                    assessment.get("risk_score", 0),
+                    assessment.get("posture_grade", "F"),
+                    json.dumps(assessment.get("findings", [])),
+                    json.dumps(assessment.get("recommendations", [])),
+                    now,
+                ),
             )
 
         logger.info(
             "Security agent: NDC %s → SDC %s assessed (score=%s, grade=%s)",
-            topology_id, design_id,
+            topology_id,
+            design_id,
             assessment.get("risk_score"),
             assessment.get("posture_grade"),
         )
@@ -136,14 +130,16 @@ def on_iac_generated(
             continue
         for pattern, rule_id, title, severity in _IAC_CHECKS:
             if pattern in lower:
-                findings.append({
-                    "rule_id": rule_id,
-                    "title": title,
-                    "severity": severity,
-                    "line": i,
-                    "content": line.strip()[:120],
-                    "iac_type": iac_type,
-                })
+                findings.append(
+                    {
+                        "rule_id": rule_id,
+                        "title": title,
+                        "severity": severity,
+                        "line": i,
+                        "content": line.strip()[:120],
+                        "iac_type": iac_type,
+                    }
+                )
 
     return {
         "status": "scanned",
@@ -171,69 +167,65 @@ def on_pipeline_saved(
     jobs = pipeline_config.get("jobs", {})
 
     # Check: no secret scanning stage
-    stage_names = [s if isinstance(s, str) else s.get("name", "")
-                   for s in stages]
-    has_secret_scan = any(
-        "secret" in s.lower() or "detect-secrets" in s.lower()
-        for s in stage_names
-    )
+    stage_names = [s if isinstance(s, str) else s.get("name", "") for s in stages]
+    has_secret_scan = any("secret" in s.lower() or "detect-secrets" in s.lower() for s in stage_names)
     if not has_secret_scan:
-        findings.append({
-            "rule_id": "PIPE-001",
-            "title": "No secret scanning stage detected",
-            "severity": "CAT2",
-            "category": "supply_chain",
-        })
+        findings.append(
+            {
+                "rule_id": "PIPE-001",
+                "title": "No secret scanning stage detected",
+                "severity": "CAT2",
+                "category": "supply_chain",
+            }
+        )
 
     # Check: no SAST stage
-    has_sast = any(
-        "sast" in s.lower() or "security" in s.lower()
-        for s in stage_names
-    )
+    has_sast = any("sast" in s.lower() or "security" in s.lower() for s in stage_names)
     if not has_sast:
-        findings.append({
-            "rule_id": "PIPE-002",
-            "title": "No SAST/security scanning stage",
-            "severity": "CAT2",
-            "category": "supply_chain",
-        })
+        findings.append(
+            {
+                "rule_id": "PIPE-002",
+                "title": "No SAST/security scanning stage",
+                "severity": "CAT2",
+                "category": "supply_chain",
+            }
+        )
 
     # Check: no container scanning
-    has_container_scan = any(
-        "container" in s.lower() and "scan" in s.lower()
-        for s in stage_names
-    )
-    if not has_container_scan and any(
-        "docker" in str(jobs).lower() or "container" in str(jobs).lower()
-        for _ in [1]
-    ):
-        findings.append({
-            "rule_id": "PIPE-003",
-            "title": "Container builds without container scanning",
-            "severity": "CAT2",
-            "category": "supply_chain",
-        })
+    has_container_scan = any("container" in s.lower() and "scan" in s.lower() for s in stage_names)
+    if not has_container_scan and any("docker" in str(jobs).lower() or "container" in str(jobs).lower() for _ in [1]):
+        findings.append(
+            {
+                "rule_id": "PIPE-003",
+                "title": "Container builds without container scanning",
+                "severity": "CAT2",
+                "category": "supply_chain",
+            }
+        )
 
     # Check individual jobs for issues
     for job_name, job_cfg in jobs.items():
         if isinstance(job_cfg, dict):
             # Overly permissive permissions
             if job_cfg.get("allow_failure") is True:
-                findings.append({
-                    "rule_id": "PIPE-004",
-                    "title": f"Job '{job_name}' allows failure — may mask "
-                             f"security issues",
-                    "severity": "CAT3",
-                    "category": "misconfiguration",
-                })
+                findings.append(
+                    {
+                        "rule_id": "PIPE-004",
+                        "title": f"Job '{job_name}' allows failure — may mask security issues",
+                        "severity": "CAT3",
+                        "category": "misconfiguration",
+                    }
+                )
             # Privileged mode
             if job_cfg.get("privileged") is True:
-                findings.append({
-                    "rule_id": "PIPE-005",
-                    "title": f"Job '{job_name}' runs in privileged mode",
-                    "severity": "CAT1",
-                    "category": "elevation_of_privilege",
-                })
+                findings.append(
+                    {
+                        "rule_id": "PIPE-005",
+                        "title": f"Job '{job_name}' runs in privileged mode",
+                        "severity": "CAT1",
+                        "category": "elevation_of_privilege",
+                    }
+                )
 
     return {
         "status": "scanned",
@@ -265,9 +257,7 @@ def on_pdc_pipeline_saved(
 
         assess_id = str(uuid.uuid4())
         now = datetime.now(timezone.utc).isoformat()
-        risk_score = float(scan.get("cat1_count", 0) * 5 +
-                          scan.get("cat2_count", 0) * 2 +
-                          scan.get("cat3_count", 0))
+        risk_score = float(scan.get("cat1_count", 0) * 5 + scan.get("cat2_count", 0) * 2 + scan.get("cat3_count", 0))
         if risk_score >= 20:
             grade = "F"
         elif risk_score >= 15:
@@ -287,20 +277,28 @@ def on_pdc_pipeline_saved(
                 "risk_score, posture_grade, findings_json, "
                 "recommendations_json, ran_at) "
                 "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-                (assess_id, None, "pipeline_scan", "pdc_save",
-                 pipeline_id,
-                 scan.get("cat1_count", 0) + scan.get("cat2_count", 0) + scan.get("cat3_count", 0),
-                 0,
-                 risk_score,
-                 grade,
-                 json.dumps(findings),
-                 json.dumps([]),
-                 now),
+                (
+                    assess_id,
+                    None,
+                    "pipeline_scan",
+                    "pdc_save",
+                    pipeline_id,
+                    scan.get("cat1_count", 0) + scan.get("cat2_count", 0) + scan.get("cat3_count", 0),
+                    0,
+                    risk_score,
+                    grade,
+                    json.dumps(findings),
+                    json.dumps([]),
+                    now,
+                ),
             )
 
         logger.info(
             "Security agent: PDC %s assessed (cat1=%s, score=%s, grade=%s)",
-            pipeline_id, scan.get("cat1_count", 0), risk_score, grade,
+            pipeline_id,
+            scan.get("cat1_count", 0),
+            risk_score,
+            grade,
         )
         scan["assessment_id"] = assess_id
         scan["risk_score"] = risk_score
@@ -339,10 +337,18 @@ def on_idc_design_saved(design_id: str) -> dict:
 
         # Map IDC node types to SDC component types
         _IDC_TO_SDC = {
-            "ec2": "server", "lambda": "service", "rds": "database",
-            "s3": "storage", "alb": "load_balancer", "api_gateway": "api",
-            "vpc": "network", "subnet": "network", "security_group": "firewall",
-            "iam": "auth_service", "kms": "key_management", "waf": "waf",
+            "ec2": "server",
+            "lambda": "service",
+            "rds": "database",
+            "s3": "storage",
+            "alb": "load_balancer",
+            "api_gateway": "api",
+            "vpc": "network",
+            "subnet": "network",
+            "security_group": "firewall",
+            "iam": "auth_service",
+            "kms": "key_management",
+            "waf": "waf",
         }
         sdc_nodes = [
             {
@@ -371,22 +377,39 @@ def on_idc_design_saved(design_id: str) -> dict:
             ntype = n.get("type", "").lower()
             nlabel = n.get("label", n.get("id", "?"))
             if ntype == "s3" and not n.get("data", {}).get("encrypted"):
-                findings.append({"rule_id": "IDC-001", "title": f"S3 bucket '{nlabel}' missing encryption", "severity": "CAT1"})
+                findings.append(
+                    {"rule_id": "IDC-001", "title": f"S3 bucket '{nlabel}' missing encryption", "severity": "CAT1"}
+                )
             if ntype == "rds" and not n.get("data", {}).get("multi_az"):
                 findings.append({"rule_id": "IDC-002", "title": f"RDS '{nlabel}' missing Multi-AZ", "severity": "CAT3"})
             if ntype == "ec2" and n.get("data", {}).get("public_ip"):
-                findings.append({"rule_id": "IDC-003", "title": f"EC2 '{nlabel}' has public IP — review exposure", "severity": "CAT2"})
+                findings.append(
+                    {
+                        "rule_id": "IDC-003",
+                        "title": f"EC2 '{nlabel}' has public IP — review exposure",
+                        "severity": "CAT2",
+                    }
+                )
             if ntype == "security_group":
                 rules = n.get("data", {}).get("rules", [])
                 if any("0.0.0.0/0" in str(r) for r in rules):
-                    findings.append({"rule_id": "IDC-004", "title": f"Security group '{nlabel}' allows 0.0.0.0/0", "severity": "CAT1"})
+                    findings.append(
+                        {
+                            "rule_id": "IDC-004",
+                            "title": f"Security group '{nlabel}' allows 0.0.0.0/0",
+                            "severity": "CAT1",
+                        }
+                    )
 
         cat1 = sum(1 for f in findings if f["severity"] == "CAT1")
         cat2 = sum(1 for f in findings if f["severity"] == "CAT2")
         cat3 = sum(1 for f in findings if f["severity"] == "CAT3")
         risk_score = float(cat1 * 10 + cat2 * 4 + cat3)
-        grade = "F" if risk_score >= 30 else ("D" if risk_score >= 20 else
-                ("C" if risk_score >= 10 else ("B" if risk_score >= 4 else "A")))
+        grade = (
+            "F"
+            if risk_score >= 30
+            else ("D" if risk_score >= 20 else ("C" if risk_score >= 10 else ("B" if risk_score >= 4 else "A")))
+        )
 
         now = datetime.now(timezone.utc).isoformat()
         assess_id = str(uuid.uuid4())
@@ -409,10 +432,15 @@ def on_idc_design_saved(design_id: str) -> dict:
                     "INSERT INTO security_designs "
                     "(id, name, description, classification, graph_json, created_at, updated_at) "
                     "VALUES (?,?,?,?,?,?,?)",
-                    (sdc_design_id,
-                     f"[IDC] {design_name}",
-                     f"Auto-derived from IDC design {design_id}",
-                     "CUI", json.dumps(sdc_graph), now, now),
+                    (
+                        sdc_design_id,
+                        f"[IDC] {design_name}",
+                        f"Auto-derived from IDC design {design_id}",
+                        "CUI",
+                        json.dumps(sdc_graph),
+                        now,
+                        now,
+                    ),
                 )
 
             # Persist assessment
@@ -423,20 +451,37 @@ def on_idc_design_saved(design_id: str) -> dict:
                 "risk_score, posture_grade, findings_json, "
                 "recommendations_json, ran_at) "
                 "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-                (assess_id, sdc_design_id, "idc_gap_scan", "idc_save",
-                 design_id, len(findings), 0, risk_score, grade,
-                 json.dumps(findings), json.dumps([]), now),
+                (
+                    assess_id,
+                    sdc_design_id,
+                    "idc_gap_scan",
+                    "idc_save",
+                    design_id,
+                    len(findings),
+                    0,
+                    risk_score,
+                    grade,
+                    json.dumps(findings),
+                    json.dumps([]),
+                    now,
+                ),
             )
 
         logger.info(
             "Security agent: IDC %s → SDC %s assessed (cat1=%s, score=%s, grade=%s)",
-            design_id, sdc_design_id, cat1, risk_score, grade,
+            design_id,
+            sdc_design_id,
+            cat1,
+            risk_score,
+            grade,
         )
         return {
             "status": "assessed",
             "sdc_design_id": sdc_design_id,
             "assessment_id": assess_id,
-            "cat1": cat1, "cat2": cat2, "cat3": cat3,
+            "cat1": cat1,
+            "cat2": cat2,
+            "cat3": cat3,
             "risk_score": risk_score,
             "posture_grade": grade,
         }
@@ -451,10 +496,23 @@ def on_ddc_design_saved(design_id: str) -> dict:
     Auto-classifies data flows and detects CUI/PII exposure threats.
     Persists findings to sc_assessments with trigger_source='ddc_save'.
     """
-    _CUI_KEYWORDS = frozenset({
-        "ssn", "social_security", "pii", "cui", "phi", "pci", "credit_card",
-        "password", "secret", "private_key", "dod_id", "edipi", "npi",
-    })
+    _CUI_KEYWORDS = frozenset(
+        {
+            "ssn",
+            "social_security",
+            "pii",
+            "cui",
+            "phi",
+            "pci",
+            "credit_card",
+            "password",
+            "secret",
+            "private_key",
+            "dod_id",
+            "edipi",
+            "npi",
+        }
+    )
     _UNPROTECTED_TYPES = frozenset({"ftp", "http", "smtp", "telnet", "unencrypted"})
 
     try:
@@ -480,41 +538,48 @@ def on_ddc_design_saved(design_id: str) -> dict:
             node_type = n.get("type", "").lower()
             # CUI/PII data store detection
             if any(kw in label_lower for kw in _CUI_KEYWORDS):
-                findings.append({
-                    "rule_id": "DDC-001",
-                    "title": f"Potential CUI/PII data store: '{n.get('label','?')}'",
-                    "severity": "CAT1",
-                    "affected": n.get("id"),
-                })
+                findings.append(
+                    {
+                        "rule_id": "DDC-001",
+                        "title": f"Potential CUI/PII data store: '{n.get('label', '?')}'",
+                        "severity": "CAT1",
+                        "affected": n.get("id"),
+                    }
+                )
                 # Check if this node has unencrypted connections
-                node_edges = [e for e in edges
-                              if e.get("source") == n.get("id") or e.get("target") == n.get("id")]
+                node_edges = [e for e in edges if e.get("source") == n.get("id") or e.get("target") == n.get("id")]
                 for e in node_edges:
                     if not e.get("encrypted", True):
-                        findings.append({
-                            "rule_id": "DDC-002",
-                            "title": f"CUI data node '{n.get('label','?')}' on unencrypted flow",
-                            "severity": "CAT1",
-                            "affected": n.get("id"),
-                        })
+                        findings.append(
+                            {
+                                "rule_id": "DDC-002",
+                                "title": f"CUI data node '{n.get('label', '?')}' on unencrypted flow",
+                                "severity": "CAT1",
+                                "affected": n.get("id"),
+                            }
+                        )
             # Unprotected external data store
             if node_type in ("external", "api", "external_service"):
-                unprotected = [e for e in edges
-                               if (e.get("source") == n.get("id") or e.get("target") == n.get("id"))
-                               and e.get("protocol", "").lower() in _UNPROTECTED_TYPES]
+                unprotected = [
+                    e
+                    for e in edges
+                    if (e.get("source") == n.get("id") or e.get("target") == n.get("id"))
+                    and e.get("protocol", "").lower() in _UNPROTECTED_TYPES
+                ]
                 if unprotected:
-                    findings.append({
-                        "rule_id": "DDC-003",
-                        "title": f"External node '{n.get('label','?')}' uses insecure protocol",
-                        "severity": "CAT2",
-                        "affected": n.get("id"),
-                    })
+                    findings.append(
+                        {
+                            "rule_id": "DDC-003",
+                            "title": f"External node '{n.get('label', '?')}' uses insecure protocol",
+                            "severity": "CAT2",
+                            "affected": n.get("id"),
+                        }
+                    )
 
         cat1 = sum(1 for f in findings if f["severity"] == "CAT1")
         cat2 = sum(1 for f in findings if f["severity"] == "CAT2")
         risk_score = float(cat1 * 10 + cat2 * 4)
-        grade = "F" if risk_score >= 20 else ("D" if risk_score >= 10 else
-                ("C" if risk_score >= 4 else "A"))
+        grade = "F" if risk_score >= 20 else ("D" if risk_score >= 10 else ("C" if risk_score >= 4 else "A"))
         now = datetime.now(timezone.utc).isoformat()
         assess_id = str(uuid.uuid4())
 
@@ -526,20 +591,35 @@ def on_ddc_design_saved(design_id: str) -> dict:
                 "risk_score, posture_grade, findings_json, "
                 "recommendations_json, ran_at) "
                 "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-                (assess_id, None, "ddc_cui_scan", "ddc_save",
-                 design_id, len(findings), 0, risk_score, grade,
-                 json.dumps(findings), json.dumps([]), now),
+                (
+                    assess_id,
+                    None,
+                    "ddc_cui_scan",
+                    "ddc_save",
+                    design_id,
+                    len(findings),
+                    0,
+                    risk_score,
+                    grade,
+                    json.dumps(findings),
+                    json.dumps([]),
+                    now,
+                ),
             )
 
         logger.info(
             "Security agent: DDC %s assessed (cat1=%s, score=%s, grade=%s)",
-            design_id, cat1, risk_score, grade,
+            design_id,
+            cat1,
+            risk_score,
+            grade,
         )
         return {
             "status": "assessed",
             "assessment_id": assess_id,
             "design_name": design_name,
-            "cat1": cat1, "cat2": cat2,
+            "cat1": cat1,
+            "cat2": cat2,
             "risk_score": risk_score,
             "posture_grade": grade,
         }
@@ -576,51 +656,53 @@ def on_bdc_design_saved(design_id: str) -> dict:
         # Check boundary IL level consistency
         il_levels = {b.get("il_level") for b in boundaries if b.get("il_level")}
         if len(il_levels) > 1:
-            findings.append({
-                "rule_id": "BDC-001",
-                "title": "Mixed IL levels in same boundary design — review enclave separation",
-                "severity": "CAT2",
-            })
+            findings.append(
+                {
+                    "rule_id": "BDC-001",
+                    "title": "Mixed IL levels in same boundary design — review enclave separation",
+                    "severity": "CAT2",
+                }
+            )
 
         # Check for cross-boundary flows without ISA
         for e in edges:
-            src_boundary = next((b.get("id") for b in boundaries
-                                 if e.get("source") in b.get("members", [])), None)
-            tgt_boundary = next((b.get("id") for b in boundaries
-                                 if e.get("target") in b.get("members", [])), None)
+            src_boundary = next((b.get("id") for b in boundaries if e.get("source") in b.get("members", [])), None)
+            tgt_boundary = next((b.get("id") for b in boundaries if e.get("target") in b.get("members", [])), None)
             if src_boundary and tgt_boundary and src_boundary != tgt_boundary:
                 if not e.get("isa_id"):
-                    findings.append({
-                        "rule_id": "BDC-002",
-                        "title": f"Cross-boundary flow missing ISA agreement "
-                                 f"(src_boundary={src_boundary}, tgt_boundary={tgt_boundary})",
-                        "severity": "CAT1",
-                    })
+                    findings.append(
+                        {
+                            "rule_id": "BDC-002",
+                            "title": f"Cross-boundary flow missing ISA agreement "
+                            f"(src_boundary={src_boundary}, tgt_boundary={tgt_boundary})",
+                            "severity": "CAT1",
+                        }
+                    )
 
         # Validate NDC enclaves: check if known NDC topologies match BDC boundaries
         try:
             from tools.network.db.init_db import get_connection as get_ndc_conn
+
             with get_ndc_conn() as ndc_conn:
-                ndc_enclaves = ndc_conn.execute(
-                    "SELECT id, name FROM topologies LIMIT 50"
-                ).fetchall()
+                ndc_enclaves = ndc_conn.execute("SELECT id, name FROM topologies LIMIT 50").fetchall()
             ndc_ids = {row[0] for row in ndc_enclaves}
             for b in boundaries:
                 source_topo = b.get("source_topology_id")
                 if source_topo and source_topo not in ndc_ids:
-                    findings.append({
-                        "rule_id": "BDC-003",
-                        "title": f"Boundary '{b.get('label','?')}' references unknown NDC topology",
-                        "severity": "CAT2",
-                    })
+                    findings.append(
+                        {
+                            "rule_id": "BDC-003",
+                            "title": f"Boundary '{b.get('label', '?')}' references unknown NDC topology",
+                            "severity": "CAT2",
+                        }
+                    )
         except Exception:
             pass  # NDC not available — skip cross-canvas check
 
         cat1 = sum(1 for f in findings if f["severity"] == "CAT1")
         cat2 = sum(1 for f in findings if f["severity"] == "CAT2")
         risk_score = float(cat1 * 10 + cat2 * 4)
-        grade = "F" if risk_score >= 20 else ("D" if risk_score >= 10 else
-                ("C" if risk_score >= 4 else "A"))
+        grade = "F" if risk_score >= 20 else ("D" if risk_score >= 10 else ("C" if risk_score >= 4 else "A"))
         now = datetime.now(timezone.utc).isoformat()
         assess_id = str(uuid.uuid4())
 
@@ -632,20 +714,35 @@ def on_bdc_design_saved(design_id: str) -> dict:
                 "risk_score, posture_grade, findings_json, "
                 "recommendations_json, ran_at) "
                 "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-                (assess_id, None, "bdc_boundary_scan", "bdc_save",
-                 design_id, len(findings), 0, risk_score, grade,
-                 json.dumps(findings), json.dumps([]), now),
+                (
+                    assess_id,
+                    None,
+                    "bdc_boundary_scan",
+                    "bdc_save",
+                    design_id,
+                    len(findings),
+                    0,
+                    risk_score,
+                    grade,
+                    json.dumps(findings),
+                    json.dumps([]),
+                    now,
+                ),
             )
 
         logger.info(
             "Security agent: BDC %s assessed (cat1=%s, score=%s, grade=%s)",
-            design_id, cat1, risk_score, grade,
+            design_id,
+            cat1,
+            risk_score,
+            grade,
         )
         return {
             "status": "assessed",
             "assessment_id": assess_id,
             "design_name": design_name,
-            "cat1": cat1, "cat2": cat2,
+            "cat1": cat1,
+            "cat2": cat2,
             "risk_score": risk_score,
             "posture_grade": grade,
         }
@@ -697,31 +794,33 @@ def on_odc_design_saved(design_id: str) -> dict:
                 or control_type.replace("_", "") in node_labels_lower
             )
             if not has_control:
-                findings.append({
-                    "rule_id": f"ODC-{list(_REQUIRED_CONTROLS).index(control_type) + 1:03d}",
-                    "title": f"Missing monitoring control: {control_type.replace('_', ' ').title()} "
-                             f"(NIST {nist_control})",
-                    "severity": "CAT2" if control_type in ("siem", "audit_trail") else "CAT3",
-                    "nist_control": nist_control,
-                })
+                findings.append(
+                    {
+                        "rule_id": f"ODC-{list(_REQUIRED_CONTROLS).index(control_type) + 1:03d}",
+                        "title": f"Missing monitoring control: {control_type.replace('_', ' ').title()} "
+                        f"(NIST {nist_control})",
+                        "severity": "CAT2" if control_type in ("siem", "audit_trail") else "CAT3",
+                        "nist_control": nist_control,
+                    }
+                )
 
         # Check if any SDC designs have unmatched logging requirements
         try:
             with get_sdc_conn() as sdc_conn:
                 sdc_findings_rows = sdc_conn.execute(
-                    "SELECT findings_json FROM sc_assessments "
-                    "ORDER BY ran_at DESC LIMIT 5"
+                    "SELECT findings_json FROM sc_assessments ORDER BY ran_at DESC LIMIT 5"
                 ).fetchall()
             for frow in sdc_findings_rows:
                 sdc_finds = json.loads(frow[0] or "[]")
                 for sf in sdc_finds:
-                    if "logging" in sf.get("title", "").lower() and \
-                            "log" not in node_labels_lower:
-                        findings.append({
-                            "rule_id": "ODC-LOG-001",
-                            "title": "SDC audit finding references logging — not covered in ODC",
-                            "severity": "CAT2",
-                        })
+                    if "logging" in sf.get("title", "").lower() and "log" not in node_labels_lower:
+                        findings.append(
+                            {
+                                "rule_id": "ODC-LOG-001",
+                                "title": "SDC audit finding references logging — not covered in ODC",
+                                "severity": "CAT2",
+                            }
+                        )
                         break
         except Exception:
             pass
@@ -729,8 +828,7 @@ def on_odc_design_saved(design_id: str) -> dict:
         cat2 = sum(1 for f in findings if f["severity"] == "CAT2")
         cat3 = sum(1 for f in findings if f["severity"] == "CAT3")
         risk_score = float(cat2 * 4 + cat3)
-        grade = "F" if risk_score >= 20 else ("D" if risk_score >= 12 else
-                ("C" if risk_score >= 4 else "A"))
+        grade = "F" if risk_score >= 20 else ("D" if risk_score >= 12 else ("C" if risk_score >= 4 else "A"))
         now = datetime.now(timezone.utc).isoformat()
         assess_id = str(uuid.uuid4())
 
@@ -742,20 +840,35 @@ def on_odc_design_saved(design_id: str) -> dict:
                 "risk_score, posture_grade, findings_json, "
                 "recommendations_json, ran_at) "
                 "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-                (assess_id, None, "odc_logging_scan", "odc_save",
-                 design_id, len(findings), len(_REQUIRED_CONTROLS), risk_score, grade,
-                 json.dumps(findings), json.dumps([]), now),
+                (
+                    assess_id,
+                    None,
+                    "odc_logging_scan",
+                    "odc_save",
+                    design_id,
+                    len(findings),
+                    len(_REQUIRED_CONTROLS),
+                    risk_score,
+                    grade,
+                    json.dumps(findings),
+                    json.dumps([]),
+                    now,
+                ),
             )
 
         logger.info(
             "Security agent: ODC %s assessed (cat2=%s, score=%s, grade=%s)",
-            design_id, cat2, risk_score, grade,
+            design_id,
+            cat2,
+            risk_score,
+            grade,
         )
         return {
             "status": "assessed",
             "assessment_id": assess_id,
             "design_name": design_name,
-            "cat2": cat2, "cat3": cat3,
+            "cat2": cat2,
+            "cat3": cat3,
             "risk_score": risk_score,
             "posture_grade": grade,
         }
@@ -782,9 +895,7 @@ def auto_assess(design_id: str, trigger_source: str = "auto") -> dict:
             if not row:
                 return {"status": "skipped", "reason": "Design not found"}
 
-            graph = (
-                json.loads(row[0]) if isinstance(row[0], str) else row[0]
-            )
+            graph = json.loads(row[0]) if isinstance(row[0], str) else row[0]
             nodes = graph.get("nodes", [])
             if len(nodes) < 2:
                 return {
@@ -801,14 +912,19 @@ def auto_assess(design_id: str, trigger_source: str = "auto") -> dict:
                 "total_threats, total_controls, risk_score, posture_grade, "
                 "findings_json, recommendations_json, ran_at) "
                 "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                (assess_id, design_id, "auto", trigger_source,
-                 assessment.get("total_threats", 0),
-                 assessment.get("total_controls", 0),
-                 assessment.get("risk_score", 0),
-                 assessment.get("posture_grade", "F"),
-                 json.dumps(assessment.get("findings", [])),
-                 json.dumps(assessment.get("recommendations", [])),
-                 now),
+                (
+                    assess_id,
+                    design_id,
+                    "auto",
+                    trigger_source,
+                    assessment.get("total_threats", 0),
+                    assessment.get("total_controls", 0),
+                    assessment.get("risk_score", 0),
+                    assessment.get("posture_grade", "F"),
+                    json.dumps(assessment.get("findings", [])),
+                    json.dumps(assessment.get("recommendations", [])),
+                    now,
+                ),
             )
 
         return {
@@ -928,10 +1044,7 @@ def llm_identify_threats(graph_data: dict) -> dict:
     if nodes:
         lines.append("Components:")
         for n in nodes:
-            lines.append(
-                f"  - {n.get('label', n.get('id', '?'))} "
-                f"(type: {n.get('type', 'unknown')})"
-            )
+            lines.append(f"  - {n.get('label', n.get('id', '?'))} (type: {n.get('type', 'unknown')})")
     if edges:
         label_map = {n.get("id", ""): n.get("label", n.get("id", "")) for n in nodes}
         lines.append("Data flows:")
@@ -970,12 +1083,14 @@ def llm_identify_threats(graph_data: dict) -> dict:
             '"description": "...", "affected": "...", "nist_control": "..."}]}'
         )
 
-        payload = json.dumps({
-            "model": model,
-            "messages": [{"role": "user", "content": prompt}],
-            "stream": False,
-            "options": {"num_predict": 1024, "temperature": 0.3},
-        }).encode("utf-8")
+        payload = json.dumps(
+            {
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}],
+                "stream": False,
+                "options": {"num_predict": 1024, "temperature": 0.3},
+            }
+        ).encode("utf-8")
         req = urllib.request.Request(
             "http://localhost:11434/api/chat",
             data=payload,
@@ -986,9 +1101,7 @@ def llm_identify_threats(graph_data: dict) -> dict:
             result = json.loads(resp.read().decode("utf-8"))
             content = result.get("message", {}).get("content", "")
             # Strip thinking tags if present (qwen3 thinking mode)
-            content = re.sub(
-                r"<think>.*?</think>", "", content, flags=re.DOTALL
-            ).strip()
+            content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
             # Try to extract JSON from the response (may be wrapped in markdown)
             json_match = re.search(r"\{[\s\S]*\}", content)
             if json_match:

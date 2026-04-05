@@ -175,14 +175,17 @@ class TestReviewBoardDaemon:
 
     def test_daemon_imports(self):
         from tools.review_board.daemon import ReviewBoardDaemon
+
         assert ReviewBoardDaemon.daemon_name == "Engineering Review Board"
 
     def test_daemon_version(self):
         from tools.review_board.daemon import DAEMON_VERSION
+
         assert DAEMON_VERSION == "1.0.0"
 
     def test_reflex_names(self):
         from tools.review_board.daemon import REFLEX_NAMES
+
         assert len(REFLEX_NAMES) == 8
         assert "sre" in REFLEX_NAMES
         assert "qa" in REFLEX_NAMES
@@ -200,15 +203,16 @@ class TestReviewBoardDaemon:
 
         with patch("tools.review_board.daemon.get_connection", side_effect=_make_conn):
             from tools.review_board.daemon import ReviewBoardDaemon
+
             config = {"enabled": True, "reflexes": {}, "trust_kernel": {}}
             daemon = ReviewBoardDaemon(config)
             daemon.ensure_tables()
 
             # Verify tables exist using a fresh connection
             verify_conn = sqlite3.connect(str(db_path))
-            tables = [row[0] for row in verify_conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            ).fetchall()]
+            tables = [
+                row[0] for row in verify_conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+            ]
             assert "review_board_audit" in tables
             assert "review_board_reflex_state" in tables
             assert "review_board_findings" in tables
@@ -226,6 +230,7 @@ class TestReviewBoardDaemon:
 
         with patch("tools.review_board.daemon.get_connection", side_effect=_make_conn):
             from tools.review_board.daemon import ReviewBoardDaemon
+
             config = {"enabled": True, "reflexes": {}, "trust_kernel": {}}
             daemon = ReviewBoardDaemon(config)
 
@@ -241,9 +246,7 @@ class TestReviewBoardDaemon:
 
             # Verify it was inserted
             verify_conn = _make_conn()
-            row = verify_conn.execute(
-                "SELECT * FROM review_board_audit WHERE id = ?", (audit_id,)
-            ).fetchone()
+            row = verify_conn.execute("SELECT * FROM review_board_audit WHERE id = ?", (audit_id,)).fetchone()
             assert row is not None
             assert row["event_type"] == "review_board.reflex.started"
             assert row["reflex_name"] == "sre"
@@ -262,6 +265,7 @@ class TestReviewBoardDaemon:
 
         with patch("tools.review_board.daemon.get_connection", side_effect=_make_conn):
             from tools.review_board.daemon import ReviewBoardDaemon
+
             config = {"enabled": True, "reflexes": {}, "trust_kernel": {}}
             daemon = ReviewBoardDaemon(config)
 
@@ -302,6 +306,7 @@ class TestReviewBoardDaemon:
 
         with patch("tools.review_board.daemon.get_connection", return_value=conn):
             from tools.review_board.daemon import ReviewBoardDaemon
+
             config = {"enabled": True, "reflexes": {}, "trust_kernel": {}}
             daemon = ReviewBoardDaemon(config)
             status = daemon.get_extra_status()
@@ -319,6 +324,7 @@ class TestSREReflex:
 
     def test_sre_run_returns_expected_keys(self):
         from tools.review_board.reflexes.sre import run
+
         config = {"thresholds": {}}
         result = run(config, trust=None)
         assert "success" in result
@@ -335,6 +341,7 @@ class TestSREReflex:
             fake_db.write_bytes(b"x" * (600 * 1024 * 1024))  # 600MB
 
             from tools.review_board.reflexes.sre import run
+
             config = {"thresholds": {"max_db_file_size_mb": 500}}
             result = run(config, trust=None)
 
@@ -349,6 +356,7 @@ class TestQAReflex:
 
     def test_qa_run_returns_expected_keys(self):
         from tools.review_board.reflexes.qa import run
+
         config = {"thresholds": {}}
         result = run(config, trust=None)
         assert "success" in result
@@ -368,6 +376,7 @@ class TestQAReflex:
             tests_dir.mkdir()
 
             from tools.review_board.reflexes.qa import run
+
             config = {"thresholds": {}}
             result = run(config, trust=None)
 
@@ -381,6 +390,7 @@ class TestSecurityReflex:
 
     def test_security_run_returns_expected_keys(self):
         from tools.review_board.reflexes.security import run
+
         config = {"thresholds": {}}
         result = run(config, trust=None)
         assert "success" in result
@@ -397,6 +407,7 @@ class TestSecurityReflex:
             )
 
             from tools.review_board.reflexes.security import run
+
             config = {"thresholds": {}}
             result = run(config, trust=None)
 
@@ -410,6 +421,7 @@ class TestPerfReflex:
 
     def test_perf_run_returns_expected_keys(self):
         from tools.review_board.reflexes.perf import run
+
         config = {"thresholds": {}}
         result = run(config, trust=None)
         assert "success" in result
@@ -426,6 +438,7 @@ class TestPerfReflex:
             data_dir.mkdir()
 
             from tools.review_board.reflexes.perf import run
+
             config = {"thresholds": {}}
             result = run(config, trust=None)
 
@@ -439,6 +452,7 @@ class TestUXReflex:
 
     def test_ux_run_returns_expected_keys(self):
         from tools.review_board.reflexes.ux import run
+
         config = {"thresholds": {}}
         result = run(config, trust=None)
         assert "success" in result
@@ -450,6 +464,7 @@ class TestDocsReflex:
 
     def test_docs_run_returns_expected_keys(self):
         from tools.review_board.reflexes.docs import run
+
         config = {"thresholds": {}}
         result = run(config, trust=None)
         assert "success" in result
@@ -461,6 +476,7 @@ class TestProductReflex:
 
     def test_product_run_returns_expected_keys(self):
         from tools.review_board.reflexes.product import run
+
         config = {"thresholds": {}}
         result = run(config, trust=None)
         assert "success" in result
@@ -479,6 +495,7 @@ class TestModuleFunctions:
 
         with patch("tools.review_board.daemon.get_connection", return_value=conn):
             from tools.review_board.daemon import get_status
+
             status = get_status(as_json=True)
             assert isinstance(status, dict)
 
@@ -496,6 +513,7 @@ class TestModuleFunctions:
 
         with patch("tools.review_board.daemon.get_connection", return_value=conn):
             from tools.review_board.daemon import get_findings
+
             findings = get_findings(limit=10)
             assert isinstance(findings, list)
             assert len(findings) == 1
@@ -519,6 +537,7 @@ class TestModuleFunctions:
 
         with patch("tools.review_board.daemon.get_connection", return_value=conn):
             from tools.review_board.daemon import get_findings
+
             high_only = get_findings(severity="high")
             assert len(high_only) == 1
             assert high_only[0]["severity"] == "high"

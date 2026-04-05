@@ -27,7 +27,8 @@ def _git(args: list, cwd: str = None) -> Tuple[str, str, int]:
     """Run a git command."""
     proc = subprocess.run(
         ["git"] + args,
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
         cwd=cwd or str(PROJECT_ROOT),
     )
     return proc.stdout.strip(), proc.stderr.strip(), proc.returncode
@@ -121,6 +122,7 @@ def finalize_git_operations(state, logger, vcs=None):
     # Import VCS if needed
     if vcs is None:
         from tools.ci.modules.vcs import VCS
+
         try:
             vcs = VCS()
         except Exception as e:
@@ -144,10 +146,7 @@ def finalize_git_operations(state, logger, vcs=None):
         logger.info(f"PR/MR already exists: {pr_url}")
         if issue_number:
             platform_name = "MR" if vcs.is_gitlab else "PR"
-            vcs.comment_on_issue(
-                int(issue_number),
-                f"[ICDEV™-BOT] Updated existing {platform_name}: {pr_url}"
-            )
+            vcs.comment_on_issue(int(issue_number), f"[ICDEV™-BOT] Updated existing {platform_name}: {pr_url}")
         return
 
     # Create new PR/MR
@@ -167,9 +166,6 @@ def finalize_git_operations(state, logger, vcs=None):
         platform_name = "Merge Request" if vcs.is_gitlab else "Pull Request"
         logger.info(f"{platform_name} created: {pr_url}")
         if issue_number:
-            vcs.comment_on_issue(
-                int(issue_number),
-                f"[ICDEV™-BOT] Created {platform_name}: {pr_url}"
-            )
+            vcs.comment_on_issue(int(issue_number), f"[ICDEV™-BOT] Created {platform_name}: {pr_url}")
     else:
         logger.error("Failed to create PR/MR")

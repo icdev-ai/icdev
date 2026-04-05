@@ -19,16 +19,17 @@ logger = logging.getLogger("icdev.sre.api")
 sre_api = Blueprint("sre_api", __name__, url_prefix="/api/sre")
 
 
-
 # ══════════════════════════════════════════════════════════════════════
 # SLO ENDPOINTS
 # ══════════════════════════════════════════════════════════════════════
+
 
 @sre_api.route("/slos", methods=["GET"])
 def api_sre_slos():
     """List all SLOs with current status."""
     try:
         from tools.sre.slo_manager import get_slo_dashboard
+
         return jsonify({"slos": get_slo_dashboard()})
     except Exception as exc:
         return jsonify({"slos": [], "error": str(exc)})
@@ -40,6 +41,7 @@ def api_sre_create_slo():
     data = request.get_json(force=True, silent=True) or {}
     try:
         from tools.sre.slo_manager import create_slo
+
         result = create_slo(
             service=data.get("service_name", ""),
             name=data.get("slo_name", ""),
@@ -58,6 +60,7 @@ def api_sre_record_measurement(slo_id):
     data = request.get_json(force=True, silent=True) or {}
     try:
         from tools.sre.slo_manager import record_measurement
+
         result = record_measurement(
             slo_id=slo_id,
             value=float(data.get("value", 0)),
@@ -75,6 +78,7 @@ def api_sre_burn_rate(slo_id):
     """Get burn rate analysis for an SLO."""
     try:
         from tools.sre.slo_manager import calculate_burn_rate
+
         return jsonify(calculate_burn_rate(slo_id))
     except Exception as exc:
         return jsonify({"error": str(exc)}), 400
@@ -85,6 +89,7 @@ def api_sre_slo_health():
     """Get overall SLO health gate check."""
     try:
         from tools.sre.slo_manager import check_slo_health
+
         return jsonify(check_slo_health())
     except Exception as exc:
         return jsonify({"error": str(exc)})
@@ -94,12 +99,14 @@ def api_sre_slo_health():
 # INCIDENT ENDPOINTS
 # ══════════════════════════════════════════════════════════════════════
 
+
 @sre_api.route("/incidents", methods=["GET"])
 def api_sre_incidents():
     """List incidents with optional status filter."""
     status_filter = request.args.get("status")
     try:
         from tools.sre.incident_commander import list_incidents
+
         return jsonify({"incidents": list_incidents(status_filter)})
     except Exception as exc:
         return jsonify({"incidents": [], "error": str(exc)})
@@ -111,6 +118,7 @@ def api_sre_create_incident():
     data = request.get_json(force=True, silent=True) or {}
     try:
         from tools.sre.incident_commander import create_incident
+
         result = create_incident(
             title=data.get("title", ""),
             severity=data.get("severity", "sev3"),
@@ -127,6 +135,7 @@ def api_sre_get_incident(incident_id):
     """Get incident details with timeline."""
     try:
         from tools.sre.incident_commander import get_incident
+
         result = get_incident(incident_id)
         if not result:
             return jsonify({"error": "Not found"}), 404
@@ -141,6 +150,7 @@ def api_sre_triage(incident_id):
     data = request.get_json(force=True, silent=True) or {}
     try:
         from tools.sre.incident_commander import triage_incident
+
         return jsonify(triage_incident(incident_id, data.get("root_cause")))
     except Exception as exc:
         return jsonify({"error": str(exc)}), 400
@@ -152,6 +162,7 @@ def api_sre_escalate(incident_id):
     data = request.get_json(force=True, silent=True) or {}
     try:
         from tools.sre.incident_commander import escalate_incident
+
         return jsonify(escalate_incident(incident_id, data.get("reason", "")))
     except Exception as exc:
         return jsonify({"error": str(exc)}), 400
@@ -163,6 +174,7 @@ def api_sre_resolve(incident_id):
     data = request.get_json(force=True, silent=True) or {}
     try:
         from tools.sre.incident_commander import resolve_incident
+
         return jsonify(resolve_incident(incident_id, data.get("mitigation_steps", [])))
     except Exception as exc:
         return jsonify({"error": str(exc)}), 400
@@ -174,6 +186,7 @@ def api_sre_postmortem(incident_id):
     data = request.get_json(force=True, silent=True) or {}
     try:
         from tools.sre.incident_commander import add_postmortem
+
         return jsonify(add_postmortem(incident_id, data.get("url", ""), data.get("lessons_learned", "")))
     except Exception as exc:
         return jsonify({"error": str(exc)}), 400
@@ -184,6 +197,7 @@ def api_sre_close(incident_id):
     """Close an incident."""
     try:
         from tools.sre.incident_commander import close_incident
+
         return jsonify(close_incident(incident_id))
     except Exception as exc:
         return jsonify({"error": str(exc)}), 400
@@ -194,6 +208,7 @@ def api_sre_mttr():
     """Get MTTR statistics by severity."""
     try:
         from tools.sre.incident_commander import get_mttr_stats
+
         return jsonify(get_mttr_stats())
     except Exception as exc:
         return jsonify({"error": str(exc)})
@@ -204,6 +219,7 @@ def api_sre_incident_health():
     """Get incident management health."""
     try:
         from tools.sre.incident_commander import check_incident_health
+
         return jsonify(check_incident_health())
     except Exception as exc:
         return jsonify({"error": str(exc)})
@@ -213,11 +229,13 @@ def api_sre_incident_health():
 # RUNBOOK ENDPOINTS
 # ══════════════════════════════════════════════════════════════════════
 
+
 @sre_api.route("/runbooks", methods=["GET"])
 def api_sre_runbooks():
     """List all runbooks."""
     try:
         from tools.sre.runbook_executor import list_runbooks
+
         return jsonify({"runbooks": list_runbooks()})
     except Exception as exc:
         return jsonify({"runbooks": [], "error": str(exc)})
@@ -229,6 +247,7 @@ def api_sre_create_runbook():
     data = request.get_json(force=True, silent=True) or {}
     try:
         from tools.sre.runbook_executor import create_runbook
+
         result = create_runbook(
             name=data.get("name", ""),
             description=data.get("description", ""),
@@ -247,6 +266,7 @@ def api_sre_execute_runbook(runbook_id):
     data = request.get_json(force=True, silent=True) or {}
     try:
         from tools.sre.runbook_executor import execute_runbook
+
         result = execute_runbook(
             runbook_id=runbook_id,
             trigger_source=data.get("trigger_source", "api"),
@@ -264,6 +284,7 @@ def api_sre_match_runbook():
     data = request.get_json(force=True, silent=True) or {}
     try:
         from tools.sre.runbook_executor import match_runbook
+
         return jsonify(match_runbook(data.get("alert_text", "")))
     except Exception as exc:
         return jsonify({"error": str(exc)})
@@ -275,6 +296,7 @@ def api_sre_runbook_history():
     limit = int(request.args.get("limit", "20"))
     try:
         from tools.sre.runbook_executor import get_execution_history
+
         return jsonify({"executions": get_execution_history(limit)})
     except Exception as exc:
         return jsonify({"executions": [], "error": str(exc)})
@@ -285,6 +307,7 @@ def api_sre_runbook_health():
     """Get runbook system health."""
     try:
         from tools.sre.runbook_executor import check_runbook_health
+
         return jsonify(check_runbook_health())
     except Exception as exc:
         return jsonify({"error": str(exc)})
@@ -293,6 +316,7 @@ def api_sre_runbook_health():
 # ══════════════════════════════════════════════════════════════════════
 # PHASE 2: ALERT → INCIDENT → RUNBOOK CHAIN
 # ══════════════════════════════════════════════════════════════════════
+
 
 @sre_api.route("/chain/process-alert", methods=["POST"])
 def api_sre_process_alert():
@@ -318,6 +342,7 @@ def api_sre_process_alert():
     try:
         # Step 1: Create incident
         from tools.sre.incident_commander import create_incident
+
         incident = create_incident(
             title=f"Alert: {alert_text[:100]}",
             severity=severity,
@@ -329,6 +354,7 @@ def api_sre_process_alert():
 
         # Step 2: Match runbook
         from tools.sre.runbook_executor import match_runbook, execute_runbook
+
         match = match_runbook(alert_text)
         result["runbook_match"] = match
 
@@ -354,11 +380,13 @@ def api_sre_process_alert():
         conn = get_connection()
         try:
             conn.execute(
-                "INSERT INTO audit_trail (event_type, action, details, created_at) "
-                "VALUES (?, ?, ?, ?)",
-                ("self_heal_triggered", "sre_chain_processed",
-                 json.dumps({"severity": severity, "service": service, "chain_status": result["chain_status"]}),
-                 now_isoformat()),
+                "INSERT INTO audit_trail (event_type, action, details, created_at) VALUES (?, ?, ?, ?)",
+                (
+                    "self_heal_triggered",
+                    "sre_chain_processed",
+                    json.dumps({"severity": severity, "service": service, "chain_status": result["chain_status"]}),
+                    now_isoformat(),
+                ),
             )
             conn.commit()
         except Exception:
@@ -385,6 +413,7 @@ def api_sre_slo_breach():
 
     try:
         from tools.sre.slo_manager import calculate_burn_rate
+
         burn = calculate_burn_rate(slo_id)
         slo_status = burn.get("status", "unknown")
         budget = burn.get("budget_remaining_pct", 100)
@@ -393,6 +422,7 @@ def api_sre_slo_breach():
             alert_text = f"SLO breach: {service} budget at {budget:.1f}% (status: {slo_status})"
             # Reuse the chain processor
             from flask import current_app
+
             with current_app.test_request_context(
                 "/api/sre/chain/process-alert",
                 method="POST",
@@ -415,6 +445,7 @@ def api_sre_slo_breach():
 # PHASE 3: DORA METRICS
 # ══════════════════════════════════════════════════════════════════════
 
+
 @sre_api.route("/dora", methods=["GET"])
 def api_sre_dora():
     """Compute DORA 4 Key Metrics from pipeline and incident data.
@@ -435,7 +466,8 @@ def api_sre_dora():
         try:
             row = conn.execute(
                 "SELECT COUNT(*) FROM audit_trail WHERE event_type IN ('deployment_initiated', 'deploy', 'ci_deploy') "
-                "AND created_at >= ?", (cutoff,)
+                "AND created_at >= ?",
+                (cutoff,),
             ).fetchone()
             deploy_count = row[0] if row else 0
         except Exception:
@@ -447,7 +479,8 @@ def api_sre_dora():
         try:
             row = conn.execute(
                 "SELECT COUNT(*) FROM audit_trail WHERE event_type IN ('deploy_failed', 'deploy_rollback', 'rollback') "
-                "AND created_at >= ?", (cutoff,)
+                "AND created_at >= ?",
+                (cutoff,),
             ).fetchone()
             failed_deploys = row[0] if row else 0
         except Exception:
@@ -460,7 +493,8 @@ def api_sre_dora():
         try:
             rows = conn.execute(
                 "SELECT mttr_seconds FROM sre_incidents WHERE status IN ('resolved', 'postmortem', 'closed') "
-                "AND resolved_at >= ? AND mttr_seconds IS NOT NULL", (cutoff,)
+                "AND resolved_at >= ? AND mttr_seconds IS NOT NULL",
+                (cutoff,),
             ).fetchall()
             if rows:
                 incident_count = len(rows)
@@ -546,11 +580,17 @@ def api_sre_dora():
         }
 
         # Overall DORA score
-        ratings = [dora["deploy_frequency"]["rating"], dora["lead_time"]["rating"],
-                   dora["change_failure_rate"]["rating"], dora["mttr"]["rating"]]
+        ratings = [
+            dora["deploy_frequency"]["rating"],
+            dora["lead_time"]["rating"],
+            dora["change_failure_rate"]["rating"],
+            dora["mttr"]["rating"],
+        ]
         rank_map = {"Elite": 4, "High": 3, "Medium": 2, "Low": 1}
         avg_rank = sum(rank_map.get(r, 1) for r in ratings) / 4
-        dora["overall_rating"] = "Elite" if avg_rank >= 3.5 else "High" if avg_rank >= 2.5 else "Medium" if avg_rank >= 1.5 else "Low"
+        dora["overall_rating"] = (
+            "Elite" if avg_rank >= 3.5 else "High" if avg_rank >= 2.5 else "Medium" if avg_rank >= 1.5 else "Low"
+        )
 
         return jsonify(dora)
     except Exception as exc:
@@ -563,12 +603,14 @@ def api_sre_dora():
 # SRE DASHBOARD OVERVIEW
 # ══════════════════════════════════════════════════════════════════════
 
+
 @sre_api.route("/dashboard", methods=["GET"])
 def api_sre_dashboard():
     """Aggregated SRE dashboard data — SLOs, incidents, runbooks, DORA."""
     result = {}
     try:
         from tools.sre.slo_manager import get_slo_dashboard, check_slo_health
+
         result["slos"] = get_slo_dashboard()
         result["slo_health"] = check_slo_health()
     except Exception as exc:
@@ -577,7 +619,10 @@ def api_sre_dashboard():
 
     try:
         from tools.sre.incident_commander import list_incidents, get_mttr_stats
-        result["active_incidents"] = [i for i in list_incidents() if i.get("status") not in ("closed", "resolved", "postmortem")]
+
+        result["active_incidents"] = [
+            i for i in list_incidents() if i.get("status") not in ("closed", "resolved", "postmortem")
+        ]
         result["mttr_stats"] = get_mttr_stats()
     except Exception as exc:
         result["active_incidents"] = []
@@ -585,6 +630,7 @@ def api_sre_dashboard():
 
     try:
         from tools.sre.runbook_executor import list_runbooks, get_execution_history
+
         result["runbooks"] = list_runbooks()
         result["recent_executions"] = get_execution_history(10)
     except Exception as exc:

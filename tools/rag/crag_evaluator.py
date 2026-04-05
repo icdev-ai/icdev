@@ -105,6 +105,7 @@ _ABSTENTION_PATTERNS = re.compile(
 # Safe JSON extraction helper
 # ---------------------------------------------------------------------------
 
+
 def _safe_extract_json(text: str, container: str = "{") -> Any:
     """Extract JSON object or array from raw LLM response text."""
     if not text:
@@ -145,6 +146,7 @@ def _safe_extract_json(text: str, container: str = "{") -> Any:
 # ---------------------------------------------------------------------------
 # CRAGScorer
 # ---------------------------------------------------------------------------
+
 
 class CRAGScorer:
     """Score answers using the CRAG hallucination-penalizing rubric (D-RAG-23).
@@ -200,8 +202,7 @@ class CRAGScorer:
                 "score": CRAG_SCORES["missing"],
                 "label": "missing",
                 "reasoning": (
-                    "Answer is empty or an explicit abstention. "
-                    "The system did not attempt to answer the question."
+                    "Answer is empty or an explicit abstention. The system did not attempt to answer the question."
                 ),
             }
 
@@ -214,8 +215,7 @@ class CRAGScorer:
                     "score": CRAG_SCORES["perfect"],
                     "label": "perfect",
                     "reasoning": (
-                        "Answer correctly identifies and addresses the false premise "
-                        "rather than accepting it as true."
+                        "Answer correctly identifies and addresses the false premise rather than accepting it as true."
                     ),
                 }
             return {
@@ -399,9 +399,7 @@ class CRAGScorer:
     # Private helpers — question-type classification
     # ------------------------------------------------------------------
 
-    def _classify_via_heuristics(
-        self, query: str
-    ) -> Optional[Tuple[str, float]]:
+    def _classify_via_heuristics(self, query: str) -> Optional[Tuple[str, float]]:
         """Apply regex heuristics. Returns (question_type, confidence) or None."""
         # Order matters — check more specific types first
         if _COMPARISON_PATTERNS.search(query):
@@ -423,9 +421,7 @@ class CRAGScorer:
         # "simple" has no positive heuristic — fall through to LLM
         return None
 
-    def _classify_via_llm(
-        self, query: str, context: str = ""
-    ) -> Optional[Tuple[str, float]]:
+    def _classify_via_llm(self, query: str, context: str = "") -> Optional[Tuple[str, float]]:
         """Use scanner-tier LLM (qwen3.5) to classify the question type."""
         try:
             from tools.llm.router import LLMRouter
@@ -464,9 +460,7 @@ class CRAGScorer:
     # Private helpers — entity popularity
     # ------------------------------------------------------------------
 
-    def _get_entity_frequency(
-        self, entity: str, db_path: Optional[Path] = None
-    ) -> int:
+    def _get_entity_frequency(self, entity: str, db_path: Optional[Path] = None) -> int:
         """Query rag_chunks for entity mention frequency."""
         try:
             from tools.db.storage import get_connection
@@ -486,6 +480,7 @@ class CRAGScorer:
 # ---------------------------------------------------------------------------
 # CRAGBenchmarkRunner
 # ---------------------------------------------------------------------------
+
 
 class CRAGBenchmarkRunner:
     """Run CRAG-style benchmark campaigns against a test set (D-RAG-23).
@@ -535,9 +530,7 @@ class CRAGBenchmarkRunner:
         total_cases = len(test_cases)
 
         if total_cases == 0:
-            return self._empty_campaign_result(
-                campaign_id, campaign_name, task_type, test_set_path
-            )
+            return self._empty_campaign_result(campaign_id, campaign_name, task_type, test_set_path)
 
         # Score each case
         results = []
@@ -632,9 +625,7 @@ class CRAGBenchmarkRunner:
     ) -> Dict[str, Any]:
         """Aggregate scored results into campaign-level statistics."""
         if not results:
-            return self._empty_campaign_result(
-                campaign_id, campaign_name, task_type, ""
-            )
+            return self._empty_campaign_result(campaign_id, campaign_name, task_type, "")
 
         scores = [r["crag_score"] for r in results]
         aggregate_score = sum(scores) / len(scores)
@@ -651,12 +642,8 @@ class CRAGBenchmarkRunner:
                 type_stats[qt] = {
                     "count": len(qt_scores),
                     "mean_score": round(sum(qt_scores) / len(qt_scores), 4),
-                    "perfect_rate": round(
-                        sum(1 for s in qt_scores if s == 1.0) / len(qt_scores), 4
-                    ),
-                    "incorrect_rate": round(
-                        sum(1 for s in qt_scores if s < 0) / len(qt_scores), 4
-                    ),
+                    "perfect_rate": round(sum(1 for s in qt_scores if s == 1.0) / len(qt_scores), 4),
+                    "incorrect_rate": round(sum(1 for s in qt_scores if s < 0) / len(qt_scores), 4),
                 }
 
         # Per-popularity-tier breakdown
@@ -815,6 +802,7 @@ class CRAGBenchmarkRunner:
 # DB schema helpers
 # ---------------------------------------------------------------------------
 
+
 def _ensure_tables(conn) -> None:
     """Create CRAG evaluation tables if they do not exist."""
     conn.execute(
@@ -867,6 +855,7 @@ def _ensure_tables(conn) -> None:
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="CRAG-inspired RAG evaluation framework (D-RAG-23).",
@@ -918,9 +907,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     # Score options
     parser.add_argument("--answer", help="System answer to score (for --score).")
-    parser.add_argument(
-        "--ground-truth", help="Reference ground-truth answer (for --score)."
-    )
+    parser.add_argument("--ground-truth", help="Reference ground-truth answer (for --score).")
     parser.add_argument(
         "--question-type",
         default="simple",
@@ -987,11 +974,7 @@ def main() -> None:
         if args.json:
             print(json.dumps(result, indent=2))
         else:
-            print(
-                f"Score     : {result['score']}\n"
-                f"Label     : {result['label']}\n"
-                f"Reasoning : {result['reasoning']}"
-            )
+            print(f"Score     : {result['score']}\nLabel     : {result['label']}\nReasoning : {result['reasoning']}")
         return
 
     # ------------------------------------------------------------------
@@ -1034,9 +1017,7 @@ def main() -> None:
             threshold = 0.3
             agg = summary.get("aggregate_crag_score", 0.0)
             if agg < threshold:
-                sys.stderr.write(
-                    f"GATE FAIL: aggregate CRAG score {agg:.4f} < {threshold}\n"
-                )
+                sys.stderr.write(f"GATE FAIL: aggregate CRAG score {agg:.4f} < {threshold}\n")
                 sys.exit(1)
             print(
                 f"\nGATE PASS: aggregate CRAG score {agg:.4f} >= {threshold}",

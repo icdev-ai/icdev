@@ -7,12 +7,12 @@ reachability impact, and generates risk scores with recommendations.
 
 No Flask dependency — takes scenario configs and graph data, returns results.
 """
+
 import math
 import random
 
 
-def run_monte_carlo(graph: dict, scenario_name: str, scenario_type: str,
-                    config: dict, iterations: int = 1000) -> dict:
+def run_monte_carlo(graph: dict, scenario_name: str, scenario_type: str, config: dict, iterations: int = 1000) -> dict:
     """Run Monte Carlo simulation: N iterations of random/named failures.
 
     Models both traffic rerouting (OSPF/BGP reconvergence) and reachability impact.
@@ -54,9 +54,15 @@ def run_monte_carlo(graph: dict, scenario_name: str, scenario_type: str,
     # Cloud-managed services with provider-guaranteed HA (Hyperplane, distributed backends)
     # These have published SLAs of 99.99%+ and should NOT be modeled as typical hardware
     CLOUD_HA_TYPES = {
-        "aws-tgw", "aws-dx-gw", "aws-nlb", "aws-gwlb", "aws-cloudwan",
-        "az-vwan", "az-crosslb",
-        "gcp-ncc", "gcp-gfe",
+        "aws-tgw",
+        "aws-dx-gw",
+        "aws-nlb",
+        "aws-gwlb",
+        "aws-cloudwan",
+        "az-vwan",
+        "az-crosslb",
+        "gcp-ncc",
+        "gcp-gfe",
         "oci-drg",
         "ibm-tg",
     }
@@ -208,26 +214,35 @@ def run_monte_carlo(graph: dict, scenario_name: str, scenario_type: str,
         redundant_node_ids.add(b)
 
     # ── Single-link nodes (no redundant path) ─────────────────────────────
-    single_link_nodes = [nid for nid, neighbors in node_neighbors.items()
-                         if len(neighbors) == 1 and nid not in redundant_node_ids]
+    single_link_nodes = [
+        nid for nid, neighbors in node_neighbors.items() if len(neighbors) == 1 and nid not in redundant_node_ids
+    ]
 
     # Vulnerable = high impact AND not in a redundant pair
     vuln_nodes = sorted(
-        [(nid, label_map.get(nid, nid), node_impact.get(nid, 0), nid in redundant_node_ids)
-         for nid in node_impact if node_impact[nid] > 0 and nid not in redundant_node_ids],
-        key=lambda x: -x[2]
+        [
+            (nid, label_map.get(nid, nid), node_impact.get(nid, 0), nid in redundant_node_ids)
+            for nid in node_impact
+            if node_impact[nid] > 0 and nid not in redundant_node_ids
+        ],
+        key=lambda x: -x[2],
     )[:5]
 
     vuln_edges = sorted(
-        [(eid, freq) for eid, freq in edge_failure_freq.items() if freq > 0 and eid],
-        key=lambda x: -x[1]
+        [(eid, freq) for eid, freq in edge_failure_freq.items() if freq > 0 and eid], key=lambda x: -x[1]
     )[:5]
 
     # ── AI Recommendations (context-aware) ────────────────────────────────
     recommendations = _generate_recommendations(
-        single_link_nodes, vuln_nodes, redundant_pairs,
-        risk_score, avg_cascade, label_map, nodes,
-        node_types, CLOUD_HA_TYPES
+        single_link_nodes,
+        vuln_nodes,
+        redundant_pairs,
+        risk_score,
+        avg_cascade,
+        label_map,
+        nodes,
+        node_types,
+        CLOUD_HA_TYPES,
     )
 
     result = {
@@ -241,12 +256,18 @@ def run_monte_carlo(graph: dict, scenario_name: str, scenario_type: str,
         "std_deviation": round(std_dev, 2),
         "confidence_interval_95": ci_95,
         "avg_cascade_impact": avg_cascade,
-        "vulnerable_nodes": [{"node_id": nid, "node": label, "impact": impact, "is_redundant": is_red,
-                               "type": node_types.get(nid, "unknown"),
-                               "cloud_managed_ha": node_types.get(nid, "") in CLOUD_HA_TYPES}
-                              for nid, label, impact, is_red in vuln_nodes],
-        "redundant_pairs": [{"a": label_map.get(a, a), "b": label_map.get(b, b)}
-                            for a, b in list(redundant_pairs)[:5]],
+        "vulnerable_nodes": [
+            {
+                "node_id": nid,
+                "node": label,
+                "impact": impact,
+                "is_redundant": is_red,
+                "type": node_types.get(nid, "unknown"),
+                "cloud_managed_ha": node_types.get(nid, "") in CLOUD_HA_TYPES,
+            }
+            for nid, label, impact, is_red in vuln_nodes
+        ],
+        "redundant_pairs": [{"a": label_map.get(a, a), "b": label_map.get(b, b)} for a, b in list(redundant_pairs)[:5]],
         "single_link_nodes": [label_map.get(n, n) for n in single_link_nodes],
         "vulnerable_edges": [{"edge_id": e, "failure_count": f} for e, f in vuln_edges],
         "recommendations": recommendations,
@@ -255,19 +276,34 @@ def run_monte_carlo(graph: dict, scenario_name: str, scenario_type: str,
 
     # Add narrative
     result["narrative"] = _generate_narrative(
-        iterations, scenario_type, risk_score, avg_reach, min_reach,
-        max_reach, avg_cascade, vuln_nodes, single_link_nodes,
-        redundant_pairs, recommendations, label_map
+        iterations,
+        scenario_type,
+        risk_score,
+        avg_reach,
+        min_reach,
+        max_reach,
+        avg_cascade,
+        vuln_nodes,
+        single_link_nodes,
+        redundant_pairs,
+        recommendations,
+        label_map,
     )
 
     return result
 
 
-def _generate_recommendations(single_link_nodes: list, vuln_nodes: list,
-                              redundant_pairs: set, risk_score: float,
-                              avg_cascade: float, label_map: dict,
-                              nodes: list, node_types: dict = None,
-                              cloud_ha_types: set = None) -> list:
+def _generate_recommendations(
+    single_link_nodes: list,
+    vuln_nodes: list,
+    redundant_pairs: set,
+    risk_score: float,
+    avg_cascade: float,
+    label_map: dict,
+    nodes: list,
+    node_types: dict = None,
+    cloud_ha_types: set = None,
+) -> list:
     """Generate context-aware resilience recommendations.
 
     Args:
@@ -297,9 +333,11 @@ def _generate_recommendations(single_link_nodes: list, vuln_nodes: list,
             f"Add a second uplink to protect against link failure."
         )
         # Check if any single-link nodes are switches (distribution/core — high severity)
-        single_switches = [nid for nid in single_link_nodes
-                           if any(n.get("type", "") in ("switch-l2", "switch-l3", "router")
-                                  for n in nodes if n["id"] == nid)]
+        single_switches = [
+            nid
+            for nid in single_link_nodes
+            if any(n.get("type", "") in ("switch-l2", "switch-l3", "router") for n in nodes if n["id"] == nid)
+        ]
         if single_switches:
             sw_labels = [label_map.get(n, n) for n in single_switches[:3]]
             recommendations.append(
@@ -323,14 +361,16 @@ def _generate_recommendations(single_link_nodes: list, vuln_nodes: list,
                 )
             elif ntype in ("aws-dx", "az-er", "gcp-ic", "oci-fc"):
                 recommendations.append(
-                    f"{label}: Direct connect/express route with no VPN backup. "
-                    f"Add VPN backup for DX/ER failover."
+                    f"{label}: Direct connect/express route with no VPN backup. Add VPN backup for DX/ER failover."
                 )
 
     # Single-link cloud nodes — recommend CSP-specific redundancy
     if single_link_nodes and node_types:
-        cloud_single = [(nid, node_types.get(nid, "")) for nid in single_link_nodes
-                        if node_types.get(nid, "").startswith(("aws-", "az-", "gcp-", "oci-", "ibm-"))]
+        cloud_single = [
+            (nid, node_types.get(nid, ""))
+            for nid in single_link_nodes
+            if node_types.get(nid, "").startswith(("aws-", "az-", "gcp-", "oci-", "ibm-"))
+        ]
         csp_patterns = {
             "aws-": "AWS: use multi-AZ attachment or redundant TGW peering",
             "az-": "Azure: add second ExpressRoute circuit or VPN GW",
@@ -341,9 +381,7 @@ def _generate_recommendations(single_link_nodes: list, vuln_nodes: list,
         for nid, ntype in cloud_single:
             for prefix, pattern in csp_patterns.items():
                 if ntype.startswith(prefix):
-                    recommendations.append(
-                        f"{label_map.get(nid, nid)} ({ntype}): single-link cloud node — {pattern}."
-                    )
+                    recommendations.append(f"{label_map.get(nid, nid)} ({ntype}): single-link cloud node — {pattern}.")
                     break
 
     if redundant_pairs:
@@ -354,7 +392,9 @@ def _generate_recommendations(single_link_nodes: list, vuln_nodes: list,
         )
 
     if risk_score < 70:
-        recommendations.append("CRITICAL: Topology has significant outage risk. Implement dual-homed connections at critical sites.")
+        recommendations.append(
+            "CRITICAL: Topology has significant outage risk. Implement dual-homed connections at critical sites."
+        )
     elif risk_score < 90:
         recommendations.append("Moderate resilience. Focus on adding redundant links to single-connected nodes.")
 
@@ -370,11 +410,20 @@ def _generate_recommendations(single_link_nodes: list, vuln_nodes: list,
     return recommendations
 
 
-def _generate_narrative(iterations: int, scenario_type: str, risk_score: float,
-                        avg_reach: float, min_reach: float, max_reach: float,
-                        avg_cascade: float, vuln_nodes: list,
-                        single_link_nodes: list, redundant_pairs: set,
-                        recommendations: list, label_map: dict) -> str:
+def _generate_narrative(
+    iterations: int,
+    scenario_type: str,
+    risk_score: float,
+    avg_reach: float,
+    min_reach: float,
+    max_reach: float,
+    avg_cascade: float,
+    vuln_nodes: list,
+    single_link_nodes: list,
+    redundant_pairs: set,
+    recommendations: list,
+    label_map: dict,
+) -> str:
     """Generate human-readable narrative summary of simulation results.
 
     Returns:
@@ -391,7 +440,9 @@ def _generate_narrative(iterations: int, scenario_type: str, risk_score: float,
     if vuln_nodes:
         mc_narrative += f"Highest-impact node: {vuln_nodes[0][1]} ({vuln_nodes[0][2]} device(s) isolated if it fails). "
     if single_link_nodes:
-        mc_narrative += f"Single-connected (no redundancy): {', '.join(label_map.get(n, n) for n in single_link_nodes[:3])}. "
+        mc_narrative += (
+            f"Single-connected (no redundancy): {', '.join(label_map.get(n, n) for n in single_link_nodes[:3])}. "
+        )
     if redundant_pairs:
         mc_narrative += f"Redundant pairs detected: {len(redundant_pairs)} (these are protected). "
     if recommendations:

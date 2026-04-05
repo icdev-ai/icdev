@@ -126,17 +126,37 @@ class CredentialBroker:
         conn.commit()
         conn.close()
 
-    def _log_event(self, conn: sqlite3.Connection, agent_id: str, function: str,
-                   action: str, provider: str = "", scope: str = "",
-                   token_hash: str = "", reason: str = "", ttl: int = 0,
-                   expires_at: str = ""):
+    def _log_event(
+        self,
+        conn: sqlite3.Connection,
+        agent_id: str,
+        function: str,
+        action: str,
+        provider: str = "",
+        scope: str = "",
+        token_hash: str = "",
+        reason: str = "",
+        ttl: int = 0,
+        expires_at: str = "",
+    ):
         conn.execute(
             """INSERT INTO credential_broker_log
                (id, agent_id, function, provider, scope, action, token_hash,
                 reason, ttl_seconds, expires_at, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (str(uuid.uuid4()), agent_id, function, provider, scope,
-             action, token_hash, reason, ttl, expires_at, _now()),
+            (
+                str(uuid.uuid4()),
+                agent_id,
+                function,
+                provider,
+                scope,
+                action,
+                token_hash,
+                reason,
+                ttl,
+                expires_at,
+                _now(),
+            ),
         )
 
     def request_credential(
@@ -159,8 +179,7 @@ class CredentialBroker:
         func_cfg = self._function_map.get(function)
         if not func_cfg:
             conn = self._get_db()
-            self._log_event(conn, agent_id, function, "deny",
-                            reason="function_not_mapped")
+            self._log_event(conn, agent_id, function, "deny", reason="function_not_mapped")
             conn.commit()
             conn.close()
             return {"error": "function_not_mapped", "function": function}
@@ -172,9 +191,15 @@ class CredentialBroker:
         trust_check = self._check_agent_trust(agent_id)
         if trust_check.get("blocked"):
             conn = self._get_db()
-            self._log_event(conn, agent_id, function, "deny",
-                            provider=provider, scope=scope,
-                            reason=f"trust_level={trust_check.get('trust_level')}")
+            self._log_event(
+                conn,
+                agent_id,
+                function,
+                "deny",
+                provider=provider,
+                scope=scope,
+                reason=f"trust_level={trust_check.get('trust_level')}",
+            )
             conn.commit()
             conn.close()
             return {
@@ -185,8 +210,7 @@ class CredentialBroker:
 
         # Determine TTL
         default_ttl = self._tokens_cfg.get("default_ttl_seconds", 3600)
-        max_ttl = func_cfg.get("max_ttl_seconds",
-                               self._tokens_cfg.get("max_ttl_seconds", 86400))
+        max_ttl = func_cfg.get("max_ttl_seconds", self._tokens_cfg.get("max_ttl_seconds", 86400))
         actual_ttl = min(ttl_seconds or default_ttl, max_ttl)
 
         # Generate token
@@ -203,13 +227,19 @@ class CredentialBroker:
                (token_hash, agent_id, function, provider, scope,
                 issued_at, expires_at)
                VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (token_hash, agent_id, function, provider, scope,
-             _now(), expires_str),
+            (token_hash, agent_id, function, provider, scope, _now(), expires_str),
         )
-        self._log_event(conn, agent_id, function, "grant",
-                        provider=provider, scope=scope,
-                        token_hash=token_hash[:16] + "...",
-                        ttl=actual_ttl, expires_at=expires_str)
+        self._log_event(
+            conn,
+            agent_id,
+            function,
+            "grant",
+            provider=provider,
+            scope=scope,
+            token_hash=token_hash[:16] + "...",
+            ttl=actual_ttl,
+            expires_at=expires_str,
+        )
         conn.commit()
         conn.close()
 
@@ -241,10 +271,16 @@ class CredentialBroker:
                 "UPDATE credential_active_tokens SET revoked = 1, revoked_at = ? WHERE token_hash = ?",
                 (now, row["token_hash"]),
             )
-            self._log_event(conn, agent_id, row["function"], "revoke",
-                            provider=row["provider"], scope=row["scope"],
-                            token_hash=row["token_hash"][:16] + "...",
-                            reason=reason)
+            self._log_event(
+                conn,
+                agent_id,
+                row["function"],
+                "revoke",
+                provider=row["provider"],
+                scope=row["scope"],
+                token_hash=row["token_hash"][:16] + "...",
+                reason=reason,
+            )
             revoked.append(row["token_hash"][:16])
         conn.commit()
         conn.close()
@@ -278,8 +314,7 @@ class CredentialBroker:
             "expires_at": row["expires_at"],
         }
 
-    def get_audit_log(self, agent_id: Optional[str] = None,
-                      limit: int = 50) -> List[Dict]:
+    def get_audit_log(self, agent_id: Optional[str] = None, limit: int = 50) -> List[Dict]:
         """Get credential broker audit events."""
         conn = self._get_db()
         if agent_id:
@@ -387,8 +422,7 @@ class CredentialBroker:
             return {"error": "broker_disabled_no_fallback", "function": function}
 
         conn = self._get_db()
-        self._log_event(conn, agent_id, function, "fallback",
-                        reason="broker_disabled")
+        self._log_event(conn, agent_id, function, "fallback", reason="broker_disabled")
         conn.commit()
         conn.close()
 
@@ -402,7 +436,8 @@ class CredentialBroker:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Credential Broker — NemoClaw-adapted agent credential isolation (D-NC-1)")
+        description="Credential Broker — NemoClaw-adapted agent credential isolation (D-NC-1)"
+    )
     parser.add_argument("--request", action="store_true", help="Request a credential token")
     parser.add_argument("--revoke", action="store_true", help="Revoke all tokens for agent")
     parser.add_argument("--validate", type=str, help="Validate a token")

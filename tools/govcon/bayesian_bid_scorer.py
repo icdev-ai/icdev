@@ -74,8 +74,16 @@ def _audit(conn, event_type, action, details, opportunity_id=None):
     conn.execute(
         "INSERT INTO audit_trail (id, timestamp, event_type, actor, action, details, project_id, session_id) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (_gen_id("aud"), _now(), event_type, "bayesian_bid_scorer", action,
-         json.dumps(details) if isinstance(details, dict) else str(details), opportunity_id, None),
+        (
+            _gen_id("aud"),
+            _now(),
+            event_type,
+            "bayesian_bid_scorer",
+            action,
+            json.dumps(details) if isinstance(details, dict) else str(details),
+            opportunity_id,
+            None,
+        ),
     )
 
 
@@ -107,6 +115,7 @@ def _entropy(p):
 # Core functions
 # ---------------------------------------------------------------------------
 
+
 def compute_info_gain_weights(project_id):
     """Analyze historical bid decisions to compute info-gain weights per dimension."""
     conn = _get_db()
@@ -125,8 +134,7 @@ def compute_info_gain_weights(project_id):
 
     try:
         outcomes = conn.execute(
-            "SELECT bid_decision_id, outcome FROM pg_win_loss_records "
-            "ORDER BY created_at DESC",
+            "SELECT bid_decision_id, outcome FROM pg_win_loss_records ORDER BY created_at DESC",
         ).fetchall()
     except Exception:
         outcomes = []
@@ -222,13 +230,25 @@ def compute_info_gain_weights(project_id):
             "INSERT INTO pg_info_gain_weights (id, project_id, dimension, posterior_shift, "
             "discriminability, info_gain_weight, sample_size, computed_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (wid, project_id or "global", dim,
-             dim_scores[dim]["posterior_shift"], dim_scores[dim]["discriminability"],
-             weight, n, _now()),
+            (
+                wid,
+                project_id or "global",
+                dim,
+                dim_scores[dim]["posterior_shift"],
+                dim_scores[dim]["discriminability"],
+                weight,
+                n,
+                _now(),
+            ),
         )
 
-    _audit(conn, "bid_scoring.compute_weights", f"Computed info-gain weights from {n} decisions",
-           {"weights": weights, "sample_size": n}, project_id)
+    _audit(
+        conn,
+        "bid_scoring.compute_weights",
+        f"Computed info-gain weights from {n} decisions",
+        {"weights": weights, "sample_size": n},
+        project_id,
+    )
     conn.commit()
     conn.close()
 
@@ -276,13 +296,15 @@ def score_opportunity(opportunity_id, dimensions):
 
     # Try to load latest info-gain weights
     rows = conn.execute(
-        "SELECT dimension, info_gain_weight FROM pg_info_gain_weights "
-        "ORDER BY computed_at DESC LIMIT 6",
+        "SELECT dimension, info_gain_weight FROM pg_info_gain_weights ORDER BY computed_at DESC LIMIT 6",
     ).fetchall()
     conn.close()
 
     if len(rows) >= 6:
-        weights = {r["dimension"] if isinstance(r, dict) else r[0]: r["info_gain_weight"] if isinstance(r, dict) else r[1] for r in rows}
+        weights = {
+            r["dimension"] if isinstance(r, dict) else r[0]: r["info_gain_weight"] if isinstance(r, dict) else r[1]
+            for r in rows
+        }
         method = "info_gain"
     else:
         weights = DEFAULT_WEIGHTS.copy()
@@ -343,12 +365,14 @@ def teaching_dimensions(project_id):
 
         if ps > 0.1:  # meaningful discriminator
             threshold = (high_wr + low_wr) / 2  # midpoint between groups
-            teaching_set.append({
-                "dimension": dim,
-                "rule": f"{dim} > {threshold:.2f}",
-                "posterior_shift": ps,
-                "weight": weights[dim],
-            })
+            teaching_set.append(
+                {
+                    "dimension": dim,
+                    "rule": f"{dim} > {threshold:.2f}",
+                    "posterior_shift": ps,
+                    "weight": weights[dim],
+                }
+            )
 
         if len(teaching_set) >= 3:
             break
@@ -356,12 +380,14 @@ def teaching_dimensions(project_id):
     if not teaching_set:
         # Fallback: use top 3 by weight
         for dim in sorted(weights, key=weights.get, reverse=True)[:3]:
-            teaching_set.append({
-                "dimension": dim,
-                "rule": f"{dim} > 0.50",
-                "posterior_shift": 0,
-                "weight": weights[dim],
-            })
+            teaching_set.append(
+                {
+                    "dimension": dim,
+                    "rule": f"{dim} > 0.50",
+                    "posterior_shift": 0,
+                    "weight": weights[dim],
+                }
+            )
 
     return {
         "status": "ok",
@@ -394,8 +420,9 @@ def calibrate_from_outcome(bid_decision_id, outcome):
         "VALUES (?, ?, ?, ?, ?)",
         (wl_id, bid_decision_id, outcome, None, _now()),
     )
-    _audit(conn, "bid_scoring.calibrate", f"Recorded outcome: {outcome} for {bid_decision_id}",
-           {"outcome": outcome}, None)
+    _audit(
+        conn, "bid_scoring.calibrate", f"Recorded outcome: {outcome} for {bid_decision_id}", {"outcome": outcome}, None
+    )
     conn.commit()
     conn.close()
 
@@ -405,6 +432,7 @@ def calibrate_from_outcome(bid_decision_id, outcome):
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+
 
 def main():
     parser = argparse.ArgumentParser(description="Bayesian Bid Scorer — info-gain weighted bid/no-bid scoring")

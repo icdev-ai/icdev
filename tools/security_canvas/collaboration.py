@@ -45,10 +45,7 @@ class CollabSession:
             self.participants.pop(user_id, None)
 
     def get_participants(self) -> list:
-        return [
-            {"user_id": uid, **info}
-            for uid, info in self.participants.items()
-        ]
+        return [{"user_id": uid, **info} for uid, info in self.participants.items()]
 
     def push_operation(self, user_id: str, op_type: str, data: dict) -> int:
         with self._lock:

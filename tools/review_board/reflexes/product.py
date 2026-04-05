@@ -49,22 +49,19 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                     ).fetchall()
 
                     if bottom_events:
-                        rarely_used = [
-                            {"event": row[0], "count": row[1]}
-                            for row in bottom_events if row[1] < 3
-                        ]
+                        rarely_used = [{"event": row[0], "count": row[1]} for row in bottom_events if row[1] < 3]
                         if rarely_used:
-                            findings.append({
-                                "severity": "info",
-                                "category": "low_usage",
-                                "title": f"{len(rarely_used)} features used <3 times in 30 days",
-                                "description": "; ".join(
-                                    f"{e['event']} ({e['count']}x)" for e in rarely_used[:5]
-                                ),
-                                "evidence": {"rarely_used": rarely_used},
-                                "confidence": 0.6,
-                                "auto_fixable": False,
-                            })
+                            findings.append(
+                                {
+                                    "severity": "info",
+                                    "category": "low_usage",
+                                    "title": f"{len(rarely_used)} features used <3 times in 30 days",
+                                    "description": "; ".join(f"{e['event']} ({e['count']}x)" for e in rarely_used[:5]),
+                                    "evidence": {"rarely_used": rarely_used},
+                                    "confidence": 0.6,
+                                    "auto_fixable": False,
+                                }
+                            )
                 checks_completed += 1
             except Exception:
                 checks_completed += 1
@@ -107,25 +104,29 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                         if total > 0:
                             pass_rate = (stats["pass"] / total) * 100
                             if pass_rate < min_rate:
-                                failing_checks.append({
-                                    "check": check_id,
-                                    "pass_rate": round(pass_rate, 1),
-                                    "total": total,
-                                })
+                                failing_checks.append(
+                                    {
+                                        "check": check_id,
+                                        "pass_rate": round(pass_rate, 1),
+                                        "total": total,
+                                    }
+                                )
 
                     if failing_checks:
                         failing_checks.sort(key=lambda x: x["pass_rate"])
-                        findings.append({
-                            "severity": "medium",
-                            "category": "gate_health",
-                            "title": f"{len(failing_checks)} gates below {min_rate}% pass rate",
-                            "description": "; ".join(
-                                f"{c['check']}: {c['pass_rate']}%" for c in failing_checks[:5]
-                            ),
-                            "evidence": {"failing": failing_checks},
-                            "confidence": 0.8,
-                            "auto_fixable": False,
-                        })
+                        findings.append(
+                            {
+                                "severity": "medium",
+                                "category": "gate_health",
+                                "title": f"{len(failing_checks)} gates below {min_rate}% pass rate",
+                                "description": "; ".join(
+                                    f"{c['check']}: {c['pass_rate']}%" for c in failing_checks[:5]
+                                ),
+                                "evidence": {"failing": failing_checks},
+                                "confidence": 0.8,
+                                "auto_fixable": False,
+                            }
+                        )
                 checks_completed += 1
             except Exception:
                 checks_completed += 1
@@ -139,13 +140,15 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         templates_dir = BASE_DIR / "tools" / "dashboard" / "templates"
         if templates_dir.exists():
             template_count = sum(1 for _ in templates_dir.rglob("*.html"))
-            findings.append({
-                "severity": "info",
-                "category": "dashboard_scope",
-                "title": f"Dashboard has {template_count} HTML templates",
-                "confidence": 1.0,
-                "auto_fixable": False,
-            })
+            findings.append(
+                {
+                    "severity": "info",
+                    "category": "dashboard_scope",
+                    "title": f"Dashboard has {template_count} HTML templates",
+                    "confidence": 1.0,
+                    "auto_fixable": False,
+                }
+            )
         checks_completed += 1
     except Exception:
         checks_completed += 1
@@ -158,24 +161,22 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             for subdir in tools_dir.iterdir():
                 if subdir.is_dir() and not subdir.name.startswith(("__", ".")):
                     py_count = sum(
-                        1 for f in subdir.rglob("*.py")
-                        if "__pycache__" not in str(f)
-                        and not f.name.startswith("__")
+                        1 for f in subdir.rglob("*.py") if "__pycache__" not in str(f) and not f.name.startswith("__")
                     )
                     if py_count > 0:
                         module_counts[subdir.name] = py_count
 
             total_tools = sum(module_counts.values())
-            findings.append({
-                "severity": "info",
-                "category": "tool_distribution",
-                "title": f"{total_tools} tool modules across {len(module_counts)} packages",
-                "evidence": {"distribution": dict(
-                    sorted(module_counts.items(), key=lambda x: x[1], reverse=True)
-                )},
-                "confidence": 1.0,
-                "auto_fixable": False,
-            })
+            findings.append(
+                {
+                    "severity": "info",
+                    "category": "tool_distribution",
+                    "title": f"{total_tools} tool modules across {len(module_counts)} packages",
+                    "evidence": {"distribution": dict(sorted(module_counts.items(), key=lambda x: x[1], reverse=True))},
+                    "confidence": 1.0,
+                    "auto_fixable": False,
+                }
+            )
         checks_completed += 1
     except Exception:
         checks_completed += 1

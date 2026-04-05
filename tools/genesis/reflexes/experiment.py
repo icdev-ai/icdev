@@ -27,9 +27,11 @@ def _get_db():
     """Get database connection via storage abstraction."""
     try:
         from tools.db.storage import get_connection
+
         return get_connection()
     except ImportError:
         import sqlite3
+
         db_path = _ROOT / "data" / "icdev.db"
         conn = sqlite3.connect(str(db_path))
         conn.row_factory = sqlite3.Row
@@ -94,18 +96,22 @@ def run(config: dict, trust=None) -> dict:
             if loop_result.get("success"):
                 total_kept += loop_result.get("kept", 0)
                 total_run += loop_result.get("experiments_run", 0)
-                all_results.append({
-                    "domain": domain,
-                    "experiments_run": loop_result.get("experiments_run", 0),
-                    "kept": loop_result.get("kept", 0),
-                    "acceptance_rate": loop_result.get("acceptance_rate", 0.0),
-                    "total_improvement": loop_result.get("total_improvement", 0.0),
-                })
+                all_results.append(
+                    {
+                        "domain": domain,
+                        "experiments_run": loop_result.get("experiments_run", 0),
+                        "kept": loop_result.get("kept", 0),
+                        "acceptance_rate": loop_result.get("acceptance_rate", 0.0),
+                        "total_improvement": loop_result.get("total_improvement", 0.0),
+                    }
+                )
         except Exception as exc:
-            all_results.append({
-                "domain": domain,
-                "error": str(exc)[:200],
-            })
+            all_results.append(
+                {
+                    "domain": domain,
+                    "error": str(exc)[:200],
+                }
+            )
 
     # Step 3: Export results as GKP (if any improvements found)
     gkp_exported = False

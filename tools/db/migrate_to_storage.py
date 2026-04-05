@@ -42,24 +42,22 @@ IMPORT_LINE = "from tools.db.storage import get_connection"
 # Patterns to match various sqlite3.connect() calls
 CONNECT_PATTERNS = [
     # conn = sqlite3.connect(str(path))
-    (r'(\s*)(\w+)\s*=\s*sqlite3\.connect\(str\((\w+)\)\)',
-     r'\1\2 = get_connection()'),
+    (r"(\s*)(\w+)\s*=\s*sqlite3\.connect\(str\((\w+)\)\)", r"\1\2 = get_connection()"),
     # conn = sqlite3.connect(str(DB_PATH))
-    (r'(\s*)(\w+)\s*=\s*sqlite3\.connect\(str\(DB_PATH\)\)',
-     r'\1\2 = get_connection()'),
+    (r"(\s*)(\w+)\s*=\s*sqlite3\.connect\(str\(DB_PATH\)\)", r"\1\2 = get_connection()"),
     # conn = sqlite3.connect(str(self.db_path))
-    (r'(\s*)(\w+)\s*=\s*sqlite3\.connect\(str\(self\.db_path\)\)',
-     r'\1\2 = get_connection()'),
+    (r"(\s*)(\w+)\s*=\s*sqlite3\.connect\(str\(self\.db_path\)\)", r"\1\2 = get_connection()"),
     # conn = sqlite3.connect(str(BASE_DIR / "data" / "icdev.db"))
-    (r'(\s*)(\w+)\s*=\s*sqlite3\.connect\(str\(BASE_DIR\s*/\s*"data"\s*/\s*"icdev\.db"\)\)',
-     r'\1\2 = get_connection()'),
+    (
+        r'(\s*)(\w+)\s*=\s*sqlite3\.connect\(str\(BASE_DIR\s*/\s*"data"\s*/\s*"icdev\.db"\)\)',
+        r"\1\2 = get_connection()",
+    ),
     # conn = sqlite3.connect(DB_PATH)  (without str())
-    (r'(\s*)(\w+)\s*=\s*sqlite3\.connect\(DB_PATH\)',
-     r'\1\2 = get_connection()'),
+    (r"(\s*)(\w+)\s*=\s*sqlite3\.connect\(DB_PATH\)", r"\1\2 = get_connection()"),
 ]
 
 # row_factory line to remove (StorageConnection handles this)
-ROW_FACTORY_PATTERN = re.compile(r'^\s*\w+\.row_factory\s*=\s*sqlite3\.Row\s*$')
+ROW_FACTORY_PATTERN = re.compile(r"^\s*\w+\.row_factory\s*=\s*sqlite3\.Row\s*$")
 
 
 def should_skip(file_path: Path) -> bool:
@@ -167,7 +165,7 @@ def apply_to_file(file_path: Path) -> dict:
 
     # 4. Remove 'import sqlite3' if no longer used
     if "sqlite3" not in content.replace(IMPORT_LINE, "").replace("import sqlite3", ""):
-        content = re.sub(r'^import sqlite3\n', '', content, flags=re.MULTILINE)
+        content = re.sub(r"^import sqlite3\n", "", content, flags=re.MULTILINE)
 
     if content == original:
         return {"file": str(file_path.relative_to(BASE_DIR)), "status": "no_changes"}

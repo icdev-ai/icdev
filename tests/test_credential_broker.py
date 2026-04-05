@@ -93,9 +93,7 @@ class TestCredentialRequest:
         broker.request_credential("builder", "code_generation")
         conn = sqlite3.connect(str(broker_db))
         conn.row_factory = sqlite3.Row
-        row = conn.execute(
-            "SELECT * FROM credential_broker_log WHERE action = 'grant' LIMIT 1"
-        ).fetchone()
+        row = conn.execute("SELECT * FROM credential_broker_log WHERE action = 'grant' LIMIT 1").fetchone()
         conn.close()
         assert row is not None
         assert row["agent_id"] == "builder"
@@ -104,9 +102,7 @@ class TestCredentialRequest:
     def test_deny_creates_audit_entry(self, broker, broker_db):
         broker.request_credential("builder", "nonexistent")
         conn = sqlite3.connect(str(broker_db))
-        count = conn.execute(
-            "SELECT COUNT(*) FROM credential_broker_log WHERE action = 'deny'"
-        ).fetchone()[0]
+        count = conn.execute("SELECT COUNT(*) FROM credential_broker_log WHERE action = 'deny'").fetchone()[0]
         conn.close()
         assert count >= 1
 
@@ -170,9 +166,7 @@ class TestFallback:
     def test_fallback_creates_audit_entry(self, disabled_broker, broker_db):
         disabled_broker.request_credential("builder", "code_generation")
         conn = sqlite3.connect(str(broker_db))
-        count = conn.execute(
-            "SELECT COUNT(*) FROM credential_broker_log WHERE action = 'fallback'"
-        ).fetchone()[0]
+        count = conn.execute("SELECT COUNT(*) FROM credential_broker_log WHERE action = 'fallback'").fetchone()[0]
         conn.close()
         assert count >= 1
 

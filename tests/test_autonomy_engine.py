@@ -142,6 +142,7 @@ class TestTrustEngine:
 
         with patch("tools.autonomy.trust_engine._get_connection", side_effect=_conn):
             from tools.autonomy.trust_engine import get_trust_state
+
             state = get_trust_state("auto_fix")
             assert state["category"] == "auto_fix"
             assert state["alpha"] == 5.0  # From config
@@ -160,6 +161,7 @@ class TestTrustEngine:
 
         with patch("tools.autonomy.trust_engine._get_connection", side_effect=_conn):
             from tools.autonomy.trust_engine import get_trust_state, observe
+
             # Initialize
             get_trust_state("auto_fix")
             # Observe success
@@ -178,6 +180,7 @@ class TestTrustEngine:
 
         with patch("tools.autonomy.trust_engine._get_connection", side_effect=_conn):
             from tools.autonomy.trust_engine import get_trust_state, observe
+
             get_trust_state("auto_fix")
             result = observe("auto_fix", success=False, source="test")
             assert result["outcome"] == "failure"
@@ -194,6 +197,7 @@ class TestTrustEngine:
 
         with patch("tools.autonomy.trust_engine._get_connection", side_effect=_conn):
             from tools.autonomy.trust_engine import get_trust_state, observe
+
             get_trust_state("create_tool")
             # 50 successes should approach but not exceed ceiling (0.90)
             for _ in range(50):
@@ -202,23 +206,27 @@ class TestTrustEngine:
 
     def test_safety_invariant_blocks_delete_repo(self):
         from tools.autonomy.trust_engine import check_safety_invariant
+
         is_safe, reason = check_safety_invariant("gh repo delete my-repo")
         assert is_safe is False
         assert "delete_vcs_repos" in reason
 
     def test_safety_invariant_blocks_delete_backup(self):
         from tools.autonomy.trust_engine import check_safety_invariant
+
         is_safe, reason = check_safety_invariant("rm backup directory")
         assert is_safe is False
         assert "delete_backups" in reason
 
     def test_safety_invariant_allows_normal_action(self):
         from tools.autonomy.trust_engine import check_safety_invariant
+
         is_safe, reason = check_safety_invariant("create new tool module for parsing")
         assert is_safe is True
 
     def test_safety_invariant_blocks_drop_table(self):
         from tools.autonomy.trust_engine import check_safety_invariant
+
         is_safe, reason = check_safety_invariant("drop table audit_trail")
         assert is_safe is False
 
@@ -229,16 +237,20 @@ class TestTrustEngine:
 class TestKillSwitch:
     def test_not_killed_by_default(self):
         import os
+
         os.environ.pop("ICDEV_AUTONOMY_KILL", None)
         with patch("tools.autonomy.kill_switch.LOCKFILE", Path("/nonexistent/path")):
             from tools.autonomy.kill_switch import is_killed
+
             assert is_killed() is False
 
     def test_killed_by_env_var(self):
         import os
+
         os.environ["ICDEV_AUTONOMY_KILL"] = "true"
         try:
             from tools.autonomy.kill_switch import is_killed
+
             assert is_killed() is True
         finally:
             os.environ.pop("ICDEV_AUTONOMY_KILL", None)
@@ -248,12 +260,14 @@ class TestKillSwitch:
         lockfile.write_text('{"activated_at": "now"}', encoding="utf-8")
         with patch("tools.autonomy.kill_switch.LOCKFILE", lockfile):
             from tools.autonomy.kill_switch import is_killed
+
             assert is_killed() is True
 
     def test_activate_deactivate(self, tmp_path):
         lockfile = tmp_path / "kill.lock"
         with patch("tools.autonomy.kill_switch.LOCKFILE", lockfile):
             from tools.autonomy.kill_switch import activate, deactivate
+
             activate(reason="test")
             assert lockfile.exists()
             deactivate()
@@ -263,6 +277,7 @@ class TestKillSwitch:
         lockfile = tmp_path / "kill.lock"
         with patch("tools.autonomy.kill_switch.LOCKFILE", lockfile):
             from tools.autonomy.kill_switch import status
+
             s = status()
             assert "killed" in s
             assert "env_var_active" in s
@@ -275,9 +290,11 @@ class TestKillSwitch:
 class TestSelfEvolve:
     def test_evolve_blocked_by_kill_switch(self):
         import os
+
         os.environ["ICDEV_AUTONOMY_KILL"] = "true"
         try:
             from tools.autonomy.self_evolve import evolve_action
+
             result = evolve_action("create_tool", lambda: {}, "test action")
             assert result["final_status"] == "killed"
         finally:
@@ -285,6 +302,7 @@ class TestSelfEvolve:
 
     def test_evolve_blocked_by_safety_invariant(self, tmp_path):
         import os
+
         os.environ.pop("ICDEV_AUTONOMY_KILL", None)
         db_path = tmp_path / "test.db"
         _create_autonomy_db(db_path).close()
@@ -294,9 +312,12 @@ class TestSelfEvolve:
             c.row_factory = sqlite3.Row
             return c
 
-        with patch("tools.autonomy.trust_engine._get_connection", side_effect=_conn), \
-             patch("tools.autonomy.kill_switch.LOCKFILE", Path("/nonexistent")):
+        with (
+            patch("tools.autonomy.trust_engine._get_connection", side_effect=_conn),
+            patch("tools.autonomy.kill_switch.LOCKFILE", Path("/nonexistent")),
+        ):
             from tools.autonomy.self_evolve import evolve_action
+
             result = evolve_action("create_tool", lambda: {}, "delete backup files")
             assert result["final_status"] == "safety_blocked"
 

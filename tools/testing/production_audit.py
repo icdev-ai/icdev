@@ -51,8 +51,8 @@ class AuditCheck:
     check_id: str
     check_name: str
     category: str
-    status: str          # pass, fail, warn, skip
-    severity: str        # blocking, warning
+    status: str  # pass, fail, warn, skip
+    severity: str  # blocking, warning
     message: str
     details: dict
     duration_ms: int = 0
@@ -83,11 +83,15 @@ class AuditReport:
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _run_subprocess(cmd: list, timeout: int = 120) -> Tuple[int, str, str]:
     """Run a subprocess and return (returncode, stdout, stderr)."""
     try:
         result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=timeout,
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
             stdin=subprocess.DEVNULL,
             env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
         )
@@ -119,13 +123,16 @@ def _get_db() -> sqlite3.Connection:
 # Category 1: Platform Compatibility (PLT-001..004)
 # ---------------------------------------------------------------------------
 
+
 def check_python_version() -> AuditCheck:
     """PLT-002: Python >= 3.9 required."""
     v = sys.version_info
     ok = v >= (3, 9)
     return AuditCheck(
-        check_id="PLT-002", check_name="Python Version",
-        category="platform", status="pass" if ok else "fail",
+        check_id="PLT-002",
+        check_name="Python Version",
+        category="platform",
+        status="pass" if ok else "fail",
         severity="blocking",
         message=f"Python {v.major}.{v.minor}.{v.micro}" + ("" if ok else " — requires >= 3.9"),
         details={"version": f"{v.major}.{v.minor}.{v.micro}", "required": "3.9"},
@@ -134,8 +141,19 @@ def check_python_version() -> AuditCheck:
 
 def check_stdlib_modules() -> AuditCheck:
     """PLT-003: Required stdlib modules importable."""
-    required = ["sqlite3", "pathlib", "json", "hashlib", "argparse", "ast",
-                 "dataclasses", "subprocess", "re", "uuid", "hmac"]
+    required = [
+        "sqlite3",
+        "pathlib",
+        "json",
+        "hashlib",
+        "argparse",
+        "ast",
+        "dataclasses",
+        "subprocess",
+        "re",
+        "uuid",
+        "hmac",
+    ]
     missing = []
     for mod in required:
         try:
@@ -144,8 +162,10 @@ def check_stdlib_modules() -> AuditCheck:
             missing.append(mod)
     ok = len(missing) == 0
     return AuditCheck(
-        check_id="PLT-003", check_name="Required Stdlib Modules",
-        category="platform", status="pass" if ok else "fail",
+        check_id="PLT-003",
+        check_name="Required Stdlib Modules",
+        category="platform",
+        status="pass" if ok else "fail",
         severity="blocking",
         message=f"All {len(required)} stdlib modules available" if ok else f"Missing: {', '.join(missing)}",
         details={"checked": len(required), "missing": missing},
@@ -157,26 +177,37 @@ def check_platform_compat() -> AuditCheck:
     script = PROJECT_ROOT / "tools" / "testing" / "platform_check.py"
     if not script.exists():
         return AuditCheck(
-            check_id="PLT-001", check_name="Platform Compatibility",
-            category="platform", status="skip", severity="warning",
-            message="platform_check.py not found", details={},
+            check_id="PLT-001",
+            check_name="Platform Compatibility",
+            category="platform",
+            status="skip",
+            severity="warning",
+            message="platform_check.py not found",
+            details={},
         )
     rc, stdout, stderr = _run_subprocess([sys.executable, str(script), "--json"])
     if rc == 0:
         try:
             data = json.loads(stdout)
             return AuditCheck(
-                check_id="PLT-001", check_name="Platform Compatibility",
-                category="platform", status="pass", severity="warning",
+                check_id="PLT-001",
+                check_name="Platform Compatibility",
+                category="platform",
+                status="pass",
+                severity="warning",
                 message=f"Platform: {data.get('platform', 'unknown')}",
                 details=data,
             )
         except json.JSONDecodeError:
             pass
     return AuditCheck(
-        check_id="PLT-001", check_name="Platform Compatibility",
-        category="platform", status="warn", severity="warning",
-        message=f"platform_check returned exit {rc}", details={"stderr": stderr[:500]},
+        check_id="PLT-001",
+        check_name="Platform Compatibility",
+        category="platform",
+        status="warn",
+        severity="warning",
+        message=f"platform_check returned exit {rc}",
+        details={"stderr": stderr[:500]},
     )
 
 
@@ -185,9 +216,13 @@ def check_dockerfile_syntax() -> AuditCheck:
     docker_dir = PROJECT_ROOT / "docker"
     if not docker_dir.exists():
         return AuditCheck(
-            check_id="PLT-004", check_name="Dockerfile Syntax",
-            category="platform", status="skip", severity="warning",
-            message="docker/ directory not found", details={},
+            check_id="PLT-004",
+            check_name="Dockerfile Syntax",
+            category="platform",
+            status="skip",
+            severity="warning",
+            message="docker/ directory not found",
+            details={},
         )
     issues = []
     checked = 0
@@ -204,8 +239,10 @@ def check_dockerfile_syntax() -> AuditCheck:
             issues.append(f"{df.name}: missing USER (non-root required)")
     ok = len(issues) == 0
     return AuditCheck(
-        check_id="PLT-004", check_name="Dockerfile Syntax",
-        category="platform", status="pass" if ok else "warn",
+        check_id="PLT-004",
+        check_name="Dockerfile Syntax",
+        category="platform",
+        status="pass" if ok else "warn",
         severity="warning",
         message=f"{checked} Dockerfiles checked, {len(issues)} issues" if not ok else f"{checked} Dockerfiles valid",
         details={"checked": checked, "issues": issues},
@@ -216,10 +253,21 @@ def check_dockerfile_syntax() -> AuditCheck:
 # Category 2: Security (SEC-001..006)
 # ---------------------------------------------------------------------------
 
+
 def check_sast_bandit() -> AuditCheck:
     """SEC-001: SAST scan via bandit."""
-    cmd = [sys.executable, "-m", "bandit", "-r", str(PROJECT_ROOT / "tools"),
-           "-f", "json", "-q", "--severity-level", "medium"]
+    cmd = [
+        sys.executable,
+        "-m",
+        "bandit",
+        "-r",
+        str(PROJECT_ROOT / "tools"),
+        "-f",
+        "json",
+        "-q",
+        "--severity-level",
+        "medium",
+    ]
     # Use bandit.yaml config to suppress framework-inherent false positives
     bandit_cfg = PROJECT_ROOT / "bandit.yaml"
     if bandit_cfg.exists():
@@ -227,9 +275,13 @@ def check_sast_bandit() -> AuditCheck:
     rc, stdout, stderr = _run_subprocess(cmd, timeout=300)
     if rc == -1:
         return AuditCheck(
-            check_id="SEC-001", check_name="SAST Scan (Bandit)",
-            category="security", status="skip", severity="blocking",
-            message="bandit not installed (pip install bandit)", details={},
+            check_id="SEC-001",
+            check_name="SAST Scan (Bandit)",
+            category="security",
+            status="skip",
+            severity="blocking",
+            message="bandit not installed (pip install bandit)",
+            details={},
         )
     try:
         data = json.loads(stdout)
@@ -239,16 +291,21 @@ def check_sast_bandit() -> AuditCheck:
         medium = sum(1 for r in results if r.get("issue_severity") == "MEDIUM")
         ok = critical == 0
         return AuditCheck(
-            check_id="SEC-001", check_name="SAST Scan (Bandit)",
-            category="security", status="pass" if ok else "fail",
+            check_id="SEC-001",
+            check_name="SAST Scan (Bandit)",
+            category="security",
+            status="pass" if ok else "fail",
             severity="blocking",
             message=f"{len(results)} findings (critical={critical}, high={high}, medium={medium})",
             details={"total": len(results), "critical": critical, "high": high, "medium": medium},
         )
     except json.JSONDecodeError:
         return AuditCheck(
-            check_id="SEC-001", check_name="SAST Scan (Bandit)",
-            category="security", status="warn", severity="blocking",
+            check_id="SEC-001",
+            check_name="SAST Scan (Bandit)",
+            category="security",
+            status="warn",
+            severity="blocking",
             message=f"bandit output not parseable (exit {rc})",
             details={"stderr": stderr[:500]},
         )
@@ -262,9 +319,13 @@ def check_dependency_audit() -> AuditCheck:
     )
     if rc == -1:
         return AuditCheck(
-            check_id="SEC-002", check_name="Dependency Audit",
-            category="security", status="skip", severity="blocking",
-            message="pip-audit not installed (pip install pip-audit)", details={},
+            check_id="SEC-002",
+            check_name="Dependency Audit",
+            category="security",
+            status="skip",
+            severity="blocking",
+            message="pip-audit not installed (pip install pip-audit)",
+            details={},
         )
     try:
         data = json.loads(stdout)
@@ -274,8 +335,10 @@ def check_dependency_audit() -> AuditCheck:
         high = sum(1 for v in vuln_deps for vv in v.get("vulns", []) if "HIGH" in str(vv).upper())
         ok = critical == 0 and high == 0
         return AuditCheck(
-            check_id="SEC-002", check_name="Dependency Audit",
-            category="security", status="pass" if ok else ("fail" if critical > 0 else "warn"),
+            check_id="SEC-002",
+            check_name="Dependency Audit",
+            category="security",
+            status="pass" if ok else ("fail" if critical > 0 else "warn"),
             severity="blocking",
             message=f"{len(vuln_deps)} vulnerable deps (critical={critical}, high={high})",
             details={"vulnerable_count": len(vuln_deps), "critical": critical, "high": high},
@@ -283,8 +346,10 @@ def check_dependency_audit() -> AuditCheck:
     except (json.JSONDecodeError, TypeError):
         ok = rc == 0
         return AuditCheck(
-            check_id="SEC-002", check_name="Dependency Audit",
-            category="security", status="pass" if ok else "warn",
+            check_id="SEC-002",
+            check_name="Dependency Audit",
+            category="security",
+            status="pass" if ok else "warn",
             severity="blocking",
             message=f"pip-audit exit {rc}" + (" — no vulnerabilities" if ok else ""),
             details={"exit_code": rc, "stderr": stderr[:500]},
@@ -302,9 +367,13 @@ def check_secret_detection() -> AuditCheck:
     rc, stdout, stderr = _run_subprocess(cmd, timeout=120)
     if rc == -1:
         return AuditCheck(
-            check_id="SEC-003", check_name="Secret Detection",
-            category="security", status="skip", severity="blocking",
-            message="detect-secrets not installed (pip install detect-secrets)", details={},
+            check_id="SEC-003",
+            check_name="Secret Detection",
+            category="security",
+            status="skip",
+            severity="blocking",
+            message="detect-secrets not installed (pip install detect-secrets)",
+            details={},
         )
     try:
         scan_data = json.loads(stdout)
@@ -334,19 +403,30 @@ def check_secret_detection() -> AuditCheck:
         ok = new_secrets == 0
         baseline_note = f" ({total_raw} baselined)" if baseline_results else ""
         return AuditCheck(
-            check_id="SEC-003", check_name="Secret Detection",
-            category="security", status="pass" if ok else "fail",
+            check_id="SEC-003",
+            check_name="Secret Detection",
+            category="security",
+            status="pass" if ok else "fail",
             severity="blocking",
-            message=f"No new secrets detected{baseline_note}" if ok
-                    else f"{new_secrets} NEW secrets in {new_files} files{baseline_note}",
-            details={"new_secrets": new_secrets, "new_files": new_files,
-                     "total_raw": total_raw, "baseline_count": sum(len(v) for v in baseline_results.values())},
+            message=f"No new secrets detected{baseline_note}"
+            if ok
+            else f"{new_secrets} NEW secrets in {new_files} files{baseline_note}",
+            details={
+                "new_secrets": new_secrets,
+                "new_files": new_files,
+                "total_raw": total_raw,
+                "baseline_count": sum(len(v) for v in baseline_results.values()),
+            },
         )
     except json.JSONDecodeError:
         return AuditCheck(
-            check_id="SEC-003", check_name="Secret Detection",
-            category="security", status="warn", severity="blocking",
-            message="detect-secrets output not parseable", details={"stderr": stderr[:500]},
+            check_id="SEC-003",
+            check_name="Secret Detection",
+            category="security",
+            status="warn",
+            severity="blocking",
+            message="detect-secrets output not parseable",
+            details={"stderr": stderr[:500]},
         )
 
 
@@ -355,20 +435,27 @@ def check_prompt_injection_gate() -> AuditCheck:
     try:
         sys.path.insert(0, str(PROJECT_ROOT))
         from tools.security.prompt_injection_detector import INJECTION_PATTERNS
+
         count = len(INJECTION_PATTERNS)
         ok = count >= 10
         return AuditCheck(
-            check_id="SEC-004", check_name="Prompt Injection Defense",
-            category="security", status="pass" if ok else "warn",
+            check_id="SEC-004",
+            check_name="Prompt Injection Defense",
+            category="security",
+            status="pass" if ok else "warn",
             severity="blocking",
             message=f"{count} injection patterns registered",
             details={"pattern_count": count},
         )
     except ImportError as e:
         return AuditCheck(
-            check_id="SEC-004", check_name="Prompt Injection Defense",
-            category="security", status="skip", severity="blocking",
-            message=f"Import failed: {e}", details={},
+            check_id="SEC-004",
+            check_name="Prompt Injection Defense",
+            category="security",
+            status="skip",
+            severity="blocking",
+            message=f"Import failed: {e}",
+            details={},
         )
 
 
@@ -383,8 +470,10 @@ def check_owasp_agentic() -> AuditCheck:
     present = [t for t in tools_needed if (PROJECT_ROOT / t).exists()]
     ok = len(present) == len(tools_needed)
     return AuditCheck(
-        check_id="SEC-005", check_name="OWASP Agentic Security",
-        category="security", status="pass" if ok else "warn",
+        check_id="SEC-005",
+        check_name="OWASP Agentic Security",
+        category="security",
+        status="pass" if ok else "warn",
         severity="warning",
         message=f"{len(present)}/{len(tools_needed)} agentic security tools present",
         details={"present": present, "missing": [t for t in tools_needed if t not in present]},
@@ -396,9 +485,13 @@ def check_code_pattern_scan() -> AuditCheck:
     scanner = PROJECT_ROOT / "tools" / "security" / "code_pattern_scanner.py"
     if not scanner.exists():
         return AuditCheck(
-            check_id="SEC-006", check_name="Code Pattern Scan",
-            category="security", status="skip", severity="blocking",
-            message="code_pattern_scanner.py not found", details={},
+            check_id="SEC-006",
+            check_name="Code Pattern Scan",
+            category="security",
+            status="skip",
+            severity="blocking",
+            message="code_pattern_scanner.py not found",
+            details={},
         )
     rc, stdout, stderr = _run_subprocess(
         [sys.executable, str(scanner), "--dir", str(PROJECT_ROOT / "tools"), "--json"],
@@ -418,8 +511,10 @@ def check_code_pattern_scan() -> AuditCheck:
             if allowed:
                 msg += f" ({allowed} allowed by framework allowlist)"
             return AuditCheck(
-                check_id="SEC-006", check_name="Code Pattern Scan",
-                category="security", status="pass" if ok else "fail",
+                check_id="SEC-006",
+                check_name="Code Pattern Scan",
+                category="security",
+                status="pass" if ok else "fail",
                 severity="blocking",
                 message=msg,
                 details=data,
@@ -427,16 +522,20 @@ def check_code_pattern_scan() -> AuditCheck:
         except json.JSONDecodeError:
             pass
     return AuditCheck(
-        check_id="SEC-006", check_name="Code Pattern Scan",
-        category="security", status="warn" if rc == 0 else "fail",
+        check_id="SEC-006",
+        check_name="Code Pattern Scan",
+        category="security",
+        status="warn" if rc == 0 else "fail",
         severity="blocking",
-        message=f"Scanner exit {rc}", details={"stderr": stderr[:500]},
+        message=f"Scanner exit {rc}",
+        details={"stderr": stderr[:500]},
     )
 
 
 # ---------------------------------------------------------------------------
 # Category 3: Compliance (CMP-001..006)
 # ---------------------------------------------------------------------------
+
 
 def check_cui_markings() -> AuditCheck:
     """CMP-001: CUI markings on Python files."""
@@ -456,8 +555,10 @@ def check_cui_markings() -> AuditCheck:
     pct = round(marked / total * 100, 1) if total else 0
     ok = pct >= 90
     return AuditCheck(
-        check_id="CMP-001", check_name="CUI Marking Coverage",
-        category="compliance", status="pass" if ok else "warn",
+        check_id="CMP-001",
+        check_name="CUI Marking Coverage",
+        category="compliance",
+        status="pass" if ok else "warn",
         severity="warning",
         message=f"{marked}/{total} files marked ({pct}%)",
         details={"total": total, "marked": marked, "pct": pct},
@@ -469,12 +570,17 @@ def check_claude_governance() -> AuditCheck:
     script = PROJECT_ROOT / "tools" / "testing" / "claude_dir_validator.py"
     if not script.exists():
         return AuditCheck(
-            check_id="CMP-002", check_name="Claude Governance",
-            category="compliance", status="skip", severity="blocking",
-            message="claude_dir_validator.py not found", details={},
+            check_id="CMP-002",
+            check_name="Claude Governance",
+            category="compliance",
+            status="skip",
+            severity="blocking",
+            message="claude_dir_validator.py not found",
+            details={},
         )
     rc, stdout, stderr = _run_subprocess(
-        [sys.executable, str(script), "--json"], timeout=60,
+        [sys.executable, str(script), "--json"],
+        timeout=60,
     )
     try:
         data = json.loads(stdout)
@@ -483,18 +589,23 @@ def check_claude_governance() -> AuditCheck:
         passed = data.get("summary", {}).get("passed", 0)
         ok = failed == 0
         return AuditCheck(
-            check_id="CMP-002", check_name="Claude Governance",
-            category="compliance", status="pass" if ok else "fail",
+            check_id="CMP-002",
+            check_name="Claude Governance",
+            category="compliance",
+            status="pass" if ok else "fail",
             severity="blocking",
             message=f"{passed} passed, {failed} failed, {warned} warned",
             details={"passed": passed, "failed": failed, "warned": warned},
         )
     except (json.JSONDecodeError, TypeError):
         return AuditCheck(
-            check_id="CMP-002", check_name="Claude Governance",
-            category="compliance", status="fail" if rc != 0 else "warn",
+            check_id="CMP-002",
+            check_name="Claude Governance",
+            category="compliance",
+            status="fail" if rc != 0 else "warn",
             severity="blocking",
-            message=f"Validator exit {rc}", details={"stderr": stderr[:500]},
+            message=f"Validator exit {rc}",
+            details={"stderr": stderr[:500]},
         )
 
 
@@ -504,14 +615,18 @@ def check_append_only_tables() -> AuditCheck:
     PROJECT_ROOT / "tools" / "db" / "init_icdev_db.py"
     if not hook_file.exists():
         return AuditCheck(
-            check_id="CMP-003", check_name="Append-Only Table Coverage",
-            category="compliance", status="skip", severity="blocking",
-            message="pre_tool_use.py not found", details={},
+            check_id="CMP-003",
+            check_name="Append-Only Table Coverage",
+            category="compliance",
+            status="skip",
+            severity="blocking",
+            message="pre_tool_use.py not found",
+            details={},
         )
     try:
         hook_content = hook_file.read_text(encoding="utf-8")
         # Extract APPEND_ONLY_TABLES list
-        match = re.search(r'APPEND_ONLY_TABLES\s*=\s*\[(.*?)\]', hook_content, re.DOTALL)
+        match = re.search(r"APPEND_ONLY_TABLES\s*=\s*\[(.*?)\]", hook_content, re.DOTALL)
         if match:
             tables_str = match.group(1)
             protected = re.findall(r'"(\w+)"', tables_str)
@@ -519,17 +634,23 @@ def check_append_only_tables() -> AuditCheck:
             protected = []
         ok = len(protected) >= 20  # We expect 29+ tables
         return AuditCheck(
-            check_id="CMP-003", check_name="Append-Only Table Coverage",
-            category="compliance", status="pass" if ok else "warn",
+            check_id="CMP-003",
+            check_name="Append-Only Table Coverage",
+            category="compliance",
+            status="pass" if ok else "warn",
             severity="blocking",
             message=f"{len(protected)} tables protected in hooks",
             details={"count": len(protected), "tables": protected},
         )
     except Exception as e:
         return AuditCheck(
-            check_id="CMP-003", check_name="Append-Only Table Coverage",
-            category="compliance", status="fail", severity="blocking",
-            message=str(e), details={},
+            check_id="CMP-003",
+            check_name="Append-Only Table Coverage",
+            category="compliance",
+            status="fail",
+            severity="blocking",
+            message=str(e),
+            details={},
         )
 
 
@@ -538,41 +659,53 @@ def check_security_gates_config() -> AuditCheck:
     gates_file = PROJECT_ROOT / "args" / "security_gates.yaml"
     if not gates_file.exists():
         return AuditCheck(
-            check_id="CMP-004", check_name="Security Gates Config",
-            category="compliance", status="fail", severity="warning",
-            message="security_gates.yaml not found", details={},
+            check_id="CMP-004",
+            check_name="Security Gates Config",
+            category="compliance",
+            status="fail",
+            severity="warning",
+            message="security_gates.yaml not found",
+            details={},
         )
     try:
         import yaml
+
         data = yaml.safe_load(gates_file.read_text(encoding="utf-8"))
         gate_count = len(data) if isinstance(data, dict) else 0
         expected_gates = ["merge_gates", "deploy_gates", "fedramp", "cmmc"]
         # Accept alternate naming conventions (e.g., deployment_gates for deploy_gates)
         aliases = {"deploy_gates": ["deployment_gates"]}
         keys = set(data.keys()) if data else set()
-        present = [
-            g for g in expected_gates
-            if g in keys or any(a in keys for a in aliases.get(g, []))
-        ]
+        present = [g for g in expected_gates if g in keys or any(a in keys for a in aliases.get(g, []))]
         ok = gate_count >= 5 and len(present) == len(expected_gates)
         return AuditCheck(
-            check_id="CMP-004", check_name="Security Gates Config",
-            category="compliance", status="pass" if ok else "warn",
+            check_id="CMP-004",
+            check_name="Security Gates Config",
+            category="compliance",
+            status="pass" if ok else "warn",
             severity="warning",
             message=f"{gate_count} gates defined, {len(present)}/{len(expected_gates)} core gates present",
             details={"gate_count": gate_count, "present": present},
         )
     except ImportError:
         return AuditCheck(
-            check_id="CMP-004", check_name="Security Gates Config",
-            category="compliance", status="skip", severity="warning",
-            message="pyyaml not installed", details={},
+            check_id="CMP-004",
+            check_name="Security Gates Config",
+            category="compliance",
+            status="skip",
+            severity="warning",
+            message="pyyaml not installed",
+            details={},
         )
     except Exception as e:
         return AuditCheck(
-            check_id="CMP-004", check_name="Security Gates Config",
-            category="compliance", status="fail", severity="warning",
-            message=f"Parse error: {e}", details={},
+            check_id="CMP-004",
+            check_name="Security Gates Config",
+            category="compliance",
+            status="fail",
+            severity="warning",
+            message=f"Parse error: {e}",
+            details={},
         )
 
 
@@ -581,23 +714,34 @@ def check_xai_compliance() -> AuditCheck:
     assessor = PROJECT_ROOT / "tools" / "compliance" / "xai_assessor.py"
     if not assessor.exists():
         return AuditCheck(
-            check_id="CMP-005", check_name="XAI Compliance",
-            category="compliance", status="skip", severity="warning",
-            message="xai_assessor.py not found (Phase 46)", details={},
+            check_id="CMP-005",
+            check_name="XAI Compliance",
+            category="compliance",
+            status="skip",
+            severity="warning",
+            message="xai_assessor.py not found (Phase 46)",
+            details={},
         )
     try:
         ast.parse(assessor.read_text(encoding="utf-8"))
         return AuditCheck(
-            check_id="CMP-005", check_name="XAI Compliance",
-            category="compliance", status="pass", severity="warning",
+            check_id="CMP-005",
+            check_name="XAI Compliance",
+            category="compliance",
+            status="pass",
+            severity="warning",
             message="XAI assessor available and syntactically valid",
             details={},
         )
     except SyntaxError as e:
         return AuditCheck(
-            check_id="CMP-005", check_name="XAI Compliance",
-            category="compliance", status="fail", severity="warning",
-            message=f"Syntax error: {e}", details={},
+            check_id="CMP-005",
+            check_name="XAI Compliance",
+            category="compliance",
+            status="fail",
+            severity="warning",
+            message=f"Syntax error: {e}",
+            details={},
         )
 
 
@@ -606,22 +750,34 @@ def check_sbom_generation() -> AuditCheck:
     sbom = PROJECT_ROOT / "tools" / "compliance" / "sbom_generator.py"
     if not sbom.exists():
         return AuditCheck(
-            check_id="CMP-006", check_name="SBOM Generator",
-            category="compliance", status="skip", severity="warning",
-            message="sbom_generator.py not found", details={},
+            check_id="CMP-006",
+            check_name="SBOM Generator",
+            category="compliance",
+            status="skip",
+            severity="warning",
+            message="sbom_generator.py not found",
+            details={},
         )
     try:
         ast.parse(sbom.read_text(encoding="utf-8"))
         return AuditCheck(
-            check_id="CMP-006", check_name="SBOM Generator",
-            category="compliance", status="pass", severity="warning",
-            message="SBOM generator available", details={},
+            check_id="CMP-006",
+            check_name="SBOM Generator",
+            category="compliance",
+            status="pass",
+            severity="warning",
+            message="SBOM generator available",
+            details={},
         )
     except SyntaxError as e:
         return AuditCheck(
-            check_id="CMP-006", check_name="SBOM Generator",
-            category="compliance", status="fail", severity="warning",
-            message=f"Syntax error: {e}", details={},
+            check_id="CMP-006",
+            check_name="SBOM Generator",
+            category="compliance",
+            status="fail",
+            severity="warning",
+            message=f"Syntax error: {e}",
+            details={},
         )
 
 
@@ -629,9 +785,13 @@ def check_ai_inventory() -> AuditCheck:
     """AI-001: AI inventory populated (Phase 48)."""
     if not DB_PATH.exists():
         return AuditCheck(
-            check_id="AI-001", check_name="AI Inventory Populated",
-            category="compliance", status="skip", severity="warning",
-            message="Database not found", details={},
+            check_id="AI-001",
+            check_name="AI Inventory Populated",
+            category="compliance",
+            status="skip",
+            severity="warning",
+            message="Database not found",
+            details={},
         )
     try:
         conn = get_connection()
@@ -642,8 +802,11 @@ def check_ai_inventory() -> AuditCheck:
         if not table_exists:
             conn.close()
             return AuditCheck(
-                check_id="AI-001", check_name="AI Inventory Populated",
-                category="compliance", status="fail", severity="warning",
+                check_id="AI-001",
+                check_name="AI Inventory Populated",
+                category="compliance",
+                status="fail",
+                severity="warning",
                 message="ai_use_case_inventory table not found — run init_icdev_db.py",
                 details={"table_exists": False},
             )
@@ -651,17 +814,25 @@ def check_ai_inventory() -> AuditCheck:
         conn.close()
         ok = count > 0
         return AuditCheck(
-            check_id="AI-001", check_name="AI Inventory Populated",
-            category="compliance", status="pass" if ok else "fail",
+            check_id="AI-001",
+            check_name="AI Inventory Populated",
+            category="compliance",
+            status="pass" if ok else "fail",
             severity="warning",
-            message=f"{count} AI use cases registered" if ok else "No AI use cases registered — run ai_inventory_manager.py",
+            message=f"{count} AI use cases registered"
+            if ok
+            else "No AI use cases registered — run ai_inventory_manager.py",
             details={"record_count": count},
         )
     except Exception as e:
         return AuditCheck(
-            check_id="AI-001", check_name="AI Inventory Populated",
-            category="compliance", status="fail", severity="warning",
-            message=str(e), details={},
+            check_id="AI-001",
+            check_name="AI Inventory Populated",
+            category="compliance",
+            status="fail",
+            severity="warning",
+            message=str(e),
+            details={},
         )
 
 
@@ -669,9 +840,13 @@ def check_model_cards() -> AuditCheck:
     """AI-002: Model cards generated (Phase 48)."""
     if not DB_PATH.exists():
         return AuditCheck(
-            check_id="AI-002", check_name="Model Cards Generated",
-            category="compliance", status="skip", severity="warning",
-            message="Database not found", details={},
+            check_id="AI-002",
+            check_name="Model Cards Generated",
+            category="compliance",
+            status="skip",
+            severity="warning",
+            message="Database not found",
+            details={},
         )
     try:
         conn = get_connection()
@@ -681,8 +856,11 @@ def check_model_cards() -> AuditCheck:
         if not table_exists:
             conn.close()
             return AuditCheck(
-                check_id="AI-002", check_name="Model Cards Generated",
-                category="compliance", status="fail", severity="warning",
+                check_id="AI-002",
+                check_name="Model Cards Generated",
+                category="compliance",
+                status="fail",
+                severity="warning",
                 message="model_cards table not found — run init_icdev_db.py",
                 details={"table_exists": False},
             )
@@ -690,17 +868,25 @@ def check_model_cards() -> AuditCheck:
         conn.close()
         ok = count > 0
         return AuditCheck(
-            check_id="AI-002", check_name="Model Cards Generated",
-            category="compliance", status="pass" if ok else "fail",
+            check_id="AI-002",
+            check_name="Model Cards Generated",
+            category="compliance",
+            status="pass" if ok else "fail",
             severity="warning",
-            message=f"{count} model cards generated" if ok else "No model cards generated — run model_card_generator.py",
+            message=f"{count} model cards generated"
+            if ok
+            else "No model cards generated — run model_card_generator.py",
             details={"record_count": count},
         )
     except Exception as e:
         return AuditCheck(
-            check_id="AI-002", check_name="Model Cards Generated",
-            category="compliance", status="fail", severity="warning",
-            message=str(e), details={},
+            check_id="AI-002",
+            check_name="Model Cards Generated",
+            category="compliance",
+            status="fail",
+            severity="warning",
+            message=str(e),
+            details={},
         )
 
 
@@ -708,9 +894,13 @@ def check_ai_transparency_frameworks() -> AuditCheck:
     """AI-003: AI transparency frameworks assessed (Phase 48)."""
     if not DB_PATH.exists():
         return AuditCheck(
-            check_id="AI-003", check_name="AI Transparency Frameworks Assessed",
-            category="compliance", status="skip", severity="warning",
-            message="Database not found", details={},
+            check_id="AI-003",
+            check_name="AI Transparency Frameworks Assessed",
+            category="compliance",
+            status="skip",
+            severity="warning",
+            message="Database not found",
+            details={},
         )
     assessment_tables = [
         "omb_m25_21_assessments",
@@ -723,9 +913,7 @@ def check_ai_transparency_frameworks() -> AuditCheck:
         found_tables = []
         total_records = 0
         for tbl in assessment_tables:
-            exists = conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name=?", (tbl,)
-            ).fetchone()
+            exists = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (tbl,)).fetchone()
             if exists:
                 cnt = conn.execute(f"SELECT COUNT(*) FROM {tbl}").fetchone()[0]  # nosec B608 -- table/column names are internal constants, not user input
                 if cnt > 0:
@@ -736,22 +924,32 @@ def check_ai_transparency_frameworks() -> AuditCheck:
         if ok:
             tbl_names = [t["table"] for t in found_tables]
             return AuditCheck(
-                check_id="AI-003", check_name="AI Transparency Frameworks Assessed",
-                category="compliance", status="pass", severity="warning",
+                check_id="AI-003",
+                check_name="AI Transparency Frameworks Assessed",
+                category="compliance",
+                status="pass",
+                severity="warning",
                 message=f"{len(found_tables)} framework(s) assessed ({total_records} total records): {', '.join(tbl_names)}",
                 details={"assessed_frameworks": found_tables, "total_records": total_records},
             )
         return AuditCheck(
-            check_id="AI-003", check_name="AI Transparency Frameworks Assessed",
-            category="compliance", status="fail", severity="warning",
+            check_id="AI-003",
+            check_name="AI Transparency Frameworks Assessed",
+            category="compliance",
+            status="fail",
+            severity="warning",
             message="No AI transparency framework assessments found — run ai_transparency_audit.py",
             details={"checked_tables": assessment_tables, "assessed_frameworks": []},
         )
     except Exception as e:
         return AuditCheck(
-            check_id="AI-003", check_name="AI Transparency Frameworks Assessed",
-            category="compliance", status="fail", severity="warning",
-            message=str(e), details={},
+            check_id="AI-003",
+            check_name="AI Transparency Frameworks Assessed",
+            category="compliance",
+            status="fail",
+            severity="warning",
+            message=str(e),
+            details={},
         )
 
 
@@ -766,26 +964,36 @@ def check_owasp_asi() -> AuditCheck:
         missing.append("owasp_agentic_asi.json")
     if missing:
         return AuditCheck(
-            check_id="SEC-007", check_name="OWASP ASI Assessor",
-            category="security", status="skip", severity="warning",
-            message=f"Missing: {', '.join(missing)}", details={"missing": missing},
+            check_id="SEC-007",
+            check_name="OWASP ASI Assessor",
+            category="security",
+            status="skip",
+            severity="warning",
+            message=f"Missing: {', '.join(missing)}",
+            details={"missing": missing},
         )
     try:
         data = json.loads(catalog.read_text(encoding="utf-8"))
         req_count = len(data.get("requirements", []))
         ok = req_count == 10
         return AuditCheck(
-            check_id="SEC-007", check_name="OWASP ASI Assessor",
-            category="security", status="pass" if ok else "warn",
+            check_id="SEC-007",
+            check_name="OWASP ASI Assessor",
+            category="security",
+            status="pass" if ok else "warn",
             severity="warning",
             message=f"OWASP ASI catalog: {req_count} risks, assessor present",
             details={"requirements": req_count, "assessor": str(assessor)},
         )
     except Exception as e:
         return AuditCheck(
-            check_id="SEC-007", check_name="OWASP ASI Assessor",
-            category="security", status="fail", severity="warning",
-            message=str(e), details={},
+            check_id="SEC-007",
+            check_name="OWASP ASI Assessor",
+            category="security",
+            status="fail",
+            severity="warning",
+            message=str(e),
+            details={},
         )
 
 
@@ -794,9 +1002,13 @@ def check_endpoint_security() -> AuditCheck:
     scanner = PROJECT_ROOT / "tools" / "security" / "endpoint_security_scanner.py"
     if not scanner.exists():
         return AuditCheck(
-            check_id="SEC-008", check_name="Endpoint Security Scan",
-            category="security", status="skip", severity="blocking",
-            message="endpoint_security_scanner.py not found", details={},
+            check_id="SEC-008",
+            check_name="Endpoint Security Scan",
+            category="security",
+            status="skip",
+            severity="blocking",
+            message="endpoint_security_scanner.py not found",
+            details={},
         )
     rc, stdout, stderr = _run_subprocess(
         [sys.executable, str(scanner), "--dir", str(PROJECT_ROOT / "tools"), "--json"],
@@ -809,8 +1021,10 @@ def check_endpoint_security() -> AuditCheck:
             high = data.get("high", 0)
             ok = critical == 0 and high == 0
             return AuditCheck(
-                check_id="SEC-008", check_name="Endpoint Security Scan",
-                category="security", status="pass" if ok else "fail",
+                check_id="SEC-008",
+                check_name="Endpoint Security Scan",
+                category="security",
+                status="pass" if ok else "fail",
                 severity="blocking",
                 message=f"routes={data.get('routes_found', 0)}, critical={critical}, high={high}",
                 details=data,
@@ -818,10 +1032,13 @@ def check_endpoint_security() -> AuditCheck:
         except json.JSONDecodeError:
             pass
     return AuditCheck(
-        check_id="SEC-008", check_name="Endpoint Security Scan",
-        category="security", status="warn" if rc == 0 else "fail",
+        check_id="SEC-008",
+        check_name="Endpoint Security Scan",
+        category="security",
+        status="warn" if rc == 0 else "fail",
         severity="blocking",
-        message=f"Scanner exit {rc}", details={"stderr": stderr[:500]},
+        message=f"Scanner exit {rc}",
+        details={"stderr": stderr[:500]},
     )
 
 
@@ -836,26 +1053,36 @@ def check_fedramp_20x_ksi() -> AuditCheck:
         missing.append("fedramp_20x_ksi_schemas.json")
     if missing:
         return AuditCheck(
-            check_id="CMP-008", check_name="FedRAMP 20x KSI",
-            category="compliance", status="skip", severity="warning",
-            message=f"Missing: {', '.join(missing)}", details={"missing": missing},
+            check_id="CMP-008",
+            check_name="FedRAMP 20x KSI",
+            category="compliance",
+            status="skip",
+            severity="warning",
+            message=f"Missing: {', '.join(missing)}",
+            details={"missing": missing},
         )
     try:
         data = json.loads(schema.read_text(encoding="utf-8"))
         ksi_count = sum(len(f.get("ksis", [])) for f in data.get("ksi_families", []))
         families = len(data.get("ksi_families", []))
         return AuditCheck(
-            check_id="CMP-008", check_name="FedRAMP 20x KSI",
-            category="compliance", status="pass" if ksi_count > 0 else "warn",
+            check_id="CMP-008",
+            check_name="FedRAMP 20x KSI",
+            category="compliance",
+            status="pass" if ksi_count > 0 else "warn",
             severity="warning",
             message=f"FedRAMP 20x: {ksi_count} KSIs across {families} families",
             details={"ksi_count": ksi_count, "families": families},
         )
     except Exception as e:
         return AuditCheck(
-            check_id="CMP-008", check_name="FedRAMP 20x KSI",
-            category="compliance", status="fail", severity="warning",
-            message=str(e), details={},
+            check_id="CMP-008",
+            check_name="FedRAMP 20x KSI",
+            category="compliance",
+            status="fail",
+            severity="warning",
+            message=str(e),
+            details={},
         )
 
 
@@ -870,25 +1097,37 @@ def check_slsa_swft() -> AuditCheck:
         missing.append("swft_evidence_bundler.py")
     if missing:
         return AuditCheck(
-            check_id="CMP-009", check_name="SLSA/SWFT",
-            category="compliance", status="skip", severity="warning",
-            message=f"Missing: {', '.join(missing)}", details={"missing": missing},
+            check_id="CMP-009",
+            check_name="SLSA/SWFT",
+            category="compliance",
+            status="skip",
+            severity="warning",
+            message=f"Missing: {', '.join(missing)}",
+            details={"missing": missing},
         )
     try:
         import py_compile
+
         for f in [slsa, swft]:
             py_compile.compile(str(f), doraise=True)
         return AuditCheck(
-            check_id="CMP-009", check_name="SLSA/SWFT",
-            category="compliance", status="pass", severity="warning",
+            check_id="CMP-009",
+            check_name="SLSA/SWFT",
+            category="compliance",
+            status="pass",
+            severity="warning",
             message="SLSA v1.0 attestation generator and SWFT evidence bundler present",
             details={"slsa": True, "swft": True},
         )
     except Exception as e:
         return AuditCheck(
-            check_id="CMP-009", check_name="SLSA/SWFT",
-            category="compliance", status="fail", severity="warning",
-            message=str(e), details={},
+            check_id="CMP-009",
+            check_name="SLSA/SWFT",
+            category="compliance",
+            status="fail",
+            severity="warning",
+            message=str(e),
+            details={},
         )
 
 
@@ -904,9 +1143,13 @@ def check_oscal_ecosystem() -> AuditCheck:
         missing.append("oscal_catalog_adapter.py")
     if missing:
         return AuditCheck(
-            check_id="CMP-007", check_name="OSCAL Ecosystem",
-            category="compliance", status="skip", severity="warning",
-            message=f"Missing: {', '.join(missing)}", details={"missing": missing},
+            check_id="CMP-007",
+            check_name="OSCAL Ecosystem",
+            category="compliance",
+            status="skip",
+            severity="warning",
+            message=f"Missing: {', '.join(missing)}",
+            details={"missing": missing},
         )
     # Syntax check both files
     syntax_errors = []
@@ -917,8 +1160,11 @@ def check_oscal_ecosystem() -> AuditCheck:
             syntax_errors.append(f"{f.name}: {e}")
     if syntax_errors:
         return AuditCheck(
-            check_id="CMP-007", check_name="OSCAL Ecosystem",
-            category="compliance", status="fail", severity="warning",
+            check_id="CMP-007",
+            check_name="OSCAL Ecosystem",
+            category="compliance",
+            status="fail",
+            severity="warning",
             message=f"Syntax errors: {'; '.join(syntax_errors)}",
             details={"syntax_errors": syntax_errors},
         )
@@ -926,6 +1172,7 @@ def check_oscal_ecosystem() -> AuditCheck:
     try:
         sys.path.insert(0, str(PROJECT_ROOT))
         from tools.compliance.oscal_tools import detect_oscal_tools
+
         detection = detect_oscal_tools()
         available = []
         unavailable = []
@@ -941,16 +1188,23 @@ def check_oscal_ecosystem() -> AuditCheck:
         if unavailable:
             msg_parts.append(f"not installed: {', '.join(unavailable)}")
         return AuditCheck(
-            check_id="CMP-007", check_name="OSCAL Ecosystem",
-            category="compliance", status=status, severity="warning",
+            check_id="CMP-007",
+            check_name="OSCAL Ecosystem",
+            category="compliance",
+            status=status,
+            severity="warning",
             message="; ".join(msg_parts),
             details={"available": available, "unavailable": unavailable, "detection": detection},
         )
     except Exception as e:
         return AuditCheck(
-            check_id="CMP-007", check_name="OSCAL Ecosystem",
-            category="compliance", status="warn", severity="warning",
-            message=f"Detection failed: {e}", details={},
+            check_id="CMP-007",
+            check_name="OSCAL Ecosystem",
+            category="compliance",
+            status="warn",
+            severity="warning",
+            message=f"Detection failed: {e}",
+            details={},
         )
 
 
@@ -958,14 +1212,19 @@ def check_oscal_ecosystem() -> AuditCheck:
 # Category 4: Integration (INT-001..005)
 # ---------------------------------------------------------------------------
 
+
 def check_mcp_servers() -> AuditCheck:
     """INT-001: Validate all MCP server files parse correctly."""
     mcp_dir = PROJECT_ROOT / "tools" / "mcp"
     if not mcp_dir.exists():
         return AuditCheck(
-            check_id="INT-001", check_name="MCP Server Validation",
-            category="integration", status="skip", severity="blocking",
-            message="tools/mcp/ not found", details={},
+            check_id="INT-001",
+            check_name="MCP Server Validation",
+            category="integration",
+            status="skip",
+            severity="blocking",
+            message="tools/mcp/ not found",
+            details={},
         )
     servers = sorted(mcp_dir.glob("*_server.py"))
     errors = []
@@ -976,8 +1235,10 @@ def check_mcp_servers() -> AuditCheck:
             errors.append(f"{srv.name}: {e}")
     ok = len(errors) == 0
     return AuditCheck(
-        check_id="INT-001", check_name="MCP Server Validation",
-        category="integration", status="pass" if ok else "fail",
+        check_id="INT-001",
+        check_name="MCP Server Validation",
+        category="integration",
+        status="pass" if ok else "fail",
         severity="blocking",
         message=f"{len(servers)} servers validated, {len(errors)} errors",
         details={"total": len(servers), "errors": errors},
@@ -988,9 +1249,13 @@ def check_db_schema() -> AuditCheck:
     """INT-002: DB schema — expected table count."""
     if not DB_PATH.exists():
         return AuditCheck(
-            check_id="INT-002", check_name="DB Schema Validation",
-            category="integration", status="fail", severity="blocking",
-            message=f"Database not found: {DB_PATH}", details={},
+            check_id="INT-002",
+            check_name="DB Schema Validation",
+            category="integration",
+            status="fail",
+            severity="blocking",
+            message=f"Database not found: {DB_PATH}",
+            details={},
         )
     try:
         conn = get_connection()
@@ -1001,17 +1266,23 @@ def check_db_schema() -> AuditCheck:
         count = len(tables)
         ok = count >= 150  # We expect 176+
         return AuditCheck(
-            check_id="INT-002", check_name="DB Schema Validation",
-            category="integration", status="pass" if ok else "warn",
+            check_id="INT-002",
+            check_name="DB Schema Validation",
+            category="integration",
+            status="pass" if ok else "warn",
             severity="blocking",
             message=f"{count} tables in icdev.db",
             details={"table_count": count},
         )
     except Exception as e:
         return AuditCheck(
-            check_id="INT-002", check_name="DB Schema Validation",
-            category="integration", status="fail", severity="blocking",
-            message=str(e), details={},
+            check_id="INT-002",
+            check_name="DB Schema Validation",
+            category="integration",
+            status="fail",
+            severity="blocking",
+            message=str(e),
+            details={},
         )
 
 
@@ -1030,8 +1301,10 @@ def check_cross_imports() -> AuditCheck:
             errors.append(f"{py.relative_to(PROJECT_ROOT)}: {e.msg} (line {e.lineno})")
     ok = len(errors) == 0
     return AuditCheck(
-        check_id="INT-003", check_name="Cross-Module Syntax Check",
-        category="integration", status="pass" if ok else "fail",
+        check_id="INT-003",
+        check_name="Cross-Module Syntax Check",
+        category="integration",
+        status="pass" if ok else "fail",
         severity="warning",
         message=f"{checked} files parsed, {len(errors)} syntax errors",
         details={"checked": checked, "errors": errors[:20]},
@@ -1044,9 +1317,13 @@ def check_dashboard_health() -> AuditCheck:
         import requests
     except ImportError:
         return AuditCheck(
-            check_id="INT-004", check_name="Dashboard Page Health",
-            category="integration", status="skip", severity="warning",
-            message="requests not installed", details={},
+            check_id="INT-004",
+            check_name="Dashboard Page Health",
+            category="integration",
+            status="skip",
+            severity="warning",
+            message="requests not installed",
+            details={},
         )
     port = os.environ.get("ICDEV_DASHBOARD_PORT", "5000")
     base = f"http://localhost:{port}"
@@ -1054,16 +1331,23 @@ def check_dashboard_health() -> AuditCheck:
         r = requests.get(f"{base}/login", timeout=3)
         if r.status_code != 200:
             return AuditCheck(
-                check_id="INT-004", check_name="Dashboard Page Health",
-                category="integration", status="skip", severity="warning",
+                check_id="INT-004",
+                check_name="Dashboard Page Health",
+                category="integration",
+                status="skip",
+                severity="warning",
                 message=f"Dashboard not running on port {port}",
                 details={},
             )
     except Exception:
         return AuditCheck(
-            check_id="INT-004", check_name="Dashboard Page Health",
-            category="integration", status="skip", severity="warning",
-            message=f"Dashboard not reachable on port {port}", details={},
+            check_id="INT-004",
+            check_name="Dashboard Page Health",
+            category="integration",
+            status="skip",
+            severity="warning",
+            message=f"Dashboard not reachable on port {port}",
+            details={},
         )
     # Dashboard is running — test pages
     session = requests.Session()
@@ -1075,6 +1359,7 @@ def check_dashboard_health() -> AuditCheck:
             "VALUES ('audit-user', 'audit@icdev.local', 'Audit', 'admin', 'active')"
         )
         import hashlib
+
         key = "icdev_audit_temp_key_" + datetime.now(timezone.utc).strftime("%H%M%S")
         key_hash = hashlib.sha256(key.encode()).hexdigest()
         conn.execute(
@@ -1088,11 +1373,31 @@ def check_dashboard_health() -> AuditCheck:
     except Exception:
         pass  # Continue without auth
 
-    pages = ["/", "/projects", "/agents", "/monitoring", "/events", "/query",
-             "/chat", "/gateway", "/wizard", "/quick-paths", "/batch",
-             "/dev-profiles", "/children", "/phases", "/translations",
-             "/traces", "/provenance", "/xai", "/activity", "/usage",
-             "/profile", "/diagrams", "/cicd"]
+    pages = [
+        "/",
+        "/projects",
+        "/agents",
+        "/monitoring",
+        "/events",
+        "/query",
+        "/chat",
+        "/gateway",
+        "/wizard",
+        "/quick-paths",
+        "/batch",
+        "/dev-profiles",
+        "/children",
+        "/phases",
+        "/translations",
+        "/traces",
+        "/provenance",
+        "/xai",
+        "/activity",
+        "/usage",
+        "/profile",
+        "/diagrams",
+        "/cicd",
+    ]
     ok_count = 0
     fail_pages = []
     for page in pages:
@@ -1115,8 +1420,10 @@ def check_dashboard_health() -> AuditCheck:
         pass
     ok = len(fail_pages) == 0
     return AuditCheck(
-        check_id="INT-004", check_name="Dashboard Page Health",
-        category="integration", status="pass" if ok else "warn",
+        check_id="INT-004",
+        check_name="Dashboard Page Health",
+        category="integration",
+        status="pass" if ok else "warn",
         severity="warning",
         message=f"{ok_count}/{len(pages)} pages OK" + (f", failed: {', '.join(fail_pages[:5])}" if fail_pages else ""),
         details={"total": len(pages), "passed": ok_count, "failed": fail_pages},
@@ -1132,20 +1439,32 @@ def check_api_gateway() -> AuditCheck:
         )
         if spec and spec.loader:
             return AuditCheck(
-                check_id="INT-005", check_name="API Gateway",
-                category="integration", status="pass", severity="warning",
-                message="API gateway module found", details={},
+                check_id="INT-005",
+                check_name="API Gateway",
+                category="integration",
+                status="pass",
+                severity="warning",
+                message="API gateway module found",
+                details={},
             )
     except Exception as e:
         return AuditCheck(
-            check_id="INT-005", check_name="API Gateway",
-            category="integration", status="warn", severity="warning",
-            message=f"Import check: {e}", details={},
+            check_id="INT-005",
+            check_name="API Gateway",
+            category="integration",
+            status="warn",
+            severity="warning",
+            message=f"Import check: {e}",
+            details={},
         )
     return AuditCheck(
-        check_id="INT-005", check_name="API Gateway",
-        category="integration", status="skip", severity="warning",
-        message="api_gateway.py not found", details={},
+        check_id="INT-005",
+        check_name="API Gateway",
+        category="integration",
+        status="skip",
+        severity="warning",
+        message="api_gateway.py not found",
+        details={},
     )
 
 
@@ -1153,17 +1472,23 @@ def check_api_gateway() -> AuditCheck:
 # Category 5: Performance / Resilience (PRF-001..004)
 # ---------------------------------------------------------------------------
 
+
 def check_migration_status() -> AuditCheck:
     """PRF-001: DB migration status."""
     migrate = PROJECT_ROOT / "tools" / "db" / "migrate.py"
     if not migrate.exists():
         return AuditCheck(
-            check_id="PRF-001", check_name="DB Migration Status",
-            category="performance", status="skip", severity="warning",
-            message="migrate.py not found", details={},
+            check_id="PRF-001",
+            check_name="DB Migration Status",
+            category="performance",
+            status="skip",
+            severity="warning",
+            message="migrate.py not found",
+            details={},
         )
     rc, stdout, stderr = _run_subprocess(
-        [sys.executable, str(migrate), "--status", "--json"], timeout=30,
+        [sys.executable, str(migrate), "--status", "--json"],
+        timeout=30,
     )
     if rc == 0:
         try:
@@ -1173,8 +1498,10 @@ def check_migration_status() -> AuditCheck:
                 pending = len(pending)
             ok = pending == 0
             return AuditCheck(
-                check_id="PRF-001", check_name="DB Migration Status",
-                category="performance", status="pass" if ok else "warn",
+                check_id="PRF-001",
+                check_name="DB Migration Status",
+                category="performance",
+                status="pass" if ok else "warn",
                 severity="warning",
                 message=f"{pending} pending migrations" if pending else "All migrations applied",
                 details=data,
@@ -1182,9 +1509,13 @@ def check_migration_status() -> AuditCheck:
         except json.JSONDecodeError:
             pass
     return AuditCheck(
-        check_id="PRF-001", check_name="DB Migration Status",
-        category="performance", status="warn", severity="warning",
-        message=f"migrate.py exit {rc}", details={"stderr": stderr[:300]},
+        check_id="PRF-001",
+        check_name="DB Migration Status",
+        category="performance",
+        status="warn",
+        severity="warning",
+        message=f"migrate.py exit {rc}",
+        details={"stderr": stderr[:300]},
     )
 
 
@@ -1193,25 +1524,35 @@ def check_backup_config() -> AuditCheck:
     config = PROJECT_ROOT / "args" / "db_config.yaml"
     if not config.exists():
         return AuditCheck(
-            check_id="PRF-002", check_name="DB Backup Config",
-            category="performance", status="warn", severity="warning",
-            message="args/db_config.yaml not found", details={},
+            check_id="PRF-002",
+            check_name="DB Backup Config",
+            category="performance",
+            status="warn",
+            severity="warning",
+            message="args/db_config.yaml not found",
+            details={},
         )
     try:
         content = config.read_text(encoding="utf-8")
         has_backup = "backup" in content.lower()
         return AuditCheck(
-            check_id="PRF-002", check_name="DB Backup Config",
-            category="performance", status="pass" if has_backup else "warn",
+            check_id="PRF-002",
+            check_name="DB Backup Config",
+            category="performance",
+            status="pass" if has_backup else "warn",
             severity="warning",
             message="Backup configuration present" if has_backup else "No backup section found",
             details={"has_backup_section": has_backup},
         )
     except Exception as e:
         return AuditCheck(
-            check_id="PRF-002", check_name="DB Backup Config",
-            category="performance", status="warn", severity="warning",
-            message=str(e), details={},
+            check_id="PRF-002",
+            check_name="DB Backup Config",
+            category="performance",
+            status="warn",
+            severity="warning",
+            message=str(e),
+            details={},
         )
 
 
@@ -1220,28 +1561,39 @@ def check_resilience_config() -> AuditCheck:
     config = PROJECT_ROOT / "args" / "resilience_config.yaml"
     if not config.exists():
         return AuditCheck(
-            check_id="PRF-003", check_name="Resilience Config",
-            category="performance", status="warn", severity="warning",
-            message="args/resilience_config.yaml not found", details={},
+            check_id="PRF-003",
+            check_name="Resilience Config",
+            category="performance",
+            status="warn",
+            severity="warning",
+            message="args/resilience_config.yaml not found",
+            details={},
         )
     try:
         import yaml
+
         data = yaml.safe_load(config.read_text(encoding="utf-8"))
         has_cb = "circuit_breaker" in str(data).lower() if data else False
         has_retry = "retry" in str(data).lower() if data else False
         ok = has_cb and has_retry
         return AuditCheck(
-            check_id="PRF-003", check_name="Resilience Config",
-            category="performance", status="pass" if ok else "warn",
+            check_id="PRF-003",
+            check_name="Resilience Config",
+            category="performance",
+            status="pass" if ok else "warn",
             severity="warning",
             message=f"circuit_breaker={'yes' if has_cb else 'no'}, retry={'yes' if has_retry else 'no'}",
             details={"circuit_breaker": has_cb, "retry": has_retry},
         )
     except ImportError:
         return AuditCheck(
-            check_id="PRF-003", check_name="Resilience Config",
-            category="performance", status="skip", severity="warning",
-            message="pyyaml not installed", details={},
+            check_id="PRF-003",
+            check_name="Resilience Config",
+            category="performance",
+            status="skip",
+            severity="warning",
+            message="pyyaml not installed",
+            details={},
         )
 
 
@@ -1253,17 +1605,23 @@ def check_test_collection() -> AuditCheck:
     )
     if rc == -1:
         return AuditCheck(
-            check_id="PRF-004", check_name="Test Collection",
-            category="performance", status="skip", severity="blocking",
-            message="pytest not installed", details={},
+            check_id="PRF-004",
+            check_name="Test Collection",
+            category="performance",
+            status="skip",
+            severity="blocking",
+            message="pytest not installed",
+            details={},
         )
     # Parse "N tests collected"
     match = re.search(r"(\d+)\s+test", stdout)
     count = int(match.group(1)) if match else 0
     ok = rc == 0 and count > 0
     return AuditCheck(
-        check_id="PRF-004", check_name="Test Collection",
-        category="performance", status="pass" if ok else "fail",
+        check_id="PRF-004",
+        check_name="Test Collection",
+        category="performance",
+        status="pass" if ok else "fail",
         severity="blocking",
         message=f"{count} tests collected" if ok else f"Collection failed (exit {rc})",
         details={"test_count": count, "exit_code": rc},
@@ -1274,29 +1632,40 @@ def check_test_collection() -> AuditCheck:
 # Category 7: Code Quality Intelligence (CODE-001..005) — Phase 52
 # ---------------------------------------------------------------------------
 
+
 def check_code_analyzer_syntax() -> AuditCheck:
     """CODE-001: Code analyzer tool syntax check."""
     try:
         mod_path = PROJECT_ROOT / "tools" / "analysis" / "code_analyzer.py"
         if not mod_path.exists():
             return AuditCheck(
-                check_id="CODE-001", check_name="Code Analyzer Syntax",
-                category="code_quality", status="skip", severity="warning",
-                message="code_analyzer.py not found", details={},
+                check_id="CODE-001",
+                check_name="Code Analyzer Syntax",
+                category="code_quality",
+                status="skip",
+                severity="warning",
+                message="code_analyzer.py not found",
+                details={},
             )
         with open(mod_path, "r", encoding="utf-8") as f:
             source = f.read()
         ast.parse(source)
         return AuditCheck(
-            check_id="CODE-001", check_name="Code Analyzer Syntax",
-            category="code_quality", status="pass", severity="warning",
+            check_id="CODE-001",
+            check_name="Code Analyzer Syntax",
+            category="code_quality",
+            status="pass",
+            severity="warning",
             message="code_analyzer.py parses without errors",
             details={"file": str(mod_path)},
         )
     except SyntaxError as e:
         return AuditCheck(
-            check_id="CODE-001", check_name="Code Analyzer Syntax",
-            category="code_quality", status="fail", severity="warning",
+            check_id="CODE-001",
+            check_name="Code Analyzer Syntax",
+            category="code_quality",
+            status="fail",
+            severity="warning",
             message=f"Syntax error: {e}",
             details={"error": str(e)},
         )
@@ -1307,15 +1676,20 @@ def check_avg_complexity() -> AuditCheck:
     try:
         sys.path.insert(0, str(PROJECT_ROOT))
         from tools.analysis.code_analyzer import CodeAnalyzer
+
         analyzer = CodeAnalyzer(project_dir=str(PROJECT_ROOT / "tools"))
         result = analyzer.scan_directory()
         metrics = result.get("metrics", [])
         fn_metrics = [m for m in metrics if m.get("function_name")]
         if not fn_metrics:
             return AuditCheck(
-                check_id="CODE-002", check_name="Avg Cyclomatic Complexity",
-                category="code_quality", status="skip", severity="blocking",
-                message="No function metrics collected", details={},
+                check_id="CODE-002",
+                check_name="Avg Cyclomatic Complexity",
+                category="code_quality",
+                status="skip",
+                severity="blocking",
+                message="No function metrics collected",
+                details={},
             )
         avg_cc = sum(m.get("cyclomatic_complexity", 0) for m in fn_metrics) / len(fn_metrics)
         avg_cc = round(avg_cc, 2)
@@ -1326,16 +1700,23 @@ def check_avg_complexity() -> AuditCheck:
         else:
             status = "pass"
         return AuditCheck(
-            check_id="CODE-002", check_name="Avg Cyclomatic Complexity",
-            category="code_quality", status=status, severity="blocking",
+            check_id="CODE-002",
+            check_name="Avg Cyclomatic Complexity",
+            category="code_quality",
+            status=status,
+            severity="blocking",
             message=f"Avg CC={avg_cc} across {len(fn_metrics)} functions",
             details={"avg_complexity": avg_cc, "function_count": len(fn_metrics)},
         )
     except Exception as e:
         return AuditCheck(
-            check_id="CODE-002", check_name="Avg Cyclomatic Complexity",
-            category="code_quality", status="skip", severity="blocking",
-            message=f"Analysis failed: {e}", details={"error": str(e)},
+            check_id="CODE-002",
+            check_name="Avg Cyclomatic Complexity",
+            category="code_quality",
+            status="skip",
+            severity="blocking",
+            message=f"Analysis failed: {e}",
+            details={"error": str(e)},
         )
 
 
@@ -1344,6 +1725,7 @@ def _load_code_quality_thresholds() -> dict:
     defaults = {"max_high_cc_pct": 8.0, "max_smell_density_per_kloc": 15.0, "max_smell_density_critical": 25.0}
     try:
         import yaml
+
         cfg_path = PROJECT_ROOT / "args" / "code_quality_config.yaml"
         if cfg_path.exists():
             with open(cfg_path, encoding="utf-8") as f:
@@ -1361,30 +1743,41 @@ def check_high_complexity_pct() -> AuditCheck:
     try:
         sys.path.insert(0, str(PROJECT_ROOT))
         from tools.analysis.code_analyzer import CodeAnalyzer
+
         analyzer = CodeAnalyzer(project_dir=str(PROJECT_ROOT / "tools"))
         result = analyzer.scan_directory()
         metrics = result.get("metrics", [])
         fn_metrics = [m for m in metrics if m.get("function_name")]
         if not fn_metrics:
             return AuditCheck(
-                check_id="CODE-003", check_name="High Complexity Functions",
-                category="code_quality", status="skip", severity="warning",
-                message="No function metrics collected", details={},
+                check_id="CODE-003",
+                check_name="High Complexity Functions",
+                category="code_quality",
+                status="skip",
+                severity="warning",
+                message="No function metrics collected",
+                details={},
             )
         high_cc = [m for m in fn_metrics if m.get("cyclomatic_complexity", 0) > 15]
         pct = round(len(high_cc) / len(fn_metrics) * 100, 2)
         return AuditCheck(
-            check_id="CODE-003", check_name="High Complexity Functions",
-            category="code_quality", status="warn" if pct > max_pct else "pass",
+            check_id="CODE-003",
+            check_name="High Complexity Functions",
+            category="code_quality",
+            status="warn" if pct > max_pct else "pass",
             severity="warning",
             message=f"{len(high_cc)}/{len(fn_metrics)} functions ({pct}%) have CC>15",
             details={"high_cc_count": len(high_cc), "total": len(fn_metrics), "pct": pct, "threshold": max_pct},
         )
     except Exception as e:
         return AuditCheck(
-            check_id="CODE-003", check_name="High Complexity Functions",
-            category="code_quality", status="skip", severity="warning",
-            message=f"Analysis failed: {e}", details={"error": str(e)},
+            check_id="CODE-003",
+            check_name="High Complexity Functions",
+            category="code_quality",
+            status="skip",
+            severity="warning",
+            message=f"Analysis failed: {e}",
+            details={"error": str(e)},
         )
 
 
@@ -1396,6 +1789,7 @@ def check_smell_density() -> AuditCheck:
     try:
         sys.path.insert(0, str(PROJECT_ROOT))
         from tools.analysis.code_analyzer import CodeAnalyzer
+
         analyzer = CodeAnalyzer(project_dir=str(PROJECT_ROOT / "tools"))
         result = analyzer.scan_directory()
         metrics = result.get("metrics", [])
@@ -1410,17 +1804,29 @@ def check_smell_density() -> AuditCheck:
         else:
             status = "pass"
         return AuditCheck(
-            check_id="CODE-004", check_name="Smell Density",
-            category="code_quality", status=status, severity="warning",
+            check_id="CODE-004",
+            check_name="Smell Density",
+            category="code_quality",
+            status=status,
+            severity="warning",
             message=f"{total_smells} smells / {round(kloc, 1)} KLOC = {density} per KLOC",
-            details={"total_smells": total_smells, "total_loc": total_loc, "density_per_kloc": density,
-                     "warn_threshold": warn_threshold, "fail_threshold": fail_threshold},
+            details={
+                "total_smells": total_smells,
+                "total_loc": total_loc,
+                "density_per_kloc": density,
+                "warn_threshold": warn_threshold,
+                "fail_threshold": fail_threshold,
+            },
         )
     except Exception as e:
         return AuditCheck(
-            check_id="CODE-004", check_name="Smell Density",
-            category="code_quality", status="skip", severity="warning",
-            message=f"Analysis failed: {e}", details={"error": str(e)},
+            check_id="CODE-004",
+            check_name="Smell Density",
+            category="code_quality",
+            status="skip",
+            severity="warning",
+            message=f"Analysis failed: {e}",
+            details={"error": str(e)},
         )
 
 
@@ -1429,6 +1835,7 @@ def check_maintainability_trend() -> AuditCheck:
     try:
         sys.path.insert(0, str(PROJECT_ROOT))
         from tools.analysis.code_analyzer import CodeAnalyzer
+
         analyzer = CodeAnalyzer(
             project_dir=str(PROJECT_ROOT / "tools"),
             project_id="icdev",
@@ -1437,8 +1844,11 @@ def check_maintainability_trend() -> AuditCheck:
         trend = analyzer.get_trend("icdev", db_path=DB_PATH)
         if len(trend) < 2:
             return AuditCheck(
-                check_id="CODE-005", check_name="Maintainability Trend",
-                category="code_quality", status="skip", severity="warning",
+                check_id="CODE-005",
+                check_name="Maintainability Trend",
+                category="code_quality",
+                status="skip",
+                severity="warning",
                 message=f"Need >=2 scans for trend (have {len(trend)})",
                 details={"scan_count": len(trend)},
             )
@@ -1446,17 +1856,23 @@ def check_maintainability_trend() -> AuditCheck:
         previous = trend[-2].get("avg_maintainability", 0)
         declining = latest < previous - 0.05
         return AuditCheck(
-            check_id="CODE-005", check_name="Maintainability Trend",
-            category="code_quality", status="warn" if declining else "pass",
+            check_id="CODE-005",
+            check_name="Maintainability Trend",
+            category="code_quality",
+            status="warn" if declining else "pass",
             severity="warning",
             message=f"Latest={round(latest, 3)}, Previous={round(previous, 3)}" + (" (declining)" if declining else ""),
             details={"latest": latest, "previous": previous, "declining": declining},
         )
     except Exception as e:
         return AuditCheck(
-            check_id="CODE-005", check_name="Maintainability Trend",
-            category="code_quality", status="skip", severity="warning",
-            message=f"Trend unavailable: {e}", details={"error": str(e)},
+            check_id="CODE-005",
+            check_name="Maintainability Trend",
+            category="code_quality",
+            status="skip",
+            severity="warning",
+            message=f"Trend unavailable: {e}",
+            details={"error": str(e)},
         )
 
 
@@ -1469,22 +1885,22 @@ def check_sa11_complexity_compliance() -> AuditCheck:
     try:
         sys.path.insert(0, str(PROJECT_ROOT))
         from tools.compliance.complexity_compliance import run_complexity_compliance  # noqa: PLC0415
+
         result = run_complexity_compliance(include_trend=False)
         sa11_findings = [f for f in result.get("findings", []) if f["control_id"].startswith("SA-11")]
         blockers = [f for f in sa11_findings if f["severity"] == "blocking" and f["status"] == "fail"]
         warnings = [f for f in sa11_findings if f["status"] == "warn"]
         compliant = result.get("sa11_compliant", True)
         status = "pass" if compliant else ("fail" if blockers else "warn")
-        ctrl_summary = "; ".join(
-            f"{f['control_id']}={f['status']}" for f in sa11_findings
-        )
+        ctrl_summary = "; ".join(f"{f['control_id']}={f['status']}" for f in sa11_findings)
         return AuditCheck(
-            check_id="CODE-007", check_name="SA-11 Complexity Compliance",
-            category="code_quality", status=status,
+            check_id="CODE-007",
+            check_name="SA-11 Complexity Compliance",
+            category="code_quality",
+            status=status,
             severity="warning",
             message=(
-                f"SA-11 compliance: {len(blockers)} blocking, {len(warnings)} warning(s). "
-                f"Controls: {ctrl_summary}"
+                f"SA-11 compliance: {len(blockers)} blocking, {len(warnings)} warning(s). Controls: {ctrl_summary}"
             ),
             details={
                 "sa11_compliant": compliant,
@@ -1500,8 +1916,11 @@ def check_sa11_complexity_compliance() -> AuditCheck:
         )
     except Exception as e:
         return AuditCheck(
-            check_id="CODE-007", check_name="SA-11 Complexity Compliance",
-            category="code_quality", status="skip", severity="warning",
+            check_id="CODE-007",
+            check_name="SA-11 Complexity Compliance",
+            category="code_quality",
+            status="skip",
+            severity="warning",
             message=f"SA-11 compliance check unavailable: {e}",
             details={"error": str(e)},
         )
@@ -1517,23 +1936,22 @@ def check_sa15_complexity_compliance() -> AuditCheck:
     try:
         sys.path.insert(0, str(PROJECT_ROOT))
         from tools.compliance.complexity_compliance import run_complexity_compliance  # noqa: PLC0415
+
         result = run_complexity_compliance(include_trend=True)
         sa15_findings = [f for f in result.get("findings", []) if f["control_id"].startswith("SA-15")]
         blockers = [f for f in sa15_findings if f["severity"] == "blocking" and f["status"] == "fail"]
         warnings = [f for f in sa15_findings if f["status"] == "warn"]
         compliant = result.get("sa15_compliant", True)
         status = "fail" if blockers else ("warn" if warnings else "pass")
-        ctrl_summary = "; ".join(
-            f"{f['control_id']}={f['status']}" for f in sa15_findings
-        )
+        ctrl_summary = "; ".join(f"{f['control_id']}={f['status']}" for f in sa15_findings)
         return AuditCheck(
-            check_id="CODE-008", check_name="SA-15 Complexity Compliance",
+            check_id="CODE-008",
+            check_name="SA-15 Complexity Compliance",
             category="code_quality",
             status=status,
             severity="blocking",
             message=(
-                f"SA-15 compliance: {len(blockers)} blocking, {len(warnings)} warning(s). "
-                f"Controls: {ctrl_summary}"
+                f"SA-15 compliance: {len(blockers)} blocking, {len(warnings)} warning(s). Controls: {ctrl_summary}"
             ),
             details={
                 "sa15_compliant": compliant,
@@ -1549,8 +1967,11 @@ def check_sa15_complexity_compliance() -> AuditCheck:
         )
     except Exception as e:
         return AuditCheck(
-            check_id="CODE-008", check_name="SA-15 Complexity Compliance",
-            category="code_quality", status="skip", severity="blocking",
+            check_id="CODE-008",
+            check_name="SA-15 Complexity Compliance",
+            category="code_quality",
+            status="skip",
+            severity="blocking",
             message=f"SA-15 compliance check unavailable: {e}",
             details={"error": str(e)},
         )
@@ -1565,11 +1986,15 @@ def check_implementation_coherence() -> AuditCheck:
     """
     try:
         from tools.workflow.coherence_checker import run_checks
+
         report = run_checks()
         if report.overall_pass:
             return AuditCheck(
-                check_id="CODE-006", check_name="Implementation Coherence",
-                category="code_quality", status="pass", severity="warning",
+                check_id="CODE-006",
+                check_name="Implementation Coherence",
+                category="code_quality",
+                status="pass",
+                severity="warning",
                 message=f"Coherence: {report.passed_checks}/{report.total_checks} checks passed",
                 details={
                     "total": report.total_checks,
@@ -1580,8 +2005,11 @@ def check_implementation_coherence() -> AuditCheck:
             )
         else:
             return AuditCheck(
-                check_id="CODE-006", check_name="Implementation Coherence",
-                category="code_quality", status="warn", severity="warning",
+                check_id="CODE-006",
+                check_name="Implementation Coherence",
+                category="code_quality",
+                status="warn",
+                severity="warning",
                 message=f"Coherence drift: {report.failed_checks} failures, {report.warned_checks} warnings",
                 details={
                     "total": report.total_checks,
@@ -1592,8 +2020,11 @@ def check_implementation_coherence() -> AuditCheck:
             )
     except Exception as e:
         return AuditCheck(
-            check_id="CODE-006", check_name="Implementation Coherence",
-            category="code_quality", status="skip", severity="warning",
+            check_id="CODE-006",
+            check_name="Implementation Coherence",
+            category="code_quality",
+            status="skip",
+            severity="warning",
             message=f"Coherence checker unavailable: {e}",
             details={"error": str(e)},
         )
@@ -1603,14 +2034,19 @@ def check_implementation_coherence() -> AuditCheck:
 # Category 8: Documentation Alignment (DOC-001..005)
 # ---------------------------------------------------------------------------
 
+
 def check_claude_md_table_count() -> AuditCheck:
     """DOC-001: CLAUDE.md table count accuracy."""
     claude_md = PROJECT_ROOT / "CLAUDE.md"
     if not claude_md.exists():
         return AuditCheck(
-            check_id="DOC-001", check_name="CLAUDE.md Table Count",
-            category="documentation", status="skip", severity="warning",
-            message="CLAUDE.md not found", details={},
+            check_id="DOC-001",
+            check_name="CLAUDE.md Table Count",
+            category="documentation",
+            status="skip",
+            severity="warning",
+            message="CLAUDE.md not found",
+            details={},
         )
     try:
         content = claude_md.read_text(encoding="utf-8")
@@ -1620,26 +2056,34 @@ def check_claude_md_table_count() -> AuditCheck:
         # Get actual count
         if DB_PATH.exists():
             conn = get_connection()
-            actual = len(conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
-            ).fetchall())
+            actual = len(
+                conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+                ).fetchall()
+            )
             conn.close()
         else:
             actual = 0
         drift = abs(claimed - actual)
         ok = drift <= 5
         return AuditCheck(
-            check_id="DOC-001", check_name="CLAUDE.md Table Count",
-            category="documentation", status="pass" if ok else "warn",
+            check_id="DOC-001",
+            check_name="CLAUDE.md Table Count",
+            category="documentation",
+            status="pass" if ok else "warn",
             severity="warning",
             message=f"Claimed {claimed}, actual {actual} (drift={drift})",
             details={"claimed": claimed, "actual": actual, "drift": drift},
         )
     except Exception as e:
         return AuditCheck(
-            check_id="DOC-001", check_name="CLAUDE.md Table Count",
-            category="documentation", status="warn", severity="warning",
-            message=str(e), details={},
+            check_id="DOC-001",
+            check_name="CLAUDE.md Table Count",
+            category="documentation",
+            status="warn",
+            severity="warning",
+            message=str(e),
+            details={},
         )
 
 
@@ -1648,14 +2092,18 @@ def check_tools_manifest() -> AuditCheck:
     manifest = PROJECT_ROOT / "tools" / "manifest.md"
     if not manifest.exists():
         return AuditCheck(
-            check_id="DOC-002", check_name="Tools Manifest",
-            category="documentation", status="warn", severity="warning",
-            message="tools/manifest.md not found", details={},
+            check_id="DOC-002",
+            check_name="Tools Manifest",
+            category="documentation",
+            status="warn",
+            severity="warning",
+            message="tools/manifest.md not found",
+            details={},
         )
     try:
         content = manifest.read_text(encoding="utf-8")
         # Count tools mentioned in manifest
-        listed = set(re.findall(r'(\w+\.py)', content))
+        listed = set(re.findall(r"(\w+\.py)", content))
         # Count actual tool files
         actual = set()
         for py in (PROJECT_ROOT / "tools").rglob("*.py"):
@@ -1665,18 +2113,28 @@ def check_tools_manifest() -> AuditCheck:
         pct = round(len(listed & actual) / max(len(actual), 1) * 100, 1)
         ok = pct >= 70
         return AuditCheck(
-            check_id="DOC-002", check_name="Tools Manifest",
-            category="documentation", status="pass" if ok else "warn",
+            check_id="DOC-002",
+            check_name="Tools Manifest",
+            category="documentation",
+            status="pass" if ok else "warn",
             severity="warning",
             message=f"{len(listed & actual)}/{len(actual)} tools documented ({pct}%)",
-            details={"documented": len(listed & actual), "total": len(actual),
-                      "pct": pct, "missing_sample": sorted(missing)[:10]},
+            details={
+                "documented": len(listed & actual),
+                "total": len(actual),
+                "pct": pct,
+                "missing_sample": sorted(missing)[:10],
+            },
         )
     except Exception as e:
         return AuditCheck(
-            check_id="DOC-002", check_name="Tools Manifest",
-            category="documentation", status="warn", severity="warning",
-            message=str(e), details={},
+            check_id="DOC-002",
+            check_name="Tools Manifest",
+            category="documentation",
+            status="warn",
+            severity="warning",
+            message=str(e),
+            details={},
         )
 
 
@@ -1686,30 +2144,44 @@ def check_goals_manifest() -> AuditCheck:
     goals_dir = PROJECT_ROOT / "goals"
     if not manifest.exists():
         return AuditCheck(
-            check_id="DOC-003", check_name="Goals Manifest",
-            category="documentation", status="warn", severity="warning",
-            message="goals/manifest.md not found", details={},
+            check_id="DOC-003",
+            check_name="Goals Manifest",
+            category="documentation",
+            status="warn",
+            severity="warning",
+            message="goals/manifest.md not found",
+            details={},
         )
     try:
         content = manifest.read_text(encoding="utf-8")
-        listed = set(re.findall(r'(\w+\.md)', content))
+        listed = set(re.findall(r"(\w+\.md)", content))
         actual = {f.name for f in goals_dir.glob("*.md") if f.name != "manifest.md"}
         missing = actual - listed
         pct = round(len(listed & actual) / max(len(actual), 1) * 100, 1)
         ok = pct >= 80
         return AuditCheck(
-            check_id="DOC-003", check_name="Goals Manifest",
-            category="documentation", status="pass" if ok else "warn",
+            check_id="DOC-003",
+            check_name="Goals Manifest",
+            category="documentation",
+            status="pass" if ok else "warn",
             severity="warning",
             message=f"{len(listed & actual)}/{len(actual)} goals documented ({pct}%)",
-            details={"documented": len(listed & actual), "total": len(actual),
-                      "pct": pct, "missing": sorted(missing)[:10]},
+            details={
+                "documented": len(listed & actual),
+                "total": len(actual),
+                "pct": pct,
+                "missing": sorted(missing)[:10],
+            },
         )
     except Exception as e:
         return AuditCheck(
-            check_id="DOC-003", check_name="Goals Manifest",
-            category="documentation", status="warn", severity="warning",
-            message=str(e), details={},
+            check_id="DOC-003",
+            check_name="Goals Manifest",
+            category="documentation",
+            status="warn",
+            severity="warning",
+            message=str(e),
+            details={},
         )
 
 
@@ -1718,27 +2190,37 @@ def check_route_documentation() -> AuditCheck:
     start_md = PROJECT_ROOT / ".claude" / "commands" / "start.md"
     if not start_md.exists():
         return AuditCheck(
-            check_id="DOC-004", check_name="Route Documentation",
-            category="documentation", status="skip", severity="warning",
-            message="start.md not found", details={},
+            check_id="DOC-004",
+            check_name="Route Documentation",
+            category="documentation",
+            status="skip",
+            severity="warning",
+            message="start.md not found",
+            details={},
         )
     try:
         content = start_md.read_text(encoding="utf-8")
         # Count documented routes
-        routes = re.findall(r'`(/\w[^`]*)`', content)
+        routes = re.findall(r"`(/\w[^`]*)`", content)
         ok = len(routes) >= 20
         return AuditCheck(
-            check_id="DOC-004", check_name="Route Documentation",
-            category="documentation", status="pass" if ok else "warn",
+            check_id="DOC-004",
+            check_name="Route Documentation",
+            category="documentation",
+            status="pass" if ok else "warn",
             severity="warning",
             message=f"{len(routes)} routes documented in start.md",
             details={"route_count": len(routes)},
         )
     except Exception as e:
         return AuditCheck(
-            check_id="DOC-004", check_name="Route Documentation",
-            category="documentation", status="warn", severity="warning",
-            message=str(e), details={},
+            check_id="DOC-004",
+            check_name="Route Documentation",
+            category="documentation",
+            status="warn",
+            severity="warning",
+            message=str(e),
+            details={},
         )
 
 
@@ -1747,17 +2229,23 @@ def check_skill_count() -> AuditCheck:
     commands_dir = PROJECT_ROOT / ".claude" / "commands"
     if not commands_dir.exists():
         return AuditCheck(
-            check_id="DOC-005", check_name="Skill Count",
-            category="documentation", status="skip", severity="warning",
-            message=".claude/commands/ not found", details={},
+            check_id="DOC-005",
+            check_name="Skill Count",
+            category="documentation",
+            status="skip",
+            severity="warning",
+            message=".claude/commands/ not found",
+            details={},
         )
     skills = list(commands_dir.glob("*.md"))
     # Exclude e2e subdir
     e2e_skills = list((commands_dir / "e2e").glob("*.md")) if (commands_dir / "e2e").exists() else []
     total = len(skills) + len(e2e_skills)
     return AuditCheck(
-        check_id="DOC-005", check_name="Skill Count",
-        category="documentation", status="pass" if total >= 20 else "warn",
+        check_id="DOC-005",
+        check_name="Skill Count",
+        category="documentation",
+        status="pass" if total >= 20 else "warn",
         severity="warning",
         message=f"{len(skills)} skills + {len(e2e_skills)} E2E specs = {total} total",
         details={"skills": len(skills), "e2e_specs": len(e2e_skills), "total": total},
@@ -1838,6 +2326,7 @@ ALL_CATEGORIES = set(CATEGORY_ORDER)
 # Runner
 # ---------------------------------------------------------------------------
 
+
 def run_audit(
     categories: Optional[List[str]] = None,
     stream: bool = False,
@@ -1861,21 +2350,24 @@ def run_audit(
 
     for cat in categories:
         if stream:
-            print(f"\n{'='*60}", file=sys.stderr)
+            print(f"\n{'=' * 60}", file=sys.stderr)
             print(f"  Category: {cat.upper()}", file=sys.stderr)
-            print(f"{'='*60}", file=sys.stderr)
+            print(f"{'=' * 60}", file=sys.stderr)
 
-        cat_checks = [
-            (cid, fn, sev) for cid, (fn, c, sev) in CHECK_REGISTRY.items() if c == cat
-        ]
+        cat_checks = [(cid, fn, sev) for cid, (fn, c, sev) in CHECK_REGISTRY.items() if c == cat]
         for check_id, fn, severity in cat_checks:
             result, duration = _timed(fn)
             result.duration_ms = duration
             checks.append(result)
 
             if stream:
-                icon = {"pass": "[PASS]", "fail": "[FAIL]", "warn": "[WARN]", "skip": "[SKIP]"}.get(result.status, "[????]")
-                print(f"  {icon} {result.check_id}: {result.check_name} — {result.message} ({duration}ms)", file=sys.stderr)
+                icon = {"pass": "[PASS]", "fail": "[FAIL]", "warn": "[WARN]", "skip": "[SKIP]"}.get(
+                    result.status, "[????]"
+                )
+                print(
+                    f"  {icon} {result.check_id}: {result.check_name} — {result.message} ({duration}ms)",
+                    file=sys.stderr,
+                )
 
     # Build report
     total_ms = int((time.time() - start_time) * 1000)
@@ -1890,14 +2382,8 @@ def run_audit(
             "checks": [c.to_dict() for c in cat_checks_list],
         }
 
-    blockers = [
-        f"{c.check_id}: {c.message}"
-        for c in checks if c.status == "fail" and c.severity == "blocking"
-    ]
-    warnings = [
-        f"{c.check_id}: {c.message}"
-        for c in checks if c.status in ("fail", "warn")
-    ]
+    blockers = [f"{c.check_id}: {c.message}" for c in checks if c.status == "fail" and c.severity == "blocking"]
+    warnings = [f"{c.check_id}: {c.message}" for c in checks if c.status in ("fail", "warn")]
 
     report = AuditReport(
         overall_pass=len(blockers) == 0,
@@ -1952,6 +2438,7 @@ def _store_report(report: AuditReport, categories: List[str]):
 # Output formatters
 # ---------------------------------------------------------------------------
 
+
 def _format_human(report: AuditReport) -> str:
     """Format report for human-readable terminal output."""
     lines = []
@@ -1964,7 +2451,9 @@ def _format_human(report: AuditReport) -> str:
     for cat, summary in report.categories.items():
         lines.append(f"  --- {cat.upper()} ---")
         for check in summary.get("checks", []):
-            icon = {"pass": "[PASS]", "fail": "[FAIL]", "warn": "[WARN]", "skip": "[SKIP]"}.get(check["status"], "[????]")
+            icon = {"pass": "[PASS]", "fail": "[FAIL]", "warn": "[WARN]", "skip": "[SKIP]"}.get(
+                check["status"], "[????]"
+            )
             sev_tag = " (BLOCKING)" if check["severity"] == "blocking" and check["status"] == "fail" else ""
             lines.append(f"    {icon} {check['check_id']}: {check['check_name']}{sev_tag}")
             lines.append(f"          {check['message']} ({check['duration_ms']}ms)")
@@ -1973,7 +2462,9 @@ def _format_human(report: AuditReport) -> str:
     lines.append("-" * 60)
     status = "READY" if report.overall_pass else "BLOCKED"
     lines.append(f"  Overall: {status}")
-    lines.append(f"  Checks: {report.passed} passed, {report.failed} failed, {report.warned} warned, {report.skipped} skipped")
+    lines.append(
+        f"  Checks: {report.passed} passed, {report.failed} failed, {report.warned} warned, {report.skipped} skipped"
+    )
     lines.append(f"  Duration: {report.duration_total_ms}ms")
 
     if report.blockers:
@@ -1998,14 +2489,19 @@ def _format_human(report: AuditReport) -> str:
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
     parser = argparse.ArgumentParser(description="ICDEV™ Production Readiness Audit")
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--human", action="store_true", help="Human-readable output")
     parser.add_argument("--stream", action="store_true", help="Stream results as they complete")
     parser.add_argument("--gate", action="store_true", help="Exit 1 if any blocker fails")
-    parser.add_argument("--category", type=str, default=None,
-                        help="Comma-separated categories: platform,security,compliance,integration,performance,documentation")
+    parser.add_argument(
+        "--category",
+        type=str,
+        default=None,
+        help="Comma-separated categories: platform,security,compliance,integration,performance,documentation",
+    )
     args = parser.parse_args()
 
     categories = None

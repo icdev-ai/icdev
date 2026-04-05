@@ -83,11 +83,10 @@ def get_project_dir() -> Path:
 
 # ── Event Storage ──────────────────────────────────────────────────────
 
+
 def compute_hmac(payload: str, secret: str) -> str:
     """Compute HMAC-SHA256 for tamper detection."""
-    return hmac.new(
-        secret.encode(), payload.encode(), hashlib.sha256
-    ).hexdigest()
+    return hmac.new(secret.encode(), payload.encode(), hashlib.sha256).hexdigest()
 
 
 def store_event(
@@ -128,6 +127,7 @@ def forward_to_dashboard(event_data: dict) -> None:
     """Best-effort HTTP POST to dashboard SSE ingest endpoint."""
     try:
         import urllib.request
+
         port = os.environ.get("ICDEV_DASHBOARD_PORT", "5000")
         req = urllib.request.Request(
             f"http://127.0.0.1:{port}/api/events/ingest",
@@ -144,13 +144,28 @@ def forward_to_dashboard(event_data: dict) -> None:
 
 # Append-only tables that must never be UPDATE/DELETE'd (NIST AU)
 APPEND_ONLY_TABLES = [
-    "audit_trail", "hook_events", "activity_log", "compliance_evidence",
-    "security_scan_results", "deployment_log", "access_log",
-    "ai_telemetry", "redaction_audit", "prompt_injection_log",
-    "merge_audit", "deploy_audit", "fedramp_audit", "cmmc_audit",
-    "cato_audit", "sbom_snapshots", "container_scan_results",
-    "stig_results", "supply_chain_events", "mfa_events",
-    "zta_policy_decisions", "fips_assessment_log",
+    "audit_trail",
+    "hook_events",
+    "activity_log",
+    "compliance_evidence",
+    "security_scan_results",
+    "deployment_log",
+    "access_log",
+    "ai_telemetry",
+    "redaction_audit",
+    "prompt_injection_log",
+    "merge_audit",
+    "deploy_audit",
+    "fedramp_audit",
+    "cmmc_audit",
+    "cato_audit",
+    "sbom_snapshots",
+    "container_scan_results",
+    "stig_results",
+    "supply_chain_events",
+    "mfa_events",
+    "zta_policy_decisions",
+    "fips_assessment_log",
 ]
 
 
@@ -212,6 +227,7 @@ def run_pre_tool_check(
 
 # ── Auto-Commit ────────────────────────────────────────────────────────
 
+
 def run_auto_commit(message: Optional[str] = None) -> Dict[str, Any]:
     """Run auto-commit if ICDEV_AUTO_COMMIT is enabled.
 
@@ -230,7 +246,10 @@ def run_auto_commit(message: Optional[str] = None) -> Dict[str, Any]:
         # Check if there are changes to commit
         result = subprocess.run(
             ["git", "status", "--porcelain"],
-            capture_output=True, text=True, cwd=str(BASE_DIR), timeout=10,
+            capture_output=True,
+            text=True,
+            cwd=str(BASE_DIR),
+            timeout=10,
         )
         if not result.stdout.strip():
             return {"committed": False, "message": "no changes to commit"}
@@ -239,11 +258,15 @@ def run_auto_commit(message: Optional[str] = None) -> Dict[str, Any]:
         commit_msg = message or "chore: auto-commit from ICDEV air-gap session"
         subprocess.run(
             ["git", "add", "-A"],
-            capture_output=True, cwd=str(BASE_DIR), timeout=10,
+            capture_output=True,
+            cwd=str(BASE_DIR),
+            timeout=10,
         )
         subprocess.run(
             ["git", "commit", "-m", commit_msg],
-            capture_output=True, cwd=str(BASE_DIR), timeout=30,
+            capture_output=True,
+            cwd=str(BASE_DIR),
+            timeout=30,
         )
         return {"committed": True, "message": commit_msg}
     except Exception as exc:
@@ -252,7 +275,6 @@ def run_auto_commit(message: Optional[str] = None) -> Dict[str, Any]:
 
 # ── CLI ────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-
     print(f"Session ID: {get_session_id()}")
     print(f"Project dir: {get_project_dir()}")
 

@@ -47,8 +47,7 @@ def _table_exists(conn, table_name):
     try:
         if getattr(conn, "_backend", "sqlite") == "postgresql":
             row = conn.execute(
-                "SELECT 1 FROM information_schema.tables "
-                "WHERE table_schema = 'public' AND table_name = ?",
+                "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = ?",
                 (table_name,),
             ).fetchone()
             return row is not None
@@ -77,7 +76,9 @@ def cato_health():
             where = " WHERE project_id = ?" if project_id else ""
             params = (project_id,) if project_id else ()
             total = _count(
-                conn, f"SELECT COUNT(*) AS cnt FROM cato_evidence{where}", params  # nosec B608 -- table/column names are internal constants, not user input
+                conn,
+                f"SELECT COUNT(*) AS cnt FROM cato_evidence{where}",
+                params,  # nosec B608 -- table/column names are internal constants, not user input
             )
             if total > 0:
                 current = _count(
@@ -95,7 +96,9 @@ def cato_health():
             where = " WHERE project_id = ?" if project_id else ""
             params = (project_id,) if project_id else ()
             total = _count(
-                conn, f"SELECT COUNT(*) AS cnt FROM project_controls{where}", params  # nosec B608 -- table/column names are internal constants, not user input
+                conn,
+                f"SELECT COUNT(*) AS cnt FROM project_controls{where}",
+                params,  # nosec B608 -- table/column names are internal constants, not user input
             )
             if total > 0:
                 implemented = _count(
@@ -113,7 +116,9 @@ def cato_health():
             where = " WHERE project_id = ?" if project_id else ""
             params = (project_id,) if project_id else ()
             total = _count(
-                conn, f"SELECT COUNT(*) AS cnt FROM poam_items{where}", params  # nosec B608 -- table/column names are internal constants, not user input
+                conn,
+                f"SELECT COUNT(*) AS cnt FROM poam_items{where}",
+                params,  # nosec B608 -- table/column names are internal constants, not user input
             )
             if total > 0:
                 closed = _count(
@@ -131,7 +136,9 @@ def cato_health():
             where = " WHERE project_id = ?" if project_id else ""
             params = (project_id,) if project_id else ()
             total = _count(
-                conn, f"SELECT COUNT(*) AS cnt FROM cssp_certifications{where}", params  # nosec B608 -- table/column names are internal constants, not user input
+                conn,
+                f"SELECT COUNT(*) AS cnt FROM cssp_certifications{where}",
+                params,  # nosec B608 -- table/column names are internal constants, not user input
             )
             if total > 0:
                 certified = _count(
@@ -144,12 +151,7 @@ def cato_health():
                 cert_score = (certified / total) * 100
 
         # Weighted overall score
-        overall = (
-            evidence_score * 0.30
-            + control_score * 0.30
-            + poam_score * 0.25
-            + cert_score * 0.15
-        )
+        overall = evidence_score * 0.30 + control_score * 0.30 + poam_score * 0.25 + cert_score * 0.15
         overall = round(overall, 1)
 
         if overall >= 80:
@@ -159,16 +161,18 @@ def cato_health():
         else:
             category = "red"
 
-        return jsonify({
-            "health_score": overall,
-            "category": category,
-            "components": {
-                "evidence_freshness": round(evidence_score, 1),
-                "control_implementation": round(control_score, 1),
-                "poam_resolution": round(poam_score, 1),
-                "certification_status": round(cert_score, 1),
-            },
-        })
+        return jsonify(
+            {
+                "health_score": overall,
+                "category": category,
+                "components": {
+                    "evidence_freshness": round(evidence_score, 1),
+                    "control_implementation": round(control_score, 1),
+                    "poam_resolution": round(poam_score, 1),
+                    "certification_status": round(cert_score, 1),
+                },
+            }
+        )
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
     finally:
@@ -215,12 +219,14 @@ def cato_evidence():
         params.extend([per_page, (page - 1) * per_page])
 
         rows = conn.execute(query, params).fetchall()
-        return jsonify({
-            "evidence": [dict(r) for r in rows],
-            "total": total,
-            "page": page,
-            "per_page": per_page,
-        })
+        return jsonify(
+            {
+                "evidence": [dict(r) for r in rows],
+                "total": total,
+                "page": page,
+                "per_page": per_page,
+            }
+        )
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
     finally:
@@ -270,10 +276,7 @@ def cato_controls():
             params.append(project_id)
 
         if has_cc:
-            query += (
-                " GROUP BY cc.family, cc.title, pc.implementation_status"
-                " ORDER BY cc.family"
-            )
+            query += " GROUP BY cc.family, cc.title, pc.implementation_status ORDER BY cc.family"
         else:
             query += " GROUP BY family, pc.implementation_status ORDER BY family"
 
@@ -303,9 +306,7 @@ def cato_controls():
         # Add implementation percentage
         for fam in families.values():
             if fam["total"] > 0:
-                fam["implementation_pct"] = round(
-                    (fam["implemented"] + fam["not_applicable"]) / fam["total"] * 100, 1
-                )
+                fam["implementation_pct"] = round((fam["implemented"] + fam["not_applicable"]) / fam["total"] * 100, 1)
             else:
                 fam["implementation_pct"] = 0.0
 
@@ -329,14 +330,9 @@ def cato_certifications():
 
         project_id = request.args.get("project_id")
         if _is_pg(conn):
-            days_expr = (
-                "CAST(EXTRACT(EPOCH FROM "
-                "(expiration_date::timestamp - NOW())) / 86400 AS INTEGER)"
-            )
+            days_expr = "CAST(EXTRACT(EPOCH FROM (expiration_date::timestamp - NOW())) / 86400 AS INTEGER)"
         else:
-            days_expr = (
-                "CAST(julianday(expiration_date) - julianday('now') AS INTEGER)"
-            )
+            days_expr = "CAST(julianday(expiration_date) - julianday('now') AS INTEGER)"
         query = (
             f"SELECT *, {days_expr} AS days_remaining "  # nosec B608 -- table/column names are internal constants, not user input
             "FROM cssp_certifications WHERE 1=1"
@@ -419,16 +415,17 @@ def cato_refresh():
             return jsonify({"refreshed": 0, "message": "cato_evidence table not found"})
 
         cursor = conn.execute(
-            "UPDATE cato_evidence SET status = 'stale' "
-            "WHERE project_id = ? AND status = 'expired'",
+            "UPDATE cato_evidence SET status = 'stale' WHERE project_id = ? AND status = 'expired'",
             (project_id,),
         )
         conn.commit()
-        return jsonify({
-            "refreshed": cursor.rowcount,
-            "project_id": project_id,
-            "message": f"Marked {cursor.rowcount} expired evidence items as stale for refresh",
-        })
+        return jsonify(
+            {
+                "refreshed": cursor.rowcount,
+                "project_id": project_id,
+                "message": f"Marked {cursor.rowcount} expired evidence items as stale for refresh",
+            }
+        )
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
     finally:

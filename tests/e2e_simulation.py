@@ -33,8 +33,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait, Select
 
 BASE_URL = os.environ.get("DASHBOARD_URL", "http://localhost:5055")
-SCREENSHOT_DIR = os.path.join(
-    os.path.dirname(__file__), "..", "playwright", "screenshots")
+SCREENSHOT_DIR = os.path.join(os.path.dirname(__file__), "..", "playwright", "screenshots")
 os.makedirs(SCREENSHOT_DIR, exist_ok=True)
 
 passed = 0
@@ -69,7 +68,7 @@ def main():
     opts.add_argument("--disable-gpu")
     opts.add_argument("--no-sandbox")
     driver = webdriver.Chrome(options=opts)
-    wait = WebDriverWait(driver, 10)
+    WebDriverWait(driver, 10)
 
     try:
         # ================================================================
@@ -92,8 +91,7 @@ def main():
         print("\n2. Stat Cards")
         stat_cards = driver.find_elements(By.CLASS_NAME, "stat-card")
         check("Stat cards rendered (>=5)", len(stat_cards) >= 5, f"found {len(stat_cards)}")
-        for label in ["Total Scenarios", "Running", "Completed",
-                      "Monte Carlo Runs", "COAs Generated"]:
+        for label in ["Total Scenarios", "Running", "Completed", "Monte Carlo Runs", "COAs Generated"]:
             check(f"'{label}' card", label in src)
 
         # ================================================================
@@ -104,8 +102,7 @@ def main():
         nlq_project = driver.find_element(By.ID, "nlq-project")
         check("NLQ input present", nlq_input is not None)
         check("NLQ project present", nlq_project is not None)
-        check("Placeholder text", "microservices" in (
-            nlq_input.get_attribute("placeholder") or "").lower())
+        check("Placeholder text", "microservices" in (nlq_input.get_attribute("placeholder") or "").lower())
         check("Hint examples", "add AWS as a vendor" in src)
         check("Ask the Digital Twin heading", "Ask the Digital Twin" in src)
 
@@ -117,22 +114,19 @@ def main():
         nlq_input.send_keys("add 3 microservices and integrate AWS")
         nlq_project.clear()
         nlq_project.send_keys("e2e-test-proj")
-        driver.find_element(
-            By.XPATH, "//button[text()='Simulate']").click()
+        driver.find_element(By.XPATH, "//button[text()='Simulate']").click()
         time.sleep(4)
 
         preview = driver.find_element(By.ID, "nlq-preview")
         check("NLQ preview visible", preview.is_displayed())
-        check("Intent = what_if",
-              driver.find_element(By.ID, "nlq-intent").text == "what_if")
+        check("Intent = what_if", driver.find_element(By.ID, "nlq-intent").text == "what_if")
         conf_text = driver.find_element(By.ID, "nlq-confidence").text
         check("Confidence shown", "%" in conf_text, f"got: {conf_text}")
         mods_text = driver.find_element(By.ID, "nlq-mods").text
         check("Mods has add_components", "add_components" in mods_text)
         check("Mods has AWS", "AWS" in mods_text)
         status = driver.find_element(By.ID, "nlq-status").text.lower()
-        check("Status says created/complete",
-              "created" in status or "complete" in status, f"got: {status}")
+        check("Status says created/complete", "created" in status or "complete" in status, f"got: {status}")
         screenshot(driver, "nlq-simulate")
 
         # ================================================================
@@ -141,8 +135,7 @@ def main():
         print("\n5. Cascade Analysis")
         nlq_input.clear()
         nlq_input.send_keys("what systems depend on auth?")
-        driver.find_element(
-            By.XPATH, "//button[text()='Cascade']").click()
+        driver.find_element(By.XPATH, "//button[text()='Cascade']").click()
         time.sleep(4)
 
         cascade = driver.find_element(By.ID, "cascade-panel")
@@ -197,9 +190,7 @@ def main():
         """)
         time.sleep(2)
         create_data = json.loads(result_json) if result_json else {}
-        check("Scenario created via API",
-              "scenario_id" in create_data,
-              f"got: {json.dumps(create_data)[:100]}")
+        check("Scenario created via API", "scenario_id" in create_data, f"got: {json.dumps(create_data)[:100]}")
         screenshot(driver, "create-scenario")
 
         # ================================================================
@@ -216,16 +207,13 @@ def main():
         check("Scenario rows exist", has_rows, f"found {len(rows)}")
 
         # Filter controls exist
-        check("Status filter exists",
-              driver.find_element(By.ID, "filter-status") is not None)
-        check("Type filter exists",
-              driver.find_element(By.ID, "filter-type") is not None)
+        check("Status filter exists", driver.find_element(By.ID, "filter-status") is not None)
+        check("Type filter exists", driver.find_element(By.ID, "filter-type") is not None)
 
         if has_rows:
             Select(driver.find_element(By.ID, "filter-status")).select_by_value("pending")
             time.sleep(0.3)
-            pending_visible = [r for r in driver.find_elements(By.CLASS_NAME, "scenario-row")
-                               if r.is_displayed()]
+            [r for r in driver.find_elements(By.CLASS_NAME, "scenario-row") if r.is_displayed()]
             check("Status filter filters rows", True)
             Select(driver.find_element(By.ID, "filter-status")).select_by_value("")
         screenshot(driver, "scenario-registry")
@@ -295,8 +283,7 @@ def main():
         cs = driver.find_element(By.ID, "composite-score").text
         check("Composite score has %", "%" in cs, f"got: {cs}")
         sev = driver.find_element(By.ID, "composite-severity").text
-        check("Severity in GREEN/YELLOW/ORANGE/RED",
-              sev in ["GREEN", "YELLOW", "ORANGE", "RED"], f"got: {sev}")
+        check("Severity in GREEN/YELLOW/ORANGE/RED", sev in ["GREEN", "YELLOW", "ORANGE", "RED"], f"got: {sev}")
         formula = driver.find_element(By.ID, "composite-formula").text
         check("Formula has 0.35 weight", "0.35" in formula, f"got: {formula[:50]}")
         check("Formula has 0.25 weight", "0.25" in formula)
@@ -333,8 +320,7 @@ def main():
             rating = driver.find_element(By.ID, "cpars-rating").text
             check("CPARS rating shown", len(rating) > 0, f"got: {rating}")
             cf = driver.find_element(By.ID, "cpars-formula").text
-            check("CPARS formula has weights", "0.35" in cf and "0.25" in cf,
-                  f"got: {cf[:50]}")
+            check("CPARS formula has weights", "0.35" in cf and "0.25" in cf, f"got: {cf[:50]}")
             cb = driver.find_element(By.ID, "cpars-bars").get_attribute("innerHTML")
             check("CPARS bar: Overdue CDRLs", "Overdue CDRLs" in cb)
             check("CPARS bar: Rejected Deliverables", "Rejected Deliverables" in cb)
@@ -342,9 +328,15 @@ def main():
             check("CPARS bar: Late Submissions", "Late Submissions" in cb)
         else:
             # If CPARS result didn't appear, still mark bars as skipped
-            for lbl in ["CPARS score", "CPARS rating", "CPARS formula",
-                        "Overdue CDRLs", "Rejected Deliverables",
-                        "Non-Compliant", "Late Submissions"]:
+            for lbl in [
+                "CPARS score",
+                "CPARS rating",
+                "CPARS formula",
+                "Overdue CDRLs",
+                "Rejected Deliverables",
+                "Non-Compliant",
+                "Late Submissions",
+            ]:
                 check(f"CPARS {lbl} (skipped - no data)", True)
         screenshot(driver, "risk-cpars")
 
@@ -353,11 +345,9 @@ def main():
         # ================================================================
         print("\n13. Fork Scenario")
         rows = driver.find_elements(By.CLASS_NAME, "scenario-row")
-        fork_btns = driver.find_elements(
-            By.XPATH, "//button[contains(@title,'Fork')]")
+        fork_btns = driver.find_elements(By.XPATH, "//button[contains(@title,'Fork')]")
         if rows:
-            check("Fork buttons present", len(fork_btns) >= 1,
-                  f"found {len(fork_btns)}")
+            check("Fork buttons present", len(fork_btns) >= 1, f"found {len(fork_btns)}")
         else:
             check("Fork buttons (no scenarios to fork)", True)
 
@@ -374,26 +364,31 @@ def main():
         print("\n15. JS Error Check")
         logs = driver.get_log("browser")
         sim_errors = [
-            log for log in logs
+            log
+            for log in logs
             if log["level"] == "SEVERE"
             and "favicon" not in log.get("message", "").lower()
             and "simulation" in log.get("message", "").lower()
         ]
-        check("No simulation-specific JS errors", len(sim_errors) == 0,
-              f"found {len(sim_errors)}: {[e['message'][:80] for e in sim_errors[:3]]}")
+        check(
+            "No simulation-specific JS errors",
+            len(sim_errors) == 0,
+            f"found {len(sim_errors)}: {[e['message'][:80] for e in sim_errors[:3]]}",
+        )
 
         # Also count all SEVERE errors for informational purposes
-        all_severe = [l for l in logs if l["level"] == "SEVERE"
-                      and "favicon" not in l.get("message", "").lower()]
+        all_severe = [l for l in logs if l["level"] == "SEVERE" and "favicon" not in l.get("message", "").lower()]
         if all_severe:
             # Filter to only simulation-page JS
-            sim_page_errors = [l for l in all_severe
-                               if "/simulation" in l.get("message", "")
-                               or "nlq" in l.get("message", "").lower()
-                               or "cascade" in l.get("message", "").lower()
-                               or "risk" in l.get("message", "").lower()]
-            check("No simulation-page JS errors", len(sim_page_errors) == 0,
-                  f"found {len(sim_page_errors)}")
+            sim_page_errors = [
+                l
+                for l in all_severe
+                if "/simulation" in l.get("message", "")
+                or "nlq" in l.get("message", "").lower()
+                or "cascade" in l.get("message", "").lower()
+                or "risk" in l.get("message", "").lower()
+            ]
+            check("No simulation-page JS errors", len(sim_page_errors) == 0, f"found {len(sim_page_errors)}")
             print(f"    (Info: {len(all_severe)} total SEVERE JS errors from pre-existing files — excluded)")
         else:
             check("Zero SEVERE JS errors", True)
@@ -420,6 +415,7 @@ def main():
         errors.append(f"EXCEPTION: {exc}")
         print(f"\n  EXCEPTION: {exc}")
         import traceback
+
         traceback.print_exc()
         screenshot(driver, "error")
     finally:

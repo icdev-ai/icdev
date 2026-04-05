@@ -447,12 +447,32 @@ INTEROP_SCHEMA: Dict[str, Any] = {
                         "id": {"type": "string", "required": True, "description": "CaptureAI opportunity ID"},
                         "title": {"type": "string", "required": True, "description": "Opportunity title"},
                         "agency": {"type": "string", "required": True, "description": "Sponsoring agency"},
-                        "solicitation_number": {"type": "string", "required": True, "description": "SAM.gov solicitation number"},
+                        "solicitation_number": {
+                            "type": "string",
+                            "required": True,
+                            "description": "SAM.gov solicitation number",
+                        },
                         "naics_code": {"type": "string", "required": False, "description": "Primary NAICS code"},
-                        "set_aside": {"type": "string", "required": False, "description": "Set-aside type (e.g., 8(a), SDVOSB)"},
-                        "response_deadline": {"type": "string", "required": True, "description": "ISO 8601 proposal due date"},
-                        "estimated_value": {"type": "number", "required": False, "description": "Estimated contract value in USD"},
-                        "period_of_performance": {"type": "string", "required": False, "description": "Base + option years"},
+                        "set_aside": {
+                            "type": "string",
+                            "required": False,
+                            "description": "Set-aside type (e.g., 8(a), SDVOSB)",
+                        },
+                        "response_deadline": {
+                            "type": "string",
+                            "required": True,
+                            "description": "ISO 8601 proposal due date",
+                        },
+                        "estimated_value": {
+                            "type": "number",
+                            "required": False,
+                            "description": "Estimated contract value in USD",
+                        },
+                        "period_of_performance": {
+                            "type": "string",
+                            "required": False,
+                            "description": "Base + option years",
+                        },
                     },
                 },
                 "win_strategy": {
@@ -460,19 +480,47 @@ INTEROP_SCHEMA: Dict[str, Any] = {
                     "required": True,
                     "fields": {
                         "win_themes": {"type": "array", "required": True, "description": "Ordered list of win themes"},
-                        "discriminators": {"type": "array", "required": True, "description": "Key discriminators vs competition"},
-                        "ghost_strategies": {"type": "array", "required": False, "description": "Ghost team strategies per competitor"},
-                        "solution_approach_summary": {"type": "string", "required": True, "description": "High-level solution narrative"},
+                        "discriminators": {
+                            "type": "array",
+                            "required": True,
+                            "description": "Key discriminators vs competition",
+                        },
+                        "ghost_strategies": {
+                            "type": "array",
+                            "required": False,
+                            "description": "Ghost team strategies per competitor",
+                        },
+                        "solution_approach_summary": {
+                            "type": "string",
+                            "required": True,
+                            "description": "High-level solution narrative",
+                        },
                     },
                 },
                 "team": {
                     "type": "object",
                     "required": True,
                     "fields": {
-                        "prime_contractor": {"type": "string", "required": True, "description": "Prime contractor name"},
-                        "subcontractors": {"type": "array", "required": False, "description": "List of teaming partners with workshare"},
-                        "key_personnel": {"type": "array", "required": False, "description": "Key personnel with roles and qualifications"},
-                        "oci_status": {"type": "string", "required": True, "description": "OCI screening result: clear | mitigated | flagged"},
+                        "prime_contractor": {
+                            "type": "string",
+                            "required": True,
+                            "description": "Prime contractor name",
+                        },
+                        "subcontractors": {
+                            "type": "array",
+                            "required": False,
+                            "description": "List of teaming partners with workshare",
+                        },
+                        "key_personnel": {
+                            "type": "array",
+                            "required": False,
+                            "description": "Key personnel with roles and qualifications",
+                        },
+                        "oci_status": {
+                            "type": "string",
+                            "required": True,
+                            "description": "OCI screening result: clear | mitigated | flagged",
+                        },
                     },
                 },
                 "competitive_intel": {
@@ -480,18 +528,42 @@ INTEROP_SCHEMA: Dict[str, Any] = {
                     "required": True,
                     "fields": {
                         "competitors": {"type": "array", "required": True, "description": "Known competitor profiles"},
-                        "incumbent": {"type": "string", "required": False, "description": "Current incumbent name if recompete"},
-                        "competitive_landscape_summary": {"type": "string", "required": True, "description": "Assessment narrative"},
+                        "incumbent": {
+                            "type": "string",
+                            "required": False,
+                            "description": "Current incumbent name if recompete",
+                        },
+                        "competitive_landscape_summary": {
+                            "type": "string",
+                            "required": True,
+                            "description": "Assessment narrative",
+                        },
                     },
                 },
                 "customer_context": {
                     "type": "object",
                     "required": True,
                     "fields": {
-                        "key_contacts": {"type": "array", "required": True, "description": "Customer contacts with influence scores"},
-                        "engagement_history_summary": {"type": "string", "required": True, "description": "Customer relationship summary"},
-                        "hot_buttons": {"type": "array", "required": False, "description": "Customer priorities and concerns"},
-                        "evaluation_criteria_intel": {"type": "array", "required": False, "description": "Known or inferred evaluation factors"},
+                        "key_contacts": {
+                            "type": "array",
+                            "required": True,
+                            "description": "Customer contacts with influence scores",
+                        },
+                        "engagement_history_summary": {
+                            "type": "string",
+                            "required": True,
+                            "description": "Customer relationship summary",
+                        },
+                        "hot_buttons": {
+                            "type": "array",
+                            "required": False,
+                            "description": "Customer priorities and concerns",
+                        },
+                        "evaluation_criteria_intel": {
+                            "type": "array",
+                            "required": False,
+                            "description": "Known or inferred evaluation factors",
+                        },
                     },
                 },
                 "pwin_assessment": {
@@ -499,10 +571,26 @@ INTEROP_SCHEMA: Dict[str, Any] = {
                     "required": True,
                     "fields": {
                         "pwin": {"type": "number", "required": True, "description": "Probability of win (0.0-1.0)"},
-                        "pgo": {"type": "number", "required": True, "description": "Probability of go decision (0.0-1.0)"},
-                        "confidence": {"type": "number", "required": True, "description": "Assessment confidence (0.0-1.0)"},
-                        "factors": {"type": "object", "required": False, "description": "Scored Pwin factors breakdown"},
-                        "gate_decision": {"type": "string", "required": True, "description": "Latest gate decision: bid | no_bid | conditional"},
+                        "pgo": {
+                            "type": "number",
+                            "required": True,
+                            "description": "Probability of go decision (0.0-1.0)",
+                        },
+                        "confidence": {
+                            "type": "number",
+                            "required": True,
+                            "description": "Assessment confidence (0.0-1.0)",
+                        },
+                        "factors": {
+                            "type": "object",
+                            "required": False,
+                            "description": "Scored Pwin factors breakdown",
+                        },
+                        "gate_decision": {
+                            "type": "string",
+                            "required": True,
+                            "description": "Latest gate decision: bid | no_bid | conditional",
+                        },
                     },
                 },
             },
@@ -512,7 +600,11 @@ INTEROP_SCHEMA: Dict[str, Any] = {
             "description": "Mid-proposal competitive intelligence updates",
             "payload": {
                 "opportunity_id": {"type": "string", "required": True},
-                "update_type": {"type": "string", "required": True, "description": "new_competitor | incumbent_change | teaming_shift | price_intel"},
+                "update_type": {
+                    "type": "string",
+                    "required": True,
+                    "description": "new_competitor | incumbent_change | teaming_shift | price_intel",
+                },
                 "details": {"type": "object", "required": True},
                 "timestamp": {"type": "string", "required": True, "description": "ISO 8601 timestamp"},
             },
@@ -536,6 +628,7 @@ INTEROP_SCHEMA: Dict[str, Any] = {
 # ============================================================
 # Utility helpers
 # ============================================================
+
 
 def _now() -> str:
     """Return current UTC timestamp as ISO 8601 string."""
@@ -574,6 +667,7 @@ def _audit(event_type: str, action: str, details: Optional[Dict[str, Any]] = Non
 # Core functions
 # ============================================================
 
+
 def generate_blueprint(
     deployment_mode: str = "integrated",
     team_size: int = 10,
@@ -600,20 +694,14 @@ def generate_blueprint(
         ValueError: If ``deployment_mode`` is invalid or ``team_size`` < 1.
     """
     if deployment_mode not in DEPLOYMENT_MODES:
-        raise ValueError(
-            f"Invalid deployment_mode '{deployment_mode}'. "
-            f"Must be one of: {', '.join(DEPLOYMENT_MODES)}"
-        )
+        raise ValueError(f"Invalid deployment_mode '{deployment_mode}'. Must be one of: {', '.join(DEPLOYMENT_MODES)}")
     if team_size < 1:
         raise ValueError(f"team_size must be >= 1, got {team_size}")
 
     frameworks = compliance_frameworks or []
     for fw in frameworks:
         if fw not in SUPPORTED_FRAMEWORKS:
-            raise ValueError(
-                f"Unsupported compliance framework '{fw}'. "
-                f"Supported: {', '.join(SUPPORTED_FRAMEWORKS)}"
-            )
+            raise ValueError(f"Unsupported compliance framework '{fw}'. Supported: {', '.join(SUPPORTED_FRAMEWORKS)}")
 
     blueprint_id = _uuid()
     now = _now()
@@ -621,12 +709,14 @@ def generate_blueprint(
     # --- Resolve agents ---
     agents: List[Dict[str, Any]] = []
     for agent in CORE_AGENTS:
-        agents.append({
-            "name": agent["name"],
-            "port": agent["base_port"] + CHILD_PORT_OFFSET,
-            "role": agent["role"],
-            "tier": agent["tier"],
-        })
+        agents.append(
+            {
+                "name": agent["name"],
+                "port": agent["base_port"] + CHILD_PORT_OFFSET,
+                "role": agent["role"],
+                "tier": agent["tier"],
+            }
+        )
 
     for agent in CONDITIONAL_AGENTS:
         include = False
@@ -636,36 +726,42 @@ def generate_blueprint(
             # Include security agent when any compliance framework implies IL4+
             include = bool(frameworks)
         if include:
-            agents.append({
-                "name": agent["name"],
-                "port": agent["base_port"] + CHILD_PORT_OFFSET,
-                "role": agent["role"],
-                "tier": agent["tier"],
-            })
+            agents.append(
+                {
+                    "name": agent["name"],
+                    "port": agent["base_port"] + CHILD_PORT_OFFSET,
+                    "role": agent["role"],
+                    "tier": agent["tier"],
+                }
+            )
 
     # --- Resolve modules ---
     modules: List[Dict[str, Any]] = []
     for mod in CORE_MODULES:
-        modules.append({
-            "name": mod["name"],
-            "description": mod["description"],
-            "enabled": True,
-            "db_tables": mod["db_tables"],
-            "dependencies": mod["dependencies"],
-        })
+        modules.append(
+            {
+                "name": mod["name"],
+                "description": mod["description"],
+                "enabled": True,
+                "db_tables": mod["db_tables"],
+                "dependencies": mod["dependencies"],
+            }
+        )
     for mod in OPTIONAL_MODULES:
         enabled = False
         if mod["name"] == "compliance_tracker" and frameworks:
             enabled = True
         elif mod["name"] == "cost_estimator" and deployment_mode != "embedded":
             enabled = True
-        modules.append({
-            "name": mod["name"],
-            "description": mod["description"],
-            "enabled": enabled,
-            "db_tables": mod.get("db_tables", []),
-            "dependencies": mod.get("dependencies", []),
-        })
+        modules.append(
+            {
+                "name": mod["name"],
+                "description": mod["description"],
+                "enabled": enabled,
+                "db_tables": mod.get("db_tables", []),
+                "dependencies": mod.get("dependencies", []),
+            }
+        )
 
     # --- Resolve DB tables ---
     active_table_names: set = set()
@@ -793,10 +889,7 @@ def generate_blueprint(
         "blueprint_id": blueprint_id,
         "app_name": "CaptureAI",
         "app_type": "capture_management",
-        "description": (
-            "AI-powered Capture Management for Government Contracting "
-            "-- Shipley Phases 0-2"
-        ),
+        "description": ("AI-powered Capture Management for Government Contracting -- Shipley Phases 0-2"),
         "classification": "CUI",
         "impact_level": "IL4",
         "deployment_mode": deployment_mode,
@@ -910,10 +1003,7 @@ def estimate_resources(
         ValueError: If ``deployment_mode`` is invalid.
     """
     if deployment_mode not in DEPLOYMENT_MODES:
-        raise ValueError(
-            f"Invalid deployment_mode '{deployment_mode}'. "
-            f"Must be one of: {', '.join(DEPLOYMENT_MODES)}"
-        )
+        raise ValueError(f"Invalid deployment_mode '{deployment_mode}'. Must be one of: {', '.join(DEPLOYMENT_MODES)}")
 
     # Base resources per mode
     base_resources = {
@@ -927,6 +1017,7 @@ def estimate_resources(
     # Scale for team size (logarithmic scaling beyond 10 users)
     if deployment_mode != "embedded" and team_size > 10:
         import math
+
         scale_factor = 1.0 + 0.3 * math.log2(team_size / 10)
         resources["cpu_vcpu"] = round(resources["cpu_vcpu"] * scale_factor, 1)
         resources["memory_gb"] = round(resources["memory_gb"] * scale_factor, 1)
@@ -994,9 +1085,7 @@ def validate_blueprint(blueprint: Dict[str, Any]) -> Dict[str, Any]:
 
     # --- App type validation ---
     if blueprint.get("app_type") != "capture_management":
-        warnings.append(
-            f"Unexpected app_type '{blueprint.get('app_type')}', expected 'capture_management'"
-        )
+        warnings.append(f"Unexpected app_type '{blueprint.get('app_type')}', expected 'capture_management'")
 
     # --- Deployment mode ---
     mode = blueprint.get("deployment_mode")
@@ -1025,19 +1114,14 @@ def validate_blueprint(blueprint: Dict[str, Any]) -> Dict[str, Any]:
             continue
         for dep in mod.get("dependencies", []):
             if dep not in enabled_module_names:
-                issues.append(
-                    f"Module '{mod['name']}' depends on '{dep}' which is not enabled"
-                )
+                issues.append(f"Module '{mod['name']}' depends on '{dep}' which is not enabled")
 
     # --- Integrity hash check ---
     stored_hash = blueprint.get("blueprint_hash", "")
     if stored_hash:
         computed_hash = _compute_hash(blueprint)
         if computed_hash != stored_hash:
-            issues.append(
-                f"Blueprint hash mismatch: stored={stored_hash[:16]}... "
-                f"vs computed={computed_hash[:16]}..."
-            )
+            issues.append(f"Blueprint hash mismatch: stored={stored_hash[:16]}... vs computed={computed_hash[:16]}...")
 
     # --- Grandchild prevention ---
     gcp = blueprint.get("grandchild_prevention", {})
@@ -1108,6 +1192,7 @@ def export_blueprint(
 # ============================================================
 # CLI
 # ============================================================
+
 
 def _build_parser() -> argparse.ArgumentParser:
     """Build argparse parser."""

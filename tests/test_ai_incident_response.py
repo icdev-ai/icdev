@@ -9,9 +9,7 @@ import pytest
 _PROJECT_ROOT = str(Path(__file__).resolve().parent.parent)
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
-sys.path.insert(
-    0, str(Path(__file__).resolve().parent.parent / "tools" / "compliance")
-)
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools" / "compliance"))
 from ai_incident_response import (
     VALID_INCIDENT_TYPES,
     get_incident_stats,
@@ -57,9 +55,7 @@ def db_path(tmp_path):
 
 
 def test_log_incident_basic(db_path):
-    result = log_incident(
-        "proj-1", "confabulation", "Model hallucinated facts", db_path=str(db_path)
-    )
+    result = log_incident("proj-1", "confabulation", "Model hallucinated facts", db_path=str(db_path))
     assert result["incident_id"]
     assert result["status"] == "logged" or result["status"] == "open"
 
@@ -100,9 +96,7 @@ def test_log_incident_invalid_severity(db_path):
 
 def test_log_incident_all_valid_types(db_path):
     for itype in VALID_INCIDENT_TYPES:
-        result = log_incident(
-            "proj-1", itype, f"Test incident for {itype}", db_path=str(db_path)
-        )
+        result = log_incident("proj-1", itype, f"Test incident for {itype}", db_path=str(db_path))
         assert result["incident_id"]
 
 
@@ -112,9 +106,7 @@ def test_log_incident_all_valid_types(db_path):
 
 
 def test_update_incident_corrective_action(db_path):
-    incident = log_incident(
-        "proj-1", "confabulation", "Hallucination detected", db_path=str(db_path)
-    )
+    incident = log_incident("proj-1", "confabulation", "Hallucination detected", db_path=str(db_path))
     updated = update_incident(
         incident["incident_id"],
         corrective_action="Retrained model",
@@ -124,9 +116,7 @@ def test_update_incident_corrective_action(db_path):
 
 
 def test_update_incident_status_change(db_path):
-    incident = log_incident(
-        "proj-1", "bias_detected", "Bias in output", db_path=str(db_path)
-    )
+    incident = log_incident("proj-1", "bias_detected", "Bias in output", db_path=str(db_path))
     updated = update_incident(
         incident["incident_id"],
         status="investigating",
@@ -145,9 +135,7 @@ def test_update_incident_not_found(db_path):
 
 
 def test_update_incident_invalid_status(db_path):
-    incident = log_incident(
-        "proj-1", "confabulation", "Test", db_path=str(db_path)
-    )
+    incident = log_incident("proj-1", "confabulation", "Test", db_path=str(db_path))
     with pytest.raises(ValueError):
         update_incident(
             incident["incident_id"],
@@ -176,9 +164,7 @@ def test_get_open_incidents_with_data(db_path):
 
 
 def test_get_open_incidents_severity_filter(db_path):
-    log_incident(
-        "proj-1", "confabulation", "Low issue", severity="low", db_path=str(db_path)
-    )
+    log_incident("proj-1", "confabulation", "Low issue", severity="low", db_path=str(db_path))
     log_incident(
         "proj-1",
         "data_breach",
@@ -206,9 +192,7 @@ def test_get_incident_stats_empty(db_path):
 
 def test_get_incident_stats_populated(db_path):
     log_incident("proj-1", "confabulation", "Issue 1", db_path=str(db_path))
-    log_incident(
-        "proj-1", "bias_detected", "Issue 2", severity="critical", db_path=str(db_path)
-    )
+    log_incident("proj-1", "bias_detected", "Issue 2", severity="critical", db_path=str(db_path))
     stats = get_incident_stats("proj-1", db_path=str(db_path))
     assert stats["total"] == 2
     assert stats["open"] >= 2
@@ -245,9 +229,7 @@ def test_critical_unresolved_count(db_path):
 
 
 def test_resolved_count(db_path):
-    inc = log_incident(
-        "proj-1", "model_drift", "Drift detected", db_path=str(db_path)
-    )
+    inc = log_incident("proj-1", "model_drift", "Drift detected", db_path=str(db_path))
     update_incident(inc["incident_id"], status="resolved", db_path=str(db_path))
 
     stats = get_incident_stats("proj-1", db_path=str(db_path))
@@ -260,9 +242,7 @@ def test_resolved_count(db_path):
 
 
 def test_incident_ordering(db_path):
-    log_incident(
-        "proj-1", "confabulation", "Low priority", severity="low", db_path=str(db_path)
-    )
+    log_incident("proj-1", "confabulation", "Low priority", severity="low", db_path=str(db_path))
     log_incident(
         "proj-1",
         "data_breach",

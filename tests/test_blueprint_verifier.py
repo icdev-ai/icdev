@@ -2,7 +2,6 @@
 # CUI // SP-CTI
 """Tests for Blueprint Digest Verifier — NemoClaw-adapted supply chain integrity (D-NC-3)."""
 
-
 import pytest
 
 from tools.security.blueprint_verifier import BlueprintVerifier, ENTITY_TYPES

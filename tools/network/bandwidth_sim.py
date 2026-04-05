@@ -15,36 +15,45 @@ from typing import Any
 # ── Bandwidth lookup table (label fragment → Mbps) ─────────────────────────
 _BW_MAP: list[tuple[str, int]] = [
     # Cloud interconnect circuit types (match before generic speeds)
-    ("DX-400G", 400_000), ("DX-100G", 100_000), ("DX-10G", 10_000), ("DX-1G", 1_000),
-    ("ER-100G", 100_000), ("ER-10G", 10_000),
-    ("IC-100G", 100_000), ("IC-10G", 10_000),
-    ("FC-100G", 100_000), ("FC-10G", 10_000), ("FC-1G", 1_000),
+    ("DX-400G", 400_000),
+    ("DX-100G", 100_000),
+    ("DX-10G", 10_000),
+    ("DX-1G", 1_000),
+    ("ER-100G", 100_000),
+    ("ER-10G", 10_000),
+    ("IC-100G", 100_000),
+    ("IC-10G", 10_000),
+    ("FC-100G", 100_000),
+    ("FC-10G", 10_000),
+    ("FC-1G", 1_000),
     ("VPN ECMP", 9_800),
-    ("VPN-TUNNEL", 4_900), ("VPN TUNNEL", 4_900), ("IPSEC TUNNEL", 4_900),
+    ("VPN-TUNNEL", 4_900),
+    ("VPN TUNNEL", 4_900),
+    ("IPSEC TUNNEL", 4_900),
     # Generic speeds
     ("400G", 400_000),
     ("100G", 100_000),
-    ("40G",  40_000),
-    ("25G",  25_000),
-    ("10G",  10_000),
-    ("1G",   1_000),
+    ("40G", 40_000),
+    ("25G", 25_000),
+    ("10G", 10_000),
+    ("1G", 1_000),
     ("100M", 100),
-    ("10M",  10),
+    ("10M", 10),
 ]
 
 # Thresholds (%)
-_WARN_PCT   = 60
-_CRIT_PCT   = 80
-_MAX_PCT    = 100
+_WARN_PCT = 60
+_CRIT_PCT = 80
+_MAX_PCT = 100
 
 # Upgrade ladder: current capacity → recommended next tier (Mbps)
 _UPGRADE_LADDER: dict[int, int] = {
-    10:      100,
-    100:     1_000,
-    1_000:   10_000,
-    10_000:  25_000,
-    25_000:  40_000,
-    40_000:  100_000,
+    10: 100,
+    100: 1_000,
+    1_000: 10_000,
+    10_000: 25_000,
+    25_000: 40_000,
+    40_000: 100_000,
     100_000: 400_000,
 }
 
@@ -102,16 +111,13 @@ def run_bandwidth_sim(graph: dict[str, Any], params: dict[str, Any]) -> dict[str
     edges = graph.get("edges", [])
 
     # Build node-id → label map for readable output
-    node_labels: dict[str, str] = {
-        n.get("id", ""): (n.get("label") or n.get("type") or n.get("id", ""))
-        for n in nodes
-    }
+    node_labels: dict[str, str] = {n.get("id", ""): (n.get("label") or n.get("type") or n.get("id", "")) for n in nodes}
 
     # Params
-    base_util       = float(params.get("base_utilization_pct", 30))
-    growth_rate     = float(params.get("growth_rate_pct", 20))
-    years           = int(params.get("years", 3))
-    peak_mult       = float(params.get("peak_multiplier", 1.5))
+    base_util = float(params.get("base_utilization_pct", 30))
+    growth_rate = float(params.get("growth_rate_pct", 20))
+    years = int(params.get("years", 3))
+    peak_mult = float(params.get("peak_multiplier", 1.5))
 
     # Index traffic profile overrides by edge_id
     traffic_overrides: dict[str, float] = {}
@@ -124,13 +130,13 @@ def run_bandwidth_sim(graph: dict[str, Any], params: dict[str, Any]) -> dict[str
     link_results: list[dict[str, Any]] = []
 
     for e in edges:
-        eid      = e.get("id", str(uuid.uuid4())[:8])
-        label    = e.get("label") or ""
-        src_id   = e.get("source", "")
-        dst_id   = e.get("target", "")
-        src_lbl  = node_labels.get(src_id, src_id)
-        dst_lbl  = node_labels.get(dst_id, dst_id)
-        link_bw  = _parse_link_bw(label)
+        eid = e.get("id", str(uuid.uuid4())[:8])
+        label = e.get("label") or ""
+        src_id = e.get("source", "")
+        dst_id = e.get("target", "")
+        src_lbl = node_labels.get(src_id, src_id)
+        dst_lbl = node_labels.get(dst_id, dst_id)
+        link_bw = _parse_link_bw(label)
 
         # Current traffic: use override or derive from base_util + deterministic jitter
         if eid in traffic_overrides:
@@ -142,8 +148,8 @@ def run_bandwidth_sim(graph: dict[str, Any], params: dict[str, Any]) -> dict[str
             current_mbps = link_bw * effective_util / 100.0
 
         current_util_pct = round(current_mbps / link_bw * 100, 1)
-        peak_mbps        = round(current_mbps * peak_mult, 1)
-        peak_util_pct    = round(peak_mbps / link_bw * 100, 1)
+        peak_mbps = round(current_mbps * peak_mult, 1)
+        peak_util_pct = round(peak_mbps / link_bw * 100, 1)
 
         # Year-by-year growth projection
         projections: list[dict[str, Any]] = []
@@ -152,12 +158,14 @@ def run_bandwidth_sim(graph: dict[str, Any], params: dict[str, Any]) -> dict[str
             proj_mbps = proj_mbps * (1 + growth_rate / 100)
             proj_util = round(proj_mbps / link_bw * 100, 1)
             peak_proj = round(proj_mbps * peak_mult / link_bw * 100, 1)
-            projections.append({
-                "year": yr,
-                "avg_util_pct": proj_util,
-                "peak_util_pct": min(peak_proj, 100.0),
-                "avg_traffic_mbps": round(proj_mbps, 1),
-            })
+            projections.append(
+                {
+                    "year": yr,
+                    "avg_util_pct": proj_util,
+                    "peak_util_pct": min(peak_proj, 100.0),
+                    "avg_traffic_mbps": round(proj_mbps, 1),
+                }
+            )
 
         # Status at end of projection
         final_util = projections[-1]["avg_util_pct"] if projections else current_util_pct
@@ -196,8 +204,7 @@ def run_bandwidth_sim(graph: dict[str, Any], params: dict[str, Any]) -> dict[str
                 # VPN tunnels cannot be upgraded in-place
                 recommendation = "add_tunnels_or_migrate"
                 notes.append(
-                    "Cannot upgrade VPN tunnel in-place — add parallel tunnels "
-                    "for ECMP (2x = 9.8G) or migrate to DX/ER"
+                    "Cannot upgrade VPN tunnel in-place — add parallel tunnels for ECMP (2x = 9.8G) or migrate to DX/ER"
                 )
                 lag_links = None
             elif lag_needed <= 4:
@@ -207,14 +214,8 @@ def run_bandwidth_sim(graph: dict[str, Any], params: dict[str, Any]) -> dict[str
                     max_lag = 2 if link_bw >= 100_000 else 4
                     if lag_links > max_lag:
                         lag_links = max_lag
-                    notes.append(
-                        f"AWS Direct Connect LAG max {max_lag} links for "
-                        f"{_mbps_label(link_bw)} circuits"
-                    )
-                    notes.append(
-                        "LAG provides bandwidth only — NOT location/device "
-                        "redundancy (single AWS device)"
-                    )
+                    notes.append(f"AWS Direct Connect LAG max {max_lag} links for {_mbps_label(link_bw)} circuits")
+                    notes.append("LAG provides bandwidth only — NOT location/device redundancy (single AWS device)")
                 recommendation = "lag_or_upgrade"
             else:
                 recommendation = "upgrade"
@@ -223,43 +224,41 @@ def run_bandwidth_sim(graph: dict[str, Any], params: dict[str, Any]) -> dict[str
             if is_vpn:
                 recommendation = "plan_tunnel_expansion"
                 notes.append(
-                    "VPN tunnel approaching 4.9 Gbps hard limit — add ECMP "
-                    "tunnels or migrate to dedicated circuit"
+                    "VPN tunnel approaching 4.9 Gbps hard limit — add ECMP tunnels or migrate to dedicated circuit"
                 )
             else:
                 recommendation = "plan_upgrade"
 
-        link_results.append({
-            "edge_id":           eid,
-            "label":             label,
-            "source_id":         src_id,
-            "target_id":         dst_id,
-            "source_label":      src_lbl,
-            "target_label":      dst_lbl,
-            "link_bw_mbps":      link_bw,
-            "link_bw_label":     _mbps_label(link_bw),
-            "current_traffic_mbps": round(current_mbps, 1),
-            "current_util_pct":  current_util_pct,
-            "peak_util_pct":     peak_util_pct,
-            "status":            status,
-            "projections":       projections,
-            "recommendation":    recommendation,
-            "upgrade_to_mbps":   upgrade_to_mbps,
-            "upgrade_to_label":  _mbps_label(upgrade_to_mbps) if upgrade_to_mbps else None,
-            "lag_links":         lag_links,
-            "notes":             notes if notes else None,
-        })
+        link_results.append(
+            {
+                "edge_id": eid,
+                "label": label,
+                "source_id": src_id,
+                "target_id": dst_id,
+                "source_label": src_lbl,
+                "target_label": dst_lbl,
+                "link_bw_mbps": link_bw,
+                "link_bw_label": _mbps_label(link_bw),
+                "current_traffic_mbps": round(current_mbps, 1),
+                "current_util_pct": current_util_pct,
+                "peak_util_pct": peak_util_pct,
+                "status": status,
+                "projections": projections,
+                "recommendation": recommendation,
+                "upgrade_to_mbps": upgrade_to_mbps,
+                "upgrade_to_label": _mbps_label(upgrade_to_mbps) if upgrade_to_mbps else None,
+                "lag_links": lag_links,
+                "notes": notes if notes else None,
+            }
+        )
 
     # Aggregate stats
-    total_links    = len(link_results)
-    bottlenecks    = [r for r in link_results if r["status"] in ("critical", "saturated")]
-    warnings       = [r for r in link_results if r["status"] == "warning"]
-    ok_links       = [r for r in link_results if r["status"] == "ok"]
+    total_links = len(link_results)
+    bottlenecks = [r for r in link_results if r["status"] in ("critical", "saturated")]
+    warnings = [r for r in link_results if r["status"] == "warning"]
+    ok_links = [r for r in link_results if r["status"] == "ok"]
 
-    avg_util = (
-        round(sum(r["current_util_pct"] for r in link_results) / total_links, 1)
-        if total_links else 0
-    )
+    avg_util = round(sum(r["current_util_pct"] for r in link_results) / total_links, 1) if total_links else 0
 
     # Highest-utilization links
     top_loaded = sorted(link_results, key=lambda r: r["current_util_pct"], reverse=True)[:5]
@@ -270,10 +269,7 @@ def run_bandwidth_sim(graph: dict[str, Any], params: dict[str, Any]) -> dict[str
             "link": r["label"] or f"{r['source_label']} → {r['target_label']}",
             "current": r["link_bw_label"],
             "upgrade_to": r["upgrade_to_label"],
-            "lag_alternative": (
-                f"{r['lag_links']}x {r['link_bw_label']} LAG"
-                if r["lag_links"] else None
-            ),
+            "lag_alternative": (f"{r['lag_links']}x {r['link_bw_label']} LAG" if r["lag_links"] else None),
             "reason": r["recommendation"],
         }
         for r in link_results
@@ -282,37 +278,39 @@ def run_bandwidth_sim(graph: dict[str, Any], params: dict[str, Any]) -> dict[str
 
     # Narrative
     narrative = _build_narrative(
-        total_links, bottlenecks, warnings, ok_links,
-        avg_util, growth_rate, years, upgrades_needed,
+        total_links,
+        bottlenecks,
+        warnings,
+        ok_links,
+        avg_util,
+        growth_rate,
+        years,
+        upgrades_needed,
     )
 
     return {
-        "sim_id":            str(uuid.uuid4()),
-        "ran_at":            datetime.now(timezone.utc).isoformat(),
+        "sim_id": str(uuid.uuid4()),
+        "ran_at": datetime.now(timezone.utc).isoformat(),
         "params": {
             "base_utilization_pct": base_util,
-            "growth_rate_pct":      growth_rate,
-            "years":                years,
-            "peak_multiplier":      peak_mult,
+            "growth_rate_pct": growth_rate,
+            "years": years,
+            "peak_multiplier": peak_mult,
         },
         "summary": {
-            "total_links":     total_links,
-            "node_count":      len(nodes),
+            "total_links": total_links,
+            "node_count": len(nodes),
             "bottleneck_count": len(bottlenecks),
-            "warning_count":   len(warnings),
-            "ok_count":        len(ok_links),
+            "warning_count": len(warnings),
+            "ok_count": len(ok_links),
             "avg_utilization_pct": avg_util,
-            "overall_health":  (
-                "critical" if bottlenecks else
-                "warning"  if warnings    else
-                "ok"
-            ),
+            "overall_health": ("critical" if bottlenecks else "warning" if warnings else "ok"),
         },
-        "links":            link_results,
-        "bottlenecks":      bottlenecks,
+        "links": link_results,
+        "bottlenecks": bottlenecks,
         "top_loaded_links": top_loaded,
-        "upgrades_needed":  upgrades_needed,
-        "narrative":        narrative,
+        "upgrades_needed": upgrades_needed,
+        "narrative": narrative,
     }
 
 
@@ -327,18 +325,13 @@ def _build_narrative(
     upgrades: list[dict],
 ) -> str:
     lines: list[str] = []
-    lines.append(
-        f"Capacity planning simulation analysed {total_links} link(s) across the topology."
-    )
+    lines.append(f"Capacity planning simulation analysed {total_links} link(s) across the topology.")
     lines.append(
         f"Current average link utilisation is {avg_util}%, "
         f"with a {growth_rate}% annual growth projection over {years} year(s)."
     )
     if bottlenecks:
-        names = ", ".join(
-            (r["label"] or f"{r['source_label']} → {r['target_label']}")
-            for r in bottlenecks[:3]
-        )
+        names = ", ".join((r["label"] or f"{r['source_label']} → {r['target_label']}") for r in bottlenecks[:3])
         tail = f" (and {len(bottlenecks) - 3} more)" if len(bottlenecks) > 3 else ""
         lines.append(
             f"CRITICAL: {len(bottlenecks)} link(s) are at or approaching saturation: "
@@ -359,9 +352,7 @@ def _build_narrative(
             parts.append(f"{upg_count} direct capacity upgrade(s)")
         if lag_count:
             parts.append(f"{lag_count} link aggregation (LAG) candidate(s)")
-        lines.append(
-            "Recommended remediation: " + " and ".join(parts) + "."
-        )
+        lines.append("Recommended remediation: " + " and ".join(parts) + ".")
     return " ".join(lines)
 
 
@@ -380,8 +371,8 @@ def generate_report_html(sim_result: dict[str, Any], topology_name: str = "Topol
     """Generate a self-contained HTML capacity planning report."""
     now = sim_result.get("ran_at", datetime.now(timezone.utc).isoformat())[:19].replace("T", " ")
     summary = sim_result.get("summary", {})
-    params  = sim_result.get("params", {})
-    links   = sim_result.get("links", [])
+    params = sim_result.get("params", {})
+    links = sim_result.get("links", [])
     upgrades = sim_result.get("upgrades_needed", [])
     narrative = sim_result.get("narrative", "")
 
@@ -389,8 +380,8 @@ def generate_report_html(sim_result: dict[str, Any], topology_name: str = "Topol
     health_color = {"ok": "#27ae60", "warning": "#f39c12", "critical": "#e74c3c"}.get(health, "#888")
 
     status_colors = {
-        "ok":       "#27ae60",
-        "warning":  "#f39c12",
+        "ok": "#27ae60",
+        "warning": "#f39c12",
         "critical": "#e74c3c",
         "saturated": "#8e44ad",
     }
@@ -400,7 +391,7 @@ def generate_report_html(sim_result: dict[str, Any], topology_name: str = "Topol
         sc = status_colors.get(r["status"], "#888")
         link_rows += (
             f"<tr>"
-            f"<td>{r.get('label') or r.get('edge_id','')}</td>"
+            f"<td>{r.get('label') or r.get('edge_id', '')}</td>"
             f"<td>{r['source_label']} → {r['target_label']}</td>"
             f"<td>{r['link_bw_label']}</td>"
             f"<td>{r['current_util_pct']}%</td>"
@@ -414,8 +405,7 @@ def generate_report_html(sim_result: dict[str, Any], topology_name: str = "Topol
     for u in upgrades:
         lag = u.get("lag_alternative") or "—"
         upgrade_rows += (
-            f"<tr><td>{u['link']}</td><td>{u['current']}</td>"
-            f"<td>{u.get('upgrade_to') or '—'}</td><td>{lag}</td></tr>"
+            f"<tr><td>{u['link']}</td><td>{u['current']}</td><td>{u.get('upgrade_to') or '—'}</td><td>{lag}</td></tr>"
         )
 
     return f"""<!DOCTYPE html>
@@ -453,13 +443,13 @@ def generate_report_html(sim_result: dict[str, Any], topology_name: str = "Topol
 
 <h2>Summary</h2>
 <div class="summary-grid">
-  <div class="kpi"><div class="kpi-val">{summary.get('total_links',0)}</div><div class="kpi-lbl">Total Links</div></div>
-  <div class="kpi"><div class="kpi-val" style="color:#e74c3c;">{summary.get('bottleneck_count',0)}</div><div class="kpi-lbl">Bottlenecks</div></div>
-  <div class="kpi"><div class="kpi-val" style="color:#f39c12;">{summary.get('warning_count',0)}</div><div class="kpi-lbl">Warnings</div></div>
-  <div class="kpi"><div class="kpi-val">{summary.get('avg_utilization_pct',0)}%</div><div class="kpi-lbl">Avg Utilisation</div></div>
+  <div class="kpi"><div class="kpi-val">{summary.get("total_links", 0)}</div><div class="kpi-lbl">Total Links</div></div>
+  <div class="kpi"><div class="kpi-val" style="color:#e74c3c;">{summary.get("bottleneck_count", 0)}</div><div class="kpi-lbl">Bottlenecks</div></div>
+  <div class="kpi"><div class="kpi-val" style="color:#f39c12;">{summary.get("warning_count", 0)}</div><div class="kpi-lbl">Warnings</div></div>
+  <div class="kpi"><div class="kpi-val">{summary.get("avg_utilization_pct", 0)}%</div><div class="kpi-lbl">Avg Utilisation</div></div>
 </div>
-<p><strong>Projection:</strong> {params.get('growth_rate_pct',20)}% annual growth over {params.get('years',3)} year(s) &nbsp;|&nbsp;
-   <strong>Peak multiplier:</strong> {params.get('peak_multiplier',1.5)}x</p>
+<p><strong>Projection:</strong> {params.get("growth_rate_pct", 20)}% annual growth over {params.get("years", 3)} year(s) &nbsp;|&nbsp;
+   <strong>Peak multiplier:</strong> {params.get("peak_multiplier", 1.5)}x</p>
 
 <h2>Per-Link Analysis</h2>
 <table>
@@ -472,7 +462,7 @@ def generate_report_html(sim_result: dict[str, Any], topology_name: str = "Topol
 
 <div class="footer">
   ICDEV™ Network Design Canvas &copy; 2026 &nbsp;|&nbsp; Classification: CUI // SP-CTI &nbsp;|&nbsp;
-  Report ID: {sim_result.get('sim_id','—')}
+  Report ID: {sim_result.get("sim_id", "—")}
 </div>
 </body>
 </html>"""

@@ -35,9 +35,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 # Hostnames / IP patterns that indicate a local/private endpoint
 _LOCAL_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0", "::1"}  # nosec B104 -- intentional bind-all for containerized/dev deployment
-_PRIVATE_IP_RE = re.compile(
-    r"^(10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|192\.168\.\d+\.\d+)$"
-)
+_PRIVATE_IP_RE = re.compile(r"^(10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|192\.168\.\d+\.\d+)$")
 
 # ── Cache ──────────────────────────────────────────────────────────────
 _cached_result: Dict[str, Any] | None = None
@@ -78,9 +76,7 @@ def _probe_url(url: str, timeout: float = 1.5) -> bool:
 
 def _probe_ollama(base_url: str = "") -> bool:
     """Check if Ollama is running locally."""
-    url = base_url or os.environ.get(
-        "OLLAMA_BASE_URL", "http://localhost:11434"
-    )
+    url = base_url or os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
     return _probe_url(url, timeout=1.0)
 
 
@@ -112,6 +108,7 @@ def probe_local_llm_servers() -> List[Dict[str, Any]]:
     # that have local base_urls
     try:
         import yaml
+
         cfg_path = BASE_DIR / "args" / "llm_config.yaml"
         if cfg_path.exists():
             with open(cfg_path, "r", encoding="utf-8") as f:
@@ -121,6 +118,7 @@ def probe_local_llm_servers() -> List[Dict[str, Any]]:
                 # Expand env vars
                 if "${" in base:
                     import re as _re
+
                     for m in _re.finditer(r"\$\{([^}]+)\}", base):
                         expr = m.group(1)
                         var, _, default = expr.partition(":-")
@@ -160,9 +158,7 @@ def _probe_claude_code_cli() -> bool:
 def _probe_claude_code_env() -> bool:
     """Check if running inside a Claude Code session."""
     return bool(
-        os.environ.get("CLAUDE_SESSION_ID")
-        or os.environ.get("CLAUDE_PROJECT_DIR")
-        or os.environ.get("CLAUDE_CODE")
+        os.environ.get("CLAUDE_SESSION_ID") or os.environ.get("CLAUDE_PROJECT_DIR") or os.environ.get("CLAUDE_CODE")
     )
 
 
@@ -191,10 +187,7 @@ def _check_cloud_config() -> bool:
         with open(cfg_path, "r", encoding="utf-8") as f:
             cfg = yaml.safe_load(f) or {}
         env = cfg.get("environment", {})
-        return (
-            env.get("air_gapped", False) is True
-            or str(env.get("cloud_mode", "")).lower() == "air_gapped"
-        )
+        return env.get("air_gapped", False) is True or str(env.get("cloud_mode", "")).lower() == "air_gapped"
     except Exception:
         return False
 

@@ -36,7 +36,6 @@ STUDIO_TABLES: dict[str, str] = {
             shared        INTEGER DEFAULT 0
         )
     """,
-
     # ── Forms ──────────────────────────────────────────────
     "studio_forms": """
         CREATE TABLE IF NOT EXISTS studio_forms (
@@ -52,7 +51,6 @@ STUDIO_TABLES: dict[str, str] = {
                           CHECK(status IN ('draft','published','archived'))
         )
     """,
-
     "studio_form_submissions": """
         CREATE TABLE IF NOT EXISTS studio_form_submissions (
             submission_id TEXT PRIMARY KEY,
@@ -62,7 +60,6 @@ STUDIO_TABLES: dict[str, str] = {
             submitted_at  TEXT DEFAULT (datetime('now'))
         )
     """,
-
     # ── Cases ──────────────────────────────────────────────
     "studio_case_types": """
         CREATE TABLE IF NOT EXISTS studio_case_types (
@@ -72,7 +69,6 @@ STUDIO_TABLES: dict[str, str] = {
             created_at     TEXT DEFAULT (datetime('now'))
         )
     """,
-
     "studio_cases": """
         CREATE TABLE IF NOT EXISTS studio_cases (
             case_id            TEXT PRIMARY KEY,
@@ -90,7 +86,6 @@ STUDIO_TABLES: dict[str, str] = {
             form_submission_id TEXT REFERENCES studio_form_submissions(submission_id)
         )
     """,
-
     # APPEND-ONLY — audit trail
     "studio_case_history": """
         CREATE TABLE IF NOT EXISTS studio_case_history (
@@ -103,7 +98,6 @@ STUDIO_TABLES: dict[str, str] = {
             comment    TEXT
         )
     """,
-
     # ── Automations ────────────────────────────────────────
     "studio_automations": """
         CREATE TABLE IF NOT EXISTS studio_automations (
@@ -118,7 +112,6 @@ STUDIO_TABLES: dict[str, str] = {
             created_at     TEXT DEFAULT (datetime('now'))
         )
     """,
-
     # APPEND-ONLY — audit trail
     "studio_automation_runs": """
         CREATE TABLE IF NOT EXISTS studio_automation_runs (
@@ -132,7 +125,6 @@ STUDIO_TABLES: dict[str, str] = {
             completed_at  TEXT
         )
     """,
-
     # ── Dashboards ─────────────────────────────────────────
     "studio_dashboards": """
         CREATE TABLE IF NOT EXISTS studio_dashboards (
@@ -155,11 +147,11 @@ APPEND_ONLY_TABLES = ["studio_case_history", "studio_automation_runs"]
 def _table_exists(conn, name: str) -> bool:
     """Check if a table exists (works on both SQLite and PostgreSQL)."""
     from tools.db.storage import get_backend
+
     backend = get_backend()
     if backend == "postgresql":
         row = conn.execute(
-            "SELECT 1 FROM information_schema.tables "
-            "WHERE table_schema = 'public' AND table_name = %s",
+            "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = %s",
             (name,),
         ).fetchone()
     else:
@@ -210,8 +202,7 @@ def main() -> None:
     if args.json:
         print(json.dumps(result, indent=2))
     else:
-        print(f"Studio DB init: {len(result['tables_created'])} created, "
-              f"{len(result['tables_existing'])} existing")
+        print(f"Studio DB init: {len(result['tables_created'])} created, {len(result['tables_existing'])} existing")
         if result["tables_created"]:
             for t in result["tables_created"]:
                 print(f"  + {t}")

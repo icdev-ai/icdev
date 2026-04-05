@@ -62,6 +62,7 @@ def _is_provider_local(provider_cfg: dict) -> bool:
 
     # Expand env vars in base_url (e.g. ${VLLM_BASE_URL:-http://localhost:8000/v1})
     import re
+
     for m in re.finditer(r"\$\{([^}]+)\}", base_url):
         expr = m.group(1)
         var, _, default = expr.partition(":-")
@@ -69,10 +70,12 @@ def _is_provider_local(provider_cfg: dict) -> bool:
 
     try:
         from tools.airgap.detector import is_local_url
+
         return is_local_url(base_url)
     except ImportError:
         # Inline fallback if detector not importable
         from urllib.parse import urlparse
+
         parsed = urlparse(base_url)
         host = (parsed.hostname or "").lower()
         return host in ("localhost", "127.0.0.1", "0.0.0.0", "::1")  # nosec B104 -- intentional bind-all for containerized/dev deployment
@@ -111,9 +114,14 @@ def _rewrite_routing_chains(config: dict) -> dict:
 
     # Determine best default fallback
     preferred_order = [
-        "qwen3-local", "qwen3.5-local", "qwen3-dual",
-        "llama-local", "codestral-local", "gemma3-local",
-        "deepseek-local", "phi4-local",
+        "qwen3-local",
+        "qwen3.5-local",
+        "qwen3-dual",
+        "llama-local",
+        "codestral-local",
+        "gemma3-local",
+        "deepseek-local",
+        "phi4-local",
     ]
     default_fallback = None
     for m in preferred_order:
@@ -160,7 +168,10 @@ def _patch_two_tier(config: dict) -> dict:
     # Make tier2 also local — use the best available local model
     # or disable two-tier entirely to just use chain routing
     tier2_candidates = [
-        "phi4-local", "deepseek-local", "qwen3-local", "llama-local",
+        "phi4-local",
+        "deepseek-local",
+        "qwen3-local",
+        "llama-local",
     ]
     local_tier2 = None
     for m in tier2_candidates:
@@ -263,6 +274,7 @@ def activate_airgap(router=None) -> Dict[str, Any]:
     if router is None:
         try:
             from tools.llm import get_router
+
             router = get_router()
         except ImportError:
             logger.error("Cannot import LLM router — air-gap activation incomplete")
@@ -303,8 +315,7 @@ def activate_airgap(router=None) -> Dict[str, Any]:
         "env_shims": list(_original_env.keys()),
     }
 
-    logger.info("Air-gap mode ACTIVATED: %d local models, %d routes patched",
-                len(local_models), len(patched_functions))
+    logger.info("Air-gap mode ACTIVATED: %d local models, %d routes patched", len(local_models), len(patched_functions))
     return result
 
 
@@ -330,6 +341,7 @@ def deactivate_airgap(router=None) -> Dict[str, Any]:
         if router is None:
             try:
                 from tools.llm import get_router
+
                 router = get_router()
             except ImportError:
                 pass

@@ -14,6 +14,7 @@ Loaded automatically by ExtensionManager._auto_load_builtins().
 Exports:
     EXTENSION_HOOKS — dict mapping hook point names to handler metadata.
 """
+
 from __future__ import annotations
 
 import logging
@@ -33,11 +34,27 @@ ADVISORY_COOLDOWN_TURNS = 12
 
 # Keywords that trigger Bayesian learning advisory
 LEARNING_KEYWORDS = [
-    "compliance", "nist", "control", "ato", "fedramp", "cmmc",
-    "stig", "poam", "ssp", "authorization", "accreditation",
-    "800-53", "security control", "implement control", "control family",
-    "assessment", "readiness", "what should i do next",
-    "which control", "prioritize", "order of operations",
+    "compliance",
+    "nist",
+    "control",
+    "ato",
+    "fedramp",
+    "cmmc",
+    "stig",
+    "poam",
+    "ssp",
+    "authorization",
+    "accreditation",
+    "800-53",
+    "security control",
+    "implement control",
+    "control family",
+    "assessment",
+    "readiness",
+    "what should i do next",
+    "which control",
+    "prioritize",
+    "order of operations",
 ]
 
 _last_advisory_turn: dict = {}
@@ -56,6 +73,7 @@ def _record_advisory(context_id: str, turn_number: int):
 # Bayesian teaching lookup
 # ---------------------------------------------------------------------------
 
+
 def _get_optimal_next_controls(project_id: str) -> dict | None:
     """Query Bayesian teacher for optimal next compliance control to implement.
 
@@ -63,6 +81,7 @@ def _get_optimal_next_controls(project_id: str) -> dict | None:
     """
     try:
         from tools.intelligence.bayesian_teacher import BayesianTeacher
+
         teacher = BayesianTeacher()
 
         # Get optimal ordering for compliance controls
@@ -77,8 +96,7 @@ def _get_optimal_next_controls(project_id: str) -> dict | None:
             return None
 
         items_text = ", ".join(
-            f"{item.get('id', 'Unknown')} (info-gain: {item.get('score', 0):.2f})"
-            for item in next_items
+            f"{item.get('id', 'Unknown')} (info-gain: {item.get('score', 0):.2f})" for item in next_items
         )
 
         return {
@@ -124,7 +142,7 @@ def _get_fallback_advisory(project_id: str) -> dict | None:
                     f"SELECT COUNT(*) as cnt FROM {tbl} WHERE project_id = ?",  # nosec B608 -- table/column names are internal constants, not user input
                     (project_id,),
                 ).fetchone()
-                assessment_count += (cnt[0] if isinstance(cnt, (tuple, list)) else cnt["cnt"])
+                assessment_count += cnt[0] if isinstance(cnt, (tuple, list)) else cnt["cnt"]
 
         if assessment_count == 0:
             return {
@@ -149,6 +167,7 @@ def _get_fallback_advisory(project_id: str) -> dict | None:
 # ---------------------------------------------------------------------------
 # Hook handler
 # ---------------------------------------------------------------------------
+
 
 def handle(context: dict) -> dict:
     """chat_message_after handler — inject Bayesian learning advisory."""

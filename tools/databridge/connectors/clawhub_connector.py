@@ -283,10 +283,13 @@ class ClawHubConnector(DataConnector):
         url = f"{self._api_base}{path}"
 
         try:
-            req = Request(url, headers={
-                "User-Agent": USER_AGENT,
-                "Accept": "application/json",
-            })
+            req = Request(
+                url,
+                headers={
+                    "User-Agent": USER_AGENT,
+                    "Accept": "application/json",
+                },
+            )
             start = time.monotonic()
             with urlopen(req, timeout=REQUEST_TIMEOUT) as resp:  # nosec B310 -- URL scheme validated; internal/configured endpoints only
                 body = resp.read().decode("utf-8")
@@ -328,6 +331,7 @@ class ClawHubConnector(DataConnector):
 def _url_encode(s: str) -> str:
     """Simple URL encoding for query parameters."""
     from urllib.parse import quote
+
     return quote(str(s), safe="")
 
 

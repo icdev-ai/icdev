@@ -370,8 +370,10 @@ class TestEmbedMemoryD72:
         mock_provider.embed.return_value = [0.1] * 10
 
         # The icdev package imports from icdev.tools.llm, so patch BOTH paths
-        with patch("tools.llm.get_embedding_provider", return_value=mock_provider), \
-             patch("icdev.tools.llm.get_embedding_provider", return_value=mock_provider):
+        with (
+            patch("tools.llm.get_embedding_provider", return_value=mock_provider),
+            patch("icdev.tools.llm.get_embedding_provider", return_value=mock_provider),
+        ):
             client, name = embed_memory.get_embedding_client()
         assert name == "llm_provider"
         assert client is mock_provider

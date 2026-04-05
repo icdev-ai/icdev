@@ -20,8 +20,13 @@ from functools import wraps
 from pathlib import Path
 
 from flask import (
-    Blueprint, abort, jsonify, redirect, render_template,
-    request, session,
+    Blueprint,
+    abort,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    session,
 )
 
 logger = logging.getLogger("icdev.boundary_canvas")
@@ -34,6 +39,7 @@ _CONFIG_PATH = _ICDEV_ROOT / "args" / "boundary_canvas_config.yaml"
 
 try:
     import yaml as _yaml
+
     _HAS_YAML = True
 except ImportError:
     _HAS_YAML = False
@@ -76,6 +82,7 @@ def create_boundary_blueprint():
     # Initialize DB
     try:
         from tools.boundary_canvas.db.init_db import init_db
+
         init_db()
     except Exception as exc:
         logger.warning("Boundary Canvas DB init failed: %s", exc)
@@ -91,12 +98,15 @@ def create_boundary_blueprint():
         @wraps(f)
         def decorated(*args, **kwargs):
             if not session.get("user_id"):
-                if (request.is_json
-                        or request.path.startswith("/boundary/api/")
-                        or request.method in ("DELETE", "POST", "PUT")):
+                if (
+                    request.is_json
+                    or request.path.startswith("/boundary/api/")
+                    or request.method in ("DELETE", "POST", "PUT")
+                ):
                     return jsonify({"error": "Authentication required"}), 401
                 return redirect("/login")
             return f(*args, **kwargs)
+
         return decorated
 
     # ── DB helpers ─────────────────────────────────────────────────────────
@@ -112,8 +122,7 @@ def create_boundary_blueprint():
         try:
             with get_connection() as conn:
                 conn.execute(
-                    "INSERT INTO bd_audit (design_id, user, action, detail, created_at) "
-                    "VALUES (?,?,?,?,?)",
+                    "INSERT INTO bd_audit (design_id, user, action, detail, created_at) VALUES (?,?,?,?,?)",
                     (design_id, user_id, action, detail, now_isoformat()),
                 )
         except Exception:
@@ -131,22 +140,30 @@ def create_boundary_blueprint():
     def bdc_index():
         """Boundary Design Canvas dashboard — list designs + recent assessments."""
         with get_connection() as conn:
-            designs = [_row_to_dict(r) for r in conn.execute(
-                "SELECT id, name, description, classification, "
-                "created_at, updated_at "
-                "FROM boundary_designs ORDER BY updated_at DESC"
-            ).fetchall()]
-            recent_assessments = [_row_to_dict(r) for r in conn.execute(
-                "SELECT a.id, a.design_id, a.assessment_type, a.score, "
-                "a.grade, a.created_at, d.name AS design_name "
-                "FROM bd_assessments a "
-                "JOIN boundary_designs d ON a.design_id = d.id "
-                "ORDER BY a.created_at DESC LIMIT 10"
-            ).fetchall()]
-            templates = [_row_to_dict(r) for r in conn.execute(
-                "SELECT id, name, category, description, tags "
-                "FROM bd_templates ORDER BY category, name"
-            ).fetchall()]
+            designs = [
+                _row_to_dict(r)
+                for r in conn.execute(
+                    "SELECT id, name, description, classification, "
+                    "created_at, updated_at "
+                    "FROM boundary_designs ORDER BY updated_at DESC"
+                ).fetchall()
+            ]
+            recent_assessments = [
+                _row_to_dict(r)
+                for r in conn.execute(
+                    "SELECT a.id, a.design_id, a.assessment_type, a.score, "
+                    "a.grade, a.created_at, d.name AS design_name "
+                    "FROM bd_assessments a "
+                    "JOIN boundary_designs d ON a.design_id = d.id "
+                    "ORDER BY a.created_at DESC LIMIT 10"
+                ).fetchall()
+            ]
+            templates = [
+                _row_to_dict(r)
+                for r in conn.execute(
+                    "SELECT id, name, category, description, tags FROM bd_templates ORDER BY category, name"
+                ).fetchall()
+            ]
         return render_template(
             "boundary_canvas/index.html",
             designs=designs,
@@ -159,9 +176,7 @@ def create_boundary_blueprint():
     def bdc_canvas(design_id):
         """Open existing boundary design canvas."""
         with get_connection() as conn:
-            design = _row_to_dict(conn.execute(
-                "SELECT * FROM boundary_designs WHERE id=?", (design_id,)
-            ).fetchone())
+            design = _row_to_dict(conn.execute("SELECT * FROM boundary_designs WHERE id=?", (design_id,)).fetchone())
         if not design:
             abort(404)
         return render_template(
@@ -207,10 +222,12 @@ def create_boundary_blueprint():
     def bdc_templates():
         """Template gallery page."""
         with get_connection() as conn:
-            templates = [_row_to_dict(r) for r in conn.execute(
-                "SELECT id, name, category, description, tags "
-                "FROM bd_templates ORDER BY category, name"
-            ).fetchall()]
+            templates = [
+                _row_to_dict(r)
+                for r in conn.execute(
+                    "SELECT id, name, category, description, tags FROM bd_templates ORDER BY category, name"
+                ).fetchall()
+            ]
         return render_template("boundary_canvas/templates.html", templates=templates)
 
     @bp.route("/assessments")
@@ -250,9 +267,9 @@ def create_boundary_blueprint():
     def bdc_pps_matrix_page(design_id):
         """PPS Matrix page for a specific boundary design."""
         with get_connection() as conn:
-            design = _row_to_dict(conn.execute(
-                "SELECT id, name FROM boundary_designs WHERE id=?", (design_id,)
-            ).fetchone())
+            design = _row_to_dict(
+                conn.execute("SELECT id, name FROM boundary_designs WHERE id=?", (design_id,)).fetchone()
+            )
         if not design:
             return redirect("/boundary/")
         return render_template("boundary_canvas/pps_matrix.html", design=design)
@@ -262,9 +279,9 @@ def create_boundary_blueprint():
     def bdc_compliance_page(design_id):
         """Compliance view page for a specific boundary design."""
         with get_connection() as conn:
-            design = _row_to_dict(conn.execute(
-                "SELECT id, name FROM boundary_designs WHERE id=?", (design_id,)
-            ).fetchone())
+            design = _row_to_dict(
+                conn.execute("SELECT id, name FROM boundary_designs WHERE id=?", (design_id,)).fetchone()
+            )
         if not design:
             return redirect("/boundary/")
         return render_template("boundary_canvas/compliance.html", design=design)
@@ -274,9 +291,9 @@ def create_boundary_blueprint():
     def bdc_remediation_page(design_id):
         """Remediation page — gap analysis with recommended fixes."""
         with get_connection() as conn:
-            design = _row_to_dict(conn.execute(
-                "SELECT id, name FROM boundary_designs WHERE id=?", (design_id,)
-            ).fetchone())
+            design = _row_to_dict(
+                conn.execute("SELECT id, name FROM boundary_designs WHERE id=?", (design_id,)).fetchone()
+            )
         if not design:
             return redirect("/boundary/")
         return render_template("boundary_canvas/remediation.html", design=design)
@@ -300,11 +317,18 @@ def create_boundary_blueprint():
                 "(id, name, description, graph_json, template_id, "
                 "classification, created_at, updated_at) "
                 "VALUES (?,?,?,?,?,?,?,?)",
-                (design_id, name, data.get("description", ""),
-                 data.get("graph_json") if isinstance(data.get("graph_json"), str)
-                 else json.dumps(data.get("graph_json", default_graph)),
-                 data.get("template_id"),
-                 data.get("classification", "CUI"), now, now),
+                (
+                    design_id,
+                    name,
+                    data.get("description", ""),
+                    data.get("graph_json")
+                    if isinstance(data.get("graph_json"), str)
+                    else json.dumps(data.get("graph_json", default_graph)),
+                    data.get("template_id"),
+                    data.get("classification", "CUI"),
+                    now,
+                    now,
+                ),
             )
         _audit(design_id, "CREATE", name)
         return jsonify({"id": design_id, "name": name}), 201
@@ -314,9 +338,7 @@ def create_boundary_blueprint():
     def bdc_api_get_design(design_id):
         """Get a single boundary design."""
         with get_connection() as conn:
-            row = conn.execute(
-                "SELECT * FROM boundary_designs WHERE id=?", (design_id,)
-            ).fetchone()
+            row = conn.execute("SELECT * FROM boundary_designs WHERE id=?", (design_id,)).fetchone()
         if not row:
             return jsonify({"error": "Not found"}), 404
         return jsonify(_row_to_dict(row))
@@ -328,9 +350,7 @@ def create_boundary_blueprint():
         data = request.get_json(force=True, silent=True) or {}
         now = now_isoformat()
         with get_connection() as conn:
-            existing = conn.execute(
-                "SELECT id FROM boundary_designs WHERE id=?", (design_id,)
-            ).fetchone()
+            existing = conn.execute("SELECT id FROM boundary_designs WHERE id=?", (design_id,)).fetchone()
             if not existing:
                 return jsonify({"error": "Not found"}), 404
             updates = []
@@ -342,9 +362,7 @@ def create_boundary_blueprint():
             if "graph_json" in data:
                 updates.append("graph_json=?")
                 val = data["graph_json"]
-                params.append(
-                    json.dumps(val) if isinstance(val, (dict, list)) else val
-                )
+                params.append(json.dumps(val) if isinstance(val, (dict, list)) else val)
             updates.append("updated_at=?")
             params.append(now)
             params.append(design_id)
@@ -357,6 +375,7 @@ def create_boundary_blueprint():
         # Cross-canvas trigger: validate boundary vs NDC enclaves, check ISA
         try:
             from tools.security_canvas.agent import on_bdc_design_saved
+
             on_bdc_design_saved(design_id)
         except Exception:
             pass
@@ -364,6 +383,7 @@ def create_boundary_blueprint():
         # Incremental KG update: re-extract only if graph_json changed
         try:
             from tools.canvas.kg_builder import rebuild_canvas_kg
+
             rebuild_canvas_kg("bdc", design_id)
         except Exception:
             pass
@@ -378,11 +398,10 @@ def create_boundary_blueprint():
         with get_connection() as conn:
             for table in child_tables:
                 conn.execute(
-                    f"DELETE FROM {table} WHERE design_id=?", (design_id,)  # noqa: S608
+                    f"DELETE FROM {table} WHERE design_id=?",
+                    (design_id,),  # noqa: S608
                 )
-            conn.execute(
-                "DELETE FROM boundary_designs WHERE id=?", (design_id,)
-            )
+            conn.execute("DELETE FROM boundary_designs WHERE id=?", (design_id,))
         _audit(design_id, "DELETE", "")
         return jsonify({"deleted": design_id})
 
@@ -403,9 +422,7 @@ def create_boundary_blueprint():
             if not row:
                 return jsonify({"error": "Not found"}), 404
             try:
-                graph = (
-                    json.loads(row[0]) if isinstance(row[0], str) else row[0]
-                )
+                graph = json.loads(row[0]) if isinstance(row[0], str) else row[0]
             except Exception:
                 return jsonify({"error": "Bad graph data"}), 500
 
@@ -429,15 +446,19 @@ def create_boundary_blueprint():
                 "cat1_findings, cat2_findings, cat3_findings, "
                 "nist_coverage_json, created_at) "
                 "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                (assess_id, design_id, assessment_type,
-                 json.dumps(result.get("findings", [])),
-                 result.get("score", 0),
-                 result.get("grade", "N/A"),
-                 result.get("cat1_findings", 0),
-                 result.get("cat2_findings", 0),
-                 result.get("cat3_findings", 0),
-                 json.dumps(result.get("nist_coverage", {})),
-                 now),
+                (
+                    assess_id,
+                    design_id,
+                    assessment_type,
+                    json.dumps(result.get("findings", [])),
+                    result.get("score", 0),
+                    result.get("grade", "N/A"),
+                    result.get("cat1_findings", 0),
+                    result.get("cat2_findings", 0),
+                    result.get("cat3_findings", 0),
+                    json.dumps(result.get("nist_coverage", {})),
+                    now,
+                ),
             )
 
         _audit(design_id, "ASSESS", f"score={result.get('score', 0)} grade={result.get('grade')}")
@@ -458,8 +479,7 @@ def create_boundary_blueprint():
         """List all boundary design templates."""
         with get_connection() as conn:
             rows = conn.execute(
-                "SELECT id, name, category, description, tags "
-                "FROM bd_templates ORDER BY category, name"
+                "SELECT id, name, category, description, tags FROM bd_templates ORDER BY category, name"
             ).fetchall()
         return jsonify([_row_to_dict(r) for r in rows])
 
@@ -469,8 +489,7 @@ def create_boundary_blueprint():
         """List available BDC snippets (reusable graph fragments)."""
         with get_connection() as conn:
             rows = conn.execute(
-                "SELECT id, name, category, description, graph_json, tags "
-                "FROM bd_snippets ORDER BY category, name"
+                "SELECT id, name, category, description, graph_json, tags FROM bd_snippets ORDER BY category, name"
             ).fetchall()
         return jsonify({"snippets": [_row_to_dict(r) for r in rows]})
 
@@ -479,9 +498,7 @@ def create_boundary_blueprint():
     def bdc_api_get_template(template_id):
         """Get a single template with full graph JSON."""
         with get_connection() as conn:
-            row = conn.execute(
-                "SELECT * FROM bd_templates WHERE id=?", (template_id,)
-            ).fetchone()
+            row = conn.execute("SELECT * FROM bd_templates WHERE id=?", (template_id,)).fetchone()
         if not row:
             return jsonify({"error": "Not found"}), 404
         return jsonify(_row_to_dict(row))
@@ -547,9 +564,7 @@ def create_boundary_blueprint():
 
         with get_connection() as conn:
             # Verify design exists
-            design = conn.execute(
-                "SELECT id FROM boundary_designs WHERE id=?", (design_id,)
-            ).fetchone()
+            design = conn.execute("SELECT id FROM boundary_designs WHERE id=?", (design_id,)).fetchone()
             if not design:
                 return jsonify({"error": "Design not found"}), 404
 
@@ -567,10 +582,17 @@ def create_boundary_blueprint():
                     "UPDATE bd_isa_tracker SET status=?, expiry_date=?, review_date=?, "
                     "owner=?, isa_doc_id=?, notes=?, updated_at=? "
                     "WHERE design_id=? AND interconnection_id=?",
-                    (status, data.get("expiry_date"), data.get("review_date"),
-                     data.get("owner", ""), data.get("isa_doc_id"),
-                     data.get("notes", ""), now,
-                     design_id, interconnection_id),
+                    (
+                        status,
+                        data.get("expiry_date"),
+                        data.get("review_date"),
+                        data.get("owner", ""),
+                        data.get("isa_doc_id"),
+                        data.get("notes", ""),
+                        now,
+                        design_id,
+                        interconnection_id,
+                    ),
                 )
                 _audit(design_id, "ISA_UPDATE", f"{interconnection_id} -> {status}")
                 return jsonify({"updated": interconnection_id, "status": status})
@@ -581,11 +603,19 @@ def create_boundary_blueprint():
                     "(id, design_id, interconnection_id, isa_doc_id, status, "
                     "expiry_date, review_date, owner, notes, created_at, updated_at) "
                     "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                    (tracker_id, design_id, interconnection_id,
-                     data.get("isa_doc_id"), status,
-                     data.get("expiry_date"), data.get("review_date"),
-                     data.get("owner", ""), data.get("notes", ""),
-                     now, now),
+                    (
+                        tracker_id,
+                        design_id,
+                        interconnection_id,
+                        data.get("isa_doc_id"),
+                        status,
+                        data.get("expiry_date"),
+                        data.get("review_date"),
+                        data.get("owner", ""),
+                        data.get("notes", ""),
+                        now,
+                        now,
+                    ),
                 )
                 _audit(design_id, "ISA_CREATE", f"{interconnection_id} status={status}")
                 return jsonify({"id": tracker_id, "interconnection_id": interconnection_id}), 201
@@ -634,7 +664,8 @@ def create_boundary_blueprint():
         data = request.get_json(force=True, silent=True) or {}
         with get_connection() as conn:
             row = conn.execute(
-                "SELECT graph_json FROM boundary_designs WHERE id=?", (design_id,),
+                "SELECT graph_json FROM boundary_designs WHERE id=?",
+                (design_id,),
             ).fetchone()
             if not row:
                 return jsonify({"error": "Design not found"}), 404
@@ -664,12 +695,20 @@ def create_boundary_blueprint():
             conn.execute(
                 "INSERT INTO bd_versions (id, design_id, version_number, graph_json, change_summary, user_id, created_at) "
                 "VALUES (?,?,?,?,?,?,?)",
-                (ver_id, design_id, ver_num,
-                 json.dumps(current_graph) if isinstance(current_graph, dict) else str(raw),
-                 change_summary, session.get("user_id", ""), now),
+                (
+                    ver_id,
+                    design_id,
+                    ver_num,
+                    json.dumps(current_graph) if isinstance(current_graph, dict) else str(raw),
+                    change_summary,
+                    session.get("user_id", ""),
+                    now,
+                ),
             )
         _audit(design_id, "VERSION_CREATE", f"v{ver_num}")
-        return jsonify({"id": ver_id, "version_number": ver_num, "change_summary": change_summary, "created_at": now}), 201
+        return jsonify(
+            {"id": ver_id, "version_number": ver_num, "change_summary": change_summary, "created_at": now}
+        ), 201
 
     @bp.route("/api/versions/<design_id>/restore/<version_id>", methods=["POST"])
     @bdc_login_required
@@ -688,8 +727,7 @@ def create_boundary_blueprint():
                 (ver[0], now, design_id),
             )
         _audit(design_id, "VERSION_RESTORE", f"restored to v{ver[1]}")
-        return jsonify({"id": design_id, "restored_version": version_id,
-                        "version_number": ver[1], "updated_at": now})
+        return jsonify({"id": design_id, "restored_version": version_id, "version_number": ver[1], "updated_at": now})
 
     @bp.route("/api/versions/<design_id>/diff", methods=["POST"])
     @bdc_login_required
@@ -717,11 +755,13 @@ def create_boundary_blueprint():
         except Exception:
             return jsonify({"error": "Failed to parse graph data"}), 500
         summary = _bdc_diff_graph(graph_a, graph_b)
-        return jsonify({
-            "version_a": {"id": ver_a_id, "version_number": ver_a[1]},
-            "version_b": {"id": ver_b_id, "version_number": ver_b[1]},
-            "summary": summary,
-        })
+        return jsonify(
+            {
+                "version_a": {"id": ver_a_id, "version_number": ver_a[1]},
+                "version_b": {"id": ver_b_id, "version_number": ver_b[1]},
+                "summary": summary,
+            }
+        )
 
     # ====================================================================
     # API ROUTES — Object palette
@@ -744,6 +784,7 @@ def create_boundary_blueprint():
     def bdc_api_export_vsdx(design_id):
         """Export boundary design as Visio .vsdx file."""
         import base64
+
         with get_connection() as conn:
             row = conn.execute(
                 "SELECT name, graph_json FROM boundary_designs WHERE id=?",
@@ -755,18 +796,19 @@ def create_boundary_blueprint():
         gj = d["graph_json"]
         graph_data = json.loads(gj) if isinstance(gj, str) else gj
         from tools.network.visio_export import export_vsdx
+
         vsdx_bytes = export_vsdx(d["name"], graph_data)
-        return jsonify({
-            "format": "vsdx",
-            "filename": d["name"].replace(" ", "_"),
-            "data": base64.b64encode(vsdx_bytes).decode("ascii"),
-        })
+        return jsonify(
+            {
+                "format": "vsdx",
+                "filename": d["name"].replace(" ", "_"),
+                "data": base64.b64encode(vsdx_bytes).decode("ascii"),
+            }
+        )
 
     def _bdc_fetch(design_id):
         with get_connection() as conn:
-            row = conn.execute(
-                "SELECT name, graph_json FROM boundary_designs WHERE id=?", (design_id,)
-            ).fetchone()
+            row = conn.execute("SELECT name, graph_json FROM boundary_designs WHERE id=?", (design_id,)).fetchone()
         if not row:
             return None, None
         d = _row_to_dict(row)
@@ -779,10 +821,12 @@ def create_boundary_blueprint():
     def bdc_api_export_json(design_id):
         """Export boundary design as JSON."""
         import base64
+
         name, graph = _bdc_fetch(design_id)
         if name is None:
             return jsonify({"error": "Not found"}), 404
         from tools.canvas.export_utils import export_json
+
         data = base64.b64encode(export_json(name, graph, "BDC")).decode("ascii")
         return jsonify({"format": "json", "filename": f"{name.replace(' ', '_')}.json", "data": data})
 
@@ -791,10 +835,12 @@ def create_boundary_blueprint():
     def bdc_api_export_markdown(design_id):
         """Export boundary design as Markdown."""
         import base64
+
         name, graph = _bdc_fetch(design_id)
         if name is None:
             return jsonify({"error": "Not found"}), 404
         from tools.canvas.export_utils import export_markdown
+
         data = base64.b64encode(export_markdown(name, graph, "BDC")).decode("ascii")
         return jsonify({"format": "markdown", "filename": f"{name.replace(' ', '_')}.md", "data": data})
 
@@ -803,10 +849,12 @@ def create_boundary_blueprint():
     def bdc_api_export_csv(design_id):
         """Export boundary design node inventory as CSV."""
         import base64
+
         name, graph = _bdc_fetch(design_id)
         if name is None:
             return jsonify({"error": "Not found"}), 404
         from tools.canvas.export_utils import export_csv
+
         data = base64.b64encode(export_csv(name, graph, "BDC")).decode("ascii")
         return jsonify({"format": "csv", "filename": f"{name.replace(' ', '_')}.csv", "data": data})
 
@@ -815,10 +863,12 @@ def create_boundary_blueprint():
     def bdc_api_export_drawio(design_id):
         """Export boundary design as DrawIO XML."""
         import base64
+
         name, graph = _bdc_fetch(design_id)
         if name is None:
             return jsonify({"error": "Not found"}), 404
         from tools.canvas.export_utils import export_drawio
+
         data = base64.b64encode(export_drawio(name, graph, "BDC")).decode("ascii")
         return jsonify({"format": "drawio", "filename": f"{name.replace(' ', '_')}.drawio", "data": data})
 
@@ -827,16 +877,19 @@ def create_boundary_blueprint():
     def bdc_api_export_svg(design_id):
         """Export boundary design as SVG vector graphic."""
         import base64
+
         name, graph = _bdc_fetch(design_id)
         if name is None:
             return jsonify({"error": "Not found"}), 404
         from tools.canvas.export_utils import export_svg
+
         data = base64.b64encode(export_svg(name, graph, "BDC")).decode("ascii")
         return jsonify({"format": "svg", "filename": f"{name.replace(' ', '_')}.svg", "data": data})
 
     # ── Collaboration (Task 18) ───────────────────────────────────────────────
     import uuid as _uuid_mod
     from tools.canvas.collaboration import CanvasCollabManager as _BDCCollabMgr
+
     _bdc_collab = _BDCCollabMgr("bd")
 
     @bp.route("/api/collab/<design_id>/join", methods=["POST"])
@@ -897,6 +950,7 @@ def create_boundary_blueprint():
             return None
         try:
             from datetime import date
+
             target = date.fromisoformat(date_str[:10])
             delta = (target - date.today()).days
             return delta
@@ -935,6 +989,7 @@ def create_boundary_blueprint():
         Thresholds: 90 / 60 / 30 days — severity escalates as deadline approaches.
         """
         import uuid as _uuid_mod
+
         thresholds = [
             (30, "critical", "ISA expires in ≤30 days"),
             (60, "high", "ISA expires in ≤60 days"),
@@ -994,14 +1049,16 @@ def create_boundary_blueprint():
                     "VALUES (?,?,?,?,?,?,?,?)",
                     (alert_id, design_id, isa_dict["id"], alert_type, severity, days, message, now_isoformat()),
                 )
-                new_alerts.append({
-                    "id": alert_id,
-                    "isa_id": isa_dict["id"],
-                    "alert_type": alert_type,
-                    "severity": severity,
-                    "days_until_expiry": days,
-                    "message": message,
-                })
+                new_alerts.append(
+                    {
+                        "id": alert_id,
+                        "isa_id": isa_dict["id"],
+                        "alert_type": alert_type,
+                        "severity": severity,
+                        "days_until_expiry": days,
+                        "message": message,
+                    }
+                )
         return new_alerts
 
     @bp.route("/api/alerts", methods=["GET"])
@@ -1083,15 +1140,12 @@ def create_boundary_blueprint():
         Also incorporates supply chain risk from ISA status.
         """
         with get_connection() as conn:
-            row = conn.execute(
-                "SELECT graph_json FROM boundary_designs WHERE id=?", (design_id,)
-            ).fetchone()
+            row = conn.execute("SELECT graph_json FROM boundary_designs WHERE id=?", (design_id,)).fetchone()
             if not row:
                 return jsonify({"error": "Not found"}), 404
 
             isas = conn.execute(
-                "SELECT interconnection_id, status, expiry_date "
-                "FROM bd_isa_tracker WHERE design_id=?",
+                "SELECT interconnection_id, status, expiry_date FROM bd_isa_tracker WHERE design_id=?",
                 (design_id,),
             ).fetchall()
 
@@ -1134,46 +1188,49 @@ def create_boundary_blueprint():
             if days is not None and 0 <= days <= 30:
                 base_score = min(100, base_score + 15)
 
-            scored_edges.append({
-                "edge_id": edge_id,
-                "label": label,
-                "interconnection_type": edge_type,
-                "risk_tier": risk_info["tier"],
-                "risk_score": base_score,
-                "isa_status": isa_status,
-                "days_until_expiry": days,
-                "nist_controls": risk_info["nist_controls"],
-            })
+            scored_edges.append(
+                {
+                    "edge_id": edge_id,
+                    "label": label,
+                    "interconnection_type": edge_type,
+                    "risk_tier": risk_info["tier"],
+                    "risk_score": base_score,
+                    "isa_status": isa_status,
+                    "days_until_expiry": days,
+                    "nist_controls": risk_info["nist_controls"],
+                }
+            )
             total_score += base_score
 
         overall = round(total_score / len(scored_edges), 1) if scored_edges else 0.0
         overall_tier = (
-            "CRITICAL" if overall >= 80 else
-            "HIGH" if overall >= 60 else
-            "MEDIUM" if overall >= 40 else
-            "LOW"
+            "CRITICAL" if overall >= 80 else "HIGH" if overall >= 60 else "MEDIUM" if overall >= 40 else "LOW"
         )
 
         # Supply chain risk: scan ISAs with supply-chain-related notes
         supply_chain_risk: list[dict] = []
         for edge in scored_edges:
             if edge["risk_tier"] in ("CRITICAL", "HIGH"):
-                supply_chain_risk.append({
-                    "interconnection": edge["label"],
-                    "risk_score": edge["risk_score"],
-                    "recommendation": (
-                        "Review supply chain risk for this interconnection. "
-                        "Validate third-party security posture and add CMMC C2C controls."
-                    ),
-                })
+                supply_chain_risk.append(
+                    {
+                        "interconnection": edge["label"],
+                        "risk_score": edge["risk_score"],
+                        "recommendation": (
+                            "Review supply chain risk for this interconnection. "
+                            "Validate third-party security posture and add CMMC C2C controls."
+                        ),
+                    }
+                )
 
-        return jsonify({
-            "design_id": design_id,
-            "overall_risk_score": overall,
-            "overall_risk_tier": overall_tier,
-            "edge_count": len(edges),
-            "scored_edges": scored_edges,
-            "supply_chain_risk": supply_chain_risk,
-        })
+        return jsonify(
+            {
+                "design_id": design_id,
+                "overall_risk_score": overall,
+                "overall_risk_tier": overall_tier,
+                "edge_count": len(edges),
+                "scored_edges": scored_edges,
+                "supply_chain_risk": supply_chain_risk,
+            }
+        )
 
     return bp

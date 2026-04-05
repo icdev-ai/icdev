@@ -306,12 +306,8 @@ def main():
     parser.add_argument("--health", action="store_true", help="Check connectivity")
     parser.add_argument("--table", help="Read endpoint (account, positions, orders)")
     parser.add_argument("--bars", metavar="SYMBOL", help="Fetch equity OHLCV bars")
-    parser.add_argument(
-        "--crypto-bars", metavar="SYMBOL", help="Fetch crypto OHLCV bars"
-    )
-    parser.add_argument(
-        "--timeframe", default="1Day", help="Bar timeframe (default: 1Day)"
-    )
+    parser.add_argument("--crypto-bars", metavar="SYMBOL", help="Fetch crypto OHLCV bars")
+    parser.add_argument("--timeframe", default="1Day", help="Bar timeframe (default: 1Day)")
     parser.add_argument("--limit", type=int, default=10, help="Max rows (default: 10)")
     parser.add_argument("--json", action="store_true", help="JSON output")
     args = parser.parse_args()
@@ -319,9 +315,7 @@ def main():
     conn = AlpacaConnector()
     if not conn.connect({}):
         result = {"status": "error", "error": "Failed to connect to Alpaca"}
-        print(
-            json.dumps(result, indent=2) if args.json else f"ERROR: {result['error']}"
-        )
+        print(json.dumps(result, indent=2) if args.json else f"ERROR: {result['error']}")
         sys.exit(1)
 
     if args.health:

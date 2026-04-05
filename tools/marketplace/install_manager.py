@@ -58,11 +58,14 @@ DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db
 # Graceful import of audit logger
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
+
     def audit_log_event(**kwargs):
         return -1
+
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -77,9 +80,7 @@ def _get_db(db_path=None):
     """Get database connection with dict-like row access."""
     path = db_path or DB_PATH
     if not Path(path).exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py"
-        )
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
     conn = get_connection(db_path=str(path))
     return conn
 
@@ -113,6 +114,7 @@ def _audit(event_type, actor, action, project_id=None, details=None):
 # ---------------------------------------------------------------------------
 # Sandbox verification (D-SEC-10)
 # ---------------------------------------------------------------------------
+
 
 def _sandbox_verify_asset(source_path, asset_id):
     """Verify asset Python files execute cleanly in LLM Sandbox container.
@@ -181,11 +183,13 @@ def _sandbox_verify_asset(source_path, asset_id):
             return None  # Sandbox went away — graceful degradation
 
         if result.exit_code != 0:
-            failures.append({
-                "file": py_file.name,
-                "error": result.error or result.stderr[:200],
-                "status": result.status,
-            })
+            failures.append(
+                {
+                    "file": py_file.name,
+                    "error": result.error or result.stderr[:200],
+                    "status": result.status,
+                }
+            )
 
     status = "fail" if failures else "pass"
     return {"status": status, "checked": checked, "failures": failures}
@@ -195,8 +199,8 @@ def _sandbox_verify_asset(source_path, asset_id):
 # Core operations
 # ---------------------------------------------------------------------------
 
-def install_asset(asset_id, version_id, tenant_id, project_id,
-                  installed_by, install_path, db_path=None):
+
+def install_asset(asset_id, version_id, tenant_id, project_id, installed_by, install_path, db_path=None):
     """Install a marketplace asset into a tenant project.
 
     Performs IL compatibility check, verifies asset is published,
@@ -223,17 +227,14 @@ def install_asset(asset_id, version_id, tenant_id, project_id,
     conn = _get_db(db_path)
     try:
         # Fetch asset details
-        asset = conn.execute(
-            "SELECT * FROM marketplace_assets WHERE id = ?", (asset_id,)
-        ).fetchone()
+        asset = conn.execute("SELECT * FROM marketplace_assets WHERE id = ?", (asset_id,)).fetchone()
         if not asset:
             raise ValueError(f"Asset not found: {asset_id}")
 
         # Check asset is published
         if asset["status"] != "published":
             raise ValueError(
-                f"Asset is not published (status: {asset['status']}). "
-                f"Only published assets can be installed."
+                f"Asset is not published (status: {asset['status']}). Only published assets can be installed."
             )
 
         # IL compatibility check: consumer IL rank >= asset IL rank
@@ -242,9 +243,11 @@ def install_asset(asset_id, version_id, tenant_id, project_id,
         # asset's own IL as the floor.  In a full deployment, look up the
         # tenant's IL from the platform DB.  To allow the caller to specify,
         # we accept tenant_id and look for tenant metadata.
-        tenant_row = conn.execute(
-            "SELECT * FROM tenants WHERE id = ?", (tenant_id,)
-        ).fetchone() if _table_exists(conn, "tenants") else None
+        tenant_row = (
+            conn.execute("SELECT * FROM tenants WHERE id = ?", (tenant_id,)).fetchone()
+            if _table_exists(conn, "tenants")
+            else None
+        )
 
         if tenant_row and "impact_level" in tenant_row.keys():
             consumer_il = tenant_row["impact_level"]
@@ -291,9 +294,7 @@ def install_asset(asset_id, version_id, tenant_id, project_id,
             (version_id, asset_id),
         ).fetchone()
         if not version:
-            raise ValueError(
-                f"Version not found: {version_id} for asset {asset_id}"
-            )
+            raise ValueError(f"Version not found: {version_id} for asset {asset_id}")
 
         # Sandbox verification (D-SEC-10) — verify asset code in container
         source_path = version["file_path"]
@@ -327,8 +328,15 @@ def install_asset(asset_id, version_id, tenant_id, project_id,
                 installed_by, install_path, status, installed_at, updated_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)""",
             (
-                installation_id, asset_id, version_id, tenant_id,
-                project_id, installed_by, str(install_path), now, now,
+                installation_id,
+                asset_id,
+                version_id,
+                tenant_id,
+                project_id,
+                installed_by,
+                str(install_path),
+                now,
+                now,
             ),
         )
 
@@ -362,6 +370,7 @@ def install_asset(asset_id, version_id, tenant_id, project_id,
     if files_copied:
         try:
             from tools.workflow.coherence_checker import run_checks
+
             coherence_report = run_checks(autofix=True)
             coherence_result = {
                 "pass": coherence_report.overall_pass,
@@ -416,9 +425,7 @@ def uninstall_asset(installation_id, uninstalled_by, db_path=None):
             raise ValueError(f"Installation not found: {installation_id}")
 
         if installation["status"] == "uninstalled":
-            raise ValueError(
-                f"Installation already uninstalled at {installation['uninstalled_at']}"
-            )
+            raise ValueError(f"Installation already uninstalled at {installation['uninstalled_at']}")
 
         now = _now()
         conn.execute(
@@ -504,9 +511,7 @@ def update_asset(installation_id, new_version_id, updated_by, db_path=None):
             (new_version_id, asset_id),
         ).fetchone()
         if not new_version:
-            raise ValueError(
-                f"Version not found: {new_version_id} for asset {asset_id}"
-            )
+            raise ValueError(f"Version not found: {new_version_id} for asset {asset_id}")
 
         # Get old version info for audit
         old_version = conn.execute(
@@ -577,8 +582,7 @@ def update_asset(installation_id, new_version_id, updated_by, db_path=None):
     }
 
 
-def list_installations(tenant_id=None, project_id=None, status=None,
-                       db_path=None):
+def list_installations(tenant_id=None, project_id=None, status=None, db_path=None):
     """List marketplace installations with optional filters.
 
     Args:
@@ -690,11 +694,13 @@ def check_updates(tenant_id, db_path=None):
                 }
                 updates_available.append(update_info)
             else:
-                up_to_date.append({
-                    "installation_id": row_dict["installation_id"],
-                    "asset_name": row_dict["asset_name"],
-                    "version": installed_ver,
-                })
+                up_to_date.append(
+                    {
+                        "installation_id": row_dict["installation_id"],
+                        "asset_name": row_dict["asset_name"],
+                        "version": installed_ver,
+                    }
+                )
 
         return {
             "tenant_id": tenant_id,
@@ -711,6 +717,7 @@ def check_updates(tenant_id, db_path=None):
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+
 def _table_exists(conn, table_name):
     """Check if a table exists in the database."""
     row = conn.execute(
@@ -724,24 +731,16 @@ def _table_exists(conn, table_name):
 # CLI
 # ---------------------------------------------------------------------------
 def main():
-    parser = argparse.ArgumentParser(
-        description="ICDEV™ Marketplace Install Manager"
-    )
+    parser = argparse.ArgumentParser(description="ICDEV™ Marketplace Install Manager")
     parser.add_argument("--json", action="store_true", help="Output as JSON")
-    parser.add_argument("--db-path", type=Path, default=None,
-                        help="Override database path")
+    parser.add_argument("--db-path", type=Path, default=None, help="Override database path")
 
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--install", action="store_true",
-                       help="Install a marketplace asset")
-    group.add_argument("--uninstall", action="store_true",
-                       help="Uninstall a marketplace asset")
-    group.add_argument("--update", action="store_true",
-                       help="Update an installed asset to a new version")
-    group.add_argument("--list", action="store_true",
-                       help="List installations")
-    group.add_argument("--check-updates", action="store_true",
-                       help="Check for available updates")
+    group.add_argument("--install", action="store_true", help="Install a marketplace asset")
+    group.add_argument("--uninstall", action="store_true", help="Uninstall a marketplace asset")
+    group.add_argument("--update", action="store_true", help="Update an installed asset to a new version")
+    group.add_argument("--list", action="store_true", help="List installations")
+    group.add_argument("--check-updates", action="store_true", help="Check for available updates")
 
     # Install args
     parser.add_argument("--asset-id", help="Marketplace asset ID")
@@ -757,18 +756,18 @@ def main():
     parser.add_argument("--updated-by", help="User performing the update")
 
     # List filters
-    parser.add_argument("--status",
-                        choices=["active", "disabled", "uninstalled",
-                                 "update_available"],
-                        help="Filter by status")
+    parser.add_argument(
+        "--status", choices=["active", "disabled", "uninstalled", "update_available"], help="Filter by status"
+    )
 
     args = parser.parse_args()
     db_path = Path(args.db_path) if args.db_path else None
 
     try:
         if args.install:
-            if not all([args.asset_id, args.version_id, args.tenant_id,
-                        args.project_id, args.installed_by, args.install_path]):
+            if not all(
+                [args.asset_id, args.version_id, args.tenant_id, args.project_id, args.installed_by, args.install_path]
+            ):
                 parser.error(
                     "--install requires --asset-id, --version-id, --tenant-id, "
                     "--project-id, --installed-by, --install-path"
@@ -785,9 +784,7 @@ def main():
 
         elif args.uninstall:
             if not all([args.installation_id, args.uninstalled_by]):
-                parser.error(
-                    "--uninstall requires --installation-id, --uninstalled-by"
-                )
+                parser.error("--uninstall requires --installation-id, --uninstalled-by")
             result = uninstall_asset(
                 installation_id=args.installation_id,
                 uninstalled_by=args.uninstalled_by,
@@ -796,10 +793,7 @@ def main():
 
         elif args.update:
             if not all([args.installation_id, args.version_id, args.updated_by]):
-                parser.error(
-                    "--update requires --installation-id, --version-id, "
-                    "--updated-by"
-                )
+                parser.error("--update requires --installation-id, --version-id, --updated-by")
             result = update_asset(
                 installation_id=args.installation_id,
                 new_version_id=args.version_id,

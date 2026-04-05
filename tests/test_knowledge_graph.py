@@ -73,8 +73,7 @@ def kg_db():
 def _populate_graph(conn, graph_id="kg-test001", project_id="test-proj"):
     """Insert a sample graph with nodes and edges for testing."""
     conn.execute(
-        "INSERT INTO kg_graphs (id, project_id, name, entity_count, edge_count) "
-        "VALUES (?, ?, 'Test Graph', 4, 2)",
+        "INSERT INTO kg_graphs (id, project_id, name, entity_count, edge_count) VALUES (?, ?, 'Test Graph', 4, 2)",
         (graph_id, project_id),
     )
     nodes = [
@@ -85,8 +84,7 @@ def _populate_graph(conn, graph_id="kg-test001", project_id="test-proj"):
     ]
     for nid, gid, label, etype, cent in nodes:
         conn.execute(
-            "INSERT INTO kg_nodes (id, graph_id, label, entity_type, centrality) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO kg_nodes (id, graph_id, label, entity_type, centrality) VALUES (?, ?, ?, ?, ?)",
             (nid, gid, label, etype, cent),
         )
     edges = [
@@ -95,8 +93,7 @@ def _populate_graph(conn, graph_id="kg-test001", project_id="test-proj"):
     ]
     for eid, gid, src, tgt, rel, w in edges:
         conn.execute(
-            "INSERT INTO kg_edges (id, graph_id, source_id, target_id, relationship, weight) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO kg_edges (id, graph_id, source_id, target_id, relationship, weight) VALUES (?, ?, ?, ?, ?, ?)",
             (eid, gid, src, tgt, rel, w),
         )
     conn.commit()
@@ -107,11 +104,13 @@ def _populate_graph(conn, graph_id="kg-test001", project_id="test-proj"):
 # text_network tests
 # ===========================================================================
 
+
 class TestTextNetworkExtraction:
     """Test entity and relationship extraction from text."""
 
     def test_extract_control_entities(self):
         from tools.knowledge_graph.text_network import _extract_entities
+
         entities = _extract_entities("The system must comply with AC-2 and SC-13 controls.")
         labels = [e[0] for e in entities]
         types = [e[1] for e in entities]
@@ -121,23 +120,27 @@ class TestTextNetworkExtraction:
 
     def test_extract_standard_entities(self):
         from tools.knowledge_graph.text_network import _extract_entities
+
         entities = _extract_entities("Per NIST SP 800-53 Rev5, all systems must be assessed.")
         labels = [e[0] for e in entities]
         assert any("800-53" in l for l in labels)
 
     def test_extract_shall_requirements(self):
         from tools.knowledge_graph.text_network import _extract_entities
+
         entities = _extract_entities("The system SHALL provide monthly reports and enforce access controls.")
         types = [e[1] for e in entities]
         assert "requirement" in types
 
     def test_empty_text_returns_empty(self):
         from tools.knowledge_graph.text_network import _extract_entities
+
         assert _extract_entities("") == []
         assert _extract_entities("   ") == []
 
     def test_extract_relationships(self):
         from tools.knowledge_graph.text_network import _extract_relationships
+
         entities = [("AC-2", "control"), ("NIST 800-53", "standard")]
         text = "AC-2 implements NIST 800-53 requirements."
         rels = _extract_relationships(text, entities)
@@ -146,6 +149,7 @@ class TestTextNetworkExtraction:
 
     def test_deduplication(self):
         from tools.knowledge_graph.text_network import _extract_entities
+
         entities = _extract_entities("AC-2 and AC-2 and AC-2 controls.")
         labels = [e[0] for e in entities]
         assert labels.count("AC-2") == 1
@@ -153,6 +157,7 @@ class TestTextNetworkExtraction:
     def test_extract_and_persist(self):
         """Full extract_entities_and_relationships with mocked DB."""
         from tools.knowledge_graph.text_network import _extract_entities
+
         text = "DISA requires AC-2 for all DoD systems."
         entities = _extract_entities(text)
         # Should extract at least the control and organization
@@ -168,6 +173,7 @@ class TestTextNetworkDB:
         with patch("tools.knowledge_graph.text_network._get_db", return_value=kg_db):
             with patch("tools.knowledge_graph.text_network._ensure_tables"):
                 from tools.knowledge_graph.text_network import get_graph
+
                 result = get_graph("kg-test001")
                 assert result["status"] == "ok"
                 assert result["graph"]["id"] == "kg-test001"
@@ -178,6 +184,7 @@ class TestTextNetworkDB:
         with patch("tools.knowledge_graph.text_network._get_db", return_value=kg_db):
             with patch("tools.knowledge_graph.text_network._ensure_tables"):
                 from tools.knowledge_graph.text_network import get_graph
+
                 result = get_graph("nonexistent")
                 assert result["status"] == "error"
 
@@ -186,6 +193,7 @@ class TestTextNetworkDB:
         with patch("tools.knowledge_graph.text_network._get_db", return_value=kg_db):
             with patch("tools.knowledge_graph.text_network._ensure_tables"):
                 from tools.knowledge_graph.text_network import search_nodes
+
                 result = search_nodes("NIST", project_id="test-proj")
                 assert result["status"] == "ok"
                 assert len(result["nodes"]) >= 1
@@ -195,21 +203,25 @@ class TestTextNetworkDB:
 # ingester tests
 # ===========================================================================
 
+
 class TestIngesterChunking:
     """Test text chunking logic."""
 
     def test_short_text_single_chunk(self):
         from tools.knowledge_graph.ingester import _chunk_text
+
         chunks = _chunk_text("Short text here.", chunk_size=2000)
         assert len(chunks) == 1
 
     def test_empty_text(self):
         from tools.knowledge_graph.ingester import _chunk_text
+
         assert _chunk_text("") == []
         assert _chunk_text(None) == []
 
     def test_long_text_multiple_chunks(self):
         from tools.knowledge_graph.ingester import _chunk_text
+
         text = "A " * 2000  # ~4000 chars
         chunks = _chunk_text(text, chunk_size=500, overlap=50)
         assert len(chunks) > 1
@@ -219,6 +231,7 @@ class TestIngesterChunking:
 
     def test_overlap_present(self):
         from tools.knowledge_graph.ingester import _chunk_text
+
         text = "word " * 1000
         chunks = _chunk_text(text, chunk_size=200, overlap=50)
         if len(chunks) >= 2:
@@ -232,6 +245,7 @@ class TestIngesterEntityExtraction:
 
     def test_extract_entities(self):
         from tools.knowledge_graph.ingester import _extract_entities
+
         entities = _extract_entities("NIST framework for cybersecurity compliance")
         assert isinstance(entities, list)
         # Should find at least NIST as organization/framework
@@ -244,6 +258,7 @@ class TestIngesterMerge:
 
     def test_merge_entities_dedup(self):
         from tools.knowledge_graph.ingester import _merge_entities
+
         batch1 = [{"label": "NIST", "entity_type": "organization"}]
         batch2 = [{"label": "NIST", "entity_type": "organization"}]
         merged = _merge_entities([batch1, batch2])
@@ -255,27 +270,33 @@ class TestIngesterMerge:
 # graph_rag tests
 # ===========================================================================
 
+
 class TestGraphRAGProfiles:
     """Test profile auto-detection and scoring."""
 
     def test_compliance_profile_detection(self):
         from tools.knowledge_graph.graph_rag import _auto_detect_profile
+
         assert _auto_detect_profile("NIST 800-53 audit controls") == "compliance"
 
     def test_exploratory_profile_detection(self):
         from tools.knowledge_graph.graph_rag import _auto_detect_profile
+
         assert _auto_detect_profile("explore gaps in coverage") == "exploratory"
 
     def test_security_profile_detection(self):
         from tools.knowledge_graph.graph_rag import _auto_detect_profile
+
         assert _auto_detect_profile("CVE vulnerability assessment") == "security"
 
     def test_provenance_profile_detection(self):
         from tools.knowledge_graph.graph_rag import _auto_detect_profile
+
         assert _auto_detect_profile("trace the origin of this supply chain") == "provenance"
 
     def test_default_profile_fallback(self):
         from tools.knowledge_graph.graph_rag import _auto_detect_profile
+
         profile = _auto_detect_profile("random text with no keywords")
         assert profile in ("compliance", "exploratory", "provenance", "security")
 
@@ -285,6 +306,7 @@ class TestGraphRAGScoring:
 
     def test_score_calculation(self):
         from tools.knowledge_graph.graph_rag import SCORING_PROFILES
+
         profile = SCORING_PROFILES["compliance"]
         # Verify weights sum to 1.0 (approximately)
         total = sum(profile.values())
@@ -292,6 +314,7 @@ class TestGraphRAGScoring:
 
     def test_all_profiles_have_required_keys(self):
         from tools.knowledge_graph.graph_rag import SCORING_PROFILES
+
         for name, weights in SCORING_PROFILES.items():
             assert "edge_weight" in weights, f"{name} missing edge_weight"
             assert "centrality" in weights, f"{name} missing centrality"
@@ -306,6 +329,7 @@ class TestGraphRAGRetrieve:
         with patch("tools.knowledge_graph.graph_rag._get_db", return_value=kg_db):
             with patch("tools.knowledge_graph.graph_rag._ensure_tables"):
                 from tools.knowledge_graph.graph_rag import retrieve
+
                 result = retrieve("AC-2 compliance", project_id="test-proj")
                 assert "status" in result
                 assert "nodes" in result or "context" in result
@@ -315,6 +339,7 @@ class TestGraphRAGRetrieve:
         with patch("tools.knowledge_graph.graph_rag._get_db", return_value=kg_db):
             with patch("tools.knowledge_graph.graph_rag._ensure_tables"):
                 from tools.knowledge_graph.graph_rag import retrieve
+
                 result = retrieve("", project_id="test-proj")
                 assert result.get("status") in ("ok", "error")
 
@@ -323,11 +348,13 @@ class TestGraphRAGRetrieve:
 # insight_generator tests
 # ===========================================================================
 
+
 class TestInsightComponents:
     """Test BFS component detection."""
 
     def test_find_components(self):
         from tools.knowledge_graph.insight_generator import _find_components
+
         adj = {
             "n1": {"n2"},
             "n2": {"n1", "n3"},
@@ -341,6 +368,7 @@ class TestInsightComponents:
 
     def test_find_components_empty(self):
         from tools.knowledge_graph.insight_generator import _find_components
+
         components = _find_components({})
         assert components == []
 
@@ -364,6 +392,7 @@ class TestInsightBridgeGaps:
         with patch("tools.knowledge_graph.insight_generator._get_db", return_value=kg_db):
             with patch("tools.knowledge_graph.insight_generator._ensure_tables", return_value=None):
                 from tools.knowledge_graph.insight_generator import find_bridge_gaps
+
                 result = find_bridge_gaps("kg-test001", db_path=":memory:")
                 assert result["status"] == "ok"
                 assert result["connected_components"] >= 2
@@ -378,6 +407,7 @@ class TestInsightOrphans:
         with patch("tools.knowledge_graph.insight_generator._get_db", return_value=kg_db):
             with patch("tools.knowledge_graph.insight_generator._ensure_tables", return_value=None):
                 from tools.knowledge_graph.insight_generator import find_orphan_nodes
+
                 result = find_orphan_nodes("kg-test001", db_path=":memory:")
                 assert result["status"] == "ok"
                 orphan_labels = [o["label"] for o in result.get("orphan_nodes", [])]
@@ -392,6 +422,7 @@ class TestInsightSummary:
         with patch("tools.knowledge_graph.insight_generator._get_db", return_value=kg_db):
             with patch("tools.knowledge_graph.insight_generator._ensure_tables", return_value=None):
                 from tools.knowledge_graph.insight_generator import graph_summary
+
                 result = graph_summary("kg-test001", db_path=":memory:")
                 assert result["status"] == "ok"
                 assert result["entity_count"] == 4
@@ -407,6 +438,7 @@ class TestInsightQuestions:
         with patch("tools.knowledge_graph.insight_generator._get_db", return_value=kg_db):
             with patch("tools.knowledge_graph.insight_generator._ensure_tables", return_value=None):
                 from tools.knowledge_graph.insight_generator import generate_questions
+
                 result = generate_questions("kg-test001", use_llm=False, db_path=":memory:")
                 assert result["status"] == "ok"
                 assert "questions" in result

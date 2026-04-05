@@ -174,10 +174,7 @@ def style_topology(graph_json, skip_legend=False):
                 b["y"] = a["y"] + 28
 
     # ── 4. Auto-generate legend (if not already present) ──
-    has_legend = any(
-        n.get("id", "").startswith("leg-") or n.get("id", "").startswith("legend-")
-        for n in nodes
-    )
+    has_legend = any(n.get("id", "").startswith("leg-") or n.get("id", "").startswith("legend-") for n in nodes)
 
     if not has_legend and not skip_legend:
         nodes = _add_legend(nodes, edges)
@@ -260,53 +257,52 @@ def _add_legend(nodes, edges):
     cy = legend_y  # current Y
 
     # Background box
-    legend_nodes.append(_n(_uid("leg"), "", "draw-rect", legend_x, cy, {
-        "_fill": "#0f1520", "_stroke": "#636e72", "_width": 240, "_height": legend_h
-    }))
+    legend_nodes.append(
+        _n(
+            _uid("leg"),
+            "",
+            "draw-rect",
+            legend_x,
+            cy,
+            {"_fill": "#0f1520", "_stroke": "#636e72", "_width": 240, "_height": legend_h},
+        )
+    )
 
     # Title
     cy += 10
-    legend_nodes.append(_n(_uid("leg"), "Legend", "text-heading", legend_x + 60, cy, {
-        "_textColor": "#eaeaea"
-    }))
+    legend_nodes.append(_n(_uid("leg"), "Legend", "text-heading", legend_x + 60, cy, {"_textColor": "#eaeaea"}))
     cy += 35
 
     # Protocols section
     if protocols_found:
-        legend_nodes.append(_n(_uid("leg"), "Protocols:", "text-label", legend_x + 15, cy, {
-            "_textColor": "#eaeaea"
-        }))
+        legend_nodes.append(_n(_uid("leg"), "Protocols:", "text-label", legend_x + 15, cy, {"_textColor": "#eaeaea"}))
         cy += 22
         for proto, (color, label) in sorted(protocols_found.items()):
-            legend_nodes.append(_n(_uid("leg"), f"\u2022 {label}", "text-label", legend_x + 15, cy, {
-                "_textColor": color
-            }))
+            legend_nodes.append(
+                _n(_uid("leg"), f"\u2022 {label}", "text-label", legend_x + 15, cy, {"_textColor": color})
+            )
             cy += 22
         cy += 12
 
     # Devices section
     if devices_found:
-        legend_nodes.append(_n(_uid("leg"), "Devices:", "text-label", legend_x + 15, cy, {
-            "_textColor": "#eaeaea"
-        }))
+        legend_nodes.append(_n(_uid("leg"), "Devices:", "text-label", legend_x + 15, cy, {"_textColor": "#eaeaea"}))
         cy += 22
         for dtype, (color, label) in sorted(devices_found.items(), key=lambda x: x[1][1]):
-            legend_nodes.append(_n(_uid("leg"), f"\u2022 {label}", "text-label", legend_x + 15, cy, {
-                "_textColor": color
-            }))
+            legend_nodes.append(
+                _n(_uid("leg"), f"\u2022 {label}", "text-label", legend_x + 15, cy, {"_textColor": color})
+            )
             cy += 22
         cy += 12
 
     # Zones section
     if zones_found:
-        legend_nodes.append(_n(_uid("leg"), "Zones:", "text-label", legend_x + 15, cy, {
-            "_textColor": "#eaeaea"
-        }))
+        legend_nodes.append(_n(_uid("leg"), "Zones:", "text-label", legend_x + 15, cy, {"_textColor": "#eaeaea"}))
         cy += 22
         for color, label in zones_found:
-            legend_nodes.append(_n(_uid("leg"), f"\u2022 {label}", "text-label", legend_x + 15, cy, {
-                "_textColor": color
-            }))
+            legend_nodes.append(
+                _n(_uid("leg"), f"\u2022 {label}", "text-label", legend_x + 15, cy, {"_textColor": color})
+            )
             cy += 22
 
     return nodes + legend_nodes
@@ -340,9 +336,7 @@ def main():
         db_path = BASE_DIR / "data" / "network_canvas.db"
         conn = sqlite3.connect(str(db_path))
         conn.row_factory = sqlite3.Row
-        row = conn.execute(
-            "SELECT graph_json FROM topologies WHERE id=?", (args.topology_id,)
-        ).fetchone()
+        row = conn.execute("SELECT graph_json FROM topologies WHERE id=?", (args.topology_id,)).fetchone()
         if not row:
             print(f"Topology {args.topology_id} not found")
             sys.exit(1)

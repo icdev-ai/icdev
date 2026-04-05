@@ -37,10 +37,15 @@ def is_killed() -> bool:
 def activate(reason: str = "manual") -> dict:
     """Activate kill switch — halt all autonomous behavior immediately."""
     LOCKFILE.parent.mkdir(parents=True, exist_ok=True)
-    LOCKFILE.write_text(json.dumps({
-        "activated_at": datetime.now(timezone.utc).isoformat(),
-        "reason": reason,
-    }), encoding="utf-8")
+    LOCKFILE.write_text(
+        json.dumps(
+            {
+                "activated_at": datetime.now(timezone.utc).isoformat(),
+                "reason": reason,
+            }
+        ),
+        encoding="utf-8",
+    )
     os.environ[ENV_VAR] = "true"
     return {"status": "activated", "lockfile": str(LOCKFILE), "env_var": ENV_VAR}
 

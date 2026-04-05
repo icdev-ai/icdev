@@ -341,8 +341,7 @@ class TestCombinedSearch:
             emb = _generate_embedding_fallback(text)
             return emb, "hashlib-fallback", 256
 
-        with patch("icdev.tools.marketplace.search_engine.generate_embedding",
-                    side_effect=_fallback_generate):
+        with patch("icdev.tools.marketplace.search_engine.generate_embedding", side_effect=_fallback_generate):
             result = search_assets("stig", db_path=marketplace_db_with_embeddings)
         assert result["search_method"] == "hybrid"
         assert result["total"] > 0

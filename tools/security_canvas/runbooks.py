@@ -79,11 +79,9 @@ INCIDENT_RUNBOOKS: list[dict] = [
             "ISSO",
         ],
         "escalation_threshold": (
-            "Escalate to CISO if more than 10 accounts compromised "
-            "or any privileged account is affected"
+            "Escalate to CISO if more than 10 accounts compromised or any privileged account is affected"
         ),
     },
-
     # ── 2. Ransomware ─────────────────────────────────────────────────────
     {
         "id": "IR-RANSOM-001",
@@ -159,7 +157,6 @@ INCIDENT_RUNBOOKS: list[dict] = [
             "if ransom demand received or PII potentially affected"
         ),
     },
-
     # ── 3. DDoS Attack ────────────────────────────────────────────────────
     {
         "id": "IR-DDOS-001",
@@ -234,7 +231,6 @@ INCIDENT_RUNBOOKS: list[dict] = [
             "or attack volume exceeds CDN scrubbing capacity"
         ),
     },
-
     # ── 4. Data Breach / Exfiltration ─────────────────────────────────────
     {
         "id": "IR-BREACH-001",
@@ -310,7 +306,6 @@ INCIDENT_RUNBOOKS: list[dict] = [
             "bodies if PII/PHI of more than 500 individuals is affected"
         ),
     },
-
     # ── 5. Insider Threat ────────────────────────────────────────────────────
     {
         "id": "IR-INSIDER-001",
@@ -380,11 +375,8 @@ INCIDENT_RUNBOOKS: list[dict] = [
             "System Admin",
             "HR Liaison",
         ],
-        "escalation_threshold": (
-            "If not contained within 2 hours, escalate to CISO"
-        ),
+        "escalation_threshold": ("If not contained within 2 hours, escalate to CISO"),
     },
-
     # ── 6. Supply Chain Compromise ───────────────────────────────────────────
     {
         "id": "IR-SUPPLY-001",
@@ -454,11 +446,8 @@ INCIDENT_RUNBOOKS: list[dict] = [
             "System Admin",
             "DevSecOps Engineer",
         ],
-        "escalation_threshold": (
-            "If not contained within 2 hours, escalate to CISO"
-        ),
+        "escalation_threshold": ("If not contained within 2 hours, escalate to CISO"),
     },
-
     # ── 7. Zero-Day Exploit ──────────────────────────────────────────────────
     {
         "id": "IR-ZERODAY-001",
@@ -528,11 +517,8 @@ INCIDENT_RUNBOOKS: list[dict] = [
             "System Admin",
             "Threat Intelligence Analyst",
         ],
-        "escalation_threshold": (
-            "If not contained within 2 hours, escalate to CISO"
-        ),
+        "escalation_threshold": ("If not contained within 2 hours, escalate to CISO"),
     },
-
     # ── 8. Phishing Campaign ─────────────────────────────────────────────────
     {
         "id": "IR-PHISH-001",
@@ -602,11 +588,8 @@ INCIDENT_RUNBOOKS: list[dict] = [
             "System Admin",
             "Email Administrator",
         ],
-        "escalation_threshold": (
-            "If not contained within 2 hours, escalate to CISO"
-        ),
+        "escalation_threshold": ("If not contained within 2 hours, escalate to CISO"),
     },
-
     # ── 9. Cloud Misconfiguration ────────────────────────────────────────────
     {
         "id": "IR-CLOUDCONFIG-001",
@@ -676,11 +659,8 @@ INCIDENT_RUNBOOKS: list[dict] = [
             "System Admin",
             "Cloud Security Engineer",
         ],
-        "escalation_threshold": (
-            "If not contained within 2 hours, escalate to CISO"
-        ),
+        "escalation_threshold": ("If not contained within 2 hours, escalate to CISO"),
     },
-
     # ── 10. API Abuse / Injection ────────────────────────────────────────────
     {
         "id": "IR-APIABUSE-001",
@@ -750,11 +730,8 @@ INCIDENT_RUNBOOKS: list[dict] = [
             "System Admin",
             "API Security Engineer",
         ],
-        "escalation_threshold": (
-            "If not contained within 2 hours, escalate to CISO"
-        ),
+        "escalation_threshold": ("If not contained within 2 hours, escalate to CISO"),
     },
-
     # ── 11. Privilege Escalation ─────────────────────────────────────────────
     {
         "id": "IR-PRIVESC-001",
@@ -824,11 +801,8 @@ INCIDENT_RUNBOOKS: list[dict] = [
             "System Admin",
             "Identity & Access Engineer",
         ],
-        "escalation_threshold": (
-            "If not contained within 2 hours, escalate to CISO"
-        ),
+        "escalation_threshold": ("If not contained within 2 hours, escalate to CISO"),
     },
-
     # ── 12. Data Integrity Violation ─────────────────────────────────────────
     {
         "id": "IR-INTEGRITY-001",
@@ -898,9 +872,7 @@ INCIDENT_RUNBOOKS: list[dict] = [
             "System Admin",
             "Database Administrator",
         ],
-        "escalation_threshold": (
-            "If not contained within 2 hours, escalate to CISO"
-        ),
+        "escalation_threshold": ("If not contained within 2 hours, escalate to CISO"),
     },
 ]
 
@@ -936,16 +908,26 @@ def get_applicable_runbooks(findings: list[dict]) -> list[dict]:
     _auth_keywords = {"authentication", "credential", "password", "mfa", "login", "identity"}
     _crypto_keywords = {"encryption", "segmentation", "tls", "ssl", "cipher", "data-at-rest"}
     _monitor_keywords = {"monitoring", "logging", "detection", "siem", "alerting", "ids", "ips"}
-    _access_keywords = {"access_control", "access-control", "rbac", "iam", "privilege", "authorization", "least-privilege"}
+    _access_keywords = {
+        "access_control",
+        "access-control",
+        "rbac",
+        "iam",
+        "privilege",
+        "authorization",
+        "least-privilege",
+    }
     _supply_keywords = {"supply_chain", "supply-chain", "dependency", "sbom", "package", "registry"}
     _data_keywords = {"data_protection", "data-protection", "integrity", "tampering", "hash", "checksum"}
 
     for finding in findings:
-        text = " ".join([
-            str(finding.get("category", "")),
-            str(finding.get("title", "")),
-            str(finding.get("description", "")),
-        ]).lower()
+        text = " ".join(
+            [
+                str(finding.get("category", "")),
+                str(finding.get("title", "")),
+                str(finding.get("description", "")),
+            ]
+        ).lower()
 
         if any(kw in text for kw in _auth_keywords):
             matched_ids.add("IR-CRED-001")

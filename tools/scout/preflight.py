@@ -42,6 +42,7 @@ def check_cpu_usage(max_percent: float = 70.0) -> Tuple[bool, str]:
     """Check if CPU usage is below threshold."""
     try:
         import psutil
+
         usage = psutil.cpu_percent(interval=2)
         if usage <= max_percent:
             return True, f"CPU usage {usage:.1f}% <= {max_percent}% threshold"
@@ -53,7 +54,9 @@ def check_cpu_usage(max_percent: float = 70.0) -> Tuple[bool, str]:
     try:
         result = subprocess.run(
             ["wmic", "cpu", "get", "loadpercentage", "/value"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         for line in result.stdout.strip().split("\n"):
             if "LoadPercentage" in line:
@@ -73,7 +76,9 @@ def check_vram_usage(max_gb: float = 6.0) -> Tuple[bool, str]:
     try:
         result = subprocess.run(
             ["nvidia-smi", "--query-gpu=memory.used", "--format=csv,noheader,nounits"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         if result.returncode == 0:
             used_mb = float(result.stdout.strip().split("\n")[0])
@@ -92,6 +97,7 @@ def check_ollama_running(url: str = "http://localhost:11434") -> Tuple[bool, str
     """Check if Ollama is running and responsive."""
     try:
         import urllib.request
+
         req = urllib.request.Request(f"{url}/api/tags", method="GET")
         with urllib.request.urlopen(req, timeout=5) as resp:  # nosec B310 — localhost Ollama
             if resp.status == 200:
@@ -114,13 +120,17 @@ def check_claude_code_session(config: Dict) -> Tuple[bool, str]:
         if sys.platform == "win32":
             result = subprocess.run(
                 ["tasklist", "/FO", "CSV", "/NH"],
-                capture_output=True, text=True, timeout=10,
+                capture_output=True,
+                text=True,
+                timeout=10,
             )
             running = result.stdout.lower()
         else:
             result = subprocess.run(
                 ["ps", "aux"],
-                capture_output=True, text=True, timeout=10,
+                capture_output=True,
+                text=True,
+                timeout=10,
             )
             running = result.stdout.lower()
 
@@ -181,8 +191,7 @@ def check_all(config: Dict) -> Tuple[bool, str, Dict]:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Scout preflight checks")
     parser.add_argument("--check-all", action="store_true", help="Run all checks")
-    parser.add_argument("--check", choices=["cpu", "vram", "ollama", "window", "claude"],
-                        help="Run a specific check")
+    parser.add_argument("--check", choices=["cpu", "vram", "ollama", "window", "claude"], help="Run a specific check")
     parser.add_argument("--json", action="store_true", dest="json_output")
     parser.add_argument("--gate", action="store_true", help="Exit 1 if check fails")
     args = parser.parse_args()
@@ -190,6 +199,7 @@ def main() -> None:
     # Load config
     try:
         import yaml
+
         cfg_path = BASE_DIR / "args" / "scout_config.yaml"
         with open(cfg_path, "r", encoding="utf-8") as f:
             config = yaml.safe_load(f) or {}

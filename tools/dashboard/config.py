@@ -14,6 +14,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 # Load .env early so all os.environ reads below pick up .env values
 try:
     from dotenv import load_dotenv
+
     load_dotenv(BASE_DIR / ".env")
 except ImportError:
     _env_file = BASE_DIR / ".env"

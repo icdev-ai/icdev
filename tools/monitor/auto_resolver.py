@@ -40,6 +40,7 @@ def _load_config() -> Dict[str, Any]:
     if config_path.exists():
         try:
             import yaml  # type: ignore
+
             with open(config_path, encoding="utf-8") as fh:
                 section = (yaml.safe_load(fh) or {}).get("auto_resolution", {})
             if section:
@@ -91,9 +92,9 @@ def _ensure_table(db_path: Optional[Path] = None) -> None:
         conn.close()
 
 
-def _update_status(resolution_id: str, status: str,
-                   extra: Optional[Dict[str, Any]] = None,
-                   db_path: Optional[Path] = None) -> None:
+def _update_status(
+    resolution_id: str, status: str, extra: Optional[Dict[str, Any]] = None, db_path: Optional[Path] = None
+) -> None:
     """Update resolution_status and optional columns for a log entry."""
     conn = _get_connection(db_path)
     try:
@@ -115,8 +116,7 @@ def _update_status(resolution_id: str, status: str,
                 val = extra["details"]
                 params.append(json.dumps(val) if isinstance(val, dict) else str(val))
         params.append(resolution_id)
-        conn.execute(
-            f"UPDATE auto_resolution_log SET {', '.join(sets)} WHERE id = ?", params)  # nosec B608 -- table/column names are internal constants, not user input
+        conn.execute(f"UPDATE auto_resolution_log SET {', '.join(sets)} WHERE id = ?", params)  # nosec B608 -- table/column names are internal constants, not user input
         conn.commit()
     finally:
         conn.close()
@@ -142,8 +142,10 @@ def normalize_sentry_alert(payload: dict) -> dict:
         "stack_trace": "\n".join(stack_lines),
         "service_name": tags.get("server_name") or tags.get("service") or payload.get("project_slug", "unknown"),
         "environment": tags.get("environment", "unknown"),
-        "source": "sentry", "severity": payload.get("level", "error"),
-        "project_id": payload.get("project_id"), "raw_payload": payload,
+        "source": "sentry",
+        "severity": payload.get("level", "error"),
+        "project_id": payload.get("project_id"),
+        "raw_payload": payload,
     }
 
 
@@ -158,8 +160,10 @@ def normalize_prometheus_alert(payload: dict) -> dict:
         "stack_trace": "",
         "service_name": labels.get("job", labels.get("service", labels.get("instance", "unknown"))),
         "environment": labels.get("environment", labels.get("namespace", "unknown")),
-        "source": "prometheus", "severity": labels.get("severity", "warning"),
-        "project_id": labels.get("project_id"), "raw_payload": payload,
+        "source": "prometheus",
+        "severity": labels.get("severity", "warning"),
+        "project_id": labels.get("project_id"),
+        "raw_payload": payload,
     }
 
 
@@ -173,14 +177,19 @@ def normalize_generic_alert(payload: dict) -> dict:
         "environment": payload.get("environment", "unknown"),
         "source": payload.get("source", "generic"),
         "severity": payload.get("severity", "warning"),
-        "project_id": payload.get("project_id"), "raw_payload": payload,
+        "project_id": payload.get("project_id"),
+        "raw_payload": payload,
     }
 
 
 def normalize_alert(payload: dict, source: str = "generic") -> dict:
     """Route to appropriate normalizer based on source string."""
-    normalizers = {"sentry": normalize_sentry_alert, "prometheus": normalize_prometheus_alert,
-                   "elk": normalize_generic_alert, "generic": normalize_generic_alert}
+    normalizers = {
+        "sentry": normalize_sentry_alert,
+        "prometheus": normalize_prometheus_alert,
+        "elk": normalize_generic_alert,
+        "generic": normalize_generic_alert,
+    }
     result = normalizers.get(source, normalize_generic_alert)(payload)
     result.setdefault("timestamp", datetime.now(timezone.utc).isoformat())
     return result
@@ -193,6 +202,7 @@ def _extract_features(failure_data: dict) -> dict:
     """Extract features for pattern matching. Delegates to pattern_detector or falls back."""
     try:
         from tools.knowledge.pattern_detector import extract_features
+
         return extract_features(failure_data)
     except ImportError:
         pass
@@ -201,8 +211,10 @@ def _extract_features(failure_data: dict) -> dict:
     et = failure_data.get("error_type", "unknown")
     sn = failure_data.get("service_name", "unknown")
     return {
-        "error_type": et, "service_name": sn,
-        "message_length": len(msg), "word_count": len(msg.split()) if msg else 0,
+        "error_type": et,
+        "service_name": sn,
+        "message_length": len(msg),
+        "word_count": len(msg.split()) if msg else 0,
         "has_stack_trace": 1 if failure_data.get("stack_trace") else 0,
         "severity_level": sev_map.get(failure_data.get("severity", "warning"), 2),
         "has_timeout": 1 if "timeout" in msg else 0,
@@ -220,6 +232,7 @@ def _match_patterns(features: dict, db_path: Optional[Path] = None) -> Tuple[flo
     """Match features against known patterns. Returns (confidence, pattern_or_None)."""
     try:
         from tools.knowledge.pattern_detector import match_known_pattern
+
         matches = match_known_pattern(features, db_path)
         if matches:
             return matches[0]["combined_score"], matches[0]
@@ -266,10 +279,14 @@ def _match_patterns(features: dict, db_path: Optional[Path] = None) -> Tuple[flo
             if combined > best_score:
                 best_score = combined
                 best_match = {
-                    "pattern_id": r["id"], "pattern_type": r["pattern_type"],
-                    "description": r["description"], "root_cause": r["root_cause"],
-                    "remediation": r["remediation"], "confidence": r["confidence"],
-                    "combined_score": round(combined, 3), "auto_healable": bool(r["auto_healable"]),
+                    "pattern_id": r["id"],
+                    "pattern_type": r["pattern_type"],
+                    "description": r["description"],
+                    "root_cause": r["root_cause"],
+                    "remediation": r["remediation"],
+                    "confidence": r["confidence"],
+                    "combined_score": round(combined, 3),
+                    "auto_healable": bool(r["auto_healable"]),
                 }
         return (best_score, best_match) if best_score > 0.1 else (0.0, None)
     except Exception:
@@ -290,8 +307,7 @@ def _check_rate_limit(config: dict, db_path: Optional[Path] = None) -> bool:
         conn.close()
 
 
-def analyze_alert(alert_payload: dict, source: str = "generic",
-                  db_path: Optional[Path] = None) -> dict:
+def analyze_alert(alert_payload: dict, source: str = "generic", db_path: Optional[Path] = None) -> dict:
     """Analyze alert (phases 1-4) without executing fixes."""
     config = _load_config()
     failure_data = normalize_alert(alert_payload, source)
@@ -307,21 +323,29 @@ def analyze_alert(alert_payload: dict, source: str = "generic",
     else:
         decision, reason = "suggest", f"Confidence {confidence:.2f} between {et}-{ct}"
 
-    result: Dict[str, Any] = {"status": "ok", "alert_normalized": failure_data,
-                               "features": features, "confidence": round(confidence, 3),
-                               "decision": decision, "reason": reason}
+    result: Dict[str, Any] = {
+        "status": "ok",
+        "alert_normalized": failure_data,
+        "features": features,
+        "confidence": round(confidence, 3),
+        "decision": decision,
+        "reason": reason,
+    }
     if decision == "suggest" and matched:
-        result["suggestion"] = {"pattern": matched.get("description"),
-                                "root_cause": matched.get("root_cause"),
-                                "remediation": matched.get("remediation"),
-                                "confidence": round(confidence, 3)}
+        result["suggestion"] = {
+            "pattern": matched.get("description"),
+            "root_cause": matched.get("root_cause"),
+            "remediation": matched.get("remediation"),
+            "confidence": round(confidence, 3),
+        }
     if matched:
         result["matched_pattern"] = matched
     return result
 
 
-def resolve_alert(alert_payload: dict, source: str = "generic",
-                  dry_run: bool = False, db_path: Optional[Path] = None) -> dict:
+def resolve_alert(
+    alert_payload: dict, source: str = "generic", dry_run: bool = False, db_path: Optional[Path] = None
+) -> dict:
     """Full auto-resolution pipeline: analyze -> record -> fix -> test -> PR -> notify."""
     config = _load_config()
     _ensure_table(db_path)
@@ -338,8 +362,16 @@ def resolve_alert(alert_payload: dict, source: str = "generic",
             "INSERT INTO auto_resolution_log (id, alert_source, alert_type, alert_payload, "
             "project_id, confidence, decision, resolution_status) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, 'analyzing')",
-            (rid, source, fd.get("error_type", "unknown"), json.dumps(alert_payload),
-             fd.get("project_id"), conf, decision))
+            (
+                rid,
+                source,
+                fd.get("error_type", "unknown"),
+                json.dumps(alert_payload),
+                fd.get("project_id"),
+                conf,
+                decision,
+            ),
+        )
         conn.commit()
     finally:
         conn.close()
@@ -354,8 +386,12 @@ def resolve_alert(alert_payload: dict, source: str = "generic",
     if decision == "suggest":
         _update_status(rid, "suggested", {"details": analysis}, db_path)
         _notify_resolution(rid, decision, analysis)
-        return {**result, "resolution_status": "suggested",
-                "suggestion": analysis.get("suggestion", {}), "message": analysis["reason"]}
+        return {
+            **result,
+            "resolution_status": "suggested",
+            "suggestion": analysis.get("suggestion", {}),
+            "message": analysis["reason"],
+        }
 
     # auto_fix path
     if not _check_rate_limit(config, db_path):
@@ -365,10 +401,15 @@ def resolve_alert(alert_payload: dict, source: str = "generic",
 
     if dry_run:
         _update_status(rid, "pending", {"details": analysis}, db_path)
-        return {**result, "resolution_status": "dry_run_preview",
-                "message": "Dry run -- would attempt auto-fix",
-                "would_execute": {"pattern": analysis.get("matched_pattern", {}),
-                                  "fix_branch": f"{config.get('branch_prefix', 'fix/auto-resolve-')}{rid}"}}
+        return {
+            **result,
+            "resolution_status": "dry_run_preview",
+            "message": "Dry run -- would attempt auto-fix",
+            "would_execute": {
+                "pattern": analysis.get("matched_pattern", {}),
+                "fix_branch": f"{config.get('branch_prefix', 'fix/auto-resolve-')}{rid}",
+            },
+        }
 
     _update_status(rid, "fixing", db_path=db_path)
     branch = _create_fix_branch(rid, config)
@@ -395,8 +436,10 @@ def resolve_alert(alert_payload: dict, source: str = "generic",
 
     if passed and config.get("auto_create_pr", True) and branch:
         title = f"[auto-resolve] Fix {fd.get('error_type', 'unknown')} in {fd.get('service_name', 'unknown')}"
-        body = (f"## Auto-Resolution {rid}\n\n**Source:** {source}\n**Confidence:** {conf}\n\n"
-                f"### Fix\n```json\n{json.dumps(fix, indent=2, default=str)}\n```\n")
+        body = (
+            f"## Auto-Resolution {rid}\n\n**Source:** {source}\n**Confidence:** {conf}\n\n"
+            f"### Fix\n```json\n{json.dumps(fix, indent=2, default=str)}\n```\n"
+        )
         pr_url = _create_pull_request(branch, title, body, config.get("base_branch", "main"))
         if pr_url:
             _update_status(rid, "pr_created", {"pr_url": pr_url, "details": fix}, db_path)
@@ -411,13 +454,15 @@ def resolve_alert(alert_payload: dict, source: str = "generic",
         _update_status(rid, "failed", {"details": {"fix": fix, "tests": test_res}}, db_path)
         result.update(resolution_status="failed", message="Fix applied but tests failed")
 
-    _notify_resolution(rid, decision, {"status": result.get("resolution_status"),
-                                        "pr_url": pr_url, "tests_passed": passed})
+    _notify_resolution(
+        rid, decision, {"status": result.get("resolution_status"), "pr_url": pr_url, "tests_passed": passed}
+    )
 
     # D-EVO-6: Ensure outcome verification table exists for PR tracking
     if pr_url:
         try:
             from tools.monitor.outcome_verifier import _ensure_table as _ov_ensure
+
             _ov_ensure(db_path)
         except ImportError:
             pass
@@ -429,23 +474,29 @@ def resolve_alert(alert_payload: dict, source: str = "generic",
 # ---------------------------------------------------------------------------
 # Execution helpers
 # ---------------------------------------------------------------------------
-def _attempt_fix(analysis: dict, failure_data: dict,
-                 db_path: Optional[Path] = None) -> dict:
+def _attempt_fix(analysis: dict, failure_data: dict, db_path: Optional[Path] = None) -> dict:
     """Attempt automated fix via self_heal_analyzer or fallback."""
     try:
         from tools.knowledge.self_heal_analyzer import analyze_and_heal
+
         hr = analyze_and_heal(failure_data, dry_run=False, db_path=db_path)
-        return {"success": hr.get("decision") == "auto_heal"
-                and hr.get("remediation_result", {}).get("success", False),
-                "method": "self_heal_analyzer", "details": hr}
+        return {
+            "success": hr.get("decision") == "auto_heal" and hr.get("remediation_result", {}).get("success", False),
+            "method": "self_heal_analyzer",
+            "details": hr,
+        }
     except ImportError:
         pass
     except Exception as exc:
         return {"success": False, "method": "self_heal_analyzer", "error": str(exc)}
     m = analysis.get("matched_pattern", {})
-    return {"success": False, "method": "fallback",
-            "reason": "self_heal_analyzer not available",
-            "pattern": m.get("description"), "remediation": m.get("remediation")}
+    return {
+        "success": False,
+        "method": "fallback",
+        "reason": "self_heal_analyzer not available",
+        "pattern": m.get("description"),
+        "remediation": m.get("remediation"),
+    }
 
 
 def _create_fix_branch(resolution_id: str, config: Optional[dict] = None) -> Optional[str]:
@@ -453,8 +504,14 @@ def _create_fix_branch(resolution_id: str, config: Optional[dict] = None) -> Opt
     cfg = config or _load_config()
     name = f"{cfg.get('branch_prefix', 'fix/auto-resolve-')}{resolution_id}"
     try:
-        p = subprocess.run(["git", "checkout", "-b", name], capture_output=True,
-                           text=True, timeout=30, cwd=str(BASE_DIR), stdin=subprocess.DEVNULL)
+        p = subprocess.run(
+            ["git", "checkout", "-b", name],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            cwd=str(BASE_DIR),
+            stdin=subprocess.DEVNULL,
+        )
         return name if p.returncode == 0 else None
     except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
         return None
@@ -463,27 +520,44 @@ def _create_fix_branch(resolution_id: str, config: Optional[dict] = None) -> Opt
 def _run_tests(project_dir: Optional[str] = None) -> dict:
     """Run pytest fail-fast. Returns {passed, output, returncode}."""
     try:
-        p = subprocess.run([sys.executable, "-m", "pytest", "tests/", "-x", "-q"],
-                           capture_output=True, text=True, timeout=300,
-                           cwd=project_dir or str(BASE_DIR), stdin=subprocess.DEVNULL)
-        return {"passed": p.returncode == 0,
-                "output": (p.stdout + p.stderr)[-2000:], "returncode": p.returncode}
+        p = subprocess.run(
+            [sys.executable, "-m", "pytest", "tests/", "-x", "-q"],
+            capture_output=True,
+            text=True,
+            timeout=300,
+            cwd=project_dir or str(BASE_DIR),
+            stdin=subprocess.DEVNULL,
+        )
+        return {"passed": p.returncode == 0, "output": (p.stdout + p.stderr)[-2000:], "returncode": p.returncode}
     except FileNotFoundError:
         return {"passed": False, "output": "pytest not found", "returncode": -1}
     except subprocess.TimeoutExpired:
         return {"passed": False, "output": "Timed out after 300s", "returncode": -1}
 
 
-def _create_pull_request(branch: str, title: str, body: str,
-                         base: str = "main") -> Optional[str]:
+def _create_pull_request(branch: str, title: str, body: str, base: str = "main") -> Optional[str]:
     """Create PR via gh or glab CLI. Returns URL or None."""
-    for cmd in (["gh", "pr", "create", "--title", title, "--body", body,
-                 "--base", base, "--head", branch],
-                ["glab", "mr", "create", "--title", title, "--description", body,
-                 "--target-branch", base, "--source-branch", branch, "--yes"]):
+    for cmd in (
+        ["gh", "pr", "create", "--title", title, "--body", body, "--base", base, "--head", branch],
+        [
+            "glab",
+            "mr",
+            "create",
+            "--title",
+            title,
+            "--description",
+            body,
+            "--target-branch",
+            base,
+            "--source-branch",
+            branch,
+            "--yes",
+        ],
+    ):
         try:
-            p = subprocess.run(cmd, capture_output=True, text=True, timeout=60,
-                               cwd=str(BASE_DIR), stdin=subprocess.DEVNULL)
+            p = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=60, cwd=str(BASE_DIR), stdin=subprocess.DEVNULL
+            )
             if p.returncode == 0 and p.stdout.strip():
                 return p.stdout.strip()
         except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
@@ -495,32 +569,46 @@ def _notify_resolution(resolution_id: str, decision: str, details: dict) -> None
     """Best-effort notification via audit trail, SSE, and gateway mailbox."""
     try:
         from tools.audit.audit_logger import log_event
-        evt = "auto_resolution_failed" if details.get("status") == "failed" else (
-            "auto_resolution_escalated" if decision == "escalate" else "auto_resolution_completed")
-        log_event(event_type=evt, actor="auto-resolver",
-                  action=f"Resolution {resolution_id}: {decision}",
-                  details={"resolution_id": resolution_id, "decision": decision, **details})
+
+        evt = (
+            "auto_resolution_failed"
+            if details.get("status") == "failed"
+            else ("auto_resolution_escalated" if decision == "escalate" else "auto_resolution_completed")
+        )
+        log_event(
+            event_type=evt,
+            actor="auto-resolver",
+            action=f"Resolution {resolution_id}: {decision}",
+            details={"resolution_id": resolution_id, "decision": decision, **details},
+        )
     except (ImportError, Exception):
         pass
     try:
         import urllib.request
-        data = json.dumps({"event_type": "auto_resolution",
-                           "data": {"resolution_id": resolution_id, "decision": decision,
-                                    "details": details}}).encode("utf-8")
+
+        data = json.dumps(
+            {
+                "event_type": "auto_resolution",
+                "data": {"resolution_id": resolution_id, "decision": decision, "details": details},
+            }
+        ).encode("utf-8")
         import os as _os
+
         _dash_port = _os.environ.get("ICDEV_DASHBOARD_PORT", "5000")
-        req = urllib.request.Request(f"http://localhost:{_dash_port}/api/events/ingest",
-                                    data=data, method="POST")
+        req = urllib.request.Request(f"http://localhost:{_dash_port}/api/events/ingest", data=data, method="POST")
         req.add_header("Content-Type", "application/json")
         urllib.request.urlopen(req, timeout=5)  # nosec B310 -- URL scheme validated; internal/configured endpoints only
     except Exception:
         pass
     try:
         from tools.agent.mailbox import send_message
-        send_message(sender_id="auto-resolver", recipient_id="monitor-agent",
-                     message_type="notification",
-                     payload={"resolution_id": resolution_id, "decision": decision,
-                              "details": details})
+
+        send_message(
+            sender_id="auto-resolver",
+            recipient_id="monitor-agent",
+            message_type="notification",
+            payload={"resolution_id": resolution_id, "decision": decision, "details": details},
+        )
     except (ImportError, Exception):
         pass
 
@@ -528,8 +616,9 @@ def _notify_resolution(resolution_id: str, decision: str, details: dict) -> None
 # ---------------------------------------------------------------------------
 # History
 # ---------------------------------------------------------------------------
-def get_resolution_history(project_id: Optional[str] = None, limit: int = 50,
-                           db_path: Optional[Path] = None) -> List[dict]:
+def get_resolution_history(
+    project_id: Optional[str] = None, limit: int = 50, db_path: Optional[Path] = None
+) -> List[dict]:
     """Query auto_resolution_log ordered by created_at DESC."""
     _ensure_table(db_path)
     conn = _get_connection(db_path)
@@ -567,10 +656,12 @@ def _format_table(history: List[dict]) -> str:
     hdr = f"{'ID':<18} {'Source':<12} {'Type':<20} {'Decision':<12} {'Status':<14} {'Conf':>6}  {'Created'}"
     lines = [hdr, "-" * len(hdr)]
     for e in history:
-        lines.append(f"{str(e.get('id','')):<18} {str(e.get('alert_source','')):<12} "
-                     f"{str(e.get('alert_type',''))[:20]:<20} {str(e.get('decision','')):<12} "
-                     f"{str(e.get('resolution_status','')):<14} {e.get('confidence',0.0):>6.3f}  "
-                     f"{str(e.get('created_at',''))}")
+        lines.append(
+            f"{str(e.get('id', '')):<18} {str(e.get('alert_source', '')):<12} "
+            f"{str(e.get('alert_type', ''))[:20]:<20} {str(e.get('decision', '')):<12} "
+            f"{str(e.get('resolution_status', '')):<14} {e.get('confidence', 0.0):>6.3f}  "
+            f"{str(e.get('created_at', ''))}"
+        )
     return "\n".join(lines)
 
 
@@ -581,8 +672,7 @@ def main() -> None:
     parser.add_argument("--resolve", action="store_true", help="Full resolution pipeline")
     parser.add_argument("--history", action="store_true", help="Show resolution history")
     parser.add_argument("--alert-file", type=Path, help="Path to alert JSON file")
-    parser.add_argument("--source", default="generic",
-                        choices=["sentry", "prometheus", "elk", "generic"])
+    parser.add_argument("--source", default="generic", choices=["sentry", "prometheus", "elk", "generic"])
     parser.add_argument("--dry-run", action="store_true", help="Preview without executing fixes")
     parser.add_argument("--project-id", type=str, help="Filter by project ID")
     parser.add_argument("--limit", type=int, default=50)

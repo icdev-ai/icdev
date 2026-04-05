@@ -32,6 +32,7 @@ def connector():
 @pytest.fixture
 def mock_api_response():
     """Factory for mocking urllib responses."""
+
     def _make_response(data, status=200):
         mock_resp = MagicMock()
         mock_resp.read.return_value = json.dumps(data).encode("utf-8")
@@ -39,6 +40,7 @@ def mock_api_response():
         mock_resp.__enter__ = MagicMock(return_value=mock_resp)
         mock_resp.__exit__ = MagicMock(return_value=False)
         return mock_resp
+
     return _make_response
 
 

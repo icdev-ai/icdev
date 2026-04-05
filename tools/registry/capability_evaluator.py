@@ -62,6 +62,7 @@ DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db
 # =========================================================================
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
@@ -175,6 +176,7 @@ class CapabilityEvaluator:
             return {}
         try:
             import yaml
+
             with open(config_path, encoding="utf-8") as f:
                 data = yaml.safe_load(f) or {}
             return data.get("evaluation", {})
@@ -239,10 +241,7 @@ class CapabilityEvaluator:
         }
 
         # Weighted average
-        weighted_score = sum(
-            dim_scores[dim] * weight
-            for dim, weight in self.DIMENSIONS.items()
-        )
+        weighted_score = sum(dim_scores[dim] * weight for dim, weight in self.DIMENSIONS.items())
         weighted_score = round(weighted_score, 4)
 
         # Determine outcome (REQ-36-021)
@@ -356,11 +355,23 @@ class CapabilityEvaluator:
 
         # Broadly applicable categories
         broad_keywords = [
-            "security", "compliance", "testing", "monitoring", "logging",
-            "audit", "performance", "error", "retry", "resilience",
+            "security",
+            "compliance",
+            "testing",
+            "monitoring",
+            "logging",
+            "audit",
+            "performance",
+            "error",
+            "retry",
+            "resilience",
         ]
         narrow_keywords = [
-            "specific", "custom", "niche", "experimental", "prototype",
+            "specific",
+            "custom",
+            "niche",
+            "experimental",
+            "prototype",
         ]
 
         score = 0.5  # Base
@@ -405,11 +416,23 @@ class CapabilityEvaluator:
         # Heuristic: check for compliance-related keywords
         name = data.get("name", "").lower()
         positive_kw = [
-            "stig", "nist", "fedramp", "cmmc", "compliance", "security",
-            "audit", "encryption", "fips", "cui",
+            "stig",
+            "nist",
+            "fedramp",
+            "cmmc",
+            "compliance",
+            "security",
+            "audit",
+            "encryption",
+            "fips",
+            "cui",
         ]
         negative_kw = [
-            "bypass", "disable", "skip", "ignore", "override",
+            "bypass",
+            "disable",
+            "skip",
+            "ignore",
+            "override",
         ]
 
         score = 0.60
@@ -595,8 +618,16 @@ class CapabilityEvaluator:
                 pass
 
         # Boost for security-enhancing capabilities
-        security_keywords = ["security", "encrypt", "authentication", "authorization",
-                           "compliance", "audit", "monitoring", "detection"]
+        security_keywords = [
+            "security",
+            "encrypt",
+            "authentication",
+            "authorization",
+            "compliance",
+            "audit",
+            "monitoring",
+            "detection",
+        ]
         matches = sum(1 for kw in security_keywords if kw in description)
         score += min(matches * 0.05, 0.15)
 
@@ -621,6 +652,7 @@ class CapabilityEvaluator:
         """
         try:
             from tools.registry.sandbox_scorer import score_sandbox
+
             result = score_sandbox(
                 capability_data=data,
                 db_path=self.db_path,
@@ -640,17 +672,12 @@ class CapabilityEvaluator:
 # CLI
 # =========================================================================
 def main():
-    parser = argparse.ArgumentParser(
-        description="ICDEV™ Capability Evaluator -- 7-dimension scoring (REQ-36-020)"
-    )
+    parser = argparse.ArgumentParser(description="ICDEV™ Capability Evaluator -- 7-dimension scoring (REQ-36-020)")
     parser.add_argument("--json", action="store_true", help="JSON output")
-    parser.add_argument(
-        "--db-path", type=Path, default=None, help="Database path override"
-    )
+    parser.add_argument("--db-path", type=Path, default=None, help="Database path override")
 
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--evaluate", action="store_true",
-                       help="Evaluate a capability")
+    group.add_argument("--evaluate", action="store_true", help="Evaluate a capability")
 
     parser.add_argument("--capability-data", help="JSON string of capability data")
 
@@ -693,15 +720,11 @@ def main():
                 print("  Dimensions:")
                 dims = result.get("dimensions", {})
                 weights = result.get("weights", {})
-                for dim_name, dim_score in sorted(dims.items(),
-                                                   key=lambda x: x[1],
-                                                   reverse=True):
+                for dim_name, dim_score in sorted(dims.items(), key=lambda x: x[1], reverse=True):
                     weight = weights.get(dim_name, 0)
                     weighted = dim_score * weight
                     bar = "#" * int(dim_score * 20)
-                    print(f"    {dim_name:22s}  {dim_score:.4f}  "
-                          f"(w={weight:.2f}, contrib={weighted:.4f})  "
-                          f"|{bar}|")
+                    print(f"    {dim_name:22s}  {dim_score:.4f}  (w={weight:.2f}, contrib={weighted:.4f})  |{bar}|")
 
     except Exception as e:
         error = {"error": str(e)}

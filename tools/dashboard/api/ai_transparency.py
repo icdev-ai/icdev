@@ -82,15 +82,18 @@ def get_stats():
         # Compute transparency score from framework coverage averages
         try:
             assessment_tables = [
-                "omb_m25_21_assessments", "omb_m26_04_assessments",
-                "nist_ai_600_1_assessments", "gao_ai_assessments",
+                "omb_m25_21_assessments",
+                "omb_m26_04_assessments",
+                "nist_ai_600_1_assessments",
+                "gao_ai_assessments",
             ]
             pid = _resolve_project_id(project_id)
             coverages = []
             for tbl in assessment_tables:
                 try:
                     total = conn.execute(
-                        f"SELECT COUNT(DISTINCT requirement_id) as cnt FROM {tbl} WHERE project_id = ?", (pid,),  # nosec B608 -- table/column names are internal constants, not user input
+                        f"SELECT COUNT(DISTINCT requirement_id) as cnt FROM {tbl} WHERE project_id = ?",
+                        (pid,),  # nosec B608 -- table/column names are internal constants, not user input
                     ).fetchone()
                     satisfied = conn.execute(
                         f"SELECT COUNT(DISTINCT requirement_id) as cnt FROM {tbl} WHERE project_id = ? AND status IN ('satisfied', 'partially_satisfied')",  # nosec B608 -- table/column names are internal constants, not user input
@@ -103,14 +106,20 @@ def get_stats():
             if coverages:
                 framework_avg = round(sum(coverages) / len(coverages), 1)
                 # Transparency = 0.4 * framework + 0.4 * artifact + 0.2 * fairness
-                artifact_score = 100.0 if all([
-                    stats["inventory_count"] > 0, stats["model_card_count"] > 0,
-                    stats["system_card_count"] > 0, stats["confabulation_count"] > 0,
-                ]) else 50.0
-                fairness = stats["fairness_score"] or 0
-                stats["transparency_score"] = round(
-                    0.4 * framework_avg + 0.4 * artifact_score + 0.2 * fairness, 1
+                artifact_score = (
+                    100.0
+                    if all(
+                        [
+                            stats["inventory_count"] > 0,
+                            stats["model_card_count"] > 0,
+                            stats["system_card_count"] > 0,
+                            stats["confabulation_count"] > 0,
+                        ]
+                    )
+                    else 50.0
                 )
+                fairness = stats["fairness_score"] or 0
+                stats["transparency_score"] = round(0.4 * framework_avg + 0.4 * artifact_score + 0.2 * fairness, 1)
         except Exception:
             pass
 
@@ -137,7 +146,8 @@ def get_frameworks():
                 where = "WHERE project_id = ?" if project_id else ""
                 params = (project_id,) if project_id else ()
                 total = conn.execute(
-                    f"SELECT COUNT(DISTINCT requirement_id) as cnt FROM {table} {where}", params  # nosec B608 -- table/column names are internal constants, not user input
+                    f"SELECT COUNT(DISTINCT requirement_id) as cnt FROM {table} {where}",
+                    params,  # nosec B608 -- table/column names are internal constants, not user input
                 ).fetchone()["cnt"]
                 satisfied = conn.execute(
                     f"SELECT COUNT(DISTINCT requirement_id) as cnt FROM {table} {where} {'AND' if project_id else 'WHERE'} status IN ('satisfied', 'partially_satisfied')",  # nosec B608 -- table/column names are internal constants, not user input
@@ -162,7 +172,8 @@ def get_inventory():
         where = "WHERE project_id = ?" if project_id else ""
         params = (project_id,) if project_id else ()
         rows = conn.execute(
-            f"SELECT * FROM ai_use_case_inventory {where} ORDER BY name", params  # nosec B608 -- table/column names are internal constants, not user input
+            f"SELECT * FROM ai_use_case_inventory {where} ORDER BY name",
+            params,  # nosec B608 -- table/column names are internal constants, not user input
         ).fetchall()
         conn.close()
         return jsonify({"items": [dict(r) for r in rows], "total": len(rows)})
@@ -195,6 +206,7 @@ def get_gaps():
     try:
         sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
         from ai_transparency_audit import run_transparency_audit
+
         result = run_transparency_audit(project_id, db_path=DB_PATH)
         return jsonify({"gaps": result.get("gaps", []), "gap_count": result.get("gap_count", 0)})
     except Exception as e:
@@ -210,6 +222,7 @@ def run_audit():
     try:
         sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
         from ai_transparency_audit import run_transparency_audit
+
         result = run_transparency_audit(project_id, project_dir, db_path=DB_PATH)
         return jsonify(result)
     except Exception as e:
@@ -227,6 +240,7 @@ def generate_model_card():
     try:
         sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
         from model_card_generator import generate_model_card as gen
+
         result = gen(project_id, model_name, db_path=DB_PATH)
         return jsonify(result)
     except Exception as e:
@@ -241,6 +255,7 @@ def generate_system_card():
     try:
         sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
         from system_card_generator import generate_system_card as gen
+
         result = gen(project_id, db_path=DB_PATH)
         return jsonify(result)
     except Exception as e:

@@ -51,23 +51,28 @@ CONFIG_PATH = BASE_DIR / "args" / "innovation_config.yaml"
 # =========================================================================
 try:
     import yaml
+
     _HAS_YAML = True
 except ImportError:
     _HAS_YAML = False
 
 try:
     import requests
+
     _HAS_REQUESTS = True
 except ImportError:
     _HAS_REQUESTS = False
 
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
+
     def audit_log_event(**kwargs):
         return -1
+
 
 try:
     _HAS_CB = True
@@ -95,7 +100,6 @@ def _get_db(db_path=None):
         raise FileNotFoundError(f"Database not found: {path}")
     conn = get_connection(db_path=str(path))
     return conn
-
 
 
 def _signal_id():
@@ -203,24 +207,28 @@ def scan_github(config):
                     continue
 
                 for item in (data or {}).get("items", [])[:max_results]:
-                    signals.append({
-                        "id": _signal_id(),
-                        "source": "github",
-                        "source_type": "trending_repo",
-                        "title": item.get("full_name", ""),
-                        "description": item.get("description", "") or "",
-                        "url": item.get("html_url", ""),
-                        "metadata": json.dumps({
-                            "stars": item.get("stargazers_count", 0),
-                            "forks": item.get("forks_count", 0),
-                            "language": item.get("language", ""),
-                            "topics": item.get("topics", []),
-                            "created_at": item.get("created_at", ""),
-                        }),
-                        "community_score": min(item.get("stargazers_count", 0) / 1000, 1.0),
-                        "content_hash": _content_hash(item.get("html_url", "")),
-                        "discovered_at": now_iso(),
-                    })
+                    signals.append(
+                        {
+                            "id": _signal_id(),
+                            "source": "github",
+                            "source_type": "trending_repo",
+                            "title": item.get("full_name", ""),
+                            "description": item.get("description", "") or "",
+                            "url": item.get("html_url", ""),
+                            "metadata": json.dumps(
+                                {
+                                    "stars": item.get("stargazers_count", 0),
+                                    "forks": item.get("forks_count", 0),
+                                    "language": item.get("language", ""),
+                                    "topics": item.get("topics", []),
+                                    "created_at": item.get("created_at", ""),
+                                }
+                            ),
+                            "community_score": min(item.get("stargazers_count", 0) / 1000, 1.0),
+                            "content_hash": _content_hash(item.get("html_url", "")),
+                            "discovered_at": now_iso(),
+                        }
+                    )
                 time.sleep(1)  # Rate limit courtesy
 
         elif target_type == "issues":
@@ -251,24 +259,28 @@ def scan_github(config):
                         continue  # Skip PRs
                     reactions = item.get("reactions", {})
                     thumbs_up = reactions.get("+1", 0) if isinstance(reactions, dict) else 0
-                    signals.append({
-                        "id": _signal_id(),
-                        "source": "github",
-                        "source_type": "issue",
-                        "title": f"[{repo}] {item.get('title', '')}",
-                        "description": (item.get("body", "") or "")[:2000],
-                        "url": item.get("html_url", ""),
-                        "metadata": json.dumps({
-                            "repo": repo,
-                            "labels": [lbl.get("name", "") for lbl in item.get("labels", [])],
-                            "reactions_thumbs_up": thumbs_up,
-                            "comments": item.get("comments", 0),
-                            "created_at": item.get("created_at", ""),
-                        }),
-                        "community_score": min(thumbs_up / 50, 1.0),
-                        "content_hash": _content_hash(item.get("html_url", "")),
-                        "discovered_at": now_iso(),
-                    })
+                    signals.append(
+                        {
+                            "id": _signal_id(),
+                            "source": "github",
+                            "source_type": "issue",
+                            "title": f"[{repo}] {item.get('title', '')}",
+                            "description": (item.get("body", "") or "")[:2000],
+                            "url": item.get("html_url", ""),
+                            "metadata": json.dumps(
+                                {
+                                    "repo": repo,
+                                    "labels": [lbl.get("name", "") for lbl in item.get("labels", [])],
+                                    "reactions_thumbs_up": thumbs_up,
+                                    "comments": item.get("comments", 0),
+                                    "created_at": item.get("created_at", ""),
+                                }
+                            ),
+                            "community_score": min(thumbs_up / 50, 1.0),
+                            "content_hash": _content_hash(item.get("html_url", "")),
+                            "discovered_at": now_iso(),
+                        }
+                    )
                 time.sleep(1)
 
     return signals
@@ -295,9 +307,7 @@ def scan_cve_databases(config):
 
     for source in sources:
         if source.get("name") == "nvd":
-            last_modified = (datetime.now(timezone.utc) - timedelta(hours=24)).strftime(
-                "%Y-%m-%dT%H:%M:%S.000"
-            )
+            last_modified = (datetime.now(timezone.utc) - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%S.000")
             params = {
                 "lastModStartDate": last_modified,
                 "lastModEndDate": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000"),
@@ -328,30 +338,30 @@ def scan_cve_databases(config):
                     )
                     metrics = cve_data.get("metrics", {})
                     cvss_data = metrics.get("cvssMetricV31", [{}])
-                    cvss_score = (
-                        cvss_data[0].get("cvssData", {}).get("baseScore", 0.0)
-                        if cvss_data
-                        else 0.0
-                    )
+                    cvss_score = cvss_data[0].get("cvssData", {}).get("baseScore", 0.0) if cvss_data else 0.0
 
-                    signals.append({
-                        "id": _signal_id(),
-                        "source": "nvd",
-                        "source_type": "cve",
-                        "title": cve_id,
-                        "description": desc[:2000],
-                        "url": f"https://nvd.nist.gov/vuln/detail/{cve_id}",
-                        "metadata": json.dumps({
-                            "cve_id": cve_id,
-                            "cvss_score": cvss_score,
-                            "severity": severity,
-                            "published": cve_data.get("published", ""),
-                            "modified": cve_data.get("lastModified", ""),
-                        }),
-                        "community_score": min(cvss_score / 10.0, 1.0),
-                        "content_hash": _content_hash(cve_id),
-                        "discovered_at": now_iso(),
-                    })
+                    signals.append(
+                        {
+                            "id": _signal_id(),
+                            "source": "nvd",
+                            "source_type": "cve",
+                            "title": cve_id,
+                            "description": desc[:2000],
+                            "url": f"https://nvd.nist.gov/vuln/detail/{cve_id}",
+                            "metadata": json.dumps(
+                                {
+                                    "cve_id": cve_id,
+                                    "cvss_score": cvss_score,
+                                    "severity": severity,
+                                    "published": cve_data.get("published", ""),
+                                    "modified": cve_data.get("lastModified", ""),
+                                }
+                            ),
+                            "community_score": min(cvss_score / 10.0, 1.0),
+                            "content_hash": _content_hash(cve_id),
+                            "discovered_at": now_iso(),
+                        }
+                    )
                 time.sleep(2)  # NVD rate limit
 
         elif source.get("name") == "github_advisories":
@@ -382,26 +392,28 @@ def scan_cve_databases(config):
                     for advisory in (data or [])[:max_results]:
                         ghsa_id = advisory.get("ghsa_id", "")
                         cve_id = advisory.get("cve_id", ghsa_id)
-                        signals.append({
-                            "id": _signal_id(),
-                            "source": "github_advisories",
-                            "source_type": "cve",
-                            "title": f"{cve_id}: {advisory.get('summary', '')}",
-                            "description": (advisory.get("description", "") or "")[:2000],
-                            "url": advisory.get("html_url", ""),
-                            "metadata": json.dumps({
-                                "ghsa_id": ghsa_id,
-                                "cve_id": cve_id,
-                                "severity": advisory.get("severity", ""),
-                                "ecosystem": eco,
-                                "cvss_score": (advisory.get("cvss", {}) or {}).get("score", 0),
-                            }),
-                            "community_score": min(
-                                ((advisory.get("cvss", {}) or {}).get("score", 0)) / 10.0, 1.0
-                            ),
-                            "content_hash": _content_hash(ghsa_id or cve_id),
-                            "discovered_at": now_iso(),
-                        })
+                        signals.append(
+                            {
+                                "id": _signal_id(),
+                                "source": "github_advisories",
+                                "source_type": "cve",
+                                "title": f"{cve_id}: {advisory.get('summary', '')}",
+                                "description": (advisory.get("description", "") or "")[:2000],
+                                "url": advisory.get("html_url", ""),
+                                "metadata": json.dumps(
+                                    {
+                                        "ghsa_id": ghsa_id,
+                                        "cve_id": cve_id,
+                                        "severity": advisory.get("severity", ""),
+                                        "ecosystem": eco,
+                                        "cvss_score": (advisory.get("cvss", {}) or {}).get("score", 0),
+                                    }
+                                ),
+                                "community_score": min(((advisory.get("cvss", {}) or {}).get("score", 0)) / 10.0, 1.0),
+                                "content_hash": _content_hash(ghsa_id or cve_id),
+                                "discovered_at": now_iso(),
+                            }
+                        )
                     time.sleep(1)
 
     return signals
@@ -448,25 +460,29 @@ def scan_stackoverflow(config):
             score = item.get("score", 0)
             if score < min_score:
                 continue
-            signals.append({
-                "id": _signal_id(),
-                "source": "stackoverflow",
-                "source_type": "question",
-                "title": item.get("title", ""),
-                "description": (item.get("body", "") or "")[:2000],
-                "url": item.get("link", ""),
-                "metadata": json.dumps({
-                    "tags": item.get("tags", []),
-                    "score": score,
-                    "answer_count": item.get("answer_count", 0),
-                    "view_count": item.get("view_count", 0),
-                    "is_answered": item.get("is_answered", False),
-                    "creation_date": item.get("creation_date", 0),
-                }),
-                "community_score": min(score / 100, 1.0),
-                "content_hash": _content_hash(str(item.get("question_id", ""))),
-                "discovered_at": now_iso(),
-            })
+            signals.append(
+                {
+                    "id": _signal_id(),
+                    "source": "stackoverflow",
+                    "source_type": "question",
+                    "title": item.get("title", ""),
+                    "description": (item.get("body", "") or "")[:2000],
+                    "url": item.get("link", ""),
+                    "metadata": json.dumps(
+                        {
+                            "tags": item.get("tags", []),
+                            "score": score,
+                            "answer_count": item.get("answer_count", 0),
+                            "view_count": item.get("view_count", 0),
+                            "is_answered": item.get("is_answered", False),
+                            "creation_date": item.get("creation_date", 0),
+                        }
+                    ),
+                    "community_score": min(score / 100, 1.0),
+                    "content_hash": _content_hash(str(item.get("question_id", ""))),
+                    "discovered_at": now_iso(),
+                }
+            )
         time.sleep(1)
 
     return signals
@@ -503,7 +519,7 @@ def scan_hackernews(config):
     if err:
         return [_error_signal("hackernews", "topstories", err)]
 
-    story_ids = (data or [])[:max_results * 2]  # Fetch more, filter by score
+    story_ids = (data or [])[: max_results * 2]  # Fetch more, filter by score
 
     for story_id in story_ids:
         item_data, err = _safe_get(f"{HN_API}/item/{story_id}.json")
@@ -517,33 +533,53 @@ def scan_hackernews(config):
         title = item_data.get("title", "")
         # Filter for relevant topics
         relevance_keywords = [
-            "security", "compliance", "devops", "devsecops", "kubernetes",
-            "terraform", "ci/cd", "pipeline", "vulnerability", "sbom",
-            "zero trust", "supply chain", "developer", "tooling", "ai",
-            "coding", "automation", "infrastructure", "cloud", "container",
+            "security",
+            "compliance",
+            "devops",
+            "devsecops",
+            "kubernetes",
+            "terraform",
+            "ci/cd",
+            "pipeline",
+            "vulnerability",
+            "sbom",
+            "zero trust",
+            "supply chain",
+            "developer",
+            "tooling",
+            "ai",
+            "coding",
+            "automation",
+            "infrastructure",
+            "cloud",
+            "container",
         ]
         title_lower = title.lower()
         if not any(kw in title_lower for kw in relevance_keywords):
             continue
 
-        signals.append({
-            "id": _signal_id(),
-            "source": "hackernews",
-            "source_type": "story",
-            "title": title,
-            "description": item_data.get("text", "") or f"URL: {item_data.get('url', '')}",
-            "url": item_data.get("url", f"https://news.ycombinator.com/item?id={story_id}"),
-            "metadata": json.dumps({
-                "hn_id": story_id,
-                "score": score,
-                "comments": item_data.get("descendants", 0),
-                "by": item_data.get("by", ""),
-                "time": item_data.get("time", 0),
-            }),
-            "community_score": min(score / 500, 1.0),
-            "content_hash": _content_hash(str(story_id)),
-            "discovered_at": now_iso(),
-        })
+        signals.append(
+            {
+                "id": _signal_id(),
+                "source": "hackernews",
+                "source_type": "story",
+                "title": title,
+                "description": item_data.get("text", "") or f"URL: {item_data.get('url', '')}",
+                "url": item_data.get("url", f"https://news.ycombinator.com/item?id={story_id}"),
+                "metadata": json.dumps(
+                    {
+                        "hn_id": story_id,
+                        "score": score,
+                        "comments": item_data.get("descendants", 0),
+                        "by": item_data.get("by", ""),
+                        "time": item_data.get("time", 0),
+                    }
+                ),
+                "community_score": min(score / 500, 1.0),
+                "content_hash": _content_hash(str(story_id)),
+                "discovered_at": now_iso(),
+            }
+        )
 
         if len(signals) >= max_results:
             break
@@ -655,22 +691,27 @@ def scan_sam_gov_for_innovation(config):
     signals = []
     try:
         from tools.govcon.requirement_extractor import get_patterns
+
         patterns = get_patterns(min_frequency=3)
         for p in patterns.get("patterns", []):
-            signals.append({
-                "source_type": "sam_gov",
-                "category": "govcon_opportunity",
-                "title": f"GovCon pattern: {p.get('pattern_name', 'unknown')}",
-                "description": p.get("representative_text", "")[:500],
-                "url": "",
-                "relevance_score": min(p.get("frequency", 1) / 10.0, 1.0),
-                "metadata": json.dumps({
-                    "domain": p.get("domain_category", "unknown"),
-                    "frequency": p.get("frequency", 0),
-                    "coverage": p.get("capability_coverage"),
-                    "source": "sam_gov_requirement_pattern",
-                }),
-            })
+            signals.append(
+                {
+                    "source_type": "sam_gov",
+                    "category": "govcon_opportunity",
+                    "title": f"GovCon pattern: {p.get('pattern_name', 'unknown')}",
+                    "description": p.get("representative_text", "")[:500],
+                    "url": "",
+                    "relevance_score": min(p.get("frequency", 1) / 10.0, 1.0),
+                    "metadata": json.dumps(
+                        {
+                            "domain": p.get("domain_category", "unknown"),
+                            "frequency": p.get("frequency", 0),
+                            "coverage": p.get("capability_coverage"),
+                            "source": "sam_gov_requirement_pattern",
+                        }
+                    ),
+                }
+            )
     except Exception:
         signals.append({"source_type": "scan_error", "title": "SAM.gov scan failed", "description": ""})
     return signals
@@ -743,23 +784,27 @@ def list_sources():
 
     for source_name, scanner in SOURCE_SCANNERS.items():
         source_config = config.get("sources", {}).get(source_name, {})
-        sources.append({
-            "name": source_name,
-            "enabled": source_config.get("enabled", False),
-            "scan_interval_hours": source_config.get("scan_interval_hours", 12),
-            "has_scanner": True,
-        })
+        sources.append(
+            {
+                "name": source_name,
+                "enabled": source_config.get("enabled", False),
+                "scan_interval_hours": source_config.get("scan_interval_hours", 12),
+                "has_scanner": True,
+            }
+        )
 
     # Also list sources with config but no scanner yet
     for source_name in config.get("sources", {}):
         if source_name not in SOURCE_SCANNERS:
             source_config = config["sources"][source_name]
-            sources.append({
-                "name": source_name,
-                "enabled": source_config.get("enabled", False),
-                "scan_interval_hours": source_config.get("scan_interval_hours", 12),
-                "has_scanner": False,
-            })
+            sources.append(
+                {
+                    "name": source_name,
+                    "enabled": source_config.get("enabled", False),
+                    "scan_interval_hours": source_config.get("scan_interval_hours", 12),
+                    "has_scanner": False,
+                }
+            )
 
     return {"sources": sources, "total": len(sources)}
 
@@ -776,9 +821,7 @@ def get_scan_history(days=7, db_path=None):
     """
     conn = _get_db(db_path)
     try:
-        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime(
-            "%Y-%m-%dT%H:%M:%SZ"
-        )
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
         rows = conn.execute(
             """SELECT source, DATE(discovered_at) as scan_date, COUNT(*) as count,
                       status, category
@@ -794,12 +837,14 @@ def get_scan_history(days=7, db_path=None):
             source = row["source"]
             if source not in history:
                 history[source] = []
-            history[source].append({
-                "date": row["scan_date"],
-                "count": row["count"],
-                "status": row["status"],
-                "category": row["category"],
-            })
+            history[source].append(
+                {
+                    "date": row["scan_date"],
+                    "count": row["count"],
+                    "status": row["status"],
+                    "category": row["category"],
+                }
+            )
 
         total = conn.execute(
             "SELECT COUNT(*) as total FROM innovation_signals WHERE discovered_at >= ?",
@@ -819,9 +864,7 @@ def get_scan_history(days=7, db_path=None):
 # CLI
 # =========================================================================
 def main():
-    parser = argparse.ArgumentParser(
-        description="ICDEV™ Web Intelligence Scanner — discover innovation signals"
-    )
+    parser = argparse.ArgumentParser(description="ICDEV™ Web Intelligence Scanner — discover innovation signals")
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--db-path", type=Path, default=None, help="Database path override")
 

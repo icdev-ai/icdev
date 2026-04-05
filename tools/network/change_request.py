@@ -12,6 +12,7 @@ before/after diffs for each proposed change.
 
 No Flask dependency. All functions are deterministic and testable.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -48,6 +49,7 @@ CR_STATUSES = ("draft", "submitted", "approved", "rejected", "withdrawn")
 
 
 # ── Diff Helpers ───────────────────────────────────────────────────────────────
+
 
 def _flatten_attrs(obj: dict[str, Any]) -> dict[str, Any]:
     """Return a flat key→value dict of meaningful display attributes."""
@@ -94,6 +96,7 @@ def compute_diff(
 
 # ── Change Request Document Generator ─────────────────────────────────────────
 
+
 def generate_cr_document(
     cr: dict[str, Any],
     items: list[dict[str, Any]],
@@ -119,19 +122,13 @@ def generate_cr_document(
     # ── Impact analysis flags ──────────────────────────────────────────────
     impact_flags: list[str] = []
     if len(removes) > 0:
-        impact_flags.append(
-            f"{len(removes)} element(s) marked for removal — verify downstream dependencies."
-        )
+        impact_flags.append(f"{len(removes)} element(s) marked for removal — verify downstream dependencies.")
     if any(
-        "firewall" in (i.get("entity_label") or "").lower()
-        or "fw" in (i.get("entity_label") or "").lower()
+        "firewall" in (i.get("entity_label") or "").lower() or "fw" in (i.get("entity_label") or "").lower()
         for i in removes + modifies
     ):
         impact_flags.append("Security boundary element (firewall) affected — ISSM review required.")
-    if any(
-        i.get("entity_type") == "edge" and i.get("action_type") == "remove"
-        for i in items
-    ):
+    if any(i.get("entity_type") == "edge" and i.get("action_type") == "remove" for i in items):
         impact_flags.append("Link removal detected — assess routing/redundancy impact.")
     if len(items) > 20:
         impact_flags.append("Large change set (>20 items) — consider phased implementation.")
@@ -156,18 +153,20 @@ def generate_cr_document(
                 before_data if action_type != "add" else None,
                 after_data if action_type != "remove" else None,
             )
-            entries.append({
-                "item_id": item.get("id"),
-                "entity_id": item.get("entity_id"),
-                "entity_type": item.get("entity_type", "node"),
-                "entity_label": item.get("entity_label", item.get("entity_id", "unknown")),
-                "justification": item.get("justification", ""),
-                "before": before_data,
-                "after": after_data,
-                "diff": diff,
-                "created_at": item.get("created_at", ""),
-                "created_by": item.get("created_by", ""),
-            })
+            entries.append(
+                {
+                    "item_id": item.get("id"),
+                    "entity_id": item.get("entity_id"),
+                    "entity_type": item.get("entity_type", "node"),
+                    "entity_label": item.get("entity_label", item.get("entity_id", "unknown")),
+                    "justification": item.get("justification", ""),
+                    "before": before_data,
+                    "after": after_data,
+                    "diff": diff,
+                    "created_at": item.get("created_at", ""),
+                    "created_by": item.get("created_by", ""),
+                }
+            )
         return {
             "action_type": action_type,
             "label": ACTION_TYPES[action_type]["label"],
@@ -259,9 +258,7 @@ def generate_cr_document(
                 md_lines.append("| Field | Before | After |")
                 md_lines.append("|-------|--------|-------|")
                 for d in entry["diff"]:
-                    md_lines.append(
-                        f"| `{d['field']}` | `{d['before']}` | `{d['after']}` |"
-                    )
+                    md_lines.append(f"| `{d['field']}` | `{d['before']}` | `{d['after']}` |")
                 md_lines.append("")
             elif section["action_type"] == "add" and entry["after"]:
                 md_lines.append("**New attributes:**")
@@ -278,9 +275,7 @@ def generate_cr_document(
                     md_lines.append(f"- `{k}`: `{v}`")
                 md_lines.append("")
             if entry.get("created_by"):
-                md_lines.append(
-                    f"*Marked by: {entry['created_by']} on {entry['created_at'][:10]}*"
-                )
+                md_lines.append(f"*Marked by: {entry['created_by']} on {entry['created_at'][:10]}*")
                 md_lines.append("")
 
     md_lines.append("---")
@@ -323,24 +318,19 @@ def generate_cr_document(
 
 # ── Markup Item Validation ─────────────────────────────────────────────────────
 
+
 def validate_markup_item(item: dict[str, Any]) -> list[str]:
     """Return a list of validation error strings, or [] if valid."""
     errors: list[str] = []
     if item.get("action_type") not in ACTION_TYPES:
-        errors.append(
-            f"action_type must be one of: {', '.join(ACTION_TYPES)}"
-        )
+        errors.append(f"action_type must be one of: {', '.join(ACTION_TYPES)}")
     if not item.get("entity_id"):
         errors.append("entity_id is required.")
     if item.get("entity_type") and item["entity_type"] not in ENTITY_TYPES:
-        errors.append(
-            f"entity_type must be one of: {', '.join(ENTITY_TYPES)}"
-        )
+        errors.append(f"entity_type must be one of: {', '.join(ENTITY_TYPES)}")
     if item.get("action_type") == "modify":
         before = item.get("before_json")
         after = item.get("after_json")
         if not before and not after:
-            errors.append(
-                "modify action requires at least one of before_json or after_json."
-            )
+            errors.append("modify action requires at least one of before_json or after_json.")
     return errors

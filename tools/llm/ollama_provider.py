@@ -25,6 +25,7 @@ logger = logging.getLogger("icdev.llm.ollama")
 
 try:
     import requests
+
     HAS_REQUESTS = True
 except ImportError:
     requests = None  # type: ignore[assignment]
@@ -35,8 +36,8 @@ except ImportError:
 # Message format conversion: universal -> Ollama native
 # ---------------------------------------------------------------------------
 
-def _convert_messages_to_ollama(messages: List[Dict[str, Any]],
-                                system_prompt: str = "") -> List[Dict[str, Any]]:
+
+def _convert_messages_to_ollama(messages: List[Dict[str, Any]], system_prompt: str = "") -> List[Dict[str, Any]]:
     """Convert ICDEV™ universal messages to Ollama native chat format.
 
     Handles three content shapes:
@@ -114,6 +115,7 @@ def _convert_messages_to_ollama(messages: List[Dict[str, Any]],
 # Provider implementation
 # ---------------------------------------------------------------------------
 
+
 class OllamaProvider(LLMProvider):
     """Native Ollama provider using the Ollama REST API.
 
@@ -131,8 +133,7 @@ class OllamaProvider(LLMProvider):
     def provider_name(self) -> str:
         return "ollama"
 
-    def invoke(self, request: LLMRequest, model_id: str,
-               model_config: dict) -> LLMResponse:
+    def invoke(self, request: LLMRequest, model_id: str, model_config: dict) -> LLMResponse:
         """Invoke Ollama via native /api/chat (non-streaming)."""
         if not HAS_REQUESTS:
             raise ImportError("requests library required. Install: pip install requests")
@@ -140,9 +141,7 @@ class OllamaProvider(LLMProvider):
         start_time = time.time()
 
         # Build Ollama messages
-        ollama_messages = _convert_messages_to_ollama(
-            request.messages, request.system_prompt
-        )
+        ollama_messages = _convert_messages_to_ollama(request.messages, request.system_prompt)
 
         # Build request payload
         payload: Dict[str, Any] = {
@@ -185,19 +184,14 @@ class OllamaProvider(LLMProvider):
         except requests.ConnectionError:
             logger.error("Ollama connection refused at %s", self._base_url)
             raise ConnectionError(
-                f"Cannot connect to Ollama at {self._base_url}. "
-                "Is Ollama running? Start with: ollama serve"
+                f"Cannot connect to Ollama at {self._base_url}. Is Ollama running? Start with: ollama serve"
             )
         except requests.Timeout:
             logger.error("Ollama request timed out after %ds", self._timeout)
-            raise TimeoutError(
-                f"Ollama request timed out after {self._timeout}s"
-            )
+            raise TimeoutError(f"Ollama request timed out after {self._timeout}s")
         except requests.HTTPError as exc:
             logger.error("Ollama HTTP error: %s %s", resp_http.status_code, resp_http.text)
-            raise RuntimeError(
-                f"Ollama returned HTTP {resp_http.status_code}: {resp_http.text}"
-            ) from exc
+            raise RuntimeError(f"Ollama returned HTTP {resp_http.status_code}: {resp_http.text}") from exc
 
         data = resp_http.json()
 
@@ -231,8 +225,7 @@ class OllamaProvider(LLMProvider):
 
         return response
 
-    def invoke_streaming(self, request: LLMRequest, model_id: str,
-                         model_config: dict) -> Iterator[dict]:
+    def invoke_streaming(self, request: LLMRequest, model_id: str, model_config: dict) -> Iterator[dict]:
         """Invoke Ollama with streaming via native /api/chat."""
         if not HAS_REQUESTS:
             yield {"type": "error", "error": "requests library required"}
@@ -240,9 +233,7 @@ class OllamaProvider(LLMProvider):
 
         start_time = time.time()
 
-        ollama_messages = _convert_messages_to_ollama(
-            request.messages, request.system_prompt
-        )
+        ollama_messages = _convert_messages_to_ollama(request.messages, request.system_prompt)
 
         payload: Dict[str, Any] = {
             "model": model_id,

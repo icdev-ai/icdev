@@ -245,12 +245,17 @@ def promote_gkp(gkp_id: str, auto: bool = False) -> Dict[str, Any]:
         # Pre-promotion coherence gate (D-WF-8)
         try:
             from tools.workflow.coherence_checker import run_checks as coherence_check
+
             coherence = coherence_check()
             if not coherence.overall_pass:
-                _log_audit("genesis.promoter.coherence_warning", gkp_id, {
-                    "failed_checks": coherence.failed_checks,
-                    "warned_checks": coherence.warned_checks,
-                })
+                _log_audit(
+                    "genesis.promoter.coherence_warning",
+                    gkp_id,
+                    {
+                        "failed_checks": coherence.failed_checks,
+                        "warned_checks": coherence.warned_checks,
+                    },
+                )
                 if auto:
                     return {
                         "status": "coherence_blocked",
@@ -573,9 +578,14 @@ def _import_anticipation_report(payload: Dict, confidence: float) -> Dict:
     """Import a regulatory anticipation report — creates a suggested kanban task."""
     try:
         from tools.oracle.kanban_bridge import create_suggested_task
+
         task_id = create_suggested_task(payload, confidence)
-        return {"success": True, "table": "kanban_tasks", "id": task_id,
-                "note": "Suggested kanban task created from anticipation_report GKP"}
+        return {
+            "success": True,
+            "table": "kanban_tasks",
+            "id": task_id,
+            "note": "Suggested kanban task created from anticipation_report GKP",
+        }
     except Exception as e:
         return {"success": False, "error": f"kanban_bridge.create_suggested_task: {e}"}
 

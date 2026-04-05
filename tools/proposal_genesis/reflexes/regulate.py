@@ -40,6 +40,7 @@ def _is_air_gapped() -> bool:
 # Regulation change detection
 # ---------------------------------------------------------------------------
 
+
 def _check_ai_clause_gaps() -> List[Dict]:
     """Find opportunities where AI clause compliance has not been assessed."""
     conn = get_connection()
@@ -99,6 +100,7 @@ def _scan_regulation_changes() -> Dict[str, Any]:
 # Main entry point
 # ---------------------------------------------------------------------------
 
+
 def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     """Execute the Regulate Reflex (R16).
 
@@ -132,11 +134,13 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                 "regulation_check",
                 "regulate",
                 "green",
-                json.dumps({
-                    "clause_gaps": len(clause_gaps),
-                    "stale_assessments": len(stale_assessments),
-                    "reg_scan_status": reg_scan.get("status", "unknown"),
-                }),
+                json.dumps(
+                    {
+                        "clause_gaps": len(clause_gaps),
+                        "stale_assessments": len(stale_assessments),
+                        "reg_scan_status": reg_scan.get("status", "unknown"),
+                    }
+                ),
                 1,
                 _utcnow_iso(),
             ),
@@ -155,15 +159,13 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             "stale_assessments": len(stale_assessments),
             "regulation_scan": reg_scan,
             "total_changes_detected": total_changes,
-            "gap_details": [
-                {"opportunity_id": g["id"], "title": g["title"]}
-                for g in clause_gaps[:10]
-            ],
+            "gap_details": [{"opportunity_id": g["id"], "title": g["title"]} for g in clause_gaps[:10]],
             "stale_details": [
-                {"opportunity_id": s["opportunity_id"], "clause": s["clause_title"],
-                 "assessed_at": s["assessed_at"]}
+                {"opportunity_id": s["opportunity_id"], "clause": s["clause_title"], "assessed_at": s["assessed_at"]}
                 for s in stale_assessments[:10]
             ],
         },
     }
+
+
 # CUI // SP-CTI

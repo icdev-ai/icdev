@@ -12,53 +12,218 @@ No external dependencies — stdlib only.
 
 SECURITY_OBJECTS = {
     "assets": [
-        {"type": "asset-server", "label": "Server / VM", "icon": "server", "desc": "Compute instance (physical or virtual)"},
+        {
+            "type": "asset-server",
+            "label": "Server / VM",
+            "icon": "server",
+            "desc": "Compute instance (physical or virtual)",
+        },
         {"type": "asset-database", "label": "Database", "icon": "database", "desc": "Relational or NoSQL data store"},
         {"type": "asset-client", "label": "Client / User", "icon": "user", "desc": "End-user device or browser"},
         {"type": "asset-storage", "label": "Storage (S3/Blob)", "icon": "hdd", "desc": "Object or block storage"},
-        {"type": "asset-network", "label": "Network Device", "icon": "sitemap", "desc": "Router, switch, or load balancer"},
+        {
+            "type": "asset-network",
+            "label": "Network Device",
+            "icon": "sitemap",
+            "desc": "Router, switch, or load balancer",
+        },
         {"type": "asset-container", "label": "Container / Pod", "icon": "cube", "desc": "Docker container or K8s pod"},
-        {"type": "asset-lambda", "label": "Serverless Function", "icon": "bolt", "desc": "Lambda, Cloud Function, or Azure Function"},
-        {"type": "asset-registry", "label": "Container Registry", "icon": "archive", "desc": "Image registry (ECR, ACR, Harbor)"},
-        {"type": "asset-vdi-host", "label": "VDI Session Host", "icon": "session-host", "desc": "Virtual desktop session host (RDSH/AVD/Citrix VDA)", "nist_families": ["SC", "CM", "SI"]},
-        {"type": "asset-thin-client", "label": "Thin/Zero Client", "icon": "thin-client", "desc": "Thin or zero client endpoint (IGEL/Wyse/Teradici)", "nist_families": ["IA", "SC", "PE"]},
-        {"type": "asset-profile-store", "label": "Profile Store", "icon": "profile-store", "desc": "User profile container storage (FSLogix/UPM)", "nist_families": ["SC", "AC", "MP"]},
+        {
+            "type": "asset-lambda",
+            "label": "Serverless Function",
+            "icon": "bolt",
+            "desc": "Lambda, Cloud Function, or Azure Function",
+        },
+        {
+            "type": "asset-registry",
+            "label": "Container Registry",
+            "icon": "archive",
+            "desc": "Image registry (ECR, ACR, Harbor)",
+        },
+        {
+            "type": "asset-vdi-host",
+            "label": "VDI Session Host",
+            "icon": "session-host",
+            "desc": "Virtual desktop session host (RDSH/AVD/Citrix VDA)",
+            "nist_families": ["SC", "CM", "SI"],
+        },
+        {
+            "type": "asset-thin-client",
+            "label": "Thin/Zero Client",
+            "icon": "thin-client",
+            "desc": "Thin or zero client endpoint (IGEL/Wyse/Teradici)",
+            "nist_families": ["IA", "SC", "PE"],
+        },
+        {
+            "type": "asset-profile-store",
+            "label": "Profile Store",
+            "icon": "profile-store",
+            "desc": "User profile container storage (FSLogix/UPM)",
+            "nist_families": ["SC", "AC", "MP"],
+        },
     ],
     "controls": [
-        {"type": "ctrl-firewall", "label": "Firewall / WAF", "icon": "shield-alt", "desc": "Network or web application firewall"},
-        {"type": "ctrl-idp", "label": "IdP / MFA", "icon": "id-badge", "desc": "Identity provider with multi-factor authentication"},
-        {"type": "ctrl-kms", "label": "KMS / HSM", "icon": "key", "desc": "Key management service or hardware security module"},
-        {"type": "ctrl-siem", "label": "SIEM / SOC", "icon": "eye", "desc": "Security information and event management"},
-        {"type": "ctrl-ids", "label": "IDS / IPS", "icon": "exclamation-triangle", "desc": "Intrusion detection / prevention system"},
+        {
+            "type": "ctrl-firewall",
+            "label": "Firewall / WAF",
+            "icon": "shield-alt",
+            "desc": "Network or web application firewall",
+        },
+        {
+            "type": "ctrl-idp",
+            "label": "IdP / MFA",
+            "icon": "id-badge",
+            "desc": "Identity provider with multi-factor authentication",
+        },
+        {
+            "type": "ctrl-kms",
+            "label": "KMS / HSM",
+            "icon": "key",
+            "desc": "Key management service or hardware security module",
+        },
+        {
+            "type": "ctrl-siem",
+            "label": "SIEM / SOC",
+            "icon": "eye",
+            "desc": "Security information and event management",
+        },
+        {
+            "type": "ctrl-ids",
+            "label": "IDS / IPS",
+            "icon": "exclamation-triangle",
+            "desc": "Intrusion detection / prevention system",
+        },
         {"type": "ctrl-pam", "label": "PAM", "icon": "user-lock", "desc": "Privileged access management"},
-        {"type": "ctrl-scanner", "label": "Vulnerability Scanner", "icon": "search", "desc": "SAST, DAST, or infrastructure scanner"},
-        {"type": "ctrl-encryption", "label": "Encryptor", "icon": "lock", "desc": "Encryption appliance or TLS terminator"},
-        {"type": "ctrl-session-policy", "label": "Session Policy", "icon": "session-policy", "desc": "VDI session controls — clipboard, USB, printing, watermark, timeout", "nist_controls": ["AC-4", "AC-11", "AC-12", "SC-10"]},
-        {"type": "ctrl-vdi-gateway", "label": "VDI Gateway", "icon": "vdi-gateway", "desc": "Secure remote access gateway for VDI (RD Gateway/Citrix GW/UAG)", "nist_controls": ["AC-17", "SC-7", "SC-8"]},
-        {"type": "ctrl-image-hardening", "label": "Image Hardening", "icon": "image-harden", "desc": "Golden image STIG hardening and integrity verification", "nist_controls": ["CM-2", "CM-6", "SI-7", "SA-10"]},
+        {
+            "type": "ctrl-scanner",
+            "label": "Vulnerability Scanner",
+            "icon": "search",
+            "desc": "SAST, DAST, or infrastructure scanner",
+        },
+        {
+            "type": "ctrl-encryption",
+            "label": "Encryptor",
+            "icon": "lock",
+            "desc": "Encryption appliance or TLS terminator",
+        },
+        {
+            "type": "ctrl-session-policy",
+            "label": "Session Policy",
+            "icon": "session-policy",
+            "desc": "VDI session controls — clipboard, USB, printing, watermark, timeout",
+            "nist_controls": ["AC-4", "AC-11", "AC-12", "SC-10"],
+        },
+        {
+            "type": "ctrl-vdi-gateway",
+            "label": "VDI Gateway",
+            "icon": "vdi-gateway",
+            "desc": "Secure remote access gateway for VDI (RD Gateway/Citrix GW/UAG)",
+            "nist_controls": ["AC-17", "SC-7", "SC-8"],
+        },
+        {
+            "type": "ctrl-image-hardening",
+            "label": "Image Hardening",
+            "icon": "image-harden",
+            "desc": "Golden image STIG hardening and integrity verification",
+            "nist_controls": ["CM-2", "CM-6", "SI-7", "SA-10"],
+        },
     ],
     "threats": [
-        {"type": "threat-actor", "label": "Threat Actor", "icon": "skull-crossbones", "desc": "External attacker or insider threat"},
+        {
+            "type": "threat-actor",
+            "label": "Threat Actor",
+            "icon": "skull-crossbones",
+            "desc": "External attacker or insider threat",
+        },
         {"type": "threat-malware", "label": "Malware", "icon": "bug", "desc": "Virus, ransomware, or worm"},
-        {"type": "threat-phishing", "label": "Phishing", "icon": "envelope-open", "desc": "Social engineering attack via email"},
-        {"type": "threat-exploit", "label": "Exploit", "icon": "crosshairs", "desc": "Known or zero-day vulnerability exploit"},
+        {
+            "type": "threat-phishing",
+            "label": "Phishing",
+            "icon": "envelope-open",
+            "desc": "Social engineering attack via email",
+        },
+        {
+            "type": "threat-exploit",
+            "label": "Exploit",
+            "icon": "crosshairs",
+            "desc": "Known or zero-day vulnerability exploit",
+        },
         {"type": "threat-dos", "label": "DoS / DDoS", "icon": "network-wired", "desc": "Denial of service attack"},
-        {"type": "threat-supply", "label": "Supply Chain", "icon": "truck", "desc": "Compromised dependency or build system"},
-        {"type": "threat-insider", "label": "Insider Threat", "icon": "user-secret", "desc": "Malicious or negligent insider"},
-        {"type": "threat-session-hijack", "label": "Session Hijack", "icon": "session-hijack", "desc": "VDI session takeover via stolen token, credential replay, or MitM", "stride": "S", "mitre": "T1563"},
-        {"type": "threat-clipboard-exfil", "label": "Clipboard Exfil", "icon": "clipboard-exfil", "desc": "Data exfiltration via clipboard copy/paste from virtual desktop", "stride": "I", "mitre": "T1115"},
-        {"type": "threat-gpu-escape", "label": "GPU/VM Escape", "icon": "gpu-escape", "desc": "Breakout from virtual desktop via GPU driver or hypervisor vulnerability", "stride": "E", "mitre": "T1611"},
-        {"type": "threat-profile-tampering", "label": "Profile Tamper", "icon": "profile-tamper", "desc": "Manipulation of roaming profile or FSLogix container to persist malware", "stride": "T", "mitre": "T1547"},
+        {
+            "type": "threat-supply",
+            "label": "Supply Chain",
+            "icon": "truck",
+            "desc": "Compromised dependency or build system",
+        },
+        {
+            "type": "threat-insider",
+            "label": "Insider Threat",
+            "icon": "user-secret",
+            "desc": "Malicious or negligent insider",
+        },
+        {
+            "type": "threat-session-hijack",
+            "label": "Session Hijack",
+            "icon": "session-hijack",
+            "desc": "VDI session takeover via stolen token, credential replay, or MitM",
+            "stride": "S",
+            "mitre": "T1563",
+        },
+        {
+            "type": "threat-clipboard-exfil",
+            "label": "Clipboard Exfil",
+            "icon": "clipboard-exfil",
+            "desc": "Data exfiltration via clipboard copy/paste from virtual desktop",
+            "stride": "I",
+            "mitre": "T1115",
+        },
+        {
+            "type": "threat-gpu-escape",
+            "label": "GPU/VM Escape",
+            "icon": "gpu-escape",
+            "desc": "Breakout from virtual desktop via GPU driver or hypervisor vulnerability",
+            "stride": "E",
+            "mitre": "T1611",
+        },
+        {
+            "type": "threat-profile-tampering",
+            "label": "Profile Tamper",
+            "icon": "profile-tamper",
+            "desc": "Manipulation of roaming profile or FSLogix container to persist malware",
+            "stride": "T",
+            "mitre": "T1547",
+        },
     ],
     "boundaries": [
-        {"type": "boundary-network", "label": "Network Zone", "icon": "border-all", "desc": "Network segmentation boundary (VLAN, VPC)"},
+        {
+            "type": "boundary-network",
+            "label": "Network Zone",
+            "icon": "border-all",
+            "desc": "Network segmentation boundary (VLAN, VPC)",
+        },
         {"type": "boundary-internet", "label": "Internet", "icon": "globe", "desc": "Public internet / untrusted zone"},
         {"type": "boundary-cloud", "label": "Cloud CSP", "icon": "cloud", "desc": "Cloud service provider boundary"},
         {"type": "boundary-bcap", "label": "BCAP", "icon": "shield", "desc": "DoD Boundary Cloud Access Point"},
-        {"type": "boundary-authorization", "label": "Auth Boundary", "icon": "border-style", "desc": "FedRAMP authorization boundary"},
+        {
+            "type": "boundary-authorization",
+            "label": "Auth Boundary",
+            "icon": "border-style",
+            "desc": "FedRAMP authorization boundary",
+        },
         {"type": "boundary-enclave", "label": "Enclave", "icon": "lock", "desc": "Classified or isolated enclave"},
-        {"type": "boundary-dmz", "label": "DMZ", "icon": "minus-circle", "desc": "Demilitarized zone between trust levels"},
-        {"type": "boundary-vdi-session", "label": "VDI Session Zone", "icon": "vdi-session", "desc": "Trust boundary isolating VDI session hosts from infrastructure", "classification_levels": ["CUI", "SECRET"]},
+        {
+            "type": "boundary-dmz",
+            "label": "DMZ",
+            "icon": "minus-circle",
+            "desc": "Demilitarized zone between trust levels",
+        },
+        {
+            "type": "boundary-vdi-session",
+            "label": "VDI Session Zone",
+            "icon": "vdi-session",
+            "desc": "Trust boundary isolating VDI session hosts from infrastructure",
+            "classification_levels": ["CUI", "SECRET"],
+        },
     ],
 }
 
@@ -111,36 +276,98 @@ IMPACT_LEVELS = ["very_low", "low", "medium", "high", "very_high"]
 
 RISK_MATRIX = {
     # (likelihood_idx, impact_idx) → risk_score
-    (0, 0): 1,  (0, 1): 2,  (0, 2): 3,  (0, 3): 4,  (0, 4): 5,
-    (1, 0): 2,  (1, 1): 4,  (1, 2): 6,  (1, 3): 8,  (1, 4): 10,
-    (2, 0): 3,  (2, 1): 6,  (2, 2): 9,  (2, 3): 12, (2, 4): 15,
-    (3, 0): 4,  (3, 1): 8,  (3, 2): 12, (3, 3): 16, (3, 4): 20,
-    (4, 0): 5,  (4, 1): 10, (4, 2): 15, (4, 3): 20, (4, 4): 25,
+    (0, 0): 1,
+    (0, 1): 2,
+    (0, 2): 3,
+    (0, 3): 4,
+    (0, 4): 5,
+    (1, 0): 2,
+    (1, 1): 4,
+    (1, 2): 6,
+    (1, 3): 8,
+    (1, 4): 10,
+    (2, 0): 3,
+    (2, 1): 6,
+    (2, 2): 9,
+    (2, 3): 12,
+    (2, 4): 15,
+    (3, 0): 4,
+    (3, 1): 8,
+    (3, 2): 12,
+    (3, 3): 16,
+    (3, 4): 20,
+    (4, 0): 5,
+    (4, 1): 10,
+    (4, 2): 15,
+    (4, 3): 20,
+    (4, 4): 25,
 }
 
 # ── NIST 800-53 Control Families ────────────────────────────────────────────
 
 NIST_CONTROL_FAMILIES = {
-    "AC": {"name": "Access Control", "examples": ["AC-2 Account Management", "AC-3 Access Enforcement", "AC-6 Least Privilege"]},
-    "AU": {"name": "Audit and Accountability", "examples": ["AU-2 Event Logging", "AU-3 Content of Audit Records", "AU-6 Audit Review"]},
+    "AC": {
+        "name": "Access Control",
+        "examples": ["AC-2 Account Management", "AC-3 Access Enforcement", "AC-6 Least Privilege"],
+    },
+    "AU": {
+        "name": "Audit and Accountability",
+        "examples": ["AU-2 Event Logging", "AU-3 Content of Audit Records", "AU-6 Audit Review"],
+    },
     "AT": {"name": "Awareness and Training", "examples": ["AT-2 Literacy Training", "AT-3 Role-Based Training"]},
-    "CM": {"name": "Configuration Management", "examples": ["CM-2 Baseline Configuration", "CM-3 Change Control", "CM-7 Least Functionality"]},
-    "CP": {"name": "Contingency Planning", "examples": ["CP-7 Alternate Processing Site", "CP-8 Telecommunications", "CP-10 Recovery"]},
-    "IA": {"name": "Identification and Authentication", "examples": ["IA-2 User Identification", "IA-5 Authenticator Mgmt", "IA-8 Non-Org Users"]},
-    "IR": {"name": "Incident Response", "examples": ["IR-4 Incident Handling", "IR-5 Incident Monitoring", "IR-6 Incident Reporting"]},
+    "CM": {
+        "name": "Configuration Management",
+        "examples": ["CM-2 Baseline Configuration", "CM-3 Change Control", "CM-7 Least Functionality"],
+    },
+    "CP": {
+        "name": "Contingency Planning",
+        "examples": ["CP-7 Alternate Processing Site", "CP-8 Telecommunications", "CP-10 Recovery"],
+    },
+    "IA": {
+        "name": "Identification and Authentication",
+        "examples": ["IA-2 User Identification", "IA-5 Authenticator Mgmt", "IA-8 Non-Org Users"],
+    },
+    "IR": {
+        "name": "Incident Response",
+        "examples": ["IR-4 Incident Handling", "IR-5 Incident Monitoring", "IR-6 Incident Reporting"],
+    },
     "MA": {"name": "Maintenance", "examples": ["MA-2 Controlled Maintenance", "MA-4 Nonlocal Maintenance"]},
-    "MP": {"name": "Media Protection", "examples": ["MP-2 Media Access", "MP-4 Media Storage", "MP-6 Media Sanitization"]},
-    "PE": {"name": "Physical and Environmental", "examples": ["PE-2 Physical Access", "PE-3 Physical Access Control", "PE-6 Monitoring"]},
+    "MP": {
+        "name": "Media Protection",
+        "examples": ["MP-2 Media Access", "MP-4 Media Storage", "MP-6 Media Sanitization"],
+    },
+    "PE": {
+        "name": "Physical and Environmental",
+        "examples": ["PE-2 Physical Access", "PE-3 Physical Access Control", "PE-6 Monitoring"],
+    },
     "PL": {"name": "Planning", "examples": ["PL-2 System Security Plan", "PL-4 Rules of Behavior"]},
     "PM": {"name": "Program Management", "examples": ["PM-1 InfoSec Program Plan", "PM-9 Risk Management Strategy"]},
     "PS": {"name": "Personnel Security", "examples": ["PS-3 Personnel Screening", "PS-4 Personnel Termination"]},
     "RA": {"name": "Risk Assessment", "examples": ["RA-3 Risk Assessment", "RA-5 Vulnerability Monitoring"]},
-    "SA": {"name": "System and Services Acquisition", "examples": ["SA-4 Acquisition Process", "SA-11 Developer Testing"]},
-    "SC": {"name": "System and Communications Protection", "examples": ["SC-7 Boundary Protection", "SC-8 Transmission Confidentiality", "SC-13 Cryptographic Protection"]},
-    "SI": {"name": "System and Information Integrity", "examples": ["SI-2 Flaw Remediation", "SI-4 System Monitoring", "SI-7 Software Integrity"]},
-    "SR": {"name": "Supply Chain Risk Management", "examples": ["SR-2 Supply Chain Risk Plan", "SR-3 Supply Chain Controls"]},
-    "PT": {"name": "PII Processing and Transparency", "examples": ["PT-2 Authority to Process PII", "PT-3 PII Processing Purposes"]},
-    "CA": {"name": "Assessment, Authorization, and Monitoring", "examples": ["CA-2 Control Assessments", "CA-6 Authorization", "CA-7 Continuous Monitoring"]},
+    "SA": {
+        "name": "System and Services Acquisition",
+        "examples": ["SA-4 Acquisition Process", "SA-11 Developer Testing"],
+    },
+    "SC": {
+        "name": "System and Communications Protection",
+        "examples": ["SC-7 Boundary Protection", "SC-8 Transmission Confidentiality", "SC-13 Cryptographic Protection"],
+    },
+    "SI": {
+        "name": "System and Information Integrity",
+        "examples": ["SI-2 Flaw Remediation", "SI-4 System Monitoring", "SI-7 Software Integrity"],
+    },
+    "SR": {
+        "name": "Supply Chain Risk Management",
+        "examples": ["SR-2 Supply Chain Risk Plan", "SR-3 Supply Chain Controls"],
+    },
+    "PT": {
+        "name": "PII Processing and Transparency",
+        "examples": ["PT-2 Authority to Process PII", "PT-3 PII Processing Purposes"],
+    },
+    "CA": {
+        "name": "Assessment, Authorization, and Monitoring",
+        "examples": ["CA-2 Control Assessments", "CA-6 Authorization", "CA-7 Continuous Monitoring"],
+    },
 }
 
 # ── Security Assessment Rules ───────────────────────────────────────────────
@@ -148,110 +375,319 @@ NIST_CONTROL_FAMILIES = {
 
 SECURITY_ASSESSMENT_RULES = [
     # Authentication (CAT1)
-    {"id": "SEC-AUTH-001", "title": "All data flows must be authenticated", "severity": "CAT1", "category": "authentication", "check": "all_flows_authenticated"},
-    {"id": "SEC-AUTH-002", "title": "IdP/MFA required for user-facing assets", "severity": "CAT1", "category": "authentication", "check": "idp_for_user_assets"},
-    {"id": "SEC-AUTH-003", "title": "PAM required for privileged access", "severity": "CAT2", "category": "authentication", "check": "pam_for_privileged"},
-
+    {
+        "id": "SEC-AUTH-001",
+        "title": "All data flows must be authenticated",
+        "severity": "CAT1",
+        "category": "authentication",
+        "check": "all_flows_authenticated",
+    },
+    {
+        "id": "SEC-AUTH-002",
+        "title": "IdP/MFA required for user-facing assets",
+        "severity": "CAT1",
+        "category": "authentication",
+        "check": "idp_for_user_assets",
+    },
+    {
+        "id": "SEC-AUTH-003",
+        "title": "PAM required for privileged access",
+        "severity": "CAT2",
+        "category": "authentication",
+        "check": "pam_for_privileged",
+    },
     # Encryption (CAT1)
-    {"id": "SEC-ENC-001", "title": "All boundary-crossing flows must be encrypted", "severity": "CAT1", "category": "encryption", "check": "boundary_flows_encrypted"},
-    {"id": "SEC-ENC-002", "title": "KMS/HSM present for key management", "severity": "CAT1", "category": "encryption", "check": "kms_present"},
-    {"id": "SEC-ENC-003", "title": "Data at rest encryption for databases", "severity": "CAT1", "category": "encryption", "check": "db_encryption_at_rest"},
-
+    {
+        "id": "SEC-ENC-001",
+        "title": "All boundary-crossing flows must be encrypted",
+        "severity": "CAT1",
+        "category": "encryption",
+        "check": "boundary_flows_encrypted",
+    },
+    {
+        "id": "SEC-ENC-002",
+        "title": "KMS/HSM present for key management",
+        "severity": "CAT1",
+        "category": "encryption",
+        "check": "kms_present",
+    },
+    {
+        "id": "SEC-ENC-003",
+        "title": "Data at rest encryption for databases",
+        "severity": "CAT1",
+        "category": "encryption",
+        "check": "db_encryption_at_rest",
+    },
     # Segmentation (CAT1)
-    {"id": "SEC-SEG-001", "title": "Trust boundaries defined between zones", "severity": "CAT1", "category": "segmentation", "check": "boundaries_defined"},
-    {"id": "SEC-SEG-002", "title": "Firewall between internet and internal assets", "severity": "CAT1", "category": "segmentation", "check": "firewall_at_boundary"},
-    {"id": "SEC-SEG-003", "title": "No direct internet-to-database flows", "severity": "CAT1", "category": "segmentation", "check": "no_direct_inet_db"},
-
+    {
+        "id": "SEC-SEG-001",
+        "title": "Trust boundaries defined between zones",
+        "severity": "CAT1",
+        "category": "segmentation",
+        "check": "boundaries_defined",
+    },
+    {
+        "id": "SEC-SEG-002",
+        "title": "Firewall between internet and internal assets",
+        "severity": "CAT1",
+        "category": "segmentation",
+        "check": "firewall_at_boundary",
+    },
+    {
+        "id": "SEC-SEG-003",
+        "title": "No direct internet-to-database flows",
+        "severity": "CAT1",
+        "category": "segmentation",
+        "check": "no_direct_inet_db",
+    },
     # Logging & Monitoring (CAT2)
-    {"id": "SEC-LOG-001", "title": "SIEM present in design", "severity": "CAT2", "category": "logging", "check": "siem_present"},
-    {"id": "SEC-LOG-002", "title": "All assets send logs to SIEM", "severity": "CAT2", "category": "logging", "check": "all_assets_logged"},
-    {"id": "SEC-LOG-003", "title": "Database audit logging enabled", "severity": "CAT2", "category": "logging", "check": "db_audit_logging"},
-
+    {
+        "id": "SEC-LOG-001",
+        "title": "SIEM present in design",
+        "severity": "CAT2",
+        "category": "logging",
+        "check": "siem_present",
+    },
+    {
+        "id": "SEC-LOG-002",
+        "title": "All assets send logs to SIEM",
+        "severity": "CAT2",
+        "category": "logging",
+        "check": "all_assets_logged",
+    },
+    {
+        "id": "SEC-LOG-003",
+        "title": "Database audit logging enabled",
+        "severity": "CAT2",
+        "category": "logging",
+        "check": "db_audit_logging",
+    },
     # Monitoring (CAT2)
-    {"id": "SEC-MON-001", "title": "IDS/IPS present for network monitoring", "severity": "CAT2", "category": "monitoring", "check": "ids_present"},
-    {"id": "SEC-MON-002", "title": "Vulnerability scanner in design", "severity": "CAT2", "category": "monitoring", "check": "scanner_present"},
-
+    {
+        "id": "SEC-MON-001",
+        "title": "IDS/IPS present for network monitoring",
+        "severity": "CAT2",
+        "category": "monitoring",
+        "check": "ids_present",
+    },
+    {
+        "id": "SEC-MON-002",
+        "title": "Vulnerability scanner in design",
+        "severity": "CAT2",
+        "category": "monitoring",
+        "check": "scanner_present",
+    },
     # Access Control (CAT2)
-    {"id": "SEC-AC-001", "title": "Least privilege: no shared admin accounts", "severity": "CAT2", "category": "access_control", "check": "no_shared_admin"},
-    {"id": "SEC-AC-002", "title": "Service-to-service authentication (mTLS/tokens)", "severity": "CAT2", "category": "access_control", "check": "s2s_auth"},
-
+    {
+        "id": "SEC-AC-001",
+        "title": "Least privilege: no shared admin accounts",
+        "severity": "CAT2",
+        "category": "access_control",
+        "check": "no_shared_admin",
+    },
+    {
+        "id": "SEC-AC-002",
+        "title": "Service-to-service authentication (mTLS/tokens)",
+        "severity": "CAT2",
+        "category": "access_control",
+        "check": "s2s_auth",
+    },
     # Data Protection (CAT2)
-    {"id": "SEC-DP-001", "title": "Data classification labels on all storage assets", "severity": "CAT2", "category": "data_protection", "check": "data_classification"},
-    {"id": "SEC-DP-002", "title": "DLP controls for sensitive data egress", "severity": "CAT2", "category": "data_protection", "check": "dlp_present"},
-
+    {
+        "id": "SEC-DP-001",
+        "title": "Data classification labels on all storage assets",
+        "severity": "CAT2",
+        "category": "data_protection",
+        "check": "data_classification",
+    },
+    {
+        "id": "SEC-DP-002",
+        "title": "DLP controls for sensitive data egress",
+        "severity": "CAT2",
+        "category": "data_protection",
+        "check": "dlp_present",
+    },
     # Incident Response (CAT2)
-    {"id": "SEC-IR-001", "title": "SIEM connected to alerting pipeline", "severity": "CAT2", "category": "incident_response", "check": "siem_alerting"},
-    {"id": "SEC-IR-002", "title": "Incident response runbook referenced", "severity": "CAT3", "category": "incident_response", "check": "ir_runbook"},
-
+    {
+        "id": "SEC-IR-001",
+        "title": "SIEM connected to alerting pipeline",
+        "severity": "CAT2",
+        "category": "incident_response",
+        "check": "siem_alerting",
+    },
+    {
+        "id": "SEC-IR-002",
+        "title": "Incident response runbook referenced",
+        "severity": "CAT3",
+        "category": "incident_response",
+        "check": "ir_runbook",
+    },
     # Supply Chain (CAT2)
-    {"id": "SEC-SC-001", "title": "Container registry with admission control", "severity": "CAT2", "category": "supply_chain", "check": "registry_admission"},
-    {"id": "SEC-SC-002", "title": "SBOM generation for all deployable artifacts", "severity": "CAT2", "category": "supply_chain", "check": "sbom_present"},
-
+    {
+        "id": "SEC-SC-001",
+        "title": "Container registry with admission control",
+        "severity": "CAT2",
+        "category": "supply_chain",
+        "check": "registry_admission",
+    },
+    {
+        "id": "SEC-SC-002",
+        "title": "SBOM generation for all deployable artifacts",
+        "severity": "CAT2",
+        "category": "supply_chain",
+        "check": "sbom_present",
+    },
     # General (CAT3)
-    {"id": "SEC-GEN-001", "title": "All assets labeled with descriptive names", "severity": "CAT3", "category": "documentation", "check": "assets_labeled"},
-    {"id": "SEC-GEN-002", "title": "Design has at least one trust boundary", "severity": "CAT3", "category": "documentation", "check": "has_boundaries"},
-    {"id": "SEC-GEN-003", "title": "Threats identified and documented", "severity": "CAT3", "category": "documentation", "check": "threats_documented"},
-
+    {
+        "id": "SEC-GEN-001",
+        "title": "All assets labeled with descriptive names",
+        "severity": "CAT3",
+        "category": "documentation",
+        "check": "assets_labeled",
+    },
+    {
+        "id": "SEC-GEN-002",
+        "title": "Design has at least one trust boundary",
+        "severity": "CAT3",
+        "category": "documentation",
+        "check": "has_boundaries",
+    },
+    {
+        "id": "SEC-GEN-003",
+        "title": "Threats identified and documented",
+        "severity": "CAT3",
+        "category": "documentation",
+        "check": "threats_documented",
+    },
     # Endpoint Protection (CAT2)
-    {"id": "SEC-EDR-001", "title": "EDR/XDR deployed on servers and endpoints", "severity": "CAT2", "category": "monitoring", "check": "edr_present"},
-
+    {
+        "id": "SEC-EDR-001",
+        "title": "EDR/XDR deployed on servers and endpoints",
+        "severity": "CAT2",
+        "category": "monitoring",
+        "check": "edr_present",
+    },
     # Cloud Posture (CAT2)
-    {"id": "SEC-CSPM-001", "title": "CSPM scanning cloud infrastructure", "severity": "CAT2", "category": "monitoring", "check": "cspm_present"},
-
+    {
+        "id": "SEC-CSPM-001",
+        "title": "CSPM scanning cloud infrastructure",
+        "severity": "CAT2",
+        "category": "monitoring",
+        "check": "cspm_present",
+    },
     # Backup & DR (CAT2)
-    {"id": "SEC-DR-001", "title": "Backup and disaster recovery strategy present", "severity": "CAT2", "category": "contingency", "check": "backup_present"},
-
+    {
+        "id": "SEC-DR-001",
+        "title": "Backup and disaster recovery strategy present",
+        "severity": "CAT2",
+        "category": "contingency",
+        "check": "backup_present",
+    },
     # Secret Management (CAT2)
-    {"id": "SEC-SECRET-001", "title": "Centralized secret management (Vault/KMS)", "severity": "CAT2", "category": "access_control", "check": "secret_mgmt_present"},
-
+    {
+        "id": "SEC-SECRET-001",
+        "title": "Centralized secret management (Vault/KMS)",
+        "severity": "CAT2",
+        "category": "access_control",
+        "check": "secret_mgmt_present",
+    },
     # mTLS (CAT1)
-    {"id": "SEC-MTLS-001", "title": "mTLS enforced on service-to-service flows", "severity": "CAT1", "category": "encryption", "check": "mtls_s2s"},
-
+    {
+        "id": "SEC-MTLS-001",
+        "title": "mTLS enforced on service-to-service flows",
+        "severity": "CAT1",
+        "category": "encryption",
+        "check": "mtls_s2s",
+    },
     # API Gateway (CAT2)
-    {"id": "SEC-APIGW-001", "title": "API gateway with WAF for external APIs", "severity": "CAT2", "category": "segmentation", "check": "api_gateway_protected"},
-
+    {
+        "id": "SEC-APIGW-001",
+        "title": "API gateway with WAF for external APIs",
+        "severity": "CAT2",
+        "category": "segmentation",
+        "check": "api_gateway_protected",
+    },
     # Zero Trust (CAT1)
-    {"id": "SEC-ZT-001", "title": "Zero Trust: all flows both authenticated AND encrypted", "severity": "CAT1", "category": "authentication", "check": "zero_trust_posture"},
-
+    {
+        "id": "SEC-ZT-001",
+        "title": "Zero Trust: all flows both authenticated AND encrypted",
+        "severity": "CAT1",
+        "category": "authentication",
+        "check": "zero_trust_posture",
+    },
     # Container Admission (CAT2)
-    {"id": "SEC-ADMIT-001", "title": "Container admission control (Kyverno/OPA)", "severity": "CAT2", "category": "supply_chain", "check": "admission_control_present"},
-
+    {
+        "id": "SEC-ADMIT-001",
+        "title": "Container admission control (Kyverno/OPA)",
+        "severity": "CAT2",
+        "category": "supply_chain",
+        "check": "admission_control_present",
+    },
     # Encryption Algorithm Compliance (CAT2)
-    {"id": "SEC-CRYPTO-001", "title": "FIPS 140-2/3 validated cryptographic modules", "severity": "CAT2", "category": "encryption", "check": "fips_crypto_validated"},
-
+    {
+        "id": "SEC-CRYPTO-001",
+        "title": "FIPS 140-2/3 validated cryptographic modules",
+        "severity": "CAT2",
+        "category": "encryption",
+        "check": "fips_crypto_validated",
+    },
     # Configuration Hardening (CAT2)
-    {"id": "SEC-HARDEN-001", "title": "OS/platform hardened to CIS/STIG baseline", "severity": "CAT2", "category": "configuration", "check": "hardening_baseline"},
-
+    {
+        "id": "SEC-HARDEN-001",
+        "title": "OS/platform hardened to CIS/STIG baseline",
+        "severity": "CAT2",
+        "category": "configuration",
+        "check": "hardening_baseline",
+    },
     # VDI Security Rules
-    {"id": "SEC-VDI-001", "title": "VDI session policy enforced",
-     "severity": "CAT1", "category": "vdi_security",
-     "description": "All VDI session hosts must have a session policy control (clipboard/USB/print restrictions) — data exfiltration risk without policy enforcement.",
-     "check": "vdi_session_policy"},
-
-    {"id": "SEC-VDI-002", "title": "VDI gateway required for external access",
-     "severity": "CAT1", "category": "vdi_security",
-     "description": "External users must connect through a VDI gateway — no direct RDP/PCoIP from internet to session hosts.",
-     "check": "vdi_gateway_required"},
-
-    {"id": "SEC-VDI-003", "title": "Session hosts in dedicated trust boundary",
-     "severity": "CAT2", "category": "vdi_security",
-     "description": "VDI session hosts must reside within a dedicated VDI session zone boundary, isolated from general compute.",
-     "check": "vdi_boundary_isolation"},
-
-    {"id": "SEC-VDI-004", "title": "Profile store encrypted at rest",
-     "severity": "CAT1", "category": "vdi_security",
-     "description": "FSLogix/UPM profile stores must have KMS/HSM encryption control connected — user profiles contain CUI.",
-     "check": "vdi_profile_encrypted"},
-
-    {"id": "SEC-VDI-005", "title": "Thin clients authenticated before VDI access",
-     "severity": "CAT2", "category": "vdi_security",
-     "description": "Thin/zero client assets must have IdP/MFA control connected — unauthenticated endpoints are session hijack vectors.",
-     "check": "vdi_endpoint_authenticated"},
-
-    {"id": "SEC-VDI-006", "title": "Golden image integrity verified",
-     "severity": "CAT2", "category": "vdi_security",
-     "description": "VDI session hosts should have image hardening control — ensures STIG-compliant golden images and detects drift.",
-     "check": "vdi_image_integrity"},
+    {
+        "id": "SEC-VDI-001",
+        "title": "VDI session policy enforced",
+        "severity": "CAT1",
+        "category": "vdi_security",
+        "description": "All VDI session hosts must have a session policy control (clipboard/USB/print restrictions) — data exfiltration risk without policy enforcement.",
+        "check": "vdi_session_policy",
+    },
+    {
+        "id": "SEC-VDI-002",
+        "title": "VDI gateway required for external access",
+        "severity": "CAT1",
+        "category": "vdi_security",
+        "description": "External users must connect through a VDI gateway — no direct RDP/PCoIP from internet to session hosts.",
+        "check": "vdi_gateway_required",
+    },
+    {
+        "id": "SEC-VDI-003",
+        "title": "Session hosts in dedicated trust boundary",
+        "severity": "CAT2",
+        "category": "vdi_security",
+        "description": "VDI session hosts must reside within a dedicated VDI session zone boundary, isolated from general compute.",
+        "check": "vdi_boundary_isolation",
+    },
+    {
+        "id": "SEC-VDI-004",
+        "title": "Profile store encrypted at rest",
+        "severity": "CAT1",
+        "category": "vdi_security",
+        "description": "FSLogix/UPM profile stores must have KMS/HSM encryption control connected — user profiles contain CUI.",
+        "check": "vdi_profile_encrypted",
+    },
+    {
+        "id": "SEC-VDI-005",
+        "title": "Thin clients authenticated before VDI access",
+        "severity": "CAT2",
+        "category": "vdi_security",
+        "description": "Thin/zero client assets must have IdP/MFA control connected — unauthenticated endpoints are session hijack vectors.",
+        "check": "vdi_endpoint_authenticated",
+    },
+    {
+        "id": "SEC-VDI-006",
+        "title": "Golden image integrity verified",
+        "severity": "CAT2",
+        "category": "vdi_security",
+        "description": "VDI session hosts should have image hardening control — ensures STIG-compliant golden images and detects drift.",
+        "check": "vdi_image_integrity",
+    },
 ]
 
 # ── NDC → SDC Node Type Mapping ─────────────────────────────────────────────
@@ -267,7 +703,6 @@ NODE_TYPE_MAPPING = {
     "mpls-pe": "asset-network",
     "mpls-p": "asset-network",
     "route-reflector": "asset-network",
-
     # Security devices → controls
     "firewall": "ctrl-firewall",
     "aws-nfw": "ctrl-firewall",
@@ -280,14 +715,12 @@ NODE_TYPE_MAPPING = {
     "siem": "ctrl-siem",
     "network-tap": "ctrl-ids",
     "hsm": "ctrl-kms",
-
     # Cloud constructs → boundaries
     "aws-vpc": "boundary-cloud",
     "az-vnet": "boundary-cloud",
     "gcp-vpc": "boundary-cloud",
     "oci-vcn": "boundary-cloud",
     "cloud": "boundary-internet",
-
     # Encryption
     "fips-140-l1": "ctrl-encryption",
     "fips-140-l2": "ctrl-encryption",
@@ -301,12 +734,10 @@ NODE_TYPE_MAPPING = {
     "kg-245x": "ctrl-encryption",
     "kg-255": "ctrl-encryption",
     "macsec": "ctrl-encryption",
-
     # DNS / Cloud services
     "aws-r53": "asset-server",
     "az-dns": "asset-server",
     "gcp-dns": "asset-server",
-
     # Transit / hybrid
     "aws-dx": "asset-network",
     "az-er": "asset-network",
@@ -325,25 +756,55 @@ MITRE_ATTACK_TECHNIQUES = {
         "tactic_id": "TA0001",
         "name": "Initial Access",
         "techniques": [
-            {"id": "T1190", "name": "Exploit Public-Facing Application", "detectable_by": ["ctrl-firewall", "ctrl-ids"], "severity": "high"},
+            {
+                "id": "T1190",
+                "name": "Exploit Public-Facing Application",
+                "detectable_by": ["ctrl-firewall", "ctrl-ids"],
+                "severity": "high",
+            },
             {"id": "T1566", "name": "Phishing", "detectable_by": ["ctrl-idp"], "severity": "high"},
-            {"id": "T1133", "name": "External Remote Services", "detectable_by": ["ctrl-firewall", "ctrl-pam"], "severity": "high"},
-            {"id": "T1078", "name": "Valid Accounts", "detectable_by": ["ctrl-idp", "ctrl-siem"], "severity": "critical"},
+            {
+                "id": "T1133",
+                "name": "External Remote Services",
+                "detectable_by": ["ctrl-firewall", "ctrl-pam"],
+                "severity": "high",
+            },
+            {
+                "id": "T1078",
+                "name": "Valid Accounts",
+                "detectable_by": ["ctrl-idp", "ctrl-siem"],
+                "severity": "critical",
+            },
         ],
     },
     "execution": {
         "tactic_id": "TA0002",
         "name": "Execution",
         "techniques": [
-            {"id": "T1059", "name": "Command and Scripting Interpreter", "detectable_by": ["ctrl-edr", "ctrl-siem"], "severity": "high"},
-            {"id": "T1203", "name": "Exploitation for Client Execution", "detectable_by": ["ctrl-edr", "ctrl-ids"], "severity": "high"},
+            {
+                "id": "T1059",
+                "name": "Command and Scripting Interpreter",
+                "detectable_by": ["ctrl-edr", "ctrl-siem"],
+                "severity": "high",
+            },
+            {
+                "id": "T1203",
+                "name": "Exploitation for Client Execution",
+                "detectable_by": ["ctrl-edr", "ctrl-ids"],
+                "severity": "high",
+            },
         ],
     },
     "persistence": {
         "tactic_id": "TA0003",
         "name": "Persistence",
         "techniques": [
-            {"id": "T1098", "name": "Account Manipulation", "detectable_by": ["ctrl-idp", "ctrl-siem", "ctrl-pam"], "severity": "high"},
+            {
+                "id": "T1098",
+                "name": "Account Manipulation",
+                "detectable_by": ["ctrl-idp", "ctrl-siem", "ctrl-pam"],
+                "severity": "high",
+            },
             {"id": "T1136", "name": "Create Account", "detectable_by": ["ctrl-idp", "ctrl-siem"], "severity": "medium"},
         ],
     },
@@ -351,7 +812,12 @@ MITRE_ATTACK_TECHNIQUES = {
         "tactic_id": "TA0004",
         "name": "Privilege Escalation",
         "techniques": [
-            {"id": "T1068", "name": "Exploitation for Privilege Escalation", "detectable_by": ["ctrl-edr", "ctrl-ids"], "severity": "critical"},
+            {
+                "id": "T1068",
+                "name": "Exploitation for Privilege Escalation",
+                "detectable_by": ["ctrl-edr", "ctrl-ids"],
+                "severity": "critical",
+            },
             {"id": "T1078", "name": "Valid Accounts", "detectable_by": ["ctrl-pam", "ctrl-siem"], "severity": "high"},
         ],
     },
@@ -360,7 +826,12 @@ MITRE_ATTACK_TECHNIQUES = {
         "name": "Defense Evasion",
         "techniques": [
             {"id": "T1070", "name": "Indicator Removal", "detectable_by": ["ctrl-siem"], "severity": "high"},
-            {"id": "T1562", "name": "Impair Defenses", "detectable_by": ["ctrl-siem", "ctrl-edr"], "severity": "critical"},
+            {
+                "id": "T1562",
+                "name": "Impair Defenses",
+                "detectable_by": ["ctrl-siem", "ctrl-edr"],
+                "severity": "critical",
+            },
         ],
     },
     "credential_access": {
@@ -368,15 +839,30 @@ MITRE_ATTACK_TECHNIQUES = {
         "name": "Credential Access",
         "techniques": [
             {"id": "T1110", "name": "Brute Force", "detectable_by": ["ctrl-idp", "ctrl-siem"], "severity": "high"},
-            {"id": "T1555", "name": "Credentials from Password Stores", "detectable_by": ["ctrl-pam", "ctrl-dlp"], "severity": "critical"},
-            {"id": "T1552", "name": "Unsecured Credentials", "detectable_by": ["ctrl-scanner", "ctrl-dlp"], "severity": "high"},
+            {
+                "id": "T1555",
+                "name": "Credentials from Password Stores",
+                "detectable_by": ["ctrl-pam", "ctrl-dlp"],
+                "severity": "critical",
+            },
+            {
+                "id": "T1552",
+                "name": "Unsecured Credentials",
+                "detectable_by": ["ctrl-scanner", "ctrl-dlp"],
+                "severity": "high",
+            },
         ],
     },
     "discovery": {
         "tactic_id": "TA0007",
         "name": "Discovery",
         "techniques": [
-            {"id": "T1046", "name": "Network Service Discovery", "detectable_by": ["ctrl-ids", "ctrl-siem"], "severity": "medium"},
+            {
+                "id": "T1046",
+                "name": "Network Service Discovery",
+                "detectable_by": ["ctrl-ids", "ctrl-siem"],
+                "severity": "medium",
+            },
             {"id": "T1087", "name": "Account Discovery", "detectable_by": ["ctrl-siem"], "severity": "medium"},
         ],
     },
@@ -384,33 +870,78 @@ MITRE_ATTACK_TECHNIQUES = {
         "tactic_id": "TA0008",
         "name": "Lateral Movement",
         "techniques": [
-            {"id": "T1021", "name": "Remote Services", "detectable_by": ["ctrl-pam", "ctrl-ids", "ctrl-firewall"], "severity": "high"},
-            {"id": "T1210", "name": "Exploitation of Remote Services", "detectable_by": ["ctrl-ids", "ctrl-edr"], "severity": "critical"},
+            {
+                "id": "T1021",
+                "name": "Remote Services",
+                "detectable_by": ["ctrl-pam", "ctrl-ids", "ctrl-firewall"],
+                "severity": "high",
+            },
+            {
+                "id": "T1210",
+                "name": "Exploitation of Remote Services",
+                "detectable_by": ["ctrl-ids", "ctrl-edr"],
+                "severity": "critical",
+            },
         ],
     },
     "collection": {
         "tactic_id": "TA0009",
         "name": "Collection",
         "techniques": [
-            {"id": "T1005", "name": "Data from Local System", "detectable_by": ["ctrl-dlp", "ctrl-edr"], "severity": "high"},
-            {"id": "T1530", "name": "Data from Cloud Storage", "detectable_by": ["ctrl-dlp", "ctrl-cspm"], "severity": "high"},
+            {
+                "id": "T1005",
+                "name": "Data from Local System",
+                "detectable_by": ["ctrl-dlp", "ctrl-edr"],
+                "severity": "high",
+            },
+            {
+                "id": "T1530",
+                "name": "Data from Cloud Storage",
+                "detectable_by": ["ctrl-dlp", "ctrl-cspm"],
+                "severity": "high",
+            },
         ],
     },
     "exfiltration": {
         "tactic_id": "TA0010",
         "name": "Exfiltration",
         "techniques": [
-            {"id": "T1041", "name": "Exfiltration Over C2 Channel", "detectable_by": ["ctrl-firewall", "ctrl-dlp", "ctrl-siem"], "severity": "critical"},
-            {"id": "T1048", "name": "Exfiltration Over Alternative Protocol", "detectable_by": ["ctrl-firewall", "ctrl-ids", "ctrl-dlp"], "severity": "critical"},
+            {
+                "id": "T1041",
+                "name": "Exfiltration Over C2 Channel",
+                "detectable_by": ["ctrl-firewall", "ctrl-dlp", "ctrl-siem"],
+                "severity": "critical",
+            },
+            {
+                "id": "T1048",
+                "name": "Exfiltration Over Alternative Protocol",
+                "detectable_by": ["ctrl-firewall", "ctrl-ids", "ctrl-dlp"],
+                "severity": "critical",
+            },
         ],
     },
     "impact": {
         "tactic_id": "TA0040",
         "name": "Impact",
         "techniques": [
-            {"id": "T1486", "name": "Data Encrypted for Impact (Ransomware)", "detectable_by": ["ctrl-edr", "ctrl-siem"], "severity": "critical"},
-            {"id": "T1485", "name": "Data Destruction", "detectable_by": ["ctrl-siem", "ctrl-edr"], "severity": "critical"},
-            {"id": "T1499", "name": "Endpoint Denial of Service", "detectable_by": ["ctrl-firewall", "ctrl-ids"], "severity": "high"},
+            {
+                "id": "T1486",
+                "name": "Data Encrypted for Impact (Ransomware)",
+                "detectable_by": ["ctrl-edr", "ctrl-siem"],
+                "severity": "critical",
+            },
+            {
+                "id": "T1485",
+                "name": "Data Destruction",
+                "detectable_by": ["ctrl-siem", "ctrl-edr"],
+                "severity": "critical",
+            },
+            {
+                "id": "T1499",
+                "name": "Endpoint Denial of Service",
+                "detectable_by": ["ctrl-firewall", "ctrl-ids"],
+                "severity": "high",
+            },
         ],
     },
 }

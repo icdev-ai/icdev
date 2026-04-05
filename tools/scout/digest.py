@@ -34,9 +34,14 @@ def _digest_dir(config: dict) -> Path:
     return d
 
 
-def generate(date_str: str, findings: List[dict], synthesis: Optional[str] = None,
-             genesis_result: Optional[dict] = None, stats: dict = None,
-             config: dict = None) -> Path:
+def generate(
+    date_str: str,
+    findings: List[dict],
+    synthesis: Optional[str] = None,
+    genesis_result: Optional[dict] = None,
+    stats: dict = None,
+    config: dict = None,
+) -> Path:
     """Generate a Markdown digest file. Returns the file path."""
     config = config or {}
     digest_cfg = config.get("digest", {})
@@ -122,9 +127,11 @@ def generate(date_str: str, findings: List[dict], synthesis: Optional[str] = Non
             lines.append(f"- **Triggered by**: {genesis_result['finding_title']}\n")
         if genesis_result.get("validation"):
             val = genesis_result["validation"]
-            lines.append(f"- **Validation**: py_compile={val.get('py_compile', '?')}, "
-                         f"ruff={val.get('ruff', '?')}, pytest={val.get('pytest', '?')}, "
-                         f"bandit={val.get('bandit', '?')}\n")
+            lines.append(
+                f"- **Validation**: py_compile={val.get('py_compile', '?')}, "
+                f"ruff={val.get('ruff', '?')}, pytest={val.get('pytest', '?')}, "
+                f"bandit={val.get('bandit', '?')}\n"
+            )
         if genesis_result.get("error"):
             lines.append(f"- **Error**: {genesis_result['error']}\n")
         if genesis_result.get("attempts"):
@@ -134,9 +141,11 @@ def generate(date_str: str, findings: List[dict], synthesis: Optional[str] = Non
 
     # Footer
     lines.append("\n---\n")
-    lines.append(f"*Scan duration: {duration_ms:,}ms | "
-                 f"Signals fed: {stats.get('signals_fed', 0)} | "
-                 f"Repos added: {stats.get('repos_added', 0)}*\n")
+    lines.append(
+        f"*Scan duration: {duration_ms:,}ms | "
+        f"Signals fed: {stats.get('signals_fed', 0)} | "
+        f"Repos added: {stats.get('repos_added', 0)}*\n"
+    )
 
     content = "\n".join(lines)
     out_path.write_text(content, encoding="utf-8")
@@ -159,11 +168,13 @@ def list_digests(config: dict = None) -> List[dict]:
     out_dir = _digest_dir(config)
     digests = []
     for f in sorted(out_dir.glob("*.md"), reverse=True):
-        digests.append({
-            "date": f.stem,
-            "path": str(f),
-            "size_bytes": f.stat().st_size,
-        })
+        digests.append(
+            {
+                "date": f.stem,
+                "path": str(f),
+                "size_bytes": f.stat().st_size,
+            }
+        )
     return digests
 
 
@@ -180,6 +191,7 @@ def main() -> None:
 
     try:
         import yaml
+
         cfg_path = BASE_DIR / "args" / "scout_config.yaml"
         with open(cfg_path, "r", encoding="utf-8") as f:
             config = yaml.safe_load(f) or {}

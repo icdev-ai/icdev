@@ -61,6 +61,7 @@ class TestResolvePolicy:
         custom_dir.mkdir()
 
         import yaml
+
         override = {
             "egress": {
                 "denied_endpoints": [
@@ -80,9 +81,7 @@ class TestResolvePolicy:
         mgr.resolve_policy("builder")
         conn = sqlite3.connect(str(mgr_db))
         conn.row_factory = sqlite3.Row
-        row = conn.execute(
-            "SELECT * FROM egress_policy_audit WHERE action = 'resolve' LIMIT 1"
-        ).fetchone()
+        row = conn.execute("SELECT * FROM egress_policy_audit WHERE action = 'resolve' LIMIT 1").fetchone()
         conn.close()
         assert row is not None
         assert row["agent_role"] == "builder"
@@ -99,17 +98,18 @@ class TestGenerateK8sManifest:
     def test_manifest_has_dns_rule(self, mgr):
         result = mgr.generate_k8s_manifest("builder")
         egress_rules = result["spec"]["egress"]
-        dns_rules = [r for r in egress_rules
-                     if any(p.get("protocol") == "UDP" and p.get("port") == 53
-                            for p in r.get("ports", []))]
+        dns_rules = [
+            r
+            for r in egress_rules
+            if any(p.get("protocol") == "UDP" and p.get("port") == 53 for p in r.get("ports", []))
+        ]
         assert len(dns_rules) >= 1
 
     def test_manifest_has_mesh_rule(self, mgr):
         result = mgr.generate_k8s_manifest("builder")
         egress_rules = result["spec"]["egress"]
         # Mesh rule targets namespace selector
-        mesh_rules = [r for r in egress_rules if "to" in r
-                      and any("namespaceSelector" in t for t in r.get("to", []))]
+        mesh_rules = [r for r in egress_rules if "to" in r and any("namespaceSelector" in t for t in r.get("to", []))]
         assert len(mesh_rules) >= 1
 
     def test_generate_unknown_role_returns_error(self, mgr):

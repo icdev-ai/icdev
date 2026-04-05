@@ -28,8 +28,7 @@ def _table_exists(conn, name):
     try:
         if getattr(conn, "_backend", "sqlite") == "postgresql":
             row = conn.execute(
-                "SELECT 1 FROM information_schema.tables "
-                "WHERE table_schema = 'public' AND table_name = ?",
+                "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = ?",
                 (name,),
             ).fetchone()
             return row is not None
@@ -83,26 +82,20 @@ def migration_stats():
 
         # --- plans ---
         if _table_exists(conn, "migration_plans"):
-            for r in conn.execute(
-                "SELECT status, COUNT(*) AS cnt FROM migration_plans GROUP BY status"
-            ).fetchall():
+            for r in conn.execute("SELECT status, COUNT(*) AS cnt FROM migration_plans GROUP BY status").fetchall():
                 result["plans_by_status"][r[0]] = r[1]
 
         # --- tasks ---
         if _table_exists(conn, "migration_tasks"):
             total_tasks = 0
             completed_tasks = 0
-            for r in conn.execute(
-                "SELECT status, COUNT(*) AS cnt FROM migration_tasks GROUP BY status"
-            ).fetchall():
+            for r in conn.execute("SELECT status, COUNT(*) AS cnt FROM migration_tasks GROUP BY status").fetchall():
                 result["tasks_by_status"][r[0]] = r[1]
                 total_tasks += r[1]
                 if r[0] == "completed":
                     completed_tasks = r[1]
             if total_tasks > 0:
-                result["completion_pct"] = round(
-                    completed_tasks / total_tasks * 100, 1
-                )
+                result["completion_pct"] = round(completed_tasks / total_tasks * 100, 1)
 
         return jsonify(result)
     except Exception as exc:
@@ -141,7 +134,8 @@ def list_assessments():
         where_sql = (" WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
 
         total = conn.execute(
-            f"SELECT COUNT(*) FROM migration_assessments{where_sql}", params  # nosec B608 -- table/column names are internal constants, not user input
+            f"SELECT COUNT(*) FROM migration_assessments{where_sql}",
+            params,  # nosec B608 -- table/column names are internal constants, not user input
         ).fetchone()[0]
 
         rows = conn.execute(
@@ -157,33 +151,37 @@ def list_assessments():
 
         assessments = []
         for r in rows:
-            assessments.append({
-                "id": r[0],
-                "legacy_app_id": r[1],
-                "component_id": r[2],
-                "assessment_scope": r[3],
-                "rehost_score": r[4],
-                "replatform_score": r[5],
-                "refactor_score": r[6],
-                "rearchitect_score": r[7],
-                "repurchase_score": r[8],
-                "retire_score": r[9],
-                "retain_score": r[10],
-                "recommended_strategy": r[11],
-                "cost_estimate_hours": r[12],
-                "risk_score": r[13],
-                "timeline_weeks": r[14],
-                "ato_impact": r[15],
-                "tech_debt_reduction": r[16],
-                "assessed_at": r[17],
-            })
+            assessments.append(
+                {
+                    "id": r[0],
+                    "legacy_app_id": r[1],
+                    "component_id": r[2],
+                    "assessment_scope": r[3],
+                    "rehost_score": r[4],
+                    "replatform_score": r[5],
+                    "refactor_score": r[6],
+                    "rearchitect_score": r[7],
+                    "repurchase_score": r[8],
+                    "retire_score": r[9],
+                    "retain_score": r[10],
+                    "recommended_strategy": r[11],
+                    "cost_estimate_hours": r[12],
+                    "risk_score": r[13],
+                    "timeline_weeks": r[14],
+                    "ato_impact": r[15],
+                    "tech_debt_reduction": r[16],
+                    "assessed_at": r[17],
+                }
+            )
 
-        return jsonify({
-            "assessments": assessments,
-            "total": total,
-            "page": page,
-            "per_page": per_page,
-        })
+        return jsonify(
+            {
+                "assessments": assessments,
+                "total": total,
+                "page": page,
+                "per_page": per_page,
+            }
+        )
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
     finally:
@@ -220,7 +218,8 @@ def list_plans():
         where_sql = (" WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
 
         total = conn.execute(
-            f"SELECT COUNT(*) FROM migration_plans{where_sql}", params  # nosec B608 -- table/column names are internal constants, not user input
+            f"SELECT COUNT(*) FROM migration_plans{where_sql}",
+            params,  # nosec B608 -- table/column names are internal constants, not user input
         ).fetchone()[0]
 
         rows = conn.execute(
@@ -236,34 +235,38 @@ def list_plans():
 
         plans = []
         for r in rows:
-            plans.append({
-                "id": r[0],
-                "legacy_app_id": r[1],
-                "plan_name": r[2],
-                "strategy": r[3],
-                "target_language": r[4],
-                "target_framework": r[5],
-                "target_database": r[6],
-                "target_architecture": r[7],
-                "migration_approach": r[8],
-                "total_tasks": r[9],
-                "completed_tasks": r[10],
-                "status": r[11],
-                "estimated_hours": r[12],
-                "actual_hours": r[13],
-                "start_date": r[14],
-                "target_date": r[15],
-                "completion_date": r[16],
-                "created_at": r[17],
-                "updated_at": r[18],
-            })
+            plans.append(
+                {
+                    "id": r[0],
+                    "legacy_app_id": r[1],
+                    "plan_name": r[2],
+                    "strategy": r[3],
+                    "target_language": r[4],
+                    "target_framework": r[5],
+                    "target_database": r[6],
+                    "target_architecture": r[7],
+                    "migration_approach": r[8],
+                    "total_tasks": r[9],
+                    "completed_tasks": r[10],
+                    "status": r[11],
+                    "estimated_hours": r[12],
+                    "actual_hours": r[13],
+                    "start_date": r[14],
+                    "target_date": r[15],
+                    "completion_date": r[16],
+                    "created_at": r[17],
+                    "updated_at": r[18],
+                }
+            )
 
-        return jsonify({
-            "plans": plans,
-            "total": total,
-            "page": page,
-            "per_page": per_page,
-        })
+        return jsonify(
+            {
+                "plans": plans,
+                "total": total,
+                "page": page,
+                "per_page": per_page,
+            }
+        )
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
     finally:
@@ -330,21 +333,23 @@ def plan_detail(plan_id):
                 "FROM migration_tasks WHERE plan_id = ? ORDER BY created_at",
                 (plan_id,),
             ).fetchall():
-                tasks.append({
-                    "id": r[0],
-                    "task_type": r[1],
-                    "title": r[2],
-                    "description": r[3],
-                    "priority": r[4],
-                    "status": r[5],
-                    "pi_number": r[6],
-                    "assigned_to": r[7],
-                    "estimated_hours": r[8],
-                    "actual_hours": r[9],
-                    "output_path": r[10],
-                    "created_at": r[11],
-                    "completed_at": r[12],
-                })
+                tasks.append(
+                    {
+                        "id": r[0],
+                        "task_type": r[1],
+                        "title": r[2],
+                        "description": r[3],
+                        "priority": r[4],
+                        "status": r[5],
+                        "pi_number": r[6],
+                        "assigned_to": r[7],
+                        "estimated_hours": r[8],
+                        "actual_hours": r[9],
+                        "output_path": r[10],
+                        "created_at": r[11],
+                        "completed_at": r[12],
+                    }
+                )
 
         # --- artifacts ---
         artifacts = []
@@ -355,15 +360,17 @@ def plan_detail(plan_id):
                 "FROM migration_artifacts WHERE plan_id = ? ORDER BY created_at",
                 (plan_id,),
             ).fetchall():
-                artifacts.append({
-                    "id": r[0],
-                    "task_id": r[1],
-                    "artifact_type": r[2],
-                    "file_path": r[3],
-                    "file_hash": r[4],
-                    "description": r[5],
-                    "created_at": r[6],
-                })
+                artifacts.append(
+                    {
+                        "id": r[0],
+                        "task_id": r[1],
+                        "artifact_type": r[2],
+                        "file_path": r[3],
+                        "file_hash": r[4],
+                        "description": r[5],
+                        "created_at": r[6],
+                    }
+                )
 
         # --- latest progress ---
         progress = None
@@ -431,24 +438,26 @@ def plan_progress(plan_id):
 
         snapshots = []
         for r in rows:
-            snapshots.append({
-                "id": r[0],
-                "pi_number": r[1],
-                "snapshot_type": r[2],
-                "tasks_total": r[3],
-                "tasks_completed": r[4],
-                "tasks_in_progress": r[5],
-                "tasks_blocked": r[6],
-                "components_migrated": r[7],
-                "components_remaining": r[8],
-                "apis_migrated": r[9],
-                "tables_migrated": r[10],
-                "test_coverage": r[11],
-                "compliance_score": r[12],
-                "hours_spent": r[13],
-                "notes": r[14],
-                "created_at": r[15],
-            })
+            snapshots.append(
+                {
+                    "id": r[0],
+                    "pi_number": r[1],
+                    "snapshot_type": r[2],
+                    "tasks_total": r[3],
+                    "tasks_completed": r[4],
+                    "tasks_in_progress": r[5],
+                    "tasks_blocked": r[6],
+                    "components_migrated": r[7],
+                    "components_remaining": r[8],
+                    "apis_migrated": r[9],
+                    "tables_migrated": r[10],
+                    "test_coverage": r[11],
+                    "compliance_score": r[12],
+                    "hours_spent": r[13],
+                    "notes": r[14],
+                    "created_at": r[15],
+                }
+            )
 
         return jsonify({"snapshots": snapshots, "plan_id": plan_id})
     except Exception as exc:

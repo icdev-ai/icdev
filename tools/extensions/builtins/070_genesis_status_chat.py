@@ -13,6 +13,7 @@ Loaded automatically by ExtensionManager._auto_load_builtins().
 Exports:
     EXTENSION_HOOKS — dict mapping hook point names to handler metadata.
 """
+
 from __future__ import annotations
 
 import logging
@@ -32,10 +33,25 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 ADVISORY_COOLDOWN_TURNS = 20
 
 GENESIS_KEYWORDS = [
-    "genesis", "improve", "self-heal", "autonomous", "research",
-    "experiment", "autoresearch", "reflex", "gkp", "knowledge packet",
-    "evolve", "innovation", "signal", "pattern", "self-improvement",
-    "heal", "auto-fix", "remediate", "bayesian",
+    "genesis",
+    "improve",
+    "self-heal",
+    "autonomous",
+    "research",
+    "experiment",
+    "autoresearch",
+    "reflex",
+    "gkp",
+    "knowledge packet",
+    "evolve",
+    "innovation",
+    "signal",
+    "pattern",
+    "self-improvement",
+    "heal",
+    "auto-fix",
+    "remediate",
+    "bayesian",
 ]
 
 _last_advisory_turn: dict = {}
@@ -53,6 +69,7 @@ def _record_advisory(context_id: str, turn_number: int):
 # ---------------------------------------------------------------------------
 # Genesis status check
 # ---------------------------------------------------------------------------
+
 
 def _table_exists(conn: sqlite3.Connection, name: str) -> bool:
     row = conn.execute(
@@ -82,9 +99,7 @@ def _check_genesis_status() -> dict | None:
             ).fetchone()
             pending = row[0] if isinstance(row, (tuple, list)) else row["cnt"]
             if pending > 0:
-                advisories.append(
-                    f"{pending} Genesis Knowledge Packet(s) pending your review"
-                )
+                advisories.append(f"{pending} Genesis Knowledge Packet(s) pending your review")
 
         # Check recent autoresearch experiments
         if _table_exists(conn, "autoresearch_experiments"):
@@ -104,10 +119,7 @@ def _check_genesis_status() -> dict | None:
                 if best:
                     domain = best["domain"] if isinstance(best, dict) else best[0]
                     pct = best["improvement_pct"] if isinstance(best, dict) else best[1]
-                    advisories.append(
-                        f"{recent} experiments completed this week (best: "
-                        f"+{pct:.1f}% in {domain})"
-                    )
+                    advisories.append(f"{recent} experiments completed this week (best: +{pct:.1f}% in {domain})")
 
         # Check innovation signals
         if _table_exists(conn, "innovation_signals"):
@@ -139,6 +151,7 @@ def _check_genesis_status() -> dict | None:
 # ---------------------------------------------------------------------------
 # Hook handler
 # ---------------------------------------------------------------------------
+
 
 def handle(context: dict) -> dict:
     """chat_message_after handler — inject Genesis status advisory."""

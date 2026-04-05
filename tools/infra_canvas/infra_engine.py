@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 try:
     import yaml as _yaml
+
     _HAS_YAML = True
 except ImportError:
     _HAS_YAML = False
@@ -40,6 +41,7 @@ def _utcnow_iso() -> str:
 
 # ── Helper: node/edge queries ────────────────────────────────────────────────
 
+
 def _nodes_by_type_prefix(nodes: list, prefix: str) -> list:
     """Return nodes whose type starts with a given prefix."""
     return [n for n in nodes if n.get("type", "").startswith(prefix)]
@@ -50,9 +52,7 @@ def _has_node_type(nodes: list, type_id: str) -> bool:
 
 
 def _has_any_node_prefix(nodes: list, prefixes: list) -> bool:
-    return any(
-        n.get("type", "").startswith(p) for n in nodes for p in prefixes
-    )
+    return any(n.get("type", "").startswith(p) for n in nodes for p in prefixes)
 
 
 def _nodes_connected_to(node_id: str, edges: list, nodes: list) -> list:
@@ -68,154 +68,221 @@ def _nodes_connected_to(node_id: str, edges: list, nodes: list) -> list:
 
 # ── Check functions ──────────────────────────────────────────────────────────
 
+
 def _check_storage_encrypted(nodes, edges, findings, rule):
     """All storage resources should have encryption (KMS node connected)."""
     storage_prefixes = [
-        "aws-s3", "aws-ebs", "aws-efs", "aws-fsx",
-        "az-blob", "az-disk", "az-files", "az-netapp",
-        "gcp-gcs", "gcp-pd", "gcp-filestore",
-        "oci-os", "oci-bv", "oci-fss",
-        "ibm-cos", "ibm-block", "ibm-file",
-        "op-san", "op-nas", "op-s3-compat",
+        "aws-s3",
+        "aws-ebs",
+        "aws-efs",
+        "aws-fsx",
+        "az-blob",
+        "az-disk",
+        "az-files",
+        "az-netapp",
+        "gcp-gcs",
+        "gcp-pd",
+        "gcp-filestore",
+        "oci-os",
+        "oci-bv",
+        "oci-fss",
+        "ibm-cos",
+        "ibm-block",
+        "ibm-file",
+        "op-san",
+        "op-nas",
+        "op-s3-compat",
     ]
     kms_types = [
-        "aws-kms", "az-keyvault", "gcp-kms",
-        "oci-vault", "ibm-kms", "iac-vault",
+        "aws-kms",
+        "az-keyvault",
+        "gcp-kms",
+        "oci-vault",
+        "ibm-kms",
+        "iac-vault",
     ]
-    storage_nodes = [
-        n for n in nodes
-        if any(n.get("type", "").startswith(p) for p in storage_prefixes)
-    ]
+    storage_nodes = [n for n in nodes if any(n.get("type", "").startswith(p) for p in storage_prefixes)]
     if not storage_nodes:
         return
     has_kms = any(n.get("type") in kms_types for n in nodes)
     if not has_kms:
-        findings.append({
-            "rule_id": rule["id"],
-            "title": rule["title"],
-            "severity": rule["severity"],
-            "category": rule["category"],
-            "detail": (
-                f"Found {len(storage_nodes)} storage resource(s) "
-                f"but no KMS/Key Vault service for encryption key management."
-            ),
-        })
+        findings.append(
+            {
+                "rule_id": rule["id"],
+                "title": rule["title"],
+                "severity": rule["severity"],
+                "category": rule["category"],
+                "detail": (
+                    f"Found {len(storage_nodes)} storage resource(s) "
+                    f"but no KMS/Key Vault service for encryption key management."
+                ),
+            }
+        )
 
 
 def _check_db_encrypted(nodes, edges, findings, rule):
     """All database services should have encryption."""
     db_prefixes = [
-        "aws-rds", "aws-aurora", "aws-dynamodb", "aws-redshift",
-        "aws-elasticache", "aws-documentdb", "aws-neptune",
-        "aws-timestream", "aws-keyspaces", "aws-opensearch",
-        "az-sql", "az-postgres", "az-mysql", "az-cosmos",
-        "az-synapse", "az-redis", "az-search",
-        "gcp-cloudsql", "gcp-spanner", "gcp-bigtable",
-        "gcp-firestore", "gcp-bigquery", "gcp-memorystore", "gcp-alloydb",
-        "oci-adb", "oci-mysql", "oci-nosql", "oci-postgresql",
-        "ibm-db2", "ibm-postgres", "ibm-mongo", "ibm-redis",
+        "aws-rds",
+        "aws-aurora",
+        "aws-dynamodb",
+        "aws-redshift",
+        "aws-elasticache",
+        "aws-documentdb",
+        "aws-neptune",
+        "aws-timestream",
+        "aws-keyspaces",
+        "aws-opensearch",
+        "az-sql",
+        "az-postgres",
+        "az-mysql",
+        "az-cosmos",
+        "az-synapse",
+        "az-redis",
+        "az-search",
+        "gcp-cloudsql",
+        "gcp-spanner",
+        "gcp-bigtable",
+        "gcp-firestore",
+        "gcp-bigquery",
+        "gcp-memorystore",
+        "gcp-alloydb",
+        "oci-adb",
+        "oci-mysql",
+        "oci-nosql",
+        "oci-postgresql",
+        "ibm-db2",
+        "ibm-postgres",
+        "ibm-mongo",
+        "ibm-redis",
         "ibm-elastic",
-        "op-postgres", "op-mysql", "op-oracle", "op-sqlserver",
-        "op-mongo", "op-redis",
+        "op-postgres",
+        "op-mysql",
+        "op-oracle",
+        "op-sqlserver",
+        "op-mongo",
+        "op-redis",
     ]
     kms_types = [
-        "aws-kms", "az-keyvault", "gcp-kms",
-        "oci-vault", "ibm-kms", "iac-vault",
+        "aws-kms",
+        "az-keyvault",
+        "gcp-kms",
+        "oci-vault",
+        "ibm-kms",
+        "iac-vault",
     ]
-    db_nodes = [
-        n for n in nodes
-        if any(n.get("type", "").startswith(p) for p in db_prefixes)
-    ]
+    db_nodes = [n for n in nodes if any(n.get("type", "").startswith(p) for p in db_prefixes)]
     if not db_nodes:
         return
     has_kms = any(n.get("type") in kms_types for n in nodes)
     if not has_kms:
-        findings.append({
-            "rule_id": rule["id"],
-            "title": rule["title"],
-            "severity": rule["severity"],
-            "category": rule["category"],
-            "detail": (
-                f"Found {len(db_nodes)} database(s) but no KMS/Key Vault "
-                f"for encryption key management."
-            ),
-        })
+        findings.append(
+            {
+                "rule_id": rule["id"],
+                "title": rule["title"],
+                "severity": rule["severity"],
+                "category": rule["category"],
+                "detail": (f"Found {len(db_nodes)} database(s) but no KMS/Key Vault for encryption key management."),
+            }
+        )
 
 
 def _check_kms_present(nodes, edges, findings, rule):
     kms_types = [
-        "aws-kms", "az-keyvault", "gcp-kms",
-        "oci-vault", "ibm-kms", "iac-vault",
+        "aws-kms",
+        "az-keyvault",
+        "gcp-kms",
+        "oci-vault",
+        "ibm-kms",
+        "iac-vault",
     ]
     if not any(n.get("type") in kms_types for n in nodes):
-        findings.append({
-            "rule_id": rule["id"],
-            "title": rule["title"],
-            "severity": rule["severity"],
-            "category": rule["category"],
-            "detail": "No KMS/Key Vault service found in the design.",
-        })
+        findings.append(
+            {
+                "rule_id": rule["id"],
+                "title": rule["title"],
+                "severity": rule["severity"],
+                "category": rule["category"],
+                "detail": "No KMS/Key Vault service found in the design.",
+            }
+        )
 
 
 def _check_compute_behind_lb(nodes, edges, findings, rule):
     """Compute instances should have a load balancer or API gateway."""
     compute_prefixes = [
-        "aws-ec2", "az-vm", "gcp-gce", "oci-compute",
-        "ibm-vsi", "op-server", "op-vm",
+        "aws-ec2",
+        "az-vm",
+        "gcp-gce",
+        "oci-compute",
+        "ibm-vsi",
+        "op-server",
+        "op-vm",
     ]
     lb_prefixes = [
-        "aws-elb", "aws-apigw", "az-app", "az-apim",
-        "gcp-lb", "gcp-apigee", "oci-lb", "oci-apigw",
+        "aws-elb",
+        "aws-apigw",
+        "az-app",
+        "az-apim",
+        "gcp-lb",
+        "gcp-apigee",
+        "oci-lb",
+        "oci-apigw",
         "ibm-lb",
     ]
-    compute_nodes = [
-        n for n in nodes
-        if any(n.get("type", "").startswith(p) for p in compute_prefixes)
-    ]
+    compute_nodes = [n for n in nodes if any(n.get("type", "").startswith(p) for p in compute_prefixes)]
     if not compute_nodes:
         return
-    has_lb = any(
-        any(n.get("type", "").startswith(p) for p in lb_prefixes)
-        for n in nodes
-    )
+    has_lb = any(any(n.get("type", "").startswith(p) for p in lb_prefixes) for n in nodes)
     if not has_lb:
-        findings.append({
-            "rule_id": rule["id"],
-            "title": rule["title"],
-            "severity": rule["severity"],
-            "category": rule["category"],
-            "detail": (
-                f"Found {len(compute_nodes)} compute instance(s) "
-                f"with no load balancer or API gateway."
-            ),
-        })
+        findings.append(
+            {
+                "rule_id": rule["id"],
+                "title": rule["title"],
+                "severity": rule["severity"],
+                "category": rule["category"],
+                "detail": (f"Found {len(compute_nodes)} compute instance(s) with no load balancer or API gateway."),
+            }
+        )
 
 
 def _check_autoscaling_configured(nodes, edges, findings, rule):
     asg_types = [
-        "aws-ec2-asg", "az-vmss", "gcp-mig", "oci-instance-pool",
+        "aws-ec2-asg",
+        "az-vmss",
+        "gcp-mig",
+        "oci-instance-pool",
     ]
     compute_prefixes = [
-        "aws-ec2", "az-vm", "gcp-gce", "oci-compute", "ibm-vsi",
+        "aws-ec2",
+        "az-vm",
+        "gcp-gce",
+        "oci-compute",
+        "ibm-vsi",
     ]
     has_compute = _has_any_node_prefix(nodes, compute_prefixes)
     if not has_compute:
         return
     has_asg = any(n.get("type") in asg_types for n in nodes)
     if not has_asg:
-        findings.append({
-            "rule_id": rule["id"],
-            "title": rule["title"],
-            "severity": rule["severity"],
-            "category": rule["category"],
-            "detail": "Compute instances found but no auto-scaling group.",
-        })
+        findings.append(
+            {
+                "rule_id": rule["id"],
+                "title": rule["title"],
+                "severity": rule["severity"],
+                "category": rule["category"],
+                "detail": "Compute instances found but no auto-scaling group.",
+            }
+        )
 
 
 def _check_dedicated_for_compliance(nodes, edges, findings, rule):
     # Advisory only — if design has compliance-tagged nodes but no dedicated hosts
     dedicated_types = [
-        "aws-ec2-dedicated", "az-dedicated", "gcp-sole", "oci-dedicated-host",
+        "aws-ec2-dedicated",
+        "az-dedicated",
+        "gcp-sole",
+        "oci-dedicated-host",
     ]
     if any(n.get("type") in dedicated_types for n in nodes):
         return  # Already using dedicated
@@ -224,50 +291,75 @@ def _check_dedicated_for_compliance(nodes, edges, findings, rule):
         meta = n.get("metadata", {}) or {}
         tags = str(meta.get("tags", "")).lower()
         if any(kw in tags for kw in ("itar", "ear", "cjis")):
-            findings.append({
-                "rule_id": rule["id"],
-                "title": rule["title"],
-                "severity": rule["severity"],
-                "category": rule["category"],
-                "detail": (
-                    f"Node '{n.get('label', n.get('type'))}' tagged with "
-                    f"compliance keywords but no dedicated/sole-tenant host."
-                ),
-            })
+            findings.append(
+                {
+                    "rule_id": rule["id"],
+                    "title": rule["title"],
+                    "severity": rule["severity"],
+                    "category": rule["category"],
+                    "detail": (
+                        f"Node '{n.get('label', n.get('type'))}' tagged with "
+                        f"compliance keywords but no dedicated/sole-tenant host."
+                    ),
+                }
+            )
             return
 
 
 def _check_registry_private(nodes, edges, findings, rule):
     registry_types = [
-        "aws-ecr", "az-acr", "gcp-gar", "oci-ocir",
-        "ibm-cr", "op-harbor",
+        "aws-ecr",
+        "az-acr",
+        "gcp-gar",
+        "oci-ocir",
+        "ibm-cr",
+        "op-harbor",
     ]
     k8s_prefixes = [
-        "aws-eks", "aws-ecs", "aws-fargate",
-        "az-aks", "az-aci", "az-aca",
-        "gcp-gke", "gcp-cloudrun",
-        "oci-oke", "ibm-iks", "ibm-openshift",
-        "op-k8s", "op-openshift", "op-docker", "op-bigbang",
+        "aws-eks",
+        "aws-ecs",
+        "aws-fargate",
+        "az-aks",
+        "az-aci",
+        "az-aca",
+        "gcp-gke",
+        "gcp-cloudrun",
+        "oci-oke",
+        "ibm-iks",
+        "ibm-openshift",
+        "op-k8s",
+        "op-openshift",
+        "op-docker",
+        "op-bigbang",
     ]
     has_containers = _has_any_node_prefix(nodes, k8s_prefixes)
     if not has_containers:
         return
     has_registry = any(n.get("type") in registry_types for n in nodes)
     if not has_registry:
-        findings.append({
-            "rule_id": rule["id"],
-            "title": rule["title"],
-            "severity": rule["severity"],
-            "category": rule["category"],
-            "detail": "Container workloads present but no private registry.",
-        })
+        findings.append(
+            {
+                "rule_id": rule["id"],
+                "title": rule["title"],
+                "severity": rule["severity"],
+                "category": rule["category"],
+                "detail": "Container workloads present but no private registry.",
+            }
+        )
 
 
 def _check_k8s_rbac(nodes, edges, findings, rule):
     # Advisory — K8s clusters should exist with RBAC
     k8s_types = [
-        "aws-eks", "az-aks", "gcp-gke", "oci-oke",
-        "ibm-iks", "ibm-openshift", "op-k8s", "op-openshift", "op-bigbang",
+        "aws-eks",
+        "az-aks",
+        "gcp-gke",
+        "oci-oke",
+        "ibm-iks",
+        "ibm-openshift",
+        "op-k8s",
+        "op-openshift",
+        "op-bigbang",
     ]
     iam_prefixes = ["aws-iam", "az-entra", "gcp-iam", "oci-iam", "ibm-iam"]
     k8s_nodes = [n for n in nodes if n.get("type") in k8s_types]
@@ -275,95 +367,123 @@ def _check_k8s_rbac(nodes, edges, findings, rule):
         return
     has_iam = _has_any_node_prefix(nodes, iam_prefixes)
     if not has_iam:
-        findings.append({
-            "rule_id": rule["id"],
-            "title": rule["title"],
-            "severity": rule["severity"],
-            "category": rule["category"],
-            "detail": (
-                f"Found {len(k8s_nodes)} K8s cluster(s) but no IAM/IdP "
-                f"service for RBAC integration."
-            ),
-        })
+        findings.append(
+            {
+                "rule_id": rule["id"],
+                "title": rule["title"],
+                "severity": rule["severity"],
+                "category": rule["category"],
+                "detail": (f"Found {len(k8s_nodes)} K8s cluster(s) but no IAM/IdP service for RBAC integration."),
+            }
+        )
 
 
 def _check_iam_present(nodes, edges, findings, rule):
     iam_types = [
-        "aws-iam", "aws-cognito", "az-entra", "gcp-iam",
-        "oci-iam", "ibm-iam",
+        "aws-iam",
+        "aws-cognito",
+        "az-entra",
+        "gcp-iam",
+        "oci-iam",
+        "ibm-iam",
     ]
     if not any(n.get("type") in iam_types for n in nodes):
-        findings.append({
-            "rule_id": rule["id"],
-            "title": rule["title"],
-            "severity": rule["severity"],
-            "category": rule["category"],
-            "detail": "No IAM or identity provider service in the design.",
-        })
+        findings.append(
+            {
+                "rule_id": rule["id"],
+                "title": rule["title"],
+                "severity": rule["severity"],
+                "category": rule["category"],
+                "detail": "No IAM or identity provider service in the design.",
+            }
+        )
 
 
 def _check_secrets_managed(nodes, edges, findings, rule):
     secrets_types = [
-        "aws-secrets", "az-keyvault", "gcp-secret",
-        "oci-vault", "ibm-secrets", "iac-vault",
+        "aws-secrets",
+        "az-keyvault",
+        "gcp-secret",
+        "oci-vault",
+        "ibm-secrets",
+        "iac-vault",
     ]
     if not any(n.get("type") in secrets_types for n in nodes):
-        findings.append({
-            "rule_id": rule["id"],
-            "title": rule["title"],
-            "severity": rule["severity"],
-            "category": rule["category"],
-            "detail": "No secrets manager found — secrets must not be hardcoded.",
-        })
+        findings.append(
+            {
+                "rule_id": rule["id"],
+                "title": rule["title"],
+                "severity": rule["severity"],
+                "category": rule["category"],
+                "detail": "No secrets manager found — secrets must not be hardcoded.",
+            }
+        )
 
 
 def _check_backup_configured(nodes, edges, findings, rule):
     backup_types = [
-        "aws-backup", "az-backup", "gcp-backup",
+        "aws-backup",
+        "az-backup",
+        "gcp-backup",
     ]
     db_prefixes = [
-        "aws-rds", "aws-aurora", "az-sql", "az-postgres",
-        "gcp-cloudsql", "gcp-spanner", "oci-adb",
+        "aws-rds",
+        "aws-aurora",
+        "az-sql",
+        "az-postgres",
+        "gcp-cloudsql",
+        "gcp-spanner",
+        "oci-adb",
     ]
     has_db = _has_any_node_prefix(nodes, db_prefixes)
     if not has_db:
         return
     has_backup = any(n.get("type") in backup_types for n in nodes)
     if not has_backup:
-        findings.append({
-            "rule_id": rule["id"],
-            "title": rule["title"],
-            "severity": rule["severity"],
-            "category": rule["category"],
-            "detail": "Database services present but no backup service.",
-        })
+        findings.append(
+            {
+                "rule_id": rule["id"],
+                "title": rule["title"],
+                "severity": rule["severity"],
+                "category": rule["category"],
+                "detail": "Database services present but no backup service.",
+            }
+        )
 
 
 def _check_cspm_present(nodes, edges, findings, rule):
     cspm_types = [
-        "aws-securityhub", "aws-config", "az-defender",
-        "gcp-scc", "oci-cspm", "ibm-scc",
+        "aws-securityhub",
+        "aws-config",
+        "az-defender",
+        "gcp-scc",
+        "oci-cspm",
+        "ibm-scc",
     ]
     if not any(n.get("type") in cspm_types for n in nodes):
-        findings.append({
-            "rule_id": rule["id"],
-            "title": rule["title"],
-            "severity": rule["severity"],
-            "category": rule["category"],
-            "detail": "No CSPM/security posture service in the design.",
-        })
+        findings.append(
+            {
+                "rule_id": rule["id"],
+                "title": rule["title"],
+                "severity": rule["severity"],
+                "category": rule["category"],
+                "detail": "No CSPM/security posture service in the design.",
+            }
+        )
 
 
 def _check_iac_present(nodes, edges, findings, rule):
     iac_prefixes = ["iac-"]
     if not _has_any_node_prefix(nodes, iac_prefixes):
-        findings.append({
-            "rule_id": rule["id"],
-            "title": rule["title"],
-            "severity": rule["severity"],
-            "category": rule["category"],
-            "detail": "No IaC tool (Terraform/Pulumi/Crossplane) in design.",
-        })
+        findings.append(
+            {
+                "rule_id": rule["id"],
+                "title": rule["title"],
+                "severity": rule["severity"],
+                "category": rule["category"],
+                "detail": "No IaC tool (Terraform/Pulumi/Crossplane) in design.",
+            }
+        )
 
 
 # Map check names to functions
@@ -385,6 +505,7 @@ _CHECK_FUNCTIONS = {
 
 
 # ── Public API ───────────────────────────────────────────────────────────────
+
 
 def assess_infra_design(graph_data: dict) -> dict:
     """Run all infrastructure compliance rules against a design.
@@ -490,10 +611,12 @@ def detect_infra_gaps(assessment_result: dict) -> list:
     """Identify missing controls from assessment findings."""
     gaps = []
     for finding in assessment_result.get("findings", []):
-        gaps.append({
-            "rule_id": finding["rule_id"],
-            "title": finding["title"],
-            "severity": finding["severity"],
-            "recommendation": finding.get("detail", ""),
-        })
+        gaps.append(
+            {
+                "rule_id": finding["rule_id"],
+                "title": finding["title"],
+                "severity": finding["severity"],
+                "recommendation": finding.get("detail", ""),
+            }
+        )
     return gaps

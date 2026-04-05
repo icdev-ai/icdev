@@ -15,7 +15,6 @@ import pathlib
 from tools.common.helpers import now_iso
 
 
-
 def generate(
     spec_path: str,
     output_dir: str | None = None,

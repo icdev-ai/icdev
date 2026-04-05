@@ -47,6 +47,7 @@ from pathlib import Path
 _BASE = Path(__file__).resolve().parent.parent.parent
 try:
     from dotenv import load_dotenv
+
     load_dotenv(_BASE / ".env")
 except ImportError:
     _env_file = _BASE / ".env"
@@ -112,7 +113,9 @@ def translate_sql(sql: str, backend: str = "postgresql") -> str:
     #    Exception: PRAGMA table_info(X) → information_schema query
     if _RE_PRAGMA.match(sql.strip()):
         pragma_ti = re.match(
-            r"\s*PRAGMA\s+table_info\(\s*(\w+)\s*\)", sql, re.IGNORECASE,
+            r"\s*PRAGMA\s+table_info\(\s*(\w+)\s*\)",
+            sql,
+            re.IGNORECASE,
         )
         if pragma_ti:
             table = pragma_ti.group(1)
@@ -185,7 +188,7 @@ def translate_sql(sql: str, backend: str = "postgresql") -> str:
         sql = _RE_AUTOINCREMENT.sub("SERIAL PRIMARY KEY", sql)
         sql = _RE_CURRENT_TIMESTAMP_DEFAULT.sub("DEFAULT NOW()", sql)
         # SQLite BLOB → PG BYTEA
-        sql = re.sub(r'\bBLOB\b', 'BYTEA', sql)
+        sql = re.sub(r"\bBLOB\b", "BYTEA", sql)
         # DEFAULT CURRENT_TIMESTAMP is compatible in both
         # BOOLEAN is native in PG
         # TEXT, REAL, INTEGER are compatible
@@ -198,26 +201,26 @@ def translate_sql(sql: str, backend: str = "postgresql") -> str:
     # 10. LIKE → ILIKE (SQLite LIKE is case-insensitive; PG LIKE is case-sensitive)
     #     Only in DML contexts (not DDL, not inside string literals)
     if "CREATE TABLE" not in sql.upper() and "CREATE INDEX" not in sql.upper():
-        sql = re.sub(r'\bLIKE\b', 'ILIKE', sql, flags=re.IGNORECASE)
+        sql = re.sub(r"\bLIKE\b", "ILIKE", sql, flags=re.IGNORECASE)
         # Also handle NOT LIKE → NOT ILIKE (already handled by the above since LIKE is replaced)
 
     # 11. GROUP_CONCAT → string_agg (PG equivalent)
     def _replace_group_concat(m):
         args = m.group(1)
-        parts = [a.strip() for a in args.split(',', 1)]
+        parts = [a.strip() for a in args.split(",", 1)]
         col = parts[0]
         sep = parts[1] if len(parts) > 1 else "','"
         return f"string_agg({col}::text, {sep})"
 
-    sql = re.sub(r'\bGROUP_CONCAT\(([^)]+)\)', _replace_group_concat, sql, flags=re.IGNORECASE)
+    sql = re.sub(r"\bGROUP_CONCAT\(([^)]+)\)", _replace_group_concat, sql, flags=re.IGNORECASE)
 
     # 12. GLOB → ~ (PG regex match) — SQLite GLOB uses * and ?
     #     col GLOB 'pattern' → col ~ 'pattern' (with * → .* and ? → . conversion)
     #     Note: This is a best-effort translation; complex GLOB patterns may need manual review
-    sql = re.sub(r'\bGLOB\b', '~', sql, flags=re.IGNORECASE)
+    sql = re.sub(r"\bGLOB\b", "~", sql, flags=re.IGNORECASE)
 
     # 13. last_insert_rowid() → lastval() (PG equivalent for last auto-generated ID)
-    sql = re.sub(r'\blast_insert_rowid\(\)', 'lastval()', sql, flags=re.IGNORECASE)
+    sql = re.sub(r"\blast_insert_rowid\(\)", "lastval()", sql, flags=re.IGNORECASE)
 
     # 14. sqlite_master → information_schema.tables / pg_tables
     #     SELECT ... FROM sqlite_master WHERE type='table' AND name=?
@@ -227,23 +230,23 @@ def translate_sql(sql: str, backend: str = "postgresql") -> str:
         sql = re.sub(
             r"SELECT\s+(?:1|name|count\(\*\))\s+FROM\s+sqlite_master\s+"
             r"WHERE\s+type\s*=\s*'table'\s+AND\s+name\s*=\s*%s",
-            "SELECT table_name FROM information_schema.tables "
-            "WHERE table_schema = 'public' AND table_name = %s",
-            sql, flags=re.IGNORECASE,
+            "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name = %s",
+            sql,
+            flags=re.IGNORECASE,
         )
         # Pattern: SELECT name FROM sqlite_master WHERE type='table'  (list all tables)
         sql = re.sub(
             r"SELECT\s+name\s+FROM\s+sqlite_master\s+WHERE\s+type\s*=\s*'table'",
-            "SELECT table_name AS name FROM information_schema.tables "
-            "WHERE table_schema = 'public'",
-            sql, flags=re.IGNORECASE,
+            "SELECT table_name AS name FROM information_schema.tables WHERE table_schema = 'public'",
+            sql,
+            flags=re.IGNORECASE,
         )
         # Pattern: SELECT count(*) FROM sqlite_master WHERE type='table'
         sql = re.sub(
             r"SELECT\s+count\(\*\)\s+FROM\s+sqlite_master\s+WHERE\s+type\s*=\s*'table'",
-            "SELECT count(*) FROM information_schema.tables "
-            "WHERE table_schema = 'public'",
-            sql, flags=re.IGNORECASE,
+            "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public'",
+            sql,
+            flags=re.IGNORECASE,
         )
 
     # 15. json_extract(col, '$.key') → col::jsonb->>'key'
@@ -252,10 +255,10 @@ def translate_sql(sql: str, backend: str = "postgresql") -> str:
         col = m.group(1).strip()
         path = m.group(2).strip().strip("'\"")
         # Remove leading '$.' from JSON path
-        path = re.sub(r'^\$\.?', '', path)
-        if '.' in path:
+        path = re.sub(r"^\$\.?", "", path)
+        if "." in path:
             # Nested path: $.a.b → col::jsonb->'a'->>'b'
-            parts = path.split('.')
+            parts = path.split(".")
             chain = "::jsonb"
             for part in parts[:-1]:
                 chain += f"->'{part}'"
@@ -265,14 +268,17 @@ def translate_sql(sql: str, backend: str = "postgresql") -> str:
 
     sql = re.sub(
         r"\bjson_extract\(\s*([^,]+?)\s*,\s*(['\"][^'\"]+['\"])\s*\)",
-        _replace_json_extract, sql, flags=re.IGNORECASE,
+        _replace_json_extract,
+        sql,
+        flags=re.IGNORECASE,
     )
 
     # 16. json_array_length(col) → jsonb_array_length(col::jsonb)
     sql = re.sub(
         r"\bjson_array_length\(\s*([^)]+)\s*\)",
         r"jsonb_array_length(\1::jsonb)",
-        sql, flags=re.IGNORECASE,
+        sql,
+        flags=re.IGNORECASE,
     )
 
     return sql
@@ -539,6 +545,7 @@ def get_connection(db_path: str = None) -> StorageConnection:
             return StorageConnection(raw_conn, "postgresql")
         except Exception as exc:
             import logging
+
             logging.getLogger(__name__).warning(
                 "PostgreSQL unavailable (%s), falling back to SQLite",
                 exc,

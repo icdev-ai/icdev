@@ -21,8 +21,7 @@ class WebhookAdapter(NotificationAdapter):
         self.method = config.get("method", "POST")
         self.headers = config.get("headers", {})
 
-    def send(self, title: str, body: str, severity: str = "info",
-             metadata: Optional[Dict] = None) -> bool:
+    def send(self, title: str, body: str, severity: str = "info", metadata: Optional[Dict] = None) -> bool:
         if not self.url:
             return False
 
@@ -39,7 +38,10 @@ class WebhookAdapter(NotificationAdapter):
             headers = {"Content-Type": "application/json"}
             headers.update(self.headers)
             req = urllib.request.Request(
-                self.url, data=data, headers=headers, method=self.method,
+                self.url,
+                data=data,
+                headers=headers,
+                method=self.method,
             )
             with urllib.request.urlopen(req, timeout=10) as resp:  # nosec B310 -- URL scheme validated; internal/configured endpoints only
                 return 200 <= resp.status < 300

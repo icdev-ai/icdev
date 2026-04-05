@@ -8,9 +8,7 @@ from pathlib import Path
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 BASE_URL = "http://localhost:5100"
-SCREENSHOT_DIR = (
-    Path(__file__).resolve().parent.parent / "playwright" / "screenshots"
-)
+SCREENSHOT_DIR = Path(__file__).resolve().parent.parent / "playwright" / "screenshots"
 
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -66,15 +64,9 @@ def main():
         inp.clear()
         inp.send_keys("NVDA")
         btn.click()
-        WebDriverWait(driver, 15).until(
-            EC.presence_of_element_located(
-                (By.CSS_SELECTOR, "#live-result a")
-            )
-        )
+        WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.CSS_SELECTOR, "#live-result a")))
         # Check "View comprehensive analysis" link appears
-        link = driver.find_element(
-            By.CSS_SELECTOR, "#live-result a"
-        )
+        link = driver.find_element(By.CSS_SELECTOR, "#live-result a")
         assert "comprehensive" in link.text.lower() or "analysis" in link.text.lower()
         ok("run_analysis", "NVDA analysis + detail link")
 
@@ -128,9 +120,7 @@ def main():
         screenshot(driver, "modal-intaas-debate")
         ok(
             "intaas_debate",
-            f"{len(bull_points)} bull points, "
-            f"net score: {net_score.text}, "
-            f"{len(conv_bars)} conviction bars",
+            f"{len(bull_points)} bull points, net score: {net_score.text}, {len(conv_bars)} conviction bars",
         )
 
         # 5. Switch to Signal tab
@@ -209,6 +199,7 @@ def main():
 
     except Exception as exc:
         import traceback
+
         traceback.print_exc()
         fail("test_error", str(exc))
         try:
@@ -222,7 +213,7 @@ def main():
     print("=" * 60)
     total = passed + failed
     status = "PASSED" if failed == 0 else "FAILED"
-    print(f"Result: {status} — {passed}/{total} tests ({passed/total*100:.0f}%)")
+    print(f"Result: {status} — {passed}/{total} tests ({passed / total * 100:.0f}%)")
     print("=" * 60)
     return 0 if failed == 0 else 1
 

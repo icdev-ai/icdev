@@ -35,6 +35,7 @@ from tools.workflow.impact_analyzer import (
 # Unit tests for parsing helpers
 # ---------------------------------------------------------------------------
 
+
 class TestParsingHelpers:
     """Test low-level AST/regex parsing functions."""
 
@@ -127,6 +128,7 @@ conn.execute(
 # Check-level tests
 # ---------------------------------------------------------------------------
 
+
 class TestSchemaCodeCheck:
     """Tests for schema-code coherence check."""
 
@@ -158,12 +160,15 @@ class TestFixtureSchemaCheck:
     def test_detects_missing_columns(self, tmp_path):
         # Create a test file with a fixture missing a column
         test_file = tmp_path / "test_example.py"
-        test_file.write_text(textwrap.dedent("""
+        test_file.write_text(
+            textwrap.dedent("""
             CREATE TABLE IF NOT EXISTS workflow_loops (
                 id TEXT PRIMARY KEY,
                 project_id TEXT
             );
-        """), encoding="utf-8")
+        """),
+            encoding="utf-8",
+        )
         result = check_fixture_schema(changed_files=[test_file])
         # Should detect missing columns vs real schema
         assert isinstance(result, CoherenceCheck)
@@ -181,16 +186,22 @@ class TestSignatureCallCheck:
 
     def test_detects_positional_calls(self, tmp_path):
         tool_file = tmp_path / "my_tool.py"
-        tool_file.write_text(textwrap.dedent("""
+        tool_file.write_text(
+            textwrap.dedent("""
             def create_thing(name, description, category, owner, db_path=None):
                 pass
-        """), encoding="utf-8")
+        """),
+            encoding="utf-8",
+        )
 
         test_file = tmp_path / "test_my_tool.py"
-        test_file.write_text(textwrap.dedent("""
+        test_file.write_text(
+            textwrap.dedent("""
             from my_tool import create_thing
             create_thing("a", "b", "c", "d", test_db)
-        """), encoding="utf-8")
+        """),
+            encoding="utf-8",
+        )
 
         result = check_signature_call(changed_files=[tool_file, test_file])
         assert isinstance(result, CoherenceCheck)
@@ -235,6 +246,7 @@ class TestImportUsageCheck:
 # Report-level tests
 # ---------------------------------------------------------------------------
 
+
 class TestCoherenceReport:
     """Tests for the aggregate report."""
 
@@ -273,8 +285,13 @@ class TestCoherenceReport:
     def test_fixes_applied_field(self):
         """Test that checks include fixes_applied list."""
         check = CoherenceCheck(
-            check_id="test", check_name="Test", status="pass",
-            expected=[], actual=[], missing=[], extra=[],
+            check_id="test",
+            check_name="Test",
+            status="pass",
+            expected=[],
+            actual=[],
+            missing=[],
+            extra=[],
             message="ok",
         )
         assert check.fixes_applied == []
@@ -284,6 +301,7 @@ class TestCoherenceReport:
     def test_fix_registry_tiers(self):
         """Test that fix registry has correct tier assignments."""
         from tools.workflow.coherence_checker import _FIX_REGISTRY
+
         assert _FIX_REGISTRY["import_usage"] == "auto"
         assert _FIX_REGISTRY["append_only"] == "auto"
         assert _FIX_REGISTRY["schema_code"] == "suggest"
@@ -293,6 +311,7 @@ class TestCoherenceReport:
 # ---------------------------------------------------------------------------
 # Impact Analyzer tests
 # ---------------------------------------------------------------------------
+
 
 class TestImpactAnalyzer:
     """Tests for cross-subsystem impact analysis."""

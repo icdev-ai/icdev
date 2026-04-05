@@ -17,6 +17,7 @@ Usage::
     python tools/llm/cost_intelligence.py --alerts --json
     python tools/llm/cost_intelligence.py --gate
 """
+
 from __future__ import annotations
 
 import argparse
@@ -55,9 +56,11 @@ RECOMMENDATION_STATUSES = ("pending", "accepted", "rejected", "implemented")
 # Database helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_conn():
     """Return a connection to the main ICDEV™ database."""
     from tools.db.storage import get_connection  # noqa: E402
+
     return get_connection()
 
 
@@ -127,6 +130,7 @@ def init_tables(conn=None):
 # Config helpers
 # ---------------------------------------------------------------------------
 
+
 def _load_config() -> dict:
     """Load llm_config.yaml and return the full dict."""
     if not CONFIG_PATH.exists():
@@ -189,17 +193,16 @@ def _month_boundaries(now: datetime | None = None) -> tuple[str, str, str]:
     month_str = now.strftime("%Y-%m")
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     if now.month == 12:
-        next_month_start = now.replace(year=now.year + 1, month=1, day=1,
-                                       hour=0, minute=0, second=0, microsecond=0)
+        next_month_start = now.replace(year=now.year + 1, month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
     else:
-        next_month_start = now.replace(month=now.month + 1, day=1,
-                                       hour=0, minute=0, second=0, microsecond=0)
+        next_month_start = now.replace(month=now.month + 1, day=1, hour=0, minute=0, second=0, microsecond=0)
     return month_str, month_start.isoformat(), next_month_start.isoformat()
 
 
 # ---------------------------------------------------------------------------
 # Alert creation helper
 # ---------------------------------------------------------------------------
+
 
 def _create_alert(
     conn,
@@ -235,6 +238,7 @@ def _create_alert(
 # ---------------------------------------------------------------------------
 # Core analysis functions
 # ---------------------------------------------------------------------------
+
 
 def detect_cost_anomalies(lookback_hours: int = 24) -> dict:
     """Compare recent spend rate to 7-day rolling average.
@@ -325,12 +329,11 @@ def detect_cost_anomalies(lookback_hours: int = 24) -> dict:
             msg = (
                 f"Cost spike detected for agent '{agent}': "
                 f"recent rate {recent_hourly:.4f}/hr vs baseline {baseline:.4f}/hr "
-                f"({ratio:.1f}x)" if ratio != float("inf") else
-                f"Cost spike detected for agent '{agent}': "
-                f"new spend {recent_hourly:.4f}/hr with no prior baseline"
+                f"({ratio:.1f}x)"
+                if ratio != float("inf")
+                else f"Cost spike detected for agent '{agent}': new spend {recent_hourly:.4f}/hr with no prior baseline"
             )
-            aid = _create_alert(conn, "spike", severity, msg,
-                                agent_id=agent, details=detail)
+            aid = _create_alert(conn, "spike", severity, msg, agent_id=agent, details=detail)
             alerts_created.append(aid)
             anomalies.append(detail)
 
@@ -445,8 +448,12 @@ def project_monthly_spend(agent_id: str | None = None) -> dict:
                     f"({proj['projected_utilization_pct']}% utilization)"
                 )
                 alert_id = _create_alert(
-                    conn, "projection", severity, msg,
-                    agent_id=aid, details=proj,
+                    conn,
+                    "projection",
+                    severity,
+                    msg,
+                    agent_id=aid,
+                    details=proj,
                 )
                 alerts_created.append(alert_id)
                 proj["over_budget"] = True
@@ -529,10 +536,16 @@ def recommend_optimizations() -> list[dict]:
                     status, created_at, updated_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
-                    rec_id, rec["recommendation_type"], rec["function_name"],
-                    rec["current_model"], rec["recommended_model"],
-                    rec["estimated_savings_usd"], rec["confidence"],
-                    rec["status"], now_iso, now_iso,
+                    rec_id,
+                    rec["recommendation_type"],
+                    rec["function_name"],
+                    rec["current_model"],
+                    rec["recommended_model"],
+                    rec["estimated_savings_usd"],
+                    rec["confidence"],
+                    rec["status"],
+                    now_iso,
+                    now_iso,
                 ),
             )
             recommendations.append(rec)
@@ -552,10 +565,7 @@ def recommend_optimizations() -> list[dict]:
     ).fetchall()
 
     if token_rows:
-        avg_values = [
-            float(r[1] if isinstance(r, (tuple, list)) else r["avg_tokens"])
-            for r in token_rows
-        ]
+        avg_values = [float(r[1] if isinstance(r, (tuple, list)) else r["avg_tokens"]) for r in token_rows]
         if avg_values:
             median_tokens = statistics.median(avg_values)
             for row in token_rows:
@@ -580,10 +590,16 @@ def recommend_optimizations() -> list[dict]:
                             status, created_at, updated_at)
                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                         (
-                            rec_id, rec["recommendation_type"], rec["function_name"],
-                            rec["current_model"], rec["recommended_model"],
-                            rec["estimated_savings_usd"], rec["confidence"],
-                            rec["status"], now_iso, now_iso,
+                            rec_id,
+                            rec["recommendation_type"],
+                            rec["function_name"],
+                            rec["current_model"],
+                            rec["recommended_model"],
+                            rec["estimated_savings_usd"],
+                            rec["confidence"],
+                            rec["status"],
+                            now_iso,
+                            now_iso,
                         ),
                     )
                     recommendations.append(rec)
@@ -643,10 +659,16 @@ def recommend_optimizations() -> list[dict]:
                         status, created_at, updated_at)
                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
-                        rec_id, rec["recommendation_type"], rec["function_name"],
-                        rec["current_model"], rec["recommended_model"],
-                        rec["estimated_savings_usd"], rec["confidence"],
-                        rec["status"], now_iso, now_iso,
+                        rec_id,
+                        rec["recommendation_type"],
+                        rec["function_name"],
+                        rec["current_model"],
+                        rec["recommended_model"],
+                        rec["estimated_savings_usd"],
+                        rec["confidence"],
+                        rec["status"],
+                        now_iso,
+                        now_iso,
                     ),
                 )
                 recommendations.append(rec)
@@ -689,18 +711,17 @@ def compare_edge_vs_cloud(function_name: str) -> dict:
     for model_name in chain:
         p = pricing.get(model_name, {"input_per_1k": 0.0, "output_per_1k": 0.0})
         is_local = _is_local_model(config, model_name)
-        cost_per_call = (
-            (avg_input / 1000) * p["input_per_1k"]
-            + (avg_output / 1000) * p["output_per_1k"]
+        cost_per_call = (avg_input / 1000) * p["input_per_1k"] + (avg_output / 1000) * p["output_per_1k"]
+        comparisons.append(
+            {
+                "model": model_name,
+                "is_local": is_local,
+                "input_per_1k_tokens": p["input_per_1k"],
+                "output_per_1k_tokens": p["output_per_1k"],
+                "estimated_cost_per_call": round(cost_per_call, 6),
+                "estimated_cost_per_1k_calls": round(cost_per_call * 1000, 4),
+            }
         )
-        comparisons.append({
-            "model": model_name,
-            "is_local": is_local,
-            "input_per_1k_tokens": p["input_per_1k"],
-            "output_per_1k_tokens": p["output_per_1k"],
-            "estimated_cost_per_call": round(cost_per_call, 6),
-            "estimated_cost_per_1k_calls": round(cost_per_call * 1000, 4),
-        })
 
     # Separate local vs cloud
     local_models = [c for c in comparisons if c["is_local"]]
@@ -712,8 +733,7 @@ def compare_edge_vs_cloud(function_name: str) -> dict:
     savings_per_1k = 0.0
     if cheapest_cloud and cheapest_local:
         savings_per_1k = round(
-            cheapest_cloud["estimated_cost_per_1k_calls"]
-            - cheapest_local["estimated_cost_per_1k_calls"],
+            cheapest_cloud["estimated_cost_per_1k_calls"] - cheapest_local["estimated_cost_per_1k_calls"],
             4,
         )
 
@@ -738,9 +758,7 @@ def get_cost_dashboard() -> dict:
     month_str, month_start_iso, next_month_iso = _month_boundaries(now)
 
     # Total spend (all time)
-    total_row = conn.execute(
-        "SELECT SUM(cost_estimate_usd), COUNT(*) FROM agent_token_usage"
-    ).fetchone()
+    total_row = conn.execute("SELECT SUM(cost_estimate_usd), COUNT(*) FROM agent_token_usage").fetchone()
     total_spend = float(total_row[0] or 0) if total_row else 0.0
     total_calls = int(total_row[1] or 0) if total_row else 0
 
@@ -769,14 +787,16 @@ def get_cost_dashboard() -> dict:
 
     agents = []
     for row in by_agent:
-        agents.append({
-            "agent_id": row[0] if isinstance(row, (tuple, list)) else row["agent_id"],
-            "cost_usd": round(float(row[1] if isinstance(row, (tuple, list)) else row["cost"]), 4),
-            "input_tokens": int(row[2] if isinstance(row, (tuple, list)) else row["input_tok"]),
-            "output_tokens": int(row[3] if isinstance(row, (tuple, list)) else row["output_tok"]),
-            "thinking_tokens": int(row[4] if isinstance(row, (tuple, list)) else row["think_tok"]),
-            "calls": int(row[5] if isinstance(row, (tuple, list)) else row["calls"]),
-        })
+        agents.append(
+            {
+                "agent_id": row[0] if isinstance(row, (tuple, list)) else row["agent_id"],
+                "cost_usd": round(float(row[1] if isinstance(row, (tuple, list)) else row["cost"]), 4),
+                "input_tokens": int(row[2] if isinstance(row, (tuple, list)) else row["input_tok"]),
+                "output_tokens": int(row[3] if isinstance(row, (tuple, list)) else row["output_tok"]),
+                "thinking_tokens": int(row[4] if isinstance(row, (tuple, list)) else row["think_tok"]),
+                "calls": int(row[5] if isinstance(row, (tuple, list)) else row["calls"]),
+            }
+        )
 
     # By model (this month)
     by_model = conn.execute(
@@ -793,12 +813,14 @@ def get_cost_dashboard() -> dict:
 
     models = []
     for row in by_model:
-        models.append({
-            "model_id": row[0] if isinstance(row, (tuple, list)) else row["model_id"],
-            "cost_usd": round(float(row[1] if isinstance(row, (tuple, list)) else row["cost"]), 4),
-            "total_tokens": int(row[2] if isinstance(row, (tuple, list)) else row["total_tokens"]),
-            "calls": int(row[3] if isinstance(row, (tuple, list)) else row["calls"]),
-        })
+        models.append(
+            {
+                "model_id": row[0] if isinstance(row, (tuple, list)) else row["model_id"],
+                "cost_usd": round(float(row[1] if isinstance(row, (tuple, list)) else row["cost"]), 4),
+                "total_tokens": int(row[2] if isinstance(row, (tuple, list)) else row["total_tokens"]),
+                "calls": int(row[3] if isinstance(row, (tuple, list)) else row["calls"]),
+            }
+        )
 
     # Daily trend (last 14 days)
     trend_rows = conn.execute(
@@ -814,11 +836,13 @@ def get_cost_dashboard() -> dict:
 
     trends = []
     for row in trend_rows:
-        trends.append({
-            "date": row[0] if isinstance(row, (tuple, list)) else row["day"],
-            "cost_usd": round(float(row[1] if isinstance(row, (tuple, list)) else row["cost"]), 4),
-            "calls": int(row[2] if isinstance(row, (tuple, list)) else row["calls"]),
-        })
+        trends.append(
+            {
+                "date": row[0] if isinstance(row, (tuple, list)) else row["day"],
+                "cost_usd": round(float(row[1] if isinstance(row, (tuple, list)) else row["cost"]), 4),
+                "calls": int(row[2] if isinstance(row, (tuple, list)) else row["calls"]),
+            }
+        )
 
     # Budget status
     budget_rows = conn.execute(
@@ -830,17 +854,17 @@ def get_cost_dashboard() -> dict:
     for row in budget_rows:
         budget = float(row[1] if isinstance(row, (tuple, list)) else row["budget_usd"])
         spent = float(row[2] if isinstance(row, (tuple, list)) else row["spent_usd"])
-        budget_status.append({
-            "agent_id": row[0] if isinstance(row, (tuple, list)) else row["agent_id"],
-            "budget_usd": budget,
-            "spent_usd": spent,
-            "utilization_pct": round((spent / budget) * 100, 1) if budget > 0 else 0.0,
-        })
+        budget_status.append(
+            {
+                "agent_id": row[0] if isinstance(row, (tuple, list)) else row["agent_id"],
+                "budget_usd": budget,
+                "spent_usd": spent,
+                "utilization_pct": round((spent / budget) * 100, 1) if budget > 0 else 0.0,
+            }
+        )
 
     # Unacknowledged alert count
-    alert_count = conn.execute(
-        "SELECT COUNT(*) FROM llm_cost_alerts WHERE acknowledged = 0"
-    ).fetchone()
+    alert_count = conn.execute("SELECT COUNT(*) FROM llm_cost_alerts WHERE acknowledged = 0").fetchone()
 
     conn.close()
 
@@ -880,17 +904,21 @@ def get_cost_alerts() -> dict:
 
     alerts = []
     for row in rows:
-        alerts.append({
-            "id": row[0] if isinstance(row, (tuple, list)) else row["id"],
-            "alert_type": row[1] if isinstance(row, (tuple, list)) else row["alert_type"],
-            "agent_id": row[2] if isinstance(row, (tuple, list)) else row["agent_id"],
-            "model_id": row[3] if isinstance(row, (tuple, list)) else row["model_id"],
-            "function_name": row[4] if isinstance(row, (tuple, list)) else row["function_name"],
-            "severity": row[5] if isinstance(row, (tuple, list)) else row["severity"],
-            "message": row[6] if isinstance(row, (tuple, list)) else row["message"],
-            "details": json.loads(row[7]) if (row[7] if isinstance(row, (tuple, list)) else row["details_json"]) else None,
-            "created_at": row[8] if isinstance(row, (tuple, list)) else row["created_at"],
-        })
+        alerts.append(
+            {
+                "id": row[0] if isinstance(row, (tuple, list)) else row["id"],
+                "alert_type": row[1] if isinstance(row, (tuple, list)) else row["alert_type"],
+                "agent_id": row[2] if isinstance(row, (tuple, list)) else row["agent_id"],
+                "model_id": row[3] if isinstance(row, (tuple, list)) else row["model_id"],
+                "function_name": row[4] if isinstance(row, (tuple, list)) else row["function_name"],
+                "severity": row[5] if isinstance(row, (tuple, list)) else row["severity"],
+                "message": row[6] if isinstance(row, (tuple, list)) else row["message"],
+                "details": json.loads(row[7])
+                if (row[7] if isinstance(row, (tuple, list)) else row["details_json"])
+                else None,
+                "created_at": row[8] if isinstance(row, (tuple, list)) else row["created_at"],
+            }
+        )
 
     return {
         "status": "ok",
@@ -949,9 +977,7 @@ def run_gate() -> dict:
         "critical_alerts": critical_count,
         "warning_alerts": warning_count,
         "message": (
-            "No critical cost alerts"
-            if passed
-            else f"{critical_count} critical cost alert(s) require acknowledgement"
+            "No critical cost alerts" if passed else f"{critical_count} critical cost alert(s) require acknowledgement"
         ),
     }
 
@@ -959,6 +985,7 @@ def run_gate() -> dict:
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+
 
 def main():
     parser = argparse.ArgumentParser(

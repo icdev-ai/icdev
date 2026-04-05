@@ -6,7 +6,6 @@ from datetime import datetime, timezone
 from functools import wraps
 
 
-
 def _now():
     return datetime.now(timezone.utc).isoformat()
 

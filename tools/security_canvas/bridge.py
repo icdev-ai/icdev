@@ -27,6 +27,7 @@ def import_ndc_topology(topology_id: str) -> dict:
     # Load NDC topology
     try:
         from tools.network.db.init_db import get_connection as ndc_conn
+
         with ndc_conn() as conn:
             row = conn.execute(
                 "SELECT id, name, graph_json FROM topologies WHERE id=?",
@@ -58,8 +59,7 @@ def import_ndc_topology(topology_id: str) -> dict:
         if existing:
             design_id = existing[0]
             sconn.execute(
-                "UPDATE security_designs SET graph_json=?, updated_at=? "
-                "WHERE id=?",
+                "UPDATE security_designs SET graph_json=?, updated_at=? WHERE id=?",
                 (json.dumps(sdc_graph), now, design_id),
             )
             action = "updated"
@@ -70,10 +70,16 @@ def import_ndc_topology(topology_id: str) -> dict:
                 "(id, name, description, graph_json, source_topology_id, "
                 "classification, created_at, updated_at) "
                 "VALUES (?,?,?,?,?,?,?,?)",
-                (design_id,
-                 f"Security: {topo_name}",
-                 f"Auto-imported from NDC topology: {topo_name}",
-                 json.dumps(sdc_graph), topology_id, "CUI", now, now),
+                (
+                    design_id,
+                    f"Security: {topo_name}",
+                    f"Auto-imported from NDC topology: {topo_name}",
+                    json.dumps(sdc_graph),
+                    topology_id,
+                    "CUI",
+                    now,
+                    now,
+                ),
             )
             action = "created"
 
@@ -86,17 +92,35 @@ def import_ndc_topology(topology_id: str) -> dict:
 
 
 # ── VPC / VNet node types that become trust boundaries ────────────────────────
-_VPC_TYPES = frozenset((
-    "aws-vpc", "az-vnet", "gcp-vpc", "oci-vcn", "ibm-vpc",
-))
+_VPC_TYPES = frozenset(
+    (
+        "aws-vpc",
+        "az-vnet",
+        "gcp-vpc",
+        "oci-vcn",
+        "ibm-vpc",
+    )
+)
 
 # ── Encrypted / authenticated protocol sets ──────────────────────────────────
-_ENCRYPTED_PROTOCOLS = frozenset((
-    "ipsec", "tls", "https", "macsec", "ssh",
-))
-_AUTHENTICATED_PROTOCOLS = frozenset((
-    "bgp", "ipsec", "saml", "oauth", "ssh",
-))
+_ENCRYPTED_PROTOCOLS = frozenset(
+    (
+        "ipsec",
+        "tls",
+        "https",
+        "macsec",
+        "ssh",
+    )
+)
+_AUTHENTICATED_PROTOCOLS = frozenset(
+    (
+        "bgp",
+        "ipsec",
+        "saml",
+        "oauth",
+        "ssh",
+    )
+)
 
 
 def _convert_ndc_to_sdc(nodes: list, edges: list) -> dict:
@@ -117,39 +141,45 @@ def _convert_ndc_to_sdc(nodes: list, edges: list) -> dict:
 
         # VPCs become trust boundaries, not regular nodes
         if ndc_type in _VPC_TYPES:
-            sdc_boundaries.append({
-                "id": f"bnd-{n.get('id', '')}",
-                "type": "boundary-cloud",
-                "label": n.get("label", "Cloud VPC"),
-                "x": n.get("x", 0) - 20,
-                "y": n.get("y", 0) - 20,
-                "width": 400,
-                "height": 300,
-                "config": n.get("config", {}),
-            })
+            sdc_boundaries.append(
+                {
+                    "id": f"bnd-{n.get('id', '')}",
+                    "type": "boundary-cloud",
+                    "label": n.get("label", "Cloud VPC"),
+                    "x": n.get("x", 0) - 20,
+                    "y": n.get("y", 0) - 20,
+                    "width": 400,
+                    "height": 300,
+                    "config": n.get("config", {}),
+                }
+            )
             continue
 
         sdc_type = NODE_TYPE_MAPPING.get(ndc_type, "asset-server")
-        sdc_nodes.append({
-            "id": n.get("id", ""),
-            "type": sdc_type,
-            "label": n.get("label", ""),
-            "x": n.get("x", 0),
-            "y": n.get("y", 0),
-            "config": n.get("config", {}),
-            "source_node_id": n.get("id", ""),
-        })
+        sdc_nodes.append(
+            {
+                "id": n.get("id", ""),
+                "type": sdc_type,
+                "label": n.get("label", ""),
+                "x": n.get("x", 0),
+                "y": n.get("y", 0),
+                "config": n.get("config", {}),
+                "source_node_id": n.get("id", ""),
+            }
+        )
 
     for e in edges:
         protocol = (e.get("protocol", "") or "").lower()
-        sdc_edges.append({
-            "source": e.get("source", ""),
-            "target": e.get("target", ""),
-            "label": e.get("label", ""),
-            "protocol": e.get("protocol", ""),
-            "encrypted": 1 if protocol in _ENCRYPTED_PROTOCOLS else 0,
-            "authenticated": 1 if protocol in _AUTHENTICATED_PROTOCOLS else 0,
-        })
+        sdc_edges.append(
+            {
+                "source": e.get("source", ""),
+                "target": e.get("target", ""),
+                "label": e.get("label", ""),
+                "protocol": e.get("protocol", ""),
+                "encrypted": 1 if protocol in _ENCRYPTED_PROTOCOLS else 0,
+                "authenticated": 1 if protocol in _AUTHENTICATED_PROTOCOLS else 0,
+            }
+        )
 
     return {
         "nodes": sdc_nodes,
@@ -202,11 +232,17 @@ def sync_ndc_compliance_to_sdc(
                     "(id, design_id, threat_category, title, description, "
                     "likelihood, impact, status, created_at) "
                     "VALUES (?,?,?,?,?,?,?,?,?)",
-                    (threat_id, design_id, category,
-                     f[2] or f[0], f[3] or "",
-                     "high" if is_cat1 else "medium",
-                     "high" if is_cat1 else "medium",
-                     "identified", now),
+                    (
+                        threat_id,
+                        design_id,
+                        category,
+                        f[2] or f[0],
+                        f[3] or "",
+                        "high" if is_cat1 else "medium",
+                        "high" if is_cat1 else "medium",
+                        "identified",
+                        now,
+                    ),
                 )
                 synced += 1
 
@@ -242,16 +278,13 @@ def push_sdc_remediation_to_ndc(
         if not plans:
             return {"status": "no_open_plans", "design_id": design_id}
 
-        steps = (
-            json.loads(plans[0]) if isinstance(plans[0], str) else plans[0]
-        )
+        steps = json.loads(plans[0]) if isinstance(plans[0], str) else plans[0]
         return {
             "status": "ready",
             "design_id": design_id,
             "topology_id": topology_id,
             "remediation_steps": len(steps) if isinstance(steps, list) else 0,
-            "note": "Remediation steps available for NDC compliance team "
-                    "to review",
+            "note": "Remediation steps available for NDC compliance team to review",
         }
     except Exception as exc:
         return {"error": str(exc)}

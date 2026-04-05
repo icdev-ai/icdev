@@ -72,11 +72,32 @@ INTENT_PATTERNS = {
 
 # Numbers — handle digits and word forms
 _NUM_WORDS = {
-    "a": 1, "an": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
-    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11,
-    "twelve": 12, "fifteen": 15, "twenty": 20, "thirty": 30, "fifty": 50,
-    "hundred": 100, "several": 3, "few": 3, "couple": 2, "many": 10, "some": 5,
+    "a": 1,
+    "an": 1,
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "nine": 9,
+    "ten": 10,
+    "eleven": 11,
+    "twelve": 12,
+    "fifteen": 15,
+    "twenty": 20,
+    "thirty": 30,
+    "fifty": 50,
+    "hundred": 100,
+    "several": 3,
+    "few": 3,
+    "couple": 2,
+    "many": 10,
+    "some": 5,
 }
+
 
 def _extract_number(text: str) -> int:
     """Extract a number from text — digits or word forms."""
@@ -202,6 +223,7 @@ _SCOPE_INCREASE_PATTERN = re.compile(
 # Core parser
 # ---------------------------------------------------------------------------
 
+
 def classify_intent(query: str) -> Tuple[str, float]:
     """Classify query intent using heuristic patterns.
 
@@ -273,8 +295,16 @@ def parse_modifications(query: str) -> Dict[str, Any]:
 
     if vendor_name:
         # Determine risk tier based on known vendors
-        critical_vendors = {"aws", "azure", "gcp", "google cloud", "amazon web services",
-                            "microsoft azure", "oracle", "palantir"}
+        critical_vendors = {
+            "aws",
+            "azure",
+            "gcp",
+            "google cloud",
+            "amazon web services",
+            "microsoft azure",
+            "oracle",
+            "palantir",
+        }
         risk_tier = "critical" if vendor_name.lower() in critical_vendors else "moderate"
         mods["add_vendor"] = {"name": vendor_name, "scrm_risk_tier": risk_tier}
 
@@ -283,9 +313,16 @@ def parse_modifications(query: str) -> Dict[str, Any]:
     if m:
         raw = m.group(1).strip().upper()
         # Normalize
-        il_map = {"IMPACT LEVEL 2": "IL2", "IMPACT LEVEL 3": "IL3", "IMPACT LEVEL 4": "IL4",
-                  "IMPACT LEVEL 5": "IL5", "IMPACT LEVEL 6": "IL6",
-                  "FEDRAMP LOW": "IL2", "FEDRAMP MODERATE": "IL4", "FEDRAMP HIGH": "IL5"}
+        il_map = {
+            "IMPACT LEVEL 2": "IL2",
+            "IMPACT LEVEL 3": "IL3",
+            "IMPACT LEVEL 4": "IL4",
+            "IMPACT LEVEL 5": "IL5",
+            "IMPACT LEVEL 6": "IL6",
+            "FEDRAMP LOW": "IL2",
+            "FEDRAMP MODERATE": "IL4",
+            "FEDRAMP HIGH": "IL5",
+        }
         mods["change_classification"] = il_map.get(raw, raw)
 
     # Schedule
@@ -293,16 +330,28 @@ def parse_modifications(query: str) -> Dict[str, Any]:
     if m:
         n = _extract_number(m.group(1))
         unit = m.group(2).lower().rstrip("s")
-        weeks = {"week": n, "month": n * 4, "sprint": n * 2, "pi": n * 10,
-                 "quarter": n * 13, "day": max(1, n // 5)}.get(unit, n)
+        weeks = {
+            "week": n,
+            "month": n * 4,
+            "sprint": n * 2,
+            "pi": n * 10,
+            "quarter": n * 13,
+            "day": max(1, n // 5),
+        }.get(unit, n)
         mods["schedule_extension_weeks"] = weeks
 
     m = _SCHEDULE_COMPRESS_PATTERN.search(query)
     if m:
         n = _extract_number(m.group(1))
         unit = m.group(2).lower().rstrip("s")
-        weeks = {"week": n, "month": n * 4, "sprint": n * 2, "pi": n * 10,
-                 "quarter": n * 13, "day": max(1, n // 5)}.get(unit, n)
+        weeks = {
+            "week": n,
+            "month": n * 4,
+            "sprint": n * 2,
+            "pi": n * 10,
+            "quarter": n * 13,
+            "day": max(1, n // 5),
+        }.get(unit, n)
         mods["schedule_compression_weeks"] = weeks
 
     # Staff
@@ -409,6 +458,7 @@ def parse_query(query: str) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+
 
 def main():
     parser = argparse.ArgumentParser(description="Natural Language Simulation Query Parser")

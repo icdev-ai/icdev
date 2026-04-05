@@ -26,6 +26,7 @@ Usage:
     python tools/security_canvas/nl_query.py --build --json
     python tools/security_canvas/nl_query.py --query "..." --design-id <id> --json
 """
+
 from __future__ import annotations
 
 import json
@@ -43,6 +44,7 @@ if str(BASE_DIR) not in sys.path:
 
 try:
     import requests as _requests
+
     _HAS_REQUESTS = True
 except ImportError:
     _requests = None  # type: ignore[assignment]
@@ -54,8 +56,7 @@ logger = logging.getLogger("icdev.security_canvas.nl_query")
 # Configuration
 # ---------------------------------------------------------------------------
 _OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
-_OLLAMA_MODEL = os.environ.get("OLLAMA_NL_QUERY_MODEL",
-                               os.environ.get("OLLAMA_TOPO_MODEL", "qwen3.5:latest"))
+_OLLAMA_MODEL = os.environ.get("OLLAMA_NL_QUERY_MODEL", os.environ.get("OLLAMA_TOPO_MODEL", "qwen3.5:latest"))
 _LLM_TIMEOUT = int(os.environ.get("OLLAMA_NL_QUERY_TIMEOUT", "60"))
 
 # STRIDE metadata (kept local to avoid circular imports)
@@ -69,60 +70,61 @@ _STRIDE_LABELS = {
 }
 
 _SDC_CTRL_LABELS = {
-    "ctrl-firewall":   "Firewall / WAF",
-    "ctrl-idp":        "IdP / MFA",
-    "ctrl-kms":        "KMS / HSM",
-    "ctrl-siem":       "SIEM / SOC",
-    "ctrl-ids":        "IDS / IPS",
-    "ctrl-pam":        "PAM",
-    "ctrl-scanner":    "Vulnerability Scanner",
+    "ctrl-firewall": "Firewall / WAF",
+    "ctrl-idp": "IdP / MFA",
+    "ctrl-kms": "KMS / HSM",
+    "ctrl-siem": "SIEM / SOC",
+    "ctrl-ids": "IDS / IPS",
+    "ctrl-pam": "PAM",
+    "ctrl-scanner": "Vulnerability Scanner",
     "ctrl-encryption": "Encryptor",
 }
 
 _SDC_THREAT_LABELS = {
-    "threat-actor":    "Threat Actor",
-    "threat-malware":  "Malware",
+    "threat-actor": "Threat Actor",
+    "threat-malware": "Malware",
     "threat-phishing": "Phishing",
-    "threat-exploit":  "Exploit",
-    "threat-dos":      "DoS / DDoS",
-    "threat-supply":   "Supply Chain Attack",
-    "threat-insider":  "Insider Threat",
+    "threat-exploit": "Exploit",
+    "threat-dos": "DoS / DDoS",
+    "threat-supply": "Supply Chain Attack",
+    "threat-insider": "Insider Threat",
 }
 
 _FRAMEWORK_ALIASES: Dict[str, List[str]] = {
-    "fedramp":          ["fedramp_moderate", "fedramp_high"],
+    "fedramp": ["fedramp_moderate", "fedramp_high"],
     "fedramp moderate": ["fedramp_moderate"],
-    "fedramp high":     ["fedramp_high"],
+    "fedramp high": ["fedramp_high"],
     "fedramp_moderate": ["fedramp_moderate"],
-    "fedramp_high":     ["fedramp_high"],
-    "cmmc":             ["cmmc_level_2", "cmmc_level_3"],
-    "cmmc level 2":     ["cmmc_level_2"],
-    "cmmc level 3":     ["cmmc_level_3"],
-    "cmmc_level_2":     ["cmmc_level_2"],
-    "cmmc_level_3":     ["cmmc_level_3"],
-    "nist 800-171":     ["nist_800_171"],
-    "nist_800_171":     ["nist_800_171"],
-    "800-171":          ["nist_800_171"],
-    "il4":              ["il4_required"],
-    "il5":              ["il5_required"],
-    "il6":              ["il6_required"],
+    "fedramp_high": ["fedramp_high"],
+    "cmmc": ["cmmc_level_2", "cmmc_level_3"],
+    "cmmc level 2": ["cmmc_level_2"],
+    "cmmc level 3": ["cmmc_level_3"],
+    "cmmc_level_2": ["cmmc_level_2"],
+    "cmmc_level_3": ["cmmc_level_3"],
+    "nist 800-171": ["nist_800_171"],
+    "nist_800_171": ["nist_800_171"],
+    "800-171": ["nist_800_171"],
+    "il4": ["il4_required"],
+    "il5": ["il5_required"],
+    "il6": ["il6_required"],
 }
 
 _FRAMEWORK_LABELS = {
     "fedramp_moderate": "FedRAMP Moderate",
-    "fedramp_high":     "FedRAMP High",
-    "nist_800_171":     "NIST 800-171",
-    "cmmc_level_2":     "CMMC Level 2",
-    "cmmc_level_3":     "CMMC Level 3",
-    "il4_required":     "DoD IL4",
-    "il5_required":     "DoD IL5",
-    "il6_required":     "DoD IL6",
+    "fedramp_high": "FedRAMP High",
+    "nist_800_171": "NIST 800-171",
+    "cmmc_level_2": "CMMC Level 2",
+    "cmmc_level_3": "CMMC Level 3",
+    "il4_required": "DoD IL4",
+    "il5_required": "DoD IL5",
+    "il6_required": "DoD IL6",
 }
 
 
 # ---------------------------------------------------------------------------
 # 1. SDC Compliance Graph (in-memory representation for traversal)
 # ---------------------------------------------------------------------------
+
 
 class SDCComplianceGraph:
     """In-memory representation of the sdc-compliance-kg for fast traversal.
@@ -132,7 +134,9 @@ class SDCComplianceGraph:
     """
 
     def __init__(
-        self, conn: Any, graph_id: str,
+        self,
+        conn: Any,
+        graph_id: str,
     ) -> None:
         self._graph_id = graph_id
         self._nodes: Dict[str, Dict[str, Any]] = {}  # id → {label, entity_type, properties}
@@ -164,8 +168,7 @@ class SDCComplianceGraph:
 
         # Load edges (store as bidirectional)
         edge_rows = conn.execute(
-            "SELECT source_id, target_id, relationship, weight, properties "
-            "FROM kg_edges WHERE graph_id = ?",
+            "SELECT source_id, target_id, relationship, weight, properties FROM kg_edges WHERE graph_id = ?",
             (self._graph_id,),
         ).fetchall()
         for row in edge_rows:
@@ -177,7 +180,9 @@ class SDCComplianceGraph:
     # -- Look-ups ------------------------------------------------------------
 
     def find_nodes(
-        self, fragment: str, entity_type: Optional[str] = None,
+        self,
+        fragment: str,
+        entity_type: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Return nodes whose label contains fragment (case-insensitive)."""
         frag = fragment.lower()
@@ -194,14 +199,14 @@ class SDCComplianceGraph:
         return results
 
     def nodes_by_type(self, entity_type: str) -> List[Dict[str, Any]]:
-        return [self._nodes[nid] for nid in self._type_index.get(entity_type, [])
-                if nid in self._nodes]
+        return [self._nodes[nid] for nid in self._type_index.get(entity_type, []) if nid in self._nodes]
 
     def node(self, node_id: str) -> Optional[Dict[str, Any]]:
         return self._nodes.get(node_id)
 
     def neighbors(
-        self, node_id: str,
+        self,
+        node_id: str,
         rel_filter: Optional[str] = None,
         direction: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
@@ -218,7 +223,10 @@ class SDCComplianceGraph:
         return results
 
     def bfs_to_type(
-        self, source_id: str, target_type: str, max_depth: int = 5,
+        self,
+        source_id: str,
+        target_type: str,
+        max_depth: int = 5,
     ) -> List[Dict[str, Any]]:
         """BFS from source_id; collect all reachable nodes of target_type."""
         visited: Set[str] = {source_id}
@@ -242,7 +250,10 @@ class SDCComplianceGraph:
         return found
 
     def bfs_path(
-        self, source_id: str, target_ids: Set[str], max_depth: int = 6,
+        self,
+        source_id: str,
+        target_ids: Set[str],
+        max_depth: int = 6,
     ) -> Optional[tuple]:
         """BFS shortest path from source to any target. Returns (path_ids, edges) or None."""
         visited: Set[str] = {source_id}
@@ -257,20 +268,20 @@ class SDCComplianceGraph:
                 nid = nbr["target"]
                 if nid not in visited:
                     visited.add(nid)
-                    queue.append((
-                        nid,
-                        path + [nid],
-                        edges + [{"from": curr, "to": nid,
-                                   "rel": nbr["rel"], "weight": nbr["weight"]}],
-                    ))
+                    queue.append(
+                        (
+                            nid,
+                            path + [nid],
+                            edges + [{"from": curr, "to": nid, "rel": nbr["rel"], "weight": nbr["weight"]}],
+                        )
+                    )
         return None
 
     def compact_context(self, max_nodes: int = 80) -> str:
         """Compact human-readable description for LLM context."""
         lines: List[str] = []
         # Group by type
-        for etype in ["stride_category", "sdc_control_type", "sdc_threat_type",
-                      "framework", "nist_family"]:
+        for etype in ["stride_category", "sdc_control_type", "sdc_threat_type", "framework", "nist_family"]:
             nodes = self.nodes_by_type(etype)
             if not nodes:
                 continue
@@ -318,9 +329,8 @@ def _get_graph(conn: Any) -> Optional[SDCComplianceGraph]:
 def _ensure_graph(conn: Any) -> Optional[SDCComplianceGraph]:
     """Load or auto-build the KG, then return it."""
     from tools.security_canvas.compliance_kg import build_sdc_kg
-    row = conn.execute(
-        "SELECT id FROM kg_graphs WHERE name = 'sdc-compliance-kg' LIMIT 1"
-    ).fetchone()
+
+    row = conn.execute("SELECT id FROM kg_graphs WHERE name = 'sdc-compliance-kg' LIMIT 1").fetchone()
     if not row:
         logger.info("sdc-compliance-kg not found — building now...")
         build_sdc_kg()
@@ -382,9 +392,7 @@ def classify_query(question: str) -> str:
 
     # Detect NIST control ID pattern early for crosswalk
     ctrl_match = re.search(r"\b([a-z]{2}-\d+)\b", q)
-    fw_mention = any(
-        re.search(p, q) for p in [r"\b(fedramp|cmmc|il4|il5|il6|800-171)\b"]
-    )
+    fw_mention = any(re.search(p, q) for p in [r"\b(fedramp|cmmc|il4|il5|il6|800-171)\b"])
     if ctrl_match and fw_mention:
         return "framework_crosswalk"
 
@@ -409,14 +417,21 @@ def classify_query(question: str) -> str:
 # 3. Deterministic Query Handlers
 # ---------------------------------------------------------------------------
 
+
 def _extract_stride_code(question: str) -> Optional[str]:
     """Extract STRIDE code or name from question."""
     q = question.lower()
     stride_kw = {
-        "spoofing": "S", "tamper": "T", "repudiation": "R",
-        "information disclosure": "I", "info disclosure": "I",
-        "denial of service": "D", "dos": "D", "ddos": "D",
-        "elevation of privilege": "E", "privilege escalation": "E",
+        "spoofing": "S",
+        "tamper": "T",
+        "repudiation": "R",
+        "information disclosure": "I",
+        "info disclosure": "I",
+        "denial of service": "D",
+        "dos": "D",
+        "ddos": "D",
+        "elevation of privilege": "E",
+        "privilege escalation": "E",
     }
     for kw, code in stride_kw.items():
         if kw in q:
@@ -510,7 +525,8 @@ def _extract_framework(question: str) -> Optional[str]:
 
 
 def _handle_stride_to_nist(
-    question: str, graph: SDCComplianceGraph,
+    question: str,
+    graph: SDCComplianceGraph,
 ) -> Dict[str, Any]:
     """Handle: What NIST controls address <STRIDE category>?"""
     code = _extract_stride_code(question)
@@ -519,20 +535,21 @@ def _handle_stride_to_nist(
         # Return all STRIDE categories
         results = []
         for stride_node in graph.nodes_by_type("stride_category"):
-            ctrl_neighbors = graph.neighbors(stride_node["id"], rel_filter="maps_to",
-                                              direction="out")
-            results.append({
-                "stride": stride_node["properties"].get("name", ""),
-                "code": stride_node["properties"].get("code", ""),
-                "nist_controls": [
-                    {
-                        "control_id": n["properties"].get("control_id", ""),
-                        "title": n["properties"].get("title", ""),
-                        "family": n["properties"].get("family", ""),
-                    }
-                    for n in ctrl_neighbors
-                ],
-            })
+            ctrl_neighbors = graph.neighbors(stride_node["id"], rel_filter="maps_to", direction="out")
+            results.append(
+                {
+                    "stride": stride_node["properties"].get("name", ""),
+                    "code": stride_node["properties"].get("code", ""),
+                    "nist_controls": [
+                        {
+                            "control_id": n["properties"].get("control_id", ""),
+                            "title": n["properties"].get("title", ""),
+                            "family": n["properties"].get("family", ""),
+                        }
+                        for n in ctrl_neighbors
+                    ],
+                }
+            )
         return {
             "intent": "stride_to_nist",
             "answer": "NIST 800-53 controls mapped to each STRIDE category:",
@@ -540,8 +557,7 @@ def _handle_stride_to_nist(
         }
 
     # Find specific STRIDE node
-    stride_nodes = graph.find_nodes(f"STRIDE:{_STRIDE_LABELS.get(code, code)}",
-                                    entity_type="stride_category")
+    stride_nodes = graph.find_nodes(f"STRIDE:{_STRIDE_LABELS.get(code, code)}", entity_type="stride_category")
     if not stride_nodes:
         # Try by code in properties
         for n in graph.nodes_by_type("stride_category"):
@@ -578,16 +594,15 @@ def _handle_stride_to_nist(
         f"{len(nist_controls)} NIST 800-53 controls: "
         f"{', '.join(c['control_id'] for c in nist_controls)}. "
         f"These controls satisfy: {', '.join(frameworks[:5])}."
-        if frameworks else
-        f"The STRIDE category '{stride_name}' maps to "
+        if frameworks
+        else f"The STRIDE category '{stride_name}' maps to "
         f"{len(nist_controls)} NIST 800-53 controls: "
         f"{', '.join(c['control_id'] for c in nist_controls)}."
     )
 
     return {
         "intent": "stride_to_nist",
-        "stride": {"code": code, "name": stride_name,
-                   "description": stride_node["properties"].get("description", "")},
+        "stride": {"code": code, "name": stride_name, "description": stride_node["properties"].get("description", "")},
         "nist_controls": nist_controls,
         "framework_reach": frameworks,
         "answer": answer,
@@ -595,7 +610,8 @@ def _handle_stride_to_nist(
 
 
 def _handle_control_implements(
-    question: str, graph: SDCComplianceGraph,
+    question: str,
+    graph: SDCComplianceGraph,
 ) -> Dict[str, Any]:
     """Handle: What NIST controls does a <SDC control type> implement?"""
     ctrl_type = _extract_sdc_ctrl_type(question)
@@ -605,14 +621,14 @@ def _handle_control_implements(
         results = []
         for sdc_node in graph.nodes_by_type("sdc_control_type"):
             nist_nbrs = graph.neighbors(sdc_node["id"], rel_filter="implements", direction="out")
-            results.append({
-                "sdc_type": sdc_node["properties"].get("type", ""),
-                "label": sdc_node["properties"].get("label", ""),
-                "nist_control_count": len(nist_nbrs),
-                "nist_controls": [
-                    n["properties"].get("control_id", "") for n in nist_nbrs
-                ],
-            })
+            results.append(
+                {
+                    "sdc_type": sdc_node["properties"].get("type", ""),
+                    "label": sdc_node["properties"].get("label", ""),
+                    "nist_control_count": len(nist_nbrs),
+                    "nist_controls": [n["properties"].get("control_id", "") for n in nist_nbrs],
+                }
+            )
         return {
             "intent": "control_implements",
             "answer": "SDC palette controls and their NIST 800-53 mappings:",
@@ -654,8 +670,8 @@ def _handle_control_implements(
         f"A '{ctrl_label}' implements {len(nist_controls)} NIST 800-53 controls: "
         f"{', '.join(c['control_id'] for c in nist_controls)}. "
         f"Together these satisfy requirements in: {', '.join(frameworks[:6])}."
-        if frameworks else
-        f"A '{ctrl_label}' implements {len(nist_controls)} NIST 800-53 controls: "
+        if frameworks
+        else f"A '{ctrl_label}' implements {len(nist_controls)} NIST 800-53 controls: "
         f"{', '.join(c['control_id'] for c in nist_controls)}."
     )
 
@@ -669,7 +685,8 @@ def _handle_control_implements(
 
 
 def _handle_framework_crosswalk(
-    question: str, graph: SDCComplianceGraph,
+    question: str,
+    graph: SDCComplianceGraph,
 ) -> Dict[str, Any]:
     """Handle: Does <control> satisfy <framework>? / List controls for <framework>."""
     fw_key = _extract_framework(question)
@@ -691,15 +708,12 @@ def _handle_framework_crosswalk(
 
         # Check direct satisfies edge
         fw_nbrs = graph.neighbors(ctrl_node["id"], rel_filter="satisfies", direction="out")
-        satisfies = any(
-            n["properties"].get("key") == fw_key or fw_key in n["label"].lower()
-            for n in fw_nbrs
-        )
+        satisfies = any(n["properties"].get("key") == fw_key or fw_key in n["label"].lower() for n in fw_nbrs)
 
         answer = (
             f"Yes — NIST control {ctrl_id} satisfies {fw_label}."
-            if satisfies else
-            f"No — NIST control {ctrl_id} does not directly satisfy {fw_label}."
+            if satisfies
+            else f"No — NIST control {ctrl_id} does not directly satisfy {fw_label}."
         )
         return {
             "intent": "framework_crosswalk",
@@ -733,11 +747,13 @@ def _handle_framework_crosswalk(
         by_family: Dict[str, List[Dict]] = defaultdict(list)
         for n in ctrl_nbrs:
             fam = n["properties"].get("family", "??")
-            by_family[fam].append({
-                "control_id": n["properties"].get("control_id", ""),
-                "title": n["properties"].get("title", ""),
-                "priority": n["properties"].get("priority", ""),
-            })
+            by_family[fam].append(
+                {
+                    "control_id": n["properties"].get("control_id", ""),
+                    "title": n["properties"].get("title", ""),
+                    "priority": n["properties"].get("priority", ""),
+                }
+            )
 
         coverage = [
             {"family": fam, "controls": sorted(ctrls, key=lambda c: c["control_id"])}
@@ -751,8 +767,7 @@ def _handle_framework_crosswalk(
             "family_count": len(by_family),
             "coverage_by_family": coverage,
             "answer": (
-                f"{fw_label} requires {len(ctrl_nbrs)} NIST 800-53 controls "
-                f"across {len(by_family)} control families."
+                f"{fw_label} requires {len(ctrl_nbrs)} NIST 800-53 controls across {len(by_family)} control families."
             ),
         }
 
@@ -760,8 +775,9 @@ def _handle_framework_crosswalk(
     fw_nodes = graph.nodes_by_type("framework")
     fw_summary = []
     for fw_node in fw_nodes:
-        ctrl_nbrs = [n for n in graph.neighbors(fw_node["id"], rel_filter="satisfies")
-                     if n["entity_type"] == "nist_control"]
+        ctrl_nbrs = [
+            n for n in graph.neighbors(fw_node["id"], rel_filter="satisfies") if n["entity_type"] == "nist_control"
+        ]
         fw_summary.append({"framework": fw_node["label"], "control_count": len(ctrl_nbrs)})
 
     return {
@@ -772,7 +788,8 @@ def _handle_framework_crosswalk(
 
 
 def _handle_threat_coverage(
-    question: str, graph: SDCComplianceGraph,
+    question: str,
+    graph: SDCComplianceGraph,
 ) -> Dict[str, Any]:
     """Handle: What controls address <threat type>?"""
     threat_type = _extract_sdc_threat_type(question)
@@ -782,13 +799,13 @@ def _handle_threat_coverage(
         results = []
         for tn in graph.nodes_by_type("sdc_threat_type"):
             stride_nbrs = graph.neighbors(tn["id"], rel_filter="represents", direction="out")
-            results.append({
-                "threat": tn["properties"].get("label", ""),
-                "type": tn["properties"].get("type", ""),
-                "stride_categories": [
-                    n["properties"].get("name", "") for n in stride_nbrs
-                ],
-            })
+            results.append(
+                {
+                    "threat": tn["properties"].get("label", ""),
+                    "type": tn["properties"].get("type", ""),
+                    "stride_categories": [n["properties"].get("name", "") for n in stride_nbrs],
+                }
+            )
         return {
             "intent": "threat_coverage",
             "answer": "SDC threat types and their STRIDE category mappings:",
@@ -851,7 +868,8 @@ def _handle_threat_coverage(
 
 
 def _handle_gap_analysis(
-    question: str, graph: SDCComplianceGraph,
+    question: str,
+    graph: SDCComplianceGraph,
 ) -> Dict[str, Any]:
     """Handle: What controls are missing for <framework>?"""
     fw_key = _extract_framework(question)
@@ -859,28 +877,24 @@ def _handle_gap_analysis(
         return {
             "intent": "gap_analysis",
             "answer": (
-                "Please specify a framework for gap analysis "
-                "(e.g., 'FedRAMP Moderate', 'CMMC Level 2', 'IL5')."
+                "Please specify a framework for gap analysis (e.g., 'FedRAMP Moderate', 'CMMC Level 2', 'IL5')."
             ),
         }
 
     fw_label = _FRAMEWORK_LABELS.get(fw_key, fw_key)
     fw_nodes = graph.find_nodes(fw_label, entity_type="framework")
     if not fw_nodes:
-        return {"intent": "gap_analysis",
-                "answer": f"Framework '{fw_label}' not found in graph."}
+        return {"intent": "gap_analysis", "answer": f"Framework '{fw_label}' not found in graph."}
 
     fw_node = fw_nodes[0]
     required_ctrls = [
-        n for n in graph.neighbors(fw_node["id"], rel_filter="satisfies")
-        if n["entity_type"] == "nist_control"
+        n for n in graph.neighbors(fw_node["id"], rel_filter="satisfies") if n["entity_type"] == "nist_control"
     ]
 
     # Group by family; compute which families are covered by SDC control types
     covered_families: Set[str] = set()
     for sdc_node in graph.nodes_by_type("sdc_control_type"):
-        for nist_nbr in graph.neighbors(sdc_node["id"], rel_filter="implements",
-                                        direction="out"):
+        for nist_nbr in graph.neighbors(sdc_node["id"], rel_filter="implements", direction="out"):
             fam = nist_nbr["properties"].get("family", "")
             if fam:
                 covered_families.add(fam)
@@ -890,11 +904,13 @@ def _handle_gap_analysis(
         fam = n["properties"].get("family", "??")
         if fam not in by_family:
             by_family[fam] = {"family": fam, "controls": [], "covered": fam in covered_families}
-        by_family[fam]["controls"].append({
-            "control_id": n["properties"].get("control_id", ""),
-            "title": n["properties"].get("title", ""),
-            "priority": n["properties"].get("priority", ""),
-        })
+        by_family[fam]["controls"].append(
+            {
+                "control_id": n["properties"].get("control_id", ""),
+                "title": n["properties"].get("title", ""),
+                "priority": n["properties"].get("priority", ""),
+            }
+        )
 
     covered_count = sum(1 for f in by_family.values() if f["covered"])
     gap_count = len(by_family) - covered_count
@@ -917,21 +933,16 @@ def _handle_gap_analysis(
         "covered_families": covered_count,
         "gap_families": gap_count,
         "gaps": [
-            {"family": f["family"],
-             "sample_controls": [c["control_id"] for c in f["controls"][:3]]}
-            for f in uncovered
+            {"family": f["family"], "sample_controls": [c["control_id"] for c in f["controls"][:3]]} for f in uncovered
         ],
-        "covered": [
-            {"family": f["family"],
-             "control_count": len(f["controls"])}
-            for f in covered
-        ],
+        "covered": [{"family": f["family"], "control_count": len(f["controls"])} for f in covered],
         "answer": answer,
     }
 
 
 def _handle_path_query(
-    question: str, graph: SDCComplianceGraph,
+    question: str,
+    graph: SDCComplianceGraph,
 ) -> Dict[str, Any]:
     """Handle: How does <A> relate to <B>?"""
     ctrl_type = _extract_sdc_ctrl_type(question)
@@ -993,23 +1004,24 @@ def _handle_path_query(
         return {
             "intent": "path_query",
             "source": source_node["label"],
-            "answer": (
-                f"No path found between '{source_node['label']}' "
-                f"and the target in the SDC compliance graph."
-            ),
+            "answer": (f"No path found between '{source_node['label']}' and the target in the SDC compliance graph."),
         }
 
     path_ids, path_edges = result
     path_nodes = [
-        {"label": graph.node(nid)["label"] if graph.node(nid) else nid,
-         "type": graph.node(nid)["entity_type"] if graph.node(nid) else "?"}
+        {
+            "label": graph.node(nid)["label"] if graph.node(nid) else nid,
+            "type": graph.node(nid)["entity_type"] if graph.node(nid) else "?",
+        }
         for nid in path_ids
     ]
     # Build human-readable path description
-    path_str = " → ".join(
-        f"{path_nodes[i]['label']} --{path_edges[i]['rel']}--> "
-        for i in range(len(path_edges))
-    ) + path_nodes[-1]["label"] if path_edges else path_nodes[0]["label"]
+    path_str = (
+        " → ".join(f"{path_nodes[i]['label']} --{path_edges[i]['rel']}--> " for i in range(len(path_edges)))
+        + path_nodes[-1]["label"]
+        if path_edges
+        else path_nodes[0]["label"]
+    )
 
     return {
         "intent": "path_query",
@@ -1017,14 +1029,13 @@ def _handle_path_query(
         "path_length": len(path_ids),
         "path_nodes": path_nodes,
         "path_edges": path_edges,
-        "answer": (
-            f"Path ({len(path_ids)} hops): {path_str}"
-        ),
+        "answer": (f"Path ({len(path_ids)} hops): {path_str}"),
     }
 
 
 def _handle_inventory(
-    question: str, graph: SDCComplianceGraph,
+    question: str,
+    graph: SDCComplianceGraph,
 ) -> Dict[str, Any]:
     """Handle: How many / list all <node type>."""
     results: Dict[str, int] = {
@@ -1054,15 +1065,13 @@ def _handle_inventory(
 # 4. LLM Fallback
 # ---------------------------------------------------------------------------
 
+
 def _llm_query(question: str, graph: SDCComplianceGraph) -> Dict[str, Any]:
     """Fallback to Ollama for open-ended questions."""
     if not _HAS_REQUESTS:
         return {
             "intent": "general",
-            "answer": (
-                "Could not classify your question deterministically. "
-                "Install 'requests' for LLM fallback."
-            ),
+            "answer": ("Could not classify your question deterministically. Install 'requests' for LLM fallback."),
             "llm_used": False,
         }
 
@@ -1088,11 +1097,7 @@ def _llm_query(question: str, graph: SDCComplianceGraph) -> Dict[str, Any]:
         )
         resp.raise_for_status()
         data = resp.json()
-        answer = (
-            data.get("message", {}).get("content", "")
-            or data.get("response", "")
-            or "No answer returned."
-        )
+        answer = data.get("message", {}).get("content", "") or data.get("response", "") or "No answer returned."
         return {
             "intent": "general",
             "answer": answer.strip(),
@@ -1116,6 +1121,7 @@ def _llm_query(question: str, graph: SDCComplianceGraph) -> Dict[str, Any]:
 # 5. Public API
 # ---------------------------------------------------------------------------
 
+
 def answer_query(
     question: str,
     design_id: Optional[str] = None,
@@ -1138,6 +1144,7 @@ def answer_query(
     own_conn = conn is None
     if own_conn:
         from tools.db.storage import get_connection
+
         conn = get_connection()
         conn.row_factory = __import__("sqlite3").Row
         conn.execute("PRAGMA journal_mode=WAL")
@@ -1208,17 +1215,16 @@ def answer_query(
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main() -> None:
     import argparse
+
     parser = argparse.ArgumentParser(
         description="SDC Compliance Knowledge Graph — Natural Language Query Engine",
     )
-    parser.add_argument("--query", "-q", default=None,
-                        help="Natural language question to answer")
-    parser.add_argument("--build", action="store_true",
-                        help="Build/rebuild the sdc-compliance-kg and exit")
-    parser.add_argument("--design-id", default=None,
-                        help="Optional SDC design ID for context")
+    parser.add_argument("--query", "-q", default=None, help="Natural language question to answer")
+    parser.add_argument("--build", action="store_true", help="Build/rebuild the sdc-compliance-kg and exit")
+    parser.add_argument("--design-id", default=None, help="Optional SDC design ID for context")
     parser.add_argument("--json", action="store_true", dest="json_output")
     parser.add_argument("--db-path", default=None)
 
@@ -1226,6 +1232,7 @@ def main() -> None:
 
     if args.build:
         from tools.security_canvas.compliance_kg import build_sdc_kg
+
         db_path = Path(args.db_path) if args.db_path else None
         result = build_sdc_kg(db_path=db_path)
         print(json.dumps(result, indent=2, default=str))

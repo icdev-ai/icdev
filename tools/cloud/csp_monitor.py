@@ -64,23 +64,28 @@ logger = logging.getLogger("icdev.cloud.csp_monitor")
 # ── GRACEFUL IMPORTS ────────────────────────────────────────────────────
 try:
     import yaml
+
     _HAS_YAML = True
 except ImportError:
     _HAS_YAML = False
 
 try:
     import requests
+
     _HAS_REQUESTS = True
 except ImportError:
     _HAS_REQUESTS = False
 
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
+
     def audit_log_event(**kwargs):
         return -1
+
 
 try:
     _HAS_CB = True
@@ -138,7 +143,9 @@ def _audit(event_type: str, actor: str, action: str, details: Any = None):
     if _HAS_AUDIT:
         try:
             audit_log_event(
-                event_type=event_type, actor=actor, action=action,
+                event_type=event_type,
+                actor=actor,
+                action=action,
                 details=json.dumps(details) if details else None,
                 project_id="csp-monitor",
             )
@@ -186,6 +193,7 @@ def _save_registry(registry: Dict, registry_path: Optional[Path] = None):
     backup_path = path.with_suffix(f".backup-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}.json")
     if path.exists():
         import shutil
+
         shutil.copy2(str(path), str(backup_path))
         logger.info("Registry backup: %s", backup_path)
     # Update metadata
@@ -203,8 +211,7 @@ def _store_signal(conn: sqlite3.Connection, signal: Dict) -> bool:
     """Store innovation signal with deduplication. Returns True if new."""
     # Check for existing signal with same content_hash
     existing = conn.execute(
-        "SELECT id FROM innovation_signals WHERE content_hash = ?",
-        (signal["content_hash"],)
+        "SELECT id FROM innovation_signals WHERE content_hash = ?", (signal["content_hash"],)
     ).fetchone()
     if existing:
         logger.debug("Duplicate signal skipped: %s", signal["content_hash"][:12])
@@ -216,37 +223,38 @@ def _store_signal(conn: sqlite3.Connection, signal: Dict) -> bool:
         "community_score, content_hash, discovered_at, status, category) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
-            signal["id"], signal["source"], signal["source_type"],
-            signal["title"], signal["description"][:2000],
-            signal.get("url", ""), json.dumps(signal.get("metadata", {})),
-            signal["community_score"], signal["content_hash"],
-            signal["discovered_at"], "new", signal["category"],
-        )
+            signal["id"],
+            signal["source"],
+            signal["source_type"],
+            signal["title"],
+            signal["description"][:2000],
+            signal.get("url", ""),
+            json.dumps(signal.get("metadata", {})),
+            signal["community_score"],
+            signal["content_hash"],
+            signal["discovered_at"],
+            "new",
+            signal["category"],
+        ),
     )
     return True
 
 
 def _check_table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
     """Check if a DB table exists."""
-    cursor = conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-        (table_name,)
-    )
+    cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table_name,))
     return cursor.fetchone() is not None
 
 
 # ── RSS/ATOM PARSER ─────────────────────────────────────────────────────
-def _parse_rss_feed(url: str, filter_keywords: List[str] = None,
-                    timeout: int = DEFAULT_TIMEOUT) -> List[Dict]:
+def _parse_rss_feed(url: str, filter_keywords: List[str] = None, timeout: int = DEFAULT_TIMEOUT) -> List[Dict]:
     """Parse RSS/Atom feed and return matching entries."""
     if not _HAS_REQUESTS:
         logger.warning("requests library not available — cannot fetch RSS")
         return []
 
     try:
-        resp = requests.get(url, timeout=timeout, headers={
-            "User-Agent": "ICDEV-CSP-Monitor/1.0"
-        })
+        resp = requests.get(url, timeout=timeout, headers={"User-Agent": "ICDEV-CSP-Monitor/1.0"})
         resp.raise_for_status()
     except Exception as exc:
         logger.error("Failed to fetch %s: %s", url, exc)
@@ -271,12 +279,14 @@ def _parse_rss_feed(url: str, filter_keywords: List[str] = None,
             if not any(kw.lower() in combined for kw in filter_keywords):
                 continue
 
-        entries.append({
-            "title": title,
-            "description": description[:2000],
-            "url": link,
-            "published": pub_date,
-        })
+        entries.append(
+            {
+                "title": title,
+                "description": description[:2000],
+                "url": link,
+                "published": pub_date,
+            }
+        )
 
     # Try Atom if RSS had no items
     if not entries:
@@ -292,12 +302,14 @@ def _parse_rss_feed(url: str, filter_keywords: List[str] = None,
                 if not any(kw.lower() in combined for kw in filter_keywords):
                     continue
 
-            entries.append({
-                "title": title,
-                "description": summary[:2000],
-                "url": link,
-                "published": updated,
-            })
+            entries.append(
+                {
+                    "title": title,
+                    "description": summary[:2000],
+                    "url": link,
+                    "published": updated,
+                }
+            )
 
     return entries
 
@@ -307,30 +319,42 @@ def _classify_change(title: str, description: str) -> str:
     """Classify a CSP announcement into a change type."""
     text = f"{title} {description}".lower()
 
-    if any(kw in text for kw in ["deprecated", "end of life", "eol", "sunset",
-                                   "retiring", "discontinue", "decommission"]):
+    if any(
+        kw in text for kw in ["deprecated", "end of life", "eol", "sunset", "retiring", "discontinue", "decommission"]
+    ):
         return "service_deprecation"
-    if any(kw in text for kw in ["breaking change", "migration required",
-                                   "incompatible", "api v2", "api change"]):
+    if any(kw in text for kw in ["breaking change", "migration required", "incompatible", "api v2", "api change"]):
         return "api_breaking_change"
-    if any(kw in text for kw in ["fedramp", "hipaa", "pci", "soc 2", "iso 27001",
-                                   "cjis", "compliance", "in scope", "authorization"]):
+    if any(
+        kw in text
+        for kw in ["fedramp", "hipaa", "pci", "soc 2", "iso 27001", "cjis", "compliance", "in scope", "authorization"]
+    ):
         return "compliance_scope_change"
-    if any(kw in text for kw in ["new region", "now available in", "region launch",
-                                   "expanded to", "availability zone"]):
+    if any(
+        kw in text for kw in ["new region", "now available in", "region launch", "expanded to", "availability zone"]
+    ):
         return "region_expansion"
-    if any(kw in text for kw in ["security", "vulnerability", "patch", "cve",
-                                   "security bulletin", "security advisory"]):
+    if any(
+        kw in text for kw in ["security", "vulnerability", "patch", "cve", "security bulletin", "security advisory"]
+    ):
         return "security_update"
-    if any(kw in text for kw in ["pricing", "cost", "free tier", "price reduction",
-                                   "price increase"]):
+    if any(kw in text for kw in ["pricing", "cost", "free tier", "price reduction", "price increase"]):
         return "pricing_change"
-    if any(kw in text for kw in ["certification", "accreditation", "attestation",
-                                   "audit report", "soc report"]):
+    if any(kw in text for kw in ["certification", "accreditation", "attestation", "audit report", "soc report"]):
         return "certification_change"
-    if any(kw in text for kw in ["new service", "launch", "now available",
-                                   "general availability", "ga ", "preview",
-                                   "introducing", "announcing"]):
+    if any(
+        kw in text
+        for kw in [
+            "new service",
+            "launch",
+            "now available",
+            "general availability",
+            "ga ",
+            "preview",
+            "introducing",
+            "announcing",
+        ]
+    ):
         return "new_service"
 
     return "new_service"  # default
@@ -339,10 +363,23 @@ def _classify_change(title: str, description: str) -> str:
 def _detect_government(title: str, description: str) -> bool:
     """Check if an announcement is government-specific."""
     text = f"{title} {description}".lower()
-    return any(kw in text for kw in [
-        "govcloud", "government", "gov ", "fedramp", "dod", "il4", "il5", "il6",
-        "ic4g", "azure government", "assured workloads", "oci government",
-    ])
+    return any(
+        kw in text
+        for kw in [
+            "govcloud",
+            "government",
+            "gov ",
+            "fedramp",
+            "dod",
+            "il4",
+            "il5",
+            "il6",
+            "ic4g",
+            "azure government",
+            "assured workloads",
+            "oci government",
+        ]
+    )
 
 
 def scan_csp(csp: str, config: Dict) -> List[Dict]:
@@ -372,12 +409,8 @@ def scan_csp(csp: str, config: Dict) -> List[Dict]:
             for entry in entries:
                 entry["csp"] = csp
                 entry["endpoint_name"] = name
-                entry["change_type"] = _classify_change(
-                    entry.get("title", ""), entry.get("description", "")
-                )
-                entry["is_government"] = _detect_government(
-                    entry.get("title", ""), entry.get("description", "")
-                )
+                entry["change_type"] = _classify_change(entry.get("title", ""), entry.get("description", ""))
+                entry["is_government"] = _detect_government(entry.get("title", ""), entry.get("description", ""))
                 announcements.append(entry)
         elif ep_type == "api":
             # API endpoints require CSP-specific adapters
@@ -471,40 +504,47 @@ def diff_registry(registry: Dict, signals: List[Dict]) -> List[Dict]:
             # Check if service already in registry
             title_lower = signal.get("title", "").lower()
             csp_services = services.get(csp, {})
-            already_known = any(
-                svc.get("display_name", "").lower() in title_lower
-                for svc in csp_services.values()
-            )
+            already_known = any(svc.get("display_name", "").lower() in title_lower for svc in csp_services.values())
             if not already_known:
-                changes.append({
-                    "signal": signal,
-                    "action": "add_to_registry",
-                    "description": f"New {csp.upper()} service not in registry",
-                })
+                changes.append(
+                    {
+                        "signal": signal,
+                        "action": "add_to_registry",
+                        "description": f"New {csp.upper()} service not in registry",
+                    }
+                )
         elif change_type == "service_deprecation":
-            changes.append({
-                "signal": signal,
-                "action": "mark_deprecated",
-                "description": f"{csp.upper()} service deprecation detected",
-            })
+            changes.append(
+                {
+                    "signal": signal,
+                    "action": "mark_deprecated",
+                    "description": f"{csp.upper()} service deprecation detected",
+                }
+            )
         elif change_type == "compliance_scope_change":
-            changes.append({
-                "signal": signal,
-                "action": "update_compliance",
-                "description": f"{csp.upper()} compliance scope change — review csp_certifications.json",
-            })
+            changes.append(
+                {
+                    "signal": signal,
+                    "action": "update_compliance",
+                    "description": f"{csp.upper()} compliance scope change — review csp_certifications.json",
+                }
+            )
         elif change_type == "region_expansion":
-            changes.append({
-                "signal": signal,
-                "action": "update_regions",
-                "description": f"{csp.upper()} new region — update registry regions",
-            })
+            changes.append(
+                {
+                    "signal": signal,
+                    "action": "update_regions",
+                    "description": f"{csp.upper()} new region — update registry regions",
+                }
+            )
         elif change_type == "certification_change":
-            changes.append({
-                "signal": signal,
-                "action": "update_certifications",
-                "description": f"{csp.upper()} certification change — may affect deployment eligibility",
-            })
+            changes.append(
+                {
+                    "signal": signal,
+                    "action": "update_certifications",
+                    "description": f"{csp.upper()} certification change — may affect deployment eligibility",
+                }
+            )
 
     return changes
 
@@ -513,9 +553,9 @@ def diff_registry(registry: Dict, signals: List[Dict]) -> List[Dict]:
 class CSPMonitor:
     """CSP Service Monitor — scan, diff, signal, and update."""
 
-    def __init__(self, config_path: Optional[str] = None,
-                 registry_path: Optional[str] = None,
-                 db_path: Optional[str] = None):
+    def __init__(
+        self, config_path: Optional[str] = None, registry_path: Optional[str] = None, db_path: Optional[str] = None
+    ):
         self._config = _load_config(Path(config_path) if config_path else None)
         self._registry = _load_registry(Path(registry_path) if registry_path else None)
         self._db_path = Path(db_path) if db_path else DB_PATH
@@ -523,8 +563,7 @@ class CSPMonitor:
 
     def scan(self, csp: Optional[str] = None) -> Dict:
         """Scan CSP(s) for service updates and store signals."""
-        _audit("csp_monitor.scan_start", "csp_monitor",
-               f"Scanning CSP(s): {csp or 'all'}")
+        _audit("csp_monitor.scan_start", "csp_monitor", f"Scanning CSP(s): {csp or 'all'}")
 
         # Scan
         if csp:
@@ -590,9 +629,12 @@ class CSPMonitor:
             ],
         }
 
-        _audit("csp_monitor.scan_complete", "csp_monitor",
-               f"Stored {stored_count} signals, {len(changes)} registry changes",
-               details=result)
+        _audit(
+            "csp_monitor.scan_complete",
+            "csp_monitor",
+            f"Stored {stored_count} signals, {len(changes)} registry changes",
+            details=result,
+        )
 
         return result
 
@@ -609,25 +651,27 @@ class CSPMonitor:
             rows = conn.execute(
                 "SELECT * FROM innovation_signals WHERE source = 'csp_monitor' "
                 "AND discovered_at >= ? ORDER BY discovered_at DESC LIMIT 500",
-                (cutoff,)
+                (cutoff,),
             ).fetchall()
             conn.close()
 
             signals = []
             for row in rows:
-                signals.append({
-                    "id": row["id"],
-                    "source": row["source"],
-                    "source_type": row["source_type"],
-                    "title": row["title"],
-                    "description": row["description"],
-                    "url": row["url"],
-                    "metadata": json.loads(row["metadata"] or "{}"),
-                    "community_score": row["community_score"],
-                    "content_hash": row["content_hash"],
-                    "discovered_at": row["discovered_at"],
-                    "category": row["category"],
-                })
+                signals.append(
+                    {
+                        "id": row["id"],
+                        "source": row["source"],
+                        "source_type": row["source_type"],
+                        "title": row["title"],
+                        "description": row["description"],
+                        "url": row["url"],
+                        "metadata": json.loads(row["metadata"] or "{}"),
+                        "community_score": row["community_score"],
+                        "content_hash": row["content_hash"],
+                        "discovered_at": row["discovered_at"],
+                        "category": row["category"],
+                    }
+                )
         except FileNotFoundError:
             return {"status": "error", "message": "Database not found", "changes": []}
 
@@ -636,9 +680,7 @@ class CSPMonitor:
             "status": "ok",
             "diffed_at": now_iso(),
             "signals_analyzed": len(signals),
-            "registry_services": sum(
-                len(svc) for svc in self._registry.get("services", {}).values()
-            ),
+            "registry_services": sum(len(svc) for svc in self._registry.get("services", {}).values()),
             "changes_detected": len(changes),
             "changes": [
                 {
@@ -693,9 +735,7 @@ class CSPMonitor:
                 "by_csp": by_csp,
                 "registry_version": self._registry.get("_metadata", {}).get("version", "unknown"),
                 "registry_last_updated": self._registry.get("_metadata", {}).get("last_updated", "unknown"),
-                "registry_services": sum(
-                    len(svc) for svc in self._registry.get("services", {}).values()
-                ),
+                "registry_services": sum(len(svc) for svc in self._registry.get("services", {}).values()),
             }
         except FileNotFoundError:
             return {"status": "error", "message": "Database not found"}
@@ -709,8 +749,7 @@ class CSPMonitor:
                 return {"status": "error", "message": "innovation_signals table not found"}
 
             row = conn.execute(
-                "SELECT * FROM innovation_signals WHERE id = ? AND source = 'csp_monitor'",
-                (signal_id,)
+                "SELECT * FROM innovation_signals WHERE id = ? AND source = 'csp_monitor'", (signal_id,)
             ).fetchone()
             if not row:
                 conn.close()
@@ -721,19 +760,19 @@ class CSPMonitor:
             change_type = row["source_type"]
 
             # For now, mark signal as reviewed and log the registry update
-            conn.execute(
-                "UPDATE innovation_signals SET status = 'reviewed' WHERE id = ?",
-                (signal_id,)
-            )
+            conn.execute("UPDATE innovation_signals SET status = 'reviewed' WHERE id = ?", (signal_id,))
             conn.commit()
             conn.close()
 
             # Save registry with backup
             _save_registry(self._registry, self._registry_path)
 
-            _audit("csp_monitor.registry_update", "csp_monitor",
-                   f"Registry updated for signal {signal_id}",
-                   details={"signal_id": signal_id, "csp": csp, "change_type": change_type})
+            _audit(
+                "csp_monitor.registry_update",
+                "csp_monitor",
+                f"Registry updated for signal {signal_id}",
+                details={"signal_id": signal_id, "csp": csp, "change_type": change_type},
+            )
 
             return {
                 "status": "ok",
@@ -741,8 +780,7 @@ class CSPMonitor:
                 "csp": csp,
                 "change_type": change_type,
                 "action": "registry_updated",
-                "message": f"Signal {signal_id} marked as reviewed. "
-                           f"Registry backed up and saved.",
+                "message": f"Signal {signal_id} marked as reviewed. Registry backed up and saved.",
             }
         except Exception as exc:
             return {"status": "error", "message": str(exc)}
@@ -759,24 +797,26 @@ class CSPMonitor:
             rows = conn.execute(
                 "SELECT * FROM innovation_signals WHERE source = 'csp_monitor' "
                 "AND discovered_at >= ? ORDER BY discovered_at DESC",
-                (cutoff,)
+                (cutoff,),
             ).fetchall()
             conn.close()
 
             entries = []
             for row in rows:
                 metadata = json.loads(row["metadata"] or "{}")
-                entries.append({
-                    "date": row["discovered_at"],
-                    "csp": metadata.get("csp", "unknown").upper(),
-                    "change_type": row["source_type"],
-                    "title": row["title"],
-                    "description": row["description"][:200],
-                    "url": row["url"],
-                    "score": row["community_score"],
-                    "status": row["status"],
-                    "is_government": metadata.get("is_government", False),
-                })
+                entries.append(
+                    {
+                        "date": row["discovered_at"],
+                        "csp": metadata.get("csp", "unknown").upper(),
+                        "change_type": row["source_type"],
+                        "title": row["title"],
+                        "description": row["description"][:200],
+                        "url": row["url"],
+                        "score": row["community_score"],
+                        "status": row["status"],
+                        "is_government": metadata.get("is_government", False),
+                    }
+                )
 
             # Group by CSP for summary
             by_csp = {}
@@ -810,8 +850,12 @@ class CSPMonitor:
             except (ValueError, IndexError):
                 pass
 
-        logger.info("CSP Monitor daemon started (interval=%dh, quiet=%02d:00-%02d:00 UTC)",
-                     interval_hours, quiet_start, quiet_end)
+        logger.info(
+            "CSP Monitor daemon started (interval=%dh, quiet=%02d:00-%02d:00 UTC)",
+            interval_hours,
+            quiet_start,
+            quiet_end,
+        )
         _audit("csp_monitor.daemon_start", "csp_monitor", "Daemon started")
 
         while True:
@@ -823,9 +867,11 @@ class CSPMonitor:
 
             try:
                 result = self.scan()
-                logger.info("Scan complete: %d stored, %d changes",
-                             result.get("signals_stored", 0),
-                             result.get("registry_changes_detected", 0))
+                logger.info(
+                    "Scan complete: %d stored, %d changes",
+                    result.get("signals_stored", 0),
+                    result.get("registry_changes_detected", 0),
+                )
             except Exception as exc:
                 logger.error("Scan failed: %s", exc)
 
@@ -835,37 +881,21 @@ class CSPMonitor:
 # ── CLI ─────────────────────────────────────────────────────────────────
 def main():
     """CLI entry point."""
-    parser = argparse.ArgumentParser(
-        description="CSP Service Monitor — track cloud provider service changes"
-    )
-    parser.add_argument("--scan", action="store_true",
-                        help="Scan CSP(s) for service updates")
-    parser.add_argument("--all", action="store_true",
-                        help="Scan all enabled CSPs")
-    parser.add_argument("--csp", type=str, choices=SUPPORTED_CSPS,
-                        help="Scan a specific CSP")
-    parser.add_argument("--diff", action="store_true",
-                        help="Diff registry against recent signals (offline)")
-    parser.add_argument("--status", action="store_true",
-                        help="Show CSP monitor status")
-    parser.add_argument("--update-registry", action="store_true",
-                        help="Apply a signal's change to registry")
-    parser.add_argument("--signal-id", type=str,
-                        help="Signal ID for --update-registry")
-    parser.add_argument("--changelog", action="store_true",
-                        help="Generate CSP change changelog")
-    parser.add_argument("--days", type=int, default=30,
-                        help="Days of history for changelog (default: 30)")
-    parser.add_argument("--daemon", action="store_true",
-                        help="Run continuous monitoring")
-    parser.add_argument("--config", type=str, default=None,
-                        help="Path to csp_monitor_config.yaml")
-    parser.add_argument("--registry", type=str, default=None,
-                        help="Path to csp_service_registry.json")
-    parser.add_argument("--db", type=str, default=None,
-                        help="Path to icdev.db")
-    parser.add_argument("--json", action="store_true",
-                        help="JSON output")
+    parser = argparse.ArgumentParser(description="CSP Service Monitor — track cloud provider service changes")
+    parser.add_argument("--scan", action="store_true", help="Scan CSP(s) for service updates")
+    parser.add_argument("--all", action="store_true", help="Scan all enabled CSPs")
+    parser.add_argument("--csp", type=str, choices=SUPPORTED_CSPS, help="Scan a specific CSP")
+    parser.add_argument("--diff", action="store_true", help="Diff registry against recent signals (offline)")
+    parser.add_argument("--status", action="store_true", help="Show CSP monitor status")
+    parser.add_argument("--update-registry", action="store_true", help="Apply a signal's change to registry")
+    parser.add_argument("--signal-id", type=str, help="Signal ID for --update-registry")
+    parser.add_argument("--changelog", action="store_true", help="Generate CSP change changelog")
+    parser.add_argument("--days", type=int, default=30, help="Days of history for changelog (default: 30)")
+    parser.add_argument("--daemon", action="store_true", help="Run continuous monitoring")
+    parser.add_argument("--config", type=str, default=None, help="Path to csp_monitor_config.yaml")
+    parser.add_argument("--registry", type=str, default=None, help="Path to csp_service_registry.json")
+    parser.add_argument("--db", type=str, default=None, help="Path to icdev.db")
+    parser.add_argument("--json", action="store_true", help="JSON output")
 
     args = parser.parse_args()
     monitor = CSPMonitor(
@@ -909,8 +939,7 @@ def _print_human(result: Dict, args):
     if args.scan or args.all or args.csp:
         print(f"[{status_icon}] CSP Scan Complete")
         print(f"  Announcements: {result.get('announcements', 0)}")
-        print(f"  Signals stored: {result.get('signals_stored', 0)} "
-              f"(skipped: {result.get('signals_skipped', 0)})")
+        print(f"  Signals stored: {result.get('signals_stored', 0)} (skipped: {result.get('signals_skipped', 0)})")
         print(f"  Registry changes: {result.get('registry_changes_detected', 0)}")
         for change in result.get("changes", [])[:10]:
             print(f"    [{change['action']}] {change['signal_title'][:80]}")
@@ -934,8 +963,7 @@ def _print_human(result: Dict, args):
         print(f"[{status_icon}] CSP Monitor Status")
         print(f"  Total signals: {result.get('total_signals', 0)}")
         print(f"  Last scan: {result.get('last_scan', 'never')}")
-        print(f"  Registry: v{result.get('registry_version', '?')} "
-              f"({result.get('registry_services', 0)} services)")
+        print(f"  Registry: v{result.get('registry_version', '?')} ({result.get('registry_services', 0)} services)")
         for csp, types in result.get("by_csp", {}).items():
             total = sum(sum(s.values()) for s in types.values())
             print(f"    {csp.upper()}: {total} signals")

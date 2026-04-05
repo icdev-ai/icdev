@@ -48,6 +48,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     # --- Section 1: Health Score ---
     try:
         from tools.review_board.health_scorer import compute_health_score
+
         health = compute_health_score()
         score = health.get("score", 0)
         grade = health.get("grade", "N/A")
@@ -101,8 +102,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                 d = persona_data.get(persona, {"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0})
                 total = sum(d.values())
                 report_lines.append(
-                    f"| {persona.upper()} | {d['critical']} | {d['high']} | "
-                    f"{d['medium']} | {d['low']} | {total} |"
+                    f"| {persona.upper()} | {d['critical']} | {d['high']} | {d['medium']} | {d['low']} | {total} |"
                 )
             report_lines.append("")
 

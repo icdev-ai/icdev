@@ -49,10 +49,12 @@ class TestResult:
 
     def summary(self):
         total = len(self.passed) + len(self.failed)
-        rate = f"{len(self.passed)/total*100:.1f}%" if total else "0%"
+        rate = f"{len(self.passed) / total * 100:.1f}%" if total else "0%"
         return {
-            "total": total, "passed": len(self.passed),
-            "failed": len(self.failed), "pass_rate": rate,
+            "total": total,
+            "passed": len(self.passed),
+            "failed": len(self.failed),
+            "pass_rate": rate,
             "failures": self.failed,
         }
 
@@ -73,9 +75,7 @@ def check_js_errors(driver):
         for entry in driver.get_log("browser"):
             if entry.get("level") == "SEVERE":
                 msg = entry.get("message", "")
-                if any(x in msg.lower() for x in [
-                    "favicon", "401", "404", "failed to load resource"
-                ]):
+                if any(x in msg.lower() for x in ["favicon", "401", "404", "failed to load resource"]):
                     continue
                 errors.append(msg)
     except Exception:
@@ -125,44 +125,35 @@ def run_tests():
         time.sleep(2)
 
         # Setup
-        d = api(driver, "POST", "/network/api/projects", {
-            "name": "E2E P345 Test", "status": "draft", "owner": "e2e"
-        })
+        d = api(driver, "POST", "/network/api/projects", {"name": "E2E P345 Test", "status": "draft", "owner": "e2e"})
         pid = d.get("id")
         topos = api(driver, "GET", "/network/api/topologies")
         topo_id = topos[0]["id"] if topos else None
         if topo_id:
-            api(driver, "POST",
-                f"/network/api/projects/{pid}/topologies",
-                {"topology_id": topo_id})
+            api(driver, "POST", f"/network/api/projects/{pid}/topologies", {"topology_id": topo_id})
 
         # ── Phase 3: Scorecard ────────────────────────────────────────────
         if topo_id:
             try:
-                sc = api(driver, "GET",
-                         f"/network/api/design-scorecard/{topo_id}")
+                sc = api(driver, "GET", f"/network/api/design-scorecard/{topo_id}")
                 assert "checks" in sc
                 assert "categories" in sc
                 assert "overall_score" in sc
                 assert sc["overall_total"] >= 5
-                results.ok("scorecard_api",
-                            f"score={sc['overall_score']}%, "
-                            f"checks={sc['overall_total']}")
+                results.ok("scorecard_api", f"score={sc['overall_score']}%, checks={sc['overall_total']}")
             except Exception as e:
                 results.fail("scorecard_api", e)
 
             try:
                 cats = sc.get("categories", {})
                 assert "routing" in cats
-                results.ok("scorecard_routing",
-                            f"pct={cats['routing']['pct']}%")
+                results.ok("scorecard_routing", f"pct={cats['routing']['pct']}%")
             except Exception as e:
                 results.fail("scorecard_routing", e)
 
             try:
                 assert "redundancy" in cats
-                results.ok("scorecard_redundancy",
-                            f"pct={cats['redundancy']['pct']}%")
+                results.ok("scorecard_redundancy", f"pct={cats['redundancy']['pct']}%")
             except Exception as e:
                 results.fail("scorecard_redundancy", e)
         else:
@@ -172,8 +163,7 @@ def run_tests():
 
         # ── Phase 4: Case Workflow ────────────────────────────────────────
         try:
-            d = api(driver, "POST",
-                    f"/network/api/projects/{pid}/case-workflow")
+            d = api(driver, "POST", f"/network/api/projects/{pid}/case-workflow")
             assert d.get("workflow_id")
             assert d.get("current_state") == "concept"
             results.ok("case_init", f"state={d['current_state']}")
@@ -181,81 +171,70 @@ def run_tests():
             results.fail("case_init", e)
 
         try:
-            d = api(driver, "GET",
-                    f"/network/api/projects/{pid}/case-workflow")
+            d = api(driver, "GET", f"/network/api/projects/{pid}/case-workflow")
             assert d.get("exists") is True
             assert d.get("current_state") == "concept"
             assert len(d.get("checklist", [])) >= 2
             assert "requirements" in d.get("allowed_transitions", [])
-            results.ok("case_get_state",
-                        f"checklist={len(d['checklist'])} items, "
-                        f"transitions={d['allowed_transitions']}")
+            results.ok(
+                "case_get_state", f"checklist={len(d['checklist'])} items, transitions={d['allowed_transitions']}"
+            )
         except Exception as e:
             results.fail("case_get_state", e)
 
         try:
-            d = api(driver, "POST",
-                    f"/network/api/projects/{pid}/case-transition",
-                    {"to_state": "requirements",
-                     "comment": "E2E test"})
+            d = api(
+                driver,
+                "POST",
+                f"/network/api/projects/{pid}/case-transition",
+                {"to_state": "requirements", "comment": "E2E test"},
+            )
             assert d.get("to") == "requirements"
             assert len(d.get("checklist", [])) >= 3
-            results.ok("case_transition",
-                        f"-> {d['to']}, checklist={len(d['checklist'])}")
+            results.ok("case_transition", f"-> {d['to']}, checklist={len(d['checklist'])}")
         except Exception as e:
             results.fail("case_transition", e)
 
         try:
-            d = api(driver, "POST",
-                    f"/network/api/projects/{pid}/case-transition",
-                    {"to_state": "operate"})
+            d = api(driver, "POST", f"/network/api/projects/{pid}/case-transition", {"to_state": "operate"})
             assert d.get("error"), f"Expected error: {d}"
             results.ok("case_invalid_transition", d.get("error", "")[:60])
         except Exception as e:
             results.fail("case_invalid_transition", e)
 
         try:
-            d = api(driver, "GET",
-                    f"/network/api/projects/{pid}/case-workflow")
+            d = api(driver, "GET", f"/network/api/projects/{pid}/case-workflow")
             assert len(d.get("history", [])) >= 2
-            results.ok("case_history",
-                        f"{len(d['history'])} entries")
+            results.ok("case_history", f"{len(d['history'])} entries")
         except Exception as e:
             results.fail("case_history", e)
 
         # ── Phase 5: Chat Assistant ───────────────────────────────────────
         try:
-            d = api(driver, "POST", "/network/api/chat-assist",
-                    {"message": "I need a cross-connect at the colo"})
+            d = api(driver, "POST", "/network/api/chat-assist", {"message": "I need a cross-connect at the colo"})
             assert d.get("confidence", 0) > 0
             assert d.get("template_id") == "pat-cross-connect"
-            results.ok("chat_cross_connect",
-                        f"conf={d['confidence']}")
+            results.ok("chat_cross_connect", f"conf={d['confidence']}")
         except Exception as e:
             results.fail("chat_cross_connect", e)
 
         try:
-            d = api(driver, "POST", "/network/api/chat-assist",
-                    {"message": "set up bgp peering with partner"})
+            d = api(driver, "POST", "/network/api/chat-assist", {"message": "set up bgp peering with partner"})
             assert d.get("template_id") == "pat-bgp-peering"
-            results.ok("chat_bgp",
-                        f"conf={d.get('confidence')}")
+            results.ok("chat_bgp", f"conf={d.get('confidence')}")
         except Exception as e:
             results.fail("chat_bgp", e)
 
         try:
-            d = api(driver, "POST", "/network/api/chat-assist",
-                    {"message": "asdfghjkl random text"})
+            d = api(driver, "POST", "/network/api/chat-assist", {"message": "asdfghjkl random text"})
             assert d.get("confidence", 1) == 0
-            assert "help" in d.get("response", "").lower() or \
-                   "try" in d.get("response", "").lower()
+            assert "help" in d.get("response", "").lower() or "try" in d.get("response", "").lower()
             results.ok("chat_unknown_fallback")
         except Exception as e:
             results.fail("chat_unknown_fallback", e)
 
         try:
-            d = api(driver, "POST", "/network/api/chat-assist",
-                    {"message": "routing best practices"})
+            d = api(driver, "POST", "/network/api/chat-assist", {"message": "routing best practices"})
             assert d.get("response")
             assert "OSPF" in d["response"] or "routing" in d["response"].lower()
             results.ok("chat_best_practices")
@@ -292,8 +271,7 @@ if __name__ == "__main__":
     r = run_tests()
     summary = r.summary()
     print()
-    print(f"Results: {summary['passed']}/{summary['total']} passed "
-          f"({summary['pass_rate']})")
+    print(f"Results: {summary['passed']}/{summary['total']} passed ({summary['pass_rate']})")
     if summary["failures"]:
         print("Failures:")
         for f in summary["failures"]:

@@ -14,6 +14,7 @@ Loaded automatically by ExtensionManager._auto_load_builtins().
 Exports:
     EXTENSION_HOOKS — dict mapping hook point names to handler metadata.
 """
+
 from __future__ import annotations
 
 import logging
@@ -33,10 +34,27 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 ADVISORY_COOLDOWN_TURNS = 15
 
 CODE_KEYWORDS = [
-    "code", "refactor", "function", "class", "complexity", "smell",
-    "maintainab", "quality", "coverage", "test", "lint", "dead code",
-    "cyclomatic", "nesting", "clean up", "tech debt", "code review",
-    "implement", "build", "scaffold", "generate code",
+    "code",
+    "refactor",
+    "function",
+    "class",
+    "complexity",
+    "smell",
+    "maintainab",
+    "quality",
+    "coverage",
+    "test",
+    "lint",
+    "dead code",
+    "cyclomatic",
+    "nesting",
+    "clean up",
+    "tech debt",
+    "code review",
+    "implement",
+    "build",
+    "scaffold",
+    "generate code",
 ]
 
 _last_advisory_turn: dict = {}
@@ -54,6 +72,7 @@ def _record_advisory(context_id: str, turn_number: int):
 # ---------------------------------------------------------------------------
 # Code quality check
 # ---------------------------------------------------------------------------
+
 
 def _table_exists(conn: sqlite3.Connection, name: str) -> bool:
     row = conn.execute(
@@ -121,8 +140,7 @@ def _check_code_quality(project_id: str) -> dict | None:
             "gap_id": "code_quality_issues",
             "severity": "medium" if (score is not None and score < 0.4) else "low",
             "message": (
-                f"Code quality alert: {'; '.join(issues)}. "
-                "Consider addressing high-complexity functions first."
+                f"Code quality alert: {'; '.join(issues)}. Consider addressing high-complexity functions first."
             ),
             "action": "python tools/analysis/code_analyzer.py --project-dir tools/ --trend --json",
             "score": score,
@@ -137,6 +155,7 @@ def _check_code_quality(project_id: str) -> dict | None:
 # ---------------------------------------------------------------------------
 # Hook handler
 # ---------------------------------------------------------------------------
+
 
 def handle(context: dict) -> dict:
     """chat_message_after handler — inject code quality advisory."""

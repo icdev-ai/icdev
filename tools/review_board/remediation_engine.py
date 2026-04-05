@@ -51,11 +51,13 @@ def _get_connection():
 
 def _now() -> str:
     from datetime import datetime, timezone
+
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _gen_id(prefix: str = "rbr") -> str:
     import uuid
+
     return f"{prefix}-{uuid.uuid4().hex[:10]}"
 
 
@@ -224,6 +226,7 @@ def check_cooldown(category: str) -> bool:
         if not row or not row[0]:
             return True
         from datetime import datetime, timezone, timedelta
+
         last_fix = datetime.fromisoformat(row[0].replace("Z", "+00:00"))
         now = datetime.now(timezone.utc)
         return (now - last_fix) > timedelta(minutes=COOLDOWN_MINUTES)
@@ -268,9 +271,7 @@ def execute_fix(finding: Dict, dry_run: bool = False) -> Dict[str, Any]:
     if tier == "suggest":
         registry_entry = FIX_REGISTRY.get(category, {})
         result["status"] = "suggested"
-        result["fix_description"] = registry_entry.get(
-            "description", f"Suggested fix for category '{category}'"
-        )
+        result["fix_description"] = registry_entry.get("description", f"Suggested fix for category '{category}'")
         _log_remediation(log_id, finding, tier, result, dry_run, start_ms)
         return result
 
@@ -349,34 +350,36 @@ def _mark_finding_fixed(finding_id: str) -> None:
         conn.close()
 
 
-def _log_remediation(log_id: str, finding: Dict, tier: str,
-                     result: Dict, dry_run: bool, start_ms: int) -> None:
+def _log_remediation(log_id: str, finding: Dict, tier: str, result: Dict, dry_run: bool, start_ms: int) -> None:
     """Append remediation event to audit log (D-RB-10)."""
     duration = int(time.time() * 1000) - start_ms
     conn = _get_connection()
     try:
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO review_board_remediation_log
                 (id, finding_id, reflex_name, category, severity, confidence,
                  tier, status, fix_description, fix_result, verification,
                  dry_run, duration_ms, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            log_id,
-            finding.get("id", ""),
-            finding.get("reflex_name", ""),
-            finding.get("category", ""),
-            finding.get("severity", ""),
-            finding.get("confidence", 0.0),
-            tier,
-            result.get("status", "pending"),
-            result.get("fix_description", ""),
-            json.dumps(result.get("fix_result")) if result.get("fix_result") else None,
-            json.dumps(result.get("verification")) if result.get("verification") else None,
-            1 if dry_run else 0,
-            duration,
-            _now(),
-        ))
+        """,
+            (
+                log_id,
+                finding.get("id", ""),
+                finding.get("reflex_name", ""),
+                finding.get("category", ""),
+                finding.get("severity", ""),
+                finding.get("confidence", 0.0),
+                tier,
+                result.get("status", "pending"),
+                result.get("fix_description", ""),
+                json.dumps(result.get("fix_result")) if result.get("fix_result") else None,
+                json.dumps(result.get("verification")) if result.get("verification") else None,
+                1 if dry_run else 0,
+                duration,
+                _now(),
+            ),
+        )
         conn.commit()
     except Exception:
         pass
@@ -432,8 +435,7 @@ def get_history(limit: int = 50) -> List[Dict]:
     conn = _get_connection()
     try:
         rows = conn.execute(
-            "SELECT * FROM review_board_remediation_log "
-            "ORDER BY created_at DESC LIMIT ?",
+            "SELECT * FROM review_board_remediation_log ORDER BY created_at DESC LIMIT ?",
             (limit,),
         ).fetchall()
         return [dict(r) for r in rows]
@@ -448,15 +450,9 @@ def get_stats() -> Dict[str, Any]:
     ensure_tables()
     conn = _get_connection()
     try:
-        total = conn.execute(
-            "SELECT COUNT(*) FROM review_board_remediation_log"
-        ).fetchone()
-        by_tier = conn.execute(
-            "SELECT tier, COUNT(*) FROM review_board_remediation_log GROUP BY tier"
-        ).fetchall()
-        by_status = conn.execute(
-            "SELECT status, COUNT(*) FROM review_board_remediation_log GROUP BY status"
-        ).fetchall()
+        total = conn.execute("SELECT COUNT(*) FROM review_board_remediation_log").fetchone()
+        by_tier = conn.execute("SELECT tier, COUNT(*) FROM review_board_remediation_log GROUP BY tier").fetchall()
+        by_status = conn.execute("SELECT status, COUNT(*) FROM review_board_remediation_log GROUP BY status").fetchall()
         last_hour = conn.execute(
             "SELECT COUNT(*) FROM review_board_remediation_log "
             "WHERE tier = 'auto_fix' AND status IN ('fixed', 'verified') "
@@ -480,9 +476,7 @@ def get_stats() -> Dict[str, Any]:
 # CLI
 # ---------------------------------------------------------------------------
 def main():
-    parser = argparse.ArgumentParser(
-        description="Review Board Remediation Engine (D-RB-4)"
-    )
+    parser = argparse.ArgumentParser(description="Review Board Remediation Engine (D-RB-4)")
     parser.add_argument("--run", action="store_true", help="Run remediation on pending findings")
     parser.add_argument("--dry-run", action="store_true", help="Preview fixes without applying")
     parser.add_argument("--pending", action="store_true", help="List pending auto-fixable findings")
@@ -499,25 +493,25 @@ def main():
         if args.json:
             print(json.dumps(result, indent=2))
         else:
-            print(f"Remediation complete: {result['auto_fixed']} fixed, "
-                  f"{result['verified']} verified, {result['suggested']} suggested, "
-                  f"{result['escalated']} escalated, {result['failed']} failed")
+            print(
+                f"Remediation complete: {result['auto_fixed']} fixed, "
+                f"{result['verified']} verified, {result['suggested']} suggested, "
+                f"{result['escalated']} escalated, {result['failed']} failed"
+            )
     elif args.pending:
         findings = get_pending_findings()
         if args.json:
             print(json.dumps({"pending": findings, "count": len(findings)}, indent=2))
         else:
             for f in findings:
-                print(f"  [{f['severity']}] {f['category']}: {f['title']} "
-                      f"(confidence={f['confidence']:.0%})")
+                print(f"  [{f['severity']}] {f['category']}: {f['title']} (confidence={f['confidence']:.0%})")
     elif args.history:
         history = get_history(limit=args.limit)
         if args.json:
             print(json.dumps({"history": history, "count": len(history)}, indent=2))
         else:
             for h in history:
-                print(f"  [{h['tier']}] {h['category']}: {h['status']} "
-                      f"({h['created_at']})")
+                print(f"  [{h['tier']}] {h['category']}: {h['status']} ({h['created_at']})")
     elif args.stats:
         stats = get_stats()
         if args.json:

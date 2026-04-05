@@ -50,10 +50,12 @@ class TestResult:
 
     def summary(self):
         total = len(self.passed) + len(self.failed)
-        rate = f"{len(self.passed)/total*100:.1f}%" if total else "0%"
+        rate = f"{len(self.passed) / total * 100:.1f}%" if total else "0%"
         return {
-            "total": total, "passed": len(self.passed),
-            "failed": len(self.failed), "pass_rate": rate,
+            "total": total,
+            "passed": len(self.passed),
+            "failed": len(self.failed),
+            "pass_rate": rate,
             "failures": self.failed,
         }
 
@@ -82,9 +84,7 @@ def check_js_errors(driver):
         for entry in driver.get_log("browser"):
             if entry.get("level") == "SEVERE":
                 msg = entry.get("message", "")
-                if any(x in msg.lower() for x in [
-                    "favicon", "401", "404", "failed to load resource"
-                ]):
+                if any(x in msg.lower() for x in ["favicon", "401", "404", "failed to load resource"]):
                     continue
                 errors.append(msg)
     except Exception:
@@ -134,33 +134,30 @@ def run_tests():
         time.sleep(2)
 
         # Setup
-        d = api(driver, "POST", "/network/api/projects", {
-            "name": "E2E Extended Test", "status": "approved",
-            "owner": "e2e"
-        })
+        d = api(
+            driver, "POST", "/network/api/projects", {"name": "E2E Extended Test", "status": "approved", "owner": "e2e"}
+        )
         pid = d.get("id")
         topos = api(driver, "GET", "/network/api/topologies")
         topo_a = topos[0]["id"] if topos else None
         topo_b = topos[1]["id"] if len(topos) > 1 else None
         if topo_a:
-            api(driver, "POST",
-                f"/network/api/projects/{pid}/topologies",
-                {"topology_id": topo_a})
+            api(driver, "POST", f"/network/api/projects/{pid}/topologies", {"topology_id": topo_a})
 
         # Mark all existing notifs as read first
         api(driver, "POST", "/network/api/notifications/mark-read")
 
         # ── 1. Submit review (creates notification) ───────────────────────
         try:
-            r = api(driver, "POST",
-                    f"/network/api/projects/{pid}/reviews", {
-                        "board_id": "board-arb", "phase": 1,
-                        "reviewers": ["test@e2e"]
-                    })
+            r = api(
+                driver,
+                "POST",
+                f"/network/api/projects/{pid}/reviews",
+                {"board_id": "board-arb", "phase": 1, "reviewers": ["test@e2e"]},
+            )
             review_id = r.get("id")
             assert review_id
-            results.ok("review_creates_notification",
-                        f"review={review_id}")
+            results.ok("review_creates_notification", f"review={review_id}")
         except Exception as e:
             results.fail("review_creates_notification", e)
 
@@ -169,17 +166,19 @@ def run_tests():
             n = api(driver, "GET", "/network/api/notifications")
             assert n.get("unread") >= 1, f"Expected unread, got {n}"
             assert len(n.get("notifications", [])) >= 1
-            results.ok("notifications_api_unread",
-                        f"unread={n['unread']}")
+            results.ok("notifications_api_unread", f"unread={n['unread']}")
         except Exception as e:
             results.fail("notifications_api_unread", e)
 
         # ── 3. Review decision creates notification ───────────────────────
         if review_id:
             try:
-                api(driver, "POST",
+                api(
+                    driver,
+                    "POST",
                     f"/network/api/reviews/{review_id}/decide",
-                    {"decision": "approved", "notes": "E2E test"})
+                    {"decision": "approved", "notes": "E2E test"},
+                )
                 n = api(driver, "GET", "/network/api/notifications")
                 assert n.get("unread") >= 2
                 results.ok("decision_creates_notification")
@@ -208,16 +207,12 @@ def run_tests():
         # ── 6. Topology diff API ──────────────────────────────────────────
         if topo_a and topo_b:
             try:
-                d = api(driver, "POST", "/network/api/topology-diff", {
-                    "topology_a": topo_a, "topology_b": topo_b
-                })
+                d = api(driver, "POST", "/network/api/topology-diff", {"topology_a": topo_a, "topology_b": topo_b})
                 assert "similarity_pct" in d
                 assert "nodes_only_a" in d
                 assert "nodes_only_b" in d
                 assert d.get("topology_a", {}).get("name")
-                results.ok("topology_diff_api",
-                            f"similarity={d['similarity_pct']}%, "
-                            f"common={d['nodes_common']}")
+                results.ok("topology_diff_api", f"similarity={d['similarity_pct']}%, common={d['nodes_common']}")
             except Exception as e:
                 results.fail("topology_diff_api", e)
         else:
@@ -238,28 +233,24 @@ def run_tests():
 
         # ── 8. SAFe auto-decompose API ────────────────────────────────────
         try:
-            d = api(driver, "POST",
-                    f"/network/api/projects/{pid}/decompose")
+            d = api(driver, "POST", f"/network/api/projects/{pid}/decompose")
             assert d.get("feature"), f"No feature: {d}"
             assert d.get("stories") is not None
             assert d.get("total_items") >= 1
-            results.ok("safe_decompose_api",
-                        f"items={d['total_items']}, "
-                        f"stories={len(d['stories'])}, "
-                        f"enablers={len(d['enablers'])}")
+            results.ok(
+                "safe_decompose_api",
+                f"items={d['total_items']}, stories={len(d['stories'])}, enablers={len(d['enablers'])}",
+            )
         except Exception as e:
             results.fail("safe_decompose_api", e)
 
         # ── 9. WSJF scores calculated ─────────────────────────────────────
         try:
-            d = api(driver, "POST",
-                    f"/network/api/projects/{pid}/decompose")
+            d = api(driver, "POST", f"/network/api/projects/{pid}/decompose")
             f = d.get("feature", {})
             assert f.get("wsjf_score") and f["wsjf_score"] > 0
             assert f.get("t_shirt_size") in ("S", "M", "L", "XL")
-            results.ok("wsjf_scores",
-                        f"size={f['t_shirt_size']}, "
-                        f"wsjf={f['wsjf_score']}")
+            results.ok("wsjf_scores", f"size={f['t_shirt_size']}, wsjf={f['wsjf_score']}")
         except Exception as e:
             results.fail("wsjf_scores", e)
 
@@ -268,11 +259,9 @@ def run_tests():
             driver.get(f"{BASE_URL}/network/global/canvas")
             time.sleep(3)
             screenshot(driver, "global-canvas")
-            toolbar = driver.find_element(
-                By.ID, "global-canvas-toolbar")
+            toolbar = driver.find_element(By.ID, "global-canvas-toolbar")
             assert toolbar
-            container = driver.find_element(
-                By.ID, "global-canvas-container")
+            container = driver.find_element(By.ID, "global-canvas-container")
             assert container
             results.ok("global_canvas_page_loads")
         except Exception as e:
@@ -280,31 +269,28 @@ def run_tests():
 
         # ── 11. Global canvas data API ────────────────────────────────────
         try:
-            d = api(driver, "GET",
-                    "/network/api/global-canvas-data")
+            d = api(driver, "GET", "/network/api/global-canvas-data")
             assert "nodes" in d and "edges" in d
             assert "groups" in d
-            results.ok("global_canvas_data_api",
-                        f"nodes={d['total_nodes']}, "
-                        f"edges={d['total_edges']}")
+            results.ok("global_canvas_data_api", f"nodes={d['total_nodes']}, edges={d['total_edges']}")
         except Exception as e:
             results.fail("global_canvas_data_api", e)
 
         # ── 12. Gantt timeline on detail ──────────────────────────────────
         try:
             # Add milestone with due_date
-            api(driver, "POST",
+            api(
+                driver,
+                "POST",
                 f"/network/api/projects/{pid}/milestones",
-                {"title": "Gantt Test", "due_date": "2026-05-01",
-                 "status": "in_progress"})
+                {"title": "Gantt Test", "due_date": "2026-05-01", "status": "in_progress"},
+            )
             driver.get(f"{BASE_URL}/network/projects/{pid}")
             time.sleep(2)
             screenshot(driver, "gantt-timeline")
-            gantt = driver.find_elements(
-                By.CSS_SELECTOR, ".gantt-timeline .gantt-bar")
+            gantt = driver.find_elements(By.CSS_SELECTOR, ".gantt-timeline .gantt-bar")
             assert len(gantt) >= 1, "No gantt bars"
-            results.ok("gantt_timeline_renders",
-                        f"{len(gantt)} bars")
+            results.ok("gantt_timeline_renders", f"{len(gantt)} bars")
         except Exception as e:
             results.fail("gantt_timeline_renders", e)
 
@@ -324,8 +310,7 @@ def run_tests():
             time.sleep(3)
             errs = check_js_errors(driver)
             if errs:
-                results.fail(f"js_errors_{name}",
-                              f"{len(errs)}: {errs[0][:80]}")
+                results.fail(f"js_errors_{name}", f"{len(errs)}: {errs[0][:80]}")
             else:
                 results.ok(f"js_errors_{name}", "No SEVERE JS errors")
 
@@ -345,14 +330,12 @@ def run_tests():
 
 if __name__ == "__main__":
     print("=" * 60)
-    print("E2E: Network Canvas — Extended Features "
-          "(Notifications, Diff, SAFe, Canvas, Gantt)")
+    print("E2E: Network Canvas — Extended Features (Notifications, Diff, SAFe, Canvas, Gantt)")
     print("=" * 60)
     r = run_tests()
     summary = r.summary()
     print()
-    print(f"Results: {summary['passed']}/{summary['total']} passed "
-          f"({summary['pass_rate']})")
+    print(f"Results: {summary['passed']}/{summary['total']} passed ({summary['pass_rate']})")
     if summary["failures"]:
         print("Failures:")
         for f in summary["failures"]:

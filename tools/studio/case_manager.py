@@ -121,6 +121,7 @@ def get_lifecycle_templates() -> list[dict]:
 
 # ── Case Type CRUD ────────────────────────────────────────────────────
 
+
 def create_case_type(
     name: str,
     lifecycle: dict,
@@ -139,8 +140,7 @@ def create_case_type(
     state_ids = {s["id"] for s in states}
     for t in transitions:
         if t["from"] not in state_ids or t["to"] not in state_ids:
-            return {"status": "error",
-                    "error": f"Transition references unknown state: {t['from']} -> {t['to']}"}
+            return {"status": "error", "error": f"Transition references unknown state: {t['from']} -> {t['to']}"}
 
     lifecycle["description"] = description
 
@@ -160,9 +160,7 @@ def create_case_type(
 def list_case_types() -> list[dict]:
     conn = get_connection()
     try:
-        rows = conn.execute(
-            "SELECT * FROM studio_case_types ORDER BY created_at DESC"
-        ).fetchall()
+        rows = conn.execute("SELECT * FROM studio_case_types ORDER BY created_at DESC").fetchall()
         result = []
         for r in rows:
             d = dict(r)
@@ -178,15 +176,14 @@ def list_case_types() -> list[dict]:
 def get_case_type(type_id: str) -> dict | None:
     conn = get_connection()
     try:
-        row = conn.execute(
-            "SELECT * FROM studio_case_types WHERE type_id = ?", (type_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM studio_case_types WHERE type_id = ?", (type_id,)).fetchone()
         return dict(row) if row else None
     finally:
         conn.close()
 
 
 # ── Case CRUD ─────────────────────────────────────────────────────────
+
 
 def create_case(
     type_id: str,
@@ -219,8 +216,19 @@ def create_case(
                (case_id, type_id, title, description, current_state, priority,
                 assigned_to, created_by, created_at, updated_at, form_submission_id)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (case_id, type_id, title, description, initial["id"], priority,
-             assigned_to, created_by, now, now, form_submission_id),
+            (
+                case_id,
+                type_id,
+                title,
+                description,
+                initial["id"],
+                priority,
+                assigned_to,
+                created_by,
+                now,
+                now,
+                form_submission_id,
+            ),
         )
         # Append-only history entry
         conn.execute(
@@ -268,9 +276,7 @@ def list_cases(
 def get_case(case_id: str) -> dict | None:
     conn = get_connection()
     try:
-        row = conn.execute(
-            "SELECT * FROM studio_cases WHERE case_id = ?", (case_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM studio_cases WHERE case_id = ?", (case_id,)).fetchone()
         if not row:
             return None
         case = dict(row)
@@ -305,10 +311,7 @@ def transition_case(
     transitions = lifecycle.get("transitions", [])
 
     from_state = case["current_state"]
-    valid = any(
-        t["from"] == from_state and t["to"] == to_state
-        for t in transitions
-    )
+    valid = any(t["from"] == from_state and t["to"] == to_state for t in transitions)
     if not valid:
         return {
             "status": "error",
@@ -365,6 +368,7 @@ def get_case_board(type_id: str) -> dict:
 
 
 # ── CLI ───────────────────────────────────────────────────────────────
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="ICDEV™ Studio Case Manager")

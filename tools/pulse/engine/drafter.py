@@ -12,6 +12,7 @@ Pipeline:
 
 FORGE-compliant: LLM calls go through tools/llm/router.py, not direct API.
 """
+
 from __future__ import annotations
 
 import json
@@ -25,8 +26,7 @@ from typing import Any
 from slugify import slugify
 
 # Configurable project ID — avoids hardcoding "sparkpilot"
-PULSE_PROJECT_ID = os.environ.get("ICDEV_PULSE_PROJECT_ID",
-                                   os.environ.get("ICDEV_PROJECT_ID", "pulse"))
+PULSE_PROJECT_ID = os.environ.get("ICDEV_PULSE_PROJECT_ID", os.environ.get("ICDEV_PROJECT_ID", "pulse"))
 
 from tools.pulse.config import (  # noqa: E402
     ARTICLE_TEMPLATES,
@@ -214,16 +214,13 @@ def _extract_title(markdown: str) -> str:
     if first_heading_idx is not None and first_heading_idx > 0:
         # Check if lines before heading are preamble
         pre_lines = lines[:first_heading_idx]
-        if all(
-            not line.strip() or any(p.match(line.strip()) for p in _preamble_patterns)
-            for line in pre_lines
-        ):
+        if all(not line.strip() or any(p.match(line.strip()) for p in _preamble_patterns) for line in pre_lines):
             cleaned = "\n".join(lines[first_heading_idx:])
 
     def _sanitize_title(title: str) -> str:
         """Clean LLM artifacts from titles."""
-        title = re.sub(r"^#+\s*", "", title)   # leading ##
-        title = re.sub(r"\*+", "", title)       # bold **
+        title = re.sub(r"^#+\s*", "", title)  # leading ##
+        title = re.sub(r"\*+", "", title)  # bold **
         # Replace " + " word separators with ", " (gemma3 quirk)
         title = re.sub(r"\s*\+\s*", ", ", title)
         # Collapse multiple commas
@@ -303,23 +300,90 @@ def _format_source_urls(urls: list[str]) -> str:
 
 
 _SEO_STOP_WORDS = {
-    "the", "a", "an", "in", "on", "at", "to", "for", "of", "and",
-    "or", "but", "is", "are", "was", "were", "be", "been", "being",
-    "have", "has", "had", "do", "does", "did", "will", "would",
-    "could", "should", "may", "might", "can", "with", "from", "by",
-    "how", "why", "what", "when", "where", "which", "who", "your",
-    "you", "it", "its", "this", "that", "these", "those", "not",
-    "—", "-", "–", "", "vs", "via",
+    "the",
+    "a",
+    "an",
+    "in",
+    "on",
+    "at",
+    "to",
+    "for",
+    "of",
+    "and",
+    "or",
+    "but",
+    "is",
+    "are",
+    "was",
+    "were",
+    "be",
+    "been",
+    "being",
+    "have",
+    "has",
+    "had",
+    "do",
+    "does",
+    "did",
+    "will",
+    "would",
+    "could",
+    "should",
+    "may",
+    "might",
+    "can",
+    "with",
+    "from",
+    "by",
+    "how",
+    "why",
+    "what",
+    "when",
+    "where",
+    "which",
+    "who",
+    "your",
+    "you",
+    "it",
+    "its",
+    "this",
+    "that",
+    "these",
+    "those",
+    "not",
+    "—",
+    "-",
+    "–",
+    "",
+    "vs",
+    "via",
 }
 
 # High-value SEO phrases from ICDEV™ capabilities
 _ICDEV_SEO_PHRASES = [
-    "ICDEV™", "FedRAMP", "CMMC", "NIST 800-53", "ATO", "cATO",
-    "zero trust", "DevSecOps", "SBOM", "compliance automation",
-    "agentic AI", "secure by design", "supply chain security",
-    "OSCAL", "digital thread", "MBSE", "threat modeling",
-    "AI governance", "prompt injection", "MITRE ATLAS",
-    "GovTech", "federal software", "policy-as-code",
+    "ICDEV™",
+    "FedRAMP",
+    "CMMC",
+    "NIST 800-53",
+    "ATO",
+    "cATO",
+    "zero trust",
+    "DevSecOps",
+    "SBOM",
+    "compliance automation",
+    "agentic AI",
+    "secure by design",
+    "supply chain security",
+    "OSCAL",
+    "digital thread",
+    "MBSE",
+    "threat modeling",
+    "AI governance",
+    "prompt injection",
+    "MITRE ATLAS",
+    "GovTech",
+    "federal software",
+    "policy-as-code",
 ]
 
 
@@ -482,7 +546,9 @@ def build_draft_context(
 
 
 def build_rewrite_context(
-    text: str, findings: list[dict], capability_context: str = "",
+    text: str,
+    findings: list[dict],
+    capability_context: str = "",
 ) -> dict[str, str]:
     """Build prompt context for Claude Sonnet to rewrite an article.
 
@@ -496,7 +562,8 @@ def build_rewrite_context(
     """
     instructions = "\n".join(
         f"- {f.get('category', 'general')}: {f.get('message', '')} → {f.get('suggestion', '')}"
-        for f in findings if f.get("message")
+        for f in findings
+        if f.get("message")
     )
 
     if capability_context:
@@ -720,6 +787,7 @@ def process_draft(
     # Prevent duplicate titles
     try:
         from tools.pulse.db import get_existing_titles
+
         existing = get_existing_titles()
         title = _ensure_unique_title(title, existing)
     except Exception:
@@ -734,7 +802,9 @@ def process_draft(
 
     logger.info(
         "Post processed: '%s' (%s) — %d words",
-        title, slug, word_count,
+        title,
+        slug,
+        word_count,
     )
 
     return {

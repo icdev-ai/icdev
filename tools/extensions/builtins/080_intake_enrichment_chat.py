@@ -16,6 +16,7 @@ Loaded automatically by ExtensionManager._auto_load_builtins().
 Exports:
     EXTENSION_HOOKS — dict mapping hook point names to handler metadata.
 """
+
 from __future__ import annotations
 
 import logging
@@ -36,13 +37,39 @@ ADVISORY_COOLDOWN_TURNS = 6
 
 # Keywords that indicate intake-related discussion
 INTAKE_KEYWORDS = [
-    "requirement", "requirement ", "shall", "must", "should",
-    "gap", "readiness", "intake", "decompos", "epic", "story",
-    "feature", "capability", "acceptance criteria", "bdd", "gherkin",
-    "coa", "course of action", "boundary", "ato boundary",
-    "supply chain", "vendor", "dependency", "isa",
-    "impact level", "classification", "il4", "il5", "il6",
-    "customer", "stakeholder", "mission", "objective",
+    "requirement",
+    "requirement ",
+    "shall",
+    "must",
+    "should",
+    "gap",
+    "readiness",
+    "intake",
+    "decompos",
+    "epic",
+    "story",
+    "feature",
+    "capability",
+    "acceptance criteria",
+    "bdd",
+    "gherkin",
+    "coa",
+    "course of action",
+    "boundary",
+    "ato boundary",
+    "supply chain",
+    "vendor",
+    "dependency",
+    "isa",
+    "impact level",
+    "classification",
+    "il4",
+    "il5",
+    "il6",
+    "customer",
+    "stakeholder",
+    "mission",
+    "objective",
 ]
 
 _last_advisory_turn: dict = {}
@@ -60,6 +87,7 @@ def _record_advisory(context_id: str, turn_number: int):
 # ---------------------------------------------------------------------------
 # Intake enrichment checks
 # ---------------------------------------------------------------------------
+
 
 def _table_exists(conn: sqlite3.Connection, name: str) -> bool:
     row = conn.execute(
@@ -121,10 +149,7 @@ def _check_intake_enrichment(session_id: str, project_id: str) -> dict | None:
             ).fetchone()
             gaps = gap_count[0] if isinstance(gap_count, (tuple, list)) else gap_count["cnt"]
             if gaps > 0:
-                advisories.append(
-                    f"{gaps} critical gap(s) detected. Address these before "
-                    "proceeding to decomposition"
-                )
+                advisories.append(f"{gaps} critical gap(s) detected. Address these before proceeding to decomposition")
 
         # Suggest readiness scoring if enough requirements
         if _table_exists(conn, "intake_requirements"):
@@ -149,10 +174,7 @@ def _check_intake_enrichment(session_id: str, project_id: str) -> dict | None:
             ).fetchone()
             reds = red_count[0] if isinstance(red_count, (tuple, list)) else red_count["cnt"]
             if reds > 0:
-                advisories.append(
-                    f"{reds} RED-tier boundary impact(s) require alternative COAs "
-                    "before proceeding"
-                )
+                advisories.append(f"{reds} RED-tier boundary impact(s) require alternative COAs before proceeding")
 
         if not advisories:
             return None
@@ -173,6 +195,7 @@ def _check_intake_enrichment(session_id: str, project_id: str) -> dict | None:
 # ---------------------------------------------------------------------------
 # Hook handler
 # ---------------------------------------------------------------------------
+
 
 def handle(context: dict) -> dict:
     """chat_message_after handler — inject intake enrichment advisory."""

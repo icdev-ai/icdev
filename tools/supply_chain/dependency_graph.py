@@ -39,8 +39,7 @@ VENDOR_TYPES = ("cots", "gots", "oss", "saas", "paas", "iaas", "contractor", "su
 RISK_TIERS = ("low", "moderate", "high", "critical")
 SECTION_889 = ("compliant", "under_review", "prohibited", "exempt")
 SOURCE_TARGET_TYPES = ("project", "system", "component", "vendor", "package")
-DEPENDENCY_TYPES = ("depends_on", "supplies", "integrates_with",
-                    "data_flows_to", "inherits_ato", "shares_boundary")
+DEPENDENCY_TYPES = ("depends_on", "supplies", "integrates_with", "data_flows_to", "inherits_ato", "shares_boundary")
 CRITICALITY_LEVELS = ("critical", "high", "medium", "low")
 
 
@@ -48,14 +47,12 @@ CRITICALITY_LEVELS = ("critical", "high", "medium", "low")
 # Database helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_connection(db_path=None):
     """Return a sqlite3 connection with Row factory."""
     path = Path(db_path) if db_path else DB_PATH
     if not path.exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\n"
-            "Run: python tools/db/init_icdev_db.py"
-        )
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
     conn = get_connection(db_path=str(db_path))
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
@@ -68,9 +65,14 @@ def _log_audit(conn, project_id, event_type, action, details):
             """INSERT INTO audit_trail
                (project_id, event_type, actor, action, details, classification)
                VALUES (?, ?, ?, ?, ?, ?)""",
-            (project_id, event_type, "icdev-supply-chain-agent", action,
-             json.dumps(details) if isinstance(details, dict) else str(details),
-             "CUI"),
+            (
+                project_id,
+                event_type,
+                "icdev-supply-chain-agent",
+                action,
+                json.dumps(details) if isinstance(details, dict) else str(details),
+                "CUI",
+            ),
         )
         conn.commit()
     except Exception as exc:
@@ -81,9 +83,16 @@ def _log_audit(conn, project_id, event_type, action, details):
 # Core functions
 # ---------------------------------------------------------------------------
 
-def add_vendor(project_id, vendor_name, vendor_type, country_of_origin,
-               scrm_risk_tier="moderate", section_889_status="compliant",
-               db_path=None):
+
+def add_vendor(
+    project_id,
+    vendor_name,
+    vendor_type,
+    country_of_origin,
+    scrm_risk_tier="moderate",
+    section_889_status="compliant",
+    db_path=None,
+):
     """Insert a vendor into supply_chain_vendors.
 
     Args:
@@ -114,15 +123,27 @@ def add_vendor(project_id, vendor_name, vendor_type, country_of_origin,
                (id, project_id, vendor_name, vendor_type, country_of_origin,
                 scrm_risk_tier, section_889_status, last_assessed, created_at, updated_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (vendor_id, project_id, vendor_name, vendor_type,
-             country_of_origin, scrm_risk_tier, section_889_status,
-             now, now, now),
+            (
+                vendor_id,
+                project_id,
+                vendor_name,
+                vendor_type,
+                country_of_origin,
+                scrm_risk_tier,
+                section_889_status,
+                now,
+                now,
+                now,
+            ),
         )
         conn.commit()
-        _log_audit(conn, project_id, "supply_chain_risk_escalated",
-                   f"Added vendor: {vendor_name}",
-                   {"vendor_id": vendor_id, "vendor_type": vendor_type,
-                    "risk_tier": scrm_risk_tier})
+        _log_audit(
+            conn,
+            project_id,
+            "supply_chain_risk_escalated",
+            f"Added vendor: {vendor_name}",
+            {"vendor_id": vendor_id, "vendor_type": vendor_type, "risk_tier": scrm_risk_tier},
+        )
         return {
             "vendor_id": vendor_id,
             "vendor_name": vendor_name,
@@ -132,10 +153,17 @@ def add_vendor(project_id, vendor_name, vendor_type, country_of_origin,
         conn.close()
 
 
-def add_dependency(project_id, source_component, target_component,
-                   dependency_type, criticality, vendor_id=None,
-                   source_type="component", target_type="component",
-                   db_path=None):
+def add_dependency(
+    project_id,
+    source_component,
+    target_component,
+    dependency_type,
+    criticality,
+    vendor_id=None,
+    source_type="component",
+    target_type="component",
+    db_path=None,
+):
     """Insert a dependency edge into supply_chain_dependencies.
 
     The adjacency list uses (source_type, source_id) -> (target_type, target_id).
@@ -162,16 +190,27 @@ def add_dependency(project_id, source_component, target_component,
                (project_id, source_type, source_id, target_type, target_id,
                 dependency_type, criticality, metadata, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (project_id, source_type, source_component,
-             target_type, target_component, dependency_type,
-             criticality, metadata, datetime.now(timezone.utc).isoformat()),
+            (
+                project_id,
+                source_type,
+                source_component,
+                target_type,
+                target_component,
+                dependency_type,
+                criticality,
+                metadata,
+                datetime.now(timezone.utc).isoformat(),
+            ),
         )
         conn.commit()
         dep_id = cur.lastrowid
-        _log_audit(conn, project_id, "supply_chain_risk_escalated",
-                   f"Added dependency: {source_component} -> {target_component}",
-                   {"dependency_id": dep_id, "type": dependency_type,
-                    "criticality": criticality})
+        _log_audit(
+            conn,
+            project_id,
+            "supply_chain_risk_escalated",
+            f"Added dependency: {source_component} -> {target_component}",
+            {"dependency_id": dep_id, "type": dependency_type, "criticality": criticality},
+        )
         return {
             "dependency_id": dep_id,
             "source": source_component,
@@ -206,12 +245,14 @@ def build_graph(project_id, db_path=None):
             tgt = f"{r['target_type']}:{r['target_id']}"
             nodes_set.add(src)
             nodes_set.add(tgt)
-            edges.append({
-                "source": src,
-                "target": tgt,
-                "dependency_type": r["dependency_type"],
-                "criticality": r["criticality"],
-            })
+            edges.append(
+                {
+                    "source": src,
+                    "target": tgt,
+                    "dependency_type": r["dependency_type"],
+                    "criticality": r["criticality"],
+                }
+            )
             if r["criticality"] == "critical":
                 critical_count += 1
 
@@ -253,7 +294,7 @@ def _bfs(project_id, component, direction, db_path=None):
         # Build adjacency lists
         # "upstream" of X: X depends_on Y  =>  edge X->Y  => follow source->target
         # "downstream" of X: Y depends_on X => edge Y->X  => follow target->source
-        forward = {}   # source -> [target, ...]
+        forward = {}  # source -> [target, ...]
         backward = {}  # target -> [source, ...]
         crit_edges = set()
 
@@ -281,15 +322,16 @@ def _bfs(project_id, component, direction, db_path=None):
                 if neighbor not in seen:
                     seen.add(neighbor)
                     max_depth = max(max_depth, depth + 1)
-                    is_crit = ((current, neighbor) in crit_edges
-                               or (neighbor, current) in crit_edges)
+                    is_crit = (current, neighbor) in crit_edges or (neighbor, current) in crit_edges
                     if is_crit:
                         critical_count += 1
-                    visited.append({
-                        "component": neighbor,
-                        "depth": depth + 1,
-                        "critical": is_crit,
-                    })
+                    visited.append(
+                        {
+                            "component": neighbor,
+                            "depth": depth + 1,
+                            "critical": is_crit,
+                        }
+                    )
                     queue.append((neighbor, depth + 1))
 
         return visited, max_depth, critical_count
@@ -305,8 +347,7 @@ def get_upstream(project_id, component, db_path=None):
     Returns:
         dict with component, upstream list, depth, critical_count.
     """
-    visited, max_depth, critical_count = _bfs(
-        project_id, component, "upstream", db_path)
+    visited, max_depth, critical_count = _bfs(project_id, component, "upstream", db_path)
     return {
         "component": component,
         "upstream": visited,
@@ -323,8 +364,7 @@ def get_downstream(project_id, component, db_path=None):
     Returns:
         dict with component, downstream list, depth, impact_radius.
     """
-    visited, max_depth, _ = _bfs(
-        project_id, component, "downstream", db_path)
+    visited, max_depth, _ = _bfs(project_id, component, "downstream", db_path)
     return {
         "component": component,
         "downstream": visited,
@@ -333,8 +373,7 @@ def get_downstream(project_id, component, db_path=None):
     }
 
 
-def propagate_impact(project_id, component, impact_type, severity,
-                     db_path=None):
+def propagate_impact(project_id, component, impact_type, severity, db_path=None):
     """Trace downstream impact of a change/vulnerability in a component.
 
     Severity decays by factor 0.8 per hop. Returns blast radius and
@@ -380,31 +419,37 @@ def propagate_impact(project_id, component, impact_type, severity,
                 if neighbor not in seen:
                     seen.add(neighbor)
                     decayed = round(current_score * decay, 2)
-                    sev_label = ("critical" if decayed >= 8.0
-                                 else "high" if decayed >= 5.5
-                                 else "medium" if decayed >= 3.0
-                                 else "low")
-                    affected.append({
-                        "component": neighbor,
-                        "hop": depth + 1,
-                        "propagated_score": decayed,
-                        "propagated_severity": sev_label,
-                    })
+                    sev_label = (
+                        "critical"
+                        if decayed >= 8.0
+                        else "high"
+                        if decayed >= 5.5
+                        else "medium"
+                        if decayed >= 3.0
+                        else "low"
+                    )
+                    affected.append(
+                        {
+                            "component": neighbor,
+                            "hop": depth + 1,
+                            "propagated_score": decayed,
+                            "propagated_severity": sev_label,
+                        }
+                    )
                     queue.append((neighbor, depth + 1, decayed))
 
         # Recommendations
         recommendations = []
         if len(affected) > 5:
             recommendations.append(
-                "High blast radius detected. Consider isolating this component "
-                "behind an abstraction layer.")
+                "High blast radius detected. Consider isolating this component behind an abstraction layer."
+            )
         if severity == "critical":
-            recommendations.append(
-                "Critical severity: initiate incident response within 24 hours.")
+            recommendations.append("Critical severity: initiate incident response within 24 hours.")
         if any(a["propagated_severity"] == "critical" for a in affected):
             recommendations.append(
-                "Critical propagated impact reaches downstream components. "
-                "Assess downstream ISAs and ATO boundaries.")
+                "Critical propagated impact reaches downstream components. Assess downstream ISAs and ATO boundaries."
+            )
         if not recommendations:
             recommendations.append("Impact contained. Monitor for changes.")
 
@@ -417,10 +462,13 @@ def propagate_impact(project_id, component, impact_type, severity,
             "recommendations": recommendations,
         }
 
-        _log_audit(conn, project_id, "cve_impact_propagated",
-                   f"Impact propagated from {component}",
-                   {"blast_radius": len(affected), "severity": severity,
-                    "impact_type": impact_type})
+        _log_audit(
+            conn,
+            project_id,
+            "cve_impact_propagated",
+            f"Impact propagated from {component}",
+            {"blast_radius": len(affected), "severity": severity, "impact_type": impact_type},
+        )
 
         return result
     finally:
@@ -465,11 +513,13 @@ def get_critical_path(project_id, db_path=None):
                         seen.add(neighbor)
                         count += 1
                         queue.append(neighbor)
-            results.append({
-                "component": node,
-                "downstream_count": count,
-                "impact_radius": count,
-            })
+            results.append(
+                {
+                    "component": node,
+                    "downstream_count": count,
+                    "impact_radius": count,
+                }
+            )
 
         results.sort(key=lambda x: x["impact_radius"], reverse=True)
         return {
@@ -485,58 +535,48 @@ def get_critical_path(project_id, db_path=None):
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
-    parser = argparse.ArgumentParser(
-        description="Supply Chain Dependency Graph (RICOAS)")
+    parser = argparse.ArgumentParser(description="Supply Chain Dependency Graph (RICOAS)")
     parser.add_argument("--project-id", required=True, help="Project identifier")
     parser.add_argument("--json", action="store_true", help="Output as JSON")
 
     # Vendor operations
-    parser.add_argument("--add-vendor", action="store_true",
-                        help="Add a new vendor")
+    parser.add_argument("--add-vendor", action="store_true", help="Add a new vendor")
     parser.add_argument("--vendor-name", help="Vendor display name")
-    parser.add_argument("--vendor-type", choices=VENDOR_TYPES,
-                        help="Vendor type")
+    parser.add_argument("--vendor-type", choices=VENDOR_TYPES, help="Vendor type")
     parser.add_argument("--country", help="Country of origin")
-    parser.add_argument("--risk-tier", choices=RISK_TIERS, default="moderate",
-                        help="SCRM risk tier (default: moderate)")
-    parser.add_argument("--section-889", choices=SECTION_889,
-                        default="compliant",
-                        help="Section 889 compliance status")
+    parser.add_argument(
+        "--risk-tier", choices=RISK_TIERS, default="moderate", help="SCRM risk tier (default: moderate)"
+    )
+    parser.add_argument("--section-889", choices=SECTION_889, default="compliant", help="Section 889 compliance status")
 
     # Dependency operations
-    parser.add_argument("--add-dep", action="store_true",
-                        help="Add a dependency edge")
+    parser.add_argument("--add-dep", action="store_true", help="Add a dependency edge")
     parser.add_argument("--source", help="Source component ID")
     parser.add_argument("--target", help="Target component ID")
-    parser.add_argument("--dep-type", choices=DEPENDENCY_TYPES,
-                        help="Dependency type")
-    parser.add_argument("--criticality", choices=CRITICALITY_LEVELS,
-                        default="medium", help="Dependency criticality")
-    parser.add_argument("--source-type", choices=SOURCE_TARGET_TYPES,
-                        default="component", help="Source node type")
-    parser.add_argument("--target-type", choices=SOURCE_TARGET_TYPES,
-                        default="component", help="Target node type")
+    parser.add_argument("--dep-type", choices=DEPENDENCY_TYPES, help="Dependency type")
+    parser.add_argument("--criticality", choices=CRITICALITY_LEVELS, default="medium", help="Dependency criticality")
+    parser.add_argument("--source-type", choices=SOURCE_TARGET_TYPES, default="component", help="Source node type")
+    parser.add_argument("--target-type", choices=SOURCE_TARGET_TYPES, default="component", help="Target node type")
     parser.add_argument("--vendor-id", help="Associated vendor ID")
 
     # Query operations
-    parser.add_argument("--build-graph", action="store_true",
-                        help="Build full adjacency-list graph")
-    parser.add_argument("--upstream", metavar="COMPONENT",
-                        help="Get upstream dependencies of component")
-    parser.add_argument("--downstream", metavar="COMPONENT",
-                        help="Get downstream dependents of component")
+    parser.add_argument("--build-graph", action="store_true", help="Build full adjacency-list graph")
+    parser.add_argument("--upstream", metavar="COMPONENT", help="Get upstream dependencies of component")
+    parser.add_argument("--downstream", metavar="COMPONENT", help="Get downstream dependents of component")
 
     # Impact analysis
-    parser.add_argument("--impact", metavar="COMPONENT",
-                        help="Propagate impact from component")
-    parser.add_argument("--impact-type", default="vulnerability",
-                        help="Type of impact (default: vulnerability)")
-    parser.add_argument("--severity", choices=("critical", "high", "medium", "low"),
-                        default="high", help="Impact severity (default: high)")
+    parser.add_argument("--impact", metavar="COMPONENT", help="Propagate impact from component")
+    parser.add_argument("--impact-type", default="vulnerability", help="Type of impact (default: vulnerability)")
+    parser.add_argument(
+        "--severity",
+        choices=("critical", "high", "medium", "low"),
+        default="high",
+        help="Impact severity (default: high)",
+    )
 
-    parser.add_argument("--critical-path", action="store_true",
-                        help="Find critical-path components by impact radius")
+    parser.add_argument("--critical-path", action="store_true", help="Find critical-path components by impact radius")
 
     args = parser.parse_args()
 
@@ -547,16 +587,22 @@ def main():
             if not all([args.vendor_name, args.vendor_type, args.country]):
                 parser.error("--add-vendor requires --vendor-name, --vendor-type, --country")
             result = add_vendor(
-                args.project_id, args.vendor_name, args.vendor_type,
-                args.country, args.risk_tier, args.section_889)
+                args.project_id, args.vendor_name, args.vendor_type, args.country, args.risk_tier, args.section_889
+            )
 
         elif args.add_dep:
             if not all([args.source, args.target, args.dep_type]):
                 parser.error("--add-dep requires --source, --target, --dep-type")
             result = add_dependency(
-                args.project_id, args.source, args.target,
-                args.dep_type, args.criticality, args.vendor_id,
-                args.source_type, args.target_type)
+                args.project_id,
+                args.source,
+                args.target,
+                args.dep_type,
+                args.criticality,
+                args.vendor_id,
+                args.source_type,
+                args.target_type,
+            )
 
         elif args.build_graph:
             result = build_graph(args.project_id)
@@ -568,8 +614,7 @@ def main():
             result = get_downstream(args.project_id, args.downstream)
 
         elif args.impact:
-            result = propagate_impact(
-                args.project_id, args.impact, args.impact_type, args.severity)
+            result = propagate_impact(args.project_id, args.impact, args.impact_type, args.severity)
 
         elif args.critical_path:
             result = get_critical_path(args.project_id)
@@ -604,18 +649,15 @@ def _print_human(data):
         print(f"  Edges: {stats.get('total_edges', 0)}")
         print(f"  Critical paths: {stats.get('critical_paths', 0)}")
         for e in data["edges"]:
-            print(f"    {e['source']} --[{e['dependency_type']}]--> {e['target']}"
-                  f"  ({e['criticality']})")
+            print(f"    {e['source']} --[{e['dependency_type']}]--> {e['target']}  ({e['criticality']})")
     elif "upstream" in data:
-        print(f"Upstream of {data['component']}  (depth={data['depth']}, "
-              f"critical={data['critical_count']})")
+        print(f"Upstream of {data['component']}  (depth={data['depth']}, critical={data['critical_count']})")
         for u in data["upstream"]:
             indent = "  " * u["depth"]
             crit = " [CRITICAL]" if u.get("critical") else ""
             print(f"  {indent}{u['component']} (hop {u['depth']}){crit}")
     elif "downstream" in data:
-        print(f"Downstream of {data['component']}  (depth={data['depth']}, "
-              f"impact_radius={data['impact_radius']})")
+        print(f"Downstream of {data['component']}  (depth={data['depth']}, impact_radius={data['impact_radius']})")
         for d in data["downstream"]:
             indent = "  " * d["depth"]
             print(f"  {indent}{d['component']} (hop {d['depth']})")
@@ -624,14 +666,12 @@ def _print_human(data):
         print(f"  Type: {data['impact_type']}  Severity: {data['severity']}")
         print(f"  Blast radius: {data['blast_radius']}")
         for a in data["affected_components"]:
-            print(f"    hop {a['hop']}: {a['component']} "
-                  f"(score={a['propagated_score']}, {a['propagated_severity']})")
+            print(f"    hop {a['hop']}: {a['component']} (score={a['propagated_score']}, {a['propagated_severity']})")
         print("  Recommendations:")
         for r in data.get("recommendations", []):
             print(f"    - {r}")
     elif "critical_components" in data:
-        print(f"Critical Path Analysis: {data['project_id']}  "
-              f"({data['total_components']} components)")
+        print(f"Critical Path Analysis: {data['project_id']}  ({data['total_components']} components)")
         for c in data["critical_components"]:
             print(f"  {c['component']}  downstream={c['downstream_count']}")
     else:

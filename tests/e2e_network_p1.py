@@ -46,7 +46,7 @@ class TestResult:
 
     def summary(self):
         total = len(self.passed) + len(self.failed)
-        rate = f"{len(self.passed)/total*100:.1f}%" if total else "0%"
+        rate = f"{len(self.passed) / total * 100:.1f}%" if total else "0%"
         return {
             "total": total,
             "passed": len(self.passed),
@@ -81,10 +81,15 @@ def check_js_errors(driver):
         for entry in driver.get_log("browser"):
             if entry.get("level") == "SEVERE":
                 msg = entry.get("message", "")
-                if any(x in msg.lower() for x in [
-                    "favicon", "401", "404",
-                    "failed to load resource",
-                ]):
+                if any(
+                    x in msg.lower()
+                    for x in [
+                        "favicon",
+                        "401",
+                        "404",
+                        "failed to load resource",
+                    ]
+                ):
                     continue
                 errors.append(msg)
     except Exception:
@@ -137,35 +142,43 @@ def run_tests():
         time.sleep(2)
 
         # ── Setup: create project + link a topology ───────────────────────
-        proj_data = api(driver, "POST", "/network/api/projects", {
-            "name": "E2E P1 Test Project", "status": "draft",
-            "owner": "e2e-tester", "description": "P1 compliance/cost test"
-        })
+        proj_data = api(
+            driver,
+            "POST",
+            "/network/api/projects",
+            {
+                "name": "E2E P1 Test Project",
+                "status": "draft",
+                "owner": "e2e-tester",
+                "description": "P1 compliance/cost test",
+            },
+        )
         proj_id = proj_data.get("id")
 
         # Get first available topology and link it
         topos = api(driver, "GET", "/network/api/topologies")
         if topos and len(topos) > 0:
             topo_id = topos[0]["id"]
-            link_result = api(driver, "POST",
-                              f"/network/api/projects/{proj_id}/topologies",
-                              {"topology_id": topo_id})
+            link_result = api(driver, "POST", f"/network/api/projects/{proj_id}/topologies", {"topology_id": topo_id})
             print(f"  INFO  Linked topo {topo_id[:8]}... result: {link_result}")
 
         # Run a compliance audit on the topology (to generate data)
         if topo_id:
             try:
                 # Set compliance profile first
-                api(driver, "PUT", f"/network/api/compliance/{topo_id}/profile", {
-                    "regimes": ["fisma_high", "stig"],
-                    "classification": "CUI",
-                    "environment": "IL4",
-                })
+                api(
+                    driver,
+                    "PUT",
+                    f"/network/api/compliance/{topo_id}/profile",
+                    {
+                        "regimes": ["fisma_high", "stig"],
+                        "classification": "CUI",
+                        "environment": "IL4",
+                    },
+                )
                 time.sleep(0.5)
-                audit_result = api(driver, "POST",
-                                   f"/network/api/compliance/{topo_id}/audit")
-                print(f"  INFO  Audit result: passed={audit_result.get('passed')}, "
-                      f"failed={audit_result.get('failed')}")
+                audit_result = api(driver, "POST", f"/network/api/compliance/{topo_id}/audit")
+                print(f"  INFO  Audit result: passed={audit_result.get('passed')}, failed={audit_result.get('failed')}")
             except Exception as exc:
                 print(f"  WARN  Audit call: {exc}")
             time.sleep(2)
@@ -178,8 +191,7 @@ def run_tests():
         try:
             comp_tables = driver.find_elements(By.ID, "compliance-table")
             if comp_tables:
-                headers = [th.text.upper() for th in comp_tables[0].find_elements(
-                    By.CSS_SELECTOR, "thead th")]
+                headers = [th.text.upper() for th in comp_tables[0].find_elements(By.CSS_SELECTOR, "thead th")]
                 assert "SCORE" in headers
                 assert "CAT1" in headers
                 assert "CAT2" in headers
@@ -188,16 +200,14 @@ def run_tests():
                 # Table hidden because no audit data — check fallback text
                 page_text = driver.page_source
                 assert "Compliance Rollup" in page_text, "Compliance section missing"
-                results.ok("compliance_rollup_table",
-                            "No audit data — fallback text shown correctly")
+                results.ok("compliance_rollup_table", "No audit data — fallback text shown correctly")
         except Exception as e:
             results.fail("compliance_rollup_table", e)
 
         # ── 2. Aggregate compliance score in stats bar ────────────────────
         try:
             stat_cards = driver.find_elements(By.CSS_SELECTOR, ".stats-bar .stat-card")
-            labels = [s.find_element(By.CSS_SELECTOR, ".stat-label").text
-                      for s in stat_cards]
+            labels = [s.find_element(By.CSS_SELECTOR, ".stat-label").text for s in stat_cards]
             assert "Compliance Score" in labels, f"No Compliance Score stat: {labels}"
             results.ok("aggregate_compliance_stat", str(labels))
         except Exception as e:
@@ -207,8 +217,7 @@ def run_tests():
         try:
             cost_table = driver.find_element(By.ID, "cost-table")
             assert cost_table, "Cost rollup table not found"
-            cost_headers = [th.text.upper() for th in cost_table.find_elements(
-                By.CSS_SELECTOR, "thead th")]
+            cost_headers = [th.text.upper() for th in cost_table.find_elements(By.CSS_SELECTOR, "thead th")]
             assert "EST. CAPEX" in cost_headers, f"No CapEx column: {cost_headers}"
             # Check footer has TOTAL row
             tfoot = cost_table.find_elements(By.CSS_SELECTOR, "tfoot tr")
@@ -236,19 +245,16 @@ def run_tests():
                 assert len(footer_rows) >= 1, "No aggregate footer row"
                 agg_text = footer_rows[0].text
                 assert "AGGREGATE" in agg_text
-                results.ok("compliance_per_topo_rows",
-                            f"{len(body_rows)} topos, aggregate footer present")
+                results.ok("compliance_per_topo_rows", f"{len(body_rows)} topos, aggregate footer present")
             else:
-                results.ok("compliance_per_topo_rows",
-                            "No audit data — section present with fallback")
+                results.ok("compliance_per_topo_rows", "No audit data — section present with fallback")
         except Exception as e:
             results.fail("compliance_per_topo_rows", e)
 
         # ── 6. Stats bar has CapEx and OpEx cards ─────────────────────────
         try:
             stat_cards = driver.find_elements(By.CSS_SELECTOR, ".stats-bar .stat-card")
-            labels = [s.find_element(By.CSS_SELECTOR, ".stat-label").text
-                      for s in stat_cards]
+            labels = [s.find_element(By.CSS_SELECTOR, ".stat-label").text for s in stat_cards]
             assert "Est. CapEx" in labels, f"No CapEx stat: {labels}"
             assert "Circuit OpEx" in labels, f"No OpEx stat: {labels}"
             results.ok("cost_stat_cards", str(labels))
@@ -257,8 +263,10 @@ def run_tests():
 
         # ── 7. Open Findings stat card ────────────────────────────────────
         try:
-            labels = [s.find_element(By.CSS_SELECTOR, ".stat-label").text
-                      for s in driver.find_elements(By.CSS_SELECTOR, ".stats-bar .stat-card")]
+            labels = [
+                s.find_element(By.CSS_SELECTOR, ".stat-label").text
+                for s in driver.find_elements(By.CSS_SELECTOR, ".stats-bar .stat-card")
+            ]
             assert "Open Findings" in labels
             results.ok("open_findings_stat")
         except Exception as e:
@@ -266,9 +274,7 @@ def run_tests():
 
         # ── 8. Filter Dashboard link ──────────────────────────────────────
         try:
-            filter_link = driver.find_element(
-                By.CSS_SELECTOR,
-                f'a[href="/network/?project={proj_id}"]')
+            filter_link = driver.find_element(By.CSS_SELECTOR, f'a[href="/network/?project={proj_id}"]')
             assert filter_link.text.strip() == "Filter Dashboard"
             results.ok("filter_dashboard_link")
         except Exception as e:
@@ -277,21 +283,15 @@ def run_tests():
         # ── 9. Compliance links to audit page ─────────────────────────────
         if topo_id:
             try:
-                comp_links = driver.find_elements(
-                    By.CSS_SELECTOR,
-                    f'a[href="/network/compliance/{topo_id}"]')
+                comp_links = driver.find_elements(By.CSS_SELECTOR, f'a[href="/network/compliance/{topo_id}"]')
                 if comp_links:
-                    results.ok("compliance_audit_links",
-                                f"{len(comp_links)} links found")
+                    results.ok("compliance_audit_links", f"{len(comp_links)} links found")
                 else:
                     # Links are in compliance table + topologies table
                     # If no audit ran, compliance table won't have links
-                    topo_links = driver.find_elements(
-                        By.CSS_SELECTOR,
-                        f'a[href="/network/canvas/{topo_id}"]')
+                    topo_links = driver.find_elements(By.CSS_SELECTOR, f'a[href="/network/canvas/{topo_id}"]')
                     assert topo_links, "No topology links at all"
-                    results.ok("compliance_audit_links",
-                                "Topo links present, audit links depend on data")
+                    results.ok("compliance_audit_links", "Topo links present, audit links depend on data")
             except Exception as e:
                 results.fail("compliance_audit_links", e)
         else:
@@ -316,8 +316,7 @@ def run_tests():
         # ── 11. Portfolio stats still show findings ───────────────────────
         try:
             stat_cards = driver.find_elements(By.CSS_SELECTOR, ".stats-bar .stat-card")
-            labels = [s.find_element(By.CSS_SELECTOR, ".stat-label").text
-                      for s in stat_cards]
+            labels = [s.find_element(By.CSS_SELECTOR, ".stat-label").text for s in stat_cards]
             assert "Open Findings" in labels
             results.ok("portfolio_findings_stat")
         except Exception as e:
@@ -328,8 +327,7 @@ def run_tests():
         time.sleep(2)
         js_errs = check_js_errors(driver)
         if js_errs:
-            results.fail("js_errors_project_detail",
-                          f"{len(js_errs)}: {js_errs[0][:100]}")
+            results.fail("js_errors_project_detail", f"{len(js_errs)}: {js_errs[0][:100]}")
         else:
             results.ok("js_errors_project_detail", "No SEVERE JS errors")
 
@@ -338,8 +336,7 @@ def run_tests():
         time.sleep(2)
         js_errs = check_js_errors(driver)
         if js_errs:
-            results.fail("js_errors_portfolio",
-                          f"{len(js_errs)}: {js_errs[0][:100]}")
+            results.fail("js_errors_portfolio", f"{len(js_errs)}: {js_errs[0][:100]}")
         else:
             results.ok("js_errors_portfolio", "No SEVERE JS errors")
 
@@ -363,8 +360,7 @@ if __name__ == "__main__":
     r = run_tests()
     summary = r.summary()
     print()
-    print(f"Results: {summary['passed']}/{summary['total']} passed "
-          f"({summary['pass_rate']})")
+    print(f"Results: {summary['passed']}/{summary['total']} passed ({summary['pass_rate']})")
     if summary["failures"]:
         print("Failures:")
         for f in summary["failures"]:

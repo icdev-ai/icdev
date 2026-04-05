@@ -30,6 +30,7 @@ def _get_pg_conn():
     """Get raw psycopg2 connection with autocommit."""
     import os
     import psycopg2
+
     conn = psycopg2.connect(
         host=os.environ.get("ICDEV_PG_HOST", "localhost"),
         port=int(os.environ.get("ICDEV_PG_PORT", "5432")),
@@ -43,10 +44,8 @@ def _get_pg_conn():
 
 def _clean_fk(stmt: str) -> str:
     """Remove FOREIGN KEY and REFERENCES constraints from a statement."""
-    stmt = re.sub(
-        r',?\s*FOREIGN KEY\s*\([^)]+\)\s*REFERENCES\s+\w+\s*\(\w+\)', '', stmt
-    )
-    stmt = re.sub(r'\s+REFERENCES\s+\w+\s*\(\w+\)', '', stmt)
+    stmt = re.sub(r",?\s*FOREIGN KEY\s*\([^)]+\)\s*REFERENCES\s+\w+\s*\(\w+\)", "", stmt)
+    stmt = re.sub(r"\s+REFERENCES\s+\w+\s*\(\w+\)", "", stmt)
     return stmt
 
 
@@ -120,10 +119,8 @@ def migrate_data() -> dict:
 
     # Get all tables
     tables = [
-        row[0] for row in
-        sqlite_conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
-        ).fetchall()
+        row[0]
+        for row in sqlite_conn.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").fetchall()
     ]
 
     results = {"tables_migrated": 0, "rows_migrated": 0, "errors": []}
@@ -153,6 +150,7 @@ def migrate_data() -> dict:
                     v = row[c]
                     if isinstance(v, bytes):
                         import psycopg2
+
                         v = psycopg2.Binary(v)
                     values.append(v)
                 try:
@@ -180,16 +178,11 @@ def verify() -> dict:
     """Verify PostgreSQL schema matches expected table count."""
     conn = _get_pg_conn()
     cur = conn.cursor()
-    cur.execute(
-        "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public'"
-    )
+    cur.execute("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public'")
     table_count = cur.fetchone()[0]
 
     # Get table list
-    cur.execute(
-        "SELECT table_name FROM information_schema.tables "
-        "WHERE table_schema = 'public' ORDER BY table_name"
-    )
+    cur.execute("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name")
     tables = [row[0] for row in cur.fetchall()]
 
     cur.close()

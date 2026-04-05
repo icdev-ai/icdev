@@ -14,6 +14,7 @@ Architecture Decision:
     table names, event prefixes, and reflex lists.  This base extracts the shared
     infrastructure so each daemon only defines its domain-specific behavior.
 """
+
 from __future__ import annotations
 
 import abc
@@ -41,6 +42,7 @@ if str(BASE_DIR) not in sys.path:
 # Load .env so daemon env var overrides (ICDEV_GENESIS_ENABLED, etc.) work
 try:
     from dotenv import load_dotenv
+
     load_dotenv(BASE_DIR / ".env")
 except ImportError:
     _env_file = BASE_DIR / ".env"
@@ -155,11 +157,9 @@ def parse_schedule(schedule_str: str) -> Optional[Dict[str, Any]]:
     # "weekly DAY HH:MM"
     m = re.match(r"weekly\s+(\w+)\s+(\d{2}):(\d{2})", s)
     if m:
-        day_map = {"mon": 0, "tue": 1, "wed": 2, "thu": 3,
-                   "fri": 4, "sat": 5, "sun": 6}
+        day_map = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6}
         day = day_map.get(m.group(1)[:3], 6)
-        return {"type": "weekly", "weekday": day,
-                "hour": int(m.group(2)), "minute": int(m.group(3))}
+        return {"type": "weekly", "weekday": day, "hour": int(m.group(2)), "minute": int(m.group(3))}
 
     return None
 
@@ -178,8 +178,7 @@ def is_due(schedule: Dict[str, Any], last_run: Optional[str]) -> bool:
         return (now - last).total_seconds() >= schedule["seconds"]
 
     if schedule["type"] == "daily":
-        target = now.replace(hour=schedule["hour"], minute=schedule["minute"],
-                             second=0, microsecond=0)
+        target = now.replace(hour=schedule["hour"], minute=schedule["minute"], second=0, microsecond=0)
         if now < target:
             return False
         if last_run is None:
@@ -191,8 +190,7 @@ def is_due(schedule: Dict[str, Any], last_run: Optional[str]) -> bool:
         return last < target
 
     if schedule["type"] == "weekly":
-        target = now.replace(hour=schedule["hour"], minute=schedule["minute"],
-                             second=0, microsecond=0)
+        target = now.replace(hour=schedule["hour"], minute=schedule["minute"], second=0, microsecond=0)
         days_since = (now.weekday() - schedule["weekday"]) % 7
         target = target - timedelta(days=days_since)
         if now < target:
@@ -251,24 +249,31 @@ class ReflexStateBase:
         try:
             row = conn.execute(
                 f"SELECT * FROM {self.state_table} WHERE reflex_name = ?",  # nosec B608 -- table/column names are internal constants, not user input
-                (self.name,)
+                (self.name,),
             ).fetchone()
             if row:
                 return dict(row)
             now = utcnow_iso()
-            conn.execute(f"""
+            conn.execute(
+                f"""
                 INSERT OR IGNORE INTO {self.state_table}
                     (reflex_name, enabled, consecutive_failures, circuit_breaker_open,
                      total_runs, total_successes, total_failures, updated_at)
                 VALUES (?, ?, 0, 0, 0, 0, 0, ?)
-            """, (self.name, 1 if self.config.get("enabled", True) else 0, now))
+            """,
+                (self.name, 1 if self.config.get("enabled", True) else 0, now),
+            )
             conn.commit()
             return {
                 "reflex_name": self.name,
                 "enabled": 1 if self.config.get("enabled", True) else 0,
-                "last_run_at": None, "next_run_at": None,
-                "consecutive_failures": 0, "circuit_breaker_open": 0,
-                "total_runs": 0, "total_successes": 0, "total_failures": 0,
+                "last_run_at": None,
+                "next_run_at": None,
+                "consecutive_failures": 0,
+                "circuit_breaker_open": 0,
+                "total_runs": 0,
+                "total_successes": 0,
+                "total_failures": 0,
             }
         finally:
             conn.close()
@@ -279,7 +284,8 @@ class ReflexStateBase:
             now = utcnow_iso()
             conn = get_connection()
             try:
-                conn.execute(f"""
+                conn.execute(
+                    f"""
                     UPDATE {self.state_table} SET
                         last_run_at = ?, consecutive_failures = 0,
                         total_runs = total_runs + 1,
@@ -287,7 +293,8 @@ class ReflexStateBase:
                         last_metric_value = ?, last_error = NULL, updated_at = ?
                     WHERE reflex_name = ?
                 """,  # nosec B608 -- table/column names are internal constants, not user input
-                (now, metric_value, now, self.name))
+                    (now, metric_value, now, self.name),
+                )
                 conn.commit()
             finally:
                 conn.close()
@@ -301,12 +308,13 @@ class ReflexStateBase:
                 state = conn.execute(
                     f"SELECT consecutive_failures FROM {self.state_table} "  # nosec B608 -- table/column names are internal constants, not user input
                     f"WHERE reflex_name = ?",
-                    (self.name,)
+                    (self.name,),
                 ).fetchone()
                 failures = (state["consecutive_failures"] if state else 0) + 1
                 tripped = failures >= cb_config.get("max_consecutive_failures", 3)
 
-                conn.execute(f"""
+                conn.execute(
+                    f"""
                     UPDATE {self.state_table} SET
                         last_run_at = ?, consecutive_failures = ?,
                         circuit_breaker_open = ?,
@@ -316,8 +324,8 @@ class ReflexStateBase:
                         last_error = ?, updated_at = ?
                     WHERE reflex_name = ?
                 """,  # nosec B608 -- table/column names are internal constants, not user input
-                (now, failures, 1 if tripped else 0,
-                      now if tripped else None, error[:2000], now, self.name))
+                    (now, failures, 1 if tripped else 0, now if tripped else None, error[:2000], now, self.name),
+                )
                 conn.commit()
                 return tripped
             finally:
@@ -329,13 +337,15 @@ class ReflexStateBase:
             now = utcnow_iso()
             conn = get_connection()
             try:
-                conn.execute(f"""
+                conn.execute(
+                    f"""
                     UPDATE {self.state_table} SET
                         consecutive_failures = 0, circuit_breaker_open = 0,
                         circuit_breaker_tripped_at = NULL, updated_at = ?
                     WHERE reflex_name = ?
                 """,  # nosec B608 -- table/column names are internal constants, not user input
-                (now, self.name))
+                    (now, self.name),
+                )
                 conn.commit()
             finally:
                 conn.close()
@@ -350,11 +360,13 @@ class ReflexStateBase:
         now = utcnow_iso()
         conn = get_connection()
         try:
-            conn.execute(f"""
+            conn.execute(
+                f"""
                 UPDATE {self.state_table} SET enabled = ?, updated_at = ?
                 WHERE reflex_name = ?
             """,  # nosec B608 -- table/column names are internal constants, not user input
-            (1 if enabled else 0, now, self.name))
+                (1 if enabled else 0, now, self.name),
+            )
             conn.commit()
         finally:
             conn.close()
@@ -454,10 +466,11 @@ class DaemonBase(abc.ABC):
     # --- Signal handling ---
     def install_signal_handlers(self) -> None:
         """Install SIGINT/SIGTERM handlers for graceful shutdown."""
+
         def handler(signum: int, frame: Any) -> None:
-            print(f"\nINFO: {self.daemon_name} received signal {signum}, "
-                  f"initiating graceful shutdown...")
+            print(f"\nINFO: {self.daemon_name} received signal {signum}, initiating graceful shutdown...")
             self._shutdown_event.set()
+
         signal.signal(signal.SIGINT, handler)
         signal.signal(signal.SIGTERM, handler)
 
@@ -467,16 +480,22 @@ class DaemonBase(abc.ABC):
         """Create daemon-specific DB tables."""
 
     @abc.abstractmethod
-    def log_audit(self, event_type: str, reflex_name: str = None,
-                  risk_tier: str = None, details: Dict = None,
-                  success: bool = None, duration_ms: int = None,
-                  metric_name: str = None, metric_value: float = None,
-                  **kwargs) -> str:
+    def log_audit(
+        self,
+        event_type: str,
+        reflex_name: str = None,
+        risk_tier: str = None,
+        details: Dict = None,
+        success: bool = None,
+        duration_ms: int = None,
+        metric_name: str = None,
+        metric_value: float = None,
+        **kwargs,
+    ) -> str:
         """Write to daemon-specific audit table (append-only, NIST AU)."""
 
     @abc.abstractmethod
-    def create_reflex_state(self, name: str,
-                            config: Dict[str, Any]) -> ReflexStateBase:
+    def create_reflex_state(self, name: str, config: Dict[str, Any]) -> ReflexStateBase:
         """Factory: create a ReflexStateBase subclass instance."""
 
     @abc.abstractmethod
@@ -484,8 +503,7 @@ class DaemonBase(abc.ABC):
         """Factory: create a TrustKernelBase subclass instance."""
 
     @abc.abstractmethod
-    def run_reflex_impl(self, name: str, config: Dict[str, Any],
-                        trust: TrustKernelBase) -> Tuple[bool, float, Dict]:
+    def run_reflex_impl(self, name: str, config: Dict[str, Any], trust: TrustKernelBase) -> Tuple[bool, float, Dict]:
         """Execute a single reflex.  Returns (success, metric_value, details)."""
 
     # --- Optional overrides ---
@@ -501,8 +519,7 @@ class DaemonBase(abc.ABC):
         """Handle daemon-specific CLI args.  Return True if handled."""
         return None
 
-    def on_reflex_completed(self, name: str,
-                            result: Dict[str, Any]) -> None:
+    def on_reflex_completed(self, name: str, result: Dict[str, Any]) -> None:
         """Hook called after a reflex completes successfully in the due loop.
         Override for pipeline chain triggering, etc."""
         pass
@@ -553,13 +570,11 @@ class DaemonBase(abc.ABC):
                     "auto_reenable": False,
                 },
             },
-            "reflexes": {name: {"enabled": False, "risk_tier": RISK_GREEN}
-                         for name in cls.reflex_names},
+            "reflexes": {name: {"enabled": False, "risk_tier": RISK_GREEN} for name in cls.reflex_names},
         }
 
     # --- Checkpoint / Resumability (adapted from Agent Harness pattern) ---
-    def save_checkpoint(self, reflex_name: str, phase: str,
-                        partial_results: Dict[str, Any]) -> str:
+    def save_checkpoint(self, reflex_name: str, phase: str, partial_results: Dict[str, Any]) -> str:
         """Save a mid-reflex checkpoint for resumability.
 
         When a reflex has multi-step execution (e.g. scanning 50 items),
@@ -578,7 +593,8 @@ class DaemonBase(abc.ABC):
         checkpoint_id = generate_id("ckpt")
         conn = get_connection()
         try:
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT INTO daemon_checkpoints
                     (id, daemon_name, reflex_name, phase, partial_results,
                      created_at)
@@ -588,11 +604,16 @@ class DaemonBase(abc.ABC):
                     phase = excluded.phase,
                     partial_results = excluded.partial_results,
                     created_at = excluded.created_at
-            """, (
-                checkpoint_id, self.daemon_name, reflex_name, phase,
-                json.dumps(partial_results, default=str),
-                utcnow_iso(),
-            ))
+            """,
+                (
+                    checkpoint_id,
+                    self.daemon_name,
+                    reflex_name,
+                    phase,
+                    json.dumps(partial_results, default=str),
+                    utcnow_iso(),
+                ),
+            )
             conn.commit()
         finally:
             conn.close()
@@ -608,8 +629,7 @@ class DaemonBase(abc.ABC):
         conn = get_connection()
         try:
             row = conn.execute(
-                "SELECT * FROM daemon_checkpoints "
-                "WHERE daemon_name = ? AND reflex_name = ?",
+                "SELECT * FROM daemon_checkpoints WHERE daemon_name = ? AND reflex_name = ?",
                 (self.daemon_name, reflex_name),
             ).fetchone()
             if not row:
@@ -629,8 +649,7 @@ class DaemonBase(abc.ABC):
         conn = get_connection()
         try:
             conn.execute(
-                "DELETE FROM daemon_checkpoints "
-                "WHERE daemon_name = ? AND reflex_name = ?",
+                "DELETE FROM daemon_checkpoints WHERE daemon_name = ? AND reflex_name = ?",
                 (self.daemon_name, reflex_name),
             )
             conn.commit()
@@ -675,8 +694,7 @@ class DaemonBase(abc.ABC):
 
         # Pre-flight checks
         if state.is_circuit_open():
-            self.log_audit(f"{self.event_prefix}.reflex.skipped", name, risk_tier,
-                           {"reason": "circuit_breaker_open"})
+            self.log_audit(f"{self.event_prefix}.reflex.skipped", name, risk_tier, {"reason": "circuit_breaker_open"})
             return {"status": "skipped", "reason": "circuit_breaker_open"}
 
         current_state = state.load()
@@ -688,14 +706,12 @@ class DaemonBase(abc.ABC):
         start_time = time.monotonic()
 
         try:
-            success, metric_value, details = self.run_reflex_impl(
-                name, reflex_config, self.trust)
+            success, metric_value, details = self.run_reflex_impl(name, reflex_config, self.trust)
             duration_ms = int((time.monotonic() - start_time) * 1000)
 
             metric_config = reflex_config.get("success_metric", {})
             metric_name = metric_config.get("name", "default")
-            metric_passed = (evaluate_metric(metric_config, metric_value)
-                             if success else False)
+            metric_passed = evaluate_metric(metric_config, metric_value) if success else False
 
             if success and metric_passed:
                 state.record_success(metric_value)
@@ -703,38 +719,58 @@ class DaemonBase(abc.ABC):
                 # SILENT suppression: skip audit log when reflex has nothing to report
                 # (metric_value == 0 and details indicate no-op)
                 silent = details.get("status") in (
-                    "no_due_tasks", "air_gapped", "no_changes",
-                    "nothing_to_do", "empty",
+                    "no_due_tasks",
+                    "air_gapped",
+                    "no_changes",
+                    "nothing_to_do",
+                    "empty",
                 ) or (metric_value == 0 and not details.get("tasks"))
                 if not silent:
                     self.log_audit(
-                        f"{self.event_prefix}.reflex.completed", name, risk_tier,
-                        details, success=True, duration_ms=duration_ms,
-                        metric_name=metric_name, metric_value=metric_value)
+                        f"{self.event_prefix}.reflex.completed",
+                        name,
+                        risk_tier,
+                        details,
+                        success=True,
+                        duration_ms=duration_ms,
+                        metric_name=metric_name,
+                        metric_value=metric_value,
+                    )
                 return {
-                    "status": "success", "reflex": name,
+                    "status": "success",
+                    "reflex": name,
                     "metric": {metric_name: metric_value},
-                    "duration_ms": duration_ms, "details": details,
+                    "duration_ms": duration_ms,
+                    "details": details,
                 }
             else:
                 error_msg = details.get("error", "metric_threshold_not_met")
                 tripped = state.record_failure(error_msg, cb_config)
-                event = (f"{self.event_prefix}.circuit_breaker.tripped"
-                         if tripped
-                         else f"{self.event_prefix}.reflex.failed")
+                event = (
+                    f"{self.event_prefix}.circuit_breaker.tripped" if tripped else f"{self.event_prefix}.reflex.failed"
+                )
                 self.log_audit(
-                    event, name, risk_tier,
+                    event,
+                    name,
+                    risk_tier,
                     {**details, "circuit_breaker_tripped": tripped},
-                    success=False, duration_ms=duration_ms,
-                    metric_name=metric_name, metric_value=metric_value)
+                    success=False,
+                    duration_ms=duration_ms,
+                    metric_name=metric_name,
+                    metric_value=metric_value,
+                )
                 if tripped:
-                    print(f"WARNING: Circuit breaker TRIPPED for reflex '{name}' "
-                          f"after {cb_config.get('max_consecutive_failures', 3)} "
-                          f"consecutive failures")
+                    print(
+                        f"WARNING: Circuit breaker TRIPPED for reflex '{name}' "
+                        f"after {cb_config.get('max_consecutive_failures', 3)} "
+                        f"consecutive failures"
+                    )
                 return {
-                    "status": "failed", "reflex": name,
+                    "status": "failed",
+                    "reflex": name,
                     "circuit_breaker_tripped": tripped,
-                    "error": error_msg, "duration_ms": duration_ms,
+                    "error": error_msg,
+                    "duration_ms": duration_ms,
                 }
 
         except Exception as e:
@@ -742,12 +778,18 @@ class DaemonBase(abc.ABC):
             error_msg = f"{type(e).__name__}: {e}"
             tripped = state.record_failure(error_msg, cb_config)
             self.log_audit(
-                f"{self.event_prefix}.reflex.failed", name, risk_tier,
+                f"{self.event_prefix}.reflex.failed",
+                name,
+                risk_tier,
                 {"error": error_msg, "exception": True},
-                success=False, duration_ms=duration_ms)
+                success=False,
+                duration_ms=duration_ms,
+            )
             return {
-                "status": "error", "reflex": name,
-                "error": error_msg, "circuit_breaker_tripped": tripped,
+                "status": "error",
+                "reflex": name,
+                "error": error_msg,
+                "circuit_breaker_tripped": tripped,
                 "duration_ms": duration_ms,
             }
 
@@ -784,9 +826,13 @@ class DaemonBase(abc.ABC):
             # SSE progress broadcast (best-effort)
             try:
                 from tools.dashboard.sse_manager import emit_progress
+
                 emit_progress(
-                    f"{self.event_prefix}-cycle", f"{self.event_prefix}_reflex",
-                    name, idx, total_due,
+                    f"{self.event_prefix}-cycle",
+                    f"{self.event_prefix}_reflex",
+                    name,
+                    idx,
+                    total_due,
                     detail=f"Running reflex: {name}",
                 )
             except Exception:
@@ -801,9 +847,13 @@ class DaemonBase(abc.ABC):
         if due_reflexes:
             try:
                 from tools.dashboard.sse_manager import emit_progress
+
                 emit_progress(
-                    f"{self.event_prefix}-cycle", f"{self.event_prefix}_reflex",
-                    "cycle_complete", total_due, total_due,
+                    f"{self.event_prefix}-cycle",
+                    f"{self.event_prefix}_reflex",
+                    "cycle_complete",
+                    total_due,
+                    total_due,
                     status="completed",
                     detail=f"{len(results)} reflexes executed",
                 )
@@ -814,27 +864,28 @@ class DaemonBase(abc.ABC):
 
     def run_forever(self) -> None:
         """Main daemon loop."""
-        enabled_count = sum(
-            1 for n in self.reflex_names
-            if self.config.get("reflexes", {}).get(n, {}).get("enabled"))
+        enabled_count = sum(1 for n in self.reflex_names if self.config.get("reflexes", {}).get(n, {}).get("enabled"))
         print(f"INFO: {self.daemon_name} v{self.daemon_version} starting...")
         print(f"INFO: {enabled_count} reflexes enabled")
 
-        self.log_audit(f"{self.event_prefix}.daemon.started", details={
-            "version": self.daemon_version,
-            "enabled_reflexes": [
-                n for n in self.reflex_names
-                if self.config.get("reflexes", {}).get(n, {}).get("enabled")
-            ],
-        })
+        self.log_audit(
+            f"{self.event_prefix}.daemon.started",
+            details={
+                "version": self.daemon_version,
+                "enabled_reflexes": [
+                    n for n in self.reflex_names if self.config.get("reflexes", {}).get(n, {}).get("enabled")
+                ],
+            },
+        )
 
         self.pid_file.parent.mkdir(parents=True, exist_ok=True)
         self.pid_file.write_text(str(os.getpid()))
         self._init_states()
 
         try:
-            check_interval = self.config.get("trust_kernel", {}).get(
-                "kill_switch", {}).get("check_interval_seconds", 10)
+            check_interval = (
+                self.config.get("trust_kernel", {}).get("kill_switch", {}).get("check_interval_seconds", 10)
+            )
 
             while not self._shutdown_event.is_set():
                 # Check kill switch
@@ -842,8 +893,8 @@ class DaemonBase(abc.ABC):
                     env_val = os.environ.get(self.env_enabled_var, "").lower()
                     if env_val not in ("true", "1"):
                         self.log_audit(
-                            f"{self.event_prefix}.kill_switch.activated",
-                            details={"reason": "config_disabled"})
+                            f"{self.event_prefix}.kill_switch.activated", details={"reason": "config_disabled"}
+                        )
                         print(f"INFO: {self.daemon_name} disabled -- shutting down")
                         break
 
@@ -860,9 +911,7 @@ class DaemonBase(abc.ABC):
                     self.run_due_reflexes()
                 except Exception as e:
                     print(f"ERROR: Daemon loop error: {e}")
-                    self.log_audit(
-                        f"{self.event_prefix}.daemon.error",
-                        details={"error": str(e)})
+                    self.log_audit(f"{self.event_prefix}.daemon.error", details={"error": str(e)})
 
                 # Sleep in small increments for responsive shutdown
                 for _ in range(check_interval):
@@ -871,8 +920,7 @@ class DaemonBase(abc.ABC):
                     time.sleep(1)
 
         finally:
-            self.log_audit(f"{self.event_prefix}.daemon.stopped",
-                           details={"reason": "shutdown"})
+            self.log_audit(f"{self.event_prefix}.daemon.stopped", details={"reason": "shutdown"})
             print(f"INFO: {self.daemon_name} stopped")
             if self.pid_file.exists():
                 self.pid_file.unlink()
@@ -903,7 +951,7 @@ class DaemonBase(abc.ABC):
         try:
             row = conn.execute(
                 f"SELECT COUNT(*) as cnt FROM {audit_table} WHERE created_at > ?",  # nosec B608 -- table/column names are internal constants, not user input
-                ((utcnow() - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%SZ"),)
+                ((utcnow() - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%SZ"),),
             ).fetchone()
             events_24h = row["cnt"] if row else 0
         except Exception:
@@ -936,22 +984,14 @@ class DaemonBase(abc.ABC):
     # --- CLI ---
     def run_cli(self) -> None:
         """Standard CLI entry point."""
-        parser = argparse.ArgumentParser(
-            description=f"{self.daemon_name} — ICDEV™ Autonomous Engine")
-        parser.add_argument("--once", action="store_true",
-                            help="Single pass: run all due reflexes then exit")
-        parser.add_argument("--status", action="store_true",
-                            help="Show daemon & reflex status")
-        parser.add_argument("--reflex", type=str, metavar="NAME",
-                            help="Run one reflex immediately")
-        parser.add_argument("--enable", type=str, metavar="NAME",
-                            help="Enable a reflex")
-        parser.add_argument("--disable", type=str, metavar="NAME",
-                            help="Disable a reflex")
-        parser.add_argument("--reset", type=str, metavar="NAME",
-                            help="Reset circuit breaker for a reflex")
-        parser.add_argument("--json", action="store_true",
-                            help="JSON output")
+        parser = argparse.ArgumentParser(description=f"{self.daemon_name} — ICDEV™ Autonomous Engine")
+        parser.add_argument("--once", action="store_true", help="Single pass: run all due reflexes then exit")
+        parser.add_argument("--status", action="store_true", help="Show daemon & reflex status")
+        parser.add_argument("--reflex", type=str, metavar="NAME", help="Run one reflex immediately")
+        parser.add_argument("--enable", type=str, metavar="NAME", help="Enable a reflex")
+        parser.add_argument("--disable", type=str, metavar="NAME", help="Disable a reflex")
+        parser.add_argument("--reset", type=str, metavar="NAME", help="Reset circuit breaker for a reflex")
+        parser.add_argument("--json", action="store_true", help="JSON output")
         self.add_cli_args(parser)
         args = parser.parse_args()
 
@@ -974,16 +1014,13 @@ class DaemonBase(abc.ABC):
 
         # --- Enable/Disable/Reset ---
         if args.enable:
-            self._cli_enable_disable_reset(
-                args.enable, "enable", args.json)
+            self._cli_enable_disable_reset(args.enable, "enable", args.json)
             return
         if args.disable:
-            self._cli_enable_disable_reset(
-                args.disable, "disable", args.json)
+            self._cli_enable_disable_reset(args.disable, "disable", args.json)
             return
         if args.reset:
-            self._cli_enable_disable_reset(
-                args.reset, "reset", args.json)
+            self._cli_enable_disable_reset(args.reset, "reset", args.json)
             return
 
         # --- Run one reflex ---
@@ -1023,17 +1060,18 @@ class DaemonBase(abc.ABC):
         if not self.config.get("enabled", False):
             env_val = os.environ.get(self.env_enabled_var, "").lower()
             if env_val not in ("true", "1"):
-                print(f"ERROR: {self.daemon_name} is disabled. "
-                      f"Set {self.env_enabled_var}=true or "
-                      f"enabled: true in {self.config_path}",
-                      file=sys.stderr)
+                print(
+                    f"ERROR: {self.daemon_name} is disabled. "
+                    f"Set {self.env_enabled_var}=true or "
+                    f"enabled: true in {self.config_path}",
+                    file=sys.stderr,
+                )
                 sys.exit(1)
             self.config["enabled"] = True
 
         self.run_forever()
 
-    def _cli_enable_disable_reset(self, name: str, action: str,
-                                  json_output: bool) -> None:
+    def _cli_enable_disable_reset(self, name: str, action: str, json_output: bool) -> None:
         """Handle enable/disable/reset CLI actions."""
         if name not in self.reflex_names:
             print(f"ERROR: Unknown reflex '{name}'", file=sys.stderr)
@@ -1065,13 +1103,14 @@ class DaemonBase(abc.ABC):
         print(f"  PID: {d['pid']}")
         print(f"  Audit events (24h): {status['audit']['events_last_24h']}")
         print()
-        print(f"{'Reflex':<12} {'Tier':<8} {'Enabled':<9} {'CB':<5} "
-              f"{'Runs':<6} {'OK':<6} {'Fail':<6} {'Last Run'}")
+        print(f"{'Reflex':<12} {'Tier':<8} {'Enabled':<9} {'CB':<5} {'Runs':<6} {'OK':<6} {'Fail':<6} {'Last Run'}")
         print("-" * 90)
         for name, r in status["reflexes"].items():
             cb = "OPEN" if r["circuit_breaker_open"] else "ok"
             last = r["last_run_at"][:16] if r["last_run_at"] else "never"
-            print(f"{name:<12} {r['risk_tier']:<8} "
-                  f"{str(r['enabled']):<9} {cb:<5} "
-                  f"{r['total_runs']:<6} {r['total_successes']:<6} "
-                  f"{r['total_failures']:<6} {last}")
+            print(
+                f"{name:<12} {r['risk_tier']:<8} "
+                f"{str(r['enabled']):<9} {cb:<5} "
+                f"{r['total_runs']:<6} {r['total_successes']:<6} "
+                f"{r['total_failures']:<6} {last}"
+            )

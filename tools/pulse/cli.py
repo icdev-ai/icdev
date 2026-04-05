@@ -57,13 +57,16 @@ def init():
     # Seed default author
     authors = query_rows("authors", limit=1)
     if not authors:
-        insert_row("authors", {
-            "id": f"author-{uuid4().hex[:8]}",
-            "name": "ICDEV™ Team",
-            "email": "team@icdev.ai",
-            "bio": "The ICDEV™ team builds intelligent certified development tools.",
-            "role": "admin",
-        })
+        insert_row(
+            "authors",
+            {
+                "id": f"author-{uuid4().hex[:8]}",
+                "name": "ICDEV™ Team",
+                "email": "team@icdev.ai",
+                "bio": "The ICDEV™ team builds intelligent certified development tools.",
+                "role": "admin",
+            },
+        )
         console.print("[green]Default author 'ICDEV™ Team' created[/green]")
 
 
@@ -146,22 +149,26 @@ def draft(topic, json_output):
         if result["status"] == "ok":
             cluster = result.get("cluster", {})
             synthesis = result.get("synthesis", {})
-            console.print(Panel(
-                f"[green bold]Research Complete[/green bold]\n\n"
-                f"Cluster: {cluster.get('name', 'N/A')}\n"
-                f"Priority: {cluster.get('priority_score', 0):.2f}\n"
-                f"Research results: {len(result.get('research_results', []))}\n"
-                f"Synthesis model: {synthesis.get('model_used', 'N/A')}\n\n"
-                f"[cyan]Next step: Ask Claude Code to write the article[/cyan]",
-                title="Ready for Drafting",
-                border_style="green",
-            ))
+            console.print(
+                Panel(
+                    f"[green bold]Research Complete[/green bold]\n\n"
+                    f"Cluster: {cluster.get('name', 'N/A')}\n"
+                    f"Priority: {cluster.get('priority_score', 0):.2f}\n"
+                    f"Research results: {len(result.get('research_results', []))}\n"
+                    f"Synthesis model: {synthesis.get('model_used', 'N/A')}\n\n"
+                    f"[cyan]Next step: Ask Claude Code to write the article[/cyan]",
+                    title="Ready for Drafting",
+                    border_style="green",
+                )
+            )
             if synthesis.get("synthesis"):
-                console.print(Panel(
-                    str(synthesis["synthesis"])[:500],
-                    title="Research Synthesis (Ollama)",
-                    border_style="blue",
-                ))
+                console.print(
+                    Panel(
+                        str(synthesis["synthesis"])[:500],
+                        title="Research Synthesis (Ollama)",
+                        border_style="blue",
+                    )
+                )
         else:
             console.print(f"[red]Research failed: {result.get('error', 'Unknown')}[/red]")
 
@@ -184,13 +191,15 @@ def synthesize(json_output):
     if json_output:
         click.echo(json.dumps(synthesis, indent=2, default=str))
     else:
-        console.print(Panel(
-            f"Model: {synthesis.get('model_used', 'N/A')}\n"
-            f"Status: {synthesis.get('status', 'N/A')}\n\n"
-            f"{str(synthesis.get('synthesis', ''))[:1000]}",
-            title="Research Synthesis",
-            border_style="cyan",
-        ))
+        console.print(
+            Panel(
+                f"Model: {synthesis.get('model_used', 'N/A')}\n"
+                f"Status: {synthesis.get('status', 'N/A')}\n\n"
+                f"{str(synthesis.get('synthesis', ''))[:1000]}",
+                title="Research Synthesis",
+                border_style="cyan",
+            )
+        )
         if synthesis.get("recommended_angles"):
             console.print("\n[yellow]Recommended article angles:[/yellow]")
             for angle in synthesis["recommended_angles"]:
@@ -213,6 +222,7 @@ def pipeline(topic, draft_file):
             raise SystemExit(1)
 
         from pathlib import Path
+
         content = Path(draft_file).read_text(encoding="utf-8")
         from tools.pulse.engine.scheduler import run_pipeline_from_draft
 
@@ -297,14 +307,16 @@ def review(post_id):
         console.print(f"[red]Post not found: {post_id}[/red]")
         return
 
-    console.print(Panel(
-        f"[bold]{post.get('title', 'Untitled')}[/bold]\n"
-        f"Status: {post.get('status')} | Words: {post.get('word_count', 0)} | "
-        f"Quality: {post.get('readability_score', 0):.0f}\n"
-        f"WriteGuard: {'PASSED' if post.get('writeguard_passed') else 'NEEDS REVIEW'}",
-        title="Post Review",
-        border_style="cyan",
-    ))
+    console.print(
+        Panel(
+            f"[bold]{post.get('title', 'Untitled')}[/bold]\n"
+            f"Status: {post.get('status')} | Words: {post.get('word_count', 0)} | "
+            f"Quality: {post.get('readability_score', 0):.0f}\n"
+            f"WriteGuard: {'PASSED' if post.get('writeguard_passed') else 'NEEDS REVIEW'}",
+            title="Post Review",
+            border_style="cyan",
+        )
+    )
 
     if post.get("tldr"):
         console.print(Panel(post["tldr"], title="TL;DR", border_style="blue"))
@@ -315,8 +327,7 @@ def review(post_id):
         preview = body[:2000] + ("..." if len(body) > 2000 else "")
         console.print(Markdown(preview))
         if len(body) > 2000:
-            console.print(f"\n[dim]... {len(body) - 2000} more characters. "
-                          f"See full post in exports.[/dim]")
+            console.print(f"\n[dim]... {len(body) - 2000} more characters. See full post in exports.[/dim]")
 
     console.print(f"\n[dim]Approve: python cli.py approve {post_id}[/dim]")
     console.print(f"[dim]Reject:  python cli.py reject {post_id} --notes 'reason'[/dim]")
@@ -334,16 +345,23 @@ def approve(post_id, reviewer):
         return
 
     datetime.now(timezone.utc).isoformat()
-    update_row("posts", post_id, {
-        "status": "approved",
-        "reviewer_id": reviewer,
-    })
-    insert_row("post_reviews", {
-        "id": f"rev-{uuid4().hex[:12]}",
-        "post_id": post_id,
-        "reviewer_id": reviewer,
-        "action": "approved",
-    })
+    update_row(
+        "posts",
+        post_id,
+        {
+            "status": "approved",
+            "reviewer_id": reviewer,
+        },
+    )
+    insert_row(
+        "post_reviews",
+        {
+            "id": f"rev-{uuid4().hex[:12]}",
+            "post_id": post_id,
+            "reviewer_id": reviewer,
+            "action": "approved",
+        },
+    )
     console.print(f"[green]Post approved! Publish with: python cli.py publish {post_id}[/green]")
 
 
@@ -359,18 +377,25 @@ def reject(post_id, notes, reviewer):
         console.print(f"[red]Post not found: {post_id}[/red]")
         return
 
-    update_row("posts", post_id, {
-        "status": "rejected",
-        "reviewer_id": reviewer,
-        "review_notes": notes,
-    })
-    insert_row("post_reviews", {
-        "id": f"rev-{uuid4().hex[:12]}",
-        "post_id": post_id,
-        "reviewer_id": reviewer,
-        "action": "rejected",
-        "notes": notes,
-    })
+    update_row(
+        "posts",
+        post_id,
+        {
+            "status": "rejected",
+            "reviewer_id": reviewer,
+            "review_notes": notes,
+        },
+    )
+    insert_row(
+        "post_reviews",
+        {
+            "id": f"rev-{uuid4().hex[:12]}",
+            "post_id": post_id,
+            "reviewer_id": reviewer,
+            "action": "rejected",
+            "notes": notes,
+        },
+    )
     console.print(f"[yellow]Post rejected. Notes: {notes or '(none)'}[/yellow]")
 
 
@@ -391,10 +416,14 @@ def publish(post_id):
         return
 
     now = datetime.now(timezone.utc).isoformat()
-    update_row("posts", post_id, {
-        "status": "published",
-        "published_at": now,
-    })
+    update_row(
+        "posts",
+        post_id,
+        {
+            "status": "published",
+            "published_at": now,
+        },
+    )
 
     exports = export_both(post_id)
     console.print("[green bold]Published![/green bold]")
@@ -452,13 +481,16 @@ def add_author(name, email, bio, role):
     """Add a new author."""
     init_db()
     author_id = f"author-{uuid4().hex[:8]}"
-    insert_row("authors", {
-        "id": author_id,
-        "name": name,
-        "email": email,
-        "bio": bio,
-        "role": role,
-    })
+    insert_row(
+        "authors",
+        {
+            "id": author_id,
+            "name": name,
+            "email": email,
+            "bio": bio,
+            "role": role,
+        },
+    )
     console.print(f"[green]Author '{name}' added ({author_id})[/green]")
 
 
@@ -492,15 +524,17 @@ def stats():
         clusters = conn.execute("SELECT COUNT(*) FROM topic_clusters").fetchone()[0]
         runs = conn.execute("SELECT COUNT(*) FROM schedule_log").fetchone()[0]
 
-    console.print(Panel(
-        f"Posts: {total} (drafts: {drafts}, approved: {approved}, "
-        f"published: {published}, rejected: {rejected})\n"
-        f"Research cache: {research} entries\n"
-        f"Topic clusters: {clusters}\n"
-        f"Pipeline runs: {runs}",
-        title="ICDEV™ Pulse Stats",
-        border_style="cyan",
-    ))
+    console.print(
+        Panel(
+            f"Posts: {total} (drafts: {drafts}, approved: {approved}, "
+            f"published: {published}, rejected: {rejected})\n"
+            f"Research cache: {research} entries\n"
+            f"Topic clusters: {clusters}\n"
+            f"Pipeline runs: {runs}",
+            title="ICDEV™ Pulse Stats",
+            border_style="cyan",
+        )
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -521,13 +555,15 @@ def hostinger_setup():
 
     result = setup_session()
     if result.get("status") == "ok":
-        console.print(Panel(
-            f"Login completed!\n"
-            f"Builder URL: {result.get('builder_url', 'N/A')}\n"
-            f"Blog found: {result.get('blog_section', {}).get('found', False)}",
-            title="Hostinger Setup Complete",
-            border_style="green",
-        ))
+        console.print(
+            Panel(
+                f"Login completed!\n"
+                f"Builder URL: {result.get('builder_url', 'N/A')}\n"
+                f"Blog found: {result.get('blog_section', {}).get('found', False)}",
+                title="Hostinger Setup Complete",
+                border_style="green",
+            )
+        )
     else:
         console.print(f"[red]Setup failed: {result.get('message')}[/red]")
 
@@ -540,12 +576,13 @@ def hostinger_publish(post_id):
 
     result = publish_post(post_id)
     if result.get("status") == "ok":
-        console.print(Panel(
-            f"Published: {result.get('title')}\n"
-            f"Post ID: {result.get('post_id')}",
-            title="Published to Hostinger",
-            border_style="green",
-        ))
+        console.print(
+            Panel(
+                f"Published: {result.get('title')}\nPost ID: {result.get('post_id')}",
+                title="Published to Hostinger",
+                border_style="green",
+            )
+        )
     else:
         console.print(f"[red]Publish failed: {result.get('message')}[/red]")
 
@@ -556,13 +593,15 @@ def hostinger_publish_all():
     from tools.pulse.engine.hostinger_publisher import publish_all_approved
 
     result = publish_all_approved()
-    console.print(Panel(
-        f"Total: {result.get('total', 0)} | "
-        f"Succeeded: {result.get('succeeded', 0)} | "
-        f"Failed: {result.get('failed', 0)}",
-        title="Batch Publish Results",
-        border_style="cyan",
-    ))
+    console.print(
+        Panel(
+            f"Total: {result.get('total', 0)} | "
+            f"Succeeded: {result.get('succeeded', 0)} | "
+            f"Failed: {result.get('failed', 0)}",
+            title="Batch Publish Results",
+            border_style="cyan",
+        )
+    )
 
 
 @hostinger_group.command("session")
@@ -571,9 +610,7 @@ def hostinger_session():
     from tools.pulse.engine.hostinger_publisher import check_session
 
     result = check_session()
-    color = {"ok": "green", "stale": "yellow", "no_session": "red"}.get(
-        result.get("status"), "white"
-    )
+    color = {"ok": "green", "stale": "yellow", "no_session": "red"}.get(result.get("status"), "white")
     console.print(f"[{color}]{result.get('message')}[/{color}]")
 
 
@@ -583,9 +620,7 @@ def hostinger_key_rotation():
     from tools.pulse.engine.hostinger_publisher import _check_key_rotation
 
     result = _check_key_rotation()
-    color = {"ok": "green", "warning": "yellow", "expired": "red"}.get(
-        result.get("status"), "white"
-    )
+    color = {"ok": "green", "warning": "yellow", "expired": "red"}.get(result.get("status"), "white")
     console.print(f"[{color}]{result.get('message', json.dumps(result))}[/{color}]")
     if result.get("rotation_due"):
         console.print(f"  Rotation due: {result['rotation_due']}")

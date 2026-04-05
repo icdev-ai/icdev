@@ -96,7 +96,11 @@ def _seed_graph(conn):
         "INSERT INTO kg_graphs (id, project_id, name, entity_count, edge_count) "
         "VALUES ('kg-int1', 'proj1', 'Integration Graph', 3, 2)",
     )
-    for nid, label, etype in [("n1", "AC-2", "control"), ("n2", "NIST 800-53", "standard"), ("n3", "Auth Module", "system")]:
+    for nid, label, etype in [
+        ("n1", "AC-2", "control"),
+        ("n2", "NIST 800-53", "standard"),
+        ("n3", "Auth Module", "system"),
+    ]:
         conn.execute(
             "INSERT INTO kg_nodes (id, graph_id, label, entity_type, centrality) VALUES (?, 'kg-int1', ?, ?, 0.5)",
             (nid, label, etype),
@@ -122,6 +126,7 @@ def _seed_rag_chunks(conn):
 # Test 1: Parallel retrieval merges correctly
 # ===========================================================================
 
+
 class TestParallelRetrieval:
     def test_corrective_rag_merges_strategies(self):
         """Verify corrective_rag.parallel_retrieve merges and deduplicates."""
@@ -138,6 +143,7 @@ class TestParallelRetrieval:
     def test_corrective_rag_import(self):
         """Verify the import that Pulse researcher uses."""
         from tools.rag.corrective_rag import parallel_retrieve
+
         assert callable(parallel_retrieve)
 
 
@@ -145,15 +151,18 @@ class TestParallelRetrieval:
 # Test 2: RAG chunks → FT pair generation
 # ===========================================================================
 
+
 class TestRAGToFTPipeline:
     def test_pipeline_dry_run(self, triad_db):
         _seed_rag_chunks(triad_db)
         from tools.finetune.rag_ft_pipeline import _detect_new_chunks
+
         chunks = _detect_new_chunks(triad_db, "innovation_signals", since="2026-01-01T00:00:00Z")
         assert len(chunks) == 3
 
     def test_auto_approve_threshold(self, triad_db):
         from tools.finetune.rag_ft_pipeline import _auto_approve_pairs
+
         triad_db.execute(
             "INSERT INTO ft_dataset_examples (dataset_id, user_input, expected_output, quality_score, approved) "
             "VALUES ('ds1', 'q', 'a', 0.95, 0)",
@@ -167,10 +176,12 @@ class TestRAGToFTPipeline:
 # Test 3: KG → FT pair generation
 # ===========================================================================
 
+
 class TestKGToFTPairs:
     def test_kg_generates_valid_pairs(self, triad_db):
         _seed_graph(triad_db)
         from tools.finetune.kg_pair_generator import generate_pairs_from_graph
+
         with patch("tools.finetune.kg_pair_generator._get_db", return_value=triad_db):
             result = generate_pairs_from_graph("kg-int1", store=False)
             assert result["status"] == "ok"
@@ -185,6 +196,7 @@ class TestKGToFTPairs:
     def test_stored_pairs_match_schema(self, triad_db):
         _seed_graph(triad_db)
         from tools.finetune.kg_pair_generator import _load_graph, _generate_entity_relationship_pairs, _content_hash
+
         graph_data = _load_graph(triad_db, "kg-int1")
         pairs = _generate_entity_relationship_pairs(graph_data)
         assert len(pairs) > 0
@@ -194,7 +206,14 @@ class TestKGToFTPairs:
             triad_db.execute(
                 "INSERT INTO ft_dataset_examples (dataset_id, system_prompt, user_input, expected_output, source, quality_score, content_hash, classification) "
                 "VALUES (?, ?, ?, ?, ?, 0.7, ?, 'CUI')",
-                ("ds-int", pair.get("system_prompt", ""), pair["user_input"], pair["expected_output"], pair.get("source", ""), ch),
+                (
+                    "ds-int",
+                    pair.get("system_prompt", ""),
+                    pair["user_input"],
+                    pair["expected_output"],
+                    pair.get("source", ""),
+                    ch,
+                ),
             )
         triad_db.commit()
         rows = triad_db.execute("SELECT * FROM ft_dataset_examples WHERE dataset_id = 'ds-int'").fetchall()
@@ -209,17 +228,17 @@ class TestKGToFTPairs:
 # Test 4: Centrality enrichment
 # ===========================================================================
 
+
 class TestCentralityEnrichment:
     def test_centrality_updates_nodes(self, triad_db):
         _seed_graph(triad_db)
         from tools.knowledge_graph.enricher import compute_centrality
+
         result = compute_centrality("kg-int1", conn=triad_db)
         assert result["status"] == "ok"
         assert result["nodes_enriched"] == 3
         # Verify centrality values were persisted
-        rows = triad_db.execute(
-            "SELECT id, centrality FROM kg_nodes WHERE graph_id = 'kg-int1'"
-        ).fetchall()
+        rows = triad_db.execute("SELECT id, centrality FROM kg_nodes WHERE graph_id = 'kg-int1'").fetchall()
         for row in rows:
             assert row["centrality"] >= 0  # Should be non-negative
 
@@ -228,15 +247,18 @@ class TestCentralityEnrichment:
 # Test 5: Pipeline disabled check
 # ===========================================================================
 
+
 class TestPipelineConfig:
     def test_disabled_pipeline_returns_early(self):
         from tools.finetune.rag_ft_pipeline import run_pipeline
+
         with patch("tools.finetune.rag_ft_pipeline._get_config", return_value={"enabled": False}):
             result = run_pipeline()
             assert result["status"] == "disabled"
 
     def test_kg_pair_disabled_returns_early(self, triad_db):
         from tools.finetune.kg_pair_generator import generate_pairs_from_graph
+
         with patch("tools.finetune.kg_pair_generator._load_config", return_value={"enabled": False}):
             with patch("tools.finetune.kg_pair_generator._get_db", return_value=triad_db):
                 result = generate_pairs_from_graph("kg-int1")

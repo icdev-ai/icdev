@@ -41,6 +41,7 @@ def _load_reflex_config() -> Dict[str, Any]:
         return {}
     try:
         import yaml
+
         with open(config_path, encoding="utf-8") as f:
             config = yaml.safe_load(f) or {}
         return config.get("reflexes", {}).get("synthesize", {})
@@ -138,9 +139,7 @@ def run(*, config: Dict = None, **kwargs) -> Dict[str, Any]:
             gkp_id = f"gkp-syn-{hashlib.sha256(json.dumps(goal['tool_chain']).encode()).hexdigest()[:12]}"
 
             # Check for duplicate GKP
-            existing = conn.execute(
-                "SELECT id FROM genesis_gkp WHERE id = %s", (gkp_id,)
-            ).fetchone()
+            existing = conn.execute("SELECT id FROM genesis_gkp WHERE id = %s", (gkp_id,)).fetchone()
             if existing:
                 continue
 
@@ -159,28 +158,33 @@ def run(*, config: Dict = None, **kwargs) -> Dict[str, Any]:
             payload_json = json.dumps(payload, sort_keys=True)
             sha = hashlib.sha256(payload_json.encode()).hexdigest()
 
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT INTO genesis_gkp
                     (id, gkp_version, artifact_type, genesis_reflex,
                      confidence, evidence, payload, sha256,
                      promotion_status, created_at)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """, (
-                gkp_id,
-                "2.0",
-                "suggested_goal",
-                "synthesize",
-                goal["confidence"],
-                json.dumps({
-                    "pattern_id": goal["pattern_id"],
-                    "frequency": goal["frequency"],
-                    "diversity": goal["caller_diversity"],
-                }),
-                payload_json,
-                sha,
-                "pending_review",
-                _utcnow_iso(),
-            ))
+            """,
+                (
+                    gkp_id,
+                    "2.0",
+                    "suggested_goal",
+                    "synthesize",
+                    goal["confidence"],
+                    json.dumps(
+                        {
+                            "pattern_id": goal["pattern_id"],
+                            "frequency": goal["frequency"],
+                            "diversity": goal["caller_diversity"],
+                        }
+                    ),
+                    payload_json,
+                    sha,
+                    "pending_review",
+                    _utcnow_iso(),
+                ),
+            )
             result["gkp_artifacts_created"] = result.get("gkp_artifacts_created", 0) + 1
 
         conn.commit()
@@ -198,11 +202,11 @@ def run(*, config: Dict = None, **kwargs) -> Dict[str, Any]:
 # CLI (for manual testing)
 # ---------------------------------------------------------------------------
 
+
 def main():
     import argparse
-    parser = argparse.ArgumentParser(
-        description="Genesis Synthesize Reflex — generate goals from tool patterns"
-    )
+
+    parser = argparse.ArgumentParser(description="Genesis Synthesize Reflex — generate goals from tool patterns")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--lookback-days", type=int, default=None)
     parser.add_argument("--min-frequency", type=int, default=None)

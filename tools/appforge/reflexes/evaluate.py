@@ -22,8 +22,7 @@ def run(config: Dict[str, Any], trust) -> Dict[str, Any]:
     try:
         # Check if there's already a challenge in progress
         in_progress = conn.execute(
-            "SELECT challenge_id, title FROM appforge_challenges "
-            "WHERE status IN ('selected', 'building') LIMIT 1"
+            "SELECT challenge_id, title FROM appforge_challenges WHERE status IN ('selected', 'building') LIMIT 1"
         ).fetchone()
         if in_progress:
             return {
@@ -37,9 +36,7 @@ def run(config: Dict[str, Any], trust) -> Dict[str, Any]:
 
         # Select top challenge
         top = conn.execute(
-            "SELECT * FROM appforge_challenges "
-            "WHERE status = 'discovered' "
-            "ORDER BY score DESC LIMIT 1"
+            "SELECT * FROM appforge_challenges WHERE status = 'discovered' ORDER BY score DESC LIMIT 1"
         ).fetchone()
         if not top:
             return {

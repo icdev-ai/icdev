@@ -25,8 +25,9 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _finding(category: str, title: str, description: str,
-             severity: str = "medium", action: str = "", meta: dict = None) -> dict:
+def _finding(
+    category: str, title: str, description: str, severity: str = "medium", action: str = "", meta: dict = None
+) -> dict:
     return {
         "id": f"scout-intr-{uuid.uuid4().hex[:12]}",
         "pillar": "introspect",
@@ -48,36 +49,43 @@ def _run_introspective_analyzer(config: dict) -> list:
     findings = []
     try:
         from tools.innovation.introspective_analyzer import analyze_all
+
         results = analyze_all()
         if isinstance(results, dict):
             for analysis_type, data in results.items():
                 if isinstance(data, dict) and data.get("findings"):
                     for f in data["findings"]:
-                        findings.append(_finding(
-                            category=analysis_type,
-                            title=f.get("title", analysis_type),
-                            description=f.get("description", str(f)),
-                            severity=f.get("severity", "medium"),
-                            action=f.get("suggested_action", ""),
-                            meta={"source_analysis": analysis_type, "raw": f},
-                        ))
+                        findings.append(
+                            _finding(
+                                category=analysis_type,
+                                title=f.get("title", analysis_type),
+                                description=f.get("description", str(f)),
+                                severity=f.get("severity", "medium"),
+                                action=f.get("suggested_action", ""),
+                                meta={"source_analysis": analysis_type, "raw": f},
+                            )
+                        )
                 elif isinstance(data, list):
                     for item in data[:10]:
-                        findings.append(_finding(
-                            category=analysis_type,
-                            title=str(item.get("title", item.get("name", analysis_type))),
-                            description=str(item.get("description", item.get("detail", str(item)))),
-                            severity=item.get("severity", "low"),
-                            action=item.get("suggested_action", ""),
-                            meta={"source_analysis": analysis_type},
-                        ))
+                        findings.append(
+                            _finding(
+                                category=analysis_type,
+                                title=str(item.get("title", item.get("name", analysis_type))),
+                                description=str(item.get("description", item.get("detail", str(item)))),
+                                severity=item.get("severity", "low"),
+                                action=item.get("suggested_action", ""),
+                                meta={"source_analysis": analysis_type},
+                            )
+                        )
     except Exception as exc:
-        findings.append(_finding(
-            category="analyzer_error",
-            title="Introspective analyzer failed",
-            description=str(exc),
-            severity="low",
-        ))
+        findings.append(
+            _finding(
+                category="analyzer_error",
+                title="Introspective analyzer failed",
+                description=str(exc),
+                severity="low",
+            )
+        )
     return findings
 
 
@@ -98,14 +106,16 @@ def _check_test_coverage() -> list:
         stem = py_file.stem
         rel = py_file.relative_to(BASE_DIR)
         if stem not in test_files:
-            findings.append(_finding(
-                category="test_coverage",
-                title=f"No test file for {rel}",
-                description=f"Tool '{rel}' has no corresponding test_*.py file in tests/",
-                severity="low",
-                action=f"Create tests/test_{stem}.py with basic validation tests",
-                meta={"file": str(rel)},
-            ))
+            findings.append(
+                _finding(
+                    category="test_coverage",
+                    title=f"No test file for {rel}",
+                    description=f"Tool '{rel}' has no corresponding test_*.py file in tests/",
+                    severity="low",
+                    action=f"Create tests/test_{stem}.py with basic validation tests",
+                    meta={"file": str(rel)},
+                )
+            )
 
     return findings
 
@@ -127,17 +137,20 @@ def _check_dead_code() -> list:
 
         # Extract tool names from manifest (lines with .py references)
         import re
-        tool_refs = re.findall(r'`([a-z_]+\.py)`', manifest_text)
+
+        tool_refs = re.findall(r"`([a-z_]+\.py)`", manifest_text)
         for tool_name in set(tool_refs):
             if tool_name not in goals_text:
-                findings.append(_finding(
-                    category="dead_code",
-                    title=f"Unreferenced tool: {tool_name}",
-                    description=f"Tool '{tool_name}' is in manifest but not referenced by any goal",
-                    severity="low",
-                    action=f"Review if {tool_name} should be added to a goal or deprecated",
-                    meta={"tool": tool_name},
-                ))
+                findings.append(
+                    _finding(
+                        category="dead_code",
+                        title=f"Unreferenced tool: {tool_name}",
+                        description=f"Tool '{tool_name}' is in manifest but not referenced by any goal",
+                        severity="low",
+                        action=f"Review if {tool_name} should be added to a goal or deprecated",
+                        meta={"tool": tool_name},
+                    )
+                )
     except Exception:
         pass
 
@@ -154,28 +167,33 @@ def _check_config_drift() -> list:
 
     try:
         import yaml
+
         for cfg_file in args_dir.glob("*.yaml"):
             try:
                 with open(cfg_file, "r", encoding="utf-8") as f:
                     data = yaml.safe_load(f)
                 if data is None:
-                    findings.append(_finding(
-                        category="config_drift",
-                        title=f"Empty config: {cfg_file.name}",
-                        description=f"Config file '{cfg_file.name}' is empty or invalid YAML",
-                        severity="medium",
-                        action=f"Review {cfg_file.name} for missing configuration",
-                        meta={"file": cfg_file.name},
-                    ))
+                    findings.append(
+                        _finding(
+                            category="config_drift",
+                            title=f"Empty config: {cfg_file.name}",
+                            description=f"Config file '{cfg_file.name}' is empty or invalid YAML",
+                            severity="medium",
+                            action=f"Review {cfg_file.name} for missing configuration",
+                            meta={"file": cfg_file.name},
+                        )
+                    )
             except yaml.YAMLError as exc:
-                findings.append(_finding(
-                    category="config_drift",
-                    title=f"Invalid YAML: {cfg_file.name}",
-                    description=f"Config file '{cfg_file.name}' has YAML errors: {exc}",
-                    severity="high",
-                    action=f"Fix YAML syntax in {cfg_file.name}",
-                    meta={"file": cfg_file.name, "error": str(exc)},
-                ))
+                findings.append(
+                    _finding(
+                        category="config_drift",
+                        title=f"Invalid YAML: {cfg_file.name}",
+                        description=f"Config file '{cfg_file.name}' has YAML errors: {exc}",
+                        severity="high",
+                        action=f"Fix YAML syntax in {cfg_file.name}",
+                        meta={"file": cfg_file.name, "error": str(exc)},
+                    )
+                )
     except ImportError:
         pass
 
@@ -220,6 +238,7 @@ def main() -> None:
 
     try:
         import yaml
+
         cfg_path = BASE_DIR / "args" / "scout_config.yaml"
         with open(cfg_path, "r", encoding="utf-8") as f:
             config = yaml.safe_load(f) or {}

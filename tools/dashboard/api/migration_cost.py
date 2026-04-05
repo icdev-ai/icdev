@@ -14,9 +14,7 @@ from tools.db.storage import get_connection  # noqa: E402
 
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
-migration_cost_api = Blueprint(
-    "migration_cost_api", __name__, url_prefix="/api/migration-cost"
-)
+migration_cost_api = Blueprint("migration_cost_api", __name__, url_prefix="/api/migration-cost")
 
 # ---------------------------------------------------------------------------
 # Cost constants
@@ -59,6 +57,7 @@ BLENDED_RATE = round(sum(HOURLY_RATES.values()) / len(HOURLY_RATES), 2)
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_db():
     conn = get_connection(db_path=str(DB_PATH))
     return conn
@@ -69,8 +68,7 @@ def _table_exists(conn, name):
     try:
         if getattr(conn, "_backend", "sqlite") == "postgresql":
             row = conn.execute(
-                "SELECT 1 FROM information_schema.tables "
-                "WHERE table_schema = 'public' AND table_name = ?",
+                "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = ?",
                 (name,),
             ).fetchone()
             return row is not None
@@ -111,13 +109,15 @@ def cost_estimate():
     try:
         conn = _get_db()
         if not _table_exists(conn, "migration_assessments"):
-            return jsonify({
-                "apps": [],
-                "total_cost": 0,
-                "total_hours": 0,
-                "app_count": 0,
-                "roi_timeline_weeks": 0,
-            })
+            return jsonify(
+                {
+                    "apps": [],
+                    "total_cost": 0,
+                    "total_hours": 0,
+                    "app_count": 0,
+                    "roi_timeline_weeks": 0,
+                }
+            )
 
         project_id = request.args.get("project_id")
         where_sql = ""
@@ -154,13 +154,15 @@ def cost_estimate():
             if (r[5] or 0) > max_timeline:
                 max_timeline = r[5] or 0
 
-        return jsonify({
-            "apps": apps,
-            "total_cost": round(total_cost, 2),
-            "total_hours": total_hours,
-            "app_count": len(apps),
-            "roi_timeline_weeks": max_timeline,
-        })
+        return jsonify(
+            {
+                "apps": apps,
+                "total_cost": round(total_cost, 2),
+                "total_hours": total_hours,
+                "app_count": len(apps),
+                "roi_timeline_weeks": max_timeline,
+            }
+        )
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
     finally:
@@ -204,23 +206,27 @@ def strategy_comparison():
             total = base_cost * factor * compliance_mult
             # Timeline scales roughly with strategy factor
             est_timeline = round(timeline_weeks * factor, 1) if timeline_weeks else 0
-            comparisons.append({
-                "strategy": strategy,
-                "strategy_factor": factor,
-                "compliance_multiplier": compliance_mult,
-                "base_cost": round(base_cost, 2),
-                "total_cost": round(total, 2),
-                "estimated_timeline_weeks": est_timeline,
-                "risk_score": risk_score,
-                "ato_impact": ato_impact,
-            })
+            comparisons.append(
+                {
+                    "strategy": strategy,
+                    "strategy_factor": factor,
+                    "compliance_multiplier": compliance_mult,
+                    "base_cost": round(base_cost, 2),
+                    "total_cost": round(total, 2),
+                    "estimated_timeline_weeks": est_timeline,
+                    "risk_score": risk_score,
+                    "ato_impact": ato_impact,
+                }
+            )
 
-        return jsonify({
-            "legacy_app_id": legacy_app_id,
-            "base_hours": hours,
-            "blended_rate": BLENDED_RATE,
-            "comparisons": comparisons,
-        })
+        return jsonify(
+            {
+                "legacy_app_id": legacy_app_id,
+                "base_hours": hours,
+                "blended_rate": BLENDED_RATE,
+                "comparisons": comparisons,
+            }
+        )
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
     finally:
@@ -251,9 +257,7 @@ def portfolio_summary():
             return jsonify(result)
 
         rows = conn.execute(
-            "SELECT recommended_strategy, cost_estimate_hours, "
-            "ato_impact, timeline_weeks "
-            "FROM migration_assessments"
+            "SELECT recommended_strategy, cost_estimate_hours, ato_impact, timeline_weeks FROM migration_assessments"
         ).fetchall()
 
         strategy_totals = {}
@@ -286,16 +290,12 @@ def portfolio_summary():
 
         # Round strategy totals
         for s in strategy_totals:
-            strategy_totals[s]["total_cost"] = round(
-                strategy_totals[s]["total_cost"], 2
-            )
+            strategy_totals[s]["total_cost"] = round(strategy_totals[s]["total_cost"], 2)
 
         # Actual cost from plans if available
         total_actual = 0.0
         if _table_exists(conn, "migration_plans"):
-            row = conn.execute(
-                "SELECT COALESCE(SUM(actual_hours), 0) FROM migration_plans"
-            ).fetchone()
+            row = conn.execute("SELECT COALESCE(SUM(actual_hours), 0) FROM migration_plans").fetchone()
             total_actual = round((row[0] or 0) * BLENDED_RATE, 2)
 
         compliance_overhead = round(total_est - total_base, 2) if total_est > 0 else 0.0
@@ -367,23 +367,25 @@ def roi_projection():
             net = cumulative_savings - total_migration_cost
             if net >= 0 and breakeven_year is None:
                 breakeven_year = year
-            projections.append({
-                "year": year,
-                "cumulative_savings": round(cumulative_savings, 2),
-                "migration_cost": total_migration_cost,
-                "net_value": round(net, 2),
-                "roi_pct": round(
-                    (net / total_migration_cost) * 100, 1
-                ) if total_migration_cost > 0 else 0,
-            })
+            projections.append(
+                {
+                    "year": year,
+                    "cumulative_savings": round(cumulative_savings, 2),
+                    "migration_cost": total_migration_cost,
+                    "net_value": round(net, 2),
+                    "roi_pct": round((net / total_migration_cost) * 100, 1) if total_migration_cost > 0 else 0,
+                }
+            )
 
-        return jsonify({
-            "migration_cost": total_migration_cost,
-            "annual_savings": annual_maintenance_savings,
-            "breakeven_year": breakeven_year,
-            "projection_years": years,
-            "projections": projections,
-        })
+        return jsonify(
+            {
+                "migration_cost": total_migration_cost,
+                "annual_savings": annual_maintenance_savings,
+                "breakeven_year": breakeven_year,
+                "projection_years": years,
+                "projections": projections,
+            }
+        )
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
     finally:
@@ -437,35 +439,33 @@ def custom_calculate():
 
         total_cost = round(total_base, 2)
         base_cost_no_mult = round(hours * BLENDED_RATE, 2)
-        compliance_overhead = round(
-            total_cost - (hours * BLENDED_RATE * strategy_factor), 2
-        )
-        strategy_overhead = round(
-            (hours * BLENDED_RATE * strategy_factor) - base_cost_no_mult, 2
-        )
+        compliance_overhead = round(total_cost - (hours * BLENDED_RATE * strategy_factor), 2)
+        strategy_overhead = round((hours * BLENDED_RATE * strategy_factor) - base_cost_no_mult, 2)
 
         # Timeline estimate (weeks) based on hours and team size
         working_hours_per_week = 40
         timeline_weeks = round(hours / (team_size * working_hours_per_week), 1)
 
-        return jsonify({
-            "input": {
-                "hours": hours,
-                "strategy": strategy,
-                "ato_impact": ato_impact,
-                "team_size": team_size,
-            },
-            "breakdown": {
-                "role_costs": role_breakdown,
-                "blended_rate": BLENDED_RATE,
-                "strategy_factor": strategy_factor,
-                "compliance_multiplier": compliance_mult,
-                "base_cost": base_cost_no_mult,
-                "strategy_overhead": strategy_overhead,
-                "compliance_overhead": compliance_overhead,
-                "total_cost": total_cost,
-            },
-            "timeline_weeks": timeline_weeks,
-        })
+        return jsonify(
+            {
+                "input": {
+                    "hours": hours,
+                    "strategy": strategy,
+                    "ato_impact": ato_impact,
+                    "team_size": team_size,
+                },
+                "breakdown": {
+                    "role_costs": role_breakdown,
+                    "blended_rate": BLENDED_RATE,
+                    "strategy_factor": strategy_factor,
+                    "compliance_multiplier": compliance_mult,
+                    "base_cost": base_cost_no_mult,
+                    "strategy_overhead": strategy_overhead,
+                    "compliance_overhead": compliance_overhead,
+                    "total_cost": total_cost,
+                },
+                "timeline_weeks": timeline_weeks,
+            }
+        )
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500

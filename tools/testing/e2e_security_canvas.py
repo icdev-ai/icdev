@@ -72,8 +72,11 @@ def check_no_js_errors(driver, page_name):
     """Check browser console for SEVERE JS errors (exclude favicon 404)."""
     logs = driver.get_log("browser")
     severe = [entry for entry in logs if entry["level"] == "SEVERE" and "favicon" not in entry.get("message", "")]
-    check(f"{page_name}: no JS errors", len(severe) == 0,
-          f"{len(severe)} errors: {severe[0]['message'][:100] if severe else ''}")
+    check(
+        f"{page_name}: no JS errors",
+        len(severe) == 0,
+        f"{len(severe)} errors: {severe[0]['message'][:100] if severe else ''}",
+    )
 
 
 # ============================================================
@@ -117,8 +120,13 @@ try:
     print("\n[2/10] Phase 1 — Index & Canvas Pages")
     driver.get(f"{SC}/")
     time.sleep(2)
-    check("Index page loads", "Security" in driver.title or driver.current_url.endswith("/security/") or "design" in driver.page_source.lower(),
-          f"Title: {driver.title}, URL: {driver.current_url}")
+    check(
+        "Index page loads",
+        "Security" in driver.title
+        or driver.current_url.endswith("/security/")
+        or "design" in driver.page_source.lower(),
+        f"Title: {driver.title}, URL: {driver.current_url}",
+    )
     screenshot(driver, "index")
     check_no_js_errors(driver, "Index")
 
@@ -135,25 +143,44 @@ try:
     create_resp = urllib.request.urlopen(  # nosec B310
         urllib.request.Request(
             f"{SC}/api/designs",
-            data=json.dumps({"name": "E2E Test Design", "graph_json": {
-                "nodes": [
-                    {"id": "web", "type": "asset-server", "label": "Web Server", "x": 100, "y": 100},
-                    {"id": "db", "type": "asset-database", "label": "PostgreSQL", "x": 400, "y": 100},
-                    {"id": "user", "type": "asset-client", "label": "Browser", "x": 0, "y": 200},
-                    {"id": "fw", "type": "ctrl-firewall", "label": "WAF", "x": 50, "y": 100},
-                    {"id": "siem", "type": "ctrl-siem", "label": "SIEM", "x": 500, "y": 200},
-                ],
-                "edges": [
-                    {"source": "user", "target": "fw", "encrypted": True, "authenticated": True, "protocol": "HTTPS"},
-                    {"source": "fw", "target": "web", "encrypted": False, "authenticated": False},
-                    {"source": "web", "target": "db", "encrypted": False, "authenticated": False},
-                    {"source": "web", "target": "siem", "encrypted": False, "authenticated": False},
-                ],
-                "boundaries": [
-                    {"id": "dmz", "type": "boundary-dmz", "label": "DMZ", "x": 30, "y": 50, "width": 400, "height": 200,
-                     "contained_assets": ["fw", "web"]},
-                ],
-            }}).encode("utf-8"),
+            data=json.dumps(
+                {
+                    "name": "E2E Test Design",
+                    "graph_json": {
+                        "nodes": [
+                            {"id": "web", "type": "asset-server", "label": "Web Server", "x": 100, "y": 100},
+                            {"id": "db", "type": "asset-database", "label": "PostgreSQL", "x": 400, "y": 100},
+                            {"id": "user", "type": "asset-client", "label": "Browser", "x": 0, "y": 200},
+                            {"id": "fw", "type": "ctrl-firewall", "label": "WAF", "x": 50, "y": 100},
+                            {"id": "siem", "type": "ctrl-siem", "label": "SIEM", "x": 500, "y": 200},
+                        ],
+                        "edges": [
+                            {
+                                "source": "user",
+                                "target": "fw",
+                                "encrypted": True,
+                                "authenticated": True,
+                                "protocol": "HTTPS",
+                            },
+                            {"source": "fw", "target": "web", "encrypted": False, "authenticated": False},
+                            {"source": "web", "target": "db", "encrypted": False, "authenticated": False},
+                            {"source": "web", "target": "siem", "encrypted": False, "authenticated": False},
+                        ],
+                        "boundaries": [
+                            {
+                                "id": "dmz",
+                                "type": "boundary-dmz",
+                                "label": "DMZ",
+                                "x": 30,
+                                "y": 50,
+                                "width": 400,
+                                "height": 200,
+                                "contained_assets": ["fw", "web"],
+                            },
+                        ],
+                    },
+                }
+            ).encode("utf-8"),
             headers={"Content-Type": "application/json"},
             method="POST",
         ),
@@ -206,8 +233,12 @@ try:
     print("\n[5/10] Phase 1 — Assessment, STRIDE, Gaps, Remediation")
     # STRIDE
     stride_resp = urllib.request.urlopen(  # nosec B310
-        urllib.request.Request(f"{SC}/api/designs/{design_id}/stride", method="POST",
-                               headers={"Content-Type": "application/json"}, data=b"{}"),
+        urllib.request.Request(
+            f"{SC}/api/designs/{design_id}/stride",
+            method="POST",
+            headers={"Content-Type": "application/json"},
+            data=b"{}",
+        ),
         timeout=10,
     )
     stride = json.loads(stride_resp.read().decode("utf-8"))
@@ -215,17 +246,29 @@ try:
 
     # Full assessment
     assess_resp = urllib.request.urlopen(  # nosec B310
-        urllib.request.Request(f"{SC}/api/designs/{design_id}/assess", method="POST",
-                               headers={"Content-Type": "application/json"}, data=b"{}"),
+        urllib.request.Request(
+            f"{SC}/api/designs/{design_id}/assess",
+            method="POST",
+            headers={"Content-Type": "application/json"},
+            data=b"{}",
+        ),
         timeout=10,
     )
     assess = json.loads(assess_resp.read().decode("utf-8"))
-    check("Security assessment", "posture_grade" in assess, f"grade={assess.get('posture_grade')}, score={assess.get('risk_score')}")
+    check(
+        "Security assessment",
+        "posture_grade" in assess,
+        f"grade={assess.get('posture_grade')}, score={assess.get('risk_score')}",
+    )
 
     # Remediation
     remed_resp = urllib.request.urlopen(  # nosec B310
-        urllib.request.Request(f"{SC}/api/designs/{design_id}/remediate", method="POST",
-                               headers={"Content-Type": "application/json"}, data=b"{}"),
+        urllib.request.Request(
+            f"{SC}/api/designs/{design_id}/remediate",
+            method="POST",
+            headers={"Content-Type": "application/json"},
+            data=b"{}",
+        ),
         timeout=10,
     )
     remed = json.loads(remed_resp.read().decode("utf-8"))
@@ -235,12 +278,20 @@ try:
     print("\n[6/10] Phase 2 — Auto-Fix, NIST, Attack Paths, Runbooks")
     # Auto-fix
     fix_resp = urllib.request.urlopen(  # nosec B310
-        urllib.request.Request(f"{SC}/api/designs/{design_id}/auto-fix", method="POST",
-                               headers={"Content-Type": "application/json"}, data=b"{}"),
+        urllib.request.Request(
+            f"{SC}/api/designs/{design_id}/auto-fix",
+            method="POST",
+            headers={"Content-Type": "application/json"},
+            data=b"{}",
+        ),
         timeout=10,
     )
     fix = json.loads(fix_resp.read().decode("utf-8"))
-    check("Auto-fix", fix.get("total_fixes", 0) >= 0, f"fixes={fix.get('total_fixes')}, nodes={len(fix.get('nodes_added', []))}")
+    check(
+        "Auto-fix",
+        fix.get("total_fixes", 0) >= 0,
+        f"fixes={fix.get('total_fixes')}, nodes={len(fix.get('nodes_added', []))}",
+    )
 
     # NIST coverage
     nist_resp = urllib.request.urlopen(f"{SC}/api/designs/{design_id}/nist-coverage", timeout=10)  # nosec B310
@@ -249,8 +300,12 @@ try:
 
     # Attack paths
     paths_resp = urllib.request.urlopen(  # nosec B310
-        urllib.request.Request(f"{SC}/api/designs/{design_id}/attack-paths", method="POST",
-                               headers={"Content-Type": "application/json"}, data=b"{}"),
+        urllib.request.Request(
+            f"{SC}/api/designs/{design_id}/attack-paths",
+            method="POST",
+            headers={"Content-Type": "application/json"},
+            data=b"{}",
+        ),
         timeout=10,
     )
     paths = json.loads(paths_resp.read().decode("utf-8"))
@@ -272,9 +327,12 @@ try:
     print("\n[7/10] Phase 3 — FedRAMP, Artifacts, IaC, MITRE, Compare, Posture")
     # FedRAMP boundary
     fed_resp = urllib.request.urlopen(  # nosec B310
-        urllib.request.Request(f"{SC}/api/designs/{design_id}/fedramp-boundary", method="POST",
-                               headers={"Content-Type": "application/json"},
-                               data=json.dumps({"impact_level": "moderate"}).encode("utf-8")),
+        urllib.request.Request(
+            f"{SC}/api/designs/{design_id}/fedramp-boundary",
+            method="POST",
+            headers={"Content-Type": "application/json"},
+            data=json.dumps({"impact_level": "moderate"}).encode("utf-8"),
+        ),
         timeout=10,
     )
     fed = json.loads(fed_resp.read().decode("utf-8"))
@@ -282,8 +340,12 @@ try:
 
     # SSP export
     ssp_resp = urllib.request.urlopen(  # nosec B310
-        urllib.request.Request(f"{SC}/api/designs/{design_id}/export/ssp", method="POST",
-                               headers={"Content-Type": "application/json"}, data=b"{}"),
+        urllib.request.Request(
+            f"{SC}/api/designs/{design_id}/export/ssp",
+            method="POST",
+            headers={"Content-Type": "application/json"},
+            data=b"{}",
+        ),
         timeout=10,
     )
     ssp = json.loads(ssp_resp.read().decode("utf-8"))
@@ -291,8 +353,12 @@ try:
 
     # SAR export
     sar_resp = urllib.request.urlopen(  # nosec B310
-        urllib.request.Request(f"{SC}/api/designs/{design_id}/export/sar", method="POST",
-                               headers={"Content-Type": "application/json"}, data=b"{}"),
+        urllib.request.Request(
+            f"{SC}/api/designs/{design_id}/export/sar",
+            method="POST",
+            headers={"Content-Type": "application/json"},
+            data=b"{}",
+        ),
         timeout=10,
     )
     sar = json.loads(sar_resp.read().decode("utf-8"))
@@ -300,8 +366,12 @@ try:
 
     # POA&M export
     poam_resp = urllib.request.urlopen(  # nosec B310
-        urllib.request.Request(f"{SC}/api/designs/{design_id}/export/poam", method="POST",
-                               headers={"Content-Type": "application/json"}, data=b"{}"),
+        urllib.request.Request(
+            f"{SC}/api/designs/{design_id}/export/poam",
+            method="POST",
+            headers={"Content-Type": "application/json"},
+            data=b"{}",
+        ),
         timeout=10,
     )
     poam = json.loads(poam_resp.read().decode("utf-8"))
@@ -310,8 +380,12 @@ try:
     # Artifact bundle (route may conflict with /export/<fmt> wildcard — test via direct import)
     try:
         bundle_resp = urllib.request.urlopen(  # nosec B310
-            urllib.request.Request(f"{SC}/api/designs/{design_id}/export/artifact-bundle", method="POST",
-                                   headers={"Content-Type": "application/json"}, data=b"{}"),
+            urllib.request.Request(
+                f"{SC}/api/designs/{design_id}/export/artifact-bundle",
+                method="POST",
+                headers={"Content-Type": "application/json"},
+                data=b"{}",
+            ),
             timeout=15,
         )
         bundle = json.loads(bundle_resp.read().decode("utf-8"))
@@ -320,14 +394,23 @@ try:
         # Flask route ordering: /export/<fmt> catches before /export/artifact-bundle
         # Verify the function works directly instead
         from tools.security_canvas.artifacts import generate_artifact_bundle
+
         bundle = generate_artifact_bundle(design_id)
         check("Artifact bundle (direct)", all(k in bundle for k in ("ssp", "sar", "poam")))
 
     # IaC scan
     iac_resp = urllib.request.urlopen(  # nosec B310
-        urllib.request.Request(f"{SC}/api/iac/scan-text", method="POST",
-                               headers={"Content-Type": "application/json"},
-                               data=json.dumps({"content": 'resource "aws_sg" {\n  cidr = "0.0.0.0/0"\n  encrypted = false\n}', "iac_type": "terraform"}).encode("utf-8")),
+        urllib.request.Request(
+            f"{SC}/api/iac/scan-text",
+            method="POST",
+            headers={"Content-Type": "application/json"},
+            data=json.dumps(
+                {
+                    "content": 'resource "aws_sg" {\n  cidr = "0.0.0.0/0"\n  encrypted = false\n}',
+                    "iac_type": "terraform",
+                }
+            ).encode("utf-8"),
+        ),
         timeout=10,
     )
     iac = json.loads(iac_resp.read().decode("utf-8"))
@@ -368,31 +451,69 @@ try:
     print("\n[8/10] Phase 4 — Import, Versioning, Collaboration, LLM, Crosswalk")
 
     # Threat model import (Threat Dragon)
-    td_json = json.dumps({
-        "content": json.dumps({
-            "summary": {"title": "E2E TD Import"},
-            "detail": {"diagrams": [{"title": "Main", "cells": [
-                {"type": "tm.Process", "data": {"name": "API"}, "position": {"x": 100, "y": 100}, "threats": []},
-                {"type": "tm.Store", "data": {"name": "DB"}, "position": {"x": 300, "y": 100},
-                 "threats": [{"title": "SQLi", "type": "T", "status": "Open", "severity": "High", "description": "SQL injection"}]},
-            ]}]}
-        }),
-        "format": "threat-dragon",
-    })
+    td_json = json.dumps(
+        {
+            "content": json.dumps(
+                {
+                    "summary": {"title": "E2E TD Import"},
+                    "detail": {
+                        "diagrams": [
+                            {
+                                "title": "Main",
+                                "cells": [
+                                    {
+                                        "type": "tm.Process",
+                                        "data": {"name": "API"},
+                                        "position": {"x": 100, "y": 100},
+                                        "threats": [],
+                                    },
+                                    {
+                                        "type": "tm.Store",
+                                        "data": {"name": "DB"},
+                                        "position": {"x": 300, "y": 100},
+                                        "threats": [
+                                            {
+                                                "title": "SQLi",
+                                                "type": "T",
+                                                "status": "Open",
+                                                "severity": "High",
+                                                "description": "SQL injection",
+                                            }
+                                        ],
+                                    },
+                                ],
+                            }
+                        ]
+                    },
+                }
+            ),
+            "format": "threat-dragon",
+        }
+    )
     import_resp = urllib.request.urlopen(  # nosec B310
-        urllib.request.Request(f"{SC}/api/import/threat-model", method="POST",
-                               headers={"Content-Type": "application/json"},
-                               data=td_json.encode("utf-8")),
+        urllib.request.Request(
+            f"{SC}/api/import/threat-model",
+            method="POST",
+            headers={"Content-Type": "application/json"},
+            data=td_json.encode("utf-8"),
+        ),
         timeout=10,
     )
     imp = json.loads(import_resp.read().decode("utf-8"))
-    check("Threat Dragon import", bool(imp.get("design_id")), f"nodes={imp.get('nodes_imported')}, threats={imp.get('threats_imported')}")
+    check(
+        "Threat Dragon import",
+        bool(imp.get("design_id")),
+        f"nodes={imp.get('nodes_imported')}, threats={imp.get('threats_imported')}",
+    )
 
     # Versioning — create snapshot
     ver_resp = urllib.request.urlopen(  # nosec B310
-        urllib.request.Request(f"{SC}/api/designs/{design_id}/versions", method="POST",
-                               headers={"Content-Type": "application/json"},
-                               data=json.dumps({"change_summary": "E2E test snapshot"}).encode("utf-8")),
+        urllib.request.Request(
+            f"{SC}/api/designs/{design_id}/versions",
+            method="POST",
+            headers={"Content-Type": "application/json"},
+            data=json.dumps({"change_summary": "E2E test snapshot"}).encode("utf-8"),
+        ),
         timeout=10,
     )
     ver = json.loads(ver_resp.read().decode("utf-8"))
@@ -405,8 +526,9 @@ try:
 
     # Collaboration — join
     cj_resp = urllib.request.urlopen(  # nosec B310
-        urllib.request.Request(f"{SC}/api/collab/{design_id}/join", method="POST",
-                               headers={"Content-Type": "application/json"}, data=b"{}"),
+        urllib.request.Request(
+            f"{SC}/api/collab/{design_id}/join", method="POST", headers={"Content-Type": "application/json"}, data=b"{}"
+        ),
         timeout=10,
     )
     cj = json.loads(cj_resp.read().decode("utf-8"))
@@ -414,9 +536,12 @@ try:
 
     # Collaboration — push op
     cp_resp = urllib.request.urlopen(  # nosec B310
-        urllib.request.Request(f"{SC}/api/collab/{design_id}/push", method="POST",
-                               headers={"Content-Type": "application/json"},
-                               data=json.dumps({"op_type": "node_add", "data": {"type": "asset-server"}}).encode("utf-8")),
+        urllib.request.Request(
+            f"{SC}/api/collab/{design_id}/push",
+            method="POST",
+            headers={"Content-Type": "application/json"},
+            data=json.dumps({"op_type": "node_add", "data": {"type": "asset-server"}}).encode("utf-8"),
+        ),
         timeout=10,
     )
     cp = json.loads(cp_resp.read().decode("utf-8"))
@@ -429,17 +554,29 @@ try:
 
     # LLM threats (will fall back to deterministic)
     llm_resp = urllib.request.urlopen(  # nosec B310
-        urllib.request.Request(f"{SC}/api/designs/{design_id}/llm-threats", method="POST",
-                               headers={"Content-Type": "application/json"}, data=b"{}"),
+        urllib.request.Request(
+            f"{SC}/api/designs/{design_id}/llm-threats",
+            method="POST",
+            headers={"Content-Type": "application/json"},
+            data=b"{}",
+        ),
         timeout=35,
     )
     llm = json.loads(llm_resp.read().decode("utf-8"))
-    check("LLM threats", llm.get("total_threats", 0) > 0, f"source={llm.get('source')}, threats={llm.get('total_threats')}")
+    check(
+        "LLM threats",
+        llm.get("total_threats", 0) > 0,
+        f"source={llm.get('source')}, threats={llm.get('total_threats')}",
+    )
 
     # Compliance crosswalk
     xw_resp = urllib.request.urlopen(f"{SC}/api/designs/{design_id}/compliance-crosswalk", timeout=10)  # nosec B310
     xw = json.loads(xw_resp.read().decode("utf-8"))
-    check("Compliance crosswalk", "frameworks" in xw, f"NIST={xw.get('frameworks',{}).get('nist_800_53',{}).get('coverage_pct')}%")
+    check(
+        "Compliance crosswalk",
+        "frameworks" in xw,
+        f"NIST={xw.get('frameworks', {}).get('nist_800_53', {}).get('coverage_pct')}%",
+    )
 
     # ── Cleanup ────────────────────────────────────────────────
     print("\n[9/10] Cleanup")

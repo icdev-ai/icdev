@@ -7,6 +7,7 @@ Creates schema and seeds 5 canonical observability design templates.
 Dual-backend: SQLite (default) or PostgreSQL.
 Set OC_STORAGE_BACKEND=postgresql + OC_PG_* env vars to use PostgreSQL.
 """
+
 import json
 import os
 import sqlite3
@@ -35,9 +36,8 @@ def get_connection():
     if _OC_BACKEND == "postgresql":
         try:
             from tools.db.storage import get_connection as _icdev_conn
-            conn = _icdev_conn(
-                db_path=os.environ.get("OC_PG_DATABASE", "observability_canvas")
-            )
+
+            conn = _icdev_conn(db_path=os.environ.get("OC_PG_DATABASE", "observability_canvas"))
             return conn
         except ImportError:
             pass
@@ -159,17 +159,19 @@ ODC_SNIPPETS = [
         "category": "Collection",
         "description": "OS log collected via syslog-ng and forwarded to Splunk.",
         "tags": json.dumps(["syslog", "splunk", "collection"]),
-        "graph_json": json.dumps({
-            "nodes": [
-                _node("os-log", "OS/System Logs", "src-os-log", 50, 80),
-                _node("syslog-ng", "Syslog-NG", "col-syslog-ng", 180, 80),
-                _node("splunk", "Splunk", "plt-splunk", 280, 80),
-            ],
-            "edges": [
-                _edge("os-log", "syslog-ng", "Syslog", "TCP/514"),
-                _edge("syslog-ng", "splunk", "HEC", "HTTPS", True),
-            ],
-        }),
+        "graph_json": json.dumps(
+            {
+                "nodes": [
+                    _node("os-log", "OS/System Logs", "src-os-log", 50, 80),
+                    _node("syslog-ng", "Syslog-NG", "col-syslog-ng", 180, 80),
+                    _node("splunk", "Splunk", "plt-splunk", 280, 80),
+                ],
+                "edges": [
+                    _edge("os-log", "syslog-ng", "Syslog", "TCP/514"),
+                    _edge("syslog-ng", "splunk", "HEC", "HTTPS", True),
+                ],
+            }
+        ),
     },
     # 2 — K8s Monitoring
     {
@@ -178,17 +180,19 @@ ODC_SNIPPETS = [
         "category": "Collection",
         "description": "Container logs collected via Fluentd into Elastic/ELK.",
         "tags": json.dumps(["kubernetes", "fluentd", "elastic", "containers"]),
-        "graph_json": json.dumps({
-            "nodes": [
-                _node("container-log", "Container Logs", "src-container-log", 50, 80),
-                _node("fluentd", "Fluentd", "col-fluentd", 180, 80),
-                _node("elk", "Elastic/ELK", "plt-elastic", 280, 80),
-            ],
-            "edges": [
-                _edge("container-log", "fluentd", "Stdout", ""),
-                _edge("fluentd", "elk", "Ingest", "HTTPS", True),
-            ],
-        }),
+        "graph_json": json.dumps(
+            {
+                "nodes": [
+                    _node("container-log", "Container Logs", "src-container-log", 50, 80),
+                    _node("fluentd", "Fluentd", "col-fluentd", 180, 80),
+                    _node("elk", "Elastic/ELK", "plt-elastic", 280, 80),
+                ],
+                "edges": [
+                    _edge("container-log", "fluentd", "Stdout", ""),
+                    _edge("fluentd", "elk", "Ingest", "HTTPS", True),
+                ],
+            }
+        ),
     },
     # 3 — SIEM + SOAR Chain
     {
@@ -197,21 +201,23 @@ ODC_SNIPPETS = [
         "category": "Automation",
         "description": "Splunk SIEM triggers alert rule, SOAR playbook creates ticket and notifies.",
         "tags": json.dumps(["siem", "soar", "splunk", "automation", "alerting"]),
-        "graph_json": json.dumps({
-            "nodes": [
-                _node("splunk", "Splunk", "plt-splunk", 50, 80),
-                _node("alert-rule", "Alert Rule", "auto-alert-rule", 150, 80),
-                _node("soar", "SOAR Playbook", "auto-soar", 250, 80),
-                _node("ticket", "ServiceNow", "auto-ticket", 200, 170),
-                _node("notify", "PagerDuty", "auto-notification", 100, 170),
-            ],
-            "edges": [
-                _edge("splunk", "alert-rule", "Triggers", ""),
-                _edge("alert-rule", "soar", "Alert", "API"),
-                _edge("soar", "ticket", "Create Incident", "API", True),
-                _edge("soar", "notify", "Notify", "API", True),
-            ],
-        }),
+        "graph_json": json.dumps(
+            {
+                "nodes": [
+                    _node("splunk", "Splunk", "plt-splunk", 50, 80),
+                    _node("alert-rule", "Alert Rule", "auto-alert-rule", 150, 80),
+                    _node("soar", "SOAR Playbook", "auto-soar", 250, 80),
+                    _node("ticket", "ServiceNow", "auto-ticket", 200, 170),
+                    _node("notify", "PagerDuty", "auto-notification", 100, 170),
+                ],
+                "edges": [
+                    _edge("splunk", "alert-rule", "Triggers", ""),
+                    _edge("alert-rule", "soar", "Alert", "API"),
+                    _edge("soar", "ticket", "Create Incident", "API", True),
+                    _edge("soar", "notify", "Notify", "API", True),
+                ],
+            }
+        ),
     },
     # 4 — OTel Full Stack
     {
@@ -220,21 +226,23 @@ ODC_SNIPPETS = [
         "category": "Collection",
         "description": "Application logs, metrics, and traces via OTel Collector to Grafana.",
         "tags": json.dumps(["opentelemetry", "otel", "grafana", "metrics", "traces"]),
-        "graph_json": json.dumps({
-            "nodes": [
-                _node("app-log", "Application Log", "src-app-log", 50, 30),
-                _node("metrics", "Metrics", "src-metric", 50, 100),
-                _node("traces", "Trace Spans", "src-trace", 50, 170),
-                _node("otel", "OTel Collector", "col-otel", 180, 100),
-                _node("grafana", "Grafana", "plt-grafana", 280, 100),
-            ],
-            "edges": [
-                _edge("app-log", "otel", "OTLP", "gRPC", True),
-                _edge("metrics", "otel", "OTLP", "gRPC", True),
-                _edge("traces", "otel", "OTLP", "gRPC", True),
-                _edge("otel", "grafana", "Prometheus", "HTTPS", True),
-            ],
-        }),
+        "graph_json": json.dumps(
+            {
+                "nodes": [
+                    _node("app-log", "Application Log", "src-app-log", 50, 30),
+                    _node("metrics", "Metrics", "src-metric", 50, 100),
+                    _node("traces", "Trace Spans", "src-trace", 50, 170),
+                    _node("otel", "OTel Collector", "col-otel", 180, 100),
+                    _node("grafana", "Grafana", "plt-grafana", 280, 100),
+                ],
+                "edges": [
+                    _edge("app-log", "otel", "OTLP", "gRPC", True),
+                    _edge("metrics", "otel", "OTLP", "gRPC", True),
+                    _edge("traces", "otel", "OTLP", "gRPC", True),
+                    _edge("otel", "grafana", "Prometheus", "HTTPS", True),
+                ],
+            }
+        ),
     },
     # 5 — Cloud Audit Trail
     {
@@ -243,19 +251,21 @@ ODC_SNIPPETS = [
         "category": "Compliance",
         "description": "Cloud audit log collected via Fluentd with S3 archive and retention policy.",
         "tags": json.dumps(["cloud", "audit", "archive", "retention", "compliance"]),
-        "graph_json": json.dumps({
-            "nodes": [
-                _node("cloud-log", "Cloud Audit Logs", "src-cloud-log", 50, 80),
-                _node("fluentd", "Fluentd", "col-fluentd", 150, 80),
-                _node("s3-archive", "S3 Log Archive", "col-s3", 250, 80),
-                _node("retention", "Log Retention Policy", "cmp-log-policy", 250, 170),
-            ],
-            "edges": [
-                _edge("cloud-log", "fluentd", "API", "HTTPS", True),
-                _edge("fluentd", "s3-archive", "Archive", "HTTPS", True),
-                _edge("s3-archive", "retention", "Policy", ""),
-            ],
-        }),
+        "graph_json": json.dumps(
+            {
+                "nodes": [
+                    _node("cloud-log", "Cloud Audit Logs", "src-cloud-log", 50, 80),
+                    _node("fluentd", "Fluentd", "col-fluentd", 150, 80),
+                    _node("s3-archive", "S3 Log Archive", "col-s3", 250, 80),
+                    _node("retention", "Log Retention Policy", "cmp-log-policy", 250, 170),
+                ],
+                "edges": [
+                    _edge("cloud-log", "fluentd", "API", "HTTPS", True),
+                    _edge("fluentd", "s3-archive", "Archive", "HTTPS", True),
+                    _edge("s3-archive", "retention", "Policy", ""),
+                ],
+            }
+        ),
     },
     # 6 — EDR + Threat Intel
     {
@@ -264,19 +274,21 @@ ODC_SNIPPETS = [
         "category": "Security",
         "description": "EDR telemetry via OTel to SIEM with threat intel enrichment.",
         "tags": json.dumps(["edr", "threat-intel", "siem", "enrichment"]),
-        "graph_json": json.dumps({
-            "nodes": [
-                _node("edr", "EDR Telemetry", "src-endpoint", 50, 80),
-                _node("otel", "OTel Collector", "col-otel", 150, 80),
-                _node("splunk", "Splunk SIEM", "plt-splunk", 250, 80),
-                _node("enrichment", "Threat Intel Enrichment", "auto-enrichment", 250, 170),
-            ],
-            "edges": [
-                _edge("edr", "otel", "API", "HTTPS", True),
-                _edge("otel", "splunk", "HEC", "HTTPS", True),
-                _edge("splunk", "enrichment", "Lookup", "API", True),
-            ],
-        }),
+        "graph_json": json.dumps(
+            {
+                "nodes": [
+                    _node("edr", "EDR Telemetry", "src-endpoint", 50, 80),
+                    _node("otel", "OTel Collector", "col-otel", 150, 80),
+                    _node("splunk", "Splunk SIEM", "plt-splunk", 250, 80),
+                    _node("enrichment", "Threat Intel Enrichment", "auto-enrichment", 250, 170),
+                ],
+                "edges": [
+                    _edge("edr", "otel", "API", "HTTPS", True),
+                    _edge("otel", "splunk", "HEC", "HTTPS", True),
+                    _edge("splunk", "enrichment", "Lookup", "API", True),
+                ],
+            }
+        ),
     },
     # 7 — Network IDS
     {
@@ -285,19 +297,21 @@ ODC_SNIPPETS = [
         "category": "Security",
         "description": "Network flow and packet capture through Suricata IDS into ELK.",
         "tags": json.dumps(["network", "ids", "suricata", "pcap", "elk"]),
-        "graph_json": json.dumps({
-            "nodes": [
-                _node("flow", "Network Flow", "src-flow", 50, 50),
-                _node("pcap", "Packet Capture", "src-pcap", 50, 140),
-                _node("suricata", "Suricata IDS", "plt-suricata", 180, 80),
-                _node("elk", "Elastic/ELK", "plt-elastic", 280, 80),
-            ],
-            "edges": [
-                _edge("flow", "suricata", "Forward", "TCP"),
-                _edge("pcap", "suricata", "Mirror/TAP", "Raw"),
-                _edge("suricata", "elk", "EVE JSON", "HTTPS", True),
-            ],
-        }),
+        "graph_json": json.dumps(
+            {
+                "nodes": [
+                    _node("flow", "Network Flow", "src-flow", 50, 50),
+                    _node("pcap", "Packet Capture", "src-pcap", 50, 140),
+                    _node("suricata", "Suricata IDS", "plt-suricata", 180, 80),
+                    _node("elk", "Elastic/ELK", "plt-elastic", 280, 80),
+                ],
+                "edges": [
+                    _edge("flow", "suricata", "Forward", "TCP"),
+                    _edge("pcap", "suricata", "Mirror/TAP", "Raw"),
+                    _edge("suricata", "elk", "EVE JSON", "HTTPS", True),
+                ],
+            }
+        ),
     },
     # 8 — Incident Response Chain
     {
@@ -306,21 +320,23 @@ ODC_SNIPPETS = [
         "category": "Automation",
         "description": "Alert rule triggers SOAR, executes runbook, creates ticket, sends notification.",
         "tags": json.dumps(["incident-response", "soar", "runbook", "automation"]),
-        "graph_json": json.dumps({
-            "nodes": [
-                _node("alert-rule", "Alert Rule", "auto-alert-rule", 50, 80),
-                _node("soar", "SOAR Playbook", "auto-soar", 150, 80),
-                _node("runbook", "Runbook", "auto-runbook", 250, 30),
-                _node("ticket", "ServiceNow", "auto-ticket", 250, 130),
-                _node("notify", "PagerDuty", "auto-notification", 150, 170),
-            ],
-            "edges": [
-                _edge("alert-rule", "soar", "Alert", "API"),
-                _edge("soar", "runbook", "Execute", "API"),
-                _edge("soar", "ticket", "Create Incident", "API", True),
-                _edge("soar", "notify", "Notify", "API", True),
-            ],
-        }),
+        "graph_json": json.dumps(
+            {
+                "nodes": [
+                    _node("alert-rule", "Alert Rule", "auto-alert-rule", 50, 80),
+                    _node("soar", "SOAR Playbook", "auto-soar", 150, 80),
+                    _node("runbook", "Runbook", "auto-runbook", 250, 30),
+                    _node("ticket", "ServiceNow", "auto-ticket", 250, 130),
+                    _node("notify", "PagerDuty", "auto-notification", 150, 170),
+                ],
+                "edges": [
+                    _edge("alert-rule", "soar", "Alert", "API"),
+                    _edge("soar", "runbook", "Execute", "API"),
+                    _edge("soar", "ticket", "Create Incident", "API", True),
+                    _edge("soar", "notify", "Notify", "API", True),
+                ],
+            }
+        ),
     },
 ]
 
@@ -331,42 +347,44 @@ TEMPLATES = [
         "name": "SOC Baseline (Splunk)",
         "category": "SOC",
         "description": "Traditional SOC architecture with Splunk SIEM. Covers OS logs, network "
-                       "logs, cloud audit logs, Filebeat + Logstash collection, Splunk analytics, "
-                       "alert rules, SOAR playbooks, PagerDuty notifications, and S3 archive.",
+        "logs, cloud audit logs, Filebeat + Logstash collection, Splunk analytics, "
+        "alert rules, SOAR playbooks, PagerDuty notifications, and S3 archive.",
         "tags": json.dumps(["soc", "splunk", "siem", "baseline", "soar", "pagerduty"]),
-        "graph_json": json.dumps({
-            "nodes": [
-                _node("os-log", "OS/System Logs", "src-os-log", 50, 100),
-                _node("net-log", "Network Logs", "src-network-log", 50, 200),
-                _node("cloud-log", "Cloud Audit Logs", "src-cloud-log", 50, 300),
-                _node("iam-log", "IAM/IdP Logs", "src-iam", 50, 400),
-                _node("filebeat", "Filebeat", "col-filebeat", 250, 150),
-                _node("logstash", "Logstash", "col-logstash", 250, 300),
-                _node("splunk", "Splunk", "plt-splunk", 500, 200),
-                _node("alert-rule", "Alert Rules", "auto-alert-rule", 700, 100),
-                _node("soar", "SOAR Playbook", "auto-soar", 700, 200),
-                _node("pagerduty", "PagerDuty", "auto-notification", 700, 300),
-                _node("ticket", "ServiceNow", "auto-ticket", 700, 400),
-                _node("s3-archive", "S3 Log Archive", "col-s3", 500, 400),
-                _node("retention", "Log Retention Policy", "cmp-log-policy", 500, 500),
-                _node("iac-ansible", "Ansible (IaC)", "auto-runbook", 250, 570),
-            ],
-            "edges": [
-                _edge("os-log", "filebeat", "Syslog", "TCP/514"),
-                _edge("net-log", "logstash", "Syslog", "UDP/514"),
-                _edge("cloud-log", "logstash", "API", "HTTPS", True),
-                _edge("iam-log", "filebeat", "Log file", ""),
-                _edge("filebeat", "splunk", "HEC", "HTTPS", True),
-                _edge("logstash", "splunk", "HEC", "HTTPS", True),
-                _edge("splunk", "alert-rule", "Triggers", ""),
-                _edge("alert-rule", "soar", "Alert", "API"),
-                _edge("soar", "pagerduty", "Notify", "API", True),
-                _edge("soar", "ticket", "Create Incident", "API", True),
-                _edge("logstash", "s3-archive", "Archive", "HTTPS", True),
-                _edge("s3-archive", "retention", "enforces"),
-                _edge("iac-ansible", "splunk", "provision", "SSH"),
-            ],
-        }),
+        "graph_json": json.dumps(
+            {
+                "nodes": [
+                    _node("os-log", "OS/System Logs", "src-os-log", 50, 100),
+                    _node("net-log", "Network Logs", "src-network-log", 50, 200),
+                    _node("cloud-log", "Cloud Audit Logs", "src-cloud-log", 50, 300),
+                    _node("iam-log", "IAM/IdP Logs", "src-iam", 50, 400),
+                    _node("filebeat", "Filebeat", "col-filebeat", 250, 150),
+                    _node("logstash", "Logstash", "col-logstash", 250, 300),
+                    _node("splunk", "Splunk", "plt-splunk", 500, 200),
+                    _node("alert-rule", "Alert Rules", "auto-alert-rule", 700, 100),
+                    _node("soar", "SOAR Playbook", "auto-soar", 700, 200),
+                    _node("pagerduty", "PagerDuty", "auto-notification", 700, 300),
+                    _node("ticket", "ServiceNow", "auto-ticket", 700, 400),
+                    _node("s3-archive", "S3 Log Archive", "col-s3", 500, 400),
+                    _node("retention", "Log Retention Policy", "cmp-log-policy", 500, 500),
+                    _node("iac-ansible", "Ansible (IaC)", "auto-runbook", 250, 570),
+                ],
+                "edges": [
+                    _edge("os-log", "filebeat", "Syslog", "TCP/514"),
+                    _edge("net-log", "logstash", "Syslog", "UDP/514"),
+                    _edge("cloud-log", "logstash", "API", "HTTPS", True),
+                    _edge("iam-log", "filebeat", "Log file", ""),
+                    _edge("filebeat", "splunk", "HEC", "HTTPS", True),
+                    _edge("logstash", "splunk", "HEC", "HTTPS", True),
+                    _edge("splunk", "alert-rule", "Triggers", ""),
+                    _edge("alert-rule", "soar", "Alert", "API"),
+                    _edge("soar", "pagerduty", "Notify", "API", True),
+                    _edge("soar", "ticket", "Create Incident", "API", True),
+                    _edge("logstash", "s3-archive", "Archive", "HTTPS", True),
+                    _edge("s3-archive", "retention", "enforces"),
+                    _edge("iac-ansible", "splunk", "provision", "SSH"),
+                ],
+            }
+        ),
     },
     # 2 — Cloud-Native (Sentinel + OTel)
     {
@@ -374,42 +392,44 @@ TEMPLATES = [
         "name": "Cloud-Native (Sentinel + OTel)",
         "category": "Cloud",
         "description": "Cloud-native observability with Microsoft Sentinel SIEM, OpenTelemetry "
-                       "Collector for unified telemetry, Sentinel Playbooks for SOAR, and "
-                       "ServiceNow for incident management.",
+        "Collector for unified telemetry, Sentinel Playbooks for SOAR, and "
+        "ServiceNow for incident management.",
         "tags": json.dumps(["cloud", "sentinel", "otel", "opentelemetry", "azure", "soar"]),
-        "graph_json": json.dumps({
-            "nodes": [
-                _node("cloud-log", "Azure Activity Log", "src-cloud-log", 50, 100),
-                _node("container-log", "Container Logs", "src-container-log", 50, 200),
-                _node("app-log", "Application Logs", "src-app-log", 50, 300),
-                _node("traces", "Trace Spans", "src-trace", 50, 400),
-                _node("metrics", "Metrics", "src-metric", 50, 500),
-                _node("iam-log", "Azure AD Logs", "src-iam", 50, 600),
-                _node("otel", "OTel Collector", "col-otel", 300, 300),
-                _node("sentinel", "Microsoft Sentinel", "plt-sentinel", 550, 250),
-                _node("grafana", "Grafana", "plt-grafana", 550, 450),
-                _node("playbooks", "Sentinel Playbooks", "auto-soar", 750, 200),
-                _node("alert-rule", "Alert Rules", "auto-alert-rule", 750, 350),
-                _node("servicenow", "ServiceNow", "auto-ticket", 750, 500),
-                _node("retention", "Log Retention Policy", "cmp-log-policy", 550, 600),
-                _node("iac-terraform", "Terraform (IaC)", "auto-runbook", 300, 670),
-            ],
-            "edges": [
-                _edge("cloud-log", "otel", "API", "HTTPS", True),
-                _edge("container-log", "otel", "OTLP", "gRPC", True),
-                _edge("app-log", "otel", "OTLP", "gRPC", True),
-                _edge("traces", "otel", "OTLP", "gRPC", True),
-                _edge("metrics", "otel", "OTLP", "gRPC", True),
-                _edge("iam-log", "otel", "API", "HTTPS", True),
-                _edge("otel", "sentinel", "Export", "HTTPS", True),
-                _edge("otel", "grafana", "Prometheus Remote Write", "HTTPS", True),
-                _edge("sentinel", "alert-rule", "Triggers", ""),
-                _edge("alert-rule", "playbooks", "Alert", "API"),
-                _edge("playbooks", "servicenow", "Create Incident", "API", True),
-                _edge("sentinel", "retention", "enforces"),
-                _edge("iac-terraform", "sentinel", "provision", "API"),
-            ],
-        }),
+        "graph_json": json.dumps(
+            {
+                "nodes": [
+                    _node("cloud-log", "Azure Activity Log", "src-cloud-log", 50, 100),
+                    _node("container-log", "Container Logs", "src-container-log", 50, 200),
+                    _node("app-log", "Application Logs", "src-app-log", 50, 300),
+                    _node("traces", "Trace Spans", "src-trace", 50, 400),
+                    _node("metrics", "Metrics", "src-metric", 50, 500),
+                    _node("iam-log", "Azure AD Logs", "src-iam", 50, 600),
+                    _node("otel", "OTel Collector", "col-otel", 300, 300),
+                    _node("sentinel", "Microsoft Sentinel", "plt-sentinel", 550, 250),
+                    _node("grafana", "Grafana", "plt-grafana", 550, 450),
+                    _node("playbooks", "Sentinel Playbooks", "auto-soar", 750, 200),
+                    _node("alert-rule", "Alert Rules", "auto-alert-rule", 750, 350),
+                    _node("servicenow", "ServiceNow", "auto-ticket", 750, 500),
+                    _node("retention", "Log Retention Policy", "cmp-log-policy", 550, 600),
+                    _node("iac-terraform", "Terraform (IaC)", "auto-runbook", 300, 670),
+                ],
+                "edges": [
+                    _edge("cloud-log", "otel", "API", "HTTPS", True),
+                    _edge("container-log", "otel", "OTLP", "gRPC", True),
+                    _edge("app-log", "otel", "OTLP", "gRPC", True),
+                    _edge("traces", "otel", "OTLP", "gRPC", True),
+                    _edge("metrics", "otel", "OTLP", "gRPC", True),
+                    _edge("iam-log", "otel", "API", "HTTPS", True),
+                    _edge("otel", "sentinel", "Export", "HTTPS", True),
+                    _edge("otel", "grafana", "Prometheus Remote Write", "HTTPS", True),
+                    _edge("sentinel", "alert-rule", "Triggers", ""),
+                    _edge("alert-rule", "playbooks", "Alert", "API"),
+                    _edge("playbooks", "servicenow", "Create Incident", "API", True),
+                    _edge("sentinel", "retention", "enforces"),
+                    _edge("iac-terraform", "sentinel", "provision", "API"),
+                ],
+            }
+        ),
     },
     # 3 — Network Security Monitoring (Suricata + ELK)
     {
@@ -417,38 +437,40 @@ TEMPLATES = [
         "name": "Network Security Monitoring (Suricata + ELK)",
         "category": "NSM",
         "description": "Network security monitoring stack with NetFlow, packet capture, "
-                       "Suricata/Zeek IDS, Elastic/ELK for analysis, alert rules, and "
-                       "TheHive for incident response.",
+        "Suricata/Zeek IDS, Elastic/ELK for analysis, alert rules, and "
+        "TheHive for incident response.",
         "tags": json.dumps(["nsm", "suricata", "zeek", "elk", "elastic", "thehive", "pcap"]),
-        "graph_json": json.dumps({
-            "nodes": [
-                _node("flow", "NetFlow Data", "src-flow", 50, 100),
-                _node("pcap", "Packet Capture", "src-pcap", 50, 250),
-                _node("net-log", "Network Logs", "src-network-log", 50, 400),
-                _node("os-log", "OS/System Logs", "src-os-log", 50, 550),
-                _node("filebeat", "Filebeat", "col-filebeat", 250, 200),
-                _node("suricata", "Suricata/Zeek", "plt-suricata", 450, 150),
-                _node("elk", "Elastic/ELK", "plt-elastic", 450, 350),
-                _node("alert-rule", "Alert Rules", "auto-alert-rule", 650, 150),
-                _node("enrichment", "Threat Intel Enrichment", "auto-enrichment", 650, 300),
-                _node("thehive", "TheHive", "plt-thehive", 650, 450),
-                _node("retention", "Log Retention Policy", "cmp-log-policy", 450, 550),
-                _node("iac-ansible", "Ansible (IaC)", "auto-runbook", 250, 620),
-            ],
-            "edges": [
-                _edge("flow", "filebeat", "Forward", "TCP"),
-                _edge("pcap", "suricata", "Mirror/TAP", "Raw"),
-                _edge("net-log", "filebeat", "Syslog", "UDP/514"),
-                _edge("os-log", "filebeat", "File", ""),
-                _edge("filebeat", "elk", "Ingest", "HTTPS", True),
-                _edge("suricata", "elk", "EVE JSON", "HTTPS", True),
-                _edge("elk", "alert-rule", "Triggers", ""),
-                _edge("alert-rule", "enrichment", "Lookup", "API", True),
-                _edge("alert-rule", "thehive", "Create Case", "API", True),
-                _edge("elk", "retention", "enforces"),
-                _edge("iac-ansible", "elk", "provision", "SSH"),
-            ],
-        }),
+        "graph_json": json.dumps(
+            {
+                "nodes": [
+                    _node("flow", "NetFlow Data", "src-flow", 50, 100),
+                    _node("pcap", "Packet Capture", "src-pcap", 50, 250),
+                    _node("net-log", "Network Logs", "src-network-log", 50, 400),
+                    _node("os-log", "OS/System Logs", "src-os-log", 50, 550),
+                    _node("filebeat", "Filebeat", "col-filebeat", 250, 200),
+                    _node("suricata", "Suricata/Zeek", "plt-suricata", 450, 150),
+                    _node("elk", "Elastic/ELK", "plt-elastic", 450, 350),
+                    _node("alert-rule", "Alert Rules", "auto-alert-rule", 650, 150),
+                    _node("enrichment", "Threat Intel Enrichment", "auto-enrichment", 650, 300),
+                    _node("thehive", "TheHive", "plt-thehive", 650, 450),
+                    _node("retention", "Log Retention Policy", "cmp-log-policy", 450, 550),
+                    _node("iac-ansible", "Ansible (IaC)", "auto-runbook", 250, 620),
+                ],
+                "edges": [
+                    _edge("flow", "filebeat", "Forward", "TCP"),
+                    _edge("pcap", "suricata", "Mirror/TAP", "Raw"),
+                    _edge("net-log", "filebeat", "Syslog", "UDP/514"),
+                    _edge("os-log", "filebeat", "File", ""),
+                    _edge("filebeat", "elk", "Ingest", "HTTPS", True),
+                    _edge("suricata", "elk", "EVE JSON", "HTTPS", True),
+                    _edge("elk", "alert-rule", "Triggers", ""),
+                    _edge("alert-rule", "enrichment", "Lookup", "API", True),
+                    _edge("alert-rule", "thehive", "Create Case", "API", True),
+                    _edge("elk", "retention", "enforces"),
+                    _edge("iac-ansible", "elk", "provision", "SSH"),
+                ],
+            }
+        ),
     },
     # 4 — Full-Stack Observability (Datadog)
     {
@@ -456,40 +478,42 @@ TEMPLATES = [
         "name": "Full-Stack Observability (Datadog)",
         "category": "APM",
         "description": "Full-stack observability with Datadog for logs, metrics, and traces. "
-                       "OTel Collector for vendor-neutral ingestion, Grafana for supplemental "
-                       "dashboards, PagerDuty for on-call, and alert rules.",
+        "OTel Collector for vendor-neutral ingestion, Grafana for supplemental "
+        "dashboards, PagerDuty for on-call, and alert rules.",
         "tags": json.dumps(["apm", "datadog", "otel", "grafana", "pagerduty", "fullstack"]),
-        "graph_json": json.dumps({
-            "nodes": [
-                _node("app-log", "Application Logs", "src-app-log", 50, 100),
-                _node("metrics", "App Metrics", "src-metric", 50, 250),
-                _node("traces", "Trace Spans", "src-trace", 50, 400),
-                _node("container-log", "Container Logs", "src-container-log", 50, 550),
-                _node("iam-log", "IAM Logs", "src-iam", 50, 700),
-                _node("otel", "OTel Collector", "col-otel", 300, 300),
-                _node("datadog", "Datadog", "plt-datadog", 550, 250),
-                _node("grafana", "Grafana", "plt-grafana", 550, 450),
-                _node("alert-rule", "Alert Rules", "auto-alert-rule", 750, 200),
-                _node("pagerduty", "PagerDuty", "auto-notification", 750, 350),
-                _node("runbook", "Runbook", "auto-runbook", 750, 500),
-                _node("retention", "Log Retention Policy", "cmp-log-policy", 550, 600),
-                _node("iac-helm", "Helm (IaC)", "auto-runbook", 300, 670),
-            ],
-            "edges": [
-                _edge("app-log", "otel", "OTLP", "gRPC", True),
-                _edge("metrics", "otel", "OTLP", "gRPC", True),
-                _edge("traces", "otel", "OTLP", "gRPC", True),
-                _edge("container-log", "otel", "OTLP", "gRPC", True),
-                _edge("iam-log", "otel", "API", "HTTPS", True),
-                _edge("otel", "datadog", "DD Agent", "HTTPS", True),
-                _edge("otel", "grafana", "Prometheus", "HTTPS", True),
-                _edge("datadog", "alert-rule", "Monitor", ""),
-                _edge("alert-rule", "pagerduty", "Notify", "API", True),
-                _edge("alert-rule", "runbook", "Trigger", "API"),
-                _edge("datadog", "retention", "enforces"),
-                _edge("iac-helm", "datadog", "deploy", "K8s"),
-            ],
-        }),
+        "graph_json": json.dumps(
+            {
+                "nodes": [
+                    _node("app-log", "Application Logs", "src-app-log", 50, 100),
+                    _node("metrics", "App Metrics", "src-metric", 50, 250),
+                    _node("traces", "Trace Spans", "src-trace", 50, 400),
+                    _node("container-log", "Container Logs", "src-container-log", 50, 550),
+                    _node("iam-log", "IAM Logs", "src-iam", 50, 700),
+                    _node("otel", "OTel Collector", "col-otel", 300, 300),
+                    _node("datadog", "Datadog", "plt-datadog", 550, 250),
+                    _node("grafana", "Grafana", "plt-grafana", 550, 450),
+                    _node("alert-rule", "Alert Rules", "auto-alert-rule", 750, 200),
+                    _node("pagerduty", "PagerDuty", "auto-notification", 750, 350),
+                    _node("runbook", "Runbook", "auto-runbook", 750, 500),
+                    _node("retention", "Log Retention Policy", "cmp-log-policy", 550, 600),
+                    _node("iac-helm", "Helm (IaC)", "auto-runbook", 300, 670),
+                ],
+                "edges": [
+                    _edge("app-log", "otel", "OTLP", "gRPC", True),
+                    _edge("metrics", "otel", "OTLP", "gRPC", True),
+                    _edge("traces", "otel", "OTLP", "gRPC", True),
+                    _edge("container-log", "otel", "OTLP", "gRPC", True),
+                    _edge("iam-log", "otel", "API", "HTTPS", True),
+                    _edge("otel", "datadog", "DD Agent", "HTTPS", True),
+                    _edge("otel", "grafana", "Prometheus", "HTTPS", True),
+                    _edge("datadog", "alert-rule", "Monitor", ""),
+                    _edge("alert-rule", "pagerduty", "Notify", "API", True),
+                    _edge("alert-rule", "runbook", "Trigger", "API"),
+                    _edge("datadog", "retention", "enforces"),
+                    _edge("iac-helm", "datadog", "deploy", "K8s"),
+                ],
+            }
+        ),
     },
     # 5 — DoD IL4 Compliance Stack
     {
@@ -497,99 +521,112 @@ TEMPLATES = [
         "name": "DoD IL4 Compliance Stack",
         "category": "DoD",
         "description": "Comprehensive DoD IL4 observability stack with all source types, "
-                       "WEF for Windows endpoints, Fluentd collection, Splunk SIEM, "
-                       "EDR telemetry, IAM logs, SOAR automation, S3 archive, "
-                       "log retention policy, and MITRE ATT&CK detection baseline.",
+        "WEF for Windows endpoints, Fluentd collection, Splunk SIEM, "
+        "EDR telemetry, IAM logs, SOAR automation, S3 archive, "
+        "log retention policy, and MITRE ATT&CK detection baseline.",
         "tags": json.dumps(["dod", "il4", "compliance", "nist", "mitre", "splunk", "edr", "soar"]),
-        "graph_json": json.dumps({
-            "nodes": [
-                # Sources (all types)
-                _node("app-log", "Application Logs", "src-app-log", 50, 50),
-                _node("os-log", "OS/System Logs", "src-os-log", 50, 130),
-                _node("net-log", "Network Logs", "src-network-log", 50, 210),
-                _node("cloud-log", "Cloud Audit Logs", "src-cloud-log", 50, 290),
-                _node("container-log", "Container Logs", "src-container-log", 50, 370),
-                _node("db-audit", "DB Audit Logs", "src-db-audit", 50, 450),
-                _node("edr", "EDR Telemetry", "src-endpoint", 50, 530),
-                _node("iam-log", "IAM/IdP Logs", "src-iam", 50, 610),
-                _node("vuln", "Vuln Scanner", "src-vulnerability", 50, 690),
-                _node("metrics", "Metrics", "src-metric", 50, 770),
-                _node("traces", "Traces", "src-trace", 50, 850),
-                # Collectors
-                _node("wef", "Windows Event Forwarding", "src-wef", 250, 130),
-                _node("fluentd", "Fluentd", "col-fluentd", 250, 350),
-                _node("otel", "OTel Collector", "col-otel", 250, 600),
-                _node("s3-archive", "S3 Log Archive", "col-s3", 250, 850),
-                # Platform
-                _node("splunk", "Splunk (GovCloud)", "plt-splunk", 500, 300),
-                _node("prometheus", "Prometheus", "plt-prometheus", 500, 600),
-                _node("grafana", "Grafana", "plt-grafana", 500, 750),
-                # Automation
-                _node("alert-rule", "Alert Rules", "auto-alert-rule", 700, 200),
-                _node("soar", "SOAR Playbook", "auto-soar", 700, 350),
-                _node("enrichment", "Threat Intel Enrichment", "auto-enrichment", 700, 500),
-                _node("ticket", "ServiceNow", "auto-ticket", 700, 650),
-                _node("notify", "PagerDuty", "auto-notification", 700, 800),
-                _node("runbook", "Runbook", "auto-runbook", 900, 350),
-                # Compliance
-                _node("retention", "Log Retention Policy", "cmp-log-policy", 500, 900),
-                _node("baseline", "MITRE ATT&CK Baseline", "cmp-baseline", 700, 900,
-                      extra={"config_json": json.dumps({
-                          "techniques": [
-                              {"id": "T1059", "name": "Command and Scripting Interpreter", "covered": True},
-                              {"id": "T1078", "name": "Valid Accounts", "covered": True},
-                              {"id": "T1071", "name": "Application Layer Protocol", "covered": True},
-                              {"id": "T1053", "name": "Scheduled Task/Job", "covered": False},
-                              {"id": "T1021", "name": "Remote Services", "covered": False},
-                              {"id": "T1055", "name": "Process Injection", "covered": False},
-                              {"id": "T1003", "name": "OS Credential Dumping", "covered": True},
-                              {"id": "T1110", "name": "Brute Force", "covered": True},
-                              {"id": "T1486", "name": "Data Encrypted for Impact", "covered": True},
-                              {"id": "T1562", "name": "Impair Defenses", "covered": False},
-                          ]
-                      })}),
-                _node("audit-report", "Audit Report", "cmp-audit-report", 900, 900),
-                _node("iac-terraform", "Terraform (IaC)", "auto-runbook", 250, 970),
-            ],
-            "edges": [
-                # Sources -> Collectors
-                _edge("app-log", "fluentd", "Forward", "TCP/24224"),
-                _edge("os-log", "wef", "WEF", "WinRM", True),
-                _edge("wef", "fluentd", "Forward", "TCP/24224"),
-                _edge("net-log", "fluentd", "Syslog", "TLS/6514", True),
-                _edge("cloud-log", "fluentd", "API", "HTTPS", True),
-                _edge("container-log", "fluentd", "Stdout", ""),
-                _edge("db-audit", "fluentd", "File", ""),
-                _edge("edr", "otel", "API", "HTTPS", True),
-                _edge("iam-log", "otel", "API", "HTTPS", True),
-                _edge("vuln", "otel", "API", "HTTPS", True),
-                _edge("metrics", "otel", "OTLP", "gRPC", True),
-                _edge("traces", "otel", "OTLP", "gRPC", True),
-                # Collectors -> Platforms
-                _edge("fluentd", "splunk", "HEC", "HTTPS", True),
-                _edge("otel", "splunk", "HEC", "HTTPS", True),
-                _edge("otel", "prometheus", "Remote Write", "HTTPS", True),
-                _edge("fluentd", "s3-archive", "Archive", "HTTPS", True),
-                # Platform -> Visualization
-                _edge("prometheus", "grafana", "Query", "HTTPS", True),
-                # Platform -> Automation
-                _edge("splunk", "alert-rule", "Triggers", ""),
-                _edge("alert-rule", "soar", "Alert", "API"),
-                _edge("alert-rule", "enrichment", "Lookup", "API", True),
-                _edge("soar", "ticket", "Create Incident", "API", True),
-                _edge("soar", "notify", "Notify", "API", True),
-                _edge("soar", "runbook", "Execute", "API"),
-                _edge("s3-archive", "retention", "enforces"),
-                _edge("splunk", "baseline", "maps to"),
-                _edge("splunk", "audit-report", "generates"),
-                _edge("iac-terraform", "splunk", "provision", "API"),
-            ],
-        }),
+        "graph_json": json.dumps(
+            {
+                "nodes": [
+                    # Sources (all types)
+                    _node("app-log", "Application Logs", "src-app-log", 50, 50),
+                    _node("os-log", "OS/System Logs", "src-os-log", 50, 130),
+                    _node("net-log", "Network Logs", "src-network-log", 50, 210),
+                    _node("cloud-log", "Cloud Audit Logs", "src-cloud-log", 50, 290),
+                    _node("container-log", "Container Logs", "src-container-log", 50, 370),
+                    _node("db-audit", "DB Audit Logs", "src-db-audit", 50, 450),
+                    _node("edr", "EDR Telemetry", "src-endpoint", 50, 530),
+                    _node("iam-log", "IAM/IdP Logs", "src-iam", 50, 610),
+                    _node("vuln", "Vuln Scanner", "src-vulnerability", 50, 690),
+                    _node("metrics", "Metrics", "src-metric", 50, 770),
+                    _node("traces", "Traces", "src-trace", 50, 850),
+                    # Collectors
+                    _node("wef", "Windows Event Forwarding", "src-wef", 250, 130),
+                    _node("fluentd", "Fluentd", "col-fluentd", 250, 350),
+                    _node("otel", "OTel Collector", "col-otel", 250, 600),
+                    _node("s3-archive", "S3 Log Archive", "col-s3", 250, 850),
+                    # Platform
+                    _node("splunk", "Splunk (GovCloud)", "plt-splunk", 500, 300),
+                    _node("prometheus", "Prometheus", "plt-prometheus", 500, 600),
+                    _node("grafana", "Grafana", "plt-grafana", 500, 750),
+                    # Automation
+                    _node("alert-rule", "Alert Rules", "auto-alert-rule", 700, 200),
+                    _node("soar", "SOAR Playbook", "auto-soar", 700, 350),
+                    _node("enrichment", "Threat Intel Enrichment", "auto-enrichment", 700, 500),
+                    _node("ticket", "ServiceNow", "auto-ticket", 700, 650),
+                    _node("notify", "PagerDuty", "auto-notification", 700, 800),
+                    _node("runbook", "Runbook", "auto-runbook", 900, 350),
+                    # Compliance
+                    _node("retention", "Log Retention Policy", "cmp-log-policy", 500, 900),
+                    _node(
+                        "baseline",
+                        "MITRE ATT&CK Baseline",
+                        "cmp-baseline",
+                        700,
+                        900,
+                        extra={
+                            "config_json": json.dumps(
+                                {
+                                    "techniques": [
+                                        {"id": "T1059", "name": "Command and Scripting Interpreter", "covered": True},
+                                        {"id": "T1078", "name": "Valid Accounts", "covered": True},
+                                        {"id": "T1071", "name": "Application Layer Protocol", "covered": True},
+                                        {"id": "T1053", "name": "Scheduled Task/Job", "covered": False},
+                                        {"id": "T1021", "name": "Remote Services", "covered": False},
+                                        {"id": "T1055", "name": "Process Injection", "covered": False},
+                                        {"id": "T1003", "name": "OS Credential Dumping", "covered": True},
+                                        {"id": "T1110", "name": "Brute Force", "covered": True},
+                                        {"id": "T1486", "name": "Data Encrypted for Impact", "covered": True},
+                                        {"id": "T1562", "name": "Impair Defenses", "covered": False},
+                                    ]
+                                }
+                            )
+                        },
+                    ),
+                    _node("audit-report", "Audit Report", "cmp-audit-report", 900, 900),
+                    _node("iac-terraform", "Terraform (IaC)", "auto-runbook", 250, 970),
+                ],
+                "edges": [
+                    # Sources -> Collectors
+                    _edge("app-log", "fluentd", "Forward", "TCP/24224"),
+                    _edge("os-log", "wef", "WEF", "WinRM", True),
+                    _edge("wef", "fluentd", "Forward", "TCP/24224"),
+                    _edge("net-log", "fluentd", "Syslog", "TLS/6514", True),
+                    _edge("cloud-log", "fluentd", "API", "HTTPS", True),
+                    _edge("container-log", "fluentd", "Stdout", ""),
+                    _edge("db-audit", "fluentd", "File", ""),
+                    _edge("edr", "otel", "API", "HTTPS", True),
+                    _edge("iam-log", "otel", "API", "HTTPS", True),
+                    _edge("vuln", "otel", "API", "HTTPS", True),
+                    _edge("metrics", "otel", "OTLP", "gRPC", True),
+                    _edge("traces", "otel", "OTLP", "gRPC", True),
+                    # Collectors -> Platforms
+                    _edge("fluentd", "splunk", "HEC", "HTTPS", True),
+                    _edge("otel", "splunk", "HEC", "HTTPS", True),
+                    _edge("otel", "prometheus", "Remote Write", "HTTPS", True),
+                    _edge("fluentd", "s3-archive", "Archive", "HTTPS", True),
+                    # Platform -> Visualization
+                    _edge("prometheus", "grafana", "Query", "HTTPS", True),
+                    # Platform -> Automation
+                    _edge("splunk", "alert-rule", "Triggers", ""),
+                    _edge("alert-rule", "soar", "Alert", "API"),
+                    _edge("alert-rule", "enrichment", "Lookup", "API", True),
+                    _edge("soar", "ticket", "Create Incident", "API", True),
+                    _edge("soar", "notify", "Notify", "API", True),
+                    _edge("soar", "runbook", "Execute", "API"),
+                    _edge("s3-archive", "retention", "enforces"),
+                    _edge("splunk", "baseline", "maps to"),
+                    _edge("splunk", "audit-report", "generates"),
+                    _edge("iac-terraform", "splunk", "provision", "API"),
+                ],
+            }
+        ),
     },
 ]
 
 
 # ── Init function ────────────────────────────────────────────────────────────
+
 
 def init_db():
     """Create schema and seed templates."""
@@ -609,8 +646,7 @@ def init_db():
                 conn.execute(
                     "INSERT INTO od_templates (id, name, category, description, graph_json, tags) "
                     "VALUES (?, ?, ?, ?, ?, ?)",
-                    (tpl["id"], tpl["name"], tpl["category"], tpl["description"],
-                     tpl["graph_json"], tpl["tags"]),
+                    (tpl["id"], tpl["name"], tpl["category"], tpl["description"], tpl["graph_json"], tpl["tags"]),
                 )
             conn.commit()
 
@@ -620,10 +656,8 @@ def init_db():
             check = conn.execute("SELECT 1 FROM od_snippets WHERE id=?", (s["id"],)).fetchone()
             if not check:
                 conn.execute(
-                    "INSERT INTO od_snippets (id, name, category, description, graph_json, tags) "
-                    "VALUES (?,?,?,?,?,?)",
-                    (s["id"], s["name"], s["category"], s["description"],
-                     s["graph_json"], s["tags"]),
+                    "INSERT INTO od_snippets (id, name, category, description, graph_json, tags) VALUES (?,?,?,?,?,?)",
+                    (s["id"], s["name"], s["category"], s["description"], s["graph_json"], s["tags"]),
                 )
                 snp_added += 1
         if snp_added:

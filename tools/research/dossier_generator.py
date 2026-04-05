@@ -54,18 +54,21 @@ CONFIG_PATH = BASE_DIR / "args" / "research_config.yaml"
 # =========================================================================
 try:
     import yaml
+
     _HAS_YAML = True
 except ImportError:
     _HAS_YAML = False
 
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
 
     def audit_log_event(**kwargs):
         return -1
+
 
 # =========================================================================
 # CONSTANTS
@@ -179,10 +182,13 @@ def _audit(event_type, action, details=None):
     """Write audit trail entry (append-only, D6)."""
     if _HAS_AUDIT:
         try:
-            audit_log_event(event_type=event_type, actor="research-engine",
-                            action=action,
-                            details=json.dumps(details) if details else None,
-                            project_id="research-engine")
+            audit_log_event(
+                event_type=event_type,
+                actor="research-engine",
+                action=action,
+                details=json.dumps(details) if details else None,
+                project_id="research-engine",
+            )
         except Exception:
             pass
 
@@ -223,8 +229,11 @@ def _build_executive_summary(challenges, regulatory_maps, build_buy, capability_
         str: executive summary paragraph.
     """
     critical = [c for c in challenges if c.get("composite_score", 0) >= SEVERITY_THRESHOLDS["critical"]]
-    notable = [c for c in challenges
-               if SEVERITY_THRESHOLDS["notable"] <= c.get("composite_score", 0) < SEVERITY_THRESHOLDS["critical"]]
+    notable = [
+        c
+        for c in challenges
+        if SEVERITY_THRESHOLDS["notable"] <= c.get("composite_score", 0) < SEVERITY_THRESHOLDS["critical"]
+    ]
 
     # Top categories
     cat_counts = {}
@@ -269,9 +278,7 @@ def _build_executive_summary(challenges, regulatory_maps, build_buy, capability_
             f"{buy_count} buy, and {partner_count} partner decisions."
         )
     if coverage_scores:
-        parts.append(
-            f"ICDEV™ capability coverage averages {avg_coverage:.0%} across mapped challenges."
-        )
+        parts.append(f"ICDEV™ capability coverage averages {avg_coverage:.0%} across mapped challenges.")
 
     return " ".join(parts)
 
@@ -317,8 +324,11 @@ def _build_challenge_section(challenges, severity_filter):
     if severity_filter == "critical":
         filtered = [c for c in challenges if c.get("composite_score", 0) >= SEVERITY_THRESHOLDS["critical"]]
     elif severity_filter == "notable":
-        filtered = [c for c in challenges
-                    if SEVERITY_THRESHOLDS["notable"] <= c.get("composite_score", 0) < SEVERITY_THRESHOLDS["critical"]]
+        filtered = [
+            c
+            for c in challenges
+            if SEVERITY_THRESHOLDS["notable"] <= c.get("composite_score", 0) < SEVERITY_THRESHOLDS["critical"]
+        ]
     else:
         filtered = challenges
 
@@ -370,8 +380,10 @@ def _build_regulatory_section(regulatory_maps):
         total_enforcement = sum(r.get("enforcement_actions", 0) for r in regs)
         coverage_scores = [r.get("crosswalk_coverage", 0.0) for r in regs if r.get("crosswalk_coverage") is not None]
         avg_coverage = sum(coverage_scores) / max(1, len(coverage_scores)) if coverage_scores else 0.0
-        lines.append(f"**Regulations:** {len(regs)} | **Enforcement Actions:** {total_enforcement} | "
-                     f"**Avg Crosswalk Coverage:** {avg_coverage:.0%}")
+        lines.append(
+            f"**Regulations:** {len(regs)} | **Enforcement Actions:** {total_enforcement} | "
+            f"**Avg Crosswalk Coverage:** {avg_coverage:.0%}"
+        )
         lines.append("")
         for r in regs:
             name = r.get("regulation_name", "Unknown")
@@ -417,7 +429,7 @@ def _build_competitive_section(signals):
     # Top projects/products by upvotes or citations
     top_signals = sorted(
         [s for s in signals if s.get("source_type") in oss_sources | saas_sources],
-        key=lambda x: (x.get("upvotes", 0) + x.get("citations", 0)),
+        key=lambda x: x.get("upvotes", 0) + x.get("citations", 0),
         reverse=True,
     )[:10]
 
@@ -461,9 +473,7 @@ def _build_build_buy_section(build_buy_records):
         partner = bb.get("partner_score", 0.0)
         effort = bb.get("estimated_effort") or "N/A"
         risk = bb.get("risk_level", "medium")
-        lines.append(
-            f"| {challenge_id} | **{rec}** | {build:.2f} | {buy:.2f} | {partner:.2f} | {effort} | {risk} |"
-        )
+        lines.append(f"| {challenge_id} | **{rec}** | {build:.2f} | {buy:.2f} | {partner:.2f} | {effort} | {risk} |")
 
     return "\n".join(lines)
 
@@ -544,8 +554,10 @@ def _build_opportunity_section(overall_score, challenges, build_buy):
         )
 
     if build_count > 0:
-        parts.append(f"{build_count} challenge{'s' if build_count != 1 else ''} "
-                     f"recommended for in-house build using ICDEV™ capabilities.")
+        parts.append(
+            f"{build_count} challenge{'s' if build_count != 1 else ''} "
+            f"recommended for in-house build using ICDEV™ capabilities."
+        )
 
     return " ".join(parts)
 
@@ -623,6 +635,7 @@ def _build_forecast_section(session_id, db_path=None):
     """
     try:
         from tools.research.forecast_generator import get_forecasts
+
         forecasts = get_forecasts(session_id, db_path=db_path, limit=5)
     except Exception:
         forecasts = []
@@ -717,9 +730,7 @@ def _build_appendix_challenges(challenges):
         category = c.get("category", "other")
         severity = c.get("severity", "appendix")
         signal_count = c.get("signal_count", 0)
-        lines.append(
-            f"| {i} | {title} | {score:.2f} | {category} | {severity} | {signal_count} |"
-        )
+        lines.append(f"| {i} | {title} | {score:.2f} | {category} | {severity} | {signal_count} |")
 
     return "\n".join(lines)
 
@@ -745,50 +756,61 @@ def generate_dossier(session_id, db_path=None):
     conn = _get_db(db_path)
     try:
         # 1. Load session
-        session_row = conn.execute(
-            "SELECT * FROM research_sessions WHERE id = ?", (session_id,)
-        ).fetchone()
+        session_row = conn.execute("SELECT * FROM research_sessions WHERE id = ?", (session_id,)).fetchone()
         if not session_row:
             return {"error": f"Session not found: {session_id}"}
         session = dict(session_row)
 
         # 2. Load vertical config
-        vert_row = conn.execute(
-            "SELECT * FROM research_verticals WHERE id = ?", (session["vertical_id"],)
-        ).fetchone()
+        vert_row = conn.execute("SELECT * FROM research_verticals WHERE id = ?", (session["vertical_id"],)).fetchone()
         if not vert_row:
             return {"error": f"Vertical not found: {session['vertical_id']}"}
         vertical = dict(vert_row)
 
         # 3. Query challenges sorted by composite_score DESC
-        challenges = [dict(r) for r in conn.execute(
-            "SELECT * FROM research_challenges WHERE session_id = ? ORDER BY composite_score DESC",
-            (session_id,),
-        ).fetchall()]
+        challenges = [
+            dict(r)
+            for r in conn.execute(
+                "SELECT * FROM research_challenges WHERE session_id = ? ORDER BY composite_score DESC",
+                (session_id,),
+            ).fetchall()
+        ]
 
         # 4. Query regulatory mappings
-        regulatory_maps = [dict(r) for r in conn.execute(
-            "SELECT * FROM research_regulatory_map WHERE session_id = ?",
-            (session_id,),
-        ).fetchall()]
+        regulatory_maps = [
+            dict(r)
+            for r in conn.execute(
+                "SELECT * FROM research_regulatory_map WHERE session_id = ?",
+                (session_id,),
+            ).fetchall()
+        ]
 
         # 5. Query build/buy analyses
-        build_buy = [dict(r) for r in conn.execute(
-            "SELECT * FROM research_build_buy WHERE session_id = ?",
-            (session_id,),
-        ).fetchall()]
+        build_buy = [
+            dict(r)
+            for r in conn.execute(
+                "SELECT * FROM research_build_buy WHERE session_id = ?",
+                (session_id,),
+            ).fetchall()
+        ]
 
         # 6. Query capability mappings
-        capability_maps = [dict(r) for r in conn.execute(
-            "SELECT * FROM research_capability_map WHERE session_id = ?",
-            (session_id,),
-        ).fetchall()]
+        capability_maps = [
+            dict(r)
+            for r in conn.execute(
+                "SELECT * FROM research_capability_map WHERE session_id = ?",
+                (session_id,),
+            ).fetchall()
+        ]
 
         # 7. Query signals (for source stats)
-        signals = [dict(r) for r in conn.execute(
-            "SELECT * FROM research_signals WHERE session_id = ?",
-            (session_id,),
-        ).fetchall()]
+        signals = [
+            dict(r)
+            for r in conn.execute(
+                "SELECT * FROM research_signals WHERE session_id = ?",
+                (session_id,),
+            ).fetchall()
+        ]
 
         # 8. Build all sections
         executive_summary = _build_executive_summary(challenges, regulatory_maps, build_buy, capability_maps)
@@ -816,11 +838,18 @@ def generate_dossier(session_id, db_path=None):
 
         # Counts for template
         critical_count = len([c for c in challenges if c.get("composite_score", 0) >= SEVERITY_THRESHOLDS["critical"]])
-        notable_count = len([c for c in challenges
-                            if SEVERITY_THRESHOLDS["notable"] <= c.get("composite_score", 0) < SEVERITY_THRESHOLDS["critical"]])
+        notable_count = len(
+            [
+                c
+                for c in challenges
+                if SEVERITY_THRESHOLDS["notable"] <= c.get("composite_score", 0) < SEVERITY_THRESHOLDS["critical"]
+            ]
+        )
 
         # Average capability coverage
-        coverage_scores = [cm.get("coverage_score", 0.0) for cm in capability_maps if cm.get("coverage_score") is not None]
+        coverage_scores = [
+            cm.get("coverage_score", 0.0) for cm in capability_maps if cm.get("coverage_score") is not None
+        ]
         avg_coverage = sum(coverage_scores) / max(1, len(coverage_scores)) if coverage_scores else 0.0
         enhancement_count = sum(1 for cm in capability_maps if cm.get("enhancement_needed", 0) > 0)
 
@@ -879,13 +908,15 @@ def generate_dossier(session_id, db_path=None):
                 len(build_buy),
                 round(avg_coverage, 4),
                 overall_score,
-                json.dumps({
-                    "enhancement_count": enhancement_count,
-                    "signal_source_count": len(set(s.get("source", "") for s in signals)),
-                    "build_count": sum(1 for bb in build_buy if bb.get("recommendation") == "build"),
-                    "buy_count": sum(1 for bb in build_buy if bb.get("recommendation") == "buy"),
-                    "partner_count": sum(1 for bb in build_buy if bb.get("recommendation") == "partner"),
-                }),
+                json.dumps(
+                    {
+                        "enhancement_count": enhancement_count,
+                        "signal_source_count": len(set(s.get("source", "") for s in signals)),
+                        "build_count": sum(1 for bb in build_buy if bb.get("recommendation") == "build"),
+                        "buy_count": sum(1 for bb in build_buy if bb.get("recommendation") == "buy"),
+                        "partner_count": sum(1 for bb in build_buy if bb.get("recommendation") == "partner"),
+                    }
+                ),
                 now,
             ),
         )
@@ -899,12 +930,19 @@ def generate_dossier(session_id, db_path=None):
         )
         conn.commit()
 
-        _audit("research.dossier.generated",
-               f"Generated dossier {dossier_id} for session {session_id}",
-               {"dossier_id": dossier_id, "session_id": session_id,
-                "overall_score": overall_score, "challenge_count": len(challenges),
-                "critical_count": critical_count, "notable_count": notable_count,
-                "signal_count": len(signals)})
+        _audit(
+            "research.dossier.generated",
+            f"Generated dossier {dossier_id} for session {session_id}",
+            {
+                "dossier_id": dossier_id,
+                "session_id": session_id,
+                "overall_score": overall_score,
+                "challenge_count": len(challenges),
+                "critical_count": critical_count,
+                "notable_count": notable_count,
+                "signal_count": len(signals),
+            },
+        )
 
         return {
             "dossier_id": dossier_id,
@@ -946,9 +984,7 @@ def get_dossier(dossier_id=None, session_id=None, db_path=None):
     conn = _get_db(db_path)
     try:
         if dossier_id:
-            row = conn.execute(
-                "SELECT * FROM research_dossiers WHERE id = ?", (dossier_id,)
-            ).fetchone()
+            row = conn.execute("SELECT * FROM research_dossiers WHERE id = ?", (dossier_id,)).fetchone()
         else:
             # Get latest dossier for session
             row = conn.execute(
@@ -1002,11 +1038,13 @@ def list_dossiers(status=None, db_path=None):
     """
     conn = _get_db(db_path)
     try:
-        query = ("SELECT id, session_id, vertical_id, title, "
-                 "overall_opportunity_score, challenge_count, critical_challenges, "
-                 "notable_challenges, status, reviewer, reviewed_at, "
-                 "generated_at, classification "
-                 "FROM research_dossiers")
+        query = (
+            "SELECT id, session_id, vertical_id, title, "
+            "overall_opportunity_score, challenge_count, critical_challenges, "
+            "notable_challenges, status, reviewer, reviewed_at, "
+            "generated_at, classification "
+            "FROM research_dossiers"
+        )
         params = []
 
         if status:
@@ -1021,25 +1059,25 @@ def list_dossiers(status=None, db_path=None):
 
         dossiers = []
         for row in rows:
-            dossiers.append({
-                "dossier_id": row["id"],
-                "session_id": row["session_id"],
-                "vertical_id": row["vertical_id"],
-                "title": row["title"],
-                "overall_opportunity_score": row["overall_opportunity_score"],
-                "challenge_count": row["challenge_count"],
-                "critical_challenges": row["critical_challenges"],
-                "notable_challenges": row["notable_challenges"],
-                "status": row["status"],
-                "reviewer": row["reviewer"],
-                "reviewed_at": row["reviewed_at"],
-                "generated_at": row["generated_at"],
-            })
+            dossiers.append(
+                {
+                    "dossier_id": row["id"],
+                    "session_id": row["session_id"],
+                    "vertical_id": row["vertical_id"],
+                    "title": row["title"],
+                    "overall_opportunity_score": row["overall_opportunity_score"],
+                    "challenge_count": row["challenge_count"],
+                    "critical_challenges": row["critical_challenges"],
+                    "notable_challenges": row["notable_challenges"],
+                    "status": row["status"],
+                    "reviewer": row["reviewer"],
+                    "reviewed_at": row["reviewed_at"],
+                    "generated_at": row["generated_at"],
+                }
+            )
 
         # Counts by status
-        count_rows = conn.execute(
-            "SELECT status, COUNT(*) as cnt FROM research_dossiers GROUP BY status"
-        ).fetchall()
+        count_rows = conn.execute("SELECT status, COUNT(*) as cnt FROM research_dossiers GROUP BY status").fetchall()
         counts = {r["status"]: r["cnt"] for r in count_rows}
 
         return {
@@ -1078,9 +1116,7 @@ def review_dossier(dossier_id, reviewer, status, review_notes=None, db_path=None
     conn = _get_db(db_path)
     try:
         # Fetch original dossier
-        row = conn.execute(
-            "SELECT * FROM research_dossiers WHERE id = ?", (dossier_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM research_dossiers WHERE id = ?", (dossier_id,)).fetchone()
         if not row:
             return {"error": f"Dossier not found: {dossier_id}"}
 
@@ -1118,11 +1154,13 @@ def review_dossier(dossier_id, reviewer, status, review_notes=None, db_path=None
                 now,
                 review_notes,
                 original["fitness_assessment_id"],
-                json.dumps({
-                    **_safe_json_loads(original.get("metadata"), {}),
-                    "reviewed_from": dossier_id,
-                    "review_action": status,
-                }),
+                json.dumps(
+                    {
+                        **_safe_json_loads(original.get("metadata"), {}),
+                        "reviewed_from": dossier_id,
+                        "review_action": status,
+                    }
+                ),
                 now,
             ),
         )
@@ -1138,11 +1176,17 @@ def review_dossier(dossier_id, reviewer, status, review_notes=None, db_path=None
 
         conn.commit()
 
-        _audit("research.dossier.reviewed",
-               f"Dossier {dossier_id} reviewed as {status} by {reviewer}",
-               {"original_dossier_id": dossier_id, "new_dossier_id": new_id,
-                "reviewer": reviewer, "status": status,
-                "session_id": original["session_id"]})
+        _audit(
+            "research.dossier.reviewed",
+            f"Dossier {dossier_id} reviewed as {status} by {reviewer}",
+            {
+                "original_dossier_id": dossier_id,
+                "new_dossier_id": new_id,
+                "reviewer": reviewer,
+                "status": status,
+                "session_id": original["session_id"],
+            },
+        )
 
         return {
             "dossier_id": new_id,
@@ -1175,17 +1219,17 @@ def trigger_fitness(dossier_id, db_path=None):
     conn = _get_db(db_path)
     try:
         # Fetch the dossier
-        row = conn.execute(
-            "SELECT * FROM research_dossiers WHERE id = ?", (dossier_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM research_dossiers WHERE id = ?", (dossier_id,)).fetchone()
         if not row:
             return {"error": f"Dossier not found: {dossier_id}"}
 
         original = dict(row)
 
         if original["status"] not in ("approved", "reviewed"):
-            return {"error": f"Dossier must be approved or reviewed to trigger fitness. "
-                             f"Current status: {original['status']}"}
+            return {
+                "error": f"Dossier must be approved or reviewed to trigger fitness. "
+                f"Current status: {original['status']}"
+            }
 
         # INSERT new row with child_app_triggered status
         new_id = _dossier_id()
@@ -1219,11 +1263,13 @@ def trigger_fitness(dossier_id, db_path=None):
                 original["reviewed_at"],
                 original["review_notes"],
                 None,  # fitness_assessment_id will be populated by caller
-                json.dumps({
-                    **_safe_json_loads(original.get("metadata"), {}),
-                    "triggered_from": dossier_id,
-                    "trigger_action": "child_app_triggered",
-                }),
+                json.dumps(
+                    {
+                        **_safe_json_loads(original.get("metadata"), {}),
+                        "triggered_from": dossier_id,
+                        "trigger_action": "child_app_triggered",
+                    }
+                ),
                 now,
             ),
         )
@@ -1237,11 +1283,16 @@ def trigger_fitness(dossier_id, db_path=None):
         )
         conn.commit()
 
-        _audit("research.dossier.fitness_triggered",
-               f"Dossier {dossier_id} triggered fitness assessment",
-               {"original_dossier_id": dossier_id, "new_dossier_id": new_id,
+        _audit(
+            "research.dossier.fitness_triggered",
+            f"Dossier {dossier_id} triggered fitness assessment",
+            {
+                "original_dossier_id": dossier_id,
+                "new_dossier_id": new_id,
                 "session_id": original["session_id"],
-                "overall_score": original["overall_opportunity_score"]})
+                "overall_score": original["overall_opportunity_score"],
+            },
+        )
 
         return {
             "dossier_id": new_id,
@@ -1276,9 +1327,11 @@ def _print_human(action, result):
         print(f"  Session: {result.get('session_id')}")
         print(f"  Title: {result.get('title')}")
         print(f"  Overall Score: {result.get('overall_opportunity_score', 0):.2f}")
-        print(f"  Challenges: {result.get('challenge_count', 0)} "
-              f"({result.get('critical_challenges', 0)} critical, "
-              f"{result.get('notable_challenges', 0)} notable)")
+        print(
+            f"  Challenges: {result.get('challenge_count', 0)} "
+            f"({result.get('critical_challenges', 0)} critical, "
+            f"{result.get('notable_challenges', 0)} notable)"
+        )
         print(f"  Signals: {result.get('signal_count', 0)}")
         print(f"  Regulatory Mappings: {result.get('regulatory_mappings', 0)}")
         print(f"  Build/Buy Analyses: {result.get('build_buy_analyses', 0)}")
@@ -1312,13 +1365,12 @@ def _print_human(action, result):
             print(f"  Status distribution: {counts_str}")
         print("-" * 70)
         print(f"    {'ID':20s} {'Score':6s} {'Challenges':11s} {'Status':20s} {'Generated':20s}")
-        print(f"    {'-'*20} {'-'*6} {'-'*11} {'-'*20} {'-'*20}")
+        print(f"    {'-' * 20} {'-' * 6} {'-' * 11} {'-' * 20} {'-' * 20}")
         for d in dossiers:
             score = d.get("overall_opportunity_score", 0.0)
             chal = d.get("challenge_count", 0)
             print(
-                f"    {d['dossier_id']:20s} {score:5.2f} "
-                f"{chal:11d} {d['status']:20s} {d.get('generated_at', ''):20s}"
+                f"    {d['dossier_id']:20s} {score:5.2f} {chal:11d} {d['status']:20s} {d.get('generated_at', ''):20s}"
             )
             print(f"      Title: {d.get('title', '')[:60]}")
             print("")
@@ -1358,44 +1410,41 @@ def main():
         description="Dossier Generator -- template-based research dossier generation (CUI // SP-CTI)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="Examples:\n"
-               "  %(prog)s --generate --session-id rsess-abc123 --json\n"
-               "  %(prog)s --get --dossier-id rdoss-abc123 --json\n"
-               "  %(prog)s --get --session-id rsess-abc123 --json\n"
-               "  %(prog)s --list --status approved --json\n"
-               "  %(prog)s --review --dossier-id rdoss-abc123 --reviewer analyst@mil --status reviewed --json\n"
-               "  %(prog)s --trigger-fitness --dossier-id rdoss-abc123 --json\n",
+        "  %(prog)s --generate --session-id rsess-abc123 --json\n"
+        "  %(prog)s --get --dossier-id rdoss-abc123 --json\n"
+        "  %(prog)s --get --session-id rsess-abc123 --json\n"
+        "  %(prog)s --list --status approved --json\n"
+        "  %(prog)s --review --dossier-id rdoss-abc123 --reviewer analyst@mil --status reviewed --json\n"
+        "  %(prog)s --trigger-fitness --dossier-id rdoss-abc123 --json\n",
     )
 
     # Actions
     actions = parser.add_mutually_exclusive_group(required=True)
-    actions.add_argument("--generate", action="store_true",
-                         help="Generate dossier for a session")
-    actions.add_argument("--get", action="store_true",
-                         help="Get dossier by ID or session ID")
-    actions.add_argument("--list", action="store_true",
-                         help="List all dossiers")
-    actions.add_argument("--review", action="store_true",
-                         help="Review a dossier (append new status row)")
-    actions.add_argument("--trigger-fitness", action="store_true",
-                         help="Trigger fitness assessment from approved dossier")
+    actions.add_argument("--generate", action="store_true", help="Generate dossier for a session")
+    actions.add_argument("--get", action="store_true", help="Get dossier by ID or session ID")
+    actions.add_argument("--list", action="store_true", help="List all dossiers")
+    actions.add_argument("--review", action="store_true", help="Review a dossier (append new status row)")
+    actions.add_argument(
+        "--trigger-fitness", action="store_true", help="Trigger fitness assessment from approved dossier"
+    )
 
     # Parameters
-    parser.add_argument("--session-id", type=str, default=None,
-                        help="Session ID (required for --generate, optional for --get)")
-    parser.add_argument("--dossier-id", type=str, default=None,
-                        help="Dossier ID (for --get, --review, --trigger-fitness)")
-    parser.add_argument("--reviewer", type=str, default=None,
-                        help="Reviewer identity (required for --review)")
-    parser.add_argument("--status", type=str, default=None,
-                        help="Status for --review (reviewed/approved/rejected) or filter for --list")
-    parser.add_argument("--review-notes", type=str, default=None,
-                        help="Optional review notes (for --review)")
+    parser.add_argument(
+        "--session-id", type=str, default=None, help="Session ID (required for --generate, optional for --get)"
+    )
+    parser.add_argument(
+        "--dossier-id", type=str, default=None, help="Dossier ID (for --get, --review, --trigger-fitness)"
+    )
+    parser.add_argument("--reviewer", type=str, default=None, help="Reviewer identity (required for --review)")
+    parser.add_argument(
+        "--status", type=str, default=None, help="Status for --review (reviewed/approved/rejected) or filter for --list"
+    )
+    parser.add_argument("--review-notes", type=str, default=None, help="Optional review notes (for --review)")
 
     # Output
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--human", action="store_true", help="Human-readable output")
-    parser.add_argument("--db-path", type=str, default=None,
-                        help="Override database path")
+    parser.add_argument("--db-path", type=str, default=None, help="Override database path")
 
     args = parser.parse_args()
     db_path = Path(args.db_path) if args.db_path else None

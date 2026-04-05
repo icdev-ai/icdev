@@ -82,7 +82,6 @@ def _gen_id(prefix="prov"):
     return f"{prefix}-{uuid.uuid4().hex[:12]}"
 
 
-
 def _sha256_dir(dir_path):
     """Compute SHA-256 hex digest of a directory."""
     h = hashlib.sha256()

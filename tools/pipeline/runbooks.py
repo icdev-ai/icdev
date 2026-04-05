@@ -82,11 +82,9 @@ INCIDENT_RUNBOOKS: list[dict] = [
             "ISSO",
         ],
         "escalation_threshold": (
-            "Escalate to CISO if artifact tampering confirmed "
-            "or if compromised builds were deployed to production"
+            "Escalate to CISO if artifact tampering confirmed or if compromised builds were deployed to production"
         ),
     },
-
     # ── 2. Secret Leak in Pipeline ───────────────────────────────────────
     {
         "id": "IR-PDC-SECRET-001",
@@ -162,7 +160,6 @@ INCIDENT_RUNBOOKS: list[dict] = [
             "escalate to legal if customer data access keys compromised"
         ),
     },
-
     # ── 3. Supply Chain Attack on Dependencies ───────────────────────────
     {
         "id": "IR-PDC-SUPPLY-001",
@@ -239,7 +236,6 @@ INCIDENT_RUNBOOKS: list[dict] = [
             "production or if attack affects FedRAMP-authorized systems"
         ),
     },
-
     # ── 4. Failed / Rogue Deployment ─────────────────────────────────────
     {
         "id": "IR-PDC-DEPLOY-001",
@@ -315,7 +311,6 @@ INCIDENT_RUNBOOKS: list[dict] = [
             "or if rogue artifact served customer traffic"
         ),
     },
-
     # ── 5. Vulnerable Container in Production ────────────────────────────
     {
         "id": "IR-PDC-CONTAINER-001",
@@ -391,7 +386,6 @@ INCIDENT_RUNBOOKS: list[dict] = [
             "in production or if container serves FedRAMP boundary traffic"
         ),
     },
-
     # ── 6. Container Registry Compromise ─────────────────────────────────
     {
         "id": "IR-PDC-REGISTRY-001",
@@ -468,7 +462,6 @@ INCIDENT_RUNBOOKS: list[dict] = [
             "if supply chain attack confirmed affecting multiple consumers"
         ),
     },
-
     # ── 7. Configuration Drift in Production ─────────────────────────────
     {
         "id": "IR-PDC-DRIFT-001",
@@ -544,7 +537,6 @@ INCIDENT_RUNBOOKS: list[dict] = [
             "or if affected resources are within FedRAMP/CMMC boundary"
         ),
     },
-
     # ── 8. CI/CD Platform Compromise ─────────────────────────────────────
     {
         "id": "IR-PDC-CICD-001",
@@ -617,8 +609,7 @@ INCIDENT_RUNBOOKS: list[dict] = [
             "CISO",
         ],
         "escalation_threshold": (
-            "Immediate CISO and legal notification; escalate to law "
-            "enforcement if platform-level compromise confirmed"
+            "Immediate CISO and legal notification; escalate to law enforcement if platform-level compromise confirmed"
         ),
     },
 ]
@@ -653,40 +644,85 @@ def get_applicable_runbooks(findings: list[dict]) -> list[dict]:
     matched_ids: set[str] = set()
 
     _build_keywords = {
-        "build", "compile", "artifact", "hash", "provenance", "hermetic",
-        "runner", "build-time",
+        "build",
+        "compile",
+        "artifact",
+        "hash",
+        "provenance",
+        "hermetic",
+        "runner",
+        "build-time",
     }
     _secret_keywords = {
-        "secret", "credential", "password", "token", "api-key", "apikey",
-        "leak", "exposed",
+        "secret",
+        "credential",
+        "password",
+        "token",
+        "api-key",
+        "apikey",
+        "leak",
+        "exposed",
     }
     _supply_keywords = {
-        "dependency", "supply-chain", "supplychain", "sbom", "typosquat",
-        "package", "npm", "pypi", "maven", "crate",
+        "dependency",
+        "supply-chain",
+        "supplychain",
+        "sbom",
+        "typosquat",
+        "package",
+        "npm",
+        "pypi",
+        "maven",
+        "crate",
     }
     _deploy_keywords = {
-        "deploy", "deployment", "rollback", "canary", "release",
-        "approval", "promotion",
+        "deploy",
+        "deployment",
+        "rollback",
+        "canary",
+        "release",
+        "approval",
+        "promotion",
     }
     _container_keywords = {
-        "container", "image", "cve", "vulnerability", "trivy", "grype",
-        "scan", "base-image",
+        "container",
+        "image",
+        "cve",
+        "vulnerability",
+        "trivy",
+        "grype",
+        "scan",
+        "base-image",
     }
     _registry_keywords = {
-        "registry", "cosign", "signature", "unsigned", "tag", "digest",
-        "push", "pull",
+        "registry",
+        "cosign",
+        "signature",
+        "unsigned",
+        "tag",
+        "digest",
+        "push",
+        "pull",
     }
     _drift_keywords = {
-        "drift", "configuration", "gitops", "iac", "terraform",
-        "reconcile", "cspm", "compliance",
+        "drift",
+        "configuration",
+        "gitops",
+        "iac",
+        "terraform",
+        "reconcile",
+        "cspm",
+        "compliance",
     }
 
     for finding in findings:
-        text = " ".join([
-            str(finding.get("category", "")),
-            str(finding.get("title", "")),
-            str(finding.get("description", "")),
-        ]).lower()
+        text = " ".join(
+            [
+                str(finding.get("category", "")),
+                str(finding.get("title", "")),
+                str(finding.get("description", "")),
+            ]
+        ).lower()
 
         if any(kw in text for kw in _build_keywords):
             matched_ids.add("IR-PDC-BUILD-001")

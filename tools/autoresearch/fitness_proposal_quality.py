@@ -70,9 +70,7 @@ def evaluate(project_id: str = None, **kwargs) -> Dict[str, Any]:
             )
 
             if quality_rows:
-                composites = [
-                    _to_float(r["composite_score"]) for r in quality_rows
-                ]
+                composites = [_to_float(r["composite_score"]) for r in quality_rows]
                 quality_avg = sum(composites) / len(composites)
                 # Normalise: scores may be 0-100 or 0-1
                 if quality_avg > 1.0:
@@ -93,17 +91,12 @@ def evaluate(project_id: str = None, **kwargs) -> Dict[str, Any]:
             # ── Win/loss metrics ─────────────────────────────────────
             win_rows = _safe_query(
                 conn,
-                "SELECT outcome FROM pg_win_loss_records "
-                "WHERE created_at >= ?",
+                "SELECT outcome FROM pg_win_loss_records WHERE created_at >= ?",
                 (cutoff,),
             )
 
             if win_rows:
-                wins = sum(
-                    1
-                    for r in win_rows
-                    if str(r["outcome"]).lower() in ("win", "won", "1", "true")
-                )
+                wins = sum(1 for r in win_rows if str(r["outcome"]).lower() in ("win", "won", "1", "true"))
                 total_wl = len(win_rows)
                 win_rate = wins / max(total_wl, 1)
                 win_sample = total_wl
@@ -206,9 +199,7 @@ def _baseline_result(error: str = None) -> Dict[str, Any]:
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Fitness Evaluator — Proposal Quality Domain"
-    )
+    parser = argparse.ArgumentParser(description="Fitness Evaluator — Proposal Quality Domain")
     parser.add_argument(
         "--project-id",
         type=str,

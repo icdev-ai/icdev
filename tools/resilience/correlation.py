@@ -44,6 +44,7 @@ def get_correlation_id() -> Optional[str]:
     # Try Flask g context first
     try:
         from flask import g
+
         cid = getattr(g, "correlation_id", None)
         if cid:
             return cid
@@ -90,8 +91,10 @@ def register_correlation_middleware(app):
         try:
             from tools.observability.trace_context import (
                 parse_traceparent,
-                set_current_context, context_from_correlation_id,
+                set_current_context,
+                context_from_correlation_id,
             )
+
             tp_header = request.headers.get("traceparent")
             if tp_header:
                 ctx = parse_traceparent(tp_header)
@@ -128,6 +131,7 @@ def register_correlation_middleware(app):
         # D281: Clear trace context
         try:
             from tools.observability.trace_context import clear_current_context
+
             clear_current_context()
         except ImportError:
             pass

@@ -45,6 +45,7 @@ if str(_ROOT) not in sys.path:
 
 from tools.common.helpers import now_isoformat  # noqa: E402
 from tools.db.storage import get_connection  # noqa: E402
+
 _DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(_ROOT / "data" / "icdev.db")))
 
 # ── Wrapped ICDEV™ tools (graceful ImportError) ───────────────────────
@@ -76,37 +77,54 @@ except ImportError:
 AI_CLAUSE_PATTERNS = [
     (r"GSAR\s*552\.239[–\-]7001", "gsar_552_239_7001", "GSAR 552.239-7001 (American AI)"),
     (r"(?:American\s+AI|U\.?S\.?\s+origin\s+AI)", "american_ai", "American AI / US-Origin AI"),
-    (r"(?:AI|artificial\s+intelligence)\s+(?:disclosure|transparency|bias)",
-     "ai_transparency", "AI Disclosure / Transparency / Bias"),
+    (
+        r"(?:AI|artificial\s+intelligence)\s+(?:disclosure|transparency|bias)",
+        "ai_transparency",
+        "AI Disclosure / Transparency / Bias",
+    ),
     (r"OMB\s+M[–\-]26[–\-]04", "omb_m26_04", "OMB M-26-04 (Unbiased AI)"),
     (r"OMB\s+M[–\-]25[–\-]21", "omb_m25_21", "OMB M-25-21 (High-Impact AI)"),
     (r"(?:model\s+card|system\s+card|AI\s+inventory)", "model_cards", "Model Cards / System Cards / AI Inventory"),
-    (r"(?:AI\s+source|training\s+data)\s+(?:disclosure|origin)",
-     "ai_source_disclosure", "AI Source / Training Data Disclosure"),
-    (r"NIST\s+AI\s+(?:RMF|600[–\-]1|Risk\s+Management)",
-     "nist_ai_rmf", "NIST AI RMF / AI 600-1"),
-    (r"(?:Executive\s+Order\s+14110|EO\s+14110)",
-     "eo_14110", "Executive Order 14110 (Safe AI)"),
-    (r"(?:algorithmic|AI)\s+(?:accountability|impact\s+assessment)",
-     "ai_accountability", "AI Accountability / Impact Assessment"),
+    (
+        r"(?:AI\s+source|training\s+data)\s+(?:disclosure|origin)",
+        "ai_source_disclosure",
+        "AI Source / Training Data Disclosure",
+    ),
+    (r"NIST\s+AI\s+(?:RMF|600[–\-]1|Risk\s+Management)", "nist_ai_rmf", "NIST AI RMF / AI 600-1"),
+    (r"(?:Executive\s+Order\s+14110|EO\s+14110)", "eo_14110", "Executive Order 14110 (Safe AI)"),
+    (
+        r"(?:algorithmic|AI)\s+(?:accountability|impact\s+assessment)",
+        "ai_accountability",
+        "AI Accountability / Impact Assessment",
+    ),
 ]
 
 # Supported clause types and their required artifacts
 CLAUSE_ARTIFACT_REQUIREMENTS = {
     "gsar_552_239_7001": [
-        "model_cards", "bias_evaluation", "source_disclosure", "american_ai_checklist",
+        "model_cards",
+        "bias_evaluation",
+        "source_disclosure",
+        "american_ai_checklist",
     ],
     "american_ai": [
-        "source_disclosure", "american_ai_checklist",
+        "source_disclosure",
+        "american_ai_checklist",
     ],
     "ai_transparency": [
-        "model_cards", "bias_evaluation", "source_disclosure",
+        "model_cards",
+        "bias_evaluation",
+        "source_disclosure",
     ],
     "omb_m26_04": [
-        "bias_evaluation", "model_cards",
+        "bias_evaluation",
+        "model_cards",
     ],
     "omb_m25_21": [
-        "model_cards", "bias_evaluation", "source_disclosure", "american_ai_checklist",
+        "model_cards",
+        "bias_evaluation",
+        "source_disclosure",
+        "american_ai_checklist",
     ],
     "model_cards": [
         "model_cards",
@@ -115,13 +133,19 @@ CLAUSE_ARTIFACT_REQUIREMENTS = {
         "source_disclosure",
     ],
     "nist_ai_rmf": [
-        "model_cards", "bias_evaluation", "source_disclosure",
+        "model_cards",
+        "bias_evaluation",
+        "source_disclosure",
     ],
     "eo_14110": [
-        "model_cards", "bias_evaluation", "source_disclosure", "american_ai_checklist",
+        "model_cards",
+        "bias_evaluation",
+        "source_disclosure",
+        "american_ai_checklist",
     ],
     "ai_accountability": [
-        "bias_evaluation", "model_cards",
+        "bias_evaluation",
+        "model_cards",
     ],
 }
 
@@ -134,12 +158,12 @@ ARTIFACT_STATUSES = ("pending", "generated", "reviewed", "attached", "failed")
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
+
 def _get_db():
     conn = get_connection()
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
-
 
 
 def _uuid():
@@ -204,6 +228,7 @@ def _get_rfp_text(conn, opportunity_id):
 
 # ── Detection ────────────────────────────────────────────────────────
 
+
 def detect_ai_clauses(opportunity_id):
     """Detect AI compliance clauses in RFP text (deterministic regex matching).
 
@@ -236,21 +261,26 @@ def detect_ai_clauses(opportunity_id):
     for pattern, clause_type, description in AI_CLAUSE_PATTERNS:
         matches = re.findall(pattern, rfp_text, re.IGNORECASE)
         if matches:
-            detected.append({
-                "clause_type": clause_type,
-                "description": description,
-                "match_count": len(matches),
-                "sample_match": matches[0] if matches else "",
-            })
+            detected.append(
+                {
+                    "clause_type": clause_type,
+                    "description": description,
+                    "match_count": len(matches),
+                    "sample_match": matches[0] if matches else "",
+                }
+            )
             # Add required artifacts for this clause type
             for artifact in CLAUSE_ARTIFACT_REQUIREMENTS.get(clause_type, []):
                 required_artifacts_set.add(artifact)
 
     required_artifacts = sorted(required_artifacts_set)
 
-    _audit(conn, "detect_ai_clauses",
-           f"Scanned {opportunity_id}: {len(detected)} clauses detected, "
-           f"{len(required_artifacts)} artifact types required")
+    _audit(
+        conn,
+        "detect_ai_clauses",
+        f"Scanned {opportunity_id}: {len(detected)} clauses detected, "
+        f"{len(required_artifacts)} artifact types required",
+    )
     conn.commit()
     conn.close()
 
@@ -265,6 +295,7 @@ def detect_ai_clauses(opportunity_id):
 
 
 # ── Artifact Generation ──────────────────────────────────────────────
+
 
 def _generate_model_cards_artifact(opportunity_id):
     """Generate model cards by wrapping existing ICDEV™ tool or producing stub."""
@@ -358,8 +389,11 @@ def _stub_bias_evaluation(opportunity_id):
             "assessment_date": now_isoformat(),
             "methodology": "TBD — Document bias testing methodology",
             "protected_classes_tested": [
-                "TBD — race", "TBD — gender", "TBD — age",
-                "TBD — disability", "TBD — national_origin",
+                "TBD — race",
+                "TBD — gender",
+                "TBD — age",
+                "TBD — disability",
+                "TBD — national_origin",
             ],
             "datasets_evaluated": "TBD — List evaluation datasets",
             "metrics": {
@@ -515,8 +549,7 @@ def generate_compliance_bundle(opportunity_id, clause_type="gsar_552_239_7001"):
     if clause_type not in CLAUSE_ARTIFACT_REQUIREMENTS:
         return {
             "status": "error",
-            "message": f"Unknown clause_type '{clause_type}'. "
-                       f"Supported: {list(CLAUSE_ARTIFACT_REQUIREMENTS.keys())}",
+            "message": f"Unknown clause_type '{clause_type}'. Supported: {list(CLAUSE_ARTIFACT_REQUIREMENTS.keys())}",
         }
 
     required = CLAUSE_ARTIFACT_REQUIREMENTS[clause_type]
@@ -561,15 +594,18 @@ def generate_compliance_bundle(opportunity_id, clause_type="gsar_552_239_7001"):
         except Exception:
             pass
 
-        artifacts.append({
-            "artifact_id": artifact_id,
-            "artifact_type": artifact_type,
-            "status": result.get("status", "generated"),
-            "source": result.get("source", "unknown"),
-        })
+        artifacts.append(
+            {
+                "artifact_id": artifact_id,
+                "artifact_type": artifact_type,
+                "status": result.get("status", "generated"),
+                "source": result.get("source", "unknown"),
+            }
+        )
 
-    _audit(conn, "generate_bundle",
-           f"Generated {len(artifacts)} artifacts for {opportunity_id} (clause: {clause_type})")
+    _audit(
+        conn, "generate_bundle", f"Generated {len(artifacts)} artifacts for {opportunity_id} (clause: {clause_type})"
+    )
     conn.commit()
     conn.close()
 
@@ -632,6 +668,7 @@ def generate_american_ai_checklist(opportunity_id):
 
 
 # ── Status & Gate ────────────────────────────────────────────────────
+
 
 def get_bundle_status(opportunity_id):
     """Get current status of all AI compliance artifacts for an opportunity.
@@ -784,6 +821,7 @@ def gate_evaluate(opportunity_id):
 
 # ── CLI ──────────────────────────────────────────────────────────────
 
+
 def main():
     parser = argparse.ArgumentParser(
         description="ICDEV™ Proposal Genesis — GSA American AI Clause Compliance Engine (§3.15)"
@@ -791,22 +829,21 @@ def main():
 
     # Actions
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--detect", action="store_true",
-                       help="Detect AI compliance clauses in RFP text")
-    group.add_argument("--generate", action="store_true",
-                       help="Generate compliance artifact bundle")
-    group.add_argument("--status", action="store_true",
-                       help="Get bundle status")
-    group.add_argument("--gate", action="store_true",
-                       help="Pass/fail gate evaluation")
+    group.add_argument("--detect", action="store_true", help="Detect AI compliance clauses in RFP text")
+    group.add_argument("--generate", action="store_true", help="Generate compliance artifact bundle")
+    group.add_argument("--status", action="store_true", help="Get bundle status")
+    group.add_argument("--gate", action="store_true", help="Pass/fail gate evaluation")
 
     # Identifiers
     parser.add_argument("--opportunity-id", required=True, help="Opportunity UUID")
 
     # Generation options
-    parser.add_argument("--clause-type", default="gsar_552_239_7001",
-                        choices=list(CLAUSE_ARTIFACT_REQUIREMENTS.keys()),
-                        help="Clause type to generate artifacts for (default: gsar_552_239_7001)")
+    parser.add_argument(
+        "--clause-type",
+        default="gsar_552_239_7001",
+        choices=list(CLAUSE_ARTIFACT_REQUIREMENTS.keys()),
+        help="Clause type to generate artifacts for (default: gsar_552_239_7001)",
+    )
 
     # Output format
     parser.add_argument("--json", action="store_true", help="JSON output")
@@ -869,10 +906,12 @@ def main():
                 print(f"\n  Recommendation: {result['recommendation']}")
         if "summary" in result:
             s = result["summary"]
-            print(f"\n  Required: {s.get('required', 0)} | "
-                  f"Generated: {s.get('generated', 0)} | "
-                  f"Reviewed: {s.get('reviewed', 0)} | "
-                  f"Missing: {s.get('missing', 0)}")
+            print(
+                f"\n  Required: {s.get('required', 0)} | "
+                f"Generated: {s.get('generated', 0)} | "
+                f"Reviewed: {s.get('reviewed', 0)} | "
+                f"Missing: {s.get('missing', 0)}"
+            )
         print()
     else:
         print(json.dumps(result, indent=2, default=str))

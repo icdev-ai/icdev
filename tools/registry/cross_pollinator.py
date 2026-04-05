@@ -68,6 +68,7 @@ DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db
 # =========================================================================
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
@@ -75,14 +76,17 @@ except ImportError:
     def audit_log_event(**kwargs):
         return -1
 
+
 try:
     from tools.registry.child_registry import ChildRegistry
+
     _HAS_REGISTRY = True
 except ImportError:
     _HAS_REGISTRY = False
 
 try:
     from tools.security.prompt_injection_detector import PromptInjectionDetector
+
     _pid = PromptInjectionDetector()
 except Exception:
     _pid = None
@@ -121,8 +125,13 @@ CREATE INDEX IF NOT EXISTS idx_xpoll_proposed_at
 """
 
 VALID_PROPOSAL_STATUSES = (
-    "proposed", "approved", "rejected",
-    "executing", "completed", "failed", "cancelled",
+    "proposed",
+    "approved",
+    "rejected",
+    "executing",
+    "completed",
+    "failed",
+    "cancelled",
 )
 
 
@@ -190,7 +199,9 @@ class CrossPollinator:
 
     def _ensure_tables(self):
         """Ensure required tables exist."""
-        ddl = CROSS_POLLINATION_PROPOSALS_DDL + """
+        ddl = (
+            CROSS_POLLINATION_PROPOSALS_DDL
+            + """
         CREATE TABLE IF NOT EXISTS child_learned_behaviors (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             child_id TEXT NOT NULL,
@@ -255,6 +266,7 @@ class CrossPollinator:
             classification TEXT DEFAULT 'CUI'
         );
         """
+        )
         try:
             conn = self._get_conn()
             conn.executescript(ddl)
@@ -340,9 +352,10 @@ class CrossPollinator:
                     if scan_result.get("detected") and scan_result.get("confidence", 0) >= 0.7:
                         # Skip this candidate -- injection detected
                         self._log_audit_event(
-                            conn, beh_dict.get("child_id", "unknown"),
+                            conn,
+                            beh_dict.get("child_id", "unknown"),
                             "cross_pollination_rejected",
-                            f"Injection in evidence (confidence={scan_result['confidence']:.2f})"
+                            f"Injection in evidence (confidence={scan_result['confidence']:.2f})",
                         )
                         continue
 
@@ -367,23 +380,23 @@ class CrossPollinator:
                     continue
 
                 # Compute compatibility score
-                compatibility = self._compute_compatibility(
-                    beh_dict, child_map, target_ids
-                )
+                compatibility = self._compute_compatibility(beh_dict, child_map, target_ids)
 
-                candidates.append({
-                    "source_child": source_cid,
-                    "behavior_id": beh_dict["id"],
-                    "capability": {
-                        "behavior_type": beh_dict["behavior_type"],
-                        "description": beh_dict["description"],
-                        "confidence": beh_dict["confidence"],
-                        "absorbed": bool(beh_dict.get("absorbed", 0)),
-                    },
-                    "candidate_targets": target_ids,
-                    "target_count": len(target_ids),
-                    "compatibility_score": compatibility,
-                })
+                candidates.append(
+                    {
+                        "source_child": source_cid,
+                        "behavior_id": beh_dict["id"],
+                        "capability": {
+                            "behavior_type": beh_dict["behavior_type"],
+                            "description": beh_dict["description"],
+                            "confidence": beh_dict["confidence"],
+                            "absorbed": bool(beh_dict.get("absorbed", 0)),
+                        },
+                        "candidate_targets": target_ids,
+                        "target_count": len(target_ids),
+                        "compatibility_score": compatibility,
+                    }
+                )
 
             # Sort by compatibility score descending
             candidates.sort(key=lambda c: c["compatibility_score"], reverse=True)
@@ -393,9 +406,7 @@ class CrossPollinator:
         finally:
             conn.close()
 
-    def _compute_compatibility(
-        self, behavior: dict, child_map: dict, target_ids: list
-    ) -> float:
+    def _compute_compatibility(self, behavior: dict, child_map: dict, target_ids: list) -> float:
         """Compute compatibility score for cross-pollination.
 
         Considers behavior confidence, number of potential targets, and
@@ -593,8 +604,7 @@ class CrossPollinator:
             proposal = dict(row)
             if proposal["status"] != "proposed":
                 print(
-                    f"Warning: Proposal {proposal_id} is in status "
-                    f"'{proposal['status']}', cannot approve",
+                    f"Warning: Proposal {proposal_id} is in status '{proposal['status']}', cannot approve",
                     file=sys.stderr,
                 )
                 return False
@@ -656,8 +666,7 @@ class CrossPollinator:
             if proposal["status"] != "approved":
                 return {
                     "error": (
-                        f"Proposal {proposal_id} is in status "
-                        f"'{proposal['status']}'. Must be 'approved' to execute."
+                        f"Proposal {proposal_id} is in status '{proposal['status']}'. Must be 'approved' to execute."
                     ),
                 }
 
@@ -712,11 +721,13 @@ class CrossPollinator:
                                 tid,
                                 capability_name,
                                 now,
-                                json.dumps({
-                                    "source_child": source_child_id,
-                                    "proposal_id": proposal_id,
-                                    "pollinated_at": now,
-                                }),
+                                json.dumps(
+                                    {
+                                        "source_child": source_child_id,
+                                        "proposal_id": proposal_id,
+                                        "pollinated_at": now,
+                                    }
+                                ),
                                 now,
                             ),
                         )
@@ -770,14 +781,8 @@ class CrossPollinator:
                 "source_child_id": source_child_id,
                 "status": final_status,
                 "results": results_per_target,
-                "targets_succeeded": sum(
-                    1 for r in results_per_target.values()
-                    if r["status"] == "success"
-                ),
-                "targets_failed": sum(
-                    1 for r in results_per_target.values()
-                    if r["status"] == "failed"
-                ),
+                "targets_succeeded": sum(1 for r in results_per_target.values() if r["status"] == "success"),
+                "targets_failed": sum(1 for r in results_per_target.values() if r["status"] == "failed"),
                 "executed_at": now,
             }
 
@@ -816,8 +821,9 @@ class CrossPollinator:
 
             if status:
                 if status not in VALID_PROPOSAL_STATUSES:
-                    return [{"error": f"Invalid status '{status}'. Must be one of: "
-                             f"{', '.join(VALID_PROPOSAL_STATUSES)}"}]
+                    return [
+                        {"error": f"Invalid status '{status}'. Must be one of: {', '.join(VALID_PROPOSAL_STATUSES)}"}
+                    ]
                 query += " WHERE status = ?"
                 params.append(status)
 
@@ -830,9 +836,7 @@ class CrossPollinator:
                 record = dict(row)
                 # Parse target_child_ids from JSON
                 try:
-                    record["target_child_ids"] = json.loads(
-                        record.get("target_child_ids", "[]")
-                    )
+                    record["target_child_ids"] = json.loads(record.get("target_child_ids", "[]"))
                 except (json.JSONDecodeError, TypeError):
                     record["target_child_ids"] = []
                 record["target_count"] = len(record["target_child_ids"])
@@ -855,29 +859,32 @@ def main():
         )
     )
     parser.add_argument("--json", action="store_true", help="JSON output")
-    parser.add_argument(
-        "--db-path", type=Path, default=None, help="Database path override"
-    )
+    parser.add_argument("--db-path", type=Path, default=None, help="Database path override")
 
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(
-        "--find-candidates", action="store_true",
+        "--find-candidates",
+        action="store_true",
         help="Find capabilities suitable for cross-pollination",
     )
     group.add_argument(
-        "--propose", action="store_true",
+        "--propose",
+        action="store_true",
         help="Create a cross-pollination proposal",
     )
     group.add_argument(
-        "--approve", action="store_true",
+        "--approve",
+        action="store_true",
         help="Approve a cross-pollination proposal (HITL)",
     )
     group.add_argument(
-        "--execute", action="store_true",
+        "--execute",
+        action="store_true",
         help="Execute an approved cross-pollination",
     )
     group.add_argument(
-        "--list-proposals", action="store_true",
+        "--list-proposals",
+        action="store_true",
         help="List cross-pollination proposals",
     )
 
@@ -894,7 +901,8 @@ def main():
         help="Comma-separated target child IDs (for --propose)",
     )
     parser.add_argument(
-        "--proposed-by", default="system",
+        "--proposed-by",
+        default="system",
         help="Proposer identity (for --propose)",
     )
     parser.add_argument("--rationale", help="Proposal rationale (for --propose)")
@@ -916,9 +924,7 @@ def main():
         pollinator = CrossPollinator(db_path=args.db_path)
 
         if args.find_candidates:
-            result = pollinator.find_candidates(
-                source_child_id=args.source_child_id
-            )
+            result = pollinator.find_candidates(source_child_id=args.source_child_id)
 
         elif args.propose:
             if not args.source_child_id:
@@ -928,11 +934,7 @@ def main():
             if not args.target_child_ids:
                 parser.error("--propose requires --target-child-ids")
 
-            target_ids = [
-                tid.strip()
-                for tid in args.target_child_ids.split(",")
-                if tid.strip()
-            ]
+            target_ids = [tid.strip() for tid in args.target_child_ids.split(",") if tid.strip()]
 
             result = pollinator.propose_pollination(
                 source_child_id=args.source_child_id,
@@ -962,9 +964,7 @@ def main():
         elif args.execute:
             if not args.proposal_id:
                 parser.error("--execute requires --proposal-id")
-            result = pollinator.execute_pollination(
-                proposal_id=args.proposal_id
-            )
+            result = pollinator.execute_pollination(proposal_id=args.proposal_id)
 
         elif args.list_proposals:
             result = pollinator.get_proposals(status=args.status)

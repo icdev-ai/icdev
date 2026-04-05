@@ -16,6 +16,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import get_connection  # noqa: E402
+
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 # D-EVO-7: Confidence decay config (from args/evolution_config.yaml)
@@ -25,6 +26,7 @@ _DECAY_MIN_FLOOR = 0.01
 
 try:
     import yaml as _yaml
+
     _decay_cfg_path = BASE_DIR / "args" / "evolution_config.yaml"
     if _decay_cfg_path.exists():
         with open(_decay_cfg_path, encoding="utf-8") as _f:
@@ -195,12 +197,10 @@ def match_known_pattern(features: dict, db_path: Path = None) -> list:
             updated = p["updated_at"] if "updated_at" in p.keys() else None
             if updated and _DECAY_ENABLED:
                 try:
-                    updated_dt = datetime.fromisoformat(
-                        str(updated).replace("Z", "+00:00"))
+                    updated_dt = datetime.fromisoformat(str(updated).replace("Z", "+00:00"))
                     age_days = (datetime.now(timezone.utc) - updated_dt).days
                     decay = 2 ** (-(age_days / _DECAY_HALF_LIFE_DAYS))
-                    effective_confidence = max(
-                        p["confidence"] * decay, _DECAY_MIN_FLOOR)
+                    effective_confidence = max(p["confidence"] * decay, _DECAY_MIN_FLOOR)
                 except (ValueError, TypeError):
                     pass
 

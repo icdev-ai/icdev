@@ -74,9 +74,7 @@ def _get_db(db_path: Optional[Path] = None) -> sqlite3.Connection:
     """Get database connection with dict-like row access."""
     path = db_path or DB_PATH
     if not path.exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py"
-        )
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
     conn = get_connection(db_path=str(path))
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
@@ -351,17 +349,19 @@ def score_training_pairs(
             q_score = float(row["quality_score"] or 0.5)
             c_score = float(row["compliance_score"] or 0.5)
 
-            candidates.append({
-                "id": row["id"],
-                "content": content,
-                "features": [
-                    word_count / 500.0,  # Normalised length
-                    unique_ratio,
-                    avg_word_len / 10.0,
-                    q_score,
-                    c_score,
-                ],
-            })
+            candidates.append(
+                {
+                    "id": row["id"],
+                    "content": content,
+                    "features": [
+                        word_count / 500.0,  # Normalised length
+                        unique_ratio,
+                        avg_word_len / 10.0,
+                        q_score,
+                        c_score,
+                    ],
+                }
+            )
 
         # Build hypothesis space — cluster feature centroids
         n_hyp = min(5, len(candidates))
@@ -376,9 +376,7 @@ def score_training_pairs(
         scored = []
         selected = []
         for cand in candidates:
-            result = score_candidate(
-                cand, prior, hypothesis_features, selected
-            )
+            result = score_candidate(cand, prior, hypothesis_features, selected)
             scored.append(result)
 
         # Sort by info_gain_score descending
@@ -492,9 +490,7 @@ def teaching_dimension(
             # This item eliminates concepts that would predict a different label
             eliminated = set()
             for alt in remaining:
-                alt_items = {
-                    k for k, v in concept_labels.items() if v == alt
-                }
+                alt_items = {k for k, v in concept_labels.items() if v == alt}
                 # If item is NOT in alt_items, it eliminates alt
                 if iid not in alt_items:
                     eliminated.add(alt)
@@ -507,12 +503,14 @@ def teaching_dimension(
             break
 
         teaching_set.append(best_item)
-        elimination_log.append({
-            "round": _round + 1,
-            "selected_item": best_item["id"],
-            "concepts_eliminated": list(best_eliminated),
-            "remaining_after": len(remaining - best_eliminated),
-        })
+        elimination_log.append(
+            {
+                "round": _round + 1,
+                "selected_item": best_item["id"],
+                "concepts_eliminated": list(best_eliminated),
+                "remaining_after": len(remaining - best_eliminated),
+            }
+        )
         remaining -= best_eliminated
 
     return {
@@ -576,10 +574,7 @@ def _expected_info_gain_control(
     cascade_info = len(cascade_children) * P_CHILD_FAIL_GIVEN_PARENT_FAIL
 
     # Family info: same-family controls are correlated
-    family_pending = [
-        c for c in pending_controls
-        if c != control_id and c.startswith(family + "-")
-    ]
+    family_pending = [c for c in pending_controls if c != control_id and c.startswith(family + "-")]
     family_info = len(family_pending) * 0.3  # Moderate correlation within family
 
     # Already-assessed context: if parent was assessed, this has less info
@@ -595,7 +590,11 @@ def _expected_info_gain_control(
 
     total = direct_info + cascade_info + family_info - reduction
     # Normalise to [0, 1]
-    max_possible = 1.0 + len(CONTROL_DEPENDENCIES.get(control_id, {}).get("children", [])) * P_CHILD_FAIL_GIVEN_PARENT_FAIL + 5 * 0.3
+    max_possible = (
+        1.0
+        + len(CONTROL_DEPENDENCIES.get(control_id, {}).get("children", [])) * P_CHILD_FAIL_GIVEN_PARENT_FAIL
+        + 5 * 0.3
+    )
     normalised = total / max(max_possible, 1.0)
     return round(max(0.0, min(1.0, normalised)), 4)
 
@@ -645,13 +644,15 @@ def optimal_compliance_order(
         assessed[best] = "selected"
         pending.remove(best)
 
-        steps.append({
-            "step": step_num + 1,
-            "control_id": best,
-            "info_gain": gain,
-            "cumulative_gain": round(cumulative_gain, 4),
-            "remaining": len(pending),
-        })
+        steps.append(
+            {
+                "step": step_num + 1,
+                "control_id": best,
+                "info_gain": gain,
+                "cumulative_gain": round(cumulative_gain, 4),
+                "remaining": len(pending),
+            }
+        )
 
     # Store results
     if db_path or DB_PATH.exists():
@@ -694,16 +695,12 @@ def optimal_compliance_order(
     }
 
 
-def _improvement_vs_baseline(
-    steps: List[Dict], original_order: List[str]
-) -> Dict[str, Any]:
+def _improvement_vs_baseline(steps: List[Dict], original_order: List[str]) -> Dict[str, Any]:
     """Compare optimal ordering info gain vs alphabetical baseline."""
     if not steps or not original_order:
         return {"improvement_pct": 0.0}
 
-    optimal_first_half_gain = sum(
-        s["info_gain"] for s in steps[: len(steps) // 2]
-    )
+    optimal_first_half_gain = sum(s["info_gain"] for s in steps[: len(steps) // 2])
     # Alphabetical baseline: assume uniform info gain
     total_gain = sum(s["info_gain"] for s in steps)
     baseline_first_half = total_gain / 2.0 if total_gain > 0 else 0
@@ -798,18 +795,14 @@ def smart_encode_tags(tags: Dict[str, str]) -> Dict[str, Any]:
             encoded[key] = value
             encoded_bytes += len(key) + len(str(value))
 
-    compression_ratio = (
-        round(raw_bytes / max(encoded_bytes, 1), 2) if raw_bytes > 0 else 1.0
-    )
+    compression_ratio = round(raw_bytes / max(encoded_bytes, 1), 2) if raw_bytes > 0 else 1.0
 
     return {
         "encoded": encoded,
         "raw_bytes": raw_bytes,
         "encoded_bytes": encoded_bytes,
         "compression_ratio": compression_ratio,
-        "tags_compressed": sum(
-            1 for v in encoded.values() if isinstance(v, int)
-        ),
+        "tags_compressed": sum(1 for v in encoded.values() if isinstance(v, int)),
         "tags_total": len(tags),
     }
 
@@ -876,9 +869,7 @@ def compute_encoding_stats(
         return {
             "spans_analyzed": len(rows),
             "dictionary_size": len(SMART_ENCODING_DICTIONARY),
-            "estimated_compression_ratio": round(
-                total_raw / max(total_encoded, 1), 2
-            ),
+            "estimated_compression_ratio": round(total_raw / max(total_encoded, 1), 2),
             "total_raw_bytes": total_raw,
             "total_encoded_bytes": total_encoded,
             "top_tags": tag_freq.most_common(10),
@@ -900,9 +891,7 @@ def health_check(db_path: Optional[Path] = None) -> Dict[str, Any]:
 
     try:
         conn = _get_db(db_path)
-        score_count = conn.execute(
-            "SELECT COUNT(*) as cnt FROM bayesian_teaching_scores"
-        ).fetchone()["cnt"]
+        score_count = conn.execute("SELECT COUNT(*) as cnt FROM bayesian_teaching_scores").fetchone()["cnt"]
         conn.close()
         db_ok = True
     except Exception:
@@ -928,31 +917,34 @@ def health_check(db_path: Optional[Path] = None) -> Dict[str, Any]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="ICDEV™ Bayesian Teaching Engine — information-gain scoring"
-    )
+    parser = argparse.ArgumentParser(description="ICDEV™ Bayesian Teaching Engine — information-gain scoring")
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--db-path", type=Path, default=None, help="DB path override")
 
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(
-        "--score-pairs", action="store_true",
+        "--score-pairs",
+        action="store_true",
         help="Score fine-tuning pairs by info gain",
     )
     group.add_argument(
-        "--optimal-order", action="store_true",
+        "--optimal-order",
+        action="store_true",
         help="Order compliance controls for max info gain",
     )
     group.add_argument(
-        "--teaching-dim", action="store_true",
+        "--teaching-dim",
+        action="store_true",
         help="Compute teaching dimension for item set",
     )
     group.add_argument(
-        "--smart-encode", action="store_true",
+        "--smart-encode",
+        action="store_true",
         help="SmartEncoding compression stats",
     )
     group.add_argument(
-        "--health", action="store_true",
+        "--health",
+        action="store_true",
         help="Health check",
     )
 
@@ -969,22 +961,35 @@ def main() -> None:
         if args.score_pairs:
             if not args.dataset_id:
                 parser.error("--score-pairs requires --dataset-id")
-            result = score_training_pairs(
-                args.dataset_id, top_k=args.top_k, seed=args.seed, db_path=args.db_path
-            )
+            result = score_training_pairs(args.dataset_id, top_k=args.top_k, seed=args.seed, db_path=args.db_path)
         elif args.optimal_order:
             if args.controls:
                 cids = [c.strip() for c in args.controls.split(",")]
             else:
                 # Default: common NIST 800-53 controls
                 cids = [
-                    "AC-2", "AC-3", "AC-6", "AC-7", "AU-2", "AU-3", "AU-6",
-                    "SC-7", "SC-8", "SI-2", "SI-4", "IA-2", "IA-5",
-                    "CM-2", "CM-6", "RA-3", "RA-5", "SA-3", "SA-11", "CA-2",
+                    "AC-2",
+                    "AC-3",
+                    "AC-6",
+                    "AC-7",
+                    "AU-2",
+                    "AU-3",
+                    "AU-6",
+                    "SC-7",
+                    "SC-8",
+                    "SI-2",
+                    "SI-4",
+                    "IA-2",
+                    "IA-5",
+                    "CM-2",
+                    "CM-6",
+                    "RA-3",
+                    "RA-5",
+                    "SA-3",
+                    "SA-11",
+                    "CA-2",
                 ]
-            result = optimal_compliance_order(
-                cids, project_id=args.project_id, db_path=args.db_path
-            )
+            result = optimal_compliance_order(cids, project_id=args.project_id, db_path=args.db_path)
         elif args.teaching_dim:
             items_json = args.items or '["AC-2","AC-3","SC-7","SI-2","IA-2"]'
             item_ids = json.loads(items_json)
@@ -993,9 +998,7 @@ def main() -> None:
             target = labels.get(item_ids[0], item_ids[0]) if item_ids else ""
             result = teaching_dimension(target, pool, labels, seed=args.seed)
         elif args.smart_encode:
-            result = compute_encoding_stats(
-                project_id=args.project_id, db_path=args.db_path
-            )
+            result = compute_encoding_stats(project_id=args.project_id, db_path=args.db_path)
         elif args.health:
             result = health_check(db_path=args.db_path)
         else:
@@ -1048,8 +1051,7 @@ def _print_human(result: Dict[str, Any]) -> None:
                 f"band={pair['threshold_band']}"
             )
         stats = result.get("statistics", {})
-        print(f"\nMean: {stats.get('mean_score', 0):.4f}  "
-              f"Max: {stats.get('max_score', 0):.4f}")
+        print(f"\nMean: {stats.get('mean_score', 0):.4f}  Max: {stats.get('max_score', 0):.4f}")
 
     elif "status" in result:
         print("\n=== Bayesian Teaching Health ===")

@@ -76,10 +76,16 @@ def recommend(project_id: str, db_path: Optional[Path] = None) -> Dict[str, Any]
     5. handoff_age — stale handoff documents
     """
     config = _load_config()
-    weights = config.get("next_action", {}).get("weights", {
-        "staleness": 0.30, "compliance_gap": 0.25, "security_risk": 0.20,
-        "loop_state": 0.15, "handoff_age": 0.10,
-    })
+    weights = config.get("next_action", {}).get(
+        "weights",
+        {
+            "staleness": 0.30,
+            "compliance_gap": 0.25,
+            "security_risk": 0.20,
+            "loop_state": 0.15,
+            "handoff_age": 0.10,
+        },
+    )
 
     conn = _get_db(db_path)
     try:
@@ -101,45 +107,55 @@ def recommend(project_id: str, db_path: Optional[Path] = None) -> Dict[str, Any]
             if status == "planning":
                 hours = _hours_since(loop["created_at"])
                 score = min(1.0, hours / 24.0) * weights.get("loop_state", 0.15) + 0.3
-                candidates.append((
-                    score,
-                    f"Finalize plan for '{phase}'",
-                    f"python tools/workflow/loop_engine.py --plan --loop-id {loop_id} --json",
-                    f"Loop {loop_id} has been in planning for {hours:.0f}h",
-                ))
+                candidates.append(
+                    (
+                        score,
+                        f"Finalize plan for '{phase}'",
+                        f"python tools/workflow/loop_engine.py --plan --loop-id {loop_id} --json",
+                        f"Loop {loop_id} has been in planning for {hours:.0f}h",
+                    )
+                )
             elif status == "planned":
                 score = 0.6 * weights.get("loop_state", 0.15) + 0.4
-                candidates.append((
-                    score,
-                    f"Start applying plan for '{phase}'",
-                    f"python tools/workflow/loop_engine.py --start-apply --loop-id {loop_id} --json",
-                    f"Plan for '{phase}' is approved but not started",
-                ))
+                candidates.append(
+                    (
+                        score,
+                        f"Start applying plan for '{phase}'",
+                        f"python tools/workflow/loop_engine.py --start-apply --loop-id {loop_id} --json",
+                        f"Plan for '{phase}' is approved but not started",
+                    )
+                )
             elif status == "applying":
                 remaining = loop["task_count"] - loop["tasks_completed"]
                 score = 0.7 * weights.get("loop_state", 0.15) + 0.3
-                candidates.append((
-                    score,
-                    f"Continue applying '{phase}' ({remaining} tasks remaining)",
-                    f"python tools/workflow/loop_engine.py --complete-task --loop-id {loop_id} --json",
-                    f"{loop['tasks_completed']}/{loop['task_count']} tasks done",
-                ))
+                candidates.append(
+                    (
+                        score,
+                        f"Continue applying '{phase}' ({remaining} tasks remaining)",
+                        f"python tools/workflow/loop_engine.py --complete-task --loop-id {loop_id} --json",
+                        f"{loop['tasks_completed']}/{loop['task_count']} tasks done",
+                    )
+                )
             elif status == "applied":
                 score = 0.8 * weights.get("loop_state", 0.15) + 0.5
-                candidates.append((
-                    score,
-                    f"Start UNIFY for '{phase}' — reconcile planned vs actual",
-                    f"python tools/workflow/loop_engine.py --start-unify --loop-id {loop_id} --json",
-                    "All tasks completed, reconciliation needed",
-                ))
+                candidates.append(
+                    (
+                        score,
+                        f"Start UNIFY for '{phase}' — reconcile planned vs actual",
+                        f"python tools/workflow/loop_engine.py --start-unify --loop-id {loop_id} --json",
+                        "All tasks completed, reconciliation needed",
+                    )
+                )
             elif status == "unifying":
                 score = 0.9 * weights.get("loop_state", 0.15) + 0.6
-                candidates.append((
-                    score,
-                    f"Complete reconciliation for '{phase}'",
-                    f"python tools/workflow/reconciler.py --reconcile --loop-id {loop_id} --json",
-                    "Loop is in UNIFY state, needs reconciliation to close",
-                ))
+                candidates.append(
+                    (
+                        score,
+                        f"Complete reconciliation for '{phase}'",
+                        f"python tools/workflow/reconciler.py --reconcile --loop-id {loop_id} --json",
+                        "Loop is in UNIFY state, needs reconciliation to close",
+                    )
+                )
 
         # 2. Compliance staleness
         try:
@@ -152,12 +168,14 @@ def recommend(project_id: str, db_path: Optional[Path] = None) -> Dict[str, Any]
                 hours = _hours_since(ssp["latest"])
                 if hours > 720:  # 30 days
                     score = min(1.0, hours / 2160.0) * weights.get("compliance_gap", 0.25) + 0.3
-                    candidates.append((
-                        score,
-                        f"Regenerate SSP (last generated {hours / 24:.0f} days ago)",
-                        f"python tools/compliance/ssp_generator.py --project-id {project_id}",
-                        f"SSP is {hours / 24:.0f} days old",
-                    ))
+                    candidates.append(
+                        (
+                            score,
+                            f"Regenerate SSP (last generated {hours / 24:.0f} days ago)",
+                            f"python tools/compliance/ssp_generator.py --project-id {project_id}",
+                            f"SSP is {hours / 24:.0f} days old",
+                        )
+                    )
         except Exception:
             pass
 
@@ -171,24 +189,28 @@ def recommend(project_id: str, db_path: Optional[Path] = None) -> Dict[str, Any]
             ).fetchone()
             if vulns and vulns["cnt"] > 0:
                 score = min(1.0, vulns["cnt"] / 5.0) * weights.get("security_risk", 0.20) + 0.5
-                candidates.append((
-                    score,
-                    f"Address {vulns['cnt']} critical/high security findings",
-                    "python tools/security/sast_runner.py --project-dir .",
-                    f"{vulns['cnt']} open critical/high findings",
-                ))
+                candidates.append(
+                    (
+                        score,
+                        f"Address {vulns['cnt']} critical/high security findings",
+                        "python tools/security/sast_runner.py --project-dir .",
+                        f"{vulns['cnt']} open critical/high findings",
+                    )
+                )
         except Exception:
             pass
 
         # 4. No open loops — suggest creating one
         if not open_loops:
-            candidates.append((
-                0.2,
-                "Create a new workflow loop to start your next task",
-                'python tools/workflow/loop_engine.py --create --project-id '
-                f'"{project_id}" --phase "next-task" --json',
-                "No active workflow loops",
-            ))
+            candidates.append(
+                (
+                    0.2,
+                    "Create a new workflow loop to start your next task",
+                    "python tools/workflow/loop_engine.py --create --project-id "
+                    f'"{project_id}" --phase "next-task" --json',
+                    "No active workflow loops",
+                )
+            )
 
         # Sort by score descending, pick top
         candidates.sort(key=lambda x: x[0], reverse=True)
@@ -213,8 +235,7 @@ def recommend(project_id: str, db_path: Optional[Path] = None) -> Dict[str, Any]
             "open_loops": len(open_loops),
             "total_candidates": len(candidates),
             "all_candidates": [
-                {"score": round(c[0], 4), "action": c[1], "command": c[2], "reason": c[3]}
-                for c in candidates[:5]
+                {"score": round(c[0], 4), "action": c[1], "command": c[2], "reason": c[3]} for c in candidates[:5]
             ],
             "evaluated_at": now_iso(),
         }

@@ -35,7 +35,6 @@ def _get_db(db_path: Optional[Path] = None) -> sqlite3.Connection:
     return conn
 
 
-
 def _record_event(conn: sqlite3.Connection, job_id: str, event_type: str, details: str = "{}") -> None:
     """Record a training job event (append-only, D6)."""
     conn.execute(

@@ -61,9 +61,11 @@ DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db
 # Graceful import of audit logger
 try:
     from tools.audit.audit_logger import log_event
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
+
     def log_event(**kwargs) -> int:  # type: ignore[misc]
         return -1
 
@@ -72,13 +74,12 @@ except ImportError:
 # Database helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_connection(db_path=None):
     """Get database connection with dict-like row access."""
     path = db_path or DB_PATH
     if not path.exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py"
-        )
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
     conn = get_connection(db_path=str(path))
     return conn
 
@@ -137,6 +138,7 @@ def _load_monte_carlo_runs(conn, scenario_id):
 # ---------------------------------------------------------------------------
 # Core functions
 # ---------------------------------------------------------------------------
+
 
 def fork_scenario(scenario_id, new_name, additional_modifications=None, db_path=None):
     """Create a new scenario based on an existing one with additional modifications.
@@ -200,12 +202,14 @@ def fork_scenario(scenario_id, new_name, additional_modifications=None, db_path=
                 actor="icdev-simulation-engine",
                 action=f"Forked scenario {scenario_id} as {new_id} ({new_name})",
                 project_id=source.get("project_id"),
-                details=json.dumps({
-                    "new_scenario_id": new_id,
-                    "forked_from": scenario_id,
-                    "new_name": new_name,
-                    "has_additional_mods": additional_modifications is not None,
-                }),
+                details=json.dumps(
+                    {
+                        "new_scenario_id": new_id,
+                        "forked_from": scenario_id,
+                        "new_name": new_name,
+                        "has_additional_mods": additional_modifications is not None,
+                    }
+                ),
             )
 
         return {
@@ -371,13 +375,15 @@ def export_scenario(scenario_id, output_path, db_path=None):
                 actor="icdev-simulation-engine",
                 action=f"Exported scenario {scenario_id} to {output_path}",
                 project_id=scenario.get("project_id"),
-                details=json.dumps({
-                    "scenario_id": scenario_id,
-                    "output_path": str(output_path),
-                    "size_bytes": size_bytes,
-                    "results_count": len(results),
-                    "mc_runs_count": len(mc_runs),
-                }),
+                details=json.dumps(
+                    {
+                        "scenario_id": scenario_id,
+                        "output_path": str(output_path),
+                        "size_bytes": size_bytes,
+                        "results_count": len(results),
+                        "mc_runs_count": len(mc_runs),
+                    }
+                ),
             )
 
         return {
@@ -440,11 +446,13 @@ def import_scenario(project_id, input_path, db_path=None):
             modifications["source_file"] = str(input_path)
             modifications = json.dumps(modifications)
         elif modifications is None:
-            modifications = json.dumps({
-                "imported_from": old_id,
-                "imported_at": now,
-                "source_file": str(input_path),
-            })
+            modifications = json.dumps(
+                {
+                    "imported_from": old_id,
+                    "imported_at": now,
+                    "source_file": str(input_path),
+                }
+            )
         else:
             # String — try parse, augment, re-serialize
             try:
@@ -454,12 +462,14 @@ def import_scenario(project_id, input_path, db_path=None):
                 mods["source_file"] = str(input_path)
                 modifications = json.dumps(mods)
             except json.JSONDecodeError:
-                modifications = json.dumps({
-                    "imported_from": old_id,
-                    "imported_at": now,
-                    "source_file": str(input_path),
-                    "original_modifications": modifications,
-                })
+                modifications = json.dumps(
+                    {
+                        "imported_from": old_id,
+                        "imported_at": now,
+                        "source_file": str(input_path),
+                        "original_modifications": modifications,
+                    }
+                )
 
         conn.execute(
             """INSERT INTO simulation_scenarios
@@ -541,7 +551,8 @@ def import_scenario(project_id, input_path, db_path=None):
                     confidence_intervals, run_duration_ms, completed_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
-                    mc_new_id, new_id,
+                    mc_new_id,
+                    new_id,
                     mc.get("iterations", 10000),
                     mc.get("dimension", "schedule"),
                     mc.get("distribution_type", "pert"),
@@ -552,7 +563,9 @@ def import_scenario(project_id, input_path, db_path=None):
                     mc.get("p90_value"),
                     mc.get("mean_value"),
                     mc.get("std_deviation"),
-                    histogram, cdf, ci,
+                    histogram,
+                    cdf,
+                    ci,
                     mc.get("run_duration_ms"),
                     mc.get("completed_at", now),
                 ),
@@ -566,13 +579,15 @@ def import_scenario(project_id, input_path, db_path=None):
                 actor="icdev-simulation-engine",
                 action=f"Imported scenario from {input_path} as {new_id}",
                 project_id=project_id,
-                details=json.dumps({
-                    "new_scenario_id": new_id,
-                    "imported_from_file": str(input_path),
-                    "original_id": old_id,
-                    "results_imported": len(results),
-                    "mc_runs_imported": len(mc_runs),
-                }),
+                details=json.dumps(
+                    {
+                        "new_scenario_id": new_id,
+                        "imported_from_file": str(input_path),
+                        "original_id": old_id,
+                        "results_imported": len(results),
+                        "mc_runs_imported": len(mc_runs),
+                    }
+                ),
             )
 
         return {
@@ -674,30 +689,34 @@ def get_scenario_summary(scenario_id, db_path=None):
             dim = r.get("dimension", "unknown")
             if dim not in by_dimension:
                 by_dimension[dim] = []
-            by_dimension[dim].append({
-                "metric": r.get("metric_name"),
-                "baseline": r.get("baseline_value"),
-                "simulated": r.get("simulated_value"),
-                "delta": r.get("delta"),
-                "delta_pct": r.get("delta_pct"),
-                "confidence": r.get("confidence"),
-                "impact_tier": r.get("impact_tier"),
-            })
+            by_dimension[dim].append(
+                {
+                    "metric": r.get("metric_name"),
+                    "baseline": r.get("baseline_value"),
+                    "simulated": r.get("simulated_value"),
+                    "delta": r.get("delta"),
+                    "delta_pct": r.get("delta_pct"),
+                    "confidence": r.get("confidence"),
+                    "impact_tier": r.get("impact_tier"),
+                }
+            )
 
         # Summarize Monte Carlo runs
         mc_summary = []
         for mc in mc_runs:
-            mc_summary.append({
-                "dimension": mc.get("dimension"),
-                "iterations": mc.get("iterations"),
-                "distribution": mc.get("distribution_type"),
-                "p10": mc.get("p10_value"),
-                "p50": mc.get("p50_value"),
-                "p80": mc.get("p80_value"),
-                "p90": mc.get("p90_value"),
-                "mean": mc.get("mean_value"),
-                "std_dev": mc.get("std_deviation"),
-            })
+            mc_summary.append(
+                {
+                    "dimension": mc.get("dimension"),
+                    "iterations": mc.get("iterations"),
+                    "distribution": mc.get("distribution_type"),
+                    "p10": mc.get("p10_value"),
+                    "p50": mc.get("p50_value"),
+                    "p80": mc.get("p80_value"),
+                    "p90": mc.get("p90_value"),
+                    "mean": mc.get("mean_value"),
+                    "std_dev": mc.get("std_deviation"),
+                }
+            )
 
         # Overall impact assessment
         tiers_found = [r.get("impact_tier") for r in results if r.get("impact_tier")]
@@ -777,10 +796,7 @@ def compare_multiple(scenario_ids, db_path=None):
 
             for sid in scenario_ids:
                 # Find matching result
-                matching = [
-                    r for r in all_results[sid]
-                    if r.get("dimension") == dim and r.get("metric_name") == metric
-                ]
+                matching = [r for r in all_results[sid] if r.get("dimension") == dim and r.get("metric_name") == metric]
                 if matching:
                     r = matching[0]
                     val = r.get("simulated_value")
@@ -851,6 +867,7 @@ def compare_multiple(scenario_ids, db_path=None):
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
     parser = argparse.ArgumentParser(
         description="RICOAS Scenario Manager — Save, load, fork, compare, and archive simulation scenarios"
@@ -860,41 +877,31 @@ def main():
     parser.add_argument("--db", help="Database path override")
 
     # Actions
-    parser.add_argument("--fork", action="store_true",
-                        help="Fork an existing scenario")
+    parser.add_argument("--fork", action="store_true", help="Fork an existing scenario")
     parser.add_argument("--new-name", help="Name for forked scenario")
     parser.add_argument("--modifications", help="JSON string of additional modifications")
 
-    parser.add_argument("--archive", action="store_true",
-                        help="Archive a scenario")
+    parser.add_argument("--archive", action="store_true", help="Archive a scenario")
 
-    parser.add_argument("--delete", action="store_true",
-                        help="Soft-delete a scenario")
+    parser.add_argument("--delete", action="store_true", help="Soft-delete a scenario")
 
-    parser.add_argument("--export", action="store_true",
-                        help="Export scenario to JSON file")
+    parser.add_argument("--export", action="store_true", help="Export scenario to JSON file")
     parser.add_argument("--output-path", help="Output path for export")
 
     # Use dest to avoid conflict with Python's import keyword
-    parser.add_argument("--import", dest="do_import", action="store_true",
-                        help="Import scenario from JSON file")
+    parser.add_argument("--import", dest="do_import", action="store_true", help="Import scenario from JSON file")
     parser.add_argument("--input-path", help="Input path for import")
 
-    parser.add_argument("--list", action="store_true",
-                        help="List scenarios for a project")
-    parser.add_argument("--include-archived", action="store_true",
-                        help="Include archived scenarios in list")
+    parser.add_argument("--list", action="store_true", help="List scenarios for a project")
+    parser.add_argument("--include-archived", action="store_true", help="Include archived scenarios in list")
 
-    parser.add_argument("--summary", action="store_true",
-                        help="Get scenario summary")
+    parser.add_argument("--summary", action="store_true", help="Get scenario summary")
 
-    parser.add_argument("--compare", action="store_true",
-                        help="Compare multiple scenarios")
+    parser.add_argument("--compare", action="store_true", help="Compare multiple scenarios")
     parser.add_argument("--scenario-ids", help="Comma-separated scenario IDs for comparison")
 
     # Output format
-    parser.add_argument("--json", action="store_true",
-                        help="Output as JSON")
+    parser.add_argument("--json", action="store_true", help="Output as JSON")
 
     args = parser.parse_args()
     db_path = Path(args.db) if args.db else None
@@ -1036,7 +1043,9 @@ def main():
                 if result.get("monte_carlo"):
                     print("\n  Monte Carlo Runs:")
                     for mc in result["monte_carlo"]:
-                        print(f"    {mc['dimension']}: P50={mc['p50']}, P90={mc['p90']} ({mc['iterations']} iterations)")
+                        print(
+                            f"    {mc['dimension']}: P50={mc['p50']}, P90={mc['p90']} ({mc['iterations']} iterations)"
+                        )
 
         elif args.compare:
             if not args.scenario_ids:

@@ -84,6 +84,7 @@ class LocalPDFProvider:
         """pypdf is always available if installed."""
         try:
             from pypdf import PdfReader  # noqa: F401
+
             return True
         except ImportError:
             return False
@@ -107,10 +108,7 @@ class LocalPDFProvider:
         try:
             from pypdf import PdfReader
         except ImportError:
-            raise RuntimeError(
-                "pypdf required for local PDF extraction. "
-                "Install: pip install pypdf"
-            )
+            raise RuntimeError("pypdf required for local PDF extraction. Install: pip install pypdf")
 
         reader = PdfReader(str(pdf_path))
         total_pages = min(len(reader.pages), max_pages)
@@ -127,26 +125,28 @@ class LocalPDFProvider:
                 text = ""
 
             if text:
-                results.append({
-                    "page_number": i + 1,
-                    "text": text,
-                    "provider_used": "pypdf",
-                    "metadata": {"char_count": len(text)},
-                })
+                results.append(
+                    {
+                        "page_number": i + 1,
+                        "text": text,
+                        "provider_used": "pypdf",
+                        "metadata": {"char_count": len(text)},
+                    }
+                )
             else:
                 empty_pages.append(i)
-                results.append({
-                    "page_number": i + 1,
-                    "text": "",
-                    "provider_used": "pypdf_empty",
-                    "metadata": {},
-                })
+                results.append(
+                    {
+                        "page_number": i + 1,
+                        "text": "",
+                        "provider_used": "pypdf_empty",
+                        "metadata": {},
+                    }
+                )
 
         # Phase 2: Vision OCR for empty pages (scanned PDFs)
         if empty_pages and use_vision_fallback and self._is_vision_available():
-            logger.info(
-                "Attempting vision OCR for %d empty pages", len(empty_pages)
-            )
+            logger.info("Attempting vision OCR for %d empty pages", len(empty_pages))
             for page_idx in empty_pages:
                 ocr_text = self._vision_extract_page(pdf_path, page_idx)
                 if ocr_text:
@@ -165,6 +165,7 @@ class LocalPDFProvider:
             return self._vision_api
         # Ollama has /api/tags, OpenAI-compatible has /v1/models
         import urllib.request
+
         base = self._vision_url.rstrip("/")
         try:
             urllib.request.urlopen(f"{base}/api/tags", timeout=2)  # nosec B310 localhost only
@@ -229,37 +230,49 @@ class LocalPDFProvider:
             base = self._vision_url.rstrip("/")
 
             if api == "ollama":
-                payload = json.dumps({
-                    "model": self._vision_model or "llava:latest",
-                    "messages": [{
-                        "role": "user",
-                        "content": prompt_text,
-                        "images": [image_b64],
-                    }],
-                    "stream": False,
-                    "options": {"num_predict": 4096},
-                }).encode()
+                payload = json.dumps(
+                    {
+                        "model": self._vision_model or "llava:latest",
+                        "messages": [
+                            {
+                                "role": "user",
+                                "content": prompt_text,
+                                "images": [image_b64],
+                            }
+                        ],
+                        "stream": False,
+                        "options": {"num_predict": 4096},
+                    }
+                ).encode()
                 url = f"{base}/api/chat"
             else:
                 # OpenAI-compatible vision API (vLLM, LM Studio, llama.cpp, etc.)
-                payload = json.dumps({
-                    "model": self._vision_model,
-                    "messages": [{
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": prompt_text},
-                            {"type": "image_url", "image_url": {
-                                "url": f"data:image/png;base64,{image_b64}",
-                            }},
+                payload = json.dumps(
+                    {
+                        "model": self._vision_model,
+                        "messages": [
+                            {
+                                "role": "user",
+                                "content": [
+                                    {"type": "text", "text": prompt_text},
+                                    {
+                                        "type": "image_url",
+                                        "image_url": {
+                                            "url": f"data:image/png;base64,{image_b64}",
+                                        },
+                                    },
+                                ],
+                            }
                         ],
-                    }],
-                    "max_tokens": 4096,
-                    "stream": False,
-                }).encode()
+                        "max_tokens": 4096,
+                        "stream": False,
+                    }
+                ).encode()
                 url = f"{base}/v1/chat/completions"
 
             req = urllib.request.Request(
-                url, data=payload,
+                url,
+                data=payload,
                 headers={"Content-Type": "application/json"},
             )
             resp = urllib.request.urlopen(req, timeout=120)  # nosec B310 localhost only
@@ -275,9 +288,7 @@ class LocalPDFProvider:
                 return ""
 
         except Exception as exc:
-            logger.debug(
-                "Vision OCR failed for page %d: %s", page_idx + 1, exc
-            )
+            logger.debug("Vision OCR failed for page %d: %s", page_idx + 1, exc)
             return ""
 
     @staticmethod
@@ -323,9 +334,7 @@ class LocalPDFProvider:
 
         return ""
 
-    def extract_to_rag_format(
-        self, pdf_path: Path, max_pages: int = 200
-    ) -> Dict[str, Any]:
+    def extract_to_rag_format(self, pdf_path: Path, max_pages: int = 200) -> Dict[str, Any]:
         """Extract PDF and return in RAG-compatible format.
 
         Compatible with tools.rag.pdf_provider.PDFExtraction format.
@@ -343,9 +352,7 @@ class LocalPDFProvider:
             "pages": pages,
             "provider_used": self.provider_name,
             "status": "extracted",
-            "full_text": "\n\n".join(
-                p["text"] for p in pages if p["text"]
-            ),
+            "full_text": "\n\n".join(p["text"] for p in pages if p["text"]),
         }
 
 

@@ -20,8 +20,12 @@ from functools import wraps
 from pathlib import Path
 
 from flask import (
-    Blueprint, jsonify, redirect, render_template,
-    request, session,
+    Blueprint,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    session,
 )
 
 logger = logging.getLogger("icdev.data_canvas")
@@ -33,6 +37,7 @@ _CONFIG_PATH = _ICDEV_ROOT / "args" / "data_canvas_config.yaml"
 
 try:
     import yaml as _yaml
+
     _HAS_YAML = True
 except ImportError:
     _HAS_YAML = False
@@ -84,6 +89,7 @@ def _audit(design_id, user, action, detail="", classification="CUI // SP-CTI"):
 
 # ── Blueprint Factory ────────────────────────────────────────────────────────
 
+
 def create_data_canvas_blueprint():
     """Create and return the Data Design Canvas Blueprint.
 
@@ -111,12 +117,15 @@ def create_data_canvas_blueprint():
         @wraps(f)
         def decorated(*args, **kwargs):
             if not session.get("user_id"):
-                if (request.is_json
-                        or request.path.startswith("/data/api/")
-                        or request.method in ("DELETE", "POST", "PUT")):
+                if (
+                    request.is_json
+                    or request.path.startswith("/data/api/")
+                    or request.method in ("DELETE", "POST", "PUT")
+                ):
                     return jsonify({"error": "Authentication required"}), 401
                 return redirect("/login")
             return f(*args, **kwargs)
+
         return decorated
 
     # ══════════════════════════════════════════════════════════════════════
@@ -127,14 +136,19 @@ def create_data_canvas_blueprint():
     @dc_login_required
     def dc_index():
         conn = get_connection()
-        designs = [row_to_dict(r) for r in conn.execute(
-            "SELECT id, name, description, classification, created_at, updated_at "
-            "FROM data_designs ORDER BY updated_at DESC LIMIT 20"
-        ).fetchall()]
-        templates = [row_to_dict(r) for r in conn.execute(
-            "SELECT id, name, category, description, tags "
-            "FROM dd_templates ORDER BY category, name"
-        ).fetchall()]
+        designs = [
+            row_to_dict(r)
+            for r in conn.execute(
+                "SELECT id, name, description, classification, created_at, updated_at "
+                "FROM data_designs ORDER BY updated_at DESC LIMIT 20"
+            ).fetchall()
+        ]
+        templates = [
+            row_to_dict(r)
+            for r in conn.execute(
+                "SELECT id, name, category, description, tags FROM dd_templates ORDER BY category, name"
+            ).fetchall()
+        ]
         conn.close()
         return render_template(
             "data_canvas/index.html",
@@ -174,9 +188,7 @@ def create_data_canvas_blueprint():
     @dc_login_required
     def dc_edit_canvas(design_id):
         conn = get_connection()
-        row = conn.execute(
-            "SELECT * FROM data_designs WHERE id=?", (design_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM data_designs WHERE id=?", (design_id,)).fetchone()
         conn.close()
         if not row:
             return redirect("/data/canvas/new")
@@ -195,10 +207,12 @@ def create_data_canvas_blueprint():
     def dc_templates():
         """Template gallery page."""
         conn = get_connection()
-        templates = [row_to_dict(r) for r in conn.execute(
-            "SELECT id, name, category, description, tags "
-            "FROM dd_templates ORDER BY category, name"
-        ).fetchall()]
+        templates = [
+            row_to_dict(r)
+            for r in conn.execute(
+                "SELECT id, name, category, description, tags FROM dd_templates ORDER BY category, name"
+            ).fetchall()
+        ]
         conn.close()
         return render_template("data_canvas/templates.html", templates=templates)
 
@@ -223,9 +237,7 @@ def create_data_canvas_blueprint():
     def dc_remediation_page(design_id):
         """Remediation page — gap analysis with recommended fixes."""
         conn = get_connection()
-        row = conn.execute(
-            "SELECT id, name FROM data_designs WHERE id=?", (design_id,)
-        ).fetchone()
+        row = conn.execute("SELECT id, name FROM data_designs WHERE id=?", (design_id,)).fetchone()
         conn.close()
         if not row:
             return redirect("/data/")
@@ -268,8 +280,16 @@ def create_data_canvas_blueprint():
             "INSERT INTO data_designs "
             "(id, name, description, graph_json, template_id, classification, created_at, updated_at) "
             "VALUES (?,?,?,?,?,?,?,?)",
-            (design_id, name, data.get("description", ""),
-             graph_json, template_id, classification, now_isoformat(), now_isoformat()),
+            (
+                design_id,
+                name,
+                data.get("description", ""),
+                graph_json,
+                template_id,
+                classification,
+                now_isoformat(),
+                now_isoformat(),
+            ),
         )
         conn.commit()
         conn.close()
@@ -280,9 +300,7 @@ def create_data_canvas_blueprint():
     @dc_login_required
     def dc_api_get(design_id):
         conn = get_connection()
-        row = conn.execute(
-            "SELECT * FROM data_designs WHERE id=?", (design_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM data_designs WHERE id=?", (design_id,)).fetchone()
         conn.close()
         if not row:
             return jsonify({"error": "Not found"}), 404
@@ -297,11 +315,15 @@ def create_data_canvas_blueprint():
         logger.info("Updating data design: %s", design_id)
         conn = get_connection()
         conn.execute(
-            "UPDATE data_designs SET name=?, description=?, graph_json=?, "
-            "classification=?, updated_at=? WHERE id=?",
-            (data.get("name", ""), data.get("description", ""),
-             data.get("graph_json", "{}"),
-             data.get("classification", "CUI"), now_isoformat(), design_id),
+            "UPDATE data_designs SET name=?, description=?, graph_json=?, classification=?, updated_at=? WHERE id=?",
+            (
+                data.get("name", ""),
+                data.get("description", ""),
+                data.get("graph_json", "{}"),
+                data.get("classification", "CUI"),
+                now_isoformat(),
+                design_id,
+            ),
         )
         conn.commit()
         conn.close()
@@ -310,6 +332,7 @@ def create_data_canvas_blueprint():
         # Cross-canvas trigger: auto-classify data flows, detect CUI/PII threats
         try:
             from tools.security_canvas.agent import on_ddc_design_saved
+
             on_ddc_design_saved(design_id)
         except Exception:
             pass
@@ -317,6 +340,7 @@ def create_data_canvas_blueprint():
         # Incremental KG update: re-extract only if graph_json changed
         try:
             from tools.canvas.kg_builder import rebuild_canvas_kg
+
             rebuild_canvas_kg("ddc", design_id)
         except Exception:
             pass
@@ -346,8 +370,7 @@ def create_data_canvas_blueprint():
     def dc_api_list_templates():
         conn = get_connection()
         rows = conn.execute(
-            "SELECT id, name, category, description, graph_json, tags "
-            "FROM dd_templates ORDER BY category, name"
+            "SELECT id, name, category, description, graph_json, tags FROM dd_templates ORDER BY category, name"
         ).fetchall()
         conn.close()
         return jsonify([row_to_dict(r) for r in rows])
@@ -362,8 +385,7 @@ def create_data_canvas_blueprint():
         """List available DDC snippets (reusable graph fragments)."""
         conn = get_connection()
         rows = conn.execute(
-            "SELECT id, name, category, description, graph_json, tags "
-            "FROM dd_snippets ORDER BY category, name"
+            "SELECT id, name, category, description, graph_json, tags FROM dd_snippets ORDER BY category, name"
         ).fetchall()
         conn.close()
         return jsonify({"snippets": [row_to_dict(r) for r in rows]})
@@ -377,9 +399,7 @@ def create_data_canvas_blueprint():
     def dc_api_assess(design_id):
         """Run compliance assessment on a data design."""
         conn = get_connection()
-        row = conn.execute(
-            "SELECT graph_json FROM data_designs WHERE id=?", (design_id,)
-        ).fetchone()
+        row = conn.execute("SELECT graph_json FROM data_designs WHERE id=?", (design_id,)).fetchone()
         if not row:
             conn.close()
             return jsonify({"error": "Not found"}), 404
@@ -403,6 +423,7 @@ def create_data_canvas_blueprint():
         pii_scan: dict = {}
         try:
             from tools.data_canvas.pii_detector import scan_graph as _scan_graph
+
             pii_scan = _scan_graph(graph_data)
             result["findings"].extend(pii_scan.get("compliance_findings", []))
         except Exception:
@@ -413,23 +434,28 @@ def create_data_canvas_blueprint():
         conn.execute(
             "INSERT INTO dd_assessments (id, design_id, assessment_type, findings_json, score, created_at) "
             "VALUES (?,?,?,?,?,?)",
-            (assess_id, design_id, "compliance",
-             json.dumps(result["findings"]), result["risk_score"], now_isoformat()),
+            (assess_id, design_id, "compliance", json.dumps(result["findings"]), result["risk_score"], now_isoformat()),
         )
         conn.commit()
         conn.close()
 
-        _audit(design_id, session.get("user_id", "system"), "ASSESS",
-               f"score={result['risk_score']} grade={result['posture_grade']}")
+        _audit(
+            design_id,
+            session.get("user_id", "system"),
+            "ASSESS",
+            f"score={result['risk_score']} grade={result['posture_grade']}",
+        )
 
-        return jsonify({
-            "assessment_id": assess_id,
-            "assessment": result,
-            "classification_coverage": classification_cov,
-            "nist_coverage": nist_cov,
-            "gaps": gaps,
-            "pii_scan": pii_scan,
-        })
+        return jsonify(
+            {
+                "assessment_id": assess_id,
+                "assessment": result,
+                "classification_coverage": classification_cov,
+                "nist_coverage": nist_cov,
+                "gaps": gaps,
+                "pii_scan": pii_scan,
+            }
+        )
 
     @bp.route("/api/designs/<design_id>/assessments", methods=["GET"])
     @dc_login_required
@@ -496,7 +522,10 @@ def create_data_canvas_blueprint():
             "column_name, transform_desc, classification, created_at) "
             "VALUES (?,?,?,?,?,?,?,?,?)",
             (
-                edge_id, design_id, source, target,
+                edge_id,
+                design_id,
+                source,
+                target,
                 data.get("lineage_type", "flow"),
                 data.get("column_name", ""),
                 data.get("transform_desc", ""),
@@ -506,8 +535,7 @@ def create_data_canvas_blueprint():
         )
         conn.commit()
         conn.close()
-        _audit(design_id, session.get("user_id", "system"), "LINEAGE_CREATE",
-               f"source={source} target={target}")
+        _audit(design_id, session.get("user_id", "system"), "LINEAGE_CREATE", f"source={source} target={target}")
         return jsonify({"id": edge_id, "status": "created"}), 201
 
     @bp.route("/api/designs/<design_id>/lineage/<edge_id>", methods=["DELETE"])
@@ -515,9 +543,7 @@ def create_data_canvas_blueprint():
     def dc_api_lineage_delete(design_id, edge_id):
         """Delete a lineage edge."""
         conn = get_connection()
-        conn.execute(
-            "DELETE FROM dd_lineage WHERE id=? AND design_id=?", (edge_id, design_id)
-        )
+        conn.execute("DELETE FROM dd_lineage WHERE id=? AND design_id=?", (edge_id, design_id))
         conn.commit()
         conn.close()
         return jsonify({"status": "deleted"})
@@ -527,9 +553,7 @@ def create_data_canvas_blueprint():
     def dc_api_pii_scan(design_id):
         """Run PII/PHI detection on the current graph nodes."""
         conn = get_connection()
-        row = conn.execute(
-            "SELECT graph_json FROM data_designs WHERE id=?", (design_id,)
-        ).fetchone()
+        row = conn.execute("SELECT graph_json FROM data_designs WHERE id=?", (design_id,)).fetchone()
         conn.close()
         if not row:
             return jsonify({"error": "Not found"}), 404
@@ -538,9 +562,14 @@ def create_data_canvas_blueprint():
         except (json.JSONDecodeError, TypeError):
             return jsonify({"error": "Invalid graph data"}), 400
         from tools.data_canvas.pii_detector import scan_graph as _scan_graph
+
         result = _scan_graph(graph)
-        _audit(design_id, session.get("user_id", "system"), "PII_SCAN",
-               f"pii_nodes={result['pii_node_count']} high={result['high_count']}")
+        _audit(
+            design_id,
+            session.get("user_id", "system"),
+            "PII_SCAN",
+            f"pii_nodes={result['pii_node_count']} high={result['high_count']}",
+        )
         return jsonify(result)
 
     # ====================================================================
@@ -588,7 +617,8 @@ def create_data_canvas_blueprint():
         data = request.get_json(force=True, silent=True) or {}
         conn = get_connection()
         row = conn.execute(
-            "SELECT graph_json FROM data_designs WHERE id=?", (design_id,),
+            "SELECT graph_json FROM data_designs WHERE id=?",
+            (design_id,),
         ).fetchone()
         if not row:
             conn.close()
@@ -619,14 +649,22 @@ def create_data_canvas_blueprint():
         conn.execute(
             "INSERT INTO dd_versions (id, design_id, version_number, graph_json, change_summary, user_id, created_at) "
             "VALUES (?,?,?,?,?,?,?)",
-            (ver_id, design_id, ver_num,
-             json.dumps(current_graph) if isinstance(current_graph, dict) else str(raw),
-             change_summary, session.get("user_id", ""), now),
+            (
+                ver_id,
+                design_id,
+                ver_num,
+                json.dumps(current_graph) if isinstance(current_graph, dict) else str(raw),
+                change_summary,
+                session.get("user_id", ""),
+                now,
+            ),
         )
         conn.commit()
         conn.close()
         _audit(design_id, session.get("user_id", ""), "VERSION_CREATE", f"v{ver_num}")
-        return jsonify({"id": ver_id, "version_number": ver_num, "change_summary": change_summary, "created_at": now}), 201
+        return jsonify(
+            {"id": ver_id, "version_number": ver_num, "change_summary": change_summary, "created_at": now}
+        ), 201
 
     @bp.route("/api/versions/<design_id>/restore/<version_id>", methods=["POST"])
     @dc_login_required
@@ -649,8 +687,7 @@ def create_data_canvas_blueprint():
         ver_num = ver[1]
         conn.close()
         _audit(design_id, session.get("user_id", ""), "VERSION_RESTORE", f"restored to v{ver_num}")
-        return jsonify({"id": design_id, "restored_version": version_id,
-                        "version_number": ver_num, "updated_at": now})
+        return jsonify({"id": design_id, "restored_version": version_id, "version_number": ver_num, "updated_at": now})
 
     @bp.route("/api/versions/<design_id>/diff", methods=["POST"])
     @dc_login_required
@@ -679,17 +716,20 @@ def create_data_canvas_blueprint():
         except Exception:
             return jsonify({"error": "Failed to parse graph data"}), 500
         summary = _dc_diff_graph(graph_a, graph_b)
-        return jsonify({
-            "version_a": {"id": ver_a_id, "version_number": ver_a[1]},
-            "version_b": {"id": ver_b_id, "version_number": ver_b[1]},
-            "summary": summary,
-        })
+        return jsonify(
+            {
+                "version_a": {"id": ver_a_id, "version_number": ver_a[1]},
+                "version_b": {"id": ver_b_id, "version_number": ver_b[1]},
+                "summary": summary,
+            }
+        )
 
     @bp.route("/api/export/<design_id>/vsdx", methods=["POST"])
     @dc_login_required
     def dc_api_export_vsdx(design_id):
         """Export data design as Visio .vsdx file."""
         import base64
+
         conn = get_connection()
         row = conn.execute(
             "SELECT name, graph_json FROM data_designs WHERE id=?",
@@ -702,18 +742,19 @@ def create_data_canvas_blueprint():
         gj = d["graph_json"]
         graph = json.loads(gj) if isinstance(gj, str) else gj
         from tools.network.visio_export import export_vsdx
+
         vsdx_bytes = export_vsdx(d["name"], graph)
-        return jsonify({
-            "format": "vsdx",
-            "filename": d["name"].replace(" ", "_"),
-            "data": base64.b64encode(vsdx_bytes).decode("ascii"),
-        })
+        return jsonify(
+            {
+                "format": "vsdx",
+                "filename": d["name"].replace(" ", "_"),
+                "data": base64.b64encode(vsdx_bytes).decode("ascii"),
+            }
+        )
 
     def _ddc_fetch(design_id):
         conn = get_connection()
-        row = conn.execute(
-            "SELECT name, graph_json FROM data_designs WHERE id=?", (design_id,)
-        ).fetchone()
+        row = conn.execute("SELECT name, graph_json FROM data_designs WHERE id=?", (design_id,)).fetchone()
         conn.close()
         if not row:
             return None, None
@@ -727,10 +768,12 @@ def create_data_canvas_blueprint():
     def dc_api_export_json(design_id):
         """Export data design as JSON."""
         import base64
+
         name, graph = _ddc_fetch(design_id)
         if name is None:
             return jsonify({"error": "Not found"}), 404
         from tools.canvas.export_utils import export_json
+
         data = base64.b64encode(export_json(name, graph, "DDC")).decode("ascii")
         return jsonify({"format": "json", "filename": f"{name.replace(' ', '_')}.json", "data": data})
 
@@ -739,10 +782,12 @@ def create_data_canvas_blueprint():
     def dc_api_export_markdown(design_id):
         """Export data design as Markdown."""
         import base64
+
         name, graph = _ddc_fetch(design_id)
         if name is None:
             return jsonify({"error": "Not found"}), 404
         from tools.canvas.export_utils import export_markdown
+
         data = base64.b64encode(export_markdown(name, graph, "DDC")).decode("ascii")
         return jsonify({"format": "markdown", "filename": f"{name.replace(' ', '_')}.md", "data": data})
 
@@ -751,10 +796,12 @@ def create_data_canvas_blueprint():
     def dc_api_export_csv(design_id):
         """Export data design node inventory as CSV."""
         import base64
+
         name, graph = _ddc_fetch(design_id)
         if name is None:
             return jsonify({"error": "Not found"}), 404
         from tools.canvas.export_utils import export_csv
+
         data = base64.b64encode(export_csv(name, graph, "DDC")).decode("ascii")
         return jsonify({"format": "csv", "filename": f"{name.replace(' ', '_')}.csv", "data": data})
 
@@ -763,10 +810,12 @@ def create_data_canvas_blueprint():
     def dc_api_export_drawio(design_id):
         """Export data design as DrawIO XML."""
         import base64
+
         name, graph = _ddc_fetch(design_id)
         if name is None:
             return jsonify({"error": "Not found"}), 404
         from tools.canvas.export_utils import export_drawio
+
         data = base64.b64encode(export_drawio(name, graph, "DDC")).decode("ascii")
         return jsonify({"format": "drawio", "filename": f"{name.replace(' ', '_')}.drawio", "data": data})
 
@@ -775,16 +824,19 @@ def create_data_canvas_blueprint():
     def dc_api_export_svg(design_id):
         """Export data design as SVG vector graphic."""
         import base64
+
         name, graph = _ddc_fetch(design_id)
         if name is None:
             return jsonify({"error": "Not found"}), 404
         from tools.canvas.export_utils import export_svg
+
         data = base64.b64encode(export_svg(name, graph, "DDC")).decode("ascii")
         return jsonify({"format": "svg", "filename": f"{name.replace(' ', '_')}.svg", "data": data})
 
     # ── Collaboration (Task 18) ───────────────────────────────────────────────
     import uuid as _uuid_mod
     from tools.canvas.collaboration import CanvasCollabManager as _DDCCollabMgr
+
     _ddc_collab = _DDCCollabMgr("dd")
 
     @bp.route("/api/collab/<design_id>/join", methods=["POST"])

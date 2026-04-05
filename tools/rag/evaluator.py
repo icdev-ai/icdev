@@ -325,6 +325,7 @@ class RAGEvaluator:
         if scoring_mode in ("crag", "both") and ground_truth:
             try:
                 from tools.rag.crag_evaluator import CRAGScorer
+
                 scorer = CRAGScorer()
                 crag_result = scorer.score_answer(answer, ground_truth)
                 metrics["crag_score"] = crag_result.get("score", 0.0)

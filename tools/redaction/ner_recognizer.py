@@ -17,6 +17,7 @@ CLI:
     python tools/redaction/ner_recognizer.py --extract "John Smith works at DISA" --json
     python tools/redaction/ner_recognizer.py --health --json
 """
+
 from __future__ import annotations
 
 import argparse
@@ -39,52 +40,93 @@ logger = logging.getLogger("icdev.redaction.ner_recognizer")
 
 # Common person name patterns (Title Case sequences near context words)
 _PERSON_CONTEXT = re.compile(
-    r'\b(?:Mr|Mrs|Ms|Dr|Prof|Gen|Col|Maj|Capt|Lt|Sgt|COR|COTR|PM|KO|CO)\b'
-    r'\.?\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3})',
+    r"\b(?:Mr|Mrs|Ms|Dr|Prof|Gen|Col|Maj|Capt|Lt|Sgt|COR|COTR|PM|KO|CO)\b"
+    r"\.?\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3})",
     re.MULTILINE,
 )
 
 # "Contact: First Last" or "POC: First Last" patterns
 _POC_PATTERN = re.compile(
-    r'(?:contact|poc|point of contact|contracting officer|program manager'
-    r'|project lead|key personnel|team lead|principal investigator)'
-    r'[:\s]+([A-Z][a-z]+(?:\s+[A-Z]\.?\s*)?[A-Z][a-z]+)',
+    r"(?:contact|poc|point of contact|contracting officer|program manager"
+    r"|project lead|key personnel|team lead|principal investigator)"
+    r"[:\s]+([A-Z][a-z]+(?:\s+[A-Z]\.?\s*)?[A-Z][a-z]+)",
     re.IGNORECASE,
 )
 
 # Email-derived names: john.smith@... → "John Smith"
 _EMAIL_NAME_PATTERN = re.compile(
-    r'([a-zA-Z]+)\.([a-zA-Z]+)@',
+    r"([a-zA-Z]+)\.([a-zA-Z]+)@",
 )
 
 # Common federal agencies / organizations (heuristic deny-list)
 _FEDERAL_AGENCIES = [
-    "Department of Defense", "Department of Homeland Security",
-    "Department of Veterans Affairs", "Department of Health and Human Services",
-    "Department of Energy", "Department of Commerce", "Department of the Interior",
-    "Department of Justice", "Department of Labor", "Department of State",
-    "Department of Transportation", "Department of Treasury",
-    "Defense Information Systems Agency", "Defense Intelligence Agency",
-    "Defense Logistics Agency", "Defense Health Agency",
-    "Defense Threat Reduction Agency", "Defense Advanced Research Projects Agency",
-    "Missile Defense Agency", "National Security Agency",
-    "National Geospatial-Intelligence Agency", "National Reconnaissance Office",
-    "General Services Administration", "Office of Management and Budget",
-    "Small Business Administration", "Federal Emergency Management Agency",
-    "Centers for Disease Control", "Food and Drug Administration",
-    "National Institutes of Health", "National Aeronautics and Space Administration",
-    "Army", "Navy", "Air Force", "Marine Corps", "Space Force", "Coast Guard",
-    "DISA", "DIA", "DLA", "DHA", "DTRA", "DARPA", "MDA", "NSA",
-    "NGA", "NRO", "GSA", "OMB", "SBA", "FEMA", "CDC", "FDA", "NIH", "NASA",
-    "USACE", "NAVFAC", "AFLCMC", "PEO", "SPAWAR", "NAVSEA",
+    "Department of Defense",
+    "Department of Homeland Security",
+    "Department of Veterans Affairs",
+    "Department of Health and Human Services",
+    "Department of Energy",
+    "Department of Commerce",
+    "Department of the Interior",
+    "Department of Justice",
+    "Department of Labor",
+    "Department of State",
+    "Department of Transportation",
+    "Department of Treasury",
+    "Defense Information Systems Agency",
+    "Defense Intelligence Agency",
+    "Defense Logistics Agency",
+    "Defense Health Agency",
+    "Defense Threat Reduction Agency",
+    "Defense Advanced Research Projects Agency",
+    "Missile Defense Agency",
+    "National Security Agency",
+    "National Geospatial-Intelligence Agency",
+    "National Reconnaissance Office",
+    "General Services Administration",
+    "Office of Management and Budget",
+    "Small Business Administration",
+    "Federal Emergency Management Agency",
+    "Centers for Disease Control",
+    "Food and Drug Administration",
+    "National Institutes of Health",
+    "National Aeronautics and Space Administration",
+    "Army",
+    "Navy",
+    "Air Force",
+    "Marine Corps",
+    "Space Force",
+    "Coast Guard",
+    "DISA",
+    "DIA",
+    "DLA",
+    "DHA",
+    "DTRA",
+    "DARPA",
+    "MDA",
+    "NSA",
+    "NGA",
+    "NRO",
+    "GSA",
+    "OMB",
+    "SBA",
+    "FEMA",
+    "CDC",
+    "FDA",
+    "NIH",
+    "NASA",
+    "USACE",
+    "NAVFAC",
+    "AFLCMC",
+    "PEO",
+    "SPAWAR",
+    "NAVSEA",
 ]
 
 
 class NERResult:
     """A named entity recognition result."""
 
-    def __init__(self, entity_type: str, text: str, start: int, end: int,
-                 score: float, method: str = "regex"):
+    def __init__(self, entity_type: str, text: str, start: int, end: int, score: float, method: str = "regex"):
         self.entity_type = entity_type
         self.text = text
         self.start = start
@@ -132,6 +174,7 @@ def _extract_via_ollama(text: str, model: str = "gemma3:latest") -> List[NERResu
 
         # Use low-level chat API (no thinking mode)
         import requests
+
         resp = requests.post(
             "http://localhost:11434/api/chat",
             json={
@@ -149,7 +192,7 @@ def _extract_via_ollama(text: str, model: str = "gemma3:latest") -> List[NERResu
         content = resp.json().get("message", {}).get("content", "")
 
         # Extract JSON from response (may be wrapped in markdown code block)
-        json_match = re.search(r'\[.*\]', content, re.DOTALL)
+        json_match = re.search(r"\[.*\]", content, re.DOTALL)
         if not json_match:
             return []
 
@@ -169,14 +212,16 @@ def _extract_via_ollama(text: str, model: str = "gemma3:latest") -> List[NERResu
             if idx == -1:
                 continue
 
-            results.append(NERResult(
-                entity_type=ent_type,
-                text=ent_text,
-                start=idx,
-                end=idx + len(ent_text),
-                score=0.75,  # Ollama NER confidence
-                method="ollama_ner",
-            ))
+            results.append(
+                NERResult(
+                    entity_type=ent_type,
+                    text=ent_text,
+                    start=idx,
+                    end=idx + len(ent_text),
+                    score=0.75,  # Ollama NER confidence
+                    method="ollama_ner",
+                )
+            )
 
         return results
 
@@ -184,6 +229,7 @@ def _extract_via_ollama(text: str, model: str = "gemma3:latest") -> List[NERResu
         logger.debug("Ollama NER extraction failed: %s", e)
         # Mark Ollama as temporarily unavailable to skip future attempts
         import requests as _req
+
         if isinstance(e, (_req.exceptions.Timeout, _req.exceptions.ConnectionError)):
             _OLLAMA_CACHE["available"] = False
         return []
@@ -193,6 +239,7 @@ def _extract_via_ollama(text: str, model: str = "gemma3:latest") -> List[NERResu
 # Regex NER Fallback
 # ---------------------------------------------------------------------------
 
+
 def _extract_via_regex(text: str) -> List[NERResult]:
     """Regex-based NER for person names and organizations."""
     results = []
@@ -201,27 +248,31 @@ def _extract_via_regex(text: str) -> List[NERResult]:
     for match in _PERSON_CONTEXT.finditer(text):
         name = match.group(1)
         full_start = match.start(1)
-        results.append(NERResult(
-            entity_type="PERSON",
-            text=name,
-            start=full_start,
-            end=full_start + len(name),
-            score=0.7,
-            method="regex_title",
-        ))
+        results.append(
+            NERResult(
+                entity_type="PERSON",
+                text=name,
+                start=full_start,
+                end=full_start + len(name),
+                score=0.7,
+                method="regex_title",
+            )
+        )
 
     # Person names via POC context
     for match in _POC_PATTERN.finditer(text):
         name = match.group(1)
         full_start = match.start(1)
-        results.append(NERResult(
-            entity_type="PERSON",
-            text=name,
-            start=full_start,
-            end=full_start + len(name),
-            score=0.65,
-            method="regex_poc",
-        ))
+        results.append(
+            NERResult(
+                entity_type="PERSON",
+                text=name,
+                start=full_start,
+                end=full_start + len(name),
+                score=0.65,
+                method="regex_poc",
+            )
+        )
 
     # Person names from email addresses
     for match in _EMAIL_NAME_PATTERN.finditer(text):
@@ -230,14 +281,16 @@ def _extract_via_regex(text: str) -> List[NERResult]:
         name = f"{first} {last}"
         # Don't add DetectionResult here — the email itself is caught by the detector
         # But record the derived name for surrogate mapping
-        results.append(NERResult(
-            entity_type="PERSON",
-            text=name,
-            start=match.start(),
-            end=match.end() - 1,  # Exclude @
-            score=0.5,
-            method="regex_email_derived",
-        ))
+        results.append(
+            NERResult(
+                entity_type="PERSON",
+                text=name,
+                start=match.start(),
+                end=match.end() - 1,  # Exclude @
+                score=0.5,
+                method="regex_email_derived",
+            )
+        )
 
     # Federal agencies via deny-list
     text_lower = text.lower()
@@ -245,14 +298,16 @@ def _extract_via_regex(text: str) -> List[NERResult]:
         agency_lower = agency.lower()
         idx = text_lower.find(agency_lower)
         while idx != -1:
-            results.append(NERResult(
-                entity_type="ORGANIZATION",
-                text=text[idx:idx + len(agency)],
-                start=idx,
-                end=idx + len(agency),
-                score=0.9 if len(agency) > 5 else 0.6,
-                method="regex_agency_list",
-            ))
+            results.append(
+                NERResult(
+                    entity_type="ORGANIZATION",
+                    text=text[idx : idx + len(agency)],
+                    start=idx,
+                    end=idx + len(agency),
+                    score=0.9 if len(agency) > 5 else 0.6,
+                    method="regex_agency_list",
+                )
+            )
             idx = text_lower.find(agency_lower, idx + len(agency))
 
     return results
@@ -275,12 +330,13 @@ def _check_ollama_cached() -> bool:
     so stalled inference attempts fail fast without blocking the pipeline.
     """
     import time as _t
+
     now = _t.time()
-    if (_OLLAMA_CACHE["available"] is not None
-            and (now - _OLLAMA_CACHE["checked_at"]) < _OLLAMA_CACHE_TTL):
+    if _OLLAMA_CACHE["available"] is not None and (now - _OLLAMA_CACHE["checked_at"]) < _OLLAMA_CACHE_TTL:
         return _OLLAMA_CACHE["available"]
     try:
         import requests
+
         resp = requests.get("http://localhost:11434/api/tags", timeout=1.5)
         _OLLAMA_CACHE["available"] = resp.status_code == 200
     except Exception:
@@ -350,6 +406,7 @@ class NERRecognizer:
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
     parser = argparse.ArgumentParser(description="ICDEV™ NER Recognizer (Ollama + regex)")
     parser.add_argument("--extract", type=str, help="Extract entities from text")
@@ -375,17 +432,21 @@ def main():
     if args.extract:
         results = recognizer.extract(args.extract)
         if args.json:
-            print(json.dumps({
-                "entities": [r.to_dict() for r in results],
-                "count": len(results),
-            }, indent=2))
+            print(
+                json.dumps(
+                    {
+                        "entities": [r.to_dict() for r in results],
+                        "count": len(results),
+                    },
+                    indent=2,
+                )
+            )
         else:
             if not results:
                 print("No entities found.")
             else:
                 for r in results:
-                    print(f"  {r.entity_type}: '{r.text}' [{r.start}:{r.end}] "
-                          f"score={r.score:.2f} ({r.method})")
+                    print(f"  {r.entity_type}: '{r.text}' [{r.start}:{r.end}] score={r.score:.2f} ({r.method})")
         return
 
     parser.print_help()

@@ -16,27 +16,16 @@ class EmailAdapter(NotificationAdapter):
 
     def __init__(self, config: Dict[str, Any]):
         super().__init__(config)
-        self.smtp_host = os.environ.get(
-            config.get("smtp_host_env", "SMTP_HOST"), ""
-        )
+        self.smtp_host = os.environ.get(config.get("smtp_host_env", "SMTP_HOST"), "")
         self.smtp_port = config.get("smtp_port", 587)
-        self.from_addr = os.environ.get(
-            config.get("from_addr_env", "NOTIFICATION_FROM"), ""
-        )
-        to_addrs_raw = os.environ.get(
-            config.get("to_addrs_env", "NOTIFICATION_TO"), ""
-        )
+        self.from_addr = os.environ.get(config.get("from_addr_env", "NOTIFICATION_FROM"), "")
+        to_addrs_raw = os.environ.get(config.get("to_addrs_env", "NOTIFICATION_TO"), "")
         self.to_addrs = [a.strip() for a in to_addrs_raw.split(",") if a.strip()]
         self.use_tls = config.get("use_tls", True)
-        self.username = os.environ.get(
-            config.get("username_env", "SMTP_USERNAME"), ""
-        )
-        self.password = os.environ.get(
-            config.get("password_env", "SMTP_PASSWORD"), ""
-        )
+        self.username = os.environ.get(config.get("username_env", "SMTP_USERNAME"), "")
+        self.password = os.environ.get(config.get("password_env", "SMTP_PASSWORD"), "")
 
-    def send(self, title: str, body: str, severity: str = "info",
-             metadata: Optional[Dict] = None) -> bool:
+    def send(self, title: str, body: str, severity: str = "info", metadata: Optional[Dict] = None) -> bool:
         if not self.smtp_host or not self.from_addr or not self.to_addrs:
             return False
 

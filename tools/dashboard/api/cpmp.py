@@ -44,7 +44,6 @@ def _get_db():
     return conn
 
 
-
 def _uuid():
     return str(uuid.uuid4())
 

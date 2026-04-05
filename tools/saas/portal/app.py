@@ -76,6 +76,7 @@ def _load_yaml(filepath: Path) -> dict:
     """Load a YAML file. Uses PyYAML if available, otherwise minimal parser."""
     try:
         import yaml
+
         with open(filepath, "r", encoding="utf-8") as fh:
             return yaml.safe_load(fh) or {}
     except ImportError:
@@ -207,6 +208,7 @@ def _inject_cui_banner():
 def _get_platform_conn():
     """Get a connection to the platform database (always SQLite)."""
     import sqlite3 as _sqlite3
+
     db_path = Path(os.environ.get("PLATFORM_DB_PATH", str(PLATFORM_DB)))
     conn = _sqlite3.connect(str(db_path))
     conn.row_factory = _sqlite3.Row
@@ -286,7 +288,10 @@ def _auto_login_env_key():
         # Create portal session
         portal_token = "psess_" + secrets.token_hex(24)
         _register_portal_session(
-            portal_token, row["tenant_id"], row["user_id"], row["role"],
+            portal_token,
+            row["tenant_id"],
+            row["user_id"],
+            row["role"],
         )
         session["portal_tenant_id"] = row["tenant_id"]
         session["portal_user_id"] = row["user_id"]
@@ -431,7 +436,10 @@ def login_post():
         # Generate opaque portal session token (Enhancement #1A)
         portal_token = "psess_" + secrets.token_hex(24)
         _register_portal_session(
-            portal_token, row["tenant_id"], row["user_id"], row["role"],
+            portal_token,
+            row["tenant_id"],
+            row["user_id"],
+            row["role"],
         )
 
         # Set session — NO raw API key stored (Enhancement #1A)
@@ -497,17 +505,13 @@ def dashboard():
             except Exception:
                 pass
             try:
-                row = tconn.execute(
-                    "SELECT COUNT(*) as cnt FROM projects WHERE status = 'active'"
-                ).fetchone()
+                row = tconn.execute("SELECT COUNT(*) as cnt FROM projects WHERE status = 'active'").fetchone()
                 active_projects = row["cnt"] if row else 0
             except Exception:
                 pass
             # Compliance score: average across projects
             try:
-                row = tconn.execute(
-                    "SELECT AVG(compliance_score) as avg_score FROM projects"
-                ).fetchone()
+                row = tconn.execute("SELECT AVG(compliance_score) as avg_score FROM projects").fetchone()
                 compliance_score = round(row["avg_score"] or 0)
             except Exception:
                 compliance_score = 0
@@ -686,9 +690,7 @@ def profile():
         conn.close()
 
     # BYOK LLM keys (only if enabled via env var)
-    byok_enabled = os.environ.get(
-        "ICDEV_BYOK_ENABLED", "false"
-    ).lower() in ("1", "true", "yes")
+    byok_enabled = os.environ.get("ICDEV_BYOK_ENABLED", "false").lower() in ("1", "true", "yes")
     llm_keys = []
     if byok_enabled:
         tconn = _get_tenant_conn(tenant_id)
@@ -964,16 +966,12 @@ def oscal():
     tconn = _get_tenant_conn(tenant_id)
     if tconn:
         try:
-            val_rows = tconn.execute(
-                "SELECT * FROM oscal_validation_log ORDER BY created_at DESC LIMIT 50"
-            ).fetchall()
+            val_rows = tconn.execute("SELECT * FROM oscal_validation_log ORDER BY created_at DESC LIMIT 50").fetchall()
             validations = [dict(r) for r in val_rows]
         except Exception:
             pass
         try:
-            art_rows = tconn.execute(
-                "SELECT * FROM oscal_artifacts ORDER BY generated_at DESC LIMIT 50"
-            ).fetchall()
+            art_rows = tconn.execute("SELECT * FROM oscal_artifacts ORDER BY generated_at DESC LIMIT 50").fetchall()
             artifacts = [dict(r) for r in art_rows]
         except Exception:
             pass
@@ -1021,8 +1019,11 @@ def translations():
 
             total = len(jobs)
             completed = sum(1 for j in jobs if j.get("status") == "completed")
-            in_progress = sum(1 for j in jobs if j.get("status") in
-                              ("pending", "extracting", "translating", "assembling", "validating"))
+            in_progress = sum(
+                1
+                for j in jobs
+                if j.get("status") in ("pending", "extracting", "translating", "assembling", "validating")
+            )
             failed = sum(1 for j in jobs if j.get("status") in ("failed", "partial"))
 
             try:
@@ -1069,9 +1070,7 @@ def translation_detail(job_id):
     if tconn:
         try:
             try:
-                row = tconn.execute(
-                    "SELECT * FROM translation_jobs WHERE id = ?", (job_id,)
-                ).fetchone()
+                row = tconn.execute("SELECT * FROM translation_jobs WHERE id = ?", (job_id,)).fetchone()
                 job = dict(row) if row else None
             except Exception:
                 pass
@@ -1083,7 +1082,8 @@ def translation_detail(job_id):
                                   source_complexity, target_complexity,
                                   repair_count, candidate_selected
                            FROM translation_units WHERE job_id = ?
-                           ORDER BY created_at""", (job_id,)
+                           ORDER BY created_at""",
+                        (job_id,),
                     ).fetchall()
                     units = [dict(u) for u in rows]
                 except Exception:
@@ -1093,7 +1093,7 @@ def translation_detail(job_id):
                     rows = tconn.execute(
                         """SELECT check_type, passed, score, findings
                            FROM translation_validations WHERE job_id = ?""",
-                        (job_id,)
+                        (job_id,),
                     ).fetchall()
                     validations = [dict(v) for v in rows]
                 except Exception:
@@ -1104,7 +1104,7 @@ def translation_detail(job_id):
                         """SELECT source_import, target_import, mapping_source,
                                   confidence, domain
                            FROM translation_dependency_mappings WHERE job_id = ?""",
-                        (job_id,)
+                        (job_id,),
                     ).fetchall()
                     deps = [dict(d) for d in rows]
                 except Exception:
@@ -1210,9 +1210,7 @@ def ai_transparency():
     if tconn:
         try:
             try:
-                rows = tconn.execute(
-                    "SELECT * FROM ai_use_case_inventory ORDER BY name"
-                ).fetchall()
+                rows = tconn.execute("SELECT * FROM ai_use_case_inventory ORDER BY name").fetchall()
                 inventory = [dict(r) for r in rows]
             except Exception:
                 pass

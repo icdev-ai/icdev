@@ -1,4 +1,5 @@
 """Add HPC section to AI/ML Network Fabric template."""
+
 import json
 import sqlite3
 import uuid
@@ -16,11 +17,7 @@ def main():
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
 
-    gj = json.loads(
-        conn.execute(
-            "SELECT graph_json FROM nc_templates WHERE id=?", ("tpl-aiml-fabric",)
-        ).fetchone()[0]
-    )
+    gj = json.loads(conn.execute("SELECT graph_json FROM nc_templates WHERE id=?", ("tpl-aiml-fabric",)).fetchone()[0])
     nodes = gj["nodes"]
     edges = gj["edges"]
 

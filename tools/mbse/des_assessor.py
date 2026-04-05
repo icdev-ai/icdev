@@ -40,14 +40,12 @@ except ImportError:
 # Database helpers
 # -----------------------------------------------------------------
 
+
 def _get_connection(db_path=None):
     """Get a database connection with Row factory."""
     path = db_path or DB_PATH
     if not path.exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\n"
-            "Run: python tools/db/init_icdev_db.py"
-        )
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
     conn = get_connection(db_path=str(path))
     return conn
 
@@ -80,9 +78,7 @@ def _ensure_table(conn):
 
 def _get_project(conn, project_id):
     """Load project data from the projects table."""
-    row = conn.execute(
-        "SELECT * FROM projects WHERE id = ?", (project_id,)
-    ).fetchone()
+    row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
     if not row:
         raise ValueError(f"Project '{project_id}' not found.")
     return dict(row)
@@ -91,6 +87,7 @@ def _get_project(conn, project_id):
 # -----------------------------------------------------------------
 # Configuration helpers
 # -----------------------------------------------------------------
+
 
 def load_des_requirements(catalog_path=None):
     """Load DES requirements from context/mbse/des_requirements.json.
@@ -104,8 +101,7 @@ def load_des_requirements(catalog_path=None):
     path = Path(catalog_path) if catalog_path else DES_REQUIREMENTS_PATH
     if not path.exists():
         raise FileNotFoundError(
-            f"DES requirements file not found: {path}\n"
-            "Expected: context/mbse/des_requirements.json"
+            f"DES requirements file not found: {path}\nExpected: context/mbse/des_requirements.json"
         )
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
@@ -117,6 +113,7 @@ def _load_cui_config():
     try:
         sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
         from cui_marker import load_cui_config
+
         return load_cui_config()
     except ImportError:
         return {
@@ -164,6 +161,7 @@ def _log_audit_event(conn, project_id, action, details, file_path=None):
 #    "evidence": "description of what was found",
 #    "details": "specifics"}
 # -----------------------------------------------------------------
+
 
 def _check_model_authority(project_id, project_dir, conn):
     """DES-1.x: DSM exists and is current.
@@ -232,10 +230,7 @@ def _check_model_authority(project_id, project_dir, conn):
 
     return {
         "status": "partially_compliant",
-        "evidence": (
-            f"DSM contains {element_count} element(s) but no import "
-            "records found in model_imports table."
-        ),
+        "evidence": (f"DSM contains {element_count} element(s) but no import records found in model_imports table."),
         "details": "Cannot verify model currency without import records.",
     }
 
@@ -261,10 +256,7 @@ def _check_model_completeness(project_id, project_dir, conn):
         return {
             "status": "non_compliant",
             "evidence": "No element types found in sysml_elements table.",
-            "details": (
-                "Required element types: Block, Activity, Requirement. "
-                "None found."
-            ),
+            "details": ("Required element types: Block, Activity, Requirement. None found."),
         }
 
     # Normalize type names for comparison (case-insensitive)
@@ -276,10 +268,7 @@ def _check_model_completeness(project_id, project_dir, conn):
     if len(matched) == len(required_lower):
         return {
             "status": "compliant",
-            "evidence": (
-                f"All required element types present: "
-                f"{', '.join(sorted(found_types))}."
-            ),
+            "evidence": (f"All required element types present: {', '.join(sorted(found_types))}."),
             "details": (
                 f"Found {len(found_types)} distinct element type(s) "
                 f"including all required types (Block, Activity, Requirement)."
@@ -292,10 +281,7 @@ def _check_model_completeness(project_id, project_dir, conn):
                 f"Found element types: {', '.join(sorted(found_types))}. "
                 f"Missing required: {', '.join(sorted(missing))}."
             ),
-            "details": (
-                "Partial model completeness. Add missing element types "
-                "to achieve full coverage."
-            ),
+            "details": ("Partial model completeness. Add missing element types to achieve full coverage."),
         }
 
     return {
@@ -345,8 +331,7 @@ def _check_digital_thread(project_id, project_dir, conn):
         return {
             "status": "compliant",
             "evidence": (
-                f"Digital thread coverage: {coverage:.1f}% "
-                f"({linked_elements}/{total_elements} elements linked)."
+                f"Digital thread coverage: {coverage:.1f}% ({linked_elements}/{total_elements} elements linked)."
             ),
             "details": "Meets 60% minimum traceability threshold.",
         }
@@ -363,9 +348,7 @@ def _check_digital_thread(project_id, project_dir, conn):
 
     return {
         "status": "non_compliant",
-        "evidence": (
-            f"No digital thread links found for {total_elements} element(s)."
-        ),
+        "evidence": (f"No digital thread links found for {total_elements} element(s)."),
         "details": "No traceability established. Create digital_thread_links entries.",
     }
 
@@ -393,9 +376,7 @@ def _check_model_currency(project_id, project_dir, conn):
         }
 
     try:
-        last_import = datetime.fromisoformat(
-            last_import_str.replace("Z", "+00:00").replace("+00:00", "")
-        )
+        last_import = datetime.fromisoformat(last_import_str.replace("Z", "+00:00").replace("+00:00", ""))
     except (ValueError, AttributeError):
         return {
             "status": "non_compliant",
@@ -428,8 +409,7 @@ def _check_model_currency(project_id, project_dir, conn):
     return {
         "status": "non_compliant",
         "evidence": (
-            f"Last model import: {last_import.strftime('%Y-%m-%d')} "
-            f"({days_since}d ago). Exceeds 90-day threshold."
+            f"Last model import: {last_import.strftime('%Y-%m-%d')} ({days_since}d ago). Exceeds 90-day threshold."
         ),
         "details": "Model is stale. Immediate re-import required.",
     }
@@ -465,14 +445,9 @@ def _check_data_management(project_id, project_dir, conn):
         return {
             "status": "compliant",
             "evidence": (
-                f"Model source files found ({len(source_files)} file(s)) "
-                f"and {snapshot_count} snapshot(s) recorded."
+                f"Model source files found ({len(source_files)} file(s)) and {snapshot_count} snapshot(s) recorded."
             ),
-            "details": (
-                "Files: "
-                + "; ".join(f.name for f in source_files[:5])
-                + f". Snapshots: {snapshot_count}."
-            ),
+            "details": ("Files: " + "; ".join(f.name for f in source_files[:5]) + f". Snapshots: {snapshot_count}."),
         }
     elif source_found or snapshot_count > 0:
         parts = []
@@ -487,10 +462,7 @@ def _check_data_management(project_id, project_dir, conn):
             missing.append("model snapshots in database")
         return {
             "status": "partially_compliant",
-            "evidence": (
-                f"Partial data management: found {', '.join(parts)}. "
-                f"Missing: {', '.join(missing)}."
-            ),
+            "evidence": (f"Partial data management: found {', '.join(parts)}. Missing: {', '.join(missing)}."),
             "details": "Both source files and versioned snapshots are required.",
         }
 
@@ -538,20 +510,15 @@ def _check_model_code_sync(project_id, project_dir, conn):
         return {
             "status": "compliant",
             "evidence": (
-                f"Model-code sync: {synced}/{total} mappings synced "
-                f"({sync_ratio:.0%}). Out-of-sync: {out_of_sync}."
+                f"Model-code sync: {synced}/{total} mappings synced ({sync_ratio:.0%}). Out-of-sync: {out_of_sync}."
             ),
-            "details": (
-                "Sync statuses: "
-                + ", ".join(f"{k}={v}" for k, v in sorted(status_counts.items()))
-            ),
+            "details": ("Sync statuses: " + ", ".join(f"{k}={v}" for k, v in sorted(status_counts.items()))),
         }
     elif sync_ratio >= 0.5:
         return {
             "status": "partially_compliant",
             "evidence": (
-                f"Model-code sync: {synced}/{total} mappings synced "
-                f"({sync_ratio:.0%}). Out-of-sync: {out_of_sync}."
+                f"Model-code sync: {synced}/{total} mappings synced ({sync_ratio:.0%}). Out-of-sync: {out_of_sync}."
             ),
             "details": "Between 50-80% sync. Target >= 80% for full compliance.",
         }
@@ -559,8 +526,7 @@ def _check_model_code_sync(project_id, project_dir, conn):
     return {
         "status": "non_compliant",
         "evidence": (
-            f"Model-code sync: {synced}/{total} mappings synced "
-            f"({sync_ratio:.0%}). Out-of-sync: {out_of_sync}."
+            f"Model-code sync: {synced}/{total} mappings synced ({sync_ratio:.0%}). Out-of-sync: {out_of_sync}."
         ),
         "details": "Below 50% sync. Significant model-code divergence detected.",
     }
@@ -603,27 +569,19 @@ def _check_requirements_linked(project_id, project_dir, conn):
     if link_ratio >= 0.8:
         return {
             "status": "compliant",
-            "evidence": (
-                f"{linked_count}/{req_count} requirements linked to model "
-                f"elements ({link_ratio:.0%})."
-            ),
+            "evidence": (f"{linked_count}/{req_count} requirements linked to model elements ({link_ratio:.0%})."),
             "details": "Meets 80% linkage threshold.",
         }
     elif link_ratio > 0:
         return {
             "status": "partially_compliant",
-            "evidence": (
-                f"{linked_count}/{req_count} requirements linked "
-                f"({link_ratio:.0%}). Below 80% threshold."
-            ),
+            "evidence": (f"{linked_count}/{req_count} requirements linked ({link_ratio:.0%}). Below 80% threshold."),
             "details": "Add traceability links for unlinked requirements.",
         }
 
     return {
         "status": "non_compliant",
-        "evidence": (
-            f"{req_count} requirements found but none linked to model elements."
-        ),
+        "evidence": (f"{req_count} requirements found but none linked to model elements."),
         "details": "No requirement-to-model links in digital_thread_links.",
     }
 
@@ -670,18 +628,13 @@ def _check_model_based_testing(project_id, project_dir, conn):
     if test_links >= 5 or (total_reqs_linked > 0 and test_links >= total_reqs_linked):
         return {
             "status": "compliant",
-            "evidence": (
-                f"{test_links} model-to-test traceability link(s) found."
-            ),
+            "evidence": (f"{test_links} model-to-test traceability link(s) found."),
             "details": "Model-based testing traceability is established.",
         }
 
     return {
         "status": "partially_compliant",
-        "evidence": (
-            f"{test_links} model-to-test link(s) found. "
-            "Additional links recommended for full coverage."
-        ),
+        "evidence": (f"{test_links} model-to-test link(s) found. Additional links recommended for full coverage."),
         "details": "Expand verify/test links to cover all requirements.",
     }
 
@@ -718,18 +671,13 @@ def _check_model_compliance_mapping(project_id, project_dir, conn):
     if control_links >= 5:
         return {
             "status": "compliant",
-            "evidence": (
-                f"{control_links} model-to-control traceability link(s) found."
-            ),
+            "evidence": (f"{control_links} model-to-control traceability link(s) found."),
             "details": "NIST control mapping is established in the digital thread.",
         }
 
     return {
         "status": "partially_compliant",
-        "evidence": (
-            f"Only {control_links} model-to-control link(s) found. "
-            "Additional mappings recommended."
-        ),
+        "evidence": (f"Only {control_links} model-to-control link(s) found. Additional mappings recommended."),
         "details": "Expand control mappings to cover critical NIST families.",
     }
 
@@ -759,15 +707,11 @@ def _check_pi_snapshots(project_id, project_dir, conn):
     # Check if most recent snapshot is within current PI (42 days)
     try:
         latest_str = rows[0]["snapshot_date"]
-        latest = datetime.fromisoformat(
-            latest_str.replace("Z", "+00:00").replace("+00:00", "")
-        )
+        latest = datetime.fromisoformat(latest_str.replace("Z", "+00:00").replace("+00:00", ""))
     except (ValueError, AttributeError, TypeError):
         return {
             "status": "partially_compliant",
-            "evidence": (
-                f"{len(rows)} snapshot(s) found but cannot parse latest date."
-            ),
+            "evidence": (f"{len(rows)} snapshot(s) found but cannot parse latest date."),
             "details": "Verify snapshot date format in model_snapshots table.",
         }
 
@@ -842,6 +786,7 @@ _REQ_CHECK_MAP = {
 # Core assessment function
 # -----------------------------------------------------------------
 
+
 def run_des_assessment(project_id, project_dir, db_path=None):
     """Run full DES compliance assessment.
 
@@ -901,31 +846,30 @@ def run_des_assessment(project_id, project_dir, db_path=None):
                     check_result = check_func(project_id, project_dir, conn)
                     status = check_result["status"]
                     evidence = check_result["evidence"]
-                    automation_result = json.dumps({
-                        "check_function": check_func.__name__,
-                        "automation_level": automation_level,
-                        "details": check_result.get("details", ""),
-                    })
+                    automation_result = json.dumps(
+                        {
+                            "check_function": check_func.__name__,
+                            "automation_level": automation_level,
+                            "details": check_result.get("details", ""),
+                        }
+                    )
                     if automation_level == "semi_auto":
-                        notes = (
-                            "Semi-automated check completed. "
-                            "Manual review recommended to verify full compliance."
-                        )
+                        notes = "Semi-automated check completed. Manual review recommended to verify full compliance."
                 except Exception as e:
                     status = "not_assessed"
                     evidence = f"Auto-check error: {e}"
                     notes = "Auto-check failed; manual review required."
-                    automation_result = json.dumps({
-                        "check_function": check_func.__name__,
-                        "error": str(e),
-                    })
+                    automation_result = json.dumps(
+                        {
+                            "check_function": check_func.__name__,
+                            "error": str(e),
+                        }
+                    )
             elif automation_level == "manual":
                 status = "not_assessed"
                 evidence = "Manual assessment required."
-                notes = (
-                    "This requirement must be verified manually. "
-                    "Assessment criteria: "
-                    + "; ".join(req.get("assessment_criteria", ["See requirement description."]))
+                notes = "This requirement must be verified manually. Assessment criteria: " + "; ".join(
+                    req.get("assessment_criteria", ["See requirement description."])
                 )
             else:
                 # Auto or semi_auto but no check function mapped
@@ -987,21 +931,17 @@ def run_des_assessment(project_id, project_dir, db_path=None):
         # Score: 100 * (compliant + partial * 0.5) / (total - not_applicable)
         scoreable = total - not_applicable
         if scoreable > 0:
-            score = round(
-                100.0 * (compliant + partial * 0.5) / scoreable, 1
-            )
+            score = round(100.0 * (compliant + partial * 0.5) / scoreable, 1)
         else:
             score = 100.0
 
         # Gate logic: PASS if 0 non_compliant on critical priority requirements
         # WARN if any partially_compliant on critical. FAIL otherwise.
         critical_non_compliant = sum(
-            1 for r in results
-            if r["priority"] == "critical" and r["status"] == "non_compliant"
+            1 for r in results if r["priority"] == "critical" and r["status"] == "non_compliant"
         )
         critical_partial = sum(
-            1 for r in results
-            if r["priority"] == "critical" and r["status"] == "partially_compliant"
+            1 for r in results if r["priority"] == "critical" and r["status"] == "partially_compliant"
         )
 
         if critical_non_compliant == 0 and critical_partial == 0:
@@ -1013,8 +953,7 @@ def run_des_assessment(project_id, project_dir, db_path=None):
 
         # Build category summary
         category_summary = {}
-        for cat in ["model_authority", "data_management", "infrastructure",
-                     "workforce", "policy", "lifecycle"]:
+        for cat in ["model_authority", "data_management", "infrastructure", "workforce", "policy", "lifecycle"]:
             cat_results = [r for r in results if r["category"] == cat]
             cat_total = len(cat_results)
             cat_na = sum(1 for r in cat_results if r["status"] == "not_applicable")
@@ -1022,8 +961,7 @@ def run_des_assessment(project_id, project_dir, db_path=None):
             cat_compliant = sum(1 for r in cat_results if r["status"] == "compliant")
             cat_partial = sum(1 for r in cat_results if r["status"] == "partially_compliant")
             cat_score = (
-                round(100.0 * (cat_compliant + cat_partial * 0.5) / cat_scoreable, 1)
-                if cat_scoreable > 0 else 100.0
+                round(100.0 * (cat_compliant + cat_partial * 0.5) / cat_scoreable, 1) if cat_scoreable > 0 else 100.0
             )
             category_summary[cat] = {
                 "total": cat_total,
@@ -1100,31 +1038,13 @@ def run_des_assessment(project_id, project_dir, db_path=None):
 # -----------------------------------------------------------------
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="DoDI 5000.87 Digital Engineering Strategy Assessment"
-    )
-    parser.add_argument(
-        "--project-id", required=True, help="Project ID"
-    )
-    parser.add_argument(
-        "--project-dir", required=True,
-        help="Project directory for file-based checks"
-    )
-    parser.add_argument(
-        "--json", action="store_true",
-        help="Output results as JSON"
-    )
-    parser.add_argument(
-        "--report", action="store_true",
-        help="Also generate DES compliance report"
-    )
-    parser.add_argument(
-        "--output", help="Report output path"
-    )
-    parser.add_argument(
-        "--db-path", type=Path, default=DB_PATH,
-        help="Override database path"
-    )
+    parser = argparse.ArgumentParser(description="DoDI 5000.87 Digital Engineering Strategy Assessment")
+    parser.add_argument("--project-id", required=True, help="Project ID")
+    parser.add_argument("--project-dir", required=True, help="Project directory for file-based checks")
+    parser.add_argument("--json", action="store_true", help="Output results as JSON")
+    parser.add_argument("--report", action="store_true", help="Also generate DES compliance report")
+    parser.add_argument("--output", help="Report output path")
+    parser.add_argument("--db-path", type=Path, default=DB_PATH, help="Override database path")
     args = parser.parse_args()
 
     try:
@@ -1152,6 +1072,7 @@ if __name__ == "__main__":
         if args.report:
             try:
                 from des_report_generator import generate_des_report
+
                 report_result = generate_des_report(
                     project_id=args.project_id,
                     output_path=args.output,
@@ -1163,6 +1084,7 @@ if __name__ == "__main__":
                 try:
                     sys.path.insert(0, str(Path(__file__).resolve().parent))
                     from des_report_generator import generate_des_report
+
                     report_result = generate_des_report(
                         project_id=args.project_id,
                         output_path=args.output,

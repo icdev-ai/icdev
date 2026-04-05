@@ -88,11 +88,11 @@ _MIN_STATEMENT_LENGTH = 20
 # Helper utilities
 # ---------------------------------------------------------------------------
 
+
 def _get_db(db_path: Optional[Path] = None) -> sqlite3.Connection:
     conn = get_connection(db_path=str(db_path or DB_PATH))
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
-
 
 
 def _content_hash(text: str) -> str:
@@ -159,6 +159,7 @@ def _parse_json_object(text: str) -> Optional[Dict[str, Any]]:
 # Core: Statement Extraction
 # ---------------------------------------------------------------------------
 
+
 def _extract_statements_llm(context_chunk: str) -> Optional[List[Dict[str, str]]]:
     """Use scanner-tier LLM (qwen3.5) to extract atomic statements.
 
@@ -200,10 +201,12 @@ def _extract_statements_llm(context_chunk: str) -> Optional[List[Dict[str, str]]
             stmt = s.strip()
             if len(stmt) < _MIN_STATEMENT_LENGTH:
                 continue
-            result.append({
-                "statement": stmt,
-                "type": _classify_statement_type(stmt),
-            })
+            result.append(
+                {
+                    "statement": stmt,
+                    "type": _classify_statement_type(stmt),
+                }
+            )
         return result if result else None
 
     except (ImportError, Exception):
@@ -225,14 +228,16 @@ def _extract_statements_template(context_chunk: str) -> List[Dict[str, str]]:
         if not stmt:
             continue
         # Ensure it ends with a period for consistency
-        if not stmt.endswith((".","!","?")):
+        if not stmt.endswith((".", "!", "?")):
             stmt = stmt + "."
         if len(stmt) < _MIN_STATEMENT_LENGTH:
             continue
-        result.append({
-            "statement": stmt,
-            "type": _classify_statement_type(stmt),
-        })
+        result.append(
+            {
+                "statement": stmt,
+                "type": _classify_statement_type(stmt),
+            }
+        )
 
     return result
 
@@ -266,6 +271,7 @@ def extract_statements(context_chunk: str) -> List[Dict[str, str]]:
 # ---------------------------------------------------------------------------
 # Core: Statement → Q&A Pair Conversion
 # ---------------------------------------------------------------------------
+
 
 def _statement_to_pair_llm(statement: str, context: str = "") -> Optional[Dict[str, str]]:
     """Use scanner-tier LLM to generate a Q&A pair from a statement.
@@ -318,7 +324,7 @@ def _statement_to_pair_template(statement: str) -> Dict[str, str]:
     """
     words = statement.split()
     # Take up to 5 words as subject phrase
-    subject_phrase = " ".join(words[:min(5, len(words))]).rstrip(".,;:!?")
+    subject_phrase = " ".join(words[: min(5, len(words))]).rstrip(".,;:!?")
 
     # Try to detect question type from statement content
     stmt_lower = statement.lower()
@@ -390,13 +396,15 @@ def statements_to_pairs(
 
         taxonomy_label = _map_type_to_taxonomy(stmt_type)
 
-        pairs.append({
-            "user_input": qa["question"],
-            "expected_output": qa["answer"],
-            "system_prompt": system_prompt,
-            "taxonomy_label": taxonomy_label,
-            "source_statement": statement,
-        })
+        pairs.append(
+            {
+                "user_input": qa["question"],
+                "expected_output": qa["answer"],
+                "system_prompt": system_prompt,
+                "taxonomy_label": taxonomy_label,
+                "source_statement": statement,
+            }
+        )
 
     return pairs
 
@@ -404,6 +412,7 @@ def statements_to_pairs(
 # ---------------------------------------------------------------------------
 # Public pipeline
 # ---------------------------------------------------------------------------
+
 
 def extract_and_generate(
     context_chunk: str,
@@ -535,9 +544,7 @@ def generate_from_rag_source(
 
                     # Store metadata as part of system_prompt annotation
                     metadata_note = (
-                        f" [taxonomy:{taxonomy_label}]"
-                        f" [chunk:{chunk_id}]"
-                        f" [stmt:{_content_hash(source_statement)}]"
+                        f" [taxonomy:{taxonomy_label}] [chunk:{chunk_id}] [stmt:{_content_hash(source_statement)}]"
                     )
 
                     store_result = add_example(
@@ -557,9 +564,7 @@ def generate_from_rag_source(
                         # Dedup collision is acceptable — skip silently
                         err = store_result.get("error", "")
                         if "UNIQUE constraint" not in err and "duplicate" not in err.lower():
-                            results["errors"].append(
-                                f"chunk {chunk_id}: {err}"
-                            )
+                            results["errors"].append(f"chunk {chunk_id}: {err}")
 
             except Exception as exc:
                 results["errors"].append(f"chunk {chunk_id}: {exc!s}")
@@ -626,6 +631,7 @@ def get_statement_stats(dataset_id: str, db_path: Optional[Path] = None) -> Dict
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+
 
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(

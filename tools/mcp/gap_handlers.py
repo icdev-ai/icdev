@@ -30,6 +30,7 @@ logger = logging.getLogger("mcp.gap_handlers")
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _run_cli(script_path: str, cli_args: list = None, timeout: int = 300) -> dict:
     """Run a CLI tool as subprocess with --json output.
 
@@ -76,13 +77,17 @@ def _run_cli(script_path: str, cli_args: list = None, timeout: int = 300) -> dic
 # Category: translation (Phase 43 — Cross-Language Translation)
 # ===========================================================================
 
+
 def handle_translate_code(args: dict) -> dict:
     """Full 5-phase translation pipeline."""
     cli_args = []
     for flag, key in [
-        ("--source-path", "source_path"), ("--source-language", "source_language"),
-        ("--target-language", "target_language"), ("--output-dir", "output_dir"),
-        ("--project-id", "project_id"), ("--candidates", "candidates"),
+        ("--source-path", "source_path"),
+        ("--source-language", "source_language"),
+        ("--target-language", "target_language"),
+        ("--output-dir", "output_dir"),
+        ("--project-id", "project_id"),
+        ("--candidates", "candidates"),
     ]:
         if args.get(key):
             cli_args.extend([flag, str(args[key])])
@@ -99,8 +104,10 @@ def handle_extract_source_ir(args: dict) -> dict:
     """Phase 1: Extract source code to language-agnostic IR."""
     cli_args = []
     for flag, key in [
-        ("--source-path", "source_path"), ("--language", "language"),
-        ("--output-ir", "output_ir"), ("--project-id", "project_id"),
+        ("--source-path", "source_path"),
+        ("--language", "language"),
+        ("--output-ir", "output_ir"),
+        ("--project-id", "project_id"),
     ]:
         if args.get(key):
             cli_args.extend([flag, str(args[key])])
@@ -111,8 +118,10 @@ def handle_translate_unit(args: dict) -> dict:
     """Phase 3: LLM-based code translation from IR."""
     cli_args = []
     for flag, key in [
-        ("--ir-file", "ir_file"), ("--source-language", "source_language"),
-        ("--target-language", "target_language"), ("--output-dir", "output_dir"),
+        ("--ir-file", "ir_file"),
+        ("--source-language", "source_language"),
+        ("--target-language", "target_language"),
+        ("--output-dir", "output_dir"),
         ("--candidates", "candidates"),
     ]:
         if args.get(key):
@@ -124,7 +133,8 @@ def handle_map_dependencies(args: dict) -> dict:
     """Cross-language dependency equivalence lookup."""
     cli_args = []
     for flag, key in [
-        ("--source-language", "source_language"), ("--target-language", "target_language"),
+        ("--source-language", "source_language"),
+        ("--target-language", "target_language"),
         ("--imports", "imports"),
     ]:
         if args.get(key):
@@ -136,7 +146,8 @@ def handle_check_types(args: dict) -> dict:
     """Phase 2: Type system compatibility pre-check."""
     cli_args = []
     for flag, key in [
-        ("--ir-file", "ir_file"), ("--source-language", "source_language"),
+        ("--ir-file", "ir_file"),
+        ("--source-language", "source_language"),
         ("--target-language", "target_language"),
     ]:
         if args.get(key):
@@ -148,7 +159,8 @@ def handle_assemble_project(args: dict) -> dict:
     """Phase 4: Assemble translated units into project structure."""
     cli_args = []
     for flag, key in [
-        ("--ir-list", "ir_list"), ("--output-dir", "output_dir"),
+        ("--ir-list", "ir_list"),
+        ("--output-dir", "output_dir"),
         ("--project-template", "project_template"),
     ]:
         if args.get(key):
@@ -160,7 +172,8 @@ def handle_validate_translation(args: dict) -> dict:
     """Phase 5: Validate translated output + repair loop."""
     cli_args = []
     for flag, key in [
-        ("--output-dir", "output_dir"), ("--source-language", "source_language"),
+        ("--output-dir", "output_dir"),
+        ("--source-language", "source_language"),
         ("--target-language", "target_language"),
     ]:
         if args.get(key):
@@ -172,8 +185,10 @@ def handle_translate_tests(args: dict) -> dict:
     """Translate test suites across languages."""
     cli_args = []
     for flag, key in [
-        ("--source-test-dir", "source_test_dir"), ("--source-language", "source_language"),
-        ("--target-language", "target_language"), ("--output-dir", "output_dir"),
+        ("--source-test-dir", "source_test_dir"),
+        ("--source-language", "source_language"),
+        ("--target-language", "target_language"),
+        ("--output-dir", "output_dir"),
         ("--ir-file", "ir_file"),
     ]:
         if args.get(key):
@@ -194,6 +209,7 @@ def handle_map_features(args: dict) -> dict:
 # ===========================================================================
 # Category: dx (Phase 34 — Universal AI Companion)
 # ===========================================================================
+
 
 def handle_companion_setup(args: dict) -> dict:
     """Auto-detect AI tools and generate instruction files + MCP configs."""
@@ -258,6 +274,7 @@ def handle_translate_skills(args: dict) -> dict:
 # Category: cloud (Phase 38 — Cloud-Agnostic Architecture)
 # ===========================================================================
 
+
 def handle_csp_monitor_scan(args: dict) -> dict:
     """Scan CSP services for updates and changes."""
     cli_args = ["--scan"]
@@ -310,6 +327,7 @@ def handle_csp_health_check(args: dict) -> dict:
 # ===========================================================================
 # Category: registry (Phase 36 — Evolutionary Intelligence)
 # ===========================================================================
+
 
 def handle_register_child(args: dict) -> dict:
     """Register a child application in the registry."""
@@ -373,10 +391,12 @@ def handle_cross_pollination_candidates(args: dict) -> dict:
 # Category: security_agentic (Phase 45 — OWASP Agentic AI Security)
 # ===========================================================================
 
+
 def handle_scan_code_patterns(args: dict) -> dict:
     """Scan for dangerous code patterns across 6 languages."""
     try:
         from tools.security.code_pattern_scanner import CodePatternScanner
+
         scanner = CodePatternScanner()
         project_dir = args.get("project_dir")
         if project_dir:
@@ -497,6 +517,7 @@ def handle_detect_behavioral_drift(args: dict) -> dict:
 # Category: testing (Production Gates & Validation)
 # ===========================================================================
 
+
 def handle_production_audit(args: dict) -> dict:
     """Run 30-check production readiness audit."""
     cli_args = []
@@ -563,6 +584,7 @@ def handle_run_e2e_tests(args: dict) -> dict:
 # Category: installer (Phase 33 — Modular Installation)
 # ===========================================================================
 
+
 def handle_install_modules(args: dict) -> dict:
     """Run modular installer."""
     cli_args = []
@@ -606,6 +628,7 @@ def handle_generate_platform_artifacts(args: dict) -> dict:
 # ===========================================================================
 # Category: misc (Various uncategorized gaps)
 # ===========================================================================
+
 
 def handle_register_external_patterns(args: dict) -> dict:
     """Register external framework analysis as innovation signals."""
@@ -663,8 +686,10 @@ def handle_version_migrate(args: dict) -> dict:
     """Migrate code between language versions."""
     cli_args = []
     for flag, key in [
-        ("--source", "source"), ("--output", "output"),
-        ("--language", "language"), ("--from", "from_version"),
+        ("--source", "source"),
+        ("--output", "output"),
+        ("--language", "language"),
+        ("--from", "from_version"),
         ("--to", "to_version"),
     ]:
         if args.get(key):
@@ -676,8 +701,10 @@ def handle_framework_migrate(args: dict) -> dict:
     """Migrate between application frameworks."""
     cli_args = []
     for flag, key in [
-        ("--source", "source"), ("--output", "output"),
-        ("--from", "from_framework"), ("--to", "to_framework"),
+        ("--source", "source"),
+        ("--output", "output"),
+        ("--from", "from_framework"),
+        ("--to", "to_framework"),
     ]:
         if args.get(key):
             cli_args.extend([flag, str(args[key])])
@@ -727,11 +754,13 @@ def handle_nlq_query(args: dict) -> dict:
 # AI Transparency & Accountability (Phase 48, D307-D315) — 10 tools
 # ---------------------------------------------------------------------------
 
+
 def handle_omb_m25_21_assess(args: dict) -> dict:
     """OMB M-25-21 High-Impact AI assessment."""
     try:
         sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
         from omb_m25_21_assessor import OMBM2521Assessor
+
         assessor = OMBM2521Assessor(db_path=DB_PATH)
         return assessor.assess(args["project_id"], project_dir=args.get("project_dir"))
     except Exception as exc:
@@ -743,6 +772,7 @@ def handle_omb_m26_04_assess(args: dict) -> dict:
     try:
         sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
         from omb_m26_04_assessor import OMBM2604Assessor
+
         assessor = OMBM2604Assessor(db_path=DB_PATH)
         return assessor.assess(args["project_id"], project_dir=args.get("project_dir"))
     except Exception as exc:
@@ -754,6 +784,7 @@ def handle_nist_ai_600_1_assess(args: dict) -> dict:
     try:
         sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
         from nist_ai_600_1_assessor import NISTAI6001Assessor
+
         assessor = NISTAI6001Assessor(db_path=DB_PATH)
         return assessor.assess(args["project_id"], project_dir=args.get("project_dir"))
     except Exception as exc:
@@ -765,6 +796,7 @@ def handle_gao_ai_assess(args: dict) -> dict:
     try:
         sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
         from gao_ai_assessor import GAOAIAssessor
+
         assessor = GAOAIAssessor(db_path=DB_PATH)
         return assessor.assess(args["project_id"], project_dir=args.get("project_dir"))
     except Exception as exc:
@@ -776,6 +808,7 @@ def handle_model_card_generate(args: dict) -> dict:
     try:
         sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
         from model_card_generator import generate_model_card
+
         return generate_model_card(args["project_id"], args["model_name"], db_path=DB_PATH)
     except Exception as exc:
         return {"error": str(exc)}
@@ -786,6 +819,7 @@ def handle_system_card_generate(args: dict) -> dict:
     try:
         sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
         from system_card_generator import generate_system_card
+
         return generate_system_card(args["project_id"], db_path=DB_PATH)
     except Exception as exc:
         return {"error": str(exc)}
@@ -796,6 +830,7 @@ def handle_ai_transparency_audit(args: dict) -> dict:
     try:
         sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
         from ai_transparency_audit import run_transparency_audit
+
         return run_transparency_audit(args["project_id"], args.get("project_dir"), db_path=DB_PATH)
     except Exception as exc:
         return {"error": str(exc)}
@@ -806,6 +841,7 @@ def handle_confabulation_check(args: dict) -> dict:
     try:
         sys.path.insert(0, str(BASE_DIR / "tools" / "security"))
         from confabulation_detector import check_output
+
         return check_output(args["project_id"], args["text"], db_path=DB_PATH)
     except Exception as exc:
         return {"error": str(exc)}
@@ -816,8 +852,10 @@ def handle_ai_inventory_register(args: dict) -> dict:
     try:
         sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
         from ai_inventory_manager import register_ai_component
+
         return register_ai_component(
-            args["project_id"], args["name"],
+            args["project_id"],
+            args["name"],
             purpose=args.get("purpose", ""),
             risk_level=args.get("risk_level", "minimal_risk"),
             db_path=DB_PATH,
@@ -831,6 +869,7 @@ def handle_fairness_assess(args: dict) -> dict:
     try:
         sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
         from fairness_assessor import assess_fairness
+
         return assess_fairness(args["project_id"], args.get("project_dir"), db_path=DB_PATH)
     except Exception as exc:
         return {"error": str(exc)}
@@ -840,16 +879,20 @@ def handle_fairness_assess(args: dict) -> dict:
 # AI Accountability (Phase 49, D316-D321) — 8 tools
 # ---------------------------------------------------------------------------
 
+
 def handle_ai_oversight_plan_create(args: dict) -> dict:
     """Register a human oversight plan."""
     try:
         sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
         from accountability_manager import _get_connection, _ensure_tables, register_oversight_plan
+
         conn = _get_connection(DB_PATH)
         _ensure_tables(conn)
         try:
             return register_oversight_plan(
-                conn, args["project_id"], args["plan_name"],
+                conn,
+                args["project_id"],
+                args["plan_name"],
                 description=args.get("plan_data", ""),
                 created_by=args.get("approved_by", ""),
             )
@@ -864,11 +907,13 @@ def handle_ai_caio_designate(args: dict) -> dict:
     try:
         sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
         from accountability_manager import _get_connection, _ensure_tables, designate_caio
+
         conn = _get_connection(DB_PATH)
         _ensure_tables(conn)
         try:
             return designate_caio(
-                conn, args["project_id"],
+                conn,
+                args["project_id"],
                 name=args.get("official_name", args.get("name", "")),
                 role=args.get("official_role", args.get("role", "CAIO")),
                 organization=args.get("organization", ""),
@@ -884,11 +929,15 @@ def handle_ai_appeal_file(args: dict) -> dict:
     try:
         sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
         from accountability_manager import _get_connection, _ensure_tables, file_appeal
+
         conn = _get_connection(DB_PATH)
         _ensure_tables(conn)
         try:
             return file_appeal(
-                conn, args["project_id"], args["appellant"], args["ai_system"],
+                conn,
+                args["project_id"],
+                args["appellant"],
+                args["ai_system"],
                 grievance=args.get("decision_contested", args.get("grievance", "")),
             )
         finally:
@@ -902,11 +951,14 @@ def handle_ai_appeal_resolve(args: dict) -> dict:
     try:
         sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
         from accountability_manager import _get_connection, _ensure_tables, resolve_appeal
+
         conn = _get_connection(DB_PATH)
         _ensure_tables(conn)
         try:
             return resolve_appeal(
-                conn, args["appeal_id"], args["resolution"],
+                conn,
+                args["appeal_id"],
+                args["resolution"],
                 status=args.get("resolved_by", "resolved"),
             )
         finally:
@@ -920,11 +972,14 @@ def handle_ai_ethics_review_submit(args: dict) -> dict:
     try:
         sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
         from accountability_manager import _get_connection, _ensure_tables, submit_ethics_review
+
         conn = _get_connection(DB_PATH)
         _ensure_tables(conn)
         try:
             return submit_ethics_review(
-                conn, args["project_id"], args["review_type"],
+                conn,
+                args["project_id"],
+                args["review_type"],
                 summary=args.get("ai_system", ""),
                 findings=args.get("findings", ""),
                 recommendation=args.get("reviewer", ""),
@@ -940,8 +995,10 @@ def handle_ai_incident_log(args: dict) -> dict:
     try:
         sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
         from ai_incident_response import log_incident
+
         return log_incident(
-            args["project_id"], args["incident_type"],
+            args["project_id"],
+            args["incident_type"],
             ai_system=args.get("ai_system"),
             severity=args.get("severity", "medium"),
             description=args["description"],
@@ -957,8 +1014,10 @@ def handle_ai_reassessment_schedule(args: dict) -> dict:
     try:
         sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
         from ai_reassessment_scheduler import create_schedule
+
         return create_schedule(
-            args["project_id"], args["ai_system"],
+            args["project_id"],
+            args["ai_system"],
             frequency=args.get("frequency", "annual"),
             next_due=args.get("next_due"),
             db_path=DB_PATH,
@@ -972,6 +1031,7 @@ def handle_ai_accountability_audit(args: dict) -> dict:
     try:
         sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
         from ai_accountability_audit import run_accountability_audit
+
         return run_accountability_audit(args["project_id"], db_path=DB_PATH)
     except Exception as exc:
         return {"error": str(exc)}
@@ -981,10 +1041,12 @@ def handle_ai_accountability_audit(args: dict) -> dict:
 # CODE INTELLIGENCE (Phase 52, D331-D337)
 # ============================================================
 
+
 def handle_code_analyze(args: dict) -> dict:
     """Run AST-based code quality analysis."""
     try:
         from tools.analysis.code_analyzer import CodeAnalyzer
+
         project_dir = args.get("project_dir", str(BASE_DIR / "tools"))
         project_id = args.get("project_id")
         analyzer = CodeAnalyzer(
@@ -1015,6 +1077,7 @@ def handle_code_quality_report(args: dict) -> dict:
     """Get code quality trend report."""
     try:
         from tools.analysis.code_analyzer import CodeAnalyzer
+
         analyzer = CodeAnalyzer(project_id=args.get("project_id"), db_path=DB_PATH)
         trend = analyzer.get_trend(args.get("project_id"), db_path=DB_PATH)
         return {"project_id": args.get("project_id"), "trend": trend, "scan_count": len(trend)}
@@ -1026,6 +1089,7 @@ def handle_ironbank_generate(args: dict) -> dict:
     """Generate Iron Bank hardening manifest and container approval record."""
     try:
         from tools.infra.ironbank_metadata_generator import generate_hardening_manifest
+
         return generate_hardening_manifest(
             project_id=args["project_id"],
             project_dir=args.get("project_dir"),
@@ -1039,6 +1103,7 @@ def handle_ironbank_validate(args: dict) -> dict:
     """Validate Iron Bank hardening manifest."""
     try:
         from tools.infra.ironbank_metadata_generator import validate_hardening_manifest
+
         return validate_hardening_manifest(
             project_id=args["project_id"],
             manifest_path=args.get("manifest_path"),
@@ -1051,6 +1116,7 @@ def handle_eu_ai_act_classify(args: dict) -> dict:
     """Run EU AI Act risk classification and compliance assessment."""
     try:
         from tools.compliance.eu_ai_act_classifier import EUAIActClassifier
+
         assessor = EUAIActClassifier()
         project = {"id": args["project_id"]}
         result = assessor.assess(project, project_dir=args.get("project_dir"))
@@ -1063,6 +1129,7 @@ def handle_runtime_feedback_collect(args: dict) -> dict:
     """Collect runtime feedback from test results."""
     try:
         from tools.analysis.runtime_feedback import RuntimeFeedbackCollector
+
         collector = RuntimeFeedbackCollector(
             project_id=args.get("project_id"),
             db_path=DB_PATH,
@@ -1112,6 +1179,7 @@ def handle_sandbox_score(args: dict) -> dict:
         cli_args.extend(["--capability-id", str(args["capability_id"])])
     if args.get("source_metadata"):
         import json as _json
+
         cli_args.extend(["--source-metadata", _json.dumps(args["source_metadata"])])
     return _run_cli("tools/registry/sandbox_scorer.py", cli_args)
 
@@ -1215,8 +1283,7 @@ def handle_blueprint_verify(args: dict) -> dict:
     """Compute or verify directory digest (D-NC-3)."""
     cli_args = []
     if args.get("expected"):
-        cli_args.extend(["--verify", "--path", str(args["path"]),
-                         "--expected", str(args["expected"])])
+        cli_args.extend(["--verify", "--path", str(args["path"]), "--expected", str(args["expected"])])
     else:
         cli_args.extend(["--compute", "--path", str(args["path"])])
     if args.get("entity_type"):
@@ -1239,15 +1306,25 @@ def handle_egress_policy_resolve(args: dict) -> dict:
 
 def handle_autoresearch_create(args: dict) -> dict:
     """Create a new autoresearch experiment candidate."""
-    cli_args = ["--create", "--domain", str(args.get("domain", "compliance")),
-                "--hypothesis", str(args.get("hypothesis", ""))]
+    cli_args = [
+        "--create",
+        "--domain",
+        str(args.get("domain", "compliance")),
+        "--hypothesis",
+        str(args.get("hypothesis", "")),
+    ]
     return _run_cli("tools/autoresearch/experiment_engine.py", cli_args)
 
 
 def handle_autoresearch_loop(args: dict) -> dict:
     """Run autonomous Bayesian Autoresearch loop for a domain."""
-    cli_args = ["--loop", "--domain", str(args.get("domain", "compliance")),
-                "--max-experiments", str(args.get("max_experiments", 5))]
+    cli_args = [
+        "--loop",
+        "--domain",
+        str(args.get("domain", "compliance")),
+        "--max-experiments",
+        str(args.get("max_experiments", 5)),
+    ]
     if args.get("overnight"):
         cli_args.append("--overnight")
     return _run_cli("tools/autoresearch/experiment_engine.py", cli_args)
@@ -1278,6 +1355,7 @@ def handle_autoresearch_health(args: dict) -> dict:
 
 
 # ── Redaction & Data Protection (Phase 70 — D-RDT-1) ─────────────────
+
 
 def handle_redaction_detect(args: dict) -> dict:
     """Detect PII/sensitive data in text."""
@@ -1335,8 +1413,7 @@ def handle_oracle_predictions_list(args: dict) -> dict:
         rows = conn.execute(sql, params).fetchall()
         conn.close()
         predictions = [
-            {"id": r[0], "lens": r[1], "title": r[2], "confidence": r[3],
-             "tags": r[4], "created_at": r[5]}
+            {"id": r[0], "lens": r[1], "title": r[2], "confidence": r[3], "tags": r[4], "created_at": r[5]}
             for r in rows
         ]
         return {"predictions": predictions, "count": len(predictions)}
@@ -1366,10 +1443,13 @@ def handle_oracle_lens_status(args: dict) -> dict:
         conn.close()
         lenses = [
             {
-                "lens": r[0], "total_predictions": r[1],
+                "lens": r[0],
+                "total_predictions": r[1],
                 "avg_confidence": round(r[2], 3) if r[2] else 0.0,
                 "last_run": r[3],
-                "high": r[4], "medium": r[5], "low": r[6],
+                "high": r[4],
+                "medium": r[5],
+                "low": r[6],
             }
             for r in rows
         ]

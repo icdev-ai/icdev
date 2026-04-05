@@ -76,12 +76,14 @@ QUARANTINE_DIR = BASE_DIR / ".tmp" / "openclaw_quarantine"
 # ---------------------------------------------------------------------------
 try:
     from tools.db.storage import get_connection
+
     _HAS_DB = True
 except ImportError:
     _HAS_DB = False
 
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
@@ -97,44 +99,52 @@ def _safe_audit(**kwargs):
     except Exception:
         return -1
 
+
 try:
     from tools.marketplace.asset_scanner import run_full_scan
+
     _HAS_SCANNER = True
 except ImportError:
     _HAS_SCANNER = False
 
 try:
     from tools.marketplace.catalog_manager import register_asset, add_version
+
     _HAS_CATALOG = True
 except ImportError:
     _HAS_CATALOG = False
 
 try:
     import importlib.util
+
     _HAS_REVIEW = importlib.util.find_spec("tools.marketplace.review_queue") is not None
 except (ImportError, ModuleNotFoundError):
     _HAS_REVIEW = False
 
 try:
     from tools.security.prompt_injection_detector import scan_text
+
     _HAS_PI_DETECTOR = True
 except ImportError:
     _HAS_PI_DETECTOR = False
 
 try:
     from tools.security.code_pattern_scanner import CodePatternScanner
+
     _HAS_CODE_SCANNER = True
 except ImportError:
     _HAS_CODE_SCANNER = False
 
 try:
     from tools.marketplace.openclaw_compat import check_compatibility, translate_to_icdev
+
     _HAS_COMPAT = True
 except ImportError:
     _HAS_COMPAT = False
 
 try:
     from tools.databridge.connectors.clawhub_connector import ClawHubConnector
+
     _HAS_CLAWHUB = True
 except ImportError:
     _HAS_CLAWHUB = False
@@ -158,8 +168,14 @@ CUI_PATTERNS = [
 
 # Internal metadata keys to strip on export
 STRIP_KEYS = {
-    "tenant_id", "impact_level", "classification", "compliance_controls",
-    "_body", "_main_file", "catalog_tier", "publisher_tenant_id",
+    "tenant_id",
+    "impact_level",
+    "classification",
+    "compliance_controls",
+    "_body",
+    "_main_file",
+    "catalog_tier",
+    "publisher_tenant_id",
 }
 
 # YAML tag constructors to block (CVE-2026-25253)
@@ -173,47 +189,113 @@ MAX_FRONTMATTER_VALUE_LEN = 10000
 # Blocked imports for script safety analysis (network, shell, dynamic code)
 BLOCKED_IMPORTS = {
     # Shell / process execution
-    "subprocess", "os.system", "os.popen", "shlex",
+    "subprocess",
+    "os.system",
+    "os.popen",
+    "shlex",
     # Network access
-    "requests", "urllib", "urllib3", "httpx", "aiohttp",
-    "http.client", "socket", "socketserver", "ftplib",
-    "smtplib", "xmlrpc", "grpc",
+    "requests",
+    "urllib",
+    "urllib3",
+    "httpx",
+    "aiohttp",
+    "http.client",
+    "socket",
+    "socketserver",
+    "ftplib",
+    "smtplib",
+    "xmlrpc",
+    "grpc",
     # Dynamic code execution
-    "importlib", "runpy", "code", "codeop", "compileall",
+    "importlib",
+    "runpy",
+    "code",
+    "codeop",
+    "compileall",
     # Serialization (arbitrary code execution)
-    "pickle", "shelve", "marshal",
+    "pickle",
+    "shelve",
+    "marshal",
     # System-level
-    "ctypes", "cffi", "signal", "multiprocessing",
+    "ctypes",
+    "cffi",
+    "signal",
+    "multiprocessing",
     # File system (write-capable)
-    "shutil", "tempfile",
+    "shutil",
+    "tempfile",
 }
 
 # Blocked AST call names (functions that execute arbitrary code)
 BLOCKED_CALLS = {
-    "eval", "exec", "compile", "__import__",
-    "os.system", "os.popen", "os.execv", "os.execve",
-    "os.spawn", "os.spawnl", "os.spawnle",
+    "eval",
+    "exec",
+    "compile",
+    "__import__",
+    "os.system",
+    "os.popen",
+    "os.execv",
+    "os.execve",
+    "os.spawn",
+    "os.spawnl",
+    "os.spawnle",
     "open",  # file writes — only blocked in strict mode
 }
 
 # Safe standard library imports (read-only, computational, no side effects)
 SAFE_IMPORTS = {
-    "json", "re", "math", "statistics", "collections",
-    "itertools", "functools", "operator", "string",
-    "textwrap", "datetime", "time", "calendar",
-    "decimal", "fractions", "hashlib", "hmac",
-    "base64", "binascii", "struct", "copy",
-    "enum", "dataclasses", "typing", "abc",
-    "pathlib", "os.path", "posixpath", "ntpath",
-    "csv", "configparser", "argparse",
-    "logging", "warnings", "traceback",
-    "pprint", "difflib", "unicodedata",
+    "json",
+    "re",
+    "math",
+    "statistics",
+    "collections",
+    "itertools",
+    "functools",
+    "operator",
+    "string",
+    "textwrap",
+    "datetime",
+    "time",
+    "calendar",
+    "decimal",
+    "fractions",
+    "hashlib",
+    "hmac",
+    "base64",
+    "binascii",
+    "struct",
+    "copy",
+    "enum",
+    "dataclasses",
+    "typing",
+    "abc",
+    "pathlib",
+    "os.path",
+    "posixpath",
+    "ntpath",
+    "csv",
+    "configparser",
+    "argparse",
+    "logging",
+    "warnings",
+    "traceback",
+    "pprint",
+    "difflib",
+    "unicodedata",
 }
 
 # Allowed ICDEV™ tools for imported skills
 ALLOWED_TOOLS = {
-    "Bash", "Read", "Write", "Edit", "Glob", "Grep",
-    "WebFetch", "WebSearch", "Agent", "TodoWrite",
+    "Bash",
+    "Read",
+    "Write",
+    "Edit",
+    "Glob",
+    "Grep",
+    "WebFetch",
+    "WebSearch",
+    "Agent",
+    "TodoWrite",
 }
 
 
@@ -230,6 +312,7 @@ def _get_db():
     if _HAS_DB:
         return get_connection()
     from tools.db.storage import get_connection as _get_conn
+
     return _get_conn(db_path=str(DB_PATH))
 
 
@@ -285,7 +368,9 @@ def _safe_parse_openclaw_frontmatter(text):
         raise ValueError("YAML anchor/alias blocked (CVE-2026-25253 mitigation)")
 
     if len(text) > MAX_FRONTMATTER_VALUE_LEN * MAX_FRONTMATTER_KEYS:
-        raise ValueError(f"Frontmatter exceeds max total size ({MAX_FRONTMATTER_KEYS * MAX_FRONTMATTER_VALUE_LEN} chars)")
+        raise ValueError(
+            f"Frontmatter exceeds max total size ({MAX_FRONTMATTER_KEYS * MAX_FRONTMATTER_VALUE_LEN} chars)"
+        )
 
     data = yaml.safe_load(text)
     if not isinstance(data, dict):
@@ -331,11 +416,20 @@ def _sandboxed_run_fallback(script_path, timeout=30):
     """
     env = os.environ.copy()
     for key in list(env.keys()):
-        if key.startswith((
-            "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
-            "AWS_", "AZURE_", "GCP_", "ANTHROPIC_",
-            "OPENAI_", "OLLAMA_", "ICDEV_",
-        )):
+        if key.startswith(
+            (
+                "HTTP_PROXY",
+                "HTTPS_PROXY",
+                "NO_PROXY",
+                "AWS_",
+                "AZURE_",
+                "GCP_",
+                "ANTHROPIC_",
+                "OPENAI_",
+                "OLLAMA_",
+                "ICDEV_",
+            )
+        ):
             del env[key]
 
     try:
@@ -387,9 +481,7 @@ def _sandboxed_run(script_path, timeout=30):
                 return _sandboxed_run_fallback(script_path, timeout)
 
             return {
-                "status": "pass" if result.exit_code == 0 else (
-                    "fail" if result.status == "failed" else "warning"
-                ),
+                "status": "pass" if result.exit_code == 0 else ("fail" if result.status == "failed" else "warning"),
                 "returncode": result.exit_code,
                 "stdout_preview": result.stdout[:500] if result.stdout else "",
                 "stderr_preview": result.stderr[:500] if result.stderr else "",
@@ -424,20 +516,30 @@ def analyze_script_safety(script_path):
     if script_path.suffix in (".so", ".dll", ".pyd", ".pyc"):
         return {
             "safe": False,
-            "findings": [{"type": "compiled_extension", "detail": f"Binary file: {script_path.name}", "severity": "critical"}],
+            "findings": [
+                {"type": "compiled_extension", "detail": f"Binary file: {script_path.name}", "severity": "critical"}
+            ],
             "imports_found": [],
         }
 
     try:
         source = script_path.read_text(encoding="utf-8", errors="replace")
     except Exception as exc:
-        return {"safe": False, "findings": [{"type": "read_error", "detail": str(exc), "severity": "critical"}], "imports_found": []}
+        return {
+            "safe": False,
+            "findings": [{"type": "read_error", "detail": str(exc), "severity": "critical"}],
+            "imports_found": [],
+        }
 
     # Parse AST
     try:
         tree = ast.parse(source, filename=str(script_path))
     except SyntaxError as exc:
-        return {"safe": False, "findings": [{"type": "syntax_error", "detail": str(exc), "severity": "critical"}], "imports_found": []}
+        return {
+            "safe": False,
+            "findings": [{"type": "syntax_error", "detail": str(exc), "severity": "critical"}],
+            "imports_found": [],
+        }
 
     # Walk AST nodes
     for node in ast.walk(tree):
@@ -446,46 +548,54 @@ def analyze_script_safety(script_path):
             for alias in node.names:
                 imports_found.append(alias.name)
                 if alias.name in BLOCKED_IMPORTS or any(alias.name.startswith(b + ".") for b in BLOCKED_IMPORTS):
-                    findings.append({
-                        "type": "blocked_import",
-                        "detail": f"import {alias.name}",
-                        "line": node.lineno,
-                        "severity": "critical",
-                    })
+                    findings.append(
+                        {
+                            "type": "blocked_import",
+                            "detail": f"import {alias.name}",
+                            "line": node.lineno,
+                            "severity": "critical",
+                        }
+                    )
 
         elif isinstance(node, ast.ImportFrom):
             module = node.module or ""
             imports_found.append(module)
             if module in BLOCKED_IMPORTS or any(module.startswith(b + ".") for b in BLOCKED_IMPORTS):
-                findings.append({
-                    "type": "blocked_import",
-                    "detail": f"from {module} import ...",
-                    "line": node.lineno,
-                    "severity": "critical",
-                })
+                findings.append(
+                    {
+                        "type": "blocked_import",
+                        "detail": f"from {module} import ...",
+                        "line": node.lineno,
+                        "severity": "critical",
+                    }
+                )
 
         # Check function calls
         elif isinstance(node, ast.Call):
             call_name = _resolve_call_name(node)
             if call_name and call_name in BLOCKED_CALLS:
-                findings.append({
-                    "type": "blocked_call",
-                    "detail": f"{call_name}()",
-                    "line": node.lineno,
-                    "severity": "critical",
-                })
+                findings.append(
+                    {
+                        "type": "blocked_call",
+                        "detail": f"{call_name}()",
+                        "line": node.lineno,
+                        "severity": "critical",
+                    }
+                )
 
             # Check open() with write mode
             if call_name == "open" and len(node.args) >= 2:
                 mode_arg = node.args[1]
                 if isinstance(mode_arg, ast.Constant) and isinstance(mode_arg.value, str):
                     if any(c in mode_arg.value for c in ("w", "a", "x", "+")):
-                        findings.append({
-                            "type": "file_write",
-                            "detail": f"open(..., '{mode_arg.value}')",
-                            "line": node.lineno,
-                            "severity": "high",
-                        })
+                        findings.append(
+                            {
+                                "type": "file_write",
+                                "detail": f"open(..., '{mode_arg.value}')",
+                                "line": node.lineno,
+                                "severity": "high",
+                            }
+                        )
 
     safe = len([f for f in findings if f["severity"] == "critical"]) == 0
     return {"safe": safe, "findings": findings, "imports_found": imports_found}
@@ -525,12 +635,16 @@ def analyze_scripts_directory(scripts_dir):
     # Also check for compiled extensions
     for ext in ("*.so", "*.dll", "*.pyd", "*.pyc"):
         for binary in scripts_dir.rglob(ext):
-            results.append({
-                "file": binary.name,
-                "safe": False,
-                "findings": [{"type": "compiled_extension", "detail": f"Binary: {binary.name}", "severity": "critical"}],
-                "imports_found": [],
-            })
+            results.append(
+                {
+                    "file": binary.name,
+                    "safe": False,
+                    "findings": [
+                        {"type": "compiled_extension", "detail": f"Binary: {binary.name}", "severity": "critical"}
+                    ],
+                    "imports_found": [],
+                }
+            )
 
     all_safe = all(r["safe"] for r in results) if results else True
     return {"all_safe": all_safe, "script_count": len(results), "results": results}
@@ -641,6 +755,7 @@ def import_skill(source_path, tenant_id, imported_by, clawhub_url=None):
 
         # Run functional validation on translated skill
         from tools.marketplace.openclaw_compat import validate_translated_skill
+
         functional_validation = validate_translated_skill(quarantine_path)
 
     # Save pre-enrichment content for diff view
@@ -658,6 +773,7 @@ def import_skill(source_path, tenant_id, imported_by, clawhub_url=None):
     enrichment_result = None
     try:
         from tools.marketplace.openclaw_enricher import enrich_skill as _enrich
+
         enrichment_result = _enrich(str(quarantine_path))
     except Exception:
         enrichment_result = {"success": False, "error": "Enrichment unavailable — skipped"}
@@ -671,6 +787,7 @@ def import_skill(source_path, tenant_id, imported_by, clawhub_url=None):
     scriptgen_result = None
     try:
         from tools.marketplace.openclaw_scriptgen import generate_companion_script
+
         scriptgen_result = generate_companion_script(str(quarantine_path))
         # Smoke test: verify companion.py runs --help without error
         if scriptgen_result.get("generated"):
@@ -723,11 +840,13 @@ def import_skill(source_path, tenant_id, imported_by, clawhub_url=None):
             for pat in injection_patterns:
                 matches = pat.findall(md_content)
                 if matches:
-                    pi_findings.append({
-                        "file": md_file.name,
-                        "pattern": pat.pattern[:60],
-                        "count": len(matches),
-                    })
+                    pi_findings.append(
+                        {
+                            "file": md_file.name,
+                            "pattern": pat.pattern[:60],
+                            "count": len(matches),
+                        }
+                    )
 
     gate_results["prompt_injection_scan"] = {
         "status": "fail" if pi_findings else "pass",
@@ -752,6 +871,7 @@ def import_skill(source_path, tenant_id, imported_by, clawhub_url=None):
     sandbox_full_results = []
     try:
         from tools.security.sandbox_executor import SandboxExecutor
+
         executor = SandboxExecutor()
         if executor._enabled and executor._available:
             for py_file in quarantine_path.rglob("*.py"):
@@ -774,11 +894,13 @@ def import_skill(source_path, tenant_id, imported_by, clawhub_url=None):
                     timeout_seconds=15,
                     actor="openclaw-bridge",
                 )
-                sandbox_full_results.append({
-                    "file": py_file.name,
-                    "status": "pass" if result.exit_code == 0 else "fail",
-                    "sandbox_status": result.status,
-                })
+                sandbox_full_results.append(
+                    {
+                        "file": py_file.name,
+                        "status": "pass" if result.exit_code == 0 else "fail",
+                        "sandbox_status": result.status,
+                    }
+                )
     except ImportError:
         pass
 
@@ -812,17 +934,17 @@ def import_skill(source_path, tenant_id, imported_by, clawhub_url=None):
             for pat in danger_patterns:
                 matches = pat.findall(content)
                 if matches:
-                    code_pattern_findings.append({
-                        "file": py_file.name,
-                        "pattern": pat.pattern,
-                        "count": len(matches),
-                        "severity": "critical",
-                    })
+                    code_pattern_findings.append(
+                        {
+                            "file": py_file.name,
+                            "pattern": pat.pattern,
+                            "count": len(matches),
+                            "severity": "critical",
+                        }
+                    )
 
     gate_results["code_pattern_scan"] = {
-        "status": "fail" if any(
-            f.get("severity") == "critical" for f in code_pattern_findings
-        ) else "pass",
+        "status": "fail" if any(f.get("severity") == "critical" for f in code_pattern_findings) else "pass",
         "findings": code_pattern_findings,
     }
     if gate_results["code_pattern_scan"]["status"] == "fail":
@@ -878,6 +1000,7 @@ def import_skill(source_path, tenant_id, imported_by, clawhub_url=None):
     content_intent = None
     if _HAS_COMPAT:
         from tools.marketplace.openclaw_compat import scan_content_intent
+
         # Scan the translated SKILL.md body
         skill_md_path = quarantine_path / "SKILL.md"
         if not skill_md_path.exists():
@@ -897,9 +1020,7 @@ def import_skill(source_path, tenant_id, imported_by, clawhub_url=None):
     # Auto-boost trust for content-only skills that pass all checks
     # Content-only (no scripts) + all gates passed + no malicious intent → trust 0.50
     trust_score = INITIAL_TRUST_SCORE
-    if (not has_scripts
-            and scan_status == "passed"
-            and (content_intent is None or content_intent["safe"])):
+    if not has_scripts and scan_status == "passed" and (content_intent is None or content_intent["safe"]):
         trust_score = 0.50  # Degraded — safe enough for confirmed use
 
     # Determine final status
@@ -975,9 +1096,7 @@ def import_skill(source_path, tenant_id, imported_by, clawhub_url=None):
         "quarantine_path": str(quarantine_path),
         "sha256": sha256,
         "scan_status": scan_status,
-        "gate_results_summary": {
-            k: v.get("status", "unknown") for k, v in gate_results.items()
-        },
+        "gate_results_summary": {k: v.get("status", "unknown") for k, v in gate_results.items()},
         "has_executable_content": has_scripts,
         "review_required": review_required,
         "trust_score": trust_score,
@@ -992,10 +1111,16 @@ def import_skill(source_path, tenant_id, imported_by, clawhub_url=None):
             "merge_candidates": enrichment_result.get("merge_candidates", 0) if enrichment_result else 0,
             "similar_skills": [
                 {"slug": s.get("slug", ""), "name": s.get("displayName", ""), "score": s.get("score", 0)}
-                for s in (enrichment_result.get("similar_skills", {}).get("similar_skills", []) if enrichment_result else [])
+                for s in (
+                    enrichment_result.get("similar_skills", {}).get("similar_skills", []) if enrichment_result else []
+                )
             ][:5],
-            "innovation_synthesis": (enrichment_result.get("innovation", {}).get("synthesis", "") if enrichment_result else "")[:400],
-            "innovation_count": enrichment_result.get("innovation", {}).get("findings_count", 0) if enrichment_result else 0,
+            "innovation_synthesis": (
+                enrichment_result.get("innovation", {}).get("synthesis", "") if enrichment_result else ""
+            )[:400],
+            "innovation_count": enrichment_result.get("innovation", {}).get("findings_count", 0)
+            if enrichment_result
+            else 0,
             "creative_alternatives": [
                 {"name": a.get("name", ""), "approach": a.get("approach", "")[:150]}
                 for a in (enrichment_result.get("creative", {}).get("alternatives", []) if enrichment_result else [])
@@ -1004,12 +1129,16 @@ def import_skill(source_path, tenant_id, imported_by, clawhub_url=None):
                 {"title": p.get("title", ""), "detail": p.get("detail", "")[:150]}
                 for p in (enrichment_result.get("research", {}).get("patterns", []) if enrichment_result else [])
             ][:3],
-        } if enrichment_result else None,
+        }
+        if enrichment_result
+        else None,
         "companion_script": {
             "generated": scriptgen_result.get("generated", False) if scriptgen_result else False,
             "functions": scriptgen_result.get("functions", []) if scriptgen_result else [],
             "function_count": scriptgen_result.get("function_count", 0) if scriptgen_result else 0,
-        } if scriptgen_result else None,
+        }
+        if scriptgen_result
+        else None,
         "script_safety": script_safety if script_safety else None,
         "compatibility_score": compat_report.score if compat_report else None,
         "adaptations_applied": len(compat_report.adaptations) if compat_report else 0,
@@ -1038,21 +1167,32 @@ def promote_import(import_id, promoted_by):
 
     conn = _get_db()
     try:
-        row = conn.execute(
-            "SELECT * FROM openclaw_imports WHERE id = ?", (import_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM openclaw_imports WHERE id = ?", (import_id,)).fetchone()
 
         if not row:
             return {"error": f"Import not found: {import_id}"}
 
         # Convert Row to dict
-        rec = dict(row) if hasattr(row, "keys") else {
-            "id": row[0], "scan_status": row[10], "review_required": row[12],
-            "review_id": row[13], "status": row[15], "quarantine_path": row[7],
-            "skill_name": row[5], "openclaw_slug": row[3], "openclaw_author": row[4],
-            "sha256_hash": row[8], "tenant_id": row[18], "metadata": row[19],
-            "skill_version": row[6], "source_url": row[1],
-        }
+        rec = (
+            dict(row)
+            if hasattr(row, "keys")
+            else {
+                "id": row[0],
+                "scan_status": row[10],
+                "review_required": row[12],
+                "review_id": row[13],
+                "status": row[15],
+                "quarantine_path": row[7],
+                "skill_name": row[5],
+                "openclaw_slug": row[3],
+                "openclaw_author": row[4],
+                "sha256_hash": row[8],
+                "tenant_id": row[18],
+                "metadata": row[19],
+                "skill_version": row[6],
+                "source_url": row[1],
+            }
+        )
 
         # Verify gates passed
         if rec.get("scan_status") != "passed":
@@ -1073,7 +1213,9 @@ def promote_import(import_id, promoted_by):
         metadata = json.loads(rec.get("metadata", "{}")) if isinstance(rec.get("metadata"), str) else {}
 
         # Build ICDEV™ SKILL.md content
-        icdev_name = re.sub(r"[^a-z0-9-]", "-", (metadata.get("name", rec["openclaw_slug"]) or "imported-skill").lower())[:63]
+        icdev_name = re.sub(
+            r"[^a-z0-9-]", "-", (metadata.get("name", rec["openclaw_slug"]) or "imported-skill").lower()
+        )[:63]
         oc_tools = metadata.get("tools", [])
         icdev_tools = sorted(ALLOWED_TOOLS.intersection(set(oc_tools))) if oc_tools else ["Read", "Grep", "Glob"]
 
@@ -1085,21 +1227,21 @@ def promote_import(import_id, promoted_by):
             "tags": metadata.get("tags", []),
         }
 
-        icdev_body = f"""# {rec['skill_name']}
+        icdev_body = f"""# {rec["skill_name"]}
 
 CUI // SP-CTI
 
 ## Overview
 
-{metadata.get('description', 'Imported from OpenClaw community.')}
+{metadata.get("description", "Imported from OpenClaw community.")}
 
 ## Provenance
 
 - **Source:** OpenClaw Community (ClawHub)
-- **Author:** {rec.get('openclaw_author', 'unknown')}
-- **Original URL:** {rec.get('source_url', 'N/A')}
+- **Author:** {rec.get("openclaw_author", "unknown")}
+- **Original URL:** {rec.get("source_url", "N/A")}
 - **Import Date:** {_utcnow()}
-- **SHA-256:** {rec['sha256_hash']}
+- **SHA-256:** {rec["sha256_hash"]}
 - **Scan Status:** PASSED (all 10 gates)
 - **Trust Score:** {INITIAL_TRUST_SCORE}
 - **Registration Required:** No
@@ -1318,7 +1460,9 @@ def fetch_and_import(slug, tenant_id, imported_by):
     try:
         # Get skill detail first for provenance
         detail = conn.get_skill(slug)
-        clawhub_url = f"https://clawhub.ai/{detail.get('owner', {}).get('handle', 'unknown')}/{slug}" if detail else None
+        clawhub_url = (
+            f"https://clawhub.ai/{detail.get('owner', {}).get('handle', 'unknown')}/{slug}" if detail else None
+        )
 
         # Download to temp directory
         download_dir = str(QUARANTINE_DIR / "_downloads")
@@ -1395,6 +1539,7 @@ def revoke_import(import_id, revoked_by, reason):
         if _HAS_CATALOG and asset_id:
             try:
                 from tools.marketplace.catalog_manager import update_status
+
                 update_status(asset_id, "revoked")
             except Exception:
                 pass  # Log but don't fail revocation
@@ -1460,15 +1605,11 @@ def export_skill(asset_id, version_id, output_path, exported_by):
     conn = _get_db()
     try:
         # Load asset
-        asset = conn.execute(
-            "SELECT * FROM marketplace_assets WHERE id = ?", (asset_id,)
-        ).fetchone()
+        asset = conn.execute("SELECT * FROM marketplace_assets WHERE id = ?", (asset_id,)).fetchone()
         if not asset:
             return {"error": f"Asset not found: {asset_id}"}
 
-        version = conn.execute(
-            "SELECT * FROM marketplace_versions WHERE id = ?", (version_id,)
-        ).fetchone()
+        version = conn.execute("SELECT * FROM marketplace_versions WHERE id = ?", (version_id,)).fetchone()
         if not version:
             return {"error": f"Version not found: {version_id}"}
 
@@ -1561,10 +1702,16 @@ def export_skill(asset_id, version_id, output_path, exported_by):
                 review_status, stripping_log, sha256_hash, status, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                export_id, asset_id, version_id, str(output_path),
-                exported_by, "pending",
+                export_id,
+                asset_id,
+                version_id,
+                str(output_path),
+                exported_by,
+                "pending",
                 json.dumps(stripping_log, default=str),
-                sha256, "pending", _utcnow(),
+                sha256,
+                "pending",
+                _utcnow(),
             ),
         )
         conn.commit()
@@ -1635,11 +1782,18 @@ def list_quarantine(status_filter=None):
                 d = dict(r)
             else:
                 d = {
-                    "id": r[0], "skill_name": r[1], "author": r[2],
-                    "scan_status": r[3], "status": r[4], "trust_score": r[5],
-                    "has_scripts": bool(r[6]), "review_required": bool(r[7]),
-                    "created_at": r[8], "rejected_by": r[9],
-                    "rejected_reason": r[10], "gate_results": r[11],
+                    "id": r[0],
+                    "skill_name": r[1],
+                    "author": r[2],
+                    "scan_status": r[3],
+                    "status": r[4],
+                    "trust_score": r[5],
+                    "has_scripts": bool(r[6]),
+                    "review_required": bool(r[7]),
+                    "created_at": r[8],
+                    "rejected_by": r[9],
+                    "rejected_reason": r[10],
+                    "gate_results": r[11],
                 }
             # Parse gate_results to extract failed gates summary
             gate_raw = d.get("gate_results") or d.get("gate_results_raw")
@@ -1647,8 +1801,9 @@ def list_quarantine(status_filter=None):
             if gate_raw:
                 try:
                     gates = json.loads(gate_raw) if isinstance(gate_raw, str) else gate_raw
-                    failed_gates = [k for k, v in gates.items()
-                                    if isinstance(v, dict) and v.get("status") in ("fail", "failed")]
+                    failed_gates = [
+                        k for k, v in gates.items() if isinstance(v, dict) and v.get("status") in ("fail", "failed")
+                    ]
                 except Exception:
                     pass
             d["failed_gates"] = failed_gates
@@ -1690,11 +1845,17 @@ def list_exports(status_filter=None):
             if hasattr(r, "keys"):
                 items.append(dict(r))
             else:
-                items.append({
-                    "id": r[0], "asset_id": r[1], "version_id": r[2],
-                    "exported_by": r[3], "review_status": r[4],
-                    "status": r[5], "created_at": r[6],
-                })
+                items.append(
+                    {
+                        "id": r[0],
+                        "asset_id": r[1],
+                        "version_id": r[2],
+                        "exported_by": r[3],
+                        "review_status": r[4],
+                        "status": r[5],
+                        "created_at": r[6],
+                    }
+                )
 
         return {"success": True, "count": len(items), "exports": items}
     except Exception as exc:
@@ -1776,8 +1937,7 @@ def gate_check():
         config = _load_config()
         max_age = config.get("import", {}).get("quarantine_max_age_days", 30)
         rows = conn.execute(
-            "SELECT COUNT(*) FROM openclaw_imports WHERE status = 'quarantined' "
-            "AND created_at < datetime('now', ?)",
+            "SELECT COUNT(*) FROM openclaw_imports WHERE status = 'quarantined' AND created_at < datetime('now', ?)",
             (f"-{max_age} days",),
         ).fetchone()
         overdue = rows[0] if rows else 0
@@ -1805,28 +1965,19 @@ def main():
         description="OpenClaw Skill Bridge — zero-trust import/export for ClawHub skills",
     )
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--import", dest="do_import", action="store_true",
-                       help="Import an OpenClaw skill into quarantine")
-    group.add_argument("--promote", action="store_true",
-                       help="Promote a quarantined import to marketplace")
-    group.add_argument("--reject", action="store_true",
-                       help="Reject a quarantined import")
-    group.add_argument("--revoke", action="store_true",
-                       help="Revoke a promoted import (rollback)")
-    group.add_argument("--export", action="store_true",
-                       help="Export an ICDEV™ skill to OpenClaw format")
-    group.add_argument("--list-quarantine", action="store_true",
-                       help="List quarantined imports")
-    group.add_argument("--list-exports", action="store_true",
-                       help="List export records")
-    group.add_argument("--discover", metavar="QUERY",
-                       help="Search ClawHub for skills (vector search)")
-    group.add_argument("--fetch", metavar="SLUG",
-                       help="Download + import a skill from ClawHub by slug")
-    group.add_argument("--health", action="store_true",
-                       help="Health check")
-    group.add_argument("--gate", action="store_true",
-                       help="Gate check for CI/CD")
+    group.add_argument(
+        "--import", dest="do_import", action="store_true", help="Import an OpenClaw skill into quarantine"
+    )
+    group.add_argument("--promote", action="store_true", help="Promote a quarantined import to marketplace")
+    group.add_argument("--reject", action="store_true", help="Reject a quarantined import")
+    group.add_argument("--revoke", action="store_true", help="Revoke a promoted import (rollback)")
+    group.add_argument("--export", action="store_true", help="Export an ICDEV™ skill to OpenClaw format")
+    group.add_argument("--list-quarantine", action="store_true", help="List quarantined imports")
+    group.add_argument("--list-exports", action="store_true", help="List export records")
+    group.add_argument("--discover", metavar="QUERY", help="Search ClawHub for skills (vector search)")
+    group.add_argument("--fetch", metavar="SLUG", help="Download + import a skill from ClawHub by slug")
+    group.add_argument("--health", action="store_true", help="Health check")
+    group.add_argument("--gate", action="store_true", help="Gate check for CI/CD")
 
     # Import args
     parser.add_argument("--source-path", help="Path to OpenClaw skill directory")

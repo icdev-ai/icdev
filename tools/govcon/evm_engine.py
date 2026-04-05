@@ -41,6 +41,7 @@ _CONFIG_PATH = _ROOT / "args" / "govcon_config.yaml"
 
 # ── Config ───────────────────────────────────────────────────────────
 
+
 def _load_config():
     if _CONFIG_PATH.exists():
         with open(_CONFIG_PATH) as f:
@@ -60,6 +61,7 @@ CONFIDENCE_LEVELS = _CFG.get("forecast_confidence_levels", [0.50, 0.80, 0.95])
 
 
 # ── Helpers ──────────────────────────────────────────────────────────
+
 
 def _get_db():
     conn = get_connection()
@@ -109,6 +111,7 @@ def _status_color(value, yellow_threshold, red_threshold):
 
 
 # ── Pure Computation ─────────────────────────────────────────────────
+
 
 def compute_indicators(bac, pv, ev, ac):
     """
@@ -161,6 +164,7 @@ def compute_indicators(bac, pv, ev, ac):
 
 # ── Record Period ────────────────────────────────────────────────────
 
+
 def record_period(contract_id, wbs_id, period_date, pv, ev, ac, source="manual"):
     """
     Record a monthly EVM snapshot in cpmp_evm_periods (append-only).
@@ -183,9 +187,7 @@ def record_period(contract_id, wbs_id, period_date, pv, ev, ac, source="manual")
     conn = _get_db()
 
     # Validate contract exists
-    contract = conn.execute(
-        "SELECT id FROM cpmp_contracts WHERE id = ?", (contract_id,)
-    ).fetchone()
+    contract = conn.execute("SELECT id FROM cpmp_contracts WHERE id = ?", (contract_id,)).fetchone()
     if not contract:
         conn.close()
         return {"status": "error", "message": f"Contract {contract_id} not found"}
@@ -228,13 +230,27 @@ def record_period(contract_id, wbs_id, period_date, pv, ev, ac, source="manual")
         "source, created_at) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
-            period_id, contract_id, wbs_id, period_date, bac,
-            pv_cum, ev_cum, ac_cum,
-            pv_cum, ev_cum, ac_cum,   # BCWS=PV, BCWP=EV, ACWP=AC (synonyms)
-            indicators["cpi"], indicators["spi"],
-            indicators["cost_variance"], indicators["schedule_variance"],
-            indicators["eac"], indicators["etc"], indicators["vac"], indicators["tcpi"],
-            source, _now(),
+            period_id,
+            contract_id,
+            wbs_id,
+            period_date,
+            bac,
+            pv_cum,
+            ev_cum,
+            ac_cum,
+            pv_cum,
+            ev_cum,
+            ac_cum,  # BCWS=PV, BCWP=EV, ACWP=AC (synonyms)
+            indicators["cpi"],
+            indicators["spi"],
+            indicators["cost_variance"],
+            indicators["schedule_variance"],
+            indicators["eac"],
+            indicators["etc"],
+            indicators["vac"],
+            indicators["tcpi"],
+            source,
+            _now(),
         ),
     )
 
@@ -245,9 +261,12 @@ def record_period(contract_id, wbs_id, period_date, pv, ev, ac, source="manual")
         (pv_cum, ev_cum, ac_cum, round(pct_complete, 2), _now(), wbs_id),
     )
 
-    _audit(conn, "record_period",
-           f"EVM period {period_date} for WBS {wbs_id}: PV={pv_cum}, EV={ev_cum}, AC={ac_cum}, "
-           f"CPI={indicators['cpi']}, SPI={indicators['spi']}")
+    _audit(
+        conn,
+        "record_period",
+        f"EVM period {period_date} for WBS {wbs_id}: PV={pv_cum}, EV={ev_cum}, AC={ac_cum}, "
+        f"CPI={indicators['cpi']}, SPI={indicators['spi']}",
+    )
     conn.commit()
     conn.close()
 
@@ -266,6 +285,7 @@ def record_period(contract_id, wbs_id, period_date, pv, ev, ac, source="manual")
 
 
 # ── Aggregate Contract EVM ───────────────────────────────────────────
+
 
 def aggregate_contract_evm(contract_id):
     """
@@ -289,8 +309,7 @@ def aggregate_contract_evm(contract_id):
 
     # Get total BAC from all WBS elements
     bac_row = conn.execute(
-        "SELECT COALESCE(SUM(budget_at_completion), 0) AS total_bac "
-        "FROM cpmp_wbs WHERE contract_id = ?",
+        "SELECT COALESCE(SUM(budget_at_completion), 0) AS total_bac FROM cpmp_wbs WHERE contract_id = ?",
         (contract_id,),
     ).fetchone()
     total_bac = bac_row["total_bac"]
@@ -349,6 +368,7 @@ def aggregate_contract_evm(contract_id):
 
 # ── S-Curve Data ─────────────────────────────────────────────────────
 
+
 def generate_scurve_data(contract_id):
     """
     Generate time-series data for S-curve charting.
@@ -404,6 +424,7 @@ def generate_scurve_data(contract_id):
 
 # ── Monte Carlo Forecast ────────────────────────────────────────────
 
+
 def forecast_monte_carlo(contract_id, iterations=None):
     """
     Monte Carlo EAC forecast using PERT distribution (D22 — stdlib random only).
@@ -436,8 +457,7 @@ def forecast_monte_carlo(contract_id, iterations=None):
 
     # Get total BAC
     bac_row = conn.execute(
-        "SELECT COALESCE(SUM(budget_at_completion), 0) AS total_bac "
-        "FROM cpmp_wbs WHERE contract_id = ?",
+        "SELECT COALESCE(SUM(budget_at_completion), 0) AS total_bac FROM cpmp_wbs WHERE contract_id = ?",
         (contract_id,),
     ).fetchone()
     total_bac = bac_row["total_bac"]
@@ -463,7 +483,7 @@ def forecast_monte_carlo(contract_id, iterations=None):
     worst_cpi = min(cpi_values)
 
     # PERT bounds: stretch optimistic and pessimistic slightly beyond observed range
-    optimistic_cpi = best_cpi * 0.9    # could be even better
+    optimistic_cpi = best_cpi * 0.9  # could be even better
     pessimistic_cpi = worst_cpi * 1.1  # could be even worse
 
     # Guard: optimistic must be less than pessimistic
@@ -520,13 +540,12 @@ def forecast_monte_carlo(contract_id, iterations=None):
             "median": percentiles.get("P50"),
         },
         "deterministic_eac": round(total_bac / current_cpi, 2) if current_cpi else None,
-        "variance_from_bac": {
-            k: round(v - total_bac, 2) for k, v in percentiles.items()
-        },
+        "variance_from_bac": {k: round(v - total_bac, 2) for k, v in percentiles.items()},
     }
 
 
 # ── List Periods ─────────────────────────────────────────────────────
+
 
 def get_evm_periods(contract_id, wbs_id=None):
     """
@@ -563,6 +582,7 @@ def get_evm_periods(contract_id, wbs_id=None):
 
 # ── IPMDAR Data ──────────────────────────────────────────────────────
 
+
 def generate_ipmdar_data(contract_id):
     """
     Generate IPMDAR-compatible data structure.
@@ -574,9 +594,7 @@ def generate_ipmdar_data(contract_id):
     """
     conn = _get_db()
 
-    contract = conn.execute(
-        "SELECT * FROM cpmp_contracts WHERE id = ?", (contract_id,)
-    ).fetchone()
+    contract = conn.execute("SELECT * FROM cpmp_contracts WHERE id = ?", (contract_id,)).fetchone()
     if not contract:
         conn.close()
         return {"status": "error", "message": f"Contract {contract_id} not found"}
@@ -591,8 +609,7 @@ def generate_ipmdar_data(contract_id):
     format_1 = []
     for wbs in wbs_rows:
         latest = conn.execute(
-            "SELECT * FROM cpmp_evm_periods WHERE contract_id = ? AND wbs_id = ? "
-            "ORDER BY period_date DESC LIMIT 1",
+            "SELECT * FROM cpmp_evm_periods WHERE contract_id = ? AND wbs_id = ? ORDER BY period_date DESC LIMIT 1",
             (contract_id, wbs["id"]),
         ).fetchone()
 
@@ -607,17 +624,19 @@ def generate_ipmdar_data(contract_id):
             "percent_complete": wbs["percent_complete"],
         }
         if latest:
-            entry.update({
-                "cpi": latest["cpi"],
-                "spi": latest["spi"],
-                "cost_variance": latest["cv"],
-                "schedule_variance": latest["sv"],
-                "eac": latest["eac"],
-                "etc": latest["etc"],
-                "vac": latest["vac"],
-                "tcpi": latest["tcpi"],
-                "latest_period": latest["period_date"],
-            })
+            entry.update(
+                {
+                    "cpi": latest["cpi"],
+                    "spi": latest["spi"],
+                    "cost_variance": latest["cv"],
+                    "schedule_variance": latest["sv"],
+                    "eac": latest["eac"],
+                    "etc": latest["etc"],
+                    "vac": latest["vac"],
+                    "tcpi": latest["tcpi"],
+                    "latest_period": latest["period_date"],
+                }
+            )
         format_1.append(entry)
 
     # ── Format 3: Baseline ──────────────────────────────────────────
@@ -629,17 +648,16 @@ def generate_ipmdar_data(contract_id):
             "WHERE contract_id = ? AND wbs_id = ? ORDER BY period_date ASC",
             (contract_id, wbs["id"]),
         ).fetchall()
-        format_3.append({
-            "wbs_number": wbs["wbs_number"],
-            "wbs_title": wbs["title"],
-            "bac": wbs["budget_at_completion"],
-            "planned_start": wbs["planned_start"],
-            "planned_finish": wbs["planned_finish"],
-            "baseline_periods": [
-                {"period_date": p["period_date"], "planned_value": p["pv"]}
-                for p in periods
-            ],
-        })
+        format_3.append(
+            {
+                "wbs_number": wbs["wbs_number"],
+                "wbs_title": wbs["title"],
+                "bac": wbs["budget_at_completion"],
+                "planned_start": wbs["planned_start"],
+                "planned_finish": wbs["planned_finish"],
+                "baseline_periods": [{"period_date": p["period_date"], "planned_value": p["pv"]} for p in periods],
+            }
+        )
 
     # ── Format 5: EAC Analysis ──────────────────────────────────────
     total_bac = sum((w["budget_at_completion"] or 0) for w in wbs_rows)
@@ -671,14 +689,16 @@ def generate_ipmdar_data(contract_id):
         elif ind["cpi"] is not None and ind["cpi"] < CPI_YELLOW:
             narrative += "CPI in YELLOW zone — monitoring closely."
 
-        format_5_elements.append({
-            "wbs_number": wbs["wbs_number"],
-            "wbs_title": wbs["title"],
-            "bac": bac,
-            "eac": ind["eac"],
-            "vac": ind["vac"],
-            "variance_narrative": narrative.strip(),
-        })
+        format_5_elements.append(
+            {
+                "wbs_number": wbs["wbs_number"],
+                "wbs_title": wbs["title"],
+                "bac": bac,
+                "eac": ind["eac"],
+                "vac": ind["vac"],
+                "variance_narrative": narrative.strip(),
+            }
+        )
 
     format_5 = {
         "contract_bac": total_bac,
@@ -706,10 +726,9 @@ def generate_ipmdar_data(contract_id):
 
 # ── CLI ──────────────────────────────────────────────────────────────
 
+
 def main():
-    parser = argparse.ArgumentParser(
-        description="ICDEV™ GovProposal EVM Engine — ANSI/EIA-748 (Phase 60, D-CPMP-2)"
-    )
+    parser = argparse.ArgumentParser(description="ICDEV™ GovProposal EVM Engine — ANSI/EIA-748 (Phase 60, D-CPMP-2)")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--record", action="store_true", help="Record a monthly EVM period snapshot")
     group.add_argument("--aggregate", action="store_true", help="Aggregate EVM across all WBS for a contract")
@@ -731,14 +750,29 @@ def main():
     args = parser.parse_args()
 
     if args.record:
-        if not all([args.contract_id, args.wbs_id, args.period_date,
-                     args.pv is not None, args.ev is not None, args.ac is not None]):
-            result = {"status": "error",
-                      "message": "--record requires --contract-id, --wbs-id, --period-date, --pv, --ev, --ac"}
+        if not all(
+            [
+                args.contract_id,
+                args.wbs_id,
+                args.period_date,
+                args.pv is not None,
+                args.ev is not None,
+                args.ac is not None,
+            ]
+        ):
+            result = {
+                "status": "error",
+                "message": "--record requires --contract-id, --wbs-id, --period-date, --pv, --ev, --ac",
+            }
         else:
             result = record_period(
-                args.contract_id, args.wbs_id, args.period_date,
-                args.pv, args.ev, args.ac, args.source,
+                args.contract_id,
+                args.wbs_id,
+                args.period_date,
+                args.pv,
+                args.ev,
+                args.ac,
+                args.source,
             )
     elif args.aggregate:
         if not args.contract_id:

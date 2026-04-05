@@ -20,6 +20,7 @@ Usage:
     python tools/databridge/forge/sandbox_adapter.py --test --json
     python tools/databridge/forge/sandbox_adapter.py --execute --code "print('hello')" --json
 """
+
 from __future__ import annotations
 
 import argparse
@@ -49,8 +50,10 @@ _CONFIG_PATH = Path(__file__).resolve().parents[3] / "args" / "databridge_config
 # Data types
 # ---------------------------------------------------------------------------
 
+
 class SandboxBackend(enum.Enum):
     """Supported sandbox execution backends."""
+
     DOCKER = "docker"
     OPENSANDBOX = "opensandbox"
     SUBPROCESS = "subprocess"
@@ -59,6 +62,7 @@ class SandboxBackend(enum.Enum):
 @dataclass
 class SandboxSession:
     """Represents an active sandbox session."""
+
     session_id: str
     backend: SandboxBackend
     status: str  # created, running, stopped, error
@@ -79,6 +83,7 @@ class SandboxSession:
 @dataclass
 class ExecutionResult:
     """Result of code or command execution in a sandbox."""
+
     stdout: str
     stderr: str
     exit_code: int
@@ -94,6 +99,7 @@ class ExecutionResult:
 # ---------------------------------------------------------------------------
 # Config loader (stdlib YAML-lite parser for the forge.sandbox block)
 # ---------------------------------------------------------------------------
+
 
 def _load_sandbox_config() -> Dict[str, Any]:
     """Load sandbox config from args/databridge_config.yaml.
@@ -174,6 +180,7 @@ def _load_sandbox_config() -> Dict[str, Any]:
 # Backend implementations
 # ---------------------------------------------------------------------------
 
+
 class _DockerBackend:
     """Docker-based sandbox backend (D-CF-4 primary)."""
 
@@ -191,29 +198,42 @@ class _DockerBackend:
         try:
             proc = subprocess.run(
                 ["docker", "info"],
-                capture_output=True, timeout=5,
+                capture_output=True,
+                timeout=5,
             )
             return proc.returncode == 0
         except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
             return False
 
     def create_session(
-        self, image: str, memory_limit: str, network: bool, timeout: int,
+        self,
+        image: str,
+        memory_limit: str,
+        network: bool,
+        timeout: int,
     ) -> SandboxSession:
         """Create a Docker container that stays alive for the session."""
         session_id = f"sb-docker-{uuid.uuid4().hex[:12]}"
         container_name = f"icdev-sandbox-{session_id}"
 
         cmd = [
-            "docker", "create",
-            "--name", container_name,
-            "--network", "host" if network else "none",
-            "--memory", memory_limit,
-            "--cpus", self.cpus,
+            "docker",
+            "create",
+            "--name",
+            container_name,
+            "--network",
+            "host" if network else "none",
+            "--memory",
+            memory_limit,
+            "--cpus",
+            self.cpus,
             "--read-only",
-            "--tmpfs", "/tmp",  # nosec B108 -- temp path for ephemeral scratch files
+            "--tmpfs",
+            "/tmp",  # nosec B108 -- temp path for ephemeral scratch files
             image,
-            "tail", "-f", "/dev/null",  # keep alive
+            "tail",
+            "-f",
+            "/dev/null",  # keep alive
         ]
 
         try:
@@ -225,7 +245,8 @@ class _DockerBackend:
             # Start the container
             subprocess.run(
                 ["docker", "start", container_name],
-                capture_output=True, timeout=15,
+                capture_output=True,
+                timeout=15,
             )
 
             session = SandboxSession(
@@ -249,14 +270,22 @@ class _DockerBackend:
             raise RuntimeError(f"Docker session create failed: {exc}") from exc
 
     def execute_code(
-        self, session_id: str, code: str, language: str, timeout: int,
+        self,
+        session_id: str,
+        code: str,
+        language: str,
+        timeout: int,
     ) -> ExecutionResult:
         """Execute code inside the Docker container."""
         info = self._containers.get(session_id)
         if not info:
             return ExecutionResult(
-                stdout="", stderr=f"Session {session_id} not found",
-                exit_code=1, duration_ms=0, language=language, success=False,
+                stdout="",
+                stderr=f"Session {session_id} not found",
+                exit_code=1,
+                duration_ms=0,
+                language=language,
+                success=False,
             )
 
         container_name = info["container_name"]
@@ -271,14 +300,21 @@ class _DockerBackend:
         exec_cmd = interpreters.get(language)
         if not exec_cmd:
             return ExecutionResult(
-                stdout="", stderr=f"Unsupported language: {language}",
-                exit_code=1, duration_ms=0, language=language, success=False,
+                stdout="",
+                stderr=f"Unsupported language: {language}",
+                exit_code=1,
+                duration_ms=0,
+                language=language,
+                success=False,
             )
 
         cmd = ["docker", "exec", container_name] + exec_cmd
         try:
             proc = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=timeout,
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
             )
             duration_ms = int((time.time() - start) * 1000)
             return ExecutionResult(
@@ -292,18 +328,28 @@ class _DockerBackend:
         except subprocess.TimeoutExpired:
             duration_ms = int((time.time() - start) * 1000)
             return ExecutionResult(
-                stdout="", stderr=f"Execution timed out ({timeout}s)",
-                exit_code=124, duration_ms=duration_ms, language=language, success=False,
+                stdout="",
+                stderr=f"Execution timed out ({timeout}s)",
+                exit_code=124,
+                duration_ms=duration_ms,
+                language=language,
+                success=False,
             )
 
     def execute_command(
-        self, session_id: str, command: str, timeout: int,
+        self,
+        session_id: str,
+        command: str,
+        timeout: int,
     ) -> ExecutionResult:
         """Execute a shell command in the Docker container."""
         return self.execute_code(session_id, command, "bash", timeout)
 
     def upload_file(
-        self, session_id: str, local_path: str, remote_path: str,
+        self,
+        session_id: str,
+        local_path: str,
+        remote_path: str,
     ) -> bool:
         """Copy a file into the Docker container."""
         info = self._containers.get(session_id)
@@ -313,7 +359,8 @@ class _DockerBackend:
         try:
             proc = subprocess.run(
                 ["docker", "cp", local_path, f"{container_name}:{remote_path}"],
-                capture_output=True, timeout=30,
+                capture_output=True,
+                timeout=30,
             )
             return proc.returncode == 0
         except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
@@ -330,7 +377,8 @@ class _DockerBackend:
         try:
             proc = subprocess.run(
                 ["docker", "cp", f"{container_name}:{remote_path}", tmp_path],
-                capture_output=True, timeout=30,
+                capture_output=True,
+                timeout=30,
             )
             if proc.returncode == 0:
                 return Path(tmp_path).read_bytes()
@@ -352,7 +400,8 @@ class _DockerBackend:
         try:
             subprocess.run(
                 ["docker", "rm", "-f", container_name],
-                capture_output=True, timeout=15,
+                capture_output=True,
+                timeout=15,
             )
             return True
         except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
@@ -367,7 +416,9 @@ class _DockerBackend:
         try:
             proc = subprocess.run(
                 ["docker", "version", "--format", "{{.Server.Version}}"],
-                capture_output=True, text=True, timeout=5,
+                capture_output=True,
+                text=True,
+                timeout=5,
             )
             if proc.returncode == 0:
                 return {
@@ -412,13 +463,19 @@ class _OpenSandboxBackend:
         return self.is_available_at(self.base_url)
 
     def _api_call(
-        self, method: str, path: str, body: Optional[Dict] = None, timeout: Optional[int] = None,
+        self,
+        method: str,
+        path: str,
+        body: Optional[Dict] = None,
+        timeout: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Make an HTTP API call to the OpenSandbox server."""
         url = f"{self.base_url}{path}"
         data = json.dumps(body).encode("utf-8") if body else None
         req = urllib.request.Request(
-            url, data=data, method=method,
+            url,
+            data=data,
+            method=method,
             headers={"Content-Type": "application/json"} if data else {},
         )
         try:
@@ -438,15 +495,23 @@ class _OpenSandboxBackend:
             return {"error": str(exc)}
 
     def create_session(
-        self, image: str, memory_limit: str, network: bool, timeout: int,
+        self,
+        image: str,
+        memory_limit: str,
+        network: bool,
+        timeout: int,
     ) -> SandboxSession:
         """Create a sandbox session via OpenSandbox API."""
-        resp = self._api_call("POST", "/sandboxes", {
-            "image": image,
-            "memory_limit": memory_limit,
-            "network": network,
-            "timeout": timeout,
-        })
+        resp = self._api_call(
+            "POST",
+            "/sandboxes",
+            {
+                "image": image,
+                "memory_limit": memory_limit,
+                "network": network,
+                "timeout": timeout,
+            },
+        )
         if "error" in resp:
             raise RuntimeError(f"OpenSandbox create failed: {resp['error']}")
 
@@ -466,20 +531,33 @@ class _OpenSandboxBackend:
         return session
 
     def execute_code(
-        self, session_id: str, code: str, language: str, timeout: int,
+        self,
+        session_id: str,
+        code: str,
+        language: str,
+        timeout: int,
     ) -> ExecutionResult:
         """Execute code via OpenSandbox API."""
         start = time.time()
-        resp = self._api_call("POST", f"/sandboxes/{session_id}/executions", {
-            "code": code,
-            "language": language,
-        }, timeout=timeout)
+        resp = self._api_call(
+            "POST",
+            f"/sandboxes/{session_id}/executions",
+            {
+                "code": code,
+                "language": language,
+            },
+            timeout=timeout,
+        )
         duration_ms = int((time.time() - start) * 1000)
 
         if "error" in resp:
             return ExecutionResult(
-                stdout="", stderr=resp["error"],
-                exit_code=1, duration_ms=duration_ms, language=language, success=False,
+                stdout="",
+                stderr=resp["error"],
+                exit_code=1,
+                duration_ms=duration_ms,
+                language=language,
+                success=False,
             )
 
         return ExecutionResult(
@@ -492,13 +570,19 @@ class _OpenSandboxBackend:
         )
 
     def execute_command(
-        self, session_id: str, command: str, timeout: int,
+        self,
+        session_id: str,
+        command: str,
+        timeout: int,
     ) -> ExecutionResult:
         """Execute a shell command via OpenSandbox API."""
         return self.execute_code(session_id, command, "bash", timeout)
 
     def upload_file(
-        self, session_id: str, local_path: str, remote_path: str,
+        self,
+        session_id: str,
+        local_path: str,
+        remote_path: str,
     ) -> bool:
         """Upload a file to the sandbox via API.
 
@@ -508,11 +592,16 @@ class _OpenSandboxBackend:
         try:
             file_bytes = Path(local_path).read_bytes()
             import base64
+
             encoded = base64.b64encode(file_bytes).decode("ascii")
-            resp = self._api_call("POST", f"/sandboxes/{session_id}/files", {
-                "path": remote_path,
-                "content_base64": encoded,
-            })
+            resp = self._api_call(
+                "POST",
+                f"/sandboxes/{session_id}/files",
+                {
+                    "path": remote_path,
+                    "content_base64": encoded,
+                },
+            )
             return "error" not in resp
         except Exception:
             return False
@@ -526,6 +615,7 @@ class _OpenSandboxBackend:
             content = resp.get("content_base64", "")
             if content:
                 import base64
+
                 return base64.b64decode(content)
             return resp.get("content", "").encode("utf-8") if resp.get("content") else None
         except Exception:
@@ -572,7 +662,11 @@ class _SubprocessBackend:
         return True
 
     def create_session(
-        self, image: str, memory_limit: str, network: bool, timeout: int,
+        self,
+        image: str,
+        memory_limit: str,
+        network: bool,
+        timeout: int,
     ) -> SandboxSession:
         """Create a subprocess session with a dedicated temp directory."""
         session_id = f"sb-proc-{uuid.uuid4().hex[:12]}"
@@ -593,7 +687,11 @@ class _SubprocessBackend:
         return session
 
     def execute_code(
-        self, session_id: str, code: str, language: str, timeout: int,
+        self,
+        session_id: str,
+        code: str,
+        language: str,
+        timeout: int,
     ) -> ExecutionResult:
         """Execute code in a subprocess with timeout enforcement.
 
@@ -603,15 +701,22 @@ class _SubprocessBackend:
         info = self._sessions.get(session_id)
         if not info:
             return ExecutionResult(
-                stdout="", stderr=f"Session {session_id} not found",
-                exit_code=1, duration_ms=0, language=language, success=False,
+                stdout="",
+                stderr=f"Session {session_id} not found",
+                exit_code=1,
+                duration_ms=0,
+                language=language,
+                success=False,
             )
 
         if language not in ("python", "python3"):
             return ExecutionResult(
                 stdout="",
                 stderr=f"Subprocess backend supports Python only, got: {language}",
-                exit_code=1, duration_ms=0, language=language, success=False,
+                exit_code=1,
+                duration_ms=0,
+                language=language,
+                success=False,
             )
 
         tmp_dir = info["tmp_dir"]
@@ -622,7 +727,9 @@ class _SubprocessBackend:
         try:
             proc = subprocess.run(
                 [sys.executable, str(code_file)],
-                capture_output=True, text=True, timeout=timeout,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
                 cwd=tmp_dir,
             )
             duration_ms = int((time.time() - start) * 1000)
@@ -637,19 +744,30 @@ class _SubprocessBackend:
         except subprocess.TimeoutExpired:
             duration_ms = int((time.time() - start) * 1000)
             return ExecutionResult(
-                stdout="", stderr=f"Execution timed out ({timeout}s)",
-                exit_code=124, duration_ms=duration_ms, language=language, success=False,
+                stdout="",
+                stderr=f"Execution timed out ({timeout}s)",
+                exit_code=124,
+                duration_ms=duration_ms,
+                language=language,
+                success=False,
             )
 
     def execute_command(
-        self, session_id: str, command: str, timeout: int,
+        self,
+        session_id: str,
+        command: str,
+        timeout: int,
     ) -> ExecutionResult:
         """Execute a shell command in the subprocess session."""
         info = self._sessions.get(session_id)
         if not info:
             return ExecutionResult(
-                stdout="", stderr=f"Session {session_id} not found",
-                exit_code=1, duration_ms=0, language="bash", success=False,
+                stdout="",
+                stderr=f"Session {session_id} not found",
+                exit_code=1,
+                duration_ms=0,
+                language="bash",
+                success=False,
             )
 
         tmp_dir = info["tmp_dir"]
@@ -657,8 +775,11 @@ class _SubprocessBackend:
         try:
             cmd_args = command if isinstance(command, list) else ["bash", "-c", command]
             proc = subprocess.run(
-                cmd_args, shell=False,
-                capture_output=True, text=True, timeout=timeout,
+                cmd_args,
+                shell=False,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
                 cwd=tmp_dir,
             )
             duration_ms = int((time.time() - start) * 1000)
@@ -673,12 +794,19 @@ class _SubprocessBackend:
         except subprocess.TimeoutExpired:
             duration_ms = int((time.time() - start) * 1000)
             return ExecutionResult(
-                stdout="", stderr=f"Command timed out ({timeout}s)",
-                exit_code=124, duration_ms=duration_ms, language="bash", success=False,
+                stdout="",
+                stderr=f"Command timed out ({timeout}s)",
+                exit_code=124,
+                duration_ms=duration_ms,
+                language="bash",
+                success=False,
             )
 
     def upload_file(
-        self, session_id: str, local_path: str, remote_path: str,
+        self,
+        session_id: str,
+        local_path: str,
+        remote_path: str,
     ) -> bool:
         """Copy a file into the session's temp directory."""
         info = self._sessions.get(session_id)
@@ -734,6 +862,7 @@ class _SubprocessBackend:
 # ---------------------------------------------------------------------------
 # Unified adapter
 # ---------------------------------------------------------------------------
+
 
 class SandboxAdapter:
     """Unified sandbox execution adapter supporting multiple backends.
@@ -939,52 +1068,62 @@ class SandboxAdapter:
             start = time.time()
             session = self.create_session()
             session_id = session.session_id
-            results["steps"].append({
-                "step": "create_session",
-                "success": True,
-                "session_id": session_id,
-                "duration_ms": int((time.time() - start) * 1000),
-            })
+            results["steps"].append(
+                {
+                    "step": "create_session",
+                    "success": True,
+                    "session_id": session_id,
+                    "duration_ms": int((time.time() - start) * 1000),
+                }
+            )
 
             # Step 2: Execute hello world
             start = time.time()
             exec_result = self.execute_code(session_id, "print('hello from sandbox')")
-            results["steps"].append({
-                "step": "execute_code",
-                "success": exec_result.success,
-                "stdout": exec_result.stdout.strip(),
-                "exit_code": exec_result.exit_code,
-                "duration_ms": exec_result.duration_ms,
-            })
+            results["steps"].append(
+                {
+                    "step": "execute_code",
+                    "success": exec_result.success,
+                    "stdout": exec_result.stdout.strip(),
+                    "exit_code": exec_result.exit_code,
+                    "duration_ms": exec_result.duration_ms,
+                }
+            )
 
             # Step 3: Execute arithmetic check
             start = time.time()
             math_result = self.execute_code(session_id, "import json; print(json.dumps({'result': 6 * 7}))")
-            results["steps"].append({
-                "step": "execute_arithmetic",
-                "success": math_result.success and "42" in math_result.stdout,
-                "stdout": math_result.stdout.strip(),
-                "duration_ms": math_result.duration_ms,
-            })
+            results["steps"].append(
+                {
+                    "step": "execute_arithmetic",
+                    "success": math_result.success and "42" in math_result.stdout,
+                    "stdout": math_result.stdout.strip(),
+                    "duration_ms": math_result.duration_ms,
+                }
+            )
 
             # Step 4: Destroy session
             start = time.time()
             destroyed = self.destroy_session(session_id)
-            results["steps"].append({
-                "step": "destroy_session",
-                "success": destroyed,
-                "duration_ms": int((time.time() - start) * 1000),
-            })
+            results["steps"].append(
+                {
+                    "step": "destroy_session",
+                    "success": destroyed,
+                    "duration_ms": int((time.time() - start) * 1000),
+                }
+            )
             session_id = None  # Already destroyed
 
             results["success"] = all(s["success"] for s in results["steps"])
 
         except Exception as exc:
-            results["steps"].append({
-                "step": "error",
-                "success": False,
-                "error": str(exc)[:500],
-            })
+            results["steps"].append(
+                {
+                    "step": "error",
+                    "success": False,
+                    "error": str(exc)[:500],
+                }
+            )
         finally:
             # Cleanup on failure
             if session_id:
@@ -1000,6 +1139,7 @@ class SandboxAdapter:
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def _cli() -> None:
     """Command-line interface for sandbox adapter."""
     parser = argparse.ArgumentParser(
@@ -1011,7 +1151,9 @@ def _cli() -> None:
     parser.add_argument("--code", type=str, default="", help="Code to execute (with --execute)")
     parser.add_argument("--language", type=str, default="python", help="Language (default: python)")
     parser.add_argument(
-        "--backend", type=str, choices=["docker", "opensandbox", "subprocess"],
+        "--backend",
+        type=str,
+        choices=["docker", "opensandbox", "subprocess"],
         help="Force a specific backend (default: auto-detect)",
     )
     parser.add_argument("--json", action="store_true", help="JSON output")

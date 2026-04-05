@@ -37,12 +37,14 @@ from tools.db.storage import get_connection  # noqa: E402
 # Optional imports -- graceful degradation
 try:
     from tools.knowledge_graph.graph_rag import query_graph_rag
+
     HAS_GRAPH_RAG = True
 except ImportError:
     HAS_GRAPH_RAG = False
 
 try:
     from tools.rag.retriever import retrieve as rag_retrieve
+
     HAS_RAG = True
 except ImportError:
     HAS_RAG = False
@@ -64,8 +66,16 @@ def _audit(conn, event_type, action, details, opportunity_id=None):
     conn.execute(
         "INSERT INTO audit_trail (id, timestamp, event_type, actor, action, details, project_id, session_id) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (_gen_id("aud"), _now(), event_type, "capability_enricher", action,
-         json.dumps(details) if isinstance(details, dict) else str(details), opportunity_id, None),
+        (
+            _gen_id("aud"),
+            _now(),
+            event_type,
+            "capability_enricher",
+            action,
+            json.dumps(details) if isinstance(details, dict) else str(details),
+            opportunity_id,
+            None,
+        ),
     )
 
 
@@ -76,8 +86,23 @@ def _content_hash(text):
 def _select_profile(requirement_text):
     """Select GraphRAG profile based on requirement content."""
     text_lower = requirement_text.lower()
-    compliance_kw = ["fedramp", "cmmc", "nist", "stig", "ato", "rmf", "fips", "fisma", "il4", "il5",
-                     "800-53", "800-171", "security control", "compliance", "authorization"]
+    compliance_kw = [
+        "fedramp",
+        "cmmc",
+        "nist",
+        "stig",
+        "ato",
+        "rmf",
+        "fips",
+        "fisma",
+        "il4",
+        "il5",
+        "800-53",
+        "800-171",
+        "security control",
+        "compliance",
+        "authorization",
+    ]
     exploratory_kw = ["competitor", "alternative", "market", "vendor", "incumbent", "landscape"]
 
     if any(kw in text_lower for kw in compliance_kw):
@@ -90,6 +115,7 @@ def _select_profile(requirement_text):
 # ---------------------------------------------------------------------------
 # Source retrievers
 # ---------------------------------------------------------------------------
+
 
 def _retrieve_knowledge_base(query, limit=3):
     """Search proposal knowledge base by keyword."""
@@ -106,13 +132,15 @@ def _retrieve_knowledge_base(query, limit=3):
 
     results = []
     for r in rows:
-        results.append({
-            "source": "knowledge_base",
-            "id": r["id"] if isinstance(r, dict) else r[0],
-            "title": r["title"] if isinstance(r, dict) else r[1],
-            "content": (r["content"] if isinstance(r, dict) else r[2])[:500],
-            "relevance": 0.7,
-        })
+        results.append(
+            {
+                "source": "knowledge_base",
+                "id": r["id"] if isinstance(r, dict) else r[0],
+                "title": r["title"] if isinstance(r, dict) else r[1],
+                "content": (r["content"] if isinstance(r, dict) else r[2])[:500],
+                "relevance": 0.7,
+            }
+        )
     return results
 
 
@@ -131,13 +159,15 @@ def _retrieve_pulse(query, limit=3):
 
     results = []
     for r in rows:
-        results.append({
-            "source": "pulse",
-            "id": r["id"] if isinstance(r, dict) else r[0],
-            "title": r["title"] if isinstance(r, dict) else r[1],
-            "content": (r["body_markdown"] if isinstance(r, dict) else r[2] or "")[:500],
-            "relevance": 0.6,
-        })
+        results.append(
+            {
+                "source": "pulse",
+                "id": r["id"] if isinstance(r, dict) else r[0],
+                "title": r["title"] if isinstance(r, dict) else r[1],
+                "content": (r["body_markdown"] if isinstance(r, dict) else r[2] or "")[:500],
+                "relevance": 0.6,
+            }
+        )
     return results
 
 
@@ -146,7 +176,16 @@ def _retrieve_rag(query, limit=3):
     if HAS_RAG:
         try:
             result = rag_retrieve(query=query, top_k=limit)
-            return [{"source": "rag", "id": c.get("chunk_id", ""), "title": "", "content": c.get("text", "")[:500], "relevance": c.get("score", 0.5)} for c in result.get("chunks", [])]
+            return [
+                {
+                    "source": "rag",
+                    "id": c.get("chunk_id", ""),
+                    "title": "",
+                    "content": c.get("text", "")[:500],
+                    "relevance": c.get("score", 0.5),
+                }
+                for c in result.get("chunks", [])
+            ]
         except Exception:
             pass
 
@@ -154,17 +193,23 @@ def _retrieve_rag(query, limit=3):
     conn = _get_db()
     try:
         rows = conn.execute(
-            "SELECT chunk_id, content, source_table FROM rag_chunks "
-            "WHERE content LIKE ? LIMIT ?",
+            "SELECT chunk_id, content, source_table FROM rag_chunks WHERE content LIKE ? LIMIT ?",
             (f"%{query}%", limit),
         ).fetchall()
     except Exception:
         rows = []
     conn.close()
 
-    return [{"source": "rag", "id": r[0] if isinstance(r, (tuple, list)) else r.get("chunk_id", ""),
-             "title": "", "content": (r[1] if isinstance(r, (tuple, list)) else r.get("content", ""))[:500],
-             "relevance": 0.5} for r in rows]
+    return [
+        {
+            "source": "rag",
+            "id": r[0] if isinstance(r, (tuple, list)) else r.get("chunk_id", ""),
+            "title": "",
+            "content": (r[1] if isinstance(r, (tuple, list)) else r.get("content", ""))[:500],
+            "relevance": 0.5,
+        }
+        for r in rows
+    ]
 
 
 def _retrieve_graphrag(query, profile="compliance", limit=3):
@@ -172,9 +217,16 @@ def _retrieve_graphrag(query, profile="compliance", limit=3):
     if HAS_GRAPH_RAG:
         try:
             result = query_graph_rag(query=query, profile=profile, top_k=limit)
-            return [{"source": "graphrag", "id": n.get("entity_id", ""), "title": n.get("label", ""),
-                     "content": n.get("context", "")[:500], "relevance": n.get("score", 0.8)}
-                    for n in result.get("nodes", [])]
+            return [
+                {
+                    "source": "graphrag",
+                    "id": n.get("entity_id", ""),
+                    "title": n.get("label", ""),
+                    "content": n.get("context", "")[:500],
+                    "relevance": n.get("score", 0.8),
+                }
+                for n in result.get("nodes", [])
+            ]
         except Exception:
             pass
     return []
@@ -183,6 +235,7 @@ def _retrieve_graphrag(query, profile="compliance", limit=3):
 # ---------------------------------------------------------------------------
 # Core functions
 # ---------------------------------------------------------------------------
+
 
 def parallel_retrieve(query, project_id=None, sources=None):
     """Query multiple sources simultaneously via ThreadPoolExecutor."""
@@ -295,20 +348,28 @@ def enrich_capability_mapping(opportunity_id, requirements):
 
         context = compress_context(results)
 
-        enriched.append({
-            "requirement": req_text[:200],
-            "graphrag_score": round(graphrag_score, 3),
-            "keyword_score": round(keyword_score, 3),
-            "hybrid_score": round(hybrid_score, 3),
-            "profile": retrieval.get("profile", "compliance"),
-            "sources_found": len(results),
-            "context_chars": context["char_count"],
-        })
+        enriched.append(
+            {
+                "requirement": req_text[:200],
+                "graphrag_score": round(graphrag_score, 3),
+                "keyword_score": round(keyword_score, 3),
+                "hybrid_score": round(hybrid_score, 3),
+                "profile": retrieval.get("profile", "compliance"),
+                "sources_found": len(results),
+                "context_chars": context["char_count"],
+            }
+        )
 
     avg_score = sum(e["hybrid_score"] for e in enriched) / len(enriched) if enriched else 0
 
     conn = _get_db()
-    _audit(conn, "capability.enrich", f"Enriched {len(enriched)} requirements", {"avg_score": round(avg_score, 3)}, opportunity_id)
+    _audit(
+        conn,
+        "capability.enrich",
+        f"Enriched {len(enriched)} requirements",
+        {"avg_score": round(avg_score, 3)},
+        opportunity_id,
+    )
     conn.commit()
     conn.close()
 
@@ -343,6 +404,7 @@ def enrich_draft_section(opportunity_id, section_topic, section_text=None):
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+
 
 def main():
     parser = argparse.ArgumentParser(description="Capability Enricher — GraphRAG-enhanced capability mapping")

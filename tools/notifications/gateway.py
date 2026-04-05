@@ -39,6 +39,7 @@ def _load_config() -> Dict[str, Any]:
         return {}
     try:
         import yaml
+
         with open(config_path, encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
     except Exception:
@@ -59,21 +60,25 @@ def _register_adapters():
         return
     try:
         from tools.notifications.adapters.slack import SlackAdapter
+
         ADAPTER_CLASSES["slack"] = SlackAdapter
     except ImportError:
         pass
     try:
         from tools.notifications.adapters.teams import TeamsAdapter
+
         ADAPTER_CLASSES["teams"] = TeamsAdapter
     except ImportError:
         pass
     try:
         from tools.notifications.adapters.email_adapter import EmailAdapter
+
         ADAPTER_CLASSES["email"] = EmailAdapter
     except ImportError:
         pass
     try:
         from tools.notifications.adapters.webhook import WebhookAdapter
+
         ADAPTER_CLASSES["webhook"] = WebhookAdapter
     except ImportError:
         pass
@@ -94,9 +99,7 @@ def _check_rate_limit(adapter_name: str, config: Dict) -> bool:
     cutoff = now - 3600
 
     # Clean old entries
-    _rate_counters[adapter_name] = [
-        ts for ts in _rate_counters[adapter_name] if ts > cutoff
-    ]
+    _rate_counters[adapter_name] = [ts for ts in _rate_counters[adapter_name] if ts > cutoff]
 
     if len(_rate_counters[adapter_name]) >= max_per_hour:
         return False
@@ -109,10 +112,12 @@ def _check_rate_limit(adapter_name: str, config: Dict) -> bool:
 # PII sanitization
 # ---------------------------------------------------------------------------
 
+
 def _sanitize_body(body: str) -> str:
     """Sanitize notification body before external delivery using redaction detector."""
     try:
         from tools.redaction.detector import RedactionDetector
+
         detector = RedactionDetector()
         detections = detector.detect(body)
         if detections:
@@ -130,6 +135,7 @@ def _sanitize_body(body: str) -> str:
 # ---------------------------------------------------------------------------
 # Gateway
 # ---------------------------------------------------------------------------
+
 
 class NotificationGateway:
     """Central notification dispatcher."""
@@ -217,31 +223,43 @@ class NotificationGateway:
         """Check health of all configured adapters."""
         return {
             "enabled": self.enabled,
-            "adapters": {
-                name: adapter.health_check()
-                for name, adapter in self.adapters.items()
-            },
+            "adapters": {name: adapter.health_check() for name, adapter in self.adapters.items()},
             "routing_rules": len(self.routing),
             "checked_at": _utcnow_iso(),
         }
 
     def _audit_log(
-        self, event_type: str, adapter: str, severity: str,
-        title: str, delivered: bool, error: str = "",
+        self,
+        event_type: str,
+        adapter: str,
+        severity: str,
+        title: str,
+        delivered: bool,
+        error: str = "",
     ):
         """Log delivery attempt to notification_log (append-only)."""
         try:
             conn = get_connection()
             import hashlib
+
             log_id = f"nlog-{hashlib.sha256(f'{_utcnow_iso()}{adapter}{event_type}'.encode()).hexdigest()[:12]}"
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT INTO notification_log
                     (id, event_type, adapter, severity, title, delivered, error, created_at)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-            """, (
-                log_id, event_type, adapter, severity,
-                title[:200], delivered, error[:500], _utcnow_iso(),
-            ))
+            """,
+                (
+                    log_id,
+                    event_type,
+                    adapter,
+                    severity,
+                    title[:200],
+                    delivered,
+                    error[:500],
+                    _utcnow_iso(),
+                ),
+            )
             conn.commit()
             conn.close()
         except Exception:
@@ -251,6 +269,7 @@ class NotificationGateway:
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+
 
 def main():
     parser = argparse.ArgumentParser(description="ICDEV™ Notification Gateway")

@@ -29,6 +29,7 @@ def check_local_llm() -> Dict[str, Any]:
     """Check all local LLM servers (Ollama, vLLM, llama.cpp, LM Studio, etc.)."""
     try:
         from tools.airgap.detector import probe_local_llm_servers
+
         servers = probe_local_llm_servers()
         reachable = [s for s in servers if s["reachable"]]
 
@@ -45,6 +46,7 @@ def check_local_llm() -> Dict[str, Any]:
             if s["name"] == "ollama":
                 try:
                     import urllib.request
+
                     base = s["url"].rstrip("/")
                     resp = urllib.request.urlopen(f"{base}/api/tags", timeout=5)  # nosec B310 localhost only
                     data = json.loads(resp.read())
@@ -70,10 +72,9 @@ def check_database() -> Dict[str, Any]:
 
     try:
         import sqlite3
+
         with sqlite3.connect(str(db_path)) as conn:
-            tables = conn.execute(
-                "SELECT count(*) FROM sqlite_master WHERE type='table'"
-            ).fetchone()[0]
+            tables = conn.execute("SELECT count(*) FROM sqlite_master WHERE type='table'").fetchone()[0]
         return {"status": "pass", "table_count": tables}
     except Exception as exc:
         return {"status": "fail", "error": str(exc)}
@@ -108,6 +109,7 @@ def check_llm_routing() -> Dict[str, Any]:
     try:
         from tools.llm.router import LLMRouter
         from tools.airgap.config_patcher import _is_provider_local
+
         router = LLMRouter()
 
         # Determine which providers are local by URL analysis
@@ -118,8 +120,10 @@ def check_llm_routing() -> Dict[str, Any]:
 
         # Test a few critical functions
         test_functions = [
-            "code_generation", "compliance_export",
-            "narrative_generation", "default",
+            "code_generation",
+            "compliance_export",
+            "narrative_generation",
+            "default",
         ]
         results = {}
         for func in test_functions:
@@ -158,6 +162,7 @@ def check_hooks() -> Dict[str, Any]:
     """Check that hook compatibility layer is functional."""
     try:
         from tools.airgap.hook_compat import get_session_id, get_project_dir
+
         sid = get_session_id()
         pdir = get_project_dir()
         return {
@@ -177,6 +182,7 @@ def check_pdf_extraction() -> Dict[str, Any]:
     # pypdf (text-only, always works)
     try:
         import importlib.util
+
         if importlib.util.find_spec("pypdf"):
             providers_available.append("pypdf")
     except Exception:
@@ -185,16 +191,18 @@ def check_pdf_extraction() -> Dict[str, Any]:
     # Vision OCR via any local LLM with multimodal support (LLaVA, Gemma3, etc.)
     try:
         from tools.airgap.detector import probe_local_llm_servers
+
         for server in probe_local_llm_servers():
             if server["reachable"] and server["name"] == "ollama":
                 import urllib.request
+
                 base = server["url"].rstrip("/")
                 resp = urllib.request.urlopen(f"{base}/api/tags", timeout=3)  # nosec B310 localhost only
                 data = json.loads(resp.read())
                 models = [m["name"] for m in data.get("models", [])]
-                vision_models = [m for m in models if any(
-                    v in m.lower() for v in ("llava", "gemma3", "bakllava", "moondream")
-                )]
+                vision_models = [
+                    m for m in models if any(v in m.lower() for v in ("llava", "gemma3", "bakllava", "moondream"))
+                ]
                 if vision_models:
                     providers_available.append(f"vision:{','.join(vision_models[:3])}")
                 break
@@ -205,7 +213,8 @@ def check_pdf_extraction() -> Dict[str, Any]:
         "status": "pass" if providers_available else "warn",
         "providers": providers_available,
         "note": "pypdf handles text PDFs; llava handles scanned PDFs"
-        if providers_available else "No PDF providers — install pypdf",
+        if providers_available
+        else "No PDF providers — install pypdf",
     }
 
 
@@ -219,6 +228,7 @@ def check_git() -> Dict[str, Any]:
 def check_cloud_unreachable() -> Dict[str, Any]:
     """Verify cloud APIs are NOT reachable (confirms air-gap)."""
     from tools.airgap.detector import detect_environment
+
     env = detect_environment(use_cache=False)
 
     if env["anthropic_api"] or env["bedrock"]:

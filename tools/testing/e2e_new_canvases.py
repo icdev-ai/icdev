@@ -20,7 +20,8 @@ from selenium.webdriver.chrome.options import Options
 BASE_URL = os.environ.get("DASHBOARD_URL", "http://localhost:5050")
 SCREENSHOT_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-    "playwright", "screenshots",
+    "playwright",
+    "screenshots",
 )
 os.makedirs(SCREENSHOT_DIR, exist_ok=True)
 
@@ -84,9 +85,9 @@ def main():
                 # Check for JS errors
                 logs = driver.get_log("browser")
                 severe = [
-                    entry for entry in logs
-                    if l.get("level") == "SEVERE"
-                    and "favicon" not in l.get("message", "").lower()
+                    entry
+                    for entry in logs
+                    if l.get("level") == "SEVERE" and "favicon" not in l.get("message", "").lower()  # noqa: F821
                 ]
 
                 status = "PASS" if is_ok and not severe else "FAIL"
@@ -106,21 +107,25 @@ def main():
                 if severe:
                     for s in severe[:3]:
                         print(f"         JS ERROR: {s['message'][:100]}")
-                results.append({
-                    "test": f"index_{canvas['prefix']}",
-                    "status": status,
-                    "title": title,
-                    "screenshot": screenshot_path,
-                })
+                results.append(
+                    {
+                        "test": f"index_{canvas['prefix']}",
+                        "status": status,
+                        "title": title,
+                        "screenshot": screenshot_path,
+                    }
+                )
 
             except Exception as exc:
                 failed += 1
                 print(f"  [FAIL] {canvas['name']} index — {exc}")
-                results.append({
-                    "test": f"index_{canvas['prefix']}",
-                    "status": "FAIL",
-                    "error": str(exc),
-                })
+                results.append(
+                    {
+                        "test": f"index_{canvas['prefix']}",
+                        "status": "FAIL",
+                        "error": str(exc),
+                    }
+                )
 
         # Summary
         print(f"\n{'=' * 60}")

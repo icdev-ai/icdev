@@ -53,7 +53,7 @@ def _collect_reflex_activity(since: str) -> List[Dict]:
         "FROM genesis_audit "
         "WHERE event_type IN ('genesis.reflex.completed', 'genesis.reflex.failed') "
         "AND created_at > ? ORDER BY created_at",
-        (since,)
+        (since,),
     )
 
 
@@ -63,7 +63,7 @@ def _collect_promotions(since: str) -> List[Dict]:
         "SELECT id, artifact_type, genesis_reflex, confidence, "
         "promotion_status, created_at, promoted_at "
         "FROM genesis_gkp WHERE created_at > ? ORDER BY created_at",
-        (since,)
+        (since,),
     )
 
 
@@ -158,20 +158,24 @@ def generate_report(lookback_days: int = 7) -> Dict[str, Any]:
             f"{metric_str} |"
         )
 
-    lines.extend([
-        "",
-        "---",
-        "",
-        "## Knowledge Promotions",
-        "",
-    ])
+    lines.extend(
+        [
+            "",
+            "---",
+            "",
+            "## Knowledge Promotions",
+            "",
+        ]
+    )
 
     if promoted:
         lines.append(f"### Promoted ({len(promoted)})")
         lines.append("")
         for p in promoted:
-            lines.append(f"- **{p['id']}** ({p['artifact_type']}) from `{p['genesis_reflex']}` "
-                         f"— confidence {p['confidence']:.2f}")
+            lines.append(
+                f"- **{p['id']}** ({p['artifact_type']}) from `{p['genesis_reflex']}` "
+                f"— confidence {p['confidence']:.2f}"
+            )
         lines.append("")
 
     if rejected:
@@ -185,40 +189,50 @@ def generate_report(lookback_days: int = 7) -> Dict[str, Any]:
         lines.append(f"### Awaiting Human Review ({len(pending)})")
         lines.append("")
         for p in pending:
-            lines.append(f"- **{p['id']}** ({p['artifact_type']}) from `{p['genesis_reflex']}` "
-                         f"— confidence {p['confidence']:.2f}")
+            lines.append(
+                f"- **{p['id']}** ({p['artifact_type']}) from `{p['genesis_reflex']}` "
+                f"— confidence {p['confidence']:.2f}"
+            )
         lines.append("")
 
     # Circuit breakers
     if breakers:
-        lines.extend([
-            "---",
-            "",
-            "## Circuit Breakers (ATTENTION REQUIRED)",
-            "",
-        ])
+        lines.extend(
+            [
+                "---",
+                "",
+                "## Circuit Breakers (ATTENTION REQUIRED)",
+                "",
+            ]
+        )
         for b in breakers:
-            lines.append(f"- **{b['reflex_name']}** — OPEN since {b.get('circuit_breaker_tripped_at', 'unknown')} "
-                         f"({b.get('consecutive_failures', 0)} consecutive failures)")
+            lines.append(
+                f"- **{b['reflex_name']}** — OPEN since {b.get('circuit_breaker_tripped_at', 'unknown')} "
+                f"({b.get('consecutive_failures', 0)} consecutive failures)"
+            )
         lines.append("")
         lines.append("Run `python tools/genesis/daemon.py --reset <reflex>` to re-enable.")
         lines.append("")
 
     # Recommendations
-    lines.extend([
-        "---",
-        "",
-        "## Recommendations",
-        "",
-    ])
+    lines.extend(
+        [
+            "---",
+            "",
+            "## Recommendations",
+            "",
+        ]
+    )
 
     if pending:
-        lines.append(f"1. Review {len(pending)} pending GKPs: "
-                     f"`python tools/genesis/promoter.py --list --status-filter pending_review --json`")
+        lines.append(
+            f"1. Review {len(pending)} pending GKPs: "
+            f"`python tools/genesis/promoter.py --list --status-filter pending_review --json`"
+        )
     if breakers:
         lines.append(f"2. Investigate {len(breakers)} tripped circuit breaker(s)")
     if failures > total_runs * 0.3 and total_runs > 0:
-        lines.append(f"3. High failure rate ({100-success_rate:.0f}%) — review reflex configurations")
+        lines.append(f"3. High failure rate ({100 - success_rate:.0f}%) — review reflex configurations")
     if not pending and not breakers and success_rate > 90:
         lines.append("1. All systems nominal — no action required")
 
@@ -235,23 +249,28 @@ def generate_report(lookback_days: int = 7) -> Dict[str, Any]:
     # Audit log
     try:
         conn = get_connection()
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO genesis_audit (id, event_type, details, created_at)
             VALUES (?, ?, ?, ?)
-        """, (
-            f"aud-{uuid.uuid4().hex[:10]}",
-            "genesis.report.generated",
-            json.dumps({
-                "period_start": since[:10],
-                "period_end": date_str,
-                "total_runs": total_runs,
-                "success_rate": round(success_rate, 1),
-                "gkps_promoted": len(promoted),
-                "gkps_pending": len(pending),
-                "circuit_breakers_open": len(breakers),
-            }),
-            _utcnow_iso(),
-        ))
+        """,
+            (
+                f"aud-{uuid.uuid4().hex[:10]}",
+                "genesis.report.generated",
+                json.dumps(
+                    {
+                        "period_start": since[:10],
+                        "period_end": date_str,
+                        "total_runs": total_runs,
+                        "success_rate": round(success_rate, 1),
+                        "gkps_promoted": len(promoted),
+                        "gkps_pending": len(pending),
+                        "circuit_breakers_open": len(breakers),
+                    }
+                ),
+                _utcnow_iso(),
+            ),
+        )
         conn.commit()
         conn.close()
     except Exception:
@@ -276,13 +295,13 @@ def list_reports() -> List[Dict]:
     """List all generated reports."""
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     files = sorted(REPORTS_DIR.glob("genesis-report-*.md"), reverse=True)
-    return [{"file": f.name, "size_bytes": f.stat().st_size,
-             "date": f.stem.replace("genesis-report-", "")} for f in files]
+    return [
+        {"file": f.name, "size_bytes": f.stat().st_size, "date": f.stem.replace("genesis-report-", "")} for f in files
+    ]
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Genesis Weekly Report Generator")
+    parser = argparse.ArgumentParser(description="Genesis Weekly Report Generator")
     parser.add_argument("--generate", action="store_true", help="Generate report")
     parser.add_argument("--lookback", type=int, default=7, help="Days to look back")
     parser.add_argument("--latest", action="store_true", help="Show latest report")

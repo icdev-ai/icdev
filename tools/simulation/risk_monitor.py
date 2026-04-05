@@ -47,9 +47,9 @@ COMPOSITE_WEIGHTS = {
 
 # Thresholds for alert severity
 COMPOSITE_THRESHOLDS = {
-    "green": 0.30,     # ≤ 30% = healthy
-    "yellow": 0.55,    # ≤ 55% = watch
-    "orange": 0.75,    # ≤ 75% = elevated
+    "green": 0.30,  # ≤ 30% = healthy
+    "yellow": 0.55,  # ≤ 55% = watch
+    "orange": 0.75,  # ≤ 75% = elevated
     # > 75% = red / critical
 }
 
@@ -78,18 +78,22 @@ def calculate_composite_risk(project_id, db_path=None):
     alerts = []
 
     # 1. Overdue Tasks — stories past due / total active stories
-    total_active = _q(conn,
-        "SELECT COUNT(*) FROM safe_decomposition "
-        "WHERE project_id = ? AND status IN ('in_progress', 'planned')",
-        (project_id,))
-    overdue = _q(conn,
+    total_active = _q(
+        conn,
+        "SELECT COUNT(*) FROM safe_decomposition WHERE project_id = ? AND status IN ('in_progress', 'planned')",
+        (project_id,),
+    )
+    overdue = _q(
+        conn,
         "SELECT COUNT(*) FROM safe_decomposition "
         "WHERE project_id = ? AND status = 'in_progress' "
         "AND due_date < datetime('now')",
-        (project_id,))
+        (project_id,),
+    )
     overdue_pct = overdue / total_active if total_active > 0 else 0.0
     components["overdue_tasks"] = {
-        "raw": overdue, "total": total_active,
+        "raw": overdue,
+        "total": total_active,
         "normalized": round(min(1.0, overdue_pct), 4),
         "weight": COMPOSITE_WEIGHTS["overdue_tasks"],
     }
@@ -97,24 +101,22 @@ def calculate_composite_risk(project_id, db_path=None):
         alerts.append(f"HIGH: {overdue}/{total_active} tasks overdue ({overdue_pct:.0%})")
 
     # 2. Resource Utilization — active work items / (FTE × capacity)
-    fte_count = _q(conn,
-        "SELECT COUNT(*) FROM project_team_members WHERE project_id = ?",
-        (project_id,))
+    fte_count = _q(conn, "SELECT COUNT(*) FROM project_team_members WHERE project_id = ?", (project_id,))
     if fte_count == 0:
-        story_count = _q(conn,
-            "SELECT COUNT(*) FROM safe_decomposition "
-            "WHERE project_id = ? AND level = 'story'",
-            (project_id,))
+        story_count = _q(
+            conn, "SELECT COUNT(*) FROM safe_decomposition WHERE project_id = ? AND level = 'story'", (project_id,)
+        )
         fte_count = max(1, story_count // 15) if story_count > 0 else 5
     capacity = fte_count * 3  # 3 stories per FTE at a time
-    active_items = _q(conn,
-        "SELECT COUNT(*) FROM safe_decomposition "
-        "WHERE project_id = ? AND status = 'in_progress'",
-        (project_id,))
+    active_items = _q(
+        conn, "SELECT COUNT(*) FROM safe_decomposition WHERE project_id = ? AND status = 'in_progress'", (project_id,)
+    )
     utilization = min(1.0, active_items / capacity if capacity > 0 else 0.0)
     components["resource_utilization"] = {
-        "raw": round(utilization, 4), "fte": fte_count,
-        "active_items": active_items, "capacity": capacity,
+        "raw": round(utilization, 4),
+        "fte": fte_count,
+        "active_items": active_items,
+        "capacity": capacity,
         "normalized": round(utilization, 4),
         "weight": COMPOSITE_WEIGHTS["resource_utilization"],
     }
@@ -122,19 +124,20 @@ def calculate_composite_risk(project_id, db_path=None):
         alerts.append(f"HIGH: Resource utilization at {utilization:.0%} — contention likely")
 
     # 3. Dependency Violations — broken/missing deps / total deps
-    total_deps = _q(conn,
-        "SELECT COUNT(*) FROM sysml_relationships WHERE project_id = ?",
-        (project_id,))
+    total_deps = _q(conn, "SELECT COUNT(*) FROM sysml_relationships WHERE project_id = ?", (project_id,))
     # Violations: orphan references (target doesn't exist in elements)
-    violations = _q(conn,
+    violations = _q(
+        conn,
         "SELECT COUNT(*) FROM sysml_relationships r "
         "WHERE r.project_id = ? AND NOT EXISTS "
         "(SELECT 1 FROM sysml_elements e WHERE e.id = r.target_id "
         "AND e.project_id = r.project_id)",
-        (project_id,))
+        (project_id,),
+    )
     dep_pct = violations / total_deps if total_deps > 0 else 0.0
     components["dependency_violations"] = {
-        "raw": violations, "total": total_deps,
+        "raw": violations,
+        "total": total_deps,
         "normalized": round(min(1.0, dep_pct), 4),
         "weight": COMPOSITE_WEIGHTS["dependency_violations"],
     }
@@ -142,17 +145,17 @@ def calculate_composite_risk(project_id, db_path=None):
         alerts.append(f"WARN: {violations} dependency violations detected")
 
     # 4. Compliance Gaps — unimplemented controls / total controls
-    total_controls = _q(conn,
-        "SELECT COUNT(*) FROM project_controls WHERE project_id = ?",
-        (project_id,))
-    implemented = _q(conn,
-        "SELECT COUNT(*) FROM project_controls "
-        "WHERE project_id = ? AND implementation_status = 'implemented'",
-        (project_id,))
+    total_controls = _q(conn, "SELECT COUNT(*) FROM project_controls WHERE project_id = ?", (project_id,))
+    implemented = _q(
+        conn,
+        "SELECT COUNT(*) FROM project_controls WHERE project_id = ? AND implementation_status = 'implemented'",
+        (project_id,),
+    )
     gap_count = max(0, total_controls - implemented)
     gap_pct = gap_count / total_controls if total_controls > 0 else 0.0
     components["compliance_gaps"] = {
-        "raw": gap_count, "total": total_controls,
+        "raw": gap_count,
+        "total": total_controls,
         "normalized": round(min(1.0, gap_pct), 4),
         "weight": COMPOSITE_WEIGHTS["compliance_gaps"],
     }
@@ -162,10 +165,7 @@ def calculate_composite_risk(project_id, db_path=None):
     conn.close()
 
     # Calculate weighted composite
-    composite = sum(
-        components[k]["normalized"] * components[k]["weight"]
-        for k in COMPOSITE_WEIGHTS
-    )
+    composite = sum(components[k]["normalized"] * components[k]["weight"] for k in COMPOSITE_WEIGHTS)
     composite = round(min(1.0, composite), 4)
 
     # Determine severity
@@ -236,17 +236,14 @@ def calculate_cpars_risk(contract_id, db_path=None):
     alerts = []
 
     # 1. Overdue CDRLs
-    total_cdrls = _q(conn,
-        "SELECT COUNT(*) FROM cpmp_deliverables "
-        "WHERE contract_id = ?",
-        (contract_id,))
-    overdue_cdrls = _q(conn,
-        "SELECT COUNT(*) FROM cpmp_deliverables "
-        "WHERE contract_id = ? AND status = 'overdue'",
-        (contract_id,))
+    total_cdrls = _q(conn, "SELECT COUNT(*) FROM cpmp_deliverables WHERE contract_id = ?", (contract_id,))
+    overdue_cdrls = _q(
+        conn, "SELECT COUNT(*) FROM cpmp_deliverables WHERE contract_id = ? AND status = 'overdue'", (contract_id,)
+    )
     overdue_pct = overdue_cdrls / total_cdrls if total_cdrls > 0 else 0.0
     components["overdue_cdrls"] = {
-        "raw": overdue_cdrls, "total": total_cdrls,
+        "raw": overdue_cdrls,
+        "total": total_cdrls,
         "normalized": round(min(1.0, overdue_pct), 4),
         "weight": CPARS_WEIGHTS["overdue_cdrls"],
     }
@@ -254,18 +251,20 @@ def calculate_cpars_risk(contract_id, db_path=None):
         alerts.append(f"CRITICAL: {overdue_cdrls} CDRLs overdue")
 
     # 2. Rejected Deliverables
-    total_submitted = _q(conn,
+    total_submitted = _q(
+        conn,
         "SELECT COUNT(*) FROM cpmp_deliverables "
         "WHERE contract_id = ? AND status IN "
         "('submitted', 'accepted', 'rejected')",
-        (contract_id,))
-    rejected = _q(conn,
-        "SELECT COUNT(*) FROM cpmp_deliverables "
-        "WHERE contract_id = ? AND status = 'rejected'",
-        (contract_id,))
+        (contract_id,),
+    )
+    rejected = _q(
+        conn, "SELECT COUNT(*) FROM cpmp_deliverables WHERE contract_id = ? AND status = 'rejected'", (contract_id,)
+    )
     rejected_pct = rejected / total_submitted if total_submitted > 0 else 0.0
     components["rejected_deliverables"] = {
-        "raw": rejected, "total": total_submitted,
+        "raw": rejected,
+        "total": total_submitted,
         "normalized": round(min(1.0, rejected_pct), 4),
         "weight": CPARS_WEIGHTS["rejected_deliverables"],
     }
@@ -273,30 +272,32 @@ def calculate_cpars_risk(contract_id, db_path=None):
         alerts.append(f"WARN: {rejected} deliverables rejected")
 
     # 3. Non-Compliant Items
-    total_items = _q(conn,
-        "SELECT COUNT(*) FROM cpmp_compliance_items "
-        "WHERE contract_id = ?",
-        (contract_id,))
-    non_compliant = _q(conn,
-        "SELECT COUNT(*) FROM cpmp_compliance_items "
-        "WHERE contract_id = ? AND status = 'non_compliant'",
-        (contract_id,))
+    total_items = _q(conn, "SELECT COUNT(*) FROM cpmp_compliance_items WHERE contract_id = ?", (contract_id,))
+    non_compliant = _q(
+        conn,
+        "SELECT COUNT(*) FROM cpmp_compliance_items WHERE contract_id = ? AND status = 'non_compliant'",
+        (contract_id,),
+    )
     nc_pct = non_compliant / total_items if total_items > 0 else 0.0
     components["non_compliant_items"] = {
-        "raw": non_compliant, "total": total_items,
+        "raw": non_compliant,
+        "total": total_items,
         "normalized": round(min(1.0, nc_pct), 4),
         "weight": CPARS_WEIGHTS["non_compliant_items"],
     }
 
     # 4. Late Submissions — deliverables submitted after due date
-    late = _q(conn,
+    late = _q(
+        conn,
         "SELECT COUNT(*) FROM cpmp_deliverables "
         "WHERE contract_id = ? AND submitted_at > due_date "
         "AND submitted_at IS NOT NULL AND due_date IS NOT NULL",
-        (contract_id,))
+        (contract_id,),
+    )
     late_pct = late / total_cdrls if total_cdrls > 0 else 0.0
     components["late_submissions"] = {
-        "raw": late, "total": total_cdrls,
+        "raw": late,
+        "total": total_cdrls,
         "normalized": round(min(1.0, late_pct), 4),
         "weight": CPARS_WEIGHTS["late_submissions"],
     }
@@ -306,10 +307,7 @@ def calculate_cpars_risk(contract_id, db_path=None):
     conn.close()
 
     # Calculate weighted CPARS risk
-    cpars_risk = sum(
-        components[k]["normalized"] * components[k]["weight"]
-        for k in CPARS_WEIGHTS
-    )
+    cpars_risk = sum(components[k]["normalized"] * components[k]["weight"] for k in CPARS_WEIGHTS)
     cpars_risk = round(min(1.0, cpars_risk), 4)
 
     # Project rating
@@ -342,6 +340,7 @@ def calculate_cpars_risk(contract_id, db_path=None):
 # Risk History persistence
 # ---------------------------------------------------------------------------
 
+
 def _persist_risk_snapshot(result, risk_type, db_path=None):
     """Save a risk calculation to history for trend tracking."""
     conn = get_connection(db_path)
@@ -373,6 +372,7 @@ def _persist_risk_snapshot(result, risk_type, db_path=None):
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _q(conn, sql, params=()):
     """Safe single-value query, returns 0 on any error."""
     try:
@@ -386,16 +386,14 @@ def _q(conn, sql, params=()):
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
-    parser = argparse.ArgumentParser(
-        description="Live Risk Monitor — composite + CPARS scoring")
+    parser = argparse.ArgumentParser(description="Live Risk Monitor — composite + CPARS scoring")
     parser.add_argument("--project", help="Project ID for composite risk")
     parser.add_argument("--contract", help="Contract ID for CPARS risk")
     parser.add_argument("--json", action="store_true", help="JSON output")
-    parser.add_argument("--gate", action="store_true",
-                        help="Exit 1 if RED/unsatisfactory")
-    parser.add_argument("--persist", action="store_true",
-                        help="Save snapshot to risk_monitor_history")
+    parser.add_argument("--gate", action="store_true", help="Exit 1 if RED/unsatisfactory")
+    parser.add_argument("--persist", action="store_true", help="Save snapshot to risk_monitor_history")
     args = parser.parse_args()
 
     results = []

@@ -73,11 +73,13 @@ class TestPipelineDetection:
 
     def test_detect_new_chunks_empty(self, pipeline_db):
         from tools.finetune.rag_ft_pipeline import _detect_new_chunks
+
         chunks = _detect_new_chunks(pipeline_db, "innovation_signals")
         assert chunks == []
 
     def test_detect_new_chunks_found(self, pipeline_db):
         from tools.finetune.rag_ft_pipeline import _detect_new_chunks
+
         pipeline_db.execute(
             "INSERT INTO rag_chunks (id, content, source_table, tier, created_at) "
             "VALUES ('c1', 'test content', 'innovation_signals', 'hot', '2026-03-20T00:00:00Z')",
@@ -89,6 +91,7 @@ class TestPipelineDetection:
 
     def test_detect_respects_since(self, pipeline_db):
         from tools.finetune.rag_ft_pipeline import _detect_new_chunks
+
         pipeline_db.execute(
             "INSERT INTO rag_chunks (id, content, source_table, tier, created_at) "
             "VALUES ('c1', 'old content', 'signals', 'hot', '2025-01-01T00:00:00Z')",
@@ -103,6 +106,7 @@ class TestAutoApprove:
 
     def test_auto_approve_above_threshold(self, pipeline_db):
         from tools.finetune.rag_ft_pipeline import _auto_approve_pairs
+
         pipeline_db.execute(
             "INSERT INTO ft_dataset_examples (dataset_id, user_input, expected_output, quality_score, approved) "
             "VALUES ('ds1', 'q1', 'a1', 0.9, 0)",
@@ -117,6 +121,7 @@ class TestAutoApprove:
 
     def test_auto_approve_none_above(self, pipeline_db):
         from tools.finetune.rag_ft_pipeline import _auto_approve_pairs
+
         pipeline_db.execute(
             "INSERT INTO ft_dataset_examples (dataset_id, user_input, expected_output, quality_score, approved) "
             "VALUES ('ds1', 'q1', 'a1', 0.3, 0)",
@@ -131,6 +136,7 @@ class TestEnsureDataset:
 
     def test_creates_new_dataset(self, pipeline_db):
         from tools.finetune.rag_ft_pipeline import _ensure_dataset
+
         # Mock create_dataset to simulate import failure, forcing fallback path
         with patch("tools.finetune.rag_ft_pipeline._get_db", return_value=pipeline_db):
             with patch.dict("sys.modules", {"tools.finetune.dataset_manager": None}):
@@ -141,6 +147,7 @@ class TestEnsureDataset:
 
     def test_finds_existing_dataset(self, pipeline_db):
         from tools.finetune.rag_ft_pipeline import _ensure_dataset
+
         pipeline_db.execute(
             "INSERT INTO ft_datasets (id, name, purpose, status) VALUES ('ds-existing', 'my-ds', 'general', 'ready')",
         )
@@ -154,6 +161,7 @@ class TestPipelineStatus:
 
     def test_status_empty(self, pipeline_db):
         from tools.finetune.rag_ft_pipeline import get_pipeline_status
+
         with patch("tools.finetune.rag_ft_pipeline._get_db", return_value=pipeline_db):
             with patch("tools.finetune.rag_ft_pipeline._ensure_tables"):
                 result = get_pipeline_status()
@@ -166,6 +174,7 @@ class TestPipelineRun:
 
     def test_dry_run(self, pipeline_db):
         from tools.finetune.rag_ft_pipeline import run_pipeline
+
         # Add a chunk
         pipeline_db.execute(
             "INSERT INTO rag_chunks (id, content, source_table, tier, created_at) "
@@ -182,6 +191,7 @@ class TestPipelineRun:
 
     def test_disabled_pipeline(self):
         from tools.finetune.rag_ft_pipeline import run_pipeline
+
         with patch("tools.finetune.rag_ft_pipeline._get_config", return_value={"enabled": False}):
             result = run_pipeline()
             assert result["status"] == "disabled"

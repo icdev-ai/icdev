@@ -38,14 +38,13 @@ def _get_db(db_path: Path = None) -> sqlite3.Connection:
     return conn
 
 
-
-
-def _audit_log(event_type: str, actor: str, action: str,
-               project_id: str = None, details: dict = None,
-               db_path: Path = None):
+def _audit_log(
+    event_type: str, actor: str, action: str, project_id: str = None, details: dict = None, db_path: Path = None
+):
     """Best-effort audit trail logging."""
     try:
         from tools.audit.audit_logger import log_event
+
         log_event(
             event_type=event_type,
             actor=actor,
@@ -140,7 +139,9 @@ def discover_agents_healthy(
             else:
                 logger.debug(
                     "Agent '%s' excluded -- heartbeat stale (last: %s, window: %ds)",
-                    agent.get("id", "?"), hb, staleness_seconds,
+                    agent.get("id", "?"),
+                    hb,
+                    staleness_seconds,
                 )
 
         return healthy
@@ -239,25 +240,24 @@ def route_skill(
     # redirect to the domain agent that owns the skill.
     try:
         from tools.agent.dispatcher_mode import (
-            is_dispatcher_mode, is_tool_allowed, get_redirect_agent,
+            is_dispatcher_mode,
+            is_tool_allowed,
+            get_redirect_agent,
         )
+
         if is_dispatcher_mode(project_id=project_id, db_path=effective_db):
-            if not is_tool_allowed(skill_id, project_id=project_id,
-                                   db_path=effective_db):
+            if not is_tool_allowed(skill_id, project_id=project_id, db_path=effective_db):
                 redirect_agent = get_redirect_agent(skill_id)
                 if redirect_agent:
                     logger.info(
-                        "Dispatcher mode: skill '%s' blocked for orchestrator, "
-                        "routing to '%s'",
-                        skill_id, redirect_agent,
+                        "Dispatcher mode: skill '%s' blocked for orchestrator, routing to '%s'",
+                        skill_id,
+                        redirect_agent,
                     )
                     _audit_log(
                         event_type="dispatcher_mode.skill_redirect",
                         actor="skill-router",
-                        action=(
-                            f"Dispatcher mode redirected skill '{skill_id}' "
-                            f"to {redirect_agent}"
-                        ),
+                        action=(f"Dispatcher mode redirected skill '{skill_id}' to {redirect_agent}"),
                         project_id=project_id,
                         details={
                             "skill_id": skill_id,
@@ -277,7 +277,8 @@ def route_skill(
                         if row:
                             agent = row_to_dict_json(row)
                             agent["load"] = get_agent_load(
-                                redirect_agent, db_path=effective_db,
+                                redirect_agent,
+                                db_path=effective_db,
                             )
                             agent["dispatcher_redirect"] = True
                             return agent
@@ -308,15 +309,14 @@ def route_skill(
     if not healthy_candidates:
         agent_ids = [a.get("id", "?") for a in stale_candidates]
         logger.warning(
-            "All agents for skill '%s' are stale: %s", skill_id, agent_ids,
+            "All agents for skill '%s' are stale: %s",
+            skill_id,
+            agent_ids,
         )
         _audit_log(
             event_type="agent_health_stale",
             actor="skill-router",
-            action=(
-                f"All agents for skill '{skill_id}' are stale "
-                f"(window: {staleness_seconds}s): {agent_ids}"
-            ),
+            action=(f"All agents for skill '{skill_id}' are stale (window: {staleness_seconds}s): {agent_ids}"),
             details={
                 "skill_id": skill_id,
                 "stale_agents": agent_ids,
@@ -342,7 +342,9 @@ def route_skill(
     if best_agent:
         logger.info(
             "Routed skill '%s' to agent '%s' (load: %d active tasks)",
-            skill_id, best_agent["id"], best_load,
+            skill_id,
+            best_agent["id"],
+            best_load,
         )
 
     return best_agent
@@ -385,6 +387,7 @@ def _find_all_agents_for_skill(skill_id: str, db_path: Path = None) -> List[dict
     if not matches:
         try:
             from tools.a2a.agent_registry import AGENT_CARDS_DIR
+
             if AGENT_CARDS_DIR.exists():
                 for card_file in AGENT_CARDS_DIR.glob("*.json"):
                     try:
@@ -392,16 +395,18 @@ def _find_all_agents_for_skill(skill_id: str, db_path: Path = None) -> List[dict
                             card = json.load(f)
                         for skill in card.get("skills", []):
                             if skill.get("id") == skill_id:
-                                matches.append({
-                                    "id": card_file.stem + "-agent",
-                                    "name": card.get("name", ""),
-                                    "description": card.get("description", ""),
-                                    "url": card.get("url", ""),
-                                    "capabilities": card,
-                                    "status": "active",
-                                    "last_heartbeat": "",
-                                    "source": "agent_card_file",
-                                })
+                                matches.append(
+                                    {
+                                        "id": card_file.stem + "-agent",
+                                        "name": card.get("name", ""),
+                                        "description": card.get("description", ""),
+                                        "url": card.get("url", ""),
+                                        "capabilities": card,
+                                        "status": "active",
+                                        "last_heartbeat": "",
+                                        "source": "agent_card_file",
+                                    }
+                                )
                                 break
                     except (json.JSONDecodeError, IOError):
                         continue
@@ -475,9 +480,7 @@ def get_routing_table(db_path: Path = None, staleness_seconds: int = 120) -> dic
 # ---------------------------------------------------------------------------
 def main():
     """CLI for skill routing and agent health introspection."""
-    parser = argparse.ArgumentParser(
-        description="ICDEV™ Skill Router -- health-aware agent-skill routing"
-    )
+    parser = argparse.ArgumentParser(description="ICDEV™ Skill Router -- health-aware agent-skill routing")
     parser.add_argument(
         "--route-skill",
         help="Find the healthiest agent for a skill ID",
@@ -539,12 +542,17 @@ def main():
                 print("Classification: CUI // SP-CTI")
         else:
             if args.json:
-                print(json.dumps({
-                    "skill_id": args.route_skill,
-                    "routed_agent": None,
-                    "reason": "No healthy agent found for skill",
-                    "classification": "CUI",
-                }, indent=2))
+                print(
+                    json.dumps(
+                        {
+                            "skill_id": args.route_skill,
+                            "routed_agent": None,
+                            "reason": "No healthy agent found for skill",
+                            "classification": "CUI",
+                        },
+                        indent=2,
+                    )
+                )
             else:
                 print(f"No healthy agent found for skill: {args.route_skill}")
 
@@ -555,12 +563,18 @@ def main():
         )
 
         if args.json:
-            print(json.dumps({
-                "healthy_agents": agents,
-                "count": len(agents),
-                "staleness_seconds": args.staleness,
-                "classification": "CUI",
-            }, indent=2, default=str))
+            print(
+                json.dumps(
+                    {
+                        "healthy_agents": agents,
+                        "count": len(agents),
+                        "staleness_seconds": args.staleness,
+                        "classification": "CUI",
+                    },
+                    indent=2,
+                    default=str,
+                )
+            )
         else:
             print(f"Healthy agents (staleness window: {args.staleness}s):")
             print("Classification: CUI // SP-CTI")
@@ -583,12 +597,18 @@ def main():
         )
 
         if args.json:
-            print(json.dumps({
-                "routing_table": table,
-                "skill_count": len(table),
-                "staleness_seconds": args.staleness,
-                "classification": "CUI",
-            }, indent=2, default=str))
+            print(
+                json.dumps(
+                    {
+                        "routing_table": table,
+                        "skill_count": len(table),
+                        "staleness_seconds": args.staleness,
+                        "classification": "CUI",
+                    },
+                    indent=2,
+                    default=str,
+                )
+            )
         else:
             print(f"Routing Table (staleness window: {args.staleness}s):")
             print("Classification: CUI // SP-CTI")
@@ -598,10 +618,7 @@ def main():
                 for entry in agents:
                     health = "HEALTHY" if entry["healthy"] else "STALE"
                     load = entry.get("load", {}).get("total_active", 0)
-                    print(
-                        f"    -> {entry['agent_id']} ({entry['agent_name']}) "
-                        f"[{health}] load={load}"
-                    )
+                    print(f"    -> {entry['agent_id']} ({entry['agent_name']}) [{health}] load={load}")
                 print()
             if not table:
                 print("  (no skills registered)")

@@ -64,34 +64,42 @@ class TestClassifyTier:
 
     def test_high_confidence_auto_fix(self):
         from tools.review_board.remediation_engine import classify_tier
+
         assert classify_tier(0.9, auto_fixable=True) == "auto_fix"
 
     def test_threshold_confidence_auto_fix(self):
         from tools.review_board.remediation_engine import classify_tier
+
         assert classify_tier(0.7, auto_fixable=True) == "auto_fix"
 
     def test_medium_confidence_suggest(self):
         from tools.review_board.remediation_engine import classify_tier
+
         assert classify_tier(0.5, auto_fixable=True) == "suggest"
 
     def test_low_confidence_escalate(self):
         from tools.review_board.remediation_engine import classify_tier
+
         assert classify_tier(0.2, auto_fixable=True) == "escalate"
 
     def test_not_fixable_always_escalate(self):
         from tools.review_board.remediation_engine import classify_tier
+
         assert classify_tier(0.95, auto_fixable=False) == "escalate"
 
     def test_zero_confidence_escalate(self):
         from tools.review_board.remediation_engine import classify_tier
+
         assert classify_tier(0.0, auto_fixable=True) == "escalate"
 
     def test_boundary_suggest_lower(self):
         from tools.review_board.remediation_engine import classify_tier
+
         assert classify_tier(0.3, auto_fixable=True) == "suggest"
 
     def test_boundary_suggest_upper(self):
         from tools.review_board.remediation_engine import classify_tier
+
         assert classify_tier(0.69, auto_fixable=True) == "suggest"
 
 
@@ -103,6 +111,7 @@ class TestFixRegistry:
 
     def test_registry_has_backup_handler(self):
         from tools.review_board.remediation_engine import FIX_REGISTRY
+
         assert "backup_freshness" in FIX_REGISTRY
         entry = FIX_REGISTRY["backup_freshness"]
         assert "handler" in entry
@@ -110,14 +119,17 @@ class TestFixRegistry:
 
     def test_registry_has_temp_handler(self):
         from tools.review_board.remediation_engine import FIX_REGISTRY
+
         assert "temp_size" in FIX_REGISTRY
 
     def test_registry_has_disk_handler(self):
         from tools.review_board.remediation_engine import FIX_REGISTRY
+
         assert "disk_usage" in FIX_REGISTRY
 
     def test_registry_entries_have_required_fields(self):
         from tools.review_board.remediation_engine import FIX_REGISTRY
+
         for category, entry in FIX_REGISTRY.items():
             assert "handler" in entry, f"{category} missing handler"
             assert "function" in entry, f"{category} missing function"
@@ -141,6 +153,7 @@ class TestExecuteFix:
 
         with patch("tools.review_board.remediation_engine._get_connection", side_effect=_conn):
             from tools.review_board.remediation_engine import execute_fix, ensure_tables
+
             ensure_tables()
 
             finding = {
@@ -166,6 +179,7 @@ class TestExecuteFix:
 
         with patch("tools.review_board.remediation_engine._get_connection", side_effect=_conn):
             from tools.review_board.remediation_engine import execute_fix, ensure_tables
+
             ensure_tables()
 
             finding = {
@@ -191,6 +205,7 @@ class TestExecuteFix:
 
         with patch("tools.review_board.remediation_engine._get_connection", side_effect=_conn):
             from tools.review_board.remediation_engine import execute_fix, ensure_tables
+
             ensure_tables()
 
             finding = {
@@ -216,6 +231,7 @@ class TestExecuteFix:
 
         with patch("tools.review_board.remediation_engine._get_connection", side_effect=_conn):
             from tools.review_board.remediation_engine import execute_fix, ensure_tables
+
             ensure_tables()
 
             finding = {
@@ -248,6 +264,7 @@ class TestRunRemediation:
 
         with patch("tools.review_board.remediation_engine._get_connection", side_effect=_conn):
             from tools.review_board.remediation_engine import run_remediation
+
             result = run_remediation()
             assert result["total_pending"] == 0
             assert result["auto_fixed"] == 0
@@ -270,6 +287,7 @@ class TestRunRemediation:
 
         with patch("tools.review_board.remediation_engine._get_connection", side_effect=_conn):
             from tools.review_board.remediation_engine import run_remediation
+
             result = run_remediation(dry_run=True)
             assert result["total_pending"] == 1
             assert result["suggested"] == 1  # Dry run = suggested
@@ -292,6 +310,7 @@ class TestRateLimiting:
 
         with patch("tools.review_board.remediation_engine._get_connection", side_effect=_conn):
             from tools.review_board.remediation_engine import check_rate_limit, ensure_tables
+
             ensure_tables()
             assert check_rate_limit() is True
 
@@ -306,6 +325,7 @@ class TestRateLimiting:
 
         with patch("tools.review_board.remediation_engine._get_connection", side_effect=_conn):
             from tools.review_board.remediation_engine import check_cooldown, ensure_tables
+
             ensure_tables()
             assert check_cooldown("backup_freshness") is True
 
@@ -327,6 +347,7 @@ class TestStatsAndHistory:
 
         with patch("tools.review_board.remediation_engine._get_connection", side_effect=_conn):
             from tools.review_board.remediation_engine import get_stats
+
             stats = get_stats()
             assert stats["total_remediations"] == 0
             assert stats["rate_limit_remaining"] == 5
@@ -342,6 +363,7 @@ class TestStatsAndHistory:
 
         with patch("tools.review_board.remediation_engine._get_connection", side_effect=_conn):
             from tools.review_board.remediation_engine import get_history
+
             history = get_history()
             assert isinstance(history, list)
             assert len(history) == 0
@@ -362,10 +384,12 @@ class TestPerfFixer:
             old_file.write_text("old data", encoding="utf-8")
             # Make file appear old (set mtime to 30 days ago)
             import os
+
             old_time = old_file.stat().st_mtime - (30 * 86400)
             os.utime(str(old_file), (old_time, old_time))
 
             from tools.review_board.fixers.perf_fixes import fix_temp_size
+
             result = fix_temp_size({})
             assert result["action"] == "temp_cleaned"
             assert result["files_removed"] >= 1
@@ -378,6 +402,7 @@ class TestPerfFixer:
             small_file.write_text("x" * 100, encoding="utf-8")
 
             from tools.review_board.fixers.perf_fixes import verify_temp_size
+
             result = verify_temp_size({})
             assert result["passed"] is True
 
@@ -393,6 +418,7 @@ class TestSREFixer:
             small_db.write_bytes(b"x" * 1024)  # 1KB
 
             from tools.review_board.fixers.sre_fixes import fix_disk_usage
+
             result = fix_disk_usage({})
             assert result["action"] == "vacuum_completed"
             assert len(result["vacuumed"]) == 0  # Too small to vacuum
@@ -403,6 +429,7 @@ class TestSREFixer:
             data_dir.mkdir()
 
             from tools.review_board.fixers.sre_fixes import verify_disk_usage
+
             result = verify_disk_usage({})
             assert result["passed"] is True
 

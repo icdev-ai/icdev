@@ -15,6 +15,7 @@ Usage:
     from tools.saas.rate_limiter import register_rate_limiter
     register_rate_limiter(app)
 """
+
 from __future__ import annotations
 
 import abc

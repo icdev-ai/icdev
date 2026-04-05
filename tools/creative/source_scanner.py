@@ -56,23 +56,28 @@ CONFIG_PATH = BASE_DIR / "args" / "creative_config.yaml"
 # =========================================================================
 try:
     import yaml
+
     _HAS_YAML = True
 except ImportError:
     _HAS_YAML = False
 
 try:
     import requests
+
     _HAS_REQUESTS = True
 except ImportError:
     _HAS_REQUESTS = False
 
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
+
     def audit_log_event(**kwargs):
         return -1
+
 
 try:
     _HAS_CB = True
@@ -103,7 +108,6 @@ def _get_db(db_path=None):
         raise FileNotFoundError(f"Database not found: {path}")
     conn = get_connection(db_path=str(path))
     return conn
-
 
 
 def _signal_id():
@@ -235,18 +239,20 @@ def _get_confirmed_competitors(db_path=None):
         ).fetchall()
         competitors = []
         for row in rows:
-            competitors.append({
-                "id": row["id"],
-                "name": row["name"],
-                "domain": row["domain"],
-                "source": row["source"],
-                "source_url": row["source_url"],
-                "rating": row["rating"],
-                "review_count": row["review_count"],
-                "features": row["features"],
-                "pricing_tier": row["pricing_tier"],
-                "metadata": row["metadata"],
-            })
+            competitors.append(
+                {
+                    "id": row["id"],
+                    "name": row["name"],
+                    "domain": row["domain"],
+                    "source": row["source"],
+                    "source_url": row["source_url"],
+                    "rating": row["rating"],
+                    "review_count": row["review_count"],
+                    "features": row["features"],
+                    "pricing_tier": row["pricing_tier"],
+                    "metadata": row["metadata"],
+                }
+            )
         return competitors
     finally:
         conn.close()
@@ -341,50 +347,65 @@ def scan_g2(config, competitors=None):
                 # HTML fallback -- extract minimal info from page text
                 raw_text = data["_raw"][:50000]
                 # Create a single summary signal from the page fetch
-                reviews.append({
-                    "title": f"G2 reviews page for {comp['name']}",
-                    "body": raw_text[:MAX_BODY_LENGTH],
-                    "url": url,
-                    "author": None,
-                    "rating": comp.get("rating"),
-                    "upvotes": 0,
-                })
+                reviews.append(
+                    {
+                        "title": f"G2 reviews page for {comp['name']}",
+                        "body": raw_text[:MAX_BODY_LENGTH],
+                        "url": url,
+                        "author": None,
+                        "rating": comp.get("rating"),
+                        "upvotes": 0,
+                    }
+                )
             else:
                 # Structured JSON -- iterate 'reviews' or 'data' key
                 items = data.get("reviews", data.get("data", []))
                 if isinstance(items, list):
                     for item in items[:max_reviews]:
-                        reviews.append({
-                            "title": item.get("title", item.get("headline", f"G2 review for {comp['name']}")),
-                            "body": (item.get("text", item.get("body", item.get("comment", ""))) or "")[:MAX_BODY_LENGTH],
-                            "url": item.get("url", url),
-                            "author": item.get("author", item.get("reviewer", {}).get("name") if isinstance(item.get("reviewer"), dict) else None),
-                            "rating": item.get("rating", item.get("star_rating")),
-                            "upvotes": item.get("upvotes", item.get("helpful_count", 0)),
-                        })
+                        reviews.append(
+                            {
+                                "title": item.get("title", item.get("headline", f"G2 review for {comp['name']}")),
+                                "body": (item.get("text", item.get("body", item.get("comment", ""))) or "")[
+                                    :MAX_BODY_LENGTH
+                                ],
+                                "url": item.get("url", url),
+                                "author": item.get(
+                                    "author",
+                                    item.get("reviewer", {}).get("name")
+                                    if isinstance(item.get("reviewer"), dict)
+                                    else None,
+                                ),
+                                "rating": item.get("rating", item.get("star_rating")),
+                                "upvotes": item.get("upvotes", item.get("helpful_count", 0)),
+                            }
+                        )
 
         for review in reviews[:max_reviews]:
             hash_input = f"g2_{comp_slug}_{review.get('title', '')}_{review.get('author', '')}"
-            signals.append({
-                "id": _signal_id(),
-                "source": "g2",
-                "source_type": "review",
-                "competitor_id": comp_id,
-                "title": review.get("title", f"G2 review for {comp['name']}"),
-                "body": review.get("body", "")[:MAX_BODY_LENGTH],
-                "url": review.get("url", url),
-                "author": review.get("author"),
-                "rating": review.get("rating"),
-                "upvotes": review.get("upvotes", 0) or 0,
-                "sentiment": None,
-                "content_hash": _content_hash(hash_input),
-                "metadata": json.dumps({
-                    "competitor_name": comp["name"],
+            signals.append(
+                {
+                    "id": _signal_id(),
+                    "source": "g2",
+                    "source_type": "review",
                     "competitor_id": comp_id,
-                    "site": "g2",
-                }),
-                "discovered_at": now_iso(),
-            })
+                    "title": review.get("title", f"G2 review for {comp['name']}"),
+                    "body": review.get("body", "")[:MAX_BODY_LENGTH],
+                    "url": review.get("url", url),
+                    "author": review.get("author"),
+                    "rating": review.get("rating"),
+                    "upvotes": review.get("upvotes", 0) or 0,
+                    "sentiment": None,
+                    "content_hash": _content_hash(hash_input),
+                    "metadata": json.dumps(
+                        {
+                            "competitor_name": comp["name"],
+                            "competitor_id": comp_id,
+                            "site": "g2",
+                        }
+                    ),
+                    "discovered_at": now_iso(),
+                }
+            )
 
         time.sleep(delay)
 
@@ -443,49 +464,62 @@ def scan_capterra(config, competitors=None):
         if isinstance(data, dict):
             if "_raw" in data:
                 raw_text = data["_raw"][:50000]
-                reviews.append({
-                    "title": f"Capterra reviews page for {comp['name']}",
-                    "body": raw_text[:MAX_BODY_LENGTH],
-                    "url": url,
-                    "author": None,
-                    "rating": comp.get("rating"),
-                    "upvotes": 0,
-                })
+                reviews.append(
+                    {
+                        "title": f"Capterra reviews page for {comp['name']}",
+                        "body": raw_text[:MAX_BODY_LENGTH],
+                        "url": url,
+                        "author": None,
+                        "rating": comp.get("rating"),
+                        "upvotes": 0,
+                    }
+                )
             else:
                 items = data.get("reviews", data.get("data", []))
                 if isinstance(items, list):
                     for item in items[:max_reviews]:
-                        reviews.append({
-                            "title": item.get("title", item.get("headline", f"Capterra review for {comp['name']}")),
-                            "body": (item.get("text", item.get("body", item.get("pros", "") + " " + item.get("cons", ""))) or "")[:MAX_BODY_LENGTH],
-                            "url": item.get("url", url),
-                            "author": item.get("author", item.get("reviewer_name")),
-                            "rating": item.get("rating", item.get("overall_rating")),
-                            "upvotes": item.get("upvotes", item.get("helpful_count", 0)),
-                        })
+                        reviews.append(
+                            {
+                                "title": item.get("title", item.get("headline", f"Capterra review for {comp['name']}")),
+                                "body": (
+                                    item.get(
+                                        "text", item.get("body", item.get("pros", "") + " " + item.get("cons", ""))
+                                    )
+                                    or ""
+                                )[:MAX_BODY_LENGTH],
+                                "url": item.get("url", url),
+                                "author": item.get("author", item.get("reviewer_name")),
+                                "rating": item.get("rating", item.get("overall_rating")),
+                                "upvotes": item.get("upvotes", item.get("helpful_count", 0)),
+                            }
+                        )
 
         for review in reviews[:max_reviews]:
             hash_input = f"capterra_{comp_slug}_{review.get('title', '')}_{review.get('author', '')}"
-            signals.append({
-                "id": _signal_id(),
-                "source": "capterra",
-                "source_type": "review",
-                "competitor_id": comp_id,
-                "title": review.get("title", f"Capterra review for {comp['name']}"),
-                "body": review.get("body", "")[:MAX_BODY_LENGTH],
-                "url": review.get("url", url),
-                "author": review.get("author"),
-                "rating": review.get("rating"),
-                "upvotes": review.get("upvotes", 0) or 0,
-                "sentiment": None,
-                "content_hash": _content_hash(hash_input),
-                "metadata": json.dumps({
-                    "competitor_name": comp["name"],
+            signals.append(
+                {
+                    "id": _signal_id(),
+                    "source": "capterra",
+                    "source_type": "review",
                     "competitor_id": comp_id,
-                    "site": "capterra",
-                }),
-                "discovered_at": now_iso(),
-            })
+                    "title": review.get("title", f"Capterra review for {comp['name']}"),
+                    "body": review.get("body", "")[:MAX_BODY_LENGTH],
+                    "url": review.get("url", url),
+                    "author": review.get("author"),
+                    "rating": review.get("rating"),
+                    "upvotes": review.get("upvotes", 0) or 0,
+                    "sentiment": None,
+                    "content_hash": _content_hash(hash_input),
+                    "metadata": json.dumps(
+                        {
+                            "competitor_name": comp["name"],
+                            "competitor_id": comp_id,
+                            "site": "capterra",
+                        }
+                    ),
+                    "discovered_at": now_iso(),
+                }
+            )
 
         time.sleep(delay)
 
@@ -544,49 +578,61 @@ def scan_trustradius(config, competitors=None):
         if isinstance(data, dict):
             if "_raw" in data:
                 raw_text = data["_raw"][:50000]
-                reviews.append({
-                    "title": f"TrustRadius reviews page for {comp['name']}",
-                    "body": raw_text[:MAX_BODY_LENGTH],
-                    "url": url,
-                    "author": None,
-                    "rating": comp.get("rating"),
-                    "upvotes": 0,
-                })
+                reviews.append(
+                    {
+                        "title": f"TrustRadius reviews page for {comp['name']}",
+                        "body": raw_text[:MAX_BODY_LENGTH],
+                        "url": url,
+                        "author": None,
+                        "rating": comp.get("rating"),
+                        "upvotes": 0,
+                    }
+                )
             else:
                 items = data.get("reviews", data.get("data", []))
                 if isinstance(items, list):
                     for item in items[:max_reviews]:
-                        reviews.append({
-                            "title": item.get("title", item.get("heading", f"TrustRadius review for {comp['name']}")),
-                            "body": (item.get("text", item.get("body", item.get("review_text", ""))) or "")[:MAX_BODY_LENGTH],
-                            "url": item.get("url", url),
-                            "author": item.get("author", item.get("reviewer_name")),
-                            "rating": item.get("rating", item.get("trScore")),
-                            "upvotes": item.get("upvotes", item.get("helpful_count", 0)),
-                        })
+                        reviews.append(
+                            {
+                                "title": item.get(
+                                    "title", item.get("heading", f"TrustRadius review for {comp['name']}")
+                                ),
+                                "body": (item.get("text", item.get("body", item.get("review_text", ""))) or "")[
+                                    :MAX_BODY_LENGTH
+                                ],
+                                "url": item.get("url", url),
+                                "author": item.get("author", item.get("reviewer_name")),
+                                "rating": item.get("rating", item.get("trScore")),
+                                "upvotes": item.get("upvotes", item.get("helpful_count", 0)),
+                            }
+                        )
 
         for review in reviews[:max_reviews]:
             hash_input = f"trustradius_{comp_slug}_{review.get('title', '')}_{review.get('author', '')}"
-            signals.append({
-                "id": _signal_id(),
-                "source": "trustradius",
-                "source_type": "review",
-                "competitor_id": comp_id,
-                "title": review.get("title", f"TrustRadius review for {comp['name']}"),
-                "body": review.get("body", "")[:MAX_BODY_LENGTH],
-                "url": review.get("url", url),
-                "author": review.get("author"),
-                "rating": review.get("rating"),
-                "upvotes": review.get("upvotes", 0) or 0,
-                "sentiment": None,
-                "content_hash": _content_hash(hash_input),
-                "metadata": json.dumps({
-                    "competitor_name": comp["name"],
+            signals.append(
+                {
+                    "id": _signal_id(),
+                    "source": "trustradius",
+                    "source_type": "review",
                     "competitor_id": comp_id,
-                    "site": "trustradius",
-                }),
-                "discovered_at": now_iso(),
-            })
+                    "title": review.get("title", f"TrustRadius review for {comp['name']}"),
+                    "body": review.get("body", "")[:MAX_BODY_LENGTH],
+                    "url": review.get("url", url),
+                    "author": review.get("author"),
+                    "rating": review.get("rating"),
+                    "upvotes": review.get("upvotes", 0) or 0,
+                    "sentiment": None,
+                    "content_hash": _content_hash(hash_input),
+                    "metadata": json.dumps(
+                        {
+                            "competitor_name": comp["name"],
+                            "competitor_id": comp_id,
+                            "site": "trustradius",
+                        }
+                    ),
+                    "discovered_at": now_iso(),
+                }
+            )
 
         time.sleep(delay)
 
@@ -674,29 +720,33 @@ def scan_reddit(config, competitors=None):
             post_url = f"https://www.reddit.com{permalink}" if permalink else ""
 
             hash_input = f"reddit_{subreddit}_{post_id}"
-            signals.append({
-                "id": _signal_id(),
-                "source": "reddit",
-                "source_type": "forum_post",
-                "competitor_id": None,
-                "title": title[:500],
-                "body": selftext[:MAX_BODY_LENGTH],
-                "url": post_url,
-                "author": post.get("author"),
-                "rating": None,
-                "upvotes": score,
-                "sentiment": None,
-                "content_hash": _content_hash(hash_input),
-                "metadata": json.dumps({
-                    "subreddit": subreddit,
-                    "score": score,
-                    "num_comments": post.get("num_comments", 0),
-                    "created_utc": post.get("created_utc", 0),
-                    "is_self": post.get("is_self", False),
-                    "link_flair_text": post.get("link_flair_text"),
-                }),
-                "discovered_at": now_iso(),
-            })
+            signals.append(
+                {
+                    "id": _signal_id(),
+                    "source": "reddit",
+                    "source_type": "forum_post",
+                    "competitor_id": None,
+                    "title": title[:500],
+                    "body": selftext[:MAX_BODY_LENGTH],
+                    "url": post_url,
+                    "author": post.get("author"),
+                    "rating": None,
+                    "upvotes": score,
+                    "sentiment": None,
+                    "content_hash": _content_hash(hash_input),
+                    "metadata": json.dumps(
+                        {
+                            "subreddit": subreddit,
+                            "score": score,
+                            "num_comments": post.get("num_comments", 0),
+                            "created_utc": post.get("created_utc", 0),
+                            "is_self": post.get("is_self", False),
+                            "link_flair_text": post.get("link_flair_text"),
+                        }
+                    ),
+                    "discovered_at": now_iso(),
+                }
+            )
 
         time.sleep(delay)
 
@@ -767,30 +817,34 @@ def scan_github_issues(config, competitors=None):
             issue_number = item.get("number", 0)
 
             hash_input = f"github_{repo}_{issue_number}"
-            signals.append({
-                "id": _signal_id(),
-                "source": "github",
-                "source_type": "issue",
-                "competitor_id": None,
-                "title": f"[{repo}] {title}",
-                "body": body,
-                "url": issue_url,
-                "author": (item.get("user", {}) or {}).get("login"),
-                "rating": None,
-                "upvotes": thumbs_up,
-                "sentiment": None,
-                "content_hash": _content_hash(hash_input),
-                "metadata": json.dumps({
-                    "repo": repo,
-                    "issue_number": issue_number,
-                    "labels": [lbl.get("name", "") for lbl in item.get("labels", [])],
-                    "reactions_thumbs_up": thumbs_up,
-                    "comments": item.get("comments", 0),
-                    "created_at": item.get("created_at", ""),
-                    "updated_at": item.get("updated_at", ""),
-                }),
-                "discovered_at": now_iso(),
-            })
+            signals.append(
+                {
+                    "id": _signal_id(),
+                    "source": "github",
+                    "source_type": "issue",
+                    "competitor_id": None,
+                    "title": f"[{repo}] {title}",
+                    "body": body,
+                    "url": issue_url,
+                    "author": (item.get("user", {}) or {}).get("login"),
+                    "rating": None,
+                    "upvotes": thumbs_up,
+                    "sentiment": None,
+                    "content_hash": _content_hash(hash_input),
+                    "metadata": json.dumps(
+                        {
+                            "repo": repo,
+                            "issue_number": issue_number,
+                            "labels": [lbl.get("name", "") for lbl in item.get("labels", [])],
+                            "reactions_thumbs_up": thumbs_up,
+                            "comments": item.get("comments", 0),
+                            "created_at": item.get("created_at", ""),
+                            "updated_at": item.get("updated_at", ""),
+                        }
+                    ),
+                    "discovered_at": now_iso(),
+                }
+            )
 
         time.sleep(delay_seconds)
 
@@ -841,50 +895,61 @@ def scan_producthunt(config, competitors=None):
             if "_raw" in data:
                 # HTML page -- create a single summary signal
                 raw_text = data["_raw"][:50000]
-                launches.append({
-                    "title": f"Product Hunt topic: {topic}",
-                    "body": raw_text[:MAX_BODY_LENGTH],
-                    "url": url,
-                    "author": None,
-                    "upvotes": 0,
-                    "tagline": "",
-                })
+                launches.append(
+                    {
+                        "title": f"Product Hunt topic: {topic}",
+                        "body": raw_text[:MAX_BODY_LENGTH],
+                        "url": url,
+                        "author": None,
+                        "upvotes": 0,
+                        "tagline": "",
+                    }
+                )
             else:
                 # Structured JSON -- iterate 'posts' or 'data' key
                 items = data.get("posts", data.get("data", data.get("products", [])))
                 if isinstance(items, list):
                     for item in items[:max_results]:
-                        launches.append({
-                            "title": item.get("name", item.get("title", f"PH launch in {topic}")),
-                            "body": (item.get("description", item.get("tagline", "")) or "")[:MAX_BODY_LENGTH],
-                            "url": item.get("url", item.get("discussion_url", url)),
-                            "author": item.get("maker_name", item.get("user", {}).get("name") if isinstance(item.get("user"), dict) else None),
-                            "upvotes": item.get("votes_count", item.get("upvotes", 0)),
-                            "tagline": item.get("tagline", ""),
-                        })
+                        launches.append(
+                            {
+                                "title": item.get("name", item.get("title", f"PH launch in {topic}")),
+                                "body": (item.get("description", item.get("tagline", "")) or "")[:MAX_BODY_LENGTH],
+                                "url": item.get("url", item.get("discussion_url", url)),
+                                "author": item.get(
+                                    "maker_name",
+                                    item.get("user", {}).get("name") if isinstance(item.get("user"), dict) else None,
+                                ),
+                                "upvotes": item.get("votes_count", item.get("upvotes", 0)),
+                                "tagline": item.get("tagline", ""),
+                            }
+                        )
 
         for launch in launches[:max_results]:
             hash_input = f"producthunt_{topic_slug}_{launch.get('title', '')}"
-            signals.append({
-                "id": _signal_id(),
-                "source": "producthunt",
-                "source_type": "launch",
-                "competitor_id": None,
-                "title": launch.get("title", f"Product Hunt: {topic}"),
-                "body": launch.get("body", "")[:MAX_BODY_LENGTH],
-                "url": launch.get("url", url),
-                "author": launch.get("author"),
-                "rating": None,
-                "upvotes": launch.get("upvotes", 0) or 0,
-                "sentiment": None,
-                "content_hash": _content_hash(hash_input),
-                "metadata": json.dumps({
-                    "topic": topic,
-                    "tagline": launch.get("tagline", ""),
-                    "site": "producthunt",
-                }),
-                "discovered_at": now_iso(),
-            })
+            signals.append(
+                {
+                    "id": _signal_id(),
+                    "source": "producthunt",
+                    "source_type": "launch",
+                    "competitor_id": None,
+                    "title": launch.get("title", f"Product Hunt: {topic}"),
+                    "body": launch.get("body", "")[:MAX_BODY_LENGTH],
+                    "url": launch.get("url", url),
+                    "author": launch.get("author"),
+                    "rating": None,
+                    "upvotes": launch.get("upvotes", 0) or 0,
+                    "sentiment": None,
+                    "content_hash": _content_hash(hash_input),
+                    "metadata": json.dumps(
+                        {
+                            "topic": topic,
+                            "tagline": launch.get("tagline", ""),
+                            "site": "producthunt",
+                        }
+                    ),
+                    "discovered_at": now_iso(),
+                }
+            )
 
         time.sleep(2)
 
@@ -950,7 +1015,7 @@ def scan_govcon_blogs(config, competitors=None):
                 title_start = raw_text.find("<title>")
                 title_end = raw_text.find("</title>")
                 if title_start != -1 and title_end != -1:
-                    extracted = raw_text[title_start + 7:title_end].strip()
+                    extracted = raw_text[title_start + 7 : title_end].strip()
                     if extracted:
                         title = extracted[:500]
                 body = raw_text[:MAX_BODY_LENGTH]
@@ -959,58 +1024,68 @@ def scan_govcon_blogs(config, competitors=None):
                 title = data.get("title", data.get("name", blog_url))
                 items = data.get("posts", data.get("articles", data.get("entries", [])))
                 if isinstance(items, list):
-                    for article in items[:max_results - collected]:
+                    for article in items[: max_results - collected]:
                         art_title = article.get("title", "GovCon blog post")
-                        art_body = (article.get("content", article.get("body", article.get("summary", ""))) or "")[:MAX_BODY_LENGTH]
+                        art_body = (article.get("content", article.get("body", article.get("summary", ""))) or "")[
+                            :MAX_BODY_LENGTH
+                        ]
                         art_url = article.get("url", article.get("link", blog_url))
                         art_author = article.get("author", article.get("author_name"))
 
                         hash_input = f"govcon_blog_{art_url}_{art_title}"
-                        signals.append({
-                            "id": _signal_id(),
-                            "source": "govcon_blog",
-                            "source_type": "forum_post",
-                            "competitor_id": None,
-                            "title": art_title[:500],
-                            "body": art_body,
-                            "url": art_url,
-                            "author": art_author,
-                            "rating": None,
-                            "upvotes": article.get("likes", article.get("shares", 0)) or 0,
-                            "sentiment": None,
-                            "content_hash": _content_hash(hash_input),
-                            "metadata": json.dumps({
-                                "source_url": blog_url,
-                                "site": "govcon_blog",
-                                "published": article.get("published", article.get("date", "")),
-                            }),
-                            "discovered_at": now_iso(),
-                        })
+                        signals.append(
+                            {
+                                "id": _signal_id(),
+                                "source": "govcon_blog",
+                                "source_type": "forum_post",
+                                "competitor_id": None,
+                                "title": art_title[:500],
+                                "body": art_body,
+                                "url": art_url,
+                                "author": art_author,
+                                "rating": None,
+                                "upvotes": article.get("likes", article.get("shares", 0)) or 0,
+                                "sentiment": None,
+                                "content_hash": _content_hash(hash_input),
+                                "metadata": json.dumps(
+                                    {
+                                        "source_url": blog_url,
+                                        "site": "govcon_blog",
+                                        "published": article.get("published", article.get("date", "")),
+                                    }
+                                ),
+                                "discovered_at": now_iso(),
+                            }
+                        )
                         collected += 1
                     time.sleep(delay)
                     continue
 
         # Single-page signal (HTML or non-list JSON)
         hash_input = f"govcon_blog_{blog_url}"
-        signals.append({
-            "id": _signal_id(),
-            "source": "govcon_blog",
-            "source_type": "forum_post",
-            "competitor_id": None,
-            "title": title[:500] if isinstance(title, str) else str(title)[:500],
-            "body": body[:MAX_BODY_LENGTH],
-            "url": blog_url,
-            "author": None,
-            "rating": None,
-            "upvotes": 0,
-            "sentiment": None,
-            "content_hash": _content_hash(hash_input),
-            "metadata": json.dumps({
-                "source_url": blog_url,
-                "site": "govcon_blog",
-            }),
-            "discovered_at": now_iso(),
-        })
+        signals.append(
+            {
+                "id": _signal_id(),
+                "source": "govcon_blog",
+                "source_type": "forum_post",
+                "competitor_id": None,
+                "title": title[:500] if isinstance(title, str) else str(title)[:500],
+                "body": body[:MAX_BODY_LENGTH],
+                "url": blog_url,
+                "author": None,
+                "rating": None,
+                "upvotes": 0,
+                "sentiment": None,
+                "content_hash": _content_hash(hash_input),
+                "metadata": json.dumps(
+                    {
+                        "source_url": blog_url,
+                        "site": "govcon_blog",
+                    }
+                ),
+                "discovered_at": now_iso(),
+            }
+        )
         collected += 1
         time.sleep(delay)
 
@@ -1029,23 +1104,28 @@ def scan_sam_gov_for_creative(config, competitors=None):
     signals = []
     try:
         from tools.govcon.competitor_profiler import get_leaderboard
+
         lb = get_leaderboard(limit=20)
         for entry in lb.get("leaderboard", []):
-            signals.append({
-                "source_type": "sam_gov_rfp",
-                "source_url": "",
-                "title": f"Award leader: {entry.get('vendor', 'unknown')}",
-                "content": f"{entry.get('awards', 0)} awards, ${entry.get('total_value', 0):,.0f} total value, "
-                           f"{entry.get('naics_diversity', 0)} NAICS codes, {entry.get('agency_diversity', 0)} agencies",
-                "sentiment": "neutral",
-                "keywords": ["govcon", "award", entry.get("vendor", "")],
-                "metadata": json.dumps({
-                    "vendor": entry.get("vendor"),
-                    "awards": entry.get("awards"),
-                    "total_value": entry.get("total_value"),
-                    "source": "sam_gov_awards",
-                }),
-            })
+            signals.append(
+                {
+                    "source_type": "sam_gov_rfp",
+                    "source_url": "",
+                    "title": f"Award leader: {entry.get('vendor', 'unknown')}",
+                    "content": f"{entry.get('awards', 0)} awards, ${entry.get('total_value', 0):,.0f} total value, "
+                    f"{entry.get('naics_diversity', 0)} NAICS codes, {entry.get('agency_diversity', 0)} agencies",
+                    "sentiment": "neutral",
+                    "keywords": ["govcon", "award", entry.get("vendor", "")],
+                    "metadata": json.dumps(
+                        {
+                            "vendor": entry.get("vendor"),
+                            "awards": entry.get("awards"),
+                            "total_value": entry.get("total_value"),
+                            "source": "sam_gov_awards",
+                        }
+                    ),
+                }
+            )
     except Exception:
         signals.append({"source_type": "scan_error", "title": "SAM.gov creative scan failed", "content": ""})
     return signals
@@ -1249,7 +1329,9 @@ def list_sources():
 
         community_config = config.get("sources", {}).get("community_forums", {})
         for platform in community_config.get("platforms", []):
-            if platform.get("name") == source_name or (source_name == "govcon_blogs" and platform.get("name") == "govcon_blogs"):
+            if platform.get("name") == source_name or (
+                source_name == "govcon_blogs" and platform.get("name") == "govcon_blogs"
+            ):
                 enabled = community_config.get("enabled", False)
                 scan_interval = community_config.get("scan_interval_hours", 12)
                 break
@@ -1271,13 +1353,15 @@ def list_sources():
             enabled = ph_config.get("enabled", False)
             scan_interval = ph_config.get("scan_interval_hours", 168)
 
-        sources.append({
-            "name": source_name,
-            "enabled": enabled,
-            "scan_interval_hours": scan_interval,
-            "has_scanner": True,
-            "scanner_function": scanner_fn.__name__,
-        })
+        sources.append(
+            {
+                "name": source_name,
+                "enabled": enabled,
+                "scan_interval_hours": scan_interval,
+                "has_scanner": True,
+                "scanner_function": scanner_fn.__name__,
+            }
+        )
 
     return {
         "sources": sources,
@@ -1301,9 +1385,7 @@ def get_scan_history(days=7, db_path=None):
     """
     conn = _get_db(db_path)
     try:
-        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime(
-            "%Y-%m-%dT%H:%M:%SZ"
-        )
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
         # Per-source per-day counts
         rows = conn.execute(
@@ -1321,11 +1403,13 @@ def get_scan_history(days=7, db_path=None):
             src = row["source"]
             if src not in history:
                 history[src] = []
-            history[src].append({
-                "date": row["scan_date"],
-                "count": row["count"],
-                "source_type": row["source_type"],
-            })
+            history[src].append(
+                {
+                    "date": row["scan_date"],
+                    "count": row["count"],
+                    "source_type": row["source_type"],
+                }
+            )
 
         # Total count
         total = conn.execute(

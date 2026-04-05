@@ -26,9 +26,16 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _finding(category: str, title: str, description: str,
-             url: str = "", severity: str = "medium",
-             action: str = "", score: float = 0.5, meta: dict = None) -> dict:
+def _finding(
+    category: str,
+    title: str,
+    description: str,
+    url: str = "",
+    severity: str = "medium",
+    action: str = "",
+    score: float = 0.5,
+    meta: dict = None,
+) -> dict:
     return {
         "id": f"scout-comp-{uuid.uuid4().hex[:12]}",
         "pillar": "competitive",
@@ -51,6 +58,7 @@ def _scan_existing_competitors() -> List[dict]:
     findings = []
     try:
         from tools.innovation.competitive_intel import scan_all_competitors
+
         results = scan_all_competitors()
         if isinstance(results, dict):
             for comp_name, comp_data in results.items():
@@ -65,38 +73,44 @@ def _scan_existing_competitors() -> List[dict]:
 
                 for feat in features[:5]:
                     feat_str = str(feat)
-                    findings.append(_finding(
-                        category="competitor_update",
-                        title=f"[{comp_name}] {feat_str[:100]}",
-                        description=feat_str[:300],
-                        severity="medium",
-                        score=0.6,
-                        action=f"Evaluate if ICDEV™ should match this {comp_name} feature",
-                        meta={
-                            "competitor": comp_name,
-                            "releases": releases,
-                            "issues": issues,
-                            "source_type": "competitive",
-                        },
-                    ))
+                    findings.append(
+                        _finding(
+                            category="competitor_update",
+                            title=f"[{comp_name}] {feat_str[:100]}",
+                            description=feat_str[:300],
+                            severity="medium",
+                            score=0.6,
+                            action=f"Evaluate if ICDEV™ should match this {comp_name} feature",
+                            meta={
+                                "competitor": comp_name,
+                                "releases": releases,
+                                "issues": issues,
+                                "source_type": "competitive",
+                            },
+                        )
+                    )
 
                 if releases > 0 and not features:
-                    findings.append(_finding(
-                        category="competitor_release",
-                        title=f"[{comp_name}] {releases} new release(s)",
-                        description=f"Competitor '{comp_name}' has {releases} new releases",
-                        severity="low",
-                        score=0.4,
-                        meta={"competitor": comp_name, "releases": releases},
-                    ))
+                    findings.append(
+                        _finding(
+                            category="competitor_release",
+                            title=f"[{comp_name}] {releases} new release(s)",
+                            description=f"Competitor '{comp_name}' has {releases} new releases",
+                            severity="low",
+                            score=0.4,
+                            meta={"competitor": comp_name, "releases": releases},
+                        )
+                    )
     except Exception as exc:
-        findings.append(_finding(
-            category="competitor_error",
-            title="Competitive intel scan failed",
-            description=str(exc),
-            severity="low",
-            score=0.0,
-        ))
+        findings.append(
+            _finding(
+                category="competitor_error",
+                title="Competitive intel scan failed",
+                description=str(exc),
+                severity="low",
+                score=0.0,
+            )
+        )
     return findings
 
 
@@ -142,25 +156,27 @@ def identify_new_competitors(trending_findings: List[dict], config: dict) -> Lis
             if len(parts) >= 2:
                 repo_name = f"{parts[0]}/{parts[1]}"
 
-        findings.append(_finding(
-            category="new_competitor",
-            title=f"New competitor candidate: {cand['title']}",
-            description=(
-                f"Trending repo with {cand.get('metadata', {}).get('stars', 0)} stars "
-                f"and {cand.get('relevance_score', 0):.2f} relevance score. "
-                f"{cand.get('description', '')}"
-            ),
-            url=url,
-            score=cand.get("relevance_score", 0.7),
-            severity="medium",
-            action=f"Auto-add '{repo_name}' to competitive tracking" if repo_name else "",
-            meta={
-                "repo_name": repo_name,
-                "stars": cand.get("metadata", {}).get("stars", 0),
-                "trending_id": cand.get("id", ""),
-                "auto_add_candidate": True,
-            },
-        ))
+        findings.append(
+            _finding(
+                category="new_competitor",
+                title=f"New competitor candidate: {cand['title']}",
+                description=(
+                    f"Trending repo with {cand.get('metadata', {}).get('stars', 0)} stars "
+                    f"and {cand.get('relevance_score', 0):.2f} relevance score. "
+                    f"{cand.get('description', '')}"
+                ),
+                url=url,
+                score=cand.get("relevance_score", 0.7),
+                severity="medium",
+                action=f"Auto-add '{repo_name}' to competitive tracking" if repo_name else "",
+                meta={
+                    "repo_name": repo_name,
+                    "stars": cand.get("metadata", {}).get("stars", 0),
+                    "trending_id": cand.get("id", ""),
+                    "auto_add_candidate": True,
+                },
+            )
+        )
 
     return findings
 
@@ -199,6 +215,7 @@ def main() -> None:
 
     try:
         import yaml
+
         cfg_path = BASE_DIR / "args" / "scout_config.yaml"
         with open(cfg_path, "r", encoding="utf-8") as f:
             config = yaml.safe_load(f) or {}

@@ -7,6 +7,7 @@ gap detection, and control-to-threat mapping against security design graphs.
 No Flask dependency — takes graph data and returns results.
 No LLM dependency — all checks are deterministic.
 """
+
 import json
 import uuid
 from datetime import datetime, timezone
@@ -24,6 +25,7 @@ from tools.security_canvas.constants import (
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
+
 
 def _node_types(nodes):
     """Return {node_id: node_type} dict."""
@@ -85,6 +87,7 @@ def _risk_score_from_levels(likelihood, impact):
 
 
 # ── STRIDE Analysis ─────────────────────────────────────────────────────────
+
 
 def run_stride_analysis(graph_data: dict) -> dict:
     """Analyze nodes and edges for STRIDE threats.
@@ -169,20 +172,22 @@ def run_stride_analysis(graph_data: dict) -> dict:
 
             if applicable:
                 threat_id = f"STRIDE-{cat_key}-{edge['source'][:6]}-{edge['target'][:6]}"
-                threats.append({
-                    "id": threat_id,
-                    "category": cat_key,
-                    "category_name": cat_info["name"],
-                    "title": f"{cat_info['name']}: {src_label} → {tgt_label}",
-                    "description": desc,
-                    "affected": f"{src_label}, {tgt_label}",
-                    "affected_assets": [edge["source"], edge["target"]],
-                    "edge_id": edge.get("id", ""),
-                    "crosses_boundary": crosses,
-                    "nist_controls": cat_info["nist_controls"],
-                    "likelihood": "high" if crosses else "medium",
-                    "impact": "high" if tgt_type in ("asset-database", "asset-storage") else "medium",
-                })
+                threats.append(
+                    {
+                        "id": threat_id,
+                        "category": cat_key,
+                        "category_name": cat_info["name"],
+                        "title": f"{cat_info['name']}: {src_label} → {tgt_label}",
+                        "description": desc,
+                        "affected": f"{src_label}, {tgt_label}",
+                        "affected_assets": [edge["source"], edge["target"]],
+                        "edge_id": edge.get("id", ""),
+                        "crosses_boundary": crosses,
+                        "nist_controls": cat_info["nist_controls"],
+                        "likelihood": "high" if crosses else "medium",
+                        "impact": "high" if tgt_type in ("asset-database", "asset-storage") else "medium",
+                    }
+                )
                 by_category[cat_key] += 1
 
     return {
@@ -194,8 +199,8 @@ def run_stride_analysis(graph_data: dict) -> dict:
 
 # ── Security Assessment ─────────────────────────────────────────────────────
 
-def run_security_assessment(design_id: str, graph_data: dict,
-                            rules: list = None) -> dict:
+
+def run_security_assessment(design_id: str, graph_data: dict, rules: list = None) -> dict:
     """Evaluate security assessment rules against a design.
 
     Args:
@@ -229,14 +234,16 @@ def run_security_assessment(design_id: str, graph_data: dict,
     findings = []
 
     def add_finding(rule, affected="", affected_type="design"):
-        findings.append({
-            "rule_id": rule["id"],
-            "title": rule["title"],
-            "severity": rule["severity"],
-            "category": rule["category"],
-            "affected_entity": affected,
-            "affected_type": affected_type,
-        })
+        findings.append(
+            {
+                "rule_id": rule["id"],
+                "title": rule["title"],
+                "severity": rule["severity"],
+                "category": rule["category"],
+                "affected_entity": affected,
+                "affected_type": affected_type,
+            }
+        )
 
     # Check dispatch — maps check function names to logic
     for rule in rules:
@@ -257,10 +264,7 @@ def run_security_assessment(design_id: str, graph_data: dict,
                 add_finding(rule, "design", "design")
 
         elif check == "pam_for_privileged":
-            if not pam_nodes and any(
-                (e.get("protocol") or "").lower() in ("ssh", "rdp", "admin")
-                for e in edges
-            ):
+            if not pam_nodes and any((e.get("protocol") or "").lower() in ("ssh", "rdp", "admin") for e in edges):
                 add_finding(rule, "design", "design")
 
         elif check == "boundary_flows_encrypted":
@@ -295,8 +299,9 @@ def run_security_assessment(design_id: str, graph_data: dict,
             inet_ids = {n["id"] for n in nodes if ntypes.get(n["id"]) == "boundary-internet"}
             db_ids = {n["id"] for n in db_nodes}
             for e in edges:
-                if (e["source"] in inet_ids and e["target"] in db_ids) or \
-                   (e["target"] in inet_ids and e["source"] in db_ids):
+                if (e["source"] in inet_ids and e["target"] in db_ids) or (
+                    e["target"] in inet_ids and e["source"] in db_ids
+                ):
                     add_finding(rule, f"{labels.get(e['source'], '')}→{labels.get(e['target'], '')}", "edge")
 
         elif check == "siem_present":
@@ -406,9 +411,9 @@ def run_security_assessment(design_id: str, graph_data: dict,
             storage_nodes = [n for n in nodes if ntypes.get(n["id"]) in ("asset-database", "asset-storage")]
             if storage_nodes:
                 has_backup = any(
-                    "backup" in (n.get("label", "") or "").lower() or
-                    "dr" in (n.get("label", "") or "").lower() or
-                    "replica" in (n.get("label", "") or "").lower()
+                    "backup" in (n.get("label", "") or "").lower()
+                    or "dr" in (n.get("label", "") or "").lower()
+                    or "replica" in (n.get("label", "") or "").lower()
                     for n in nodes
                 )
                 if not has_backup:
@@ -454,16 +459,15 @@ def run_security_assessment(design_id: str, graph_data: dict,
         elif check == "admission_control_present":
             has_containers = any(ntypes.get(n["id"]) in ("asset-container", "asset-registry") for n in nodes)
             has_admission = any(
-                ntypes.get(n["id"]) in ("ctrl-scanner",) and
-                "admission" in (n.get("label", "") or "").lower()
+                ntypes.get(n["id"]) in ("ctrl-scanner",) and "admission" in (n.get("label", "") or "").lower()
                 for n in nodes
             )
             # Also check for Kyverno/OPA type labels
             if not has_admission:
                 has_admission = any(
-                    "kyverno" in (n.get("label", "") or "").lower() or
-                    "opa" in (n.get("label", "") or "").lower() or
-                    "gatekeeper" in (n.get("label", "") or "").lower()
+                    "kyverno" in (n.get("label", "") or "").lower()
+                    or "opa" in (n.get("label", "") or "").lower()
+                    or "gatekeeper" in (n.get("label", "") or "").lower()
                     for n in nodes
                 )
             if has_containers and not has_admission:
@@ -601,6 +605,7 @@ def run_security_assessment(design_id: str, graph_data: dict,
 
 # ── Risk Scoring ─────────────────────────────────────────────────────────────
 
+
 def compute_risk_score(threats: list, controls: list) -> dict:
     """Compute risk scores for threats with/without mitigating controls.
 
@@ -671,6 +676,7 @@ def compute_risk_score(threats: list, controls: list) -> dict:
 
 # ── Posture Grade ────────────────────────────────────────────────────────────
 
+
 def compute_posture_grade(risk_score: float) -> str:
     """Convert a risk score (0-100) to a letter grade.
 
@@ -689,6 +695,7 @@ def compute_posture_grade(risk_score: float) -> str:
 
 
 # ── Gap Detection ────────────────────────────────────────────────────────────
+
 
 def detect_security_gaps(graph_data: dict) -> list:
     """Find missing controls, unprotected assets, and unauthenticated flows.
@@ -711,47 +718,55 @@ def detect_security_gaps(graph_data: dict) -> list:
 
     # 1. Missing SIEM
     if "ctrl-siem" not in type_set:
-        gaps.append({
-            "gap_type": "missing_control",
-            "severity": "CAT2",
-            "description": "No SIEM/SOC node in design — audit logging and monitoring will be incomplete (NIST AU-6, SI-4).",
-            "affected": "design",
-            "recommended_control": "ctrl-siem",
-        })
+        gaps.append(
+            {
+                "gap_type": "missing_control",
+                "severity": "CAT2",
+                "description": "No SIEM/SOC node in design — audit logging and monitoring will be incomplete (NIST AU-6, SI-4).",
+                "affected": "design",
+                "recommended_control": "ctrl-siem",
+            }
+        )
 
     # 2. Missing KMS
     if "ctrl-kms" not in type_set:
         has_encrypted = any(e.get("encrypted") for e in edges)
         if has_encrypted or any(ntypes.get(n["id"]) in ("asset-database", "asset-storage") for n in nodes):
-            gaps.append({
-                "gap_type": "missing_control",
-                "severity": "CAT1",
-                "description": "No KMS/HSM for key management — encrypted flows and data stores need centralized key management (NIST SC-12).",
-                "affected": "design",
-                "recommended_control": "ctrl-kms",
-            })
+            gaps.append(
+                {
+                    "gap_type": "missing_control",
+                    "severity": "CAT1",
+                    "description": "No KMS/HSM for key management — encrypted flows and data stores need centralized key management (NIST SC-12).",
+                    "affected": "design",
+                    "recommended_control": "ctrl-kms",
+                }
+            )
 
     # 3. Missing firewall
     if "ctrl-firewall" not in type_set:
-        gaps.append({
-            "gap_type": "missing_control",
-            "severity": "CAT1",
-            "description": "No firewall/WAF — perimeter and internal network filtering required (NIST SC-7).",
-            "affected": "design",
-            "recommended_control": "ctrl-firewall",
-        })
+        gaps.append(
+            {
+                "gap_type": "missing_control",
+                "severity": "CAT1",
+                "description": "No firewall/WAF — perimeter and internal network filtering required (NIST SC-7).",
+                "affected": "design",
+                "recommended_control": "ctrl-firewall",
+            }
+        )
 
     # 4. Missing IdP
     if "ctrl-idp" not in type_set:
         has_users = any(ntypes.get(n["id"]) == "asset-client" for n in nodes)
         if has_users:
-            gaps.append({
-                "gap_type": "missing_control",
-                "severity": "CAT1",
-                "description": "No IdP/MFA — user authentication requires centralized identity provider (NIST IA-2, IA-8).",
-                "affected": "design",
-                "recommended_control": "ctrl-idp",
-            })
+            gaps.append(
+                {
+                    "gap_type": "missing_control",
+                    "severity": "CAT1",
+                    "description": "No IdP/MFA — user authentication requires centralized identity provider (NIST IA-2, IA-8).",
+                    "affected": "design",
+                    "recommended_control": "ctrl-idp",
+                }
+            )
 
     # 5. Unprotected assets (no control neighbor)
     for n in nodes:
@@ -761,13 +776,15 @@ def detect_security_gaps(graph_data: dict) -> list:
         neighbors = adj.get(n["id"], set())
         has_control_neighbor = any(_is_control(ntypes.get(nb, "")) for nb in neighbors)
         if not has_control_neighbor:
-            gaps.append({
-                "gap_type": "unprotected_asset",
-                "severity": "CAT2",
-                "description": f"Asset '{labels.get(n['id'], n['id'])}' has no direct connection to any security control.",
-                "affected": n["id"],
-                "recommended_control": "ctrl-firewall",
-            })
+            gaps.append(
+                {
+                    "gap_type": "unprotected_asset",
+                    "severity": "CAT2",
+                    "description": f"Asset '{labels.get(n['id'], n['id'])}' has no direct connection to any security control.",
+                    "affected": n["id"],
+                    "recommended_control": "ctrl-firewall",
+                }
+            )
 
     # 6. Unauthenticated flows
     for e in edges:
@@ -778,39 +795,46 @@ def detect_security_gaps(graph_data: dict) -> list:
                 continue
             src_t = ntypes.get(e["source"], "")
             if _is_asset(src_t) and _is_asset(tgt_t):
-                gaps.append({
-                    "gap_type": "unauthenticated_flow",
-                    "severity": "CAT2",
-                    "description": f"Unauthenticated service-to-service flow: {labels.get(e['source'], '')} → {labels.get(e['target'], '')} (NIST IA-3).",
-                    "affected": e.get("id", ""),
-                    "recommended_control": "ctrl-idp",
-                })
+                gaps.append(
+                    {
+                        "gap_type": "unauthenticated_flow",
+                        "severity": "CAT2",
+                        "description": f"Unauthenticated service-to-service flow: {labels.get(e['source'], '')} → {labels.get(e['target'], '')} (NIST IA-3).",
+                        "affected": e.get("id", ""),
+                        "recommended_control": "ctrl-idp",
+                    }
+                )
 
     # 7. Unencrypted boundary crossings
     for e in edges:
         if _edge_crosses_boundary(e, boundaries) and not e.get("encrypted", False):
-            gaps.append({
-                "gap_type": "unencrypted_crossing",
-                "severity": "CAT1",
-                "description": f"Unencrypted flow crossing trust boundary: {labels.get(e['source'], '')} → {labels.get(e['target'], '')} (NIST SC-8).",
-                "affected": e.get("id", ""),
-                "recommended_control": "ctrl-encryption",
-            })
+            gaps.append(
+                {
+                    "gap_type": "unencrypted_crossing",
+                    "severity": "CAT1",
+                    "description": f"Unencrypted flow crossing trust boundary: {labels.get(e['source'], '')} → {labels.get(e['target'], '')} (NIST SC-8).",
+                    "affected": e.get("id", ""),
+                    "recommended_control": "ctrl-encryption",
+                }
+            )
 
     # 8. No boundaries at all
     if not boundaries and len(nodes) > 3:
-        gaps.append({
-            "gap_type": "no_segmentation",
-            "severity": "CAT2",
-            "description": "Design has no trust boundaries — network segmentation required for defense in depth (NIST SC-7).",
-            "affected": "design",
-            "recommended_control": "boundary-network",
-        })
+        gaps.append(
+            {
+                "gap_type": "no_segmentation",
+                "severity": "CAT2",
+                "description": "Design has no trust boundaries — network segmentation required for defense in depth (NIST SC-7).",
+                "affected": "design",
+                "recommended_control": "boundary-network",
+            }
+        )
 
     return gaps
 
 
 # ── NIST 800-53 Control Coverage ────────────────────────────────────────────
+
 
 def compute_nist_coverage(graph_data: dict) -> dict:
     """Compute NIST 800-53 control family coverage based on graph nodes/edges.
@@ -836,17 +860,17 @@ def compute_nist_coverage(graph_data: dict) -> dict:
     # Map control types to NIST families they cover
     # Each entry: (family_code, coverage_pct_contribution)
     _CTRL_FAMILY_MAP = {
-        "ctrl-firewall":   [("SC", 40), ("AC", 15)],
-        "ctrl-idp":        [("IA", 50), ("AC", 15)],
-        "ctrl-siem":       [("AU", 50), ("SI", 15), ("IR", 15)],
-        "ctrl-kms":        [("SC", 30)],
-        "ctrl-ids":        [("SI", 30), ("RA", 15)],
-        "ctrl-pam":        [("AC", 40)],
-        "ctrl-scanner":    [("RA", 40), ("CA", 15)],
+        "ctrl-firewall": [("SC", 40), ("AC", 15)],
+        "ctrl-idp": [("IA", 50), ("AC", 15)],
+        "ctrl-siem": [("AU", 50), ("SI", 15), ("IR", 15)],
+        "ctrl-kms": [("SC", 30)],
+        "ctrl-ids": [("SI", 30), ("RA", 15)],
+        "ctrl-pam": [("AC", 40)],
+        "ctrl-scanner": [("RA", 40), ("CA", 15)],
         "ctrl-encryption": [("SC", 30)],
-        "ctrl-dlp":        [("MP", 40), ("SI", 15)],
-        "ctrl-edr":        [("SI", 30), ("IR", 15)],
-        "ctrl-cspm":       [("CA", 30), ("CM", 15)],
+        "ctrl-dlp": [("MP", 40), ("SI", 15)],
+        "ctrl-edr": [("SI", 30), ("IR", 15)],
+        "ctrl-cspm": [("CA", 30), ("CM", 15)],
     }
 
     # Accumulate coverage per family
@@ -898,9 +922,9 @@ def compute_nist_coverage(graph_data: dict) -> dict:
 
     total_families = len(NIST_CONTROL_FAMILIES)
     covered_families = sum(1 for f in families.values() if f["coverage_pct"] > 0)
-    overall_coverage_pct = round(
-        sum(f["coverage_pct"] for f in families.values()) / total_families
-    ) if total_families else 0
+    overall_coverage_pct = (
+        round(sum(f["coverage_pct"] for f in families.values()) / total_families) if total_families else 0
+    )
 
     return {
         "families": families,
@@ -911,6 +935,7 @@ def compute_nist_coverage(graph_data: dict) -> dict:
 
 
 # ── Attack Path Finder ──────────────────────────────────────────────────────
+
 
 def find_attack_paths(graph_data: dict) -> dict:
     """Find and score attack paths from entry points to high-value targets.
@@ -958,8 +983,7 @@ def find_attack_paths(graph_data: dict) -> dict:
             entry_points.add(n["id"])
 
     # Identify high-value targets
-    targets = {n["id"] for n in nodes
-                if ntypes.get(n["id"]) in ("asset-database", "asset-storage")}
+    targets = {n["id"] for n in nodes if ntypes.get(n["id"]) in ("asset-database", "asset-storage")}
 
     MAX_DEPTH = 8
     attack_paths = []
@@ -975,41 +999,44 @@ def find_attack_paths(graph_data: dict) -> dict:
                 current, path = queue.pop(0)
                 if current == target_id:
                     # Score this path
-                    risk_score = _score_attack_path(
-                        path, dir_adj, ntypes, boundaries, edges
-                    )
+                    risk_score = _score_attack_path(path, dir_adj, ntypes, boundaries, edges)
                     risk_level = (
-                        "critical" if risk_score >= 80
-                        else "high" if risk_score >= 60
-                        else "medium" if risk_score >= 40
+                        "critical"
+                        if risk_score >= 80
+                        else "high"
+                        if risk_score >= 60
+                        else "medium"
+                        if risk_score >= 40
                         else "low"
                     )
                     mitigations = _suggest_mitigations(path, ntypes)
                     path_id = f"AP-{entry_id[:6]}-{target_id[:6]}-{len(attack_paths)}"
-                    attack_paths.append({
-                        "id": path_id,
-                        "entry": {
-                            "id": entry_id,
-                            "label": labels.get(entry_id, entry_id),
-                            "type": ntypes.get(entry_id, ""),
-                        },
-                        "target": {
-                            "id": target_id,
-                            "label": labels.get(target_id, target_id),
-                            "type": ntypes.get(target_id, ""),
-                        },
-                        "hops": [
-                            {
-                                "node_id": nid,
-                                "node_label": labels.get(nid, nid),
-                                "node_type": ntypes.get(nid, ""),
-                            }
-                            for nid in path
-                        ],
-                        "risk_score": risk_score,
-                        "risk_level": risk_level,
-                        "mitigations": mitigations,
-                    })
+                    attack_paths.append(
+                        {
+                            "id": path_id,
+                            "entry": {
+                                "id": entry_id,
+                                "label": labels.get(entry_id, entry_id),
+                                "type": ntypes.get(entry_id, ""),
+                            },
+                            "target": {
+                                "id": target_id,
+                                "label": labels.get(target_id, target_id),
+                                "type": ntypes.get(target_id, ""),
+                            },
+                            "hops": [
+                                {
+                                    "node_id": nid,
+                                    "node_label": labels.get(nid, nid),
+                                    "node_type": ntypes.get(nid, ""),
+                                }
+                                for nid in path
+                            ],
+                            "risk_score": risk_score,
+                            "risk_level": risk_level,
+                            "mitigations": mitigations,
+                        }
+                    )
                     continue
                 if len(path) >= MAX_DEPTH:
                     continue
@@ -1092,8 +1119,8 @@ def _suggest_mitigations(path, ntypes):
 
 # ── FedRAMP Authorization Boundary Auto-Drawing ──────────────────────────────
 
-def generate_fedramp_boundary(graph_data: dict,
-                              impact_level: str = "moderate") -> dict:
+
+def generate_fedramp_boundary(graph_data: dict, impact_level: str = "moderate") -> dict:
     """Generate FedRAMP authorization boundary and missing controls.
 
     Analyzes existing nodes to determine what boundaries and controls are
@@ -1230,13 +1257,15 @@ def generate_fedramp_boundary(graph_data: dict,
         # Generate edges from this control to assets it protects
         for aid in asset_ids:
             edge_id = f"fedramp-edge-{str(uuid.uuid4())[:8]}"
-            edges_added.append({
-                "id": edge_id,
-                "source": cid,
-                "target": aid,
-                "label": "protects",
-                "config": {"fedramp_generated": True},
-            })
+            edges_added.append(
+                {
+                    "id": edge_id,
+                    "source": cid,
+                    "target": aid,
+                    "label": "protects",
+                    "config": {"fedramp_generated": True},
+                }
+            )
 
         ctrl_index += 1
 
@@ -1265,8 +1294,7 @@ def generate_fedramp_boundary(graph_data: dict,
 
     fedramp_ready = len(missing_for_ready) == 0
 
-    total_additions = (len(boundaries_added) + len(controls_added)
-                       + len(edges_added))
+    total_additions = len(boundaries_added) + len(controls_added) + len(edges_added)
 
     return {
         "impact_level": impact_level,
@@ -1317,27 +1345,25 @@ def compute_mitre_coverage(graph_data: dict) -> dict:
 
         for tech in tactic_data["techniques"]:
             detectable_by = tech.get("detectable_by", [])
-            matched_controls = [
-                c for c in detectable_by if c in present_controls
-            ]
+            matched_controls = [c for c in detectable_by if c in present_controls]
             detected = len(matched_controls) > 0
             if detected:
                 detected_count += 1
             elif tech.get("severity") == "critical":
                 critical_undetected.append(tech["name"])
 
-            techniques_out.append({
-                "id": tech["id"],
-                "name": tech["name"],
-                "detected": detected,
-                "detected_by": matched_controls,
-                "severity": tech.get("severity", "medium"),
-            })
+            techniques_out.append(
+                {
+                    "id": tech["id"],
+                    "name": tech["name"],
+                    "detected": detected,
+                    "detected_by": matched_controls,
+                    "severity": tech.get("severity", "medium"),
+                }
+            )
 
         tech_total = len(tactic_data["techniques"])
-        coverage_pct = (
-            round(detected_count * 100 / tech_total) if tech_total else 0
-        )
+        coverage_pct = round(detected_count * 100 / tech_total) if tech_total else 0
         total_techniques += tech_total
         total_detected += detected_count
 
@@ -1350,10 +1376,7 @@ def compute_mitre_coverage(graph_data: dict) -> dict:
             "techniques": techniques_out,
         }
 
-    overall_pct = (
-        round(total_detected * 100 / total_techniques)
-        if total_techniques else 0
-    )
+    overall_pct = round(total_detected * 100 / total_techniques) if total_techniques else 0
 
     return {
         "tactics": tactics,
@@ -1365,6 +1388,7 @@ def compute_mitre_coverage(graph_data: dict) -> dict:
 
 
 # ── Compliance Crosswalk (NIST / FedRAMP / CMMC) ──────────────────────────────
+
 
 def compute_compliance_crosswalk(graph_data: dict) -> dict:
     """Compute multi-framework compliance crosswalk for a security design.
@@ -1383,10 +1407,7 @@ def compute_compliance_crosswalk(graph_data: dict) -> dict:
     nist_families = nist_result.get("families", {})
 
     # Determine which NIST families have coverage > 0
-    covered_families = {
-        fam_code for fam_code, fam_data in nist_families.items()
-        if fam_data.get("coverage_pct", 0) > 0
-    }
+    covered_families = {fam_code for fam_code, fam_data in nist_families.items() if fam_data.get("coverage_pct", 0) > 0}
 
     # Build per-framework results
     nist_controls = []
@@ -1402,40 +1423,48 @@ def compute_compliance_crosswalk(graph_data: dict) -> dict:
         description = mapping["description"]
 
         # NIST
-        nist_controls.append({
-            "id": nist_id,
-            "description": description,
-            "covered": is_covered,
-        })
+        nist_controls.append(
+            {
+                "id": nist_id,
+                "description": description,
+                "covered": is_covered,
+            }
+        )
 
         # FedRAMP
         fedramp_id = mapping.get("fedramp")
         if fedramp_id:
-            fedramp_controls.append({
-                "id": fedramp_id,
-                "nist_source": nist_id,
-                "description": description,
-                "covered": is_covered,
-            })
+            fedramp_controls.append(
+                {
+                    "id": fedramp_id,
+                    "nist_source": nist_id,
+                    "description": description,
+                    "covered": is_covered,
+                }
+            )
 
         # CMMC
         cmmc_id = mapping.get("cmmc")
         if cmmc_id:
-            cmmc_controls.append({
-                "id": cmmc_id,
-                "nist_source": nist_id,
-                "description": description,
-                "covered": is_covered,
-            })
+            cmmc_controls.append(
+                {
+                    "id": cmmc_id,
+                    "nist_source": nist_id,
+                    "description": description,
+                    "covered": is_covered,
+                }
+            )
 
         # Crosswalk row
-        crosswalk_matrix.append({
-            "nist": nist_id,
-            "fedramp": fedramp_id or "N/A",
-            "cmmc": cmmc_id or "N/A",
-            "description": description,
-            "covered": is_covered,
-        })
+        crosswalk_matrix.append(
+            {
+                "nist": nist_id,
+                "fedramp": fedramp_id or "N/A",
+                "cmmc": cmmc_id or "N/A",
+                "description": description,
+                "covered": is_covered,
+            }
+        )
 
     # Compute per-framework stats
     def _fw_stats(controls):
@@ -1471,6 +1500,7 @@ def compute_compliance_crosswalk(graph_data: dict) -> dict:
 
 # ── Control-to-Threat Mapping ────────────────────────────────────────────────
 
+
 def map_controls_to_threats(threats: list) -> list:
     """For each identified threat, suggest NIST 800-53 controls.
 
@@ -1495,21 +1525,25 @@ def map_controls_to_threats(threats: list) -> list:
         for ctrl_id in nist_controls:
             family = ctrl_id.split("-")[0]
             family_info = NIST_CONTROL_FAMILIES.get(family, {})
-            enriched_controls.append({
-                "control_id": ctrl_id,
-                "family": family,
-                "family_name": family_info.get("name", family),
-            })
+            enriched_controls.append(
+                {
+                    "control_id": ctrl_id,
+                    "family": family,
+                    "family_name": family_info.get("name", family),
+                }
+            )
 
-        recommendations.append({
-            "threat_id": threat.get("id", ""),
-            "threat_title": threat.get("title", ""),
-            "threat_category": cat,
-            "threat_category_name": cat_info.get("name", cat),
-            "recommended_controls": enriched_controls,
-            "rationale": f"{cat_info.get('name', cat)} threats are mitigated by "
-                         f"{', '.join(nist_controls)} controls.",
-        })
+        recommendations.append(
+            {
+                "threat_id": threat.get("id", ""),
+                "threat_title": threat.get("title", ""),
+                "threat_category": cat,
+                "threat_category_name": cat_info.get("name", cat),
+                "recommended_controls": enriched_controls,
+                "rationale": f"{cat_info.get('name', cat)} threats are mitigated by "
+                f"{', '.join(nist_controls)} controls.",
+            }
+        )
 
     return recommendations
 
@@ -1584,12 +1618,14 @@ def generate_auto_fix(design_id: str, graph_data: dict) -> dict:
                 # Find the matching edge by id
                 for e in edges:
                     if e.get("id", "") == affected_edge_id:
-                        edges_modified.append({
-                            "source": e["source"],
-                            "target": e["target"],
-                            "encrypted": 1,
-                            "authenticated": 1,
-                        })
+                        edges_modified.append(
+                            {
+                                "source": e["source"],
+                                "target": e["target"],
+                                "encrypted": 1,
+                                "authenticated": 1,
+                            }
+                        )
                         break
             continue
 
@@ -1615,22 +1651,26 @@ def generate_auto_fix(design_id: str, graph_data: dict) -> dict:
             # Connect control to the specific unprotected asset
             affected_asset = gap.get("affected", "")
             if affected_asset and affected_asset != "design":
-                edges_added.append({
-                    "source": ctrl_node_id,
-                    "target": affected_asset,
-                    "encrypted": 0,
-                    "authenticated": 0,
-                })
+                edges_added.append(
+                    {
+                        "source": ctrl_node_id,
+                        "target": affected_asset,
+                        "encrypted": 0,
+                        "authenticated": 0,
+                    }
+                )
 
         elif gap_type == "missing_control":
             # Connect control to ALL asset nodes
             for aid in asset_ids:
-                edges_added.append({
-                    "source": ctrl_node_id,
-                    "target": aid,
-                    "encrypted": 0,
-                    "authenticated": 0,
-                })
+                edges_added.append(
+                    {
+                        "source": ctrl_node_id,
+                        "target": aid,
+                        "encrypted": 0,
+                        "authenticated": 0,
+                    }
+                )
 
         elif gap_type == "unauthenticated_flow":
             # Connect control between the flow's source and target
@@ -1638,18 +1678,22 @@ def generate_auto_fix(design_id: str, graph_data: dict) -> dict:
             if affected_edge_id:
                 for e in edges:
                     if e.get("id", "") == affected_edge_id:
-                        edges_added.append({
-                            "source": ctrl_node_id,
-                            "target": e["source"],
-                            "encrypted": 0,
-                            "authenticated": 1,
-                        })
-                        edges_added.append({
-                            "source": ctrl_node_id,
-                            "target": e["target"],
-                            "encrypted": 0,
-                            "authenticated": 1,
-                        })
+                        edges_added.append(
+                            {
+                                "source": ctrl_node_id,
+                                "target": e["source"],
+                                "encrypted": 0,
+                                "authenticated": 1,
+                            }
+                        )
+                        edges_added.append(
+                            {
+                                "source": ctrl_node_id,
+                                "target": e["target"],
+                                "encrypted": 0,
+                                "authenticated": 1,
+                            }
+                        )
                         break
 
         elif gap_type == "no_segmentation":
@@ -1669,9 +1713,8 @@ def generate_auto_fix(design_id: str, graph_data: dict) -> dict:
 
 # ── Multi-Design Comparison ────────────────────────────────────────────────
 
-def compare_designs(graph_a: dict, graph_b: dict,
-                    name_a: str = "Design A",
-                    name_b: str = "Design B") -> dict:
+
+def compare_designs(graph_a: dict, graph_b: dict, name_a: str = "Design A", name_b: str = "Design B") -> dict:
     """Compare two security design graphs and return a comprehensive diff.
 
     Computes set differences for nodes, edges, and boundaries, then runs
@@ -1687,6 +1730,7 @@ def compare_designs(graph_a: dict, graph_b: dict,
         Dict with node/edge/boundary diffs, risk deltas, finding diffs,
         NIST coverage deltas, and a summary string.
     """
+
     # ── Extract node sets (type+label as identity key) ────────────────────
     def _node_key(n):
         return (n.get("type", ""), n.get("label", n.get("id", "")))
@@ -1888,17 +1932,20 @@ def diff_graph_versions(graph_old: dict, graph_new: dict) -> dict:
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
 
+
 def main():
     """CLI entry point for security analysis."""
     import argparse
 
-    parser = argparse.ArgumentParser(
-        description="Security Design Canvas — Analysis Engine"
-    )
+    parser = argparse.ArgumentParser(description="Security Design Canvas — Analysis Engine")
     parser.add_argument("--json", action="store_true", help="Output as JSON")
     parser.add_argument("--design-file", type=str, help="Path to design JSON file")
-    parser.add_argument("--analysis", choices=["stride", "assessment", "risk", "gaps", "controls"],
-                        default="assessment", help="Analysis type to run")
+    parser.add_argument(
+        "--analysis",
+        choices=["stride", "assessment", "risk", "gaps", "controls"],
+        default="assessment",
+        help="Analysis type to run",
+    )
     args = parser.parse_args()
 
     # Load design data

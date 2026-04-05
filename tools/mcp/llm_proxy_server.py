@@ -49,6 +49,7 @@ def _get_router():
     global _router
     if _router is None:
         from tools.llm.router import LLMRouter
+
         _router = LLMRouter()
         logger.info("LLMRouter initialized")
     return _router
@@ -189,6 +190,7 @@ def handle_llm_resolve(args: dict) -> dict:
 # ---------------------------------------------------------------------------
 # Server setup
 # ---------------------------------------------------------------------------
+
 
 def create_server() -> MCPServer:
     """Create and configure the LLM proxy MCP server."""

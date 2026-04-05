@@ -32,6 +32,7 @@ def fedramp_20x_stats():
     project_id = request.args.get("project_id", "")
     try:
         from fedramp_ksi_generator import generate_summary
+
         result = generate_summary(project_id, Path(DB_PATH))
         return jsonify(result)
     except Exception as e:
@@ -44,6 +45,7 @@ def fedramp_20x_ksis():
     project_id = request.args.get("project_id", "")
     try:
         from fedramp_ksi_generator import generate_all_ksis
+
         result = generate_all_ksis(project_id, Path(DB_PATH))
         return jsonify(result)
     except Exception as e:
@@ -56,6 +58,7 @@ def fedramp_20x_ksi_detail(ksi_id):
     project_id = request.args.get("project_id", "")
     try:
         from fedramp_ksi_generator import generate_ksi
+
         result = generate_ksi(project_id, ksi_id, Path(DB_PATH))
         return jsonify(result)
     except Exception as e:
@@ -68,6 +71,7 @@ def fedramp_20x_package():
     project_id = request.args.get("project_id", "")
     try:
         from fedramp_authorization_packager import package_authorization
+
         result = package_authorization(project_id)
         return jsonify(result)
     except Exception as e:

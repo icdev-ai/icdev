@@ -9571,9 +9571,7 @@ def _has_migration_system(path):
         return False
     try:
         conn = sqlite3.connect(str(path))
-        c = conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_migrations'"
-        )
+        c = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_migrations'")
         has_table = c.fetchone() is not None
         conn.close()
         return has_table

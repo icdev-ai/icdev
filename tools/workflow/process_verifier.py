@@ -98,9 +98,11 @@ def verify_loop_processes(loop_id: str, db_path: Optional[Path] = None) -> Dict[
 
         config = _load_config()
         loop_type = loop["loop_type"] or "build"
-        required = config.get("process_verification", {}).get(
-            "required_processes", DEFAULT_REQUIRED_PROCESSES
-        ).get(loop_type, DEFAULT_REQUIRED_PROCESSES.get(loop_type, []))
+        required = (
+            config.get("process_verification", {})
+            .get("required_processes", DEFAULT_REQUIRED_PROCESSES)
+            .get(loop_type, DEFAULT_REQUIRED_PROCESSES.get(loop_type, []))
+        )
 
         project_id = loop["project_id"]
         since = loop["apply_started_at"] or loop["created_at"]
@@ -123,19 +125,23 @@ def verify_loop_processes(loop_id: str, db_path: Optional[Path] = None) -> Dict[
 
             if evidence:
                 invoked_count += 1
-                results.append({
-                    "process": proc,
-                    "status": "invoked",
-                    "evidence": evidence["action"],
-                    "timestamp": evidence["created_at"],
-                })
+                results.append(
+                    {
+                        "process": proc,
+                        "status": "invoked",
+                        "evidence": evidence["action"],
+                        "timestamp": evidence["created_at"],
+                    }
+                )
             else:
-                results.append({
-                    "process": proc,
-                    "status": "missing",
-                    "evidence": None,
-                    "timestamp": None,
-                })
+                results.append(
+                    {
+                        "process": proc,
+                        "status": "missing",
+                        "evidence": None,
+                        "timestamp": None,
+                    }
+                )
 
         total = len(required)
         missing = [r["process"] for r in results if r["status"] == "missing"]
@@ -171,13 +177,13 @@ def check_project_processes(
     conn = _get_db(db_path)
     try:
         config = _load_config()
-        required = config.get("process_verification", {}).get(
-            "required_processes", DEFAULT_REQUIRED_PROCESSES
-        ).get(loop_type, DEFAULT_REQUIRED_PROCESSES.get(loop_type, []))
-
-        since = (datetime.now(timezone.utc) - timedelta(hours=hours)).strftime(
-            "%Y-%m-%dT%H:%M:%SZ"
+        required = (
+            config.get("process_verification", {})
+            .get("required_processes", DEFAULT_REQUIRED_PROCESSES)
+            .get(loop_type, DEFAULT_REQUIRED_PROCESSES.get(loop_type, []))
         )
+
+        since = (datetime.now(timezone.utc) - timedelta(hours=hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
         results: List[Dict[str, Any]] = []
         invoked_count = 0
@@ -196,15 +202,21 @@ def check_project_processes(
 
             if evidence:
                 invoked_count += 1
-                results.append({
-                    "process": proc, "status": "invoked",
-                    "last_run": evidence["created_at"],
-                })
+                results.append(
+                    {
+                        "process": proc,
+                        "status": "invoked",
+                        "last_run": evidence["created_at"],
+                    }
+                )
             else:
-                results.append({
-                    "process": proc, "status": "missing",
-                    "last_run": None,
-                })
+                results.append(
+                    {
+                        "process": proc,
+                        "status": "missing",
+                        "last_run": None,
+                    }
+                )
 
         total = len(required)
         missing = [r["process"] for r in results if r["status"] == "missing"]
@@ -249,9 +261,7 @@ def main() -> None:
         else:
             if not args.project_id:
                 parser.error("--check requires --project-id")
-            result = check_project_processes(
-                args.project_id, args.loop_type, args.hours, args.db_path
-            )
+            result = check_project_processes(args.project_id, args.loop_type, args.hours, args.db_path)
 
         if args.json:
             print(json.dumps(result, indent=2, default=str))

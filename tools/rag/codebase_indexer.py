@@ -15,6 +15,7 @@ Usage::
     python tools/rag/codebase_indexer.py --scan --scope tools/pulse
     python tools/rag/codebase_indexer.py --background --interval 30
 """
+
 from __future__ import annotations
 
 import argparse
@@ -39,8 +40,15 @@ try:
 except ImportError:
     # Fallback when running standalone or in test environments
     EXCLUDED_DIRS: set[str] = {
-        ".git", "__pycache__", "node_modules", ".venv", "venv",
-        ".mypy_cache", ".pytest_cache", ".ruff_cache", ".tmp",
+        ".git",
+        "__pycache__",
+        "node_modules",
+        ".venv",
+        "venv",
+        ".mypy_cache",
+        ".pytest_cache",
+        ".ruff_cache",
+        ".tmp",
     }
 
     def is_excluded_file(file_path: Path) -> bool:  # type: ignore[misc]
@@ -51,6 +59,7 @@ except ImportError:
             if part.lower() in EXCLUDED_DIRS:
                 return True
         return False
+
 
 try:
     from tools.db.storage import get_connection
@@ -84,14 +93,29 @@ EXTENSION_MAP: dict[str, str] = {
 
 # Files/patterns that must NEVER be indexed (secrets, credentials, DBs)
 SECURITY_EXCLUSIONS: set[str] = {
-    ".env", ".env.local", ".env.production", ".env.staging",
-    "credentials.json", "credentials.yaml", "secrets.yaml",
-    "service_account.json", "id_rsa", "id_ed25519",
+    ".env",
+    ".env.local",
+    ".env.production",
+    ".env.staging",
+    "credentials.json",
+    "credentials.yaml",
+    "secrets.yaml",
+    "service_account.json",
+    "id_rsa",
+    "id_ed25519",
 }
 
 SECURITY_EXTENSIONS: set[str] = {
-    ".pem", ".key", ".crt", ".p12", ".pfx", ".db", ".sqlite",
-    ".sqlite3", ".pickle", ".pkl",
+    ".pem",
+    ".key",
+    ".crt",
+    ".p12",
+    ".pfx",
+    ".db",
+    ".sqlite",
+    ".sqlite3",
+    ".pickle",
+    ".pkl",
 }
 
 MAX_TEXT_CHUNK_CHARS = 2000
@@ -230,35 +254,40 @@ def index_python_file(file_path: Path, base_dir: Path) -> list[dict]:
         else:
             sig_line = ""
 
-        chunks.append({
-            "content": content,
-            "metadata": {
-                "file_path": rel_path.replace("\\", "/"),
-                "line_start": line_start,
-                "line_end": line_end,
-                "symbol_name": symbol_name,
-                "symbol_type": symbol_type,
-                "docstring": textwrap.shorten(docstring, width=500, placeholder="…"),
-                "signature": sig_line,
-            },
-        })
+        chunks.append(
+            {
+                "content": content,
+                "metadata": {
+                    "file_path": rel_path.replace("\\", "/"),
+                    "line_start": line_start,
+                    "line_end": line_end,
+                    "symbol_name": symbol_name,
+                    "symbol_type": symbol_type,
+                    "docstring": textwrap.shorten(docstring, width=500, placeholder="…"),
+                    "signature": sig_line,
+                },
+            }
+        )
 
     # If the file has no top-level symbols treat it as a single text chunk
     if not chunks:
-        chunks.append({
-            "content": textwrap.shorten(
-                source, width=MAX_TEXT_CHUNK_CHARS,
-                placeholder="...",
-            ),
-            "metadata": {
-                "file_path": rel_path.replace("\\", "/"),
-                "line_start": 1,
-                "line_end": len(source_lines),
-                "symbol_name": "<module>",
-                "symbol_type": "module",
-                "docstring": ast.get_docstring(tree) or "",
-            },
-        })
+        chunks.append(
+            {
+                "content": textwrap.shorten(
+                    source,
+                    width=MAX_TEXT_CHUNK_CHARS,
+                    placeholder="...",
+                ),
+                "metadata": {
+                    "file_path": rel_path.replace("\\", "/"),
+                    "line_start": 1,
+                    "line_end": len(source_lines),
+                    "symbol_name": "<module>",
+                    "symbol_type": "module",
+                    "docstring": ast.get_docstring(tree) or "",
+                },
+            }
+        )
 
     return chunks
 
@@ -288,8 +317,7 @@ def _split_yaml(text: str) -> list[str]:
     sections: list[str] = []
     current: list[str] = []
     for line in text.splitlines(keepends=True):
-        is_top = (line and not line[0].isspace()
-                  and line[0] not in ("#", "-", " "))
+        is_top = line and not line[0].isspace() and line[0] not in ("#", "-", " ")
         if is_top and current:
             sections.append("".join(current))
             current = [line]
@@ -346,17 +374,19 @@ def index_text_file(file_path: Path, base_dir: Path) -> list[dict]:
         first_line = content.split("\n", 1)[0].strip()
         symbol_name = first_line[:120] if first_line else "<chunk>"
 
-        chunks.append({
-            "content": content,
-            "metadata": {
-                "file_path": rel_path.replace("\\", "/"),
-                "line_start": line_cursor,
-                "line_end": line_cursor + section_lines - 1,
-                "symbol_name": symbol_name,
-                "symbol_type": "section",
-                "docstring": "",
-            },
-        })
+        chunks.append(
+            {
+                "content": content,
+                "metadata": {
+                    "file_path": rel_path.replace("\\", "/"),
+                    "line_start": line_cursor,
+                    "line_end": line_cursor + section_lines - 1,
+                    "symbol_name": symbol_name,
+                    "symbol_type": "section",
+                    "docstring": "",
+                },
+            }
+        )
         line_cursor += section_lines
 
     return chunks
@@ -376,7 +406,8 @@ def index_git_history(base_dir: Path, limit: int = 200) -> list[dict]:
     try:
         result = subprocess.run(
             [
-                "git", "log",
+                "git",
+                "log",
                 f"--max-count={limit}",
                 "--pretty=format:%H||%an||%aI||%s",
                 "--name-only",
@@ -413,20 +444,22 @@ def index_git_history(base_dir: Path, limit: int = 200) -> list[dict]:
             f"Subject: {subject}\n"
             f"Files: {', '.join(changed_files[:20])}"
         )
-        chunks.append({
-            "content": content,
-            "metadata": {
-                "file_path": "<git-history>",
-                "line_start": 0,
-                "line_end": 0,
-                "symbol_name": subject[:120],
-                "symbol_type": "commit",
-                "docstring": "",
-                "commit_hash": commit_hash,
-                "author": author,
-                "date": date_str,
-            },
-        })
+        chunks.append(
+            {
+                "content": content,
+                "metadata": {
+                    "file_path": "<git-history>",
+                    "line_start": 0,
+                    "line_end": 0,
+                    "symbol_name": subject[:120],
+                    "symbol_type": "commit",
+                    "docstring": "",
+                    "commit_hash": commit_hash,
+                    "author": author,
+                    "date": date_str,
+                },
+            }
+        )
 
     return chunks
 
@@ -574,8 +607,13 @@ def scan_codebase(
 
             if conn is not None:
                 _store_record(
-                    conn, fp, base_dir, file_hash,
-                    file_type, symbols, len(chunks),
+                    conn,
+                    fp,
+                    base_dir,
+                    file_hash,
+                    file_type,
+                    symbols,
+                    len(chunks),
                 )
 
             total_chunks += len(chunks)
@@ -612,7 +650,8 @@ def run_background(
 ) -> None:
     """Run the indexer in a loop, sleeping *interval_minutes* between scans."""
     LOG.info(
-        "Starting background codebase indexer (interval=%d min)", interval_minutes,
+        "Starting background codebase indexer (interval=%d min)",
+        interval_minutes,
     )
     while True:
         try:

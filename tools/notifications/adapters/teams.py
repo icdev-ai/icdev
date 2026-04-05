@@ -26,8 +26,7 @@ class TeamsAdapter(NotificationAdapter):
         url_env = config.get("webhook_url_env", "TEAMS_WEBHOOK_URL")
         self.webhook_url = os.environ.get(url_env, "")
 
-    def send(self, title: str, body: str, severity: str = "info",
-             metadata: Optional[Dict] = None) -> bool:
+    def send(self, title: str, body: str, severity: str = "info", metadata: Optional[Dict] = None) -> bool:
         if not self.webhook_url:
             return False
 
@@ -38,11 +37,13 @@ class TeamsAdapter(NotificationAdapter):
             "@context": "http://schema.org/extensions",
             "themeColor": color,
             "summary": f"ICDEV™ {severity.upper()}: {title}",
-            "sections": [{
-                "activityTitle": f"[ICDEV™ {severity.upper()}] {title}",
-                "text": body[:5000],
-                "markdown": True,
-            }],
+            "sections": [
+                {
+                    "activityTitle": f"[ICDEV™ {severity.upper()}] {title}",
+                    "text": body[:5000],
+                    "markdown": True,
+                }
+            ],
         }
 
         try:

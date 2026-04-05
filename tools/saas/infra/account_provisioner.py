@@ -61,12 +61,14 @@ logger = logging.getLogger("account_provisioner")
 try:
     import boto3
     from botocore.exceptions import ClientError
+
     BOTO3_AVAILABLE = True
 except ImportError:
     BOTO3_AVAILABLE = False
     logger.warning(
         "boto3 not installed. Account provisioner will generate YAML plans "
-        "instead of executing AWS API calls. Install with: pip install boto3")
+        "instead of executing AWS API calls. Install with: pip install boto3"
+    )
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -110,6 +112,7 @@ VPC_CIDR = "10.{octet2}.0.0/16"
 # Plan Generation (always available, no AWS dependency)
 # ============================================================================
 
+
 def _generate_plan(tenant_slug, impact_level, email):
     """Generate a declarative plan describing resources to be provisioned.
 
@@ -138,100 +141,109 @@ def _generate_plan(tenant_slug, impact_level, email):
     }
 
     # 1. AWS Organizations sub-account
-    plan["resources"].append({
-        "type": "organizations:Account",
-        "action": "CreateAccount",
-        "properties": {
-            "AccountName": "icdev-tenant-{}".format(tenant_slug),
-            "Email": email,
-            "RoleName": "ICDEV™OrganizationRole",
-            "IamUserAccessToBilling": "DENY",
-        },
-    })
+    plan["resources"].append(
+        {
+            "type": "organizations:Account",
+            "action": "CreateAccount",
+            "properties": {
+                "AccountName": "icdev-tenant-{}".format(tenant_slug),
+                "Email": email,
+                "RoleName": "ICDEV™OrganizationRole",
+                "IamUserAccessToBilling": "DENY",
+            },
+        }
+    )
 
     # 2. KMS key for tenant encryption
-    plan["resources"].append({
-        "type": "kms:Key",
-        "action": "CreateKey",
-        "properties": {
-            "Description": "ICDEV™ tenant encryption key: {}".format(tenant_slug),
-            "KeySpec": "SYMMETRIC_DEFAULT",
-            "KeyUsage": "ENCRYPT_DECRYPT",
-            "MultiRegion": False,
-            "Tags": [
-                {"TagKey": "icdev/tenant", "TagValue": tenant_slug},
-                {"TagKey": "classification", "TagValue": "CUI"},
-            ],
-        },
-    })
+    plan["resources"].append(
+        {
+            "type": "kms:Key",
+            "action": "CreateKey",
+            "properties": {
+                "Description": "ICDEV™ tenant encryption key: {}".format(tenant_slug),
+                "KeySpec": "SYMMETRIC_DEFAULT",
+                "KeyUsage": "ENCRYPT_DECRYPT",
+                "MultiRegion": False,
+                "Tags": [
+                    {"TagKey": "icdev/tenant", "TagValue": tenant_slug},
+                    {"TagKey": "classification", "TagValue": "CUI"},
+                ],
+            },
+        }
+    )
 
     # 3. VPC with private subnets
-    plan["resources"].append({
-        "type": "ec2:VPC",
-        "action": "CreateVpc",
-        "properties": {
-            "CidrBlock": cidr,
-            "EnableDnsSupport": True,
-            "EnableDnsHostnames": True,
-            "Tags": [
-                {"Key": "Name", "Value": "icdev-tenant-{}-vpc".format(tenant_slug)},
-                {"Key": "icdev/tenant", "Value": tenant_slug},
-                {"Key": "classification", "Value": "CUI"},
-            ],
-        },
-    })
+    plan["resources"].append(
+        {
+            "type": "ec2:VPC",
+            "action": "CreateVpc",
+            "properties": {
+                "CidrBlock": cidr,
+                "EnableDnsSupport": True,
+                "EnableDnsHostnames": True,
+                "Tags": [
+                    {"Key": "Name", "Value": "icdev-tenant-{}-vpc".format(tenant_slug)},
+                    {"Key": "icdev/tenant", "Value": tenant_slug},
+                    {"Key": "classification", "Value": "CUI"},
+                ],
+            },
+        }
+    )
 
     # 3a. Private subnets (2 AZs for Multi-AZ RDS)
     for az_suffix, subnet_cidr_offset in [("a", 0), ("b", 1)]:
         subnet_cidr = "10.{}.{}.0/24".format(slug_hash, subnet_cidr_offset)
-        plan["resources"].append({
-            "type": "ec2:Subnet",
-            "action": "CreateSubnet",
-            "properties": {
-                "CidrBlock": subnet_cidr,
-                "AvailabilityZone": "{region}{az}".format(
-                    region=GOVCLOUD_REGION, az=az_suffix),
-                "MapPublicIpOnLaunch": False,
-                "Tags": [
-                    {"Key": "Name", "Value": "icdev-tenant-{}-private-{}".format(
-                        tenant_slug, az_suffix)},
-                    {"Key": "icdev/tenant", "Value": tenant_slug},
-                ],
-            },
-        })
+        plan["resources"].append(
+            {
+                "type": "ec2:Subnet",
+                "action": "CreateSubnet",
+                "properties": {
+                    "CidrBlock": subnet_cidr,
+                    "AvailabilityZone": "{region}{az}".format(region=GOVCLOUD_REGION, az=az_suffix),
+                    "MapPublicIpOnLaunch": False,
+                    "Tags": [
+                        {"Key": "Name", "Value": "icdev-tenant-{}-private-{}".format(tenant_slug, az_suffix)},
+                        {"Key": "icdev/tenant", "Value": tenant_slug},
+                    ],
+                },
+            }
+        )
 
     # 3b. DB subnet group
-    plan["resources"].append({
-        "type": "rds:DBSubnetGroup",
-        "action": "CreateDBSubnetGroup",
-        "properties": {
-            "DBSubnetGroupName": "icdev-tenant-{}-db-subnet".format(tenant_slug),
-            "DBSubnetGroupDescription": (
-                "Private subnets for ICDEV™ tenant {} RDS".format(tenant_slug)),
-            "SubnetIds": ["<subnet-a>", "<subnet-b>"],
-        },
-    })
+    plan["resources"].append(
+        {
+            "type": "rds:DBSubnetGroup",
+            "action": "CreateDBSubnetGroup",
+            "properties": {
+                "DBSubnetGroupName": "icdev-tenant-{}-db-subnet".format(tenant_slug),
+                "DBSubnetGroupDescription": ("Private subnets for ICDEV™ tenant {} RDS".format(tenant_slug)),
+                "SubnetIds": ["<subnet-a>", "<subnet-b>"],
+            },
+        }
+    )
 
     # 4. Security group for RDS
-    plan["resources"].append({
-        "type": "ec2:SecurityGroup",
-        "action": "CreateSecurityGroup",
-        "properties": {
-            "GroupName": "icdev-tenant-{}-rds-sg".format(tenant_slug),
-            "Description": "RDS access for tenant {}".format(tenant_slug),
-            "VpcId": "<vpc-id>",
-            "IngressRules": [
-                {
-                    "IpProtocol": "tcp",
-                    "FromPort": 5432,
-                    "ToPort": 5432,
-                    "Description": "PostgreSQL from K8s pods",
-                    "SourceSecurityGroupId": "<k8s-node-sg>",
-                },
-            ],
-            "EgressRules": [],
-        },
-    })
+    plan["resources"].append(
+        {
+            "type": "ec2:SecurityGroup",
+            "action": "CreateSecurityGroup",
+            "properties": {
+                "GroupName": "icdev-tenant-{}-rds-sg".format(tenant_slug),
+                "Description": "RDS access for tenant {}".format(tenant_slug),
+                "VpcId": "<vpc-id>",
+                "IngressRules": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": 5432,
+                        "ToPort": 5432,
+                        "Description": "PostgreSQL from K8s pods",
+                        "SourceSecurityGroupId": "<k8s-node-sg>",
+                    },
+                ],
+                "EgressRules": [],
+            },
+        }
+    )
 
     # 5. RDS PostgreSQL instance
     rds_props = {
@@ -244,61 +256,68 @@ def _generate_plan(tenant_slug, impact_level, email):
         "KmsKeyId": "<kms-key-arn>",
     }
     rds_props.update(rds_config)
-    plan["resources"].append({
-        "type": "rds:DBInstance",
-        "action": "CreateDBInstance",
-        "properties": rds_props,
-    })
+    plan["resources"].append(
+        {
+            "type": "rds:DBInstance",
+            "action": "CreateDBInstance",
+            "properties": rds_props,
+        }
+    )
 
     # 6. Secrets Manager secret for RDS credentials
-    plan["resources"].append({
-        "type": "secretsmanager:Secret",
-        "action": "CreateSecret",
-        "properties": {
-            "Name": "icdev/tenant/{}/rds-credentials".format(tenant_slug),
-            "Description": "RDS credentials for tenant {}".format(tenant_slug),
-            "KmsKeyId": "<kms-key-arn>",
-            "GenerateSecretString": {
-                "SecretStringTemplate": json.dumps({
-                    "username": "icdev_admin"}),
-                "GenerateStringKey": "password",
-                "PasswordLength": 32,
-                "ExcludeCharacters": "\"@/\\",
+    plan["resources"].append(
+        {
+            "type": "secretsmanager:Secret",
+            "action": "CreateSecret",
+            "properties": {
+                "Name": "icdev/tenant/{}/rds-credentials".format(tenant_slug),
+                "Description": "RDS credentials for tenant {}".format(tenant_slug),
+                "KmsKeyId": "<kms-key-arn>",
+                "GenerateSecretString": {
+                    "SecretStringTemplate": json.dumps({"username": "icdev_admin"}),
+                    "GenerateStringKey": "password",
+                    "PasswordLength": 32,
+                    "ExcludeCharacters": '"@/\\',
+                },
             },
-        },
-    })
+        }
+    )
 
     # 7. VPC peering (IL5 only, IL6 is air-gapped)
     if not is_air_gapped:
-        plan["resources"].append({
-            "type": "ec2:VPCPeeringConnection",
-            "action": "CreateVpcPeeringConnection",
-            "properties": {
-                "VpcId": "<tenant-vpc-id>",
-                "PeerVpcId": "<platform-vpc-id>",
-                "PeerRegion": GOVCLOUD_REGION,
-                "Tags": [
-                    {"Key": "Name", "Value": "icdev-tenant-{}-peering".format(
-                        tenant_slug)},
-                    {"Key": "icdev/tenant", "Value": tenant_slug},
-                ],
-            },
-        })
-        plan["resources"].append({
-            "type": "ec2:Route",
-            "action": "CreateRoute",
-            "properties": {
-                "RouteTableId": "<tenant-route-table>",
-                "DestinationCidrBlock": "<platform-vpc-cidr>",
-                "VpcPeeringConnectionId": "<peering-connection-id>",
-            },
-        })
+        plan["resources"].append(
+            {
+                "type": "ec2:VPCPeeringConnection",
+                "action": "CreateVpcPeeringConnection",
+                "properties": {
+                    "VpcId": "<tenant-vpc-id>",
+                    "PeerVpcId": "<platform-vpc-id>",
+                    "PeerRegion": GOVCLOUD_REGION,
+                    "Tags": [
+                        {"Key": "Name", "Value": "icdev-tenant-{}-peering".format(tenant_slug)},
+                        {"Key": "icdev/tenant", "Value": tenant_slug},
+                    ],
+                },
+            }
+        )
+        plan["resources"].append(
+            {
+                "type": "ec2:Route",
+                "action": "CreateRoute",
+                "properties": {
+                    "RouteTableId": "<tenant-route-table>",
+                    "DestinationCidrBlock": "<platform-vpc-cidr>",
+                    "VpcPeeringConnectionId": "<peering-connection-id>",
+                },
+            }
+        )
     else:
         plan["air_gapped"] = True
         plan["air_gapped_note"] = (
             "IL6/SECRET: No VPC peering. Tenant operates on SIPR in "
             "complete network isolation. Data exchange via approved "
-            "cross-domain solution only.")
+            "cross-domain solution only."
+        )
 
     return plan
 
@@ -347,12 +366,11 @@ def _plan_to_yaml(plan):
 # AWS API Operations (require boto3)
 # ============================================================================
 
+
 def _get_organizations_client():
     """Get boto3 Organizations client."""
     if not BOTO3_AVAILABLE:
-        raise ImportError(
-            "boto3 is required for AWS operations. "
-            "Install with: pip install boto3")
+        raise ImportError("boto3 is required for AWS operations. Install with: pip install boto3")
     return boto3.client("organizations", region_name=GOVCLOUD_REGION)
 
 
@@ -427,8 +445,7 @@ def _wait_for_account(create_request_id, max_wait=300, poll_interval=10):
 
     while elapsed < max_wait:
         try:
-            response = org_client.describe_create_account_status(
-                CreateAccountRequestId=create_request_id)
+            response = org_client.describe_create_account_status(CreateAccountRequestId=create_request_id)
             status = response.get("CreateAccountStatus", {})
             state = status.get("State", "UNKNOWN")
 
@@ -444,8 +461,7 @@ def _wait_for_account(create_request_id, max_wait=300, poll_interval=10):
                     "failure_reason": status.get("FailureReason", "Unknown"),
                 }
 
-            logger.info(
-                "Account creation in progress (%ds/%ds)...", elapsed, max_wait)
+            logger.info("Account creation in progress (%ds/%ds)...", elapsed, max_wait)
             time.sleep(poll_interval)
             elapsed += poll_interval
 
@@ -491,6 +507,7 @@ def _create_kms_key(tenant_slug):
 # Public API
 # ============================================================================
 
+
 def provision_account(tenant_slug, impact_level, email):
     """Provision a dedicated AWS sub-account for an IL5/IL6 tenant.
 
@@ -511,9 +528,7 @@ def provision_account(tenant_slug, impact_level, email):
         dict with account_id, status, plan, and resource details
     """
     if impact_level not in VALID_IMPACT_LEVELS:
-        raise ValueError(
-            "Account provisioning is only for IL5/IL6. Got: {}".format(
-                impact_level))
+        raise ValueError("Account provisioning is only for IL5/IL6. Got: {}".format(impact_level))
     if not email or "@" not in email:
         raise ValueError("Valid email required for AWS account creation.")
     if not tenant_slug or not tenant_slug.strip():
@@ -525,14 +540,14 @@ def provision_account(tenant_slug, impact_level, email):
     plan = _generate_plan(tenant_slug, impact_level, email)
 
     if not BOTO3_AVAILABLE:
-        logger.warning(
-            "boto3 not available. Returning provisioning plan only.")
+        logger.warning("boto3 not available. Returning provisioning plan only.")
         plan_yaml = _plan_to_yaml(plan)
         return {
             "status": "plan_only",
             "message": (
                 "boto3 not installed. Plan generated but not executed. "
-                "Install boto3 and re-run to provision AWS resources."),
+                "Install boto3 and re-run to provision AWS resources."
+            ),
             "plan": plan,
             "plan_yaml": plan_yaml,
             "timestamp": now,
@@ -557,31 +572,33 @@ def provision_account(tenant_slug, impact_level, email):
 
         if account_result["status"] == "IN_PROGRESS":
             logger.info("Waiting for account creation to complete...")
-            account_result = _wait_for_account(
-                account_result["create_request_id"])
+            account_result = _wait_for_account(account_result["create_request_id"])
 
         if account_result["status"] != "SUCCEEDED":
             result["status"] = "failed"
-            result["error"] = (
-                "Account creation {}: {}".format(
-                    account_result["status"],
-                    account_result.get("failure_reason", "Unknown")))
+            result["error"] = "Account creation {}: {}".format(
+                account_result["status"], account_result.get("failure_reason", "Unknown")
+            )
             return result
 
         result["account_id"] = account_result["account_id"]
-        result["resources_created"].append({
-            "type": "organizations:Account",
-            "id": account_result["account_id"],
-        })
+        result["resources_created"].append(
+            {
+                "type": "organizations:Account",
+                "id": account_result["account_id"],
+            }
+        )
 
         # Step 2: Create KMS key
         logger.info("Creating per-tenant KMS key...")
         kms_key_arn = _create_kms_key(tenant_slug)
         result["kms_key_arn"] = kms_key_arn
-        result["resources_created"].append({
-            "type": "kms:Key",
-            "arn": kms_key_arn,
-        })
+        result["resources_created"].append(
+            {
+                "type": "kms:Key",
+                "arn": kms_key_arn,
+            }
+        )
 
         # Note: VPC, subnets, RDS, and VPC peering would be created here
         # using the respective boto3 clients. In production, this would
@@ -590,7 +607,8 @@ def provision_account(tenant_slug, impact_level, email):
         logger.info(
             "Sub-account %s created. VPC, RDS, and networking resources "
             "should be provisioned via Terraform for production use.",
-            account_result["account_id"])
+            account_result["account_id"],
+        )
 
         result["status"] = "partial"
         result["next_steps"] = [
@@ -710,8 +728,7 @@ def decommission_account(account_id):
 
         # Remove from organization
         try:
-            org_client.remove_account_from_organization(
-                AccountId=str(account_id))
+            org_client.remove_account_from_organization(AccountId=str(account_id))
             removal_status = "removed"
         except ClientError as remove_exc:
             error_code = remove_exc.response.get("Error", {}).get("Code", "")
@@ -719,9 +736,7 @@ def decommission_account(account_id):
                 removal_status = "not_found"
             else:
                 removal_status = "failed"
-                logger.error(
-                    "Failed to remove account from organization: %s",
-                    remove_exc)
+                logger.error("Failed to remove account from organization: %s", remove_exc)
 
         return {
             "account_id": account_id,
@@ -749,6 +764,7 @@ def decommission_account(account_id):
 # CLI
 # ============================================================================
 
+
 def _print_result(data, as_json=False):
     """Print result to stdout."""
     if as_json:
@@ -769,9 +785,7 @@ def _print_result(data, as_json=False):
                 print("  {}:".format(key))
                 for item in value:
                     if isinstance(item, dict):
-                        print("    - {}".format(
-                            ", ".join("{}: {}".format(k, v)
-                                      for k, v in item.items())))
+                        print("    - {}".format(", ".join("{}: {}".format(k, v) for k, v in item.items())))
                     else:
                         print("    - {}".format(item))
             else:
@@ -782,37 +796,20 @@ def main():
     """CLI entry point."""
     parser = argparse.ArgumentParser(
         description="CUI // SP-CTI -- ICDEV™ SaaS AWS Account Provisioner",
-        formatter_class=argparse.RawDescriptionHelpFormatter)
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
 
     action = parser.add_mutually_exclusive_group(required=True)
-    action.add_argument(
-        "--provision", action="store_true",
-        help="Provision a new AWS sub-account for a tenant")
-    action.add_argument(
-        "--status", action="store_true",
-        help="Check AWS account creation status")
-    action.add_argument(
-        "--decommission", action="store_true",
-        help="Decommission an AWS sub-account")
-    action.add_argument(
-        "--plan", action="store_true",
-        help="Generate provisioning plan only (no AWS calls)")
+    action.add_argument("--provision", action="store_true", help="Provision a new AWS sub-account for a tenant")
+    action.add_argument("--status", action="store_true", help="Check AWS account creation status")
+    action.add_argument("--decommission", action="store_true", help="Decommission an AWS sub-account")
+    action.add_argument("--plan", action="store_true", help="Generate provisioning plan only (no AWS calls)")
 
-    parser.add_argument(
-        "--slug", type=str,
-        help="Tenant slug (e.g., acme-defense)")
-    parser.add_argument(
-        "--il", type=str, default="IL5",
-        help="Impact level: IL5 or IL6 (default: IL5)")
-    parser.add_argument(
-        "--email", type=str,
-        help="Root email for the AWS sub-account")
-    parser.add_argument(
-        "--account-id", type=str,
-        help="AWS account ID (12-digit, for --status/--decommission)")
-    parser.add_argument(
-        "--json", action="store_true", dest="as_json",
-        help="Output as JSON")
+    parser.add_argument("--slug", type=str, help="Tenant slug (e.g., acme-defense)")
+    parser.add_argument("--il", type=str, default="IL5", help="Impact level: IL5 or IL6 (default: IL5)")
+    parser.add_argument("--email", type=str, help="Root email for the AWS sub-account")
+    parser.add_argument("--account-id", type=str, help="AWS account ID (12-digit, for --status/--decommission)")
+    parser.add_argument("--json", action="store_true", dest="as_json", help="Output as JSON")
 
     args = parser.parse_args()
 
@@ -820,8 +817,7 @@ def main():
         if args.provision:
             if not args.slug or not args.email:
                 parser.error("--provision requires --slug and --email")
-            result = provision_account(
-                args.slug, args.il.upper(), args.email)
+            result = provision_account(args.slug, args.il.upper(), args.email)
             _print_result(result, args.as_json)
 
         elif args.status:
@@ -841,8 +837,7 @@ def main():
                 parser.error("--plan requires --slug and --email")
             il = args.il.upper()
             if il not in VALID_IMPACT_LEVELS:
-                parser.error(
-                    "Account provisioning is for IL5/IL6 only. Got: {}".format(il))
+                parser.error("Account provisioning is for IL5/IL6 only. Got: {}".format(il))
             plan = _generate_plan(args.slug, il, args.email)
             if args.as_json:
                 print(json.dumps(plan, indent=2, default=str))

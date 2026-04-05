@@ -40,14 +40,13 @@ def _get_connection():
     return conn
 
 
-
-
 def _load_config():
     config_path = BASE_DIR / "args" / "autonomy_config.yaml"
     if not config_path.exists():
         return {}
     try:
         import yaml
+
         with open(config_path, encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
     except ImportError:
@@ -75,10 +74,7 @@ def check_routeable_signals() -> Dict[str, Any]:
             "ORDER BY composite_score DESC LIMIT 10",
             (min_score,),
         ).fetchall()
-        results["innovation_to_creative"] = [
-            {"id": r[0], "title": r[1], "source": r[2], "score": r[3]}
-            for r in rows
-        ]
+        results["innovation_to_creative"] = [{"id": r[0], "title": r[1], "source": r[2], "score": r[3]} for r in rows]
     except Exception:
         pass
 
@@ -92,10 +88,7 @@ def check_routeable_signals() -> Dict[str, Any]:
             "ORDER BY composite_score DESC LIMIT 10",
             (min_score,),
         ).fetchall()
-        results["creative_to_research"] = [
-            {"id": r[0], "title": r[1], "score": r[2]}
-            for r in rows
-        ]
+        results["creative_to_research"] = [{"id": r[0], "title": r[1], "score": r[2]} for r in rows]
     except Exception:
         pass
 
@@ -111,8 +104,7 @@ def check_routeable_signals() -> Dict[str, Any]:
             "ORDER BY created_at DESC LIMIT 5"
         ).fetchall()
         results["research_to_fitness"] = [
-            {"id": r[0], "session_id": r[1], "vertical": r[2], "title": r[3]}
-            for r in rows
+            {"id": r[0], "session_id": r[1], "vertical": r[2], "title": r[3]} for r in rows
         ]
     except Exception:
         pass
@@ -179,21 +171,37 @@ def route_signals(dry_run: bool = False) -> Dict[str, Any]:
             details.append({"route": "creative→research", "gap": gap["title"], "dry_run": True})
             continue
         # Research sessions need more setup — just log the intent
-        details.append({"route": "creative→research", "gap": gap["title"],
-                        "status": "queued", "note": "Manual research session creation recommended"})
+        details.append(
+            {
+                "route": "creative→research",
+                "gap": gap["title"],
+                "status": "queued",
+                "note": "Manual research session creation recommended",
+            }
+        )
 
     # Route Research → Fitness
     for dossier in routeable.get("research_to_fitness", []):
         if dry_run:
             details.append({"route": "research→fitness", "dossier": dossier["title"], "dry_run": True})
             continue
-        details.append({"route": "research→fitness", "dossier": dossier["title"],
-                        "status": "queued", "note": "Fitness assessment trigger queued"})
+        details.append(
+            {
+                "route": "research→fitness",
+                "dossier": dossier["title"],
+                "status": "queued",
+                "note": "Fitness assessment trigger queued",
+            }
+        )
 
     # Record outcome
     if routed > 0 or not dry_run:
-        observe("cross_engine_feed", success=True, source="federation",
-                details={"routed": routed, "total_routeable": routeable["total_routeable"]})
+        observe(
+            "cross_engine_feed",
+            success=True,
+            source="federation",
+            details={"routed": routed, "total_routeable": routeable["total_routeable"]},
+        )
 
     return {
         "status": "completed",

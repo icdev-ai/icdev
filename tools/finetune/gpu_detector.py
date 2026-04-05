@@ -102,7 +102,7 @@ def _detect_via_torch() -> Optional[GPUDetectionResult]:
 
     for i in range(gpu_count):
         props = torch.cuda.get_device_properties(i)
-        total_mb = getattr(props, 'total_memory', getattr(props, 'total_mem', 0)) // (1024 * 1024)
+        total_mb = getattr(props, "total_memory", getattr(props, "total_mem", 0)) // (1024 * 1024)
         # Get current free memory
         try:
             torch.cuda.set_device(i)

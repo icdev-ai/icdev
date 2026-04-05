@@ -83,8 +83,7 @@ def init_tables(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
-def create_slo(service: str, name: str, slo_type: str, target: float,
-               window_days: int = 30) -> dict:
+def create_slo(service: str, name: str, slo_type: str, target: float, window_days: int = 30) -> dict:
     """Create a new SLO for a service.
 
     Args:
@@ -113,9 +112,18 @@ def create_slo(service: str, name: str, slo_type: str, target: float,
             current_value, budget_remaining, burn_rate, status,
             alert_threshold_warning, alert_threshold_critical, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, NULL, 1.0, 0.0, 'healthy', ?, ?, ?, ?)""",
-        (slo_id, service, name, slo_type, target, window_days,
-         cfg["alert_threshold_warning"], cfg["alert_threshold_critical"],
-         now, now),
+        (
+            slo_id,
+            service,
+            name,
+            slo_type,
+            target,
+            window_days,
+            cfg["alert_threshold_warning"],
+            cfg["alert_threshold_critical"],
+            now,
+            now,
+        ),
     )
     conn.commit()
 
@@ -134,8 +142,9 @@ def create_slo(service: str, name: str, slo_type: str, target: float,
     }
 
 
-def record_measurement(slo_id: str, value: float, good_events: int = None,
-                       total_events: int = None, source: str = "manual") -> dict:
+def record_measurement(
+    slo_id: str, value: float, good_events: int = None, total_events: int = None, source: str = "manual"
+) -> dict:
     """Record a measurement against an SLO.
 
     Args:
@@ -344,9 +353,20 @@ def get_slo_dashboard() -> list:
                service_name""",
     ).fetchall()
 
-    cols = ["id", "service_name", "slo_name", "slo_type", "target_value",
-            "window_days", "current_value", "budget_remaining", "burn_rate",
-            "status", "created_at", "updated_at"]
+    cols = [
+        "id",
+        "service_name",
+        "slo_name",
+        "slo_type",
+        "target_value",
+        "window_days",
+        "current_value",
+        "budget_remaining",
+        "burn_rate",
+        "status",
+        "created_at",
+        "updated_at",
+    ]
 
     dashboard = []
     for row in rows:
@@ -384,13 +404,15 @@ def check_slo_health() -> dict:
         slo_id, service, name, status, budget = row
         counts[status] = counts.get(status, 0) + 1
         if status in ("critical", "exhausted"):
-            failing.append({
-                "slo_id": slo_id,
-                "service": service,
-                "slo_name": name,
-                "status": status,
-                "budget_remaining": budget,
-            })
+            failing.append(
+                {
+                    "slo_id": slo_id,
+                    "service": service,
+                    "slo_name": name,
+                    "status": status,
+                    "budget_remaining": budget,
+                }
+            )
 
     passed = len(failing) == 0
     return {
@@ -475,7 +497,9 @@ def main():
         if args.json:
             print(json.dumps(result, indent=2))
         else:
-            print(f"Burn rate: {result.get('burn_rate')}, budget: {result.get('budget_remaining')}, status: {result.get('slo_status')}")
+            print(
+                f"Burn rate: {result.get('burn_rate')}, budget: {result.get('budget_remaining')}, status: {result.get('slo_status')}"
+            )
 
     elif args.dashboard:
         dashboard = get_slo_dashboard()
@@ -484,9 +508,11 @@ def main():
         else:
             print(f"SLO Dashboard ({len(dashboard)} SLOs):")
             for slo in dashboard:
-                print(f"  [{slo['status']:>9}] {slo['service_name']}/{slo['slo_name']} "
-                      f"target={slo['target_value']} current={slo['current_value']} "
-                      f"budget={slo['budget_remaining']} burn={slo['burn_rate']}")
+                print(
+                    f"  [{slo['status']:>9}] {slo['service_name']}/{slo['slo_name']} "
+                    f"target={slo['target_value']} current={slo['current_value']} "
+                    f"budget={slo['budget_remaining']} burn={slo['burn_rate']}"
+                )
 
     else:
         parser.print_help()

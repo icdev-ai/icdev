@@ -128,35 +128,150 @@ ANTIPATTERNS = {
 
 # ── Type Sets ────────────────────────────────────────────────────────────────
 
-_CI_ENGINES = {"cicd-gitlab", "cicd-jenkins", "cicd-tekton", "cicd-github-actions", "cicd-argo-workflows", "cicd-drone",
-               "aws-codepipeline", "aws-codebuild", "az-pipelines", "gcp-cloudbuild", "oci-devops", "ibm-cd"}
-_SCM = {"scm-gitlab", "scm-gitea", "scm-forgejo", "scm-bitbucket", "aws-codecommit", "az-repos", "gcp-source", "oci-code-repos"}
-_SCANNERS = {"scan-sast", "scan-sonarqube", "scan-semgrep", "scan-codeql", "scan-bandit", "scan-spotbugs",
-             "scan-dast", "scan-zap", "scan-nuclei", "scan-burp",
-             "scan-sca", "scan-trivy", "scan-grype", "scan-snyk", "scan-dep-check",
-             "scan-container", "scan-anchore", "scan-neuvector",
-             "scan-iac", "scan-checkov", "scan-tfsec", "scan-kics",
-             "scan-secret", "scan-gitleaks", "scan-trufflehog", "scan-detect-secrets",
-             "aws-codeguru", "aws-inspector", "az-defender", "gcp-artifact-analysis"}
+_CI_ENGINES = {
+    "cicd-gitlab",
+    "cicd-jenkins",
+    "cicd-tekton",
+    "cicd-github-actions",
+    "cicd-argo-workflows",
+    "cicd-drone",
+    "aws-codepipeline",
+    "aws-codebuild",
+    "az-pipelines",
+    "gcp-cloudbuild",
+    "oci-devops",
+    "ibm-cd",
+}
+_SCM = {
+    "scm-gitlab",
+    "scm-gitea",
+    "scm-forgejo",
+    "scm-bitbucket",
+    "aws-codecommit",
+    "az-repos",
+    "gcp-source",
+    "oci-code-repos",
+}
+_SCANNERS = {
+    "scan-sast",
+    "scan-sonarqube",
+    "scan-semgrep",
+    "scan-codeql",
+    "scan-bandit",
+    "scan-spotbugs",
+    "scan-dast",
+    "scan-zap",
+    "scan-nuclei",
+    "scan-burp",
+    "scan-sca",
+    "scan-trivy",
+    "scan-grype",
+    "scan-snyk",
+    "scan-dep-check",
+    "scan-container",
+    "scan-anchore",
+    "scan-neuvector",
+    "scan-iac",
+    "scan-checkov",
+    "scan-tfsec",
+    "scan-kics",
+    "scan-secret",
+    "scan-gitleaks",
+    "scan-trufflehog",
+    "scan-detect-secrets",
+    "aws-codeguru",
+    "aws-inspector",
+    "az-defender",
+    "gcp-artifact-analysis",
+}
 _IAC_SCANNERS = {"scan-iac", "scan-checkov", "scan-tfsec", "scan-kics"}
-_REGISTRIES = {"registry-generic", "registry-harbor", "registry-nexus", "registry-jfrog", "registry-zot",
-               "aws-ecr", "az-acr", "gcp-gar", "oci-cr", "ibm-cr"}
+_REGISTRIES = {
+    "registry-generic",
+    "registry-harbor",
+    "registry-nexus",
+    "registry-jfrog",
+    "registry-zot",
+    "aws-ecr",
+    "az-acr",
+    "gcp-gar",
+    "oci-cr",
+    "ibm-cr",
+}
 _SIGNERS = {"sign-cosign", "sign-notation", "sign-dct"}
-_K8S = {"k8s-cluster", "aws-eks", "az-aks", "gcp-gke", "oci-oke", "ibm-iks", "openshift", "rke2", "k3s", "deploy-bigbang"}
+_K8S = {
+    "k8s-cluster",
+    "aws-eks",
+    "az-aks",
+    "gcp-gke",
+    "oci-oke",
+    "ibm-iks",
+    "openshift",
+    "rke2",
+    "k3s",
+    "deploy-bigbang",
+}
 _DEPLOY = _K8S | {"deploy-serverless", "deploy-vm", "deploy-edge"}
 _GATES = {"gate-manual", "gate-automated", "gate-vuln-threshold", "gate-deploy-window"}
-_SECRETS = {"vault-hashicorp", "vault-openbao", "aws-secrets", "aws-kms", "az-keyvault", "gcp-secret", "gcp-kms",
-            "oci-vault", "ibm-secrets", "ibm-hpcs", "kms-generic", "hsm-generic", "sealed-secrets", "sops", "external-secrets"}
+_SECRETS = {
+    "vault-hashicorp",
+    "vault-openbao",
+    "aws-secrets",
+    "aws-kms",
+    "az-keyvault",
+    "gcp-secret",
+    "gcp-kms",
+    "oci-vault",
+    "ibm-secrets",
+    "ibm-hpcs",
+    "kms-generic",
+    "hsm-generic",
+    "sealed-secrets",
+    "sops",
+    "external-secrets",
+}
 _SBOM = {"sbom-syft", "sbom-cyclonedx", "sbom-spdx"}
-_MONITOR = {"mon-prometheus", "mon-grafana", "mon-loki", "mon-tempo", "mon-otel", "mon-elk", "mon-fluentbit",
-            "aws-cloudwatch", "aws-guardduty", "az-monitor", "az-sentinel", "gcp-monitoring", "gcp-scc"}
+_MONITOR = {
+    "mon-prometheus",
+    "mon-grafana",
+    "mon-loki",
+    "mon-tempo",
+    "mon-otel",
+    "mon-elk",
+    "mon-fluentbit",
+    "aws-cloudwatch",
+    "aws-guardduty",
+    "az-monitor",
+    "az-sentinel",
+    "gcp-monitoring",
+    "gcp-scc",
+}
 _RUNTIME_SEC = {"mon-falco", "mon-wazuh", "scan-neuvector"}
 _SLO = {"sre-slo", "sre-sli", "sre-openslo", "sre-sloth", "sre-pyrra", "aws-cw-slo", "gcp-service-mon"}
 _INCIDENT = {"sre-incident", "sre-pagerduty", "sre-grafana-oncall", "sre-opsgenie", "aws-incident-mgr"}
-_POLICY = {"policy-opa", "policy-kyverno", "policy-gatekeeper", "policy-kubewarden", "gcp-binary-auth", "ibm-portieris", "verify-slsa"}
-_CLOUD_MANAGED = {"aws-codepipeline", "aws-codebuild", "aws-ecr", "aws-eks", "aws-inspector",
-                  "az-pipelines", "az-acr", "az-aks", "az-defender",
-                  "gcp-cloudbuild", "gcp-gke", "gcp-gar", "gcp-artifact-analysis"}
+_POLICY = {
+    "policy-opa",
+    "policy-kyverno",
+    "policy-gatekeeper",
+    "policy-kubewarden",
+    "gcp-binary-auth",
+    "ibm-portieris",
+    "verify-slsa",
+}
+_CLOUD_MANAGED = {
+    "aws-codepipeline",
+    "aws-codebuild",
+    "aws-ecr",
+    "aws-eks",
+    "aws-inspector",
+    "az-pipelines",
+    "az-acr",
+    "az-aks",
+    "az-defender",
+    "gcp-cloudbuild",
+    "gcp-gke",
+    "gcp-gar",
+    "gcp-artifact-analysis",
+}
 _AIRGAP_MARKERS = {"pipeline-sipr", "pipeline-jwics", "boundary-secret", "boundary-topsecret"}
 _CDS = {"cds-guard", "cds-data-diode", "cds-transfer"}
 _BOUNDARIES = {"boundary-commercial", "boundary-govcloud", "boundary-secret", "boundary-topsecret"}
@@ -229,8 +344,7 @@ def detect_antipatterns(nodes, edges):
 
     # AP-PDC-008: Air-gapped with cloud services
     if has_airgap and has_cloud:
-        findings.append(_finding("AP-PDC-008",
-                                 [n for n in nodes if n.get("type") in _AIRGAP_MARKERS | _CLOUD_MANAGED]))
+        findings.append(_finding("AP-PDC-008", [n for n in nodes if n.get("type") in _AIRGAP_MARKERS | _CLOUD_MANAGED]))
 
     # AP-PDC-009: No SLO
     if has_deploy and not has_slo:
@@ -275,5 +389,7 @@ def _finding(ap_id, affected_nodes):
         "description": ap["description"],
         "recommendation": ap["recommendation"],
         "frameworks": ap["frameworks"],
-        "affected_nodes": [{"id": n.get("id", ""), "label": n.get("label", ""), "type": n.get("type", "")} for n in affected_nodes[:5]],
+        "affected_nodes": [
+            {"id": n.get("id", ""), "label": n.get("label", ""), "type": n.get("type", "")} for n in affected_nodes[:5]
+        ],
     }

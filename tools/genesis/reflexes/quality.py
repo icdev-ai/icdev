@@ -135,9 +135,7 @@ def detect_regressions() -> list[dict]:
 
     conn = _get_db()
     try:
-        rows = conn.execute(
-            "SELECT * FROM quality_snapshots ORDER BY snapshot_at DESC LIMIT 2"
-        ).fetchall()
+        rows = conn.execute("SELECT * FROM quality_snapshots ORDER BY snapshot_at DESC LIMIT 2").fetchall()
         if len(rows) < 2:
             return []
 
@@ -162,7 +160,15 @@ def detect_regressions() -> list[dict]:
             conn.execute(
                 "INSERT INTO quality_trends (id, detected_at, trend_type, dimension, direction, severity, detail) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (reg["id"], reg["detected_at"], reg["trend_type"], reg["dimension"], reg["direction"], reg["severity"], reg["detail"]),
+                (
+                    reg["id"],
+                    reg["detected_at"],
+                    reg["trend_type"],
+                    reg["dimension"],
+                    reg["direction"],
+                    reg["severity"],
+                    reg["detail"],
+                ),
             )
 
         # Findings increase
@@ -182,7 +188,15 @@ def detect_regressions() -> list[dict]:
             conn.execute(
                 "INSERT INTO quality_trends (id, detected_at, trend_type, dimension, direction, severity, detail) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (reg["id"], reg["detected_at"], reg["trend_type"], reg["dimension"], reg["direction"], reg["severity"], reg["detail"]),
+                (
+                    reg["id"],
+                    reg["detected_at"],
+                    reg["trend_type"],
+                    reg["dimension"],
+                    reg["direction"],
+                    reg["severity"],
+                    reg["detail"],
+                ),
             )
 
         conn.commit()
@@ -230,9 +244,7 @@ def generate_improvement_gkp() -> dict | None:
     conn = _get_db()
     try:
         # Get latest snapshot
-        latest = conn.execute(
-            "SELECT * FROM quality_snapshots ORDER BY snapshot_at DESC LIMIT 1"
-        ).fetchone()
+        latest = conn.execute("SELECT * FROM quality_snapshots ORDER BY snapshot_at DESC LIMIT 1").fetchone()
         if not latest:
             return None
 

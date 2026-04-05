@@ -110,11 +110,21 @@ def _now() -> str:
 # ---------------------------------------------------------------------------
 
 _SSP_REQUIRED_SECTIONS = [
-    "system_name", "system_description", "security_categorization",
-    "system_boundary", "network_architecture", "data_flow",
-    "personnel_roles", "authentication_mechanisms", "audit_mechanisms",
-    "incident_response", "contingency_plan", "maintenance_procedures",
-    "physical_security", "risk_assessment", "security_assessment",
+    "system_name",
+    "system_description",
+    "security_categorization",
+    "system_boundary",
+    "network_architecture",
+    "data_flow",
+    "personnel_roles",
+    "authentication_mechanisms",
+    "audit_mechanisms",
+    "incident_response",
+    "contingency_plan",
+    "maintenance_procedures",
+    "physical_security",
+    "risk_assessment",
+    "security_assessment",
 ]
 
 
@@ -127,7 +137,7 @@ def eval_ssp_completeness(project_id: str) -> Dict:
         # Check if SSP exists
         rows = conn.execute(
             "SELECT content FROM compliance_artifacts WHERE project_id = ? AND artifact_type = 'ssp' ORDER BY created_at DESC LIMIT 1",
-            (project_id,)
+            (project_id,),
         ).fetchall()
         conn.close()
 
@@ -141,10 +151,12 @@ def eval_ssp_completeness(project_id: str) -> Dict:
                 if keywords.lower() in content.lower():
                     sections_found += 1
                 else:
-                    findings.append({
-                        "description": f"SSP section missing: {section}",
-                        "severity": "warning",
-                    })
+                    findings.append(
+                        {
+                            "description": f"SSP section missing: {section}",
+                            "severity": "warning",
+                        }
+                    )
     except Exception:
         # DB table may not exist — still score
         findings.append({"description": "Cannot query compliance_artifacts table", "severity": "info"})
@@ -167,6 +179,7 @@ def eval_ssp_completeness(project_id: str) -> Dict:
 # Dimension 2: Control Accuracy (NIST 800-53 mapping)
 # ---------------------------------------------------------------------------
 
+
 def eval_control_accuracy(project_id: str) -> Dict:
     """Check that control mappings exist and map to valid NIST controls."""
     findings = []
@@ -175,8 +188,7 @@ def eval_control_accuracy(project_id: str) -> Dict:
     try:
         conn = _get_db()
         rows = conn.execute(
-            "SELECT control_id, status FROM control_mappings WHERE project_id = ?",
-            (project_id,)
+            "SELECT control_id, status FROM control_mappings WHERE project_id = ?", (project_id,)
         ).fetchall()
         conn.close()
 
@@ -186,10 +198,12 @@ def eval_control_accuracy(project_id: str) -> Dict:
             if control_id and len(control_id) >= 3 and "-" in control_id:
                 valid_controls += 1
             else:
-                findings.append({
-                    "description": f"Invalid control ID format: {control_id}",
-                    "severity": "warning",
-                })
+                findings.append(
+                    {
+                        "description": f"Invalid control ID format: {control_id}",
+                        "severity": "warning",
+                    }
+                )
 
         if total_controls == 0:
             findings.append({"description": "No control mappings found", "severity": "high"})
@@ -212,6 +226,7 @@ def eval_control_accuracy(project_id: str) -> Dict:
 # ---------------------------------------------------------------------------
 # Dimension 3: CUI Consistency
 # ---------------------------------------------------------------------------
+
 
 def eval_cui_consistency(project_id: str) -> Dict:
     """Check CUI markings across project files (sample-based)."""
@@ -249,10 +264,12 @@ def eval_cui_consistency(project_id: str) -> Dict:
     else:
         score = files_with_cui / files_checked
         if score < 0.9:
-            findings.append({
-                "description": f"CUI marking rate: {score:.0%} ({files_with_cui}/{files_checked})",
-                "severity": "warning",
-            })
+            findings.append(
+                {
+                    "description": f"CUI marking rate: {score:.0%} ({files_with_cui}/{files_checked})",
+                    "severity": "warning",
+                }
+            )
 
     return {
         "dimension": "cui_consistency",
@@ -269,6 +286,7 @@ def eval_cui_consistency(project_id: str) -> Dict:
 # Dimension 4: SBOM Quality
 # ---------------------------------------------------------------------------
 
+
 def eval_sbom_quality(project_id: str) -> Dict:
     """Check SBOM existence and quality."""
     findings = []
@@ -277,7 +295,7 @@ def eval_sbom_quality(project_id: str) -> Dict:
         conn = _get_db()
         rows = conn.execute(
             "SELECT content FROM compliance_artifacts WHERE project_id = ? AND artifact_type = 'sbom' ORDER BY created_at DESC LIMIT 1",
-            (project_id,)
+            (project_id,),
         ).fetchall()
         conn.close()
 
@@ -315,6 +333,7 @@ def eval_sbom_quality(project_id: str) -> Dict:
 # Dimension 5: Gate Pass Rate
 # ---------------------------------------------------------------------------
 
+
 def eval_gate_pass_rate(project_id: str) -> Dict:
     """Check historical gate evaluation pass rate from audit trail."""
     findings = []
@@ -326,7 +345,7 @@ def eval_gate_pass_rate(project_id: str) -> Dict:
             """SELECT action, details FROM audit_trail
                WHERE project_id = ? AND event_type = 'gate.evaluation'
                ORDER BY created_at DESC LIMIT 100""",
-            (project_id,)
+            (project_id,),
         ).fetchall()
         conn.close()
 
@@ -357,6 +376,7 @@ def eval_gate_pass_rate(project_id: str) -> Dict:
 # Dimension 6: Artifact Currency
 # ---------------------------------------------------------------------------
 
+
 def eval_artifact_currency(project_id: str) -> Dict:
     """Check if compliance artifacts are recent (< 30 days)."""
     findings = []
@@ -367,7 +387,7 @@ def eval_artifact_currency(project_id: str) -> Dict:
         rows = conn.execute(
             """SELECT artifact_type, created_at FROM compliance_artifacts
                WHERE project_id = ? ORDER BY created_at DESC""",
-            (project_id,)
+            (project_id,),
         ).fetchall()
         conn.close()
 
@@ -384,10 +404,12 @@ def eval_artifact_currency(project_id: str) -> Dict:
                 if age_days <= 30:
                     current += 1
                 else:
-                    findings.append({
-                        "description": f"{art_type} is {age_days} days old (max 30)",
-                        "severity": "warning",
-                    })
+                    findings.append(
+                        {
+                            "description": f"{art_type} is {age_days} days old (max 30)",
+                            "severity": "warning",
+                        }
+                    )
             except Exception:
                 current += 1  # Assume current if can't parse date
 
@@ -410,6 +432,7 @@ def eval_artifact_currency(project_id: str) -> Dict:
 # Dimension 7: Cross-Framework Cascade
 # ---------------------------------------------------------------------------
 
+
 def eval_crosswalk_cascade(project_id: str) -> Dict:
     """Check that crosswalk engine properly cascades across frameworks."""
     findings = []
@@ -419,7 +442,7 @@ def eval_crosswalk_cascade(project_id: str) -> Dict:
         rows = conn.execute(
             """SELECT DISTINCT source_framework FROM crosswalk_results
                WHERE project_id = ?""",
-            (project_id,)
+            (project_id,),
         ).fetchall()
         conn.close()
 
@@ -529,18 +552,20 @@ def get_trend(project_id: str) -> Dict:
                WHERE project_id = ?
                ORDER BY created_at DESC
                LIMIT 100""",
-            (project_id,)
+            (project_id,),
         ).fetchall()
         conn.close()
 
         entries = []
         for dim, score, model, created in rows:
-            entries.append({
-                "dimension": dim,
-                "score": score,
-                "model_label": model or "default",
-                "created_at": created,
-            })
+            entries.append(
+                {
+                    "dimension": dim,
+                    "score": score,
+                    "model_label": model or "default",
+                    "created_at": created,
+                }
+            )
 
         return {
             "project_id": project_id,
@@ -551,9 +576,7 @@ def get_trend(project_id: str) -> Dict:
         return {"project_id": project_id, "error": str(e), "entries": []}
 
 
-def compare_models(
-    project_id: str, model_a: str, model_b: str
-) -> Dict:
+def compare_models(project_id: str, model_a: str, model_b: str) -> Dict:
     """Compare GovEval scores between two model labels."""
     try:
         conn = _get_db()
@@ -562,14 +585,14 @@ def compare_models(
                FROM goveval_results
                WHERE project_id = ? AND model_label = ?
                GROUP BY dimension""",
-            (project_id, model_a)
+            (project_id, model_a),
         ).fetchall()
         rows_b = conn.execute(
             """SELECT dimension, AVG(score) as avg_score
                FROM goveval_results
                WHERE project_id = ? AND model_label = ?
                GROUP BY dimension""",
-            (project_id, model_b)
+            (project_id, model_b),
         ).fetchall()
         conn.close()
 
@@ -581,13 +604,15 @@ def compare_models(
         for dim in all_dims:
             sa = scores_a.get(dim, 0.0)
             sb = scores_b.get(dim, 0.0)
-            comparison.append({
-                "dimension": dim,
-                f"{model_a}_score": round(sa, 3),
-                f"{model_b}_score": round(sb, 3),
-                "delta": round(sa - sb, 3),
-                "winner": model_a if sa > sb else (model_b if sb > sa else "tie"),
-            })
+            comparison.append(
+                {
+                    "dimension": dim,
+                    f"{model_a}_score": round(sa, 3),
+                    f"{model_b}_score": round(sb, 3),
+                    "delta": round(sa - sb, 3),
+                    "winner": model_a if sa > sb else (model_b if sb > sa else "tie"),
+                }
+            )
 
         return {
             "project_id": project_id,
@@ -602,6 +627,7 @@ def compare_models(
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+
 
 def main():
     parser = argparse.ArgumentParser(description="GovEval Benchmark (LeanStral FLTEval-adapted)")
@@ -640,9 +666,9 @@ def main():
 def _print_human(result: Dict):
     """Human-readable output."""
     if "dimension_results" in result:
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"  GovEval Benchmark — {result['project_id']}")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
         print(f"  Composite Score:  {result['composite_score']:.3f}")
         print(f"  Dimensions:       {result['dimensions_evaluated']}")
         print(f"  Total Findings:   {result['total_findings']}")
@@ -652,7 +678,7 @@ def _print_human(result: Dict):
             bar_len = int(r.get("score", 0) * 20)
             bar = "#" * bar_len + "." * (20 - bar_len)
             print(f"  {r['dimension']:25s} [{bar}] {r['score']:.3f}  ({r['findings_count']} findings)")
-        print(f"{'='*60}\n")
+        print(f"{'=' * 60}\n")
     elif "entries" in result:
         print(f"\n  GovEval Trend — {result['project_id']} ({result['count']} entries)")
         for e in result.get("entries", [])[:20]:
@@ -660,7 +686,9 @@ def _print_human(result: Dict):
     elif "dimensions" in result:
         print(f"\n  GovEval Comparison — {result.get('model_a')} vs {result.get('model_b')}")
         for d in result.get("dimensions", []):
-            print(f"  {d['dimension']:25s}  {d.get(result.get('model_a', '') + '_score', 0):.3f} vs {d.get(result.get('model_b', '') + '_score', 0):.3f}  winner={d['winner']}")
+            print(
+                f"  {d['dimension']:25s}  {d.get(result.get('model_a', '') + '_score', 0):.3f} vs {d.get(result.get('model_b', '') + '_score', 0):.3f}  winner={d['winner']}"
+            )
 
 
 if __name__ == "__main__":

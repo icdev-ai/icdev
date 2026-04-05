@@ -75,6 +75,7 @@ def _load_evolution_config() -> dict:
         return {}
     try:
         import yaml
+
         with open(config_path, encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
         return data.get("staging", {})
@@ -398,14 +399,16 @@ class StagingManager:
             timeout = step.get("timeout_seconds", 300)
 
             if blocking_failed:
-                step_results.append({
-                    "step": step_name, "status": "skipped",
-                    "reason": "prior blocking step failed",
-                })
+                step_results.append(
+                    {
+                        "step": step_name,
+                        "status": "skipped",
+                        "reason": "prior blocking step failed",
+                    }
+                )
                 continue
 
-            step_result = self._run_pipeline_step(
-                step_name, worktree_path, timeout)
+            step_result = self._run_pipeline_step(step_name, worktree_path, timeout)
             step_result["blocking"] = is_blocking
             step_results.append(step_result)
 
@@ -447,14 +450,12 @@ class StagingManager:
             "staging.tested",
             f"Staging {staging_id} pipeline {'passed' if overall_passed else 'failed'} "
             f"({len(step_results)} steps, {len(warnings)} warnings)",
-            {"staging_id": staging_id, "passed": overall_passed,
-             "warnings": warnings},
+            {"staging_id": staging_id, "passed": overall_passed, "warnings": warnings},
         )
 
         return test_results
 
-    def _run_pipeline_step(self, step_name: str, worktree_path: str,
-                           timeout: int = 300) -> dict:
+    def _run_pipeline_step(self, step_name: str, worktree_path: str, timeout: int = 300) -> dict:
         """Execute a single pipeline step and return structured result.
 
         Args:
@@ -478,24 +479,22 @@ class StagingManager:
             py_files = list(tools_dir.rglob("*.py"))[:200]
             failures = []
             for pf in py_files:
-                r = _run_subprocess(
-                    [sys.executable, "-m", "py_compile", str(pf)],
-                    cwd=worktree_path, timeout=30)
+                r = _run_subprocess([sys.executable, "-m", "py_compile", str(pf)], cwd=worktree_path, timeout=30)
                 if not r.get("success"):
                     failures.append(str(pf.relative_to(wt)))
                     if len(failures) >= 5:
                         break
             result["success"] = len(failures) == 0
-            result["output"] = (f"{len(py_files)} files checked, "
-                                f"{len(failures)} failures")
+            result["output"] = f"{len(py_files)} files checked, {len(failures)} failures"
             if failures:
                 result["failures"] = failures[:5]
 
         elif step_name == "ruff":
             r = _run_subprocess(
-                [sys.executable, "-m", "ruff", "check", "tools/",
-                 "--select", "E,F", "--ignore", "E402"],
-                cwd=worktree_path, timeout=timeout)
+                [sys.executable, "-m", "ruff", "check", "tools/", "--select", "E,F", "--ignore", "E402"],
+                cwd=worktree_path,
+                timeout=timeout,
+            )
             result["success"] = r.get("success", False)
             result["output"] = r.get("stdout", "")[:2000]
 
@@ -506,9 +505,8 @@ class StagingManager:
                 result["output"] = "No tests/ directory"
                 return result
             r = _run_subprocess(
-                [sys.executable, "-m", "pytest", "tests/", "-v",
-                 "--tb=short", "-q"],
-                cwd=worktree_path, timeout=timeout)
+                [sys.executable, "-m", "pytest", "tests/", "-v", "--tb=short", "-q"], cwd=worktree_path, timeout=timeout
+            )
             result["success"] = r.get("success", False)
             result["output"] = r.get("stdout", "")[:2000]
 
@@ -518,9 +516,7 @@ class StagingManager:
                 result["success"] = True
                 result["output"] = "No features/ directory (skipped)"
                 return result
-            r = _run_subprocess(
-                [sys.executable, "-m", "behave", "features/"],
-                cwd=worktree_path, timeout=timeout)
+            r = _run_subprocess([sys.executable, "-m", "behave", "features/"], cwd=worktree_path, timeout=timeout)
             result["success"] = r.get("success", False)
             result["output"] = r.get("stdout", "")[:2000]
 
@@ -531,9 +527,10 @@ class StagingManager:
                 result["output"] = "No tools/ directory"
                 return result
             r = _run_subprocess(
-                [sys.executable, "-m", "bandit", "-r", "tools/", "-f", "json",
-                 "-q", "--severity-level", "high"],
-                cwd=worktree_path, timeout=timeout)
+                [sys.executable, "-m", "bandit", "-r", "tools/", "-f", "json", "-q", "--severity-level", "high"],
+                cwd=worktree_path,
+                timeout=timeout,
+            )
             # bandit returns 1 if findings exist
             findings_count = 0
             if r.get("stdout"):
@@ -547,9 +544,10 @@ class StagingManager:
 
         elif step_name == "secret_detection":
             r = _run_subprocess(
-                [sys.executable, "tools/security/secret_detector.py",
-                 "--project-dir", "."],
-                cwd=worktree_path, timeout=timeout)
+                [sys.executable, "tools/security/secret_detector.py", "--project-dir", "."],
+                cwd=worktree_path,
+                timeout=timeout,
+            )
             result["success"] = r.get("success", False)
             result["output"] = r.get("stdout", "")[:2000]
 
@@ -560,16 +558,14 @@ class StagingManager:
                 fp = wt / check_file
                 if fp.exists():
                     try:
-                        content = fp.read_text(encoding="utf-8",
-                                               errors="ignore")[:500]
+                        content = fp.read_text(encoding="utf-8", errors="ignore")[:500]
                         if "CUI" in content:
                             cui_found = True
                             break
                     except Exception:
                         pass
             result["success"] = cui_found
-            result["output"] = ("CUI markings present" if cui_found
-                                else "CUI markings not found")
+            result["output"] = "CUI markings present" if cui_found else "CUI markings not found"
 
         else:
             result["success"] = True

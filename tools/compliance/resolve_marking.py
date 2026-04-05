@@ -161,7 +161,7 @@ def resolve_project_marking(
 
         # vision_assertion: what to assert in screenshot validation
         if grep_pattern:
-            vision_assertion = f"A classification banner containing \"{grep_pattern}\" is visible at the top of the page"
+            vision_assertion = f'A classification banner containing "{grep_pattern}" is visible at the top of the page'
         else:
             vision_assertion = "A classification banner is visible at the top of the page"
 
@@ -199,7 +199,7 @@ def resolve_project_marking(
             "portion_marking": f"({'|'.join(categories)})",
             "highest_sensitivity": categories[0],
             "grep_pattern": mark,
-            "vision_assertion": f"A classification banner containing \"{mark}\" is visible at the top of the page",
+            "vision_assertion": f'A classification banner containing "{mark}" is visible at the top of the page',
         }
 
 
@@ -224,10 +224,9 @@ def _no_marking_result() -> Dict:
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
-    parser = argparse.ArgumentParser(
-        description="ICDEV™ Classification Marking Resolver"
-    )
+    parser = argparse.ArgumentParser(description="ICDEV™ Classification Marking Resolver")
     parser.add_argument("--project-id", required=True, help="ICDEV™ project ID")
     parser.add_argument("--json", action="store_true", help="Full JSON output")
     parser.add_argument("--banner-only", action="store_true", help="Print just the banner line")
@@ -252,6 +251,7 @@ def main():
                 from tools.compliance.universal_classification_manager import (
                     get_composite_code_header,
                 )
+
                 subcats = {}
                 if "CUI" in result["categories"]:
                     subcats["CUI"] = "CTI"

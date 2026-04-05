@@ -41,11 +41,13 @@ def _get_connection():
 
 def _now():
     from datetime import datetime, timezone
+
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _gen_id():
     import uuid
+
     return f"rbh-{uuid.uuid4().hex[:10]}"
 
 
@@ -102,9 +104,7 @@ def compute_health_score() -> Dict[str, Any]:
         severity_counts = {}
         try:
             rows = conn.execute(
-                "SELECT severity, COUNT(*) FROM review_board_findings "
-                "WHERE fix_applied = 0 "
-                "GROUP BY severity"
+                "SELECT severity, COUNT(*) FROM review_board_findings WHERE fix_applied = 0 GROUP BY severity"
             ).fetchall()
             severity_counts = {r[0]: r[1] for r in rows}
         except Exception:
@@ -122,8 +122,7 @@ def compute_health_score() -> Dict[str, Any]:
         persona_scores = {}
         try:
             reflex_rows = conn.execute(
-                "SELECT reflex_name, total_runs, total_successes, total_failures "
-                "FROM review_board_reflex_state"
+                "SELECT reflex_name, total_runs, total_successes, total_failures FROM review_board_reflex_state"
             ).fetchall()
             for r in reflex_rows:
                 name = r[0]
@@ -140,12 +139,10 @@ def compute_health_score() -> Dict[str, Any]:
         fix_bonus = 0.0
         try:
             fixed = conn.execute(
-                "SELECT COUNT(*) FROM review_board_remediation_log "
-                "WHERE status IN ('fixed', 'verified')"
+                "SELECT COUNT(*) FROM review_board_remediation_log WHERE status IN ('fixed', 'verified')"
             ).fetchone()
             failed = conn.execute(
-                "SELECT COUNT(*) FROM review_board_remediation_log "
-                "WHERE status = 'failed'"
+                "SELECT COUNT(*) FROM review_board_remediation_log WHERE status = 'failed'"
             ).fetchone()
             total_remediations = (fixed[0] if fixed else 0) + (failed[0] if failed else 0)
             if total_remediations > 0:
@@ -163,8 +160,7 @@ def compute_health_score() -> Dict[str, Any]:
         trend = "stable"
         try:
             last = conn.execute(
-                "SELECT score FROM review_board_health_history "
-                "ORDER BY created_at DESC LIMIT 1"
+                "SELECT score FROM review_board_health_history ORDER BY created_at DESC LIMIT 1"
             ).fetchone()
             if last:
                 delta = score - last[0]
@@ -231,10 +227,7 @@ def get_latest() -> Dict[str, Any]:
     ensure_tables()
     conn = _get_connection()
     try:
-        row = conn.execute(
-            "SELECT * FROM review_board_health_history "
-            "ORDER BY created_at DESC LIMIT 1"
-        ).fetchone()
+        row = conn.execute("SELECT * FROM review_board_health_history ORDER BY created_at DESC LIMIT 1").fetchone()
         if row:
             result = dict(row)
             result["breakdown"] = json.loads(result.get("breakdown", "{}"))

@@ -51,6 +51,7 @@ def _load_config() -> Dict[str, Any]:
     if config_path.exists():
         try:
             import yaml
+
             with open(config_path) as f:
                 cfg = yaml.safe_load(f) or {}
             return cfg.get("dataset", {})
@@ -173,11 +174,13 @@ def _parse_pairs_response(
             q = pair.get("question", "").strip()
             a = pair.get("answer", "").strip()
             if q and a and len(q) > 10 and len(a) > 20:
-                result.append({
-                    "system_prompt": system_prompt,
-                    "user_input": q,
-                    "expected_output": a,
-                })
+                result.append(
+                    {
+                        "system_prompt": system_prompt,
+                        "user_input": q,
+                        "expected_output": a,
+                    }
+                )
         return result
     except (json.JSONDecodeError, ValueError):
         return []
@@ -206,11 +209,13 @@ def _generate_pairs_template(
         if not answer.endswith("."):
             answer += "."
 
-        pairs.append({
-            "system_prompt": "",
-            "user_input": question,
-            "expected_output": answer,
-        })
+        pairs.append(
+            {
+                "system_prompt": "",
+                "user_input": question,
+                "expected_output": answer,
+            }
+        )
 
     return pairs
 
@@ -331,8 +336,10 @@ def generate_from_rag_source(
             return {"success": False, "error": f"No RAG chunks found for source: {source_table}"}
 
         chunks = [
-            {"content": r["content"] if isinstance(r, dict) else r[1],
-             "chunk_id": r["id"] if isinstance(r, dict) else r[0]}
+            {
+                "content": r["content"] if isinstance(r, dict) else r[1],
+                "chunk_id": r["id"] if isinstance(r, dict) else r[0],
+            }
             for r in rows
         ]
     except Exception as e:
@@ -408,6 +415,7 @@ def bayesian_rank_pairs(
     """
     try:
         from tools.intelligence.bayesian_teacher import score_training_pairs
+
         return score_training_pairs(dataset_id, top_k=top_k, seed=seed, db_path=db_path)
     except ImportError:
         return {"success": False, "error": "Bayesian Teaching engine not available"}
@@ -419,7 +427,9 @@ def main():
     parser = argparse.ArgumentParser(description="Fine-tuning Q&A pair generator")
     parser.add_argument("--generate", action="store_true", help="Generate from document chunks")
     parser.add_argument("--generate-from-rag", action="store_true", help="Generate from RAG chunks")
-    parser.add_argument("--bayesian-rank", action="store_true", help="Rank pending pairs by Bayesian information gain (D-BT-2)")
+    parser.add_argument(
+        "--bayesian-rank", action="store_true", help="Rank pending pairs by Bayesian information gain (D-BT-2)"
+    )
     parser.add_argument("--stats", action="store_true", help="Generation statistics")
 
     parser.add_argument("--dataset-id", type=str, default="")
@@ -463,7 +473,10 @@ def main():
     elif args.stats and args.dataset_id:
         result = get_generation_stats(dataset_id=args.dataset_id)
     else:
-        result = {"success": False, "error": "Specify --generate, --generate-from-rag, --bayesian-rank, or --stats with --dataset-id"}
+        result = {
+            "success": False,
+            "error": "Specify --generate, --generate-from-rag, --bayesian-rank, or --stats with --dataset-id",
+        }
 
     print(json.dumps(result, indent=2, default=str))
 

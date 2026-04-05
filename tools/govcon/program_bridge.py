@@ -143,9 +143,7 @@ def _ensure_tables(conn) -> None:
 # ---------------------------------------------------------------------------
 def _gather_opportunity(conn, opp_id: str) -> Dict[str, Any]:
     """Fetch opportunity details."""
-    row = conn.execute(
-        "SELECT * FROM proposal_opportunities WHERE id = ?", (opp_id,)
-    ).fetchone()
+    row = conn.execute("SELECT * FROM proposal_opportunities WHERE id = ?", (opp_id,)).fetchone()
     if not row:
         return {"data": None, "record_count": 0}
     cols = [d[0] for d in conn.execute("SELECT * FROM proposal_opportunities LIMIT 0").description]
@@ -200,11 +198,14 @@ def _gather_teaming(conn, opp_id: str) -> Dict[str, Any]:
             (opp_id,),
         ).fetchall()
         if rows:
-            cols = [d[0] for d in conn.execute(
-                "SELECT w.*, p.name AS partner_name, p.capabilities, p.certifications "
-                "FROM pg_teaming_workshare w "
-                "LEFT JOIN pg_teaming_partners p ON w.partner_id = p.id LIMIT 0"
-            ).description]
+            cols = [
+                d[0]
+                for d in conn.execute(
+                    "SELECT w.*, p.name AS partner_name, p.capabilities, p.certifications "
+                    "FROM pg_teaming_workshare w "
+                    "LEFT JOIN pg_teaming_partners p ON w.partner_id = p.id LIMIT 0"
+                ).description
+            ]
             results = [dict(zip(cols, r)) for r in rows]
     except Exception:
         pass
@@ -229,9 +230,7 @@ def _gather_pricing(conn, opp_id: str) -> Dict[str, Any]:
     """Fetch cost volumes and LCAT allocations."""
     result: Dict[str, Any] = {"volumes": [], "lcats": []}
     try:
-        rows = conn.execute(
-            "SELECT * FROM pg_cost_volumes WHERE opportunity_id = ?", (opp_id,)
-        ).fetchall()
+        rows = conn.execute("SELECT * FROM pg_cost_volumes WHERE opportunity_id = ?", (opp_id,)).fetchall()
         if rows:
             cols = [d[0] for d in conn.execute("SELECT * FROM pg_cost_volumes LIMIT 0").description]
             result["volumes"] = [dict(zip(cols, r)) for r in rows]
@@ -554,7 +553,9 @@ def _render_open_issues(opp: Optional[Dict], risks: List[Dict]) -> str:
     if open_risks:
         lines.append(f"- **{len(open_risks)} open review finding(s)** require resolution before kickoff.")
     if opp and opp.get("amendment_count", 0) > 0:
-        lines.append(f"- **{opp['amendment_count']} amendment(s)** processed -- verify all changes are reflected in final proposal.")
+        lines.append(
+            f"- **{opp['amendment_count']} amendment(s)** processed -- verify all changes are reflected in final proposal."
+        )
     if opp and opp.get("question_count", 0) > 0:
         lines.append(f"- **{opp['question_count']} Q&A item(s)** submitted -- confirm agency responses incorporated.")
     if not open_risks and (not opp or opp.get("amendment_count", 0) == 0):
@@ -602,12 +603,14 @@ def get_data_coverage(opportunity_id: str) -> Dict[str, Any]:
         available = count > 0
         if available:
             populated += 1
-        sections.append({
-            "name": name,
-            "data_available": available,
-            "source_table": source_table,
-            "record_count": count,
-        })
+        sections.append(
+            {
+                "name": name,
+                "data_available": available,
+                "source_table": source_table,
+                "record_count": count,
+            }
+        )
 
     conn.close()
     overall = (populated / len(section_map) * 100) if section_map else 0.0
@@ -661,17 +664,17 @@ def generate_bridge(opportunity_id: str) -> Dict[str, Any]:
 
     # Count populated sections
     data_counts = [
-        opp_result["record_count"],       # Executive Summary
-        opp_result["record_count"],       # Customer Intelligence
-        themes_result["record_count"],    # Win Strategy
-        drafts_result["record_count"],    # Technical Approach
-        personnel_result["record_count"], # Key Personnel
-        teaming_result["record_count"],   # Teaming
-        pricing_result["record_count"],   # Pricing
-        cmmc_result["record_count"],      # Compliance
-        cdrls_result["record_count"],     # CDRLs
-        risks_result["record_count"],     # Risks
-        risks_result["record_count"],     # Open Issues
+        opp_result["record_count"],  # Executive Summary
+        opp_result["record_count"],  # Customer Intelligence
+        themes_result["record_count"],  # Win Strategy
+        drafts_result["record_count"],  # Technical Approach
+        personnel_result["record_count"],  # Key Personnel
+        teaming_result["record_count"],  # Teaming
+        pricing_result["record_count"],  # Pricing
+        cmmc_result["record_count"],  # Compliance
+        cdrls_result["record_count"],  # CDRLs
+        risks_result["record_count"],  # Risks
+        risks_result["record_count"],  # Open Issues
     ]
     sections_populated = sum(1 for c in data_counts if c > 0)
     total_sections = len(BRIDGE_SECTIONS)
@@ -733,12 +736,14 @@ def generate_bridge(opportunity_id: str) -> Dict[str, Any]:
     _audit(
         conn,
         "bridge_generated",
-        json.dumps({
-            "bridge_id": bridge_id,
-            "version": version,
-            "sections_populated": sections_populated,
-            "coverage_pct": coverage_pct,
-        }),
+        json.dumps(
+            {
+                "bridge_id": bridge_id,
+                "version": version,
+                "sections_populated": sections_populated,
+                "coverage_pct": coverage_pct,
+            }
+        ),
         opportunity_id,
     )
 
@@ -775,9 +780,7 @@ def get_bridge(bridge_id: str) -> Dict[str, Any]:
     """Retrieve a specific bridge document."""
     conn = _get_db()
     _ensure_tables(conn)
-    row = conn.execute(
-        "SELECT * FROM pg_program_bridges WHERE id = ?", (bridge_id,)
-    ).fetchone()
+    row = conn.execute("SELECT * FROM pg_program_bridges WHERE id = ?", (bridge_id,)).fetchone()
     if not row:
         conn.close()
         return {"error": "Bridge not found", "bridge_id": bridge_id}
@@ -855,8 +858,10 @@ def main() -> None:
         elif "bridges" in result:
             print(f"Bridges: {result['count']}")
             for b in result["bridges"]:
-                print(f"  {b['id']}  opp={b['opportunity_id']}  v{b['version']}  "
-                      f"coverage={b['data_coverage_pct']}%  {b['status']}  {b['created_at']}")
+                print(
+                    f"  {b['id']}  opp={b['opportunity_id']}  v{b['version']}  "
+                    f"coverage={b['data_coverage_pct']}%  {b['status']}  {b['created_at']}"
+                )
         elif "sections" in result and "overall_coverage_pct" in result:
             print(f"Data Coverage for {result['opportunity_id']}: {result['overall_coverage_pct']}%")
             for s in result["sections"]:

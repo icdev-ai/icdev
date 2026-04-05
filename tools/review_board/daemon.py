@@ -65,6 +65,7 @@ def get_connection():
         pass  # Non-SQLite backends may not support these
     return conn
 
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -73,7 +74,14 @@ CONFIG_PATH = BASE_DIR / "args" / "review_board_config.yaml"
 PID_FILE = BASE_DIR / ".tmp" / "review_board" / "daemon.pid"
 
 REFLEX_NAMES = [
-    "sre", "qa", "security", "perf", "ux", "docs", "product", "report",
+    "sre",
+    "qa",
+    "security",
+    "perf",
+    "ux",
+    "docs",
+    "product",
+    "report",
 ]
 
 # Severity levels for findings
@@ -195,48 +203,60 @@ class ReviewBoardDaemon(DaemonBase):
         finally:
             conn.close()
 
-    def log_audit(self, event_type: str, reflex_name: str = None,
-                  risk_tier: str = None, details: Dict = None,
-                  success: bool = None, duration_ms: int = None,
-                  metric_name: str = None, metric_value: float = None,
-                  **kwargs) -> str:
+    def log_audit(
+        self,
+        event_type: str,
+        reflex_name: str = None,
+        risk_tier: str = None,
+        details: Dict = None,
+        success: bool = None,
+        duration_ms: int = None,
+        metric_name: str = None,
+        metric_value: float = None,
+        **kwargs,
+    ) -> str:
         """Append an audit event (D-RB-2: append-only, NIST AU)."""
         audit_id = generate_id("rba")
         conn = get_connection()
         try:
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT INTO review_board_audit
                     (id, event_type, reflex_name, risk_tier, details, success,
                      duration_ms, metric_name, metric_value, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                audit_id, event_type, reflex_name, risk_tier,
-                json.dumps(details) if details else None,
-                1 if success else (0 if success is False else None),
-                duration_ms, metric_name, metric_value,
-                utcnow_iso(),
-            ))
+            """,
+                (
+                    audit_id,
+                    event_type,
+                    reflex_name,
+                    risk_tier,
+                    json.dumps(details) if details else None,
+                    1 if success else (0 if success is False else None),
+                    duration_ms,
+                    metric_name,
+                    metric_value,
+                    utcnow_iso(),
+                ),
+            )
             conn.commit()
         finally:
             conn.close()
         return audit_id
 
-    def create_reflex_state(self, name: str,
-                            config: Dict[str, Any]) -> ReflexStateBase:
+    def create_reflex_state(self, name: str, config: Dict[str, Any]) -> ReflexStateBase:
         return ReviewBoardReflexState(name, config)
 
     def create_trust_kernel(self, config: Dict[str, Any]) -> TrustKernelBase:
         return ReviewBoardTrustKernel(config)
 
-    def run_reflex_impl(self, name: str, config: Dict[str, Any],
-                        trust: TrustKernelBase) -> Tuple[bool, float, Dict]:
+    def run_reflex_impl(self, name: str, config: Dict[str, Any], trust: TrustKernelBase) -> Tuple[bool, float, Dict]:
         """Execute a single reflex via tools/review_board/reflexes/<name>.py."""
         risk_tier = config.get("risk_tier", RISK_GREEN)
 
         # ORANGE tier — log that human review is needed
         if trust.requires_human_approval(risk_tier):
-            return True, 0.0, {"status": "awaiting_human_approval",
-                               "risk_tier": risk_tier}
+            return True, 0.0, {"status": "awaiting_human_approval", "risk_tier": risk_tier}
 
         try:
             module = importlib.import_module(f"tools.review_board.reflexes.{name}")
@@ -257,10 +277,14 @@ class ReviewBoardDaemon(DaemonBase):
             return False, 0.0, {"error": str(e), "stage": "reflex_execution"}
 
         # Stub mode
-        return True, 0.0, {
-            "status": "stub",
-            "message": f"Reflex '{name}' not yet implemented -- stub mode (success)",
-        }
+        return (
+            True,
+            0.0,
+            {
+                "status": "stub",
+                "message": f"Reflex '{name}' not yet implemented -- stub mode (success)",
+            },
+        )
 
     def _store_findings(self, reflex_name: str, findings: list) -> int:
         """Store findings in review_board_findings (append-only)."""
@@ -278,27 +302,30 @@ class ReviewBoardDaemon(DaemonBase):
                 ).fetchone()
                 if existing:
                     continue
-                conn.execute("""
+                conn.execute(
+                    """
                     INSERT INTO review_board_findings
                         (id, reflex_name, severity, category, title, description,
                          recommendation, evidence, confidence, auto_fixable,
                          sha256, classification, created_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    finding_id,
-                    reflex_name,
-                    finding.get("severity", "info"),
-                    finding.get("category", "general"),
-                    finding.get("title", "Untitled finding"),
-                    finding.get("description"),
-                    finding.get("recommendation"),
-                    json.dumps(finding.get("evidence")) if finding.get("evidence") else None,
-                    finding.get("confidence", 0.0),
-                    1 if finding.get("auto_fixable") else 0,
-                    content_hash,
-                    "CUI",
-                    utcnow_iso(),
-                ))
+                """,
+                    (
+                        finding_id,
+                        reflex_name,
+                        finding.get("severity", "info"),
+                        finding.get("category", "general"),
+                        finding.get("title", "Untitled finding"),
+                        finding.get("description"),
+                        finding.get("recommendation"),
+                        json.dumps(finding.get("evidence")) if finding.get("evidence") else None,
+                        finding.get("confidence", 0.0),
+                        1 if finding.get("auto_fixable") else 0,
+                        content_hash,
+                        "CUI",
+                        utcnow_iso(),
+                    ),
+                )
                 stored += 1
             conn.commit()
         finally:
@@ -313,6 +340,7 @@ class ReviewBoardDaemon(DaemonBase):
         if findings:
             try:
                 from tools.review_board.notifier import notify_findings
+
                 notify_findings(findings, reflex_name=name)
             except Exception:
                 pass  # Notification is best-effort
@@ -320,6 +348,7 @@ class ReviewBoardDaemon(DaemonBase):
         # Step 1b: Log to main audit trail (NIST AU-2)
         try:
             from tools.review_board.compliance_bridge import log_to_audit_trail
+
             severity_counts = {}
             for f in findings:
                 s = f.get("severity", "info")
@@ -338,6 +367,7 @@ class ReviewBoardDaemon(DaemonBase):
             return
         try:
             from tools.review_board.remediation_engine import run_remediation
+
             remediation_result = run_remediation(dry_run=False)
             self.log_audit(
                 f"{self.event_prefix}.remediation.completed",
@@ -352,6 +382,7 @@ class ReviewBoardDaemon(DaemonBase):
             # Notify remediation outcome
             try:
                 from tools.review_board.notifier import notify_remediation
+
                 notify_remediation(remediation_result)
             except Exception:
                 pass
@@ -369,15 +400,13 @@ class ReviewBoardDaemon(DaemonBase):
         try:
             # Count findings by severity
             rows = conn.execute(
-                "SELECT severity, COUNT(*) as cnt FROM review_board_findings "
-                "GROUP BY severity"
+                "SELECT severity, COUNT(*) as cnt FROM review_board_findings GROUP BY severity"
             ).fetchall()
             severity_counts = {row[0]: row[1] for row in rows}
 
             # Count recent findings (last 24h)
             recent = conn.execute(
-                "SELECT COUNT(*) FROM review_board_findings "
-                "WHERE created_at > datetime('now', '-24 hours')"
+                "SELECT COUNT(*) FROM review_board_findings WHERE created_at > datetime('now', '-24 hours')"
             ).fetchone()
 
             return {

@@ -42,27 +42,52 @@ _CSP_PREFIXES = {
 }
 
 _DX_TYPES = {
-    "aws-dx", "aws-dx-gw", "az-er", "az-er-global",
-    "gcp-ic", "oci-fc", "ibm-dl",
+    "aws-dx",
+    "aws-dx-gw",
+    "az-er",
+    "az-er-global",
+    "gcp-ic",
+    "oci-fc",
+    "ibm-dl",
 }
 
 _VPN_TYPES = {
-    "aws-vpn", "az-vpn-gw", "gcp-vpn", "ibm-vpn",
+    "aws-vpn",
+    "az-vpn-gw",
+    "gcp-vpn",
+    "ibm-vpn",
 }
 
 _TRANSIT_HUB_TYPES = {
-    "aws-tgw", "aws-cloudwan", "az-vwan", "gcp-ncc", "oci-drg", "ibm-tg",
+    "aws-tgw",
+    "aws-cloudwan",
+    "az-vwan",
+    "gcp-ncc",
+    "oci-drg",
+    "ibm-tg",
 }
 
 _FIREWALL_TYPES = {
-    "firewall", "aws-nfw", "az-fw", "gcp-armor", "oci-waf", "aws-waf",
+    "firewall",
+    "aws-nfw",
+    "az-fw",
+    "gcp-armor",
+    "oci-waf",
+    "aws-waf",
 }
 
 _LB_TYPES = {
-    "aws-alb", "aws-nlb", "aws-gwlb", "aws-ga",
-    "az-appgw", "az-front", "az-crosslb",
-    "gcp-lb", "gcp-gfe",
-    "oci-lb", "ibm-lb",
+    "aws-alb",
+    "aws-nlb",
+    "aws-gwlb",
+    "aws-ga",
+    "az-appgw",
+    "az-front",
+    "az-crosslb",
+    "gcp-lb",
+    "gcp-gfe",
+    "oci-lb",
+    "ibm-lb",
 }
 
 
@@ -83,6 +108,7 @@ def _build_adj(edges: list[dict]) -> dict[str, set[str]]:
 
 
 # ── Resiliency Tier Scoring ──────────────────────────────────────────────────
+
 
 def score_hybrid_resiliency(nodes: list[dict], edges: list[dict]) -> dict:
     """Score the resiliency tier of a hybrid topology.
@@ -144,7 +170,9 @@ def score_hybrid_resiliency(nodes: list[dict], edges: list[dict]) -> dict:
     # Build findings
     if total_dx == 0:
         findings.append("No dedicated interconnect (DX/ER/IC/FC) found in topology")
-        recommendations.append("Add dedicated circuit for production workloads — VPN alone has lower reliability and throughput")
+        recommendations.append(
+            "Add dedicated circuit for production workloads — VPN alone has lower reliability and throughput"
+        )
     elif total_dx == 1:
         findings.append("Single dedicated interconnect — single point of failure, no SLA")
         recommendations.append("Add a second connection at a diverse location for at least 99.9% SLA")
@@ -169,7 +197,9 @@ def score_hybrid_resiliency(nodes: list[dict], edges: list[dict]) -> dict:
             bfd_enabled = True
     if dx_nodes and not bfd_enabled:
         findings.append("BFD not detected on DX connections — failover will take ~90 seconds (BGP default)")
-        recommendations.append("Enable BFD (Bidirectional Forwarding Detection) on all DX VIFs for sub-second (<1s) failover")
+        recommendations.append(
+            "Enable BFD (Bidirectional Forwarding Detection) on all DX VIFs for sub-second (<1s) failover"
+        )
 
     # Failover time estimate
     failover_sec = 90.0 if not bfd_enabled else 0.9
@@ -193,6 +223,7 @@ def score_hybrid_resiliency(nodes: list[dict], edges: list[dict]) -> dict:
 
 
 # ── CSP Equivalence Lookups ──────────────────────────────────────────────────
+
 
 def get_csp_equivalent(service_key: str, target_csp: str) -> dict:
     """Look up the equivalent service on a target CSP.
@@ -252,6 +283,7 @@ def get_equivalence_matrix() -> list[dict]:
 
 # ── Hybrid Connectivity Validation ───────────────────────────────────────────
 
+
 def detect_connectivity_pattern(nodes: list[dict], edges: list[dict]) -> dict:
     """Detect which hybrid connectivity patterns are present in a topology.
 
@@ -271,45 +303,57 @@ def detect_connectivity_pattern(nodes: list[dict], edges: list[dict]) -> dict:
 
     # Check for DX + VPN backup pattern
     if has_dx and has_vpn:
-        detected.append({
-            "pattern": "dx_primary_vpn_backup",
-            **HYBRID_CONNECTIVITY_PATTERNS["dx_primary_vpn_backup"],
-        })
+        detected.append(
+            {
+                "pattern": "dx_primary_vpn_backup",
+                **HYBRID_CONNECTIVITY_PATTERNS["dx_primary_vpn_backup"],
+            }
+        )
     elif has_dx and not has_vpn:
-        missing.append({
-            "pattern": "dx_primary_vpn_backup",
-            "reason": "Dedicated circuit found without VPN backup — add VPN for failover",
-            "severity": "high",
-        })
+        missing.append(
+            {
+                "pattern": "dx_primary_vpn_backup",
+                "reason": "Dedicated circuit found without VPN backup — add VPN for failover",
+                "severity": "high",
+            }
+        )
 
     # Check for dual DX
     dx_nodes = [nid for nid, ntype in node_types.items() if ntype in _DX_TYPES]
     if len(dx_nodes) >= 2:
-        detected.append({
-            "pattern": "dual_dx_diverse_locations",
-            **HYBRID_CONNECTIVITY_PATTERNS["dual_dx_diverse_locations"],
-        })
+        detected.append(
+            {
+                "pattern": "dual_dx_diverse_locations",
+                **HYBRID_CONNECTIVITY_PATTERNS["dual_dx_diverse_locations"],
+            }
+        )
 
     # Check for transit hub
     vpc_count = sum(1 for t in type_set if t in {"aws-vpc", "az-vnet", "gcp-vpc", "oci-vcn", "ibm-vpc"})
     if has_hub and vpc_count >= 2:
-        detected.append({
-            "pattern": "transit_hub_multi_vpc",
-            **HYBRID_CONNECTIVITY_PATTERNS["transit_hub_multi_vpc"],
-        })
+        detected.append(
+            {
+                "pattern": "transit_hub_multi_vpc",
+                **HYBRID_CONNECTIVITY_PATTERNS["transit_hub_multi_vpc"],
+            }
+        )
     elif vpc_count >= 2 and not has_hub:
-        missing.append({
-            "pattern": "transit_hub_multi_vpc",
-            "reason": f"{vpc_count} VPCs detected without a transit hub — use TGW/vWAN/NCC/DRG for centralized routing",
-            "severity": "medium",
-        })
+        missing.append(
+            {
+                "pattern": "transit_hub_multi_vpc",
+                "reason": f"{vpc_count} VPCs detected without a transit hub — use TGW/vWAN/NCC/DRG for centralized routing",
+                "severity": "medium",
+            }
+        )
 
     # SD-WAN
     if has_sdwan:
-        detected.append({
-            "pattern": "sdwan_overlay",
-            **HYBRID_CONNECTIVITY_PATTERNS["sdwan_overlay"],
-        })
+        detected.append(
+            {
+                "pattern": "sdwan_overlay",
+                **HYBRID_CONNECTIVITY_PATTERNS["sdwan_overlay"],
+            }
+        )
 
     return {
         "detected_patterns": detected,
@@ -327,6 +371,7 @@ def detect_connectivity_pattern(nodes: list[dict], edges: list[dict]) -> dict:
 
 # ── Anti-Pattern Detection ───────────────────────────────────────────────────
 
+
 def detect_antipatterns(nodes: list[dict], edges: list[dict]) -> list[dict]:
     """Detect cloud networking anti-patterns in a topology.
 
@@ -343,11 +388,13 @@ def detect_antipatterns(nodes: list[dict], edges: list[dict]) -> list[dict]:
         config = dn.get("config", {})
         if not config.get("bfd") and not config.get("bfd_enabled"):
             ap = next(a for a in CLOUD_NETWORKING_ANTIPATTERNS if a["id"] == "AP-004")
-            detected.append({
-                **ap,
-                "affected_node": dn.get("label", dn["id"]),
-                "affected_node_id": dn["id"],
-            })
+            detected.append(
+                {
+                    **ap,
+                    "affected_node": dn.get("label", dn["id"]),
+                    "affected_node_id": dn["id"],
+                }
+            )
             break  # One finding per anti-pattern
 
     # AP-006: LAG used for HA
@@ -359,27 +406,32 @@ def detect_antipatterns(nodes: list[dict], edges: list[dict]) -> list[dict]:
             dx_neighbors = [nb for nb in neighbors if node_types.get(nb) in _DX_TYPES]
             if dx_neighbors:
                 ap = next(a for a in CLOUD_NETWORKING_ANTIPATTERNS if a["id"] == "AP-006")
-                detected.append({
-                    **ap,
-                    "affected_node": n.get("label", n["id"]),
-                    "affected_node_id": n["id"],
-                })
+                detected.append(
+                    {
+                        **ap,
+                        "affected_node": n.get("label", n["id"]),
+                        "affected_node_id": n["id"],
+                    }
+                )
                 break
 
     # AP-008: Single DX without VPN backup
     vpn_nodes = [n for n in nodes if node_types.get(n["id"]) in _VPN_TYPES]
     if len(dx_nodes) == 1 and not vpn_nodes:
         ap = next(a for a in CLOUD_NETWORKING_ANTIPATTERNS if a["id"] == "AP-008")
-        detected.append({
-            **ap,
-            "affected_node": dx_nodes[0].get("label", dx_nodes[0]["id"]),
-            "affected_node_id": dx_nodes[0]["id"],
-        })
+        detected.append(
+            {
+                **ap,
+                "affected_node": dx_nodes[0].get("label", dx_nodes[0]["id"]),
+                "affected_node_id": dx_nodes[0]["id"],
+            }
+        )
 
     return detected
 
 
 # ── Multi-Cloud Cost Estimation ──────────────────────────────────────────────
+
 
 def estimate_data_transfer_cost(
     source_csp: str,
@@ -479,6 +531,7 @@ def estimate_interconnect_monthly_cost(csp: str, speed_gbps: int, monthly_egress
 
 # ── Topology Cloud Analysis ─────────────────────────────────────────────────
 
+
 def analyze_cloud_topology(nodes: list[dict], edges: list[dict]) -> dict:
     """Run comprehensive cloud architecture analysis on a topology.
 
@@ -547,6 +600,7 @@ def analyze_cloud_topology(nodes: list[dict], edges: list[dict]) -> dict:
 
 # ── SCCA Compliance Analysis ───────────────────────────────────────────────────
 
+
 def analyze_scca_compliance(nodes: list[dict], edges: list[dict]) -> dict:
     """Analyze a topology for SCCA (Secure Cloud Computing Architecture) compliance.
 
@@ -557,8 +611,12 @@ def analyze_scca_compliance(nodes: list[dict], edges: list[dict]) -> dict:
         Dict with component_status, score, findings, and recommendations.
     """
     from tools.network.constants import (
-        SCCA_FIREWALL_TYPES, SCCA_IDENTITY_TYPES, SCCA_LOGGING_TYPES,
-        SCCA_KMS_TYPES, SCCA_SCANNING_TYPES, SCCA_DDOS_TYPES,
+        SCCA_FIREWALL_TYPES,
+        SCCA_IDENTITY_TYPES,
+        SCCA_LOGGING_TYPES,
+        SCCA_KMS_TYPES,
+        SCCA_SCANNING_TYPES,
+        SCCA_DDOS_TYPES,
     )
 
     node_types = {n["id"]: n.get("type", "") for n in nodes}
@@ -610,7 +668,9 @@ def analyze_scca_compliance(nodes: list[dict], edges: list[dict]) -> dict:
         vdss_score += 1
     else:
         components["vdss"]["findings"].append("No network firewall for IDS/IPS inspection")
-        components["vdss"]["recommendations"].append("Add Network Firewall/Azure FW for stateful inspection (FRD §2.1.2.7)")
+        components["vdss"]["recommendations"].append(
+            "Add Network Firewall/Azure FW for stateful inspection (FRD §2.1.2.7)"
+        )
     if has_waf:
         vdss_score += 1
     else:
@@ -640,8 +700,12 @@ def analyze_scca_compliance(nodes: list[dict], edges: list[dict]) -> dict:
         if ew_ok:
             vdss_score += 1
         else:
-            components["vdss"]["findings"].append("Firewall not connected to transit hub — east-west traffic may bypass inspection")
-            components["vdss"]["recommendations"].append("Connect firewall to TGW/vWAN/DRG for all inter-VPC traffic inspection")
+            components["vdss"]["findings"].append(
+                "Firewall not connected to transit hub — east-west traffic may bypass inspection"
+            )
+            components["vdss"]["recommendations"].append(
+                "Connect firewall to TGW/vWAN/DRG for all inter-VPC traffic inspection"
+            )
     components["vdss"]["score"] = round(vdss_score / vdss_max * 100)
 
     # VDMS scoring
@@ -656,17 +720,23 @@ def analyze_scca_compliance(nodes: list[dict], edges: list[dict]) -> dict:
         vdms_score += 1
     else:
         components["vdms"]["findings"].append("No FIPS 140-2 key management service")
-        components["vdms"]["recommendations"].append("Add KMS/Key Vault/OCI Vault for encryption key management (FRD §2.1.2.13)")
+        components["vdms"]["recommendations"].append(
+            "Add KMS/Key Vault/OCI Vault for encryption key management (FRD §2.1.2.13)"
+        )
     if has_scanning:
         vdms_score += 1
     else:
         components["vdms"]["findings"].append("No vulnerability scanning (ACAS equivalent)")
-        components["vdms"]["recommendations"].append("Add Inspector/Defender/Cloud Guard for continuous monitoring (FRD §2.1.3.1)")
+        components["vdms"]["recommendations"].append(
+            "Add Inspector/Defender/Cloud Guard for continuous monitoring (FRD §2.1.3.1)"
+        )
     if has_identity:
         vdms_score += 1
     else:
         components["vdms"]["findings"].append("No identity/directory service for CAC/MFA")
-        components["vdms"]["recommendations"].append("Add Managed AD/Entra ID/Identity Domains for CAC auth (FRD §2.1.3.3)")
+        components["vdms"]["recommendations"].append(
+            "Add Managed AD/Entra ID/Identity Domains for CAC auth (FRD §2.1.3.3)"
+        )
     components["vdms"]["score"] = round(vdms_score / vdms_max * 100)
 
     # TCCM scoring
@@ -815,8 +885,9 @@ def detect_landing_zone_pattern(nodes: list[dict], edges: list[dict]) -> dict:
     has_scca = scca["components_present"] >= 3
 
     # Label-based hints
-    lz_hints = any(kw in all_labels for kw in ("landing zone", "shared services", "log archive",
-                                                 "audit", "network account", "hub"))
+    lz_hints = any(
+        kw in all_labels for kw in ("landing zone", "shared services", "log archive", "audit", "network account", "hub")
+    )
 
     # Confidence scoring
     confidence = 0
@@ -848,6 +919,7 @@ def detect_landing_zone_pattern(nodes: list[dict], edges: list[dict]) -> dict:
 
 # ── WA Security Pillar Analysis ────────────────────────────────────────────────
 
+
 def analyze_wa_security(nodes: list[dict], edges: list[dict]) -> dict:
     """Analyze a topology against the AWS Well-Architected Security Pillar.
 
@@ -858,17 +930,21 @@ def analyze_wa_security(nodes: list[dict], edges: list[dict]) -> dict:
         Dict with area_scores, overall_score, rating, findings, recommendations.
     """
     from tools.network.constants import (
-        SCCA_FIREWALL_TYPES, SCCA_IDENTITY_TYPES, SCCA_LOGGING_TYPES,
-        SCCA_KMS_TYPES, SCCA_SCANNING_TYPES, SCCA_DDOS_TYPES,
-        WA_THREAT_DETECTION_TYPES, WA_CONFIG_MONITORING_TYPES,
+        SCCA_FIREWALL_TYPES,
+        SCCA_IDENTITY_TYPES,
+        SCCA_LOGGING_TYPES,
+        SCCA_KMS_TYPES,
+        SCCA_SCANNING_TYPES,
+        SCCA_DDOS_TYPES,
+        WA_THREAT_DETECTION_TYPES,
+        WA_CONFIG_MONITORING_TYPES,
     )
 
     node_types = {n["id"]: n.get("type", "") for n in nodes}
     type_set = set(node_types.values())
 
     # Detect capabilities
-    vpc_count = sum(1 for t in type_set if t in {
-        "aws-vpc", "az-vnet", "gcp-vpc", "oci-vcn", "ibm-vpc"})
+    vpc_count = sum(1 for t in type_set if t in {"aws-vpc", "az-vnet", "gcp-vpc", "oci-vcn", "ibm-vpc"})
     has_firewall = bool(type_set & SCCA_FIREWALL_TYPES)
     has_waf = bool(type_set & {"aws-waf", "az-appgw", "az-front", "oci-waf", "gcp-armor", "ibm-cis"})
     has_ddos = bool(type_set & SCCA_DDOS_TYPES)
@@ -969,8 +1045,9 @@ def analyze_wa_security(nodes: list[dict], edges: list[dict]) -> dict:
     else:
         findings.append("[SEC08] No key management service (KMS)")
         recommendations.append("[SEC08] Add KMS/Key Vault for FIPS 140-2 encryption (SEC08-BP01)")
-    encrypted_links = sum(1 for e in edges if (e.get("protocol") or "").lower() in
-                          ("ipsec", "tls", "macsec", "bgp", "https"))
+    encrypted_links = sum(
+        1 for e in edges if (e.get("protocol") or "").lower() in ("ipsec", "tls", "macsec", "bgp", "https")
+    )
     total_links = len(edges) or 1
     if encrypted_links / total_links >= 0.3 or has_dx or has_vpn:
         s += 1
@@ -994,8 +1071,12 @@ def analyze_wa_security(nodes: list[dict], edges: list[dict]) -> dict:
 
     # Overall weighted score
     weights = {
-        "foundations": 0.10, "identity": 0.15, "detection": 0.25,
-        "infrastructure": 0.25, "data_protection": 0.15, "incident_response": 0.10,
+        "foundations": 0.10,
+        "identity": 0.15,
+        "detection": 0.25,
+        "infrastructure": 0.25,
+        "data_protection": 0.15,
+        "incident_response": 0.10,
     }
     overall = sum(area_scores.get(a, 0) * w for a, w in weights.items())
     overall = round(max(0, min(100, overall)))
@@ -1054,8 +1135,13 @@ def analyze_csp_security(nodes: list[dict], edges: list[dict], csp: str = "auto"
         node_types = {n["id"]: n.get("type", "") for n in nodes}
         csp_counts = {}
         for ntype in node_types.values():
-            for prefix, csp_key in [("aws-", "aws"), ("az-", "azure"), ("gcp-", "gcp"),
-                                     ("oci-", "oci"), ("ibm-", "ibm")]:
+            for prefix, csp_key in [
+                ("aws-", "aws"),
+                ("az-", "azure"),
+                ("gcp-", "gcp"),
+                ("oci-", "oci"),
+                ("ibm-", "ibm"),
+            ]:
                 if ntype.startswith(prefix):
                     csp_counts[csp_key] = csp_counts.get(csp_key, 0) + 1
         csp = max(csp_counts, key=csp_counts.get) if csp_counts else "aws"
@@ -1069,8 +1155,12 @@ def analyze_csp_security(nodes: list[dict], edges: list[dict], csp: str = "auto"
 
     # For all other CSPs, run the same detection logic but with CSP-specific labels
     from tools.network.constants import (
-        SCCA_FIREWALL_TYPES, SCCA_IDENTITY_TYPES, SCCA_LOGGING_TYPES,
-        SCCA_KMS_TYPES, SCCA_SCANNING_TYPES, SCCA_DDOS_TYPES,
+        SCCA_FIREWALL_TYPES,
+        SCCA_IDENTITY_TYPES,
+        SCCA_LOGGING_TYPES,
+        SCCA_KMS_TYPES,
+        SCCA_SCANNING_TYPES,
+        SCCA_DDOS_TYPES,
         WA_THREAT_DETECTION_TYPES,
     )
 
@@ -1143,6 +1233,7 @@ def analyze_csp_security(nodes: list[dict], edges: list[dict], csp: str = "auto"
 
 # ── CLI Entry Point ──────────────────────────────────────────────────────────
 
+
 def main():
     """CLI entry point for testing cloud architecture functions."""
     import json
@@ -1160,25 +1251,32 @@ def main():
         print(json.dumps(get_scca_matrix(), indent=2))
     elif "--scca-components" in sys.argv:
         from tools.network.constants import SCCA_COMPONENTS
+
         print(json.dumps(SCCA_COMPONENTS, indent=2))
     elif "--landing-zones" in sys.argv:
         from tools.network.constants import LANDING_ZONE_PATTERNS
+
         print(json.dumps(LANDING_ZONE_PATTERNS, indent=2, default=str))
     elif "--wa-security" in sys.argv:
         print(json.dumps(get_wa_security_summary(), indent=2))
     elif "--csp-security" in sys.argv:
-        print(json.dumps({
-            "csp_security_frameworks": {
-                "aws": "AWS Well-Architected Security Pillar (SEC01-SEC11)",
-                "azure": "Microsoft Cloud Security Benchmark (MCSB)",
-                "gcp": "GCP Security Foundations Framework",
-                "oci": "OCI Security Best Practices + CIS Benchmark",
-                "ibm": "IBM Cloud Security & Compliance Center",
-            },
-            "auto_detection": "CSP detected from node type prefixes (aws-/az-/gcp-/oci-/ibm-)",
-            "checks_per_csp": 8,
-            "ratings": ["WELL-ARCHITECTED", "PARTIALLY ALIGNED", "SIGNIFICANT GAPS", "NOT ALIGNED"],
-        }, indent=2))
+        print(
+            json.dumps(
+                {
+                    "csp_security_frameworks": {
+                        "aws": "AWS Well-Architected Security Pillar (SEC01-SEC11)",
+                        "azure": "Microsoft Cloud Security Benchmark (MCSB)",
+                        "gcp": "GCP Security Foundations Framework",
+                        "oci": "OCI Security Best Practices + CIS Benchmark",
+                        "ibm": "IBM Cloud Security & Compliance Center",
+                    },
+                    "auto_detection": "CSP detected from node type prefixes (aws-/az-/gcp-/oci-/ibm-)",
+                    "checks_per_csp": 8,
+                    "ratings": ["WELL-ARCHITECTED", "PARTIALLY ALIGNED", "SIGNIFICANT GAPS", "NOT ALIGNED"],
+                },
+                indent=2,
+            )
+        )
     elif "--egress-compare" in sys.argv:
         gb = 1000.0
         for i, arg in enumerate(sys.argv):
@@ -1186,30 +1284,35 @@ def main():
                 gb = float(sys.argv[i + 1])
         print(json.dumps(compare_egress_costs(gb), indent=2))
     elif "--json" in sys.argv:
-        print(json.dumps({
-            "status": "ok",
-            "module": "cloud_architecture",
-            "capabilities": [
-                "resiliency_scoring",
-                "csp_equivalence",
-                "connectivity_patterns",
-                "antipattern_detection",
-                "cost_estimation",
-                "scca_compliance",
-                "scca_mapping",
-                "landing_zone_detection",
-                "wa_security_analysis",
-                "csp_security_analysis",
-            ],
-            "csps": ["aws", "azure", "gcp", "oci", "ibm"],
-            "equivalence_services": len(CSP_EQUIVALENCE),
-            "resiliency_tiers": len(RESILIENCY_TIERS),
-            "connectivity_patterns": len(HYBRID_CONNECTIVITY_PATTERNS),
-            "antipatterns": len(CLOUD_NETWORKING_ANTIPATTERNS),
-            "scca_components": 4,
-            "landing_zone_patterns": 5,
-            "wa_security_best_practices": 57,
-        }, indent=2))
+        print(
+            json.dumps(
+                {
+                    "status": "ok",
+                    "module": "cloud_architecture",
+                    "capabilities": [
+                        "resiliency_scoring",
+                        "csp_equivalence",
+                        "connectivity_patterns",
+                        "antipattern_detection",
+                        "cost_estimation",
+                        "scca_compliance",
+                        "scca_mapping",
+                        "landing_zone_detection",
+                        "wa_security_analysis",
+                        "csp_security_analysis",
+                    ],
+                    "csps": ["aws", "azure", "gcp", "oci", "ibm"],
+                    "equivalence_services": len(CSP_EQUIVALENCE),
+                    "resiliency_tiers": len(RESILIENCY_TIERS),
+                    "connectivity_patterns": len(HYBRID_CONNECTIVITY_PATTERNS),
+                    "antipatterns": len(CLOUD_NETWORKING_ANTIPATTERNS),
+                    "scca_components": 4,
+                    "landing_zone_patterns": 5,
+                    "wa_security_best_practices": 57,
+                },
+                indent=2,
+            )
+        )
     else:
         print("ICDEV Network Canvas — Cloud Architecture Engine")
         print(f"  CSP equivalence mappings: {len(CSP_EQUIVALENCE)}")

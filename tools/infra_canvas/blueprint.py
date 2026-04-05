@@ -13,6 +13,7 @@ from pathlib import Path
 
 try:
     import yaml as _yaml
+
     _HAS_YAML = True
 except ImportError:
     _HAS_YAML = False
@@ -63,10 +64,12 @@ def _gen_id():
 
 def _get_conn():
     from tools.infra_canvas.db.init_db import get_connection
+
     return get_connection()
 
 
 # ── Pages ────────────────────────────────────────────────────────────────────
+
 
 @infra_bp.route("/")
 def index():
@@ -79,8 +82,7 @@ def index():
         ).fetchall()
         designs = [dict(r) for r in rows]
         tpls = conn.execute(
-            "SELECT id, name, category, description, tags "
-            "FROM idc_templates ORDER BY category, name"
+            "SELECT id, name, category, description, tags FROM idc_templates ORDER BY category, name"
         ).fetchall()
         templates = [dict(r) for r in tpls]
         return render_template(
@@ -117,11 +119,11 @@ def new_canvas():
             "(id, name, description, graph_json, template_id, "
             "classification, created_at, updated_at) "
             "VALUES (?,?,?,?,?,?,?,?)",
-            (design_id, name, "", json.dumps(graph),
-             template_id, "CUI", now, now),
+            (design_id, name, "", json.dumps(graph), template_id, "CUI", now, now),
         )
         conn.commit()
         from flask import redirect
+
         return redirect(f"/infra/canvas/{design_id}")
     finally:
         conn.close()
@@ -133,13 +135,10 @@ def templates_page():
     conn = _get_conn()
     try:
         rows = conn.execute(
-            "SELECT id, name, category, description, tags "
-            "FROM idc_templates ORDER BY category, name"
+            "SELECT id, name, category, description, tags FROM idc_templates ORDER BY category, name"
         ).fetchall()
         templates = [dict(r) for r in rows]
-        return render_template(
-            "infra_canvas/templates.html", templates=templates
-        )
+        return render_template("infra_canvas/templates.html", templates=templates)
     finally:
         conn.close()
 
@@ -157,9 +156,7 @@ def assessments_page():
             "ORDER BY a.created_at DESC LIMIT 50"
         ).fetchall()
         assessments = [dict(r) for r in rows]
-        return render_template(
-            "infra_canvas/assessments.html", assessments=assessments
-        )
+        return render_template("infra_canvas/assessments.html", assessments=assessments)
     finally:
         conn.close()
 
@@ -169,9 +166,7 @@ def canvas(design_id):
     """Open the infrastructure canvas editor."""
     conn = _get_conn()
     try:
-        row = conn.execute(
-            "SELECT * FROM infra_designs WHERE id = ?", (design_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM infra_designs WHERE id = ?", (design_id,)).fetchone()
         if not row:
             return "Design not found", 404
         design = dict(row)
@@ -191,11 +186,10 @@ def idc_remediation_page(design_id):
     """Remediation page — gap analysis with recommended fixes."""
     conn = _get_conn()
     try:
-        row = conn.execute(
-            "SELECT id, name FROM infra_designs WHERE id=?", (design_id,)
-        ).fetchone()
+        row = conn.execute("SELECT id, name FROM infra_designs WHERE id=?", (design_id,)).fetchone()
         if not row:
             from flask import redirect
+
             return redirect("/infra/")
         design = dict(row)
         return render_template("infra_canvas/remediation.html", design=design)
@@ -204,6 +198,7 @@ def idc_remediation_page(design_id):
 
 
 # ── API ──────────────────────────────────────────────────────────────────────
+
 
 @infra_bp.route("/api/designs", methods=["POST"])
 def create_design():
@@ -240,9 +235,7 @@ def get_design(design_id):
     """Get a design by ID."""
     conn = _get_conn()
     try:
-        row = conn.execute(
-            "SELECT * FROM infra_designs WHERE id = ?", (design_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM infra_designs WHERE id = ?", (design_id,)).fetchone()
         if not row:
             return jsonify({"error": "Not found"}), 404
         d = dict(row)
@@ -278,6 +271,7 @@ def save_design(design_id):
     # Cross-canvas trigger: auto-assess for security gaps
     try:
         from tools.security_canvas.agent import on_idc_design_saved
+
         on_idc_design_saved(design_id)
     except Exception:
         pass
@@ -285,6 +279,7 @@ def save_design(design_id):
     # Incremental KG update: re-extract only if graph_json changed
     try:
         from tools.canvas.kg_builder import rebuild_canvas_kg
+
         rebuild_canvas_kg("idc", design_id)
     except Exception:
         pass
@@ -297,9 +292,7 @@ def run_assessment(design_id):
     """Run compliance assessment on a design."""
     conn = _get_conn()
     try:
-        row = conn.execute(
-            "SELECT graph_json FROM infra_designs WHERE id = ?", (design_id,)
-        ).fetchone()
+        row = conn.execute("SELECT graph_json FROM infra_designs WHERE id = ?", (design_id,)).fetchone()
         if not row:
             return jsonify({"error": "Not found"}), 404
 
@@ -338,11 +331,10 @@ def run_auto_fix(design_id):
     and returns {fixes_applied, old_score, new_score, nodes_added}.
     """
     from tools.canvas.auto_remediate import auto_remediate_idc
+
     conn = _get_conn()
     try:
-        row = conn.execute(
-            "SELECT graph_json FROM infra_designs WHERE id = ?", (design_id,)
-        ).fetchone()
+        row = conn.execute("SELECT graph_json FROM infra_designs WHERE id = ?", (design_id,)).fetchone()
         if not row:
             return jsonify({"error": "Not found"}), 404
 
@@ -366,15 +358,17 @@ def run_auto_fix(design_id):
         new_result = assess_infra_design(graph)
         new_score = new_result["score"]
 
-        return jsonify({
-            "status": "ok",
-            "design_id": design_id,
-            "fixes_applied": fix_result["fixes_applied"],
-            "old_score": old_score,
-            "new_score": new_score,
-            "nodes_added": fix_result["nodes_added"],
-            "edges_added": fix_result["edges_added"],
-        })
+        return jsonify(
+            {
+                "status": "ok",
+                "design_id": design_id,
+                "fixes_applied": fix_result["fixes_applied"],
+                "old_score": old_score,
+                "new_score": new_score,
+                "nodes_added": fix_result["nodes_added"],
+                "edges_added": fix_result["edges_added"],
+            }
+        )
     finally:
         conn.close()
 
@@ -384,10 +378,7 @@ def list_templates():
     """List available IDC templates."""
     conn = _get_conn()
     try:
-        rows = conn.execute(
-            "SELECT id, name, category, description, tags FROM idc_templates "
-            "ORDER BY name"
-        ).fetchall()
+        rows = conn.execute("SELECT id, name, category, description, tags FROM idc_templates ORDER BY name").fetchall()
         return jsonify({"templates": [dict(r) for r in rows]})
     finally:
         conn.close()
@@ -399,8 +390,7 @@ def list_snippets():
     conn = _get_conn()
     try:
         rows = conn.execute(
-            "SELECT id, name, category, description, graph_json, tags "
-            "FROM idc_snippets ORDER BY category, name"
+            "SELECT id, name, category, description, graph_json, tags FROM idc_snippets ORDER BY category, name"
         ).fetchall()
         return jsonify({"snippets": [dict(r) for r in rows]})
     finally:
@@ -408,6 +398,7 @@ def list_snippets():
 
 
 # ── Versioning helpers ────────────────────────────────────────────────────────
+
 
 def _idc_diff_graph(old: dict, new: dict) -> str:
     """Return a human-readable change summary between two graph states."""
@@ -433,6 +424,7 @@ def _idc_diff_graph(old: dict, new: dict) -> str:
 
 # ── Versioning API ────────────────────────────────────────────────────────────
 
+
 @infra_bp.route("/api/versions/<design_id>", methods=["GET"])
 def idc_api_list_versions(design_id):
     """List all version snapshots for an infra design."""
@@ -455,7 +447,8 @@ def idc_api_create_version(design_id):
     conn = _get_conn()
     try:
         row = conn.execute(
-            "SELECT graph_json FROM infra_designs WHERE id=?", (design_id,),
+            "SELECT graph_json FROM infra_designs WHERE id=?",
+            (design_id,),
         ).fetchone()
         if not row:
             return jsonify({"error": "Design not found"}), 404
@@ -485,9 +478,15 @@ def idc_api_create_version(design_id):
         conn.execute(
             "INSERT INTO idc_versions (id, design_id, version_number, graph_json, change_summary, user_id, created_at) "
             "VALUES (?,?,?,?,?,?,?)",
-            (ver_id, design_id, ver_num,
-             json.dumps(current_graph) if isinstance(current_graph, dict) else str(raw),
-             change_summary, data.get("user_id", ""), now),
+            (
+                ver_id,
+                design_id,
+                ver_num,
+                json.dumps(current_graph) if isinstance(current_graph, dict) else str(raw),
+                change_summary,
+                data.get("user_id", ""),
+                now,
+            ),
         )
         conn.commit()
     finally:
@@ -514,8 +513,9 @@ def idc_api_restore_version(design_id, version_id):
         conn.commit()
     finally:
         conn.close()
-    return jsonify({"id": design_id, "restored_version": version_id,
-                    "version_number": ver["version_number"], "updated_at": now})
+    return jsonify(
+        {"id": design_id, "restored_version": version_id, "version_number": ver["version_number"], "updated_at": now}
+    )
 
 
 @infra_bp.route("/api/versions/<design_id>/diff", methods=["POST"])
@@ -546,11 +546,13 @@ def idc_api_diff_versions(design_id):
     except Exception:
         return jsonify({"error": "Failed to parse graph data"}), 500
     summary = _idc_diff_graph(graph_a, graph_b)
-    return jsonify({
-        "version_a": {"id": ver_a_id, "version_number": ver_a["version_number"]},
-        "version_b": {"id": ver_b_id, "version_number": ver_b["version_number"]},
-        "summary": summary,
-    })
+    return jsonify(
+        {
+            "version_a": {"id": ver_a_id, "version_number": ver_a["version_number"]},
+            "version_b": {"id": ver_b_id, "version_number": ver_b["version_number"]},
+            "summary": summary,
+        }
+    )
 
 
 @infra_bp.route("/api/equivalents", methods=["GET"])
@@ -561,8 +563,7 @@ def get_equivalents():
     if not node_type or not target_csp:
         return jsonify({"error": "type and csp params required"}), 400
     suggestions = suggest_equivalents(node_type, target_csp)
-    return jsonify({"node_type": node_type, "target_csp": target_csp,
-                     "equivalents": suggestions})
+    return jsonify({"node_type": node_type, "target_csp": target_csp, "equivalents": suggestions})
 
 
 @infra_bp.route("/api/objects", methods=["GET"])
@@ -585,13 +586,16 @@ def export_vsdx_file(design_id):
         d = dict(row)
         graph = json.loads(d["graph_json"])
         from tools.network.visio_export import export_vsdx
+
         vsdx_bytes = export_vsdx(d["name"], graph)
         encoded = base64.b64encode(vsdx_bytes).decode("ascii")
-        return jsonify({
-            "format": "vsdx",
-            "filename": d["name"].replace(" ", "_"),
-            "data": encoded,
-        })
+        return jsonify(
+            {
+                "format": "vsdx",
+                "filename": d["name"].replace(" ", "_"),
+                "data": encoded,
+            }
+        )
     finally:
         conn.close()
 
@@ -620,6 +624,7 @@ def idc_export_json(design_id):
     if name is None:
         return jsonify({"error": "Not found"}), 404
     from tools.canvas.export_utils import export_json
+
     data = base64.b64encode(export_json(name, graph, "IDC")).decode("ascii")
     return jsonify({"format": "json", "filename": f"{name.replace(' ', '_')}.json", "data": data})
 
@@ -631,6 +636,7 @@ def idc_export_markdown(design_id):
     if name is None:
         return jsonify({"error": "Not found"}), 404
     from tools.canvas.export_utils import export_markdown
+
     data = base64.b64encode(export_markdown(name, graph, "IDC")).decode("ascii")
     return jsonify({"format": "markdown", "filename": f"{name.replace(' ', '_')}.md", "data": data})
 
@@ -642,6 +648,7 @@ def idc_export_csv(design_id):
     if name is None:
         return jsonify({"error": "Not found"}), 404
     from tools.canvas.export_utils import export_csv
+
     data = base64.b64encode(export_csv(name, graph, "IDC")).decode("ascii")
     return jsonify({"format": "csv", "filename": f"{name.replace(' ', '_')}.csv", "data": data})
 
@@ -653,6 +660,7 @@ def idc_export_drawio(design_id):
     if name is None:
         return jsonify({"error": "Not found"}), 404
     from tools.canvas.export_utils import export_drawio
+
     data = base64.b64encode(export_drawio(name, graph, "IDC")).decode("ascii")
     return jsonify({"format": "drawio", "filename": f"{name.replace(' ', '_')}.drawio", "data": data})
 
@@ -664,6 +672,7 @@ def idc_export_svg(design_id):
     if name is None:
         return jsonify({"error": "Not found"}), 404
     from tools.canvas.export_utils import export_svg
+
     data = base64.b64encode(export_svg(name, graph, "IDC")).decode("ascii")
     return jsonify({"format": "svg", "filename": f"{name.replace(' ', '_')}.svg", "data": data})
 
@@ -675,6 +684,7 @@ def idc_export_terraform(design_id):
     if name is None:
         return jsonify({"error": "Not found"}), 404
     from tools.infra_canvas.iac_generator import generate_terraform
+
     hcl = generate_terraform(graph)
     data = base64.b64encode(hcl.encode("utf-8")).decode("ascii")
     return jsonify({"format": "terraform", "filename": f"{name.replace(' ', '_')}.tf", "data": data})
@@ -687,6 +697,7 @@ def idc_export_cloudformation(design_id):
     if name is None:
         return jsonify({"error": "Not found"}), 404
     from tools.infra_canvas.iac_generator import generate_cloudformation
+
     cf_yaml = generate_cloudformation(graph)
     data = base64.b64encode(cf_yaml.encode("utf-8")).decode("ascii")
     return jsonify({"format": "cloudformation", "filename": f"{name.replace(' ', '_')}.yaml", "data": data})
@@ -695,6 +706,7 @@ def idc_export_cloudformation(design_id):
 # ── Collaboration (Task 18) ───────────────────────────────────────────────────
 
 from tools.canvas.collaboration import CanvasCollabManager as _IDCCollabMgr
+
 _idc_collab = _IDCCollabMgr("idc")
 
 
@@ -748,6 +760,7 @@ def idc_collab_participants(design_id):
 
 # ── Cloud Discovery Import ────────────────────────────────────────────────────
 
+
 @infra_bp.route("/api/import/cloud", methods=["POST"])
 def idc_import_cloud():
     """Import existing infrastructure from a cloud inventory JSON payload.
@@ -783,9 +796,7 @@ def idc_import_cloud():
         design_id = body.get("design_id")
         if design_id:
             # Merge into existing design
-            row = conn.execute(
-                "SELECT graph_json FROM infra_designs WHERE id = ?", (design_id,)
-            ).fetchone()
+            row = conn.execute("SELECT graph_json FROM infra_designs WHERE id = ?", (design_id,)).fetchone()
             if not row:
                 return jsonify({"error": "Design not found"}), 404
             existing = json.loads(row["graph_json"])
@@ -821,11 +832,13 @@ def idc_import_cloud():
     finally:
         conn.close()
 
-    return jsonify({
-        "status": "imported",
-        "design_id": design_id,
-        "cloud": result["cloud"],
-        "node_count": result["node_count"],
-        "imported_at": result["imported_at"],
-        "warnings": result["warnings"],
-    }), 201
+    return jsonify(
+        {
+            "status": "imported",
+            "design_id": design_id,
+            "cloud": result["cloud"],
+            "node_count": result["node_count"],
+            "imported_at": result["imported_at"],
+            "warnings": result["warnings"],
+        }
+    ), 201

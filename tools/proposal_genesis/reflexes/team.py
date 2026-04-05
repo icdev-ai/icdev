@@ -41,6 +41,7 @@ def _generate_id(prefix: str = "pgtm") -> str:
 # Teaming health checks
 # ---------------------------------------------------------------------------
 
+
 def _get_opportunities_with_teams() -> List[Dict]:
     """Find opportunities that have teaming partners assigned."""
     conn = get_connection()
@@ -64,12 +65,15 @@ def _check_ta_expiration(opp_id: str) -> List[Dict]:
     """Check for expired or soon-to-expire teaming agreements."""
     conn = get_connection()
     try:
-        rows = conn.execute("""
+        rows = conn.execute(
+            """
             SELECT id, partner_name, ta_expiration_date, ta_status
             FROM pg_teaming_workshare
             WHERE opportunity_id = ?
             AND ta_expiration_date IS NOT NULL
-        """, (opp_id,)).fetchall()
+        """,
+            (opp_id,),
+        ).fetchall()
     except Exception:
         return []
     finally:
@@ -86,17 +90,21 @@ def _check_ta_expiration(opp_id: str) -> List[Dict]:
             exp_dt = datetime.fromisoformat(exp_date.replace("Z", "+00:00"))
             days_until = (exp_dt - now).days
             if days_until < 0:
-                issues.append({
-                    "partner": row["partner_name"],
-                    "severity": "critical",
-                    "issue": f"TA expired {abs(days_until)} days ago",
-                })
+                issues.append(
+                    {
+                        "partner": row["partner_name"],
+                        "severity": "critical",
+                        "issue": f"TA expired {abs(days_until)} days ago",
+                    }
+                )
             elif days_until < 30:
-                issues.append({
-                    "partner": row["partner_name"],
-                    "severity": "warning",
-                    "issue": f"TA expires in {days_until} days",
-                })
+                issues.append(
+                    {
+                        "partner": row["partner_name"],
+                        "severity": "warning",
+                        "issue": f"TA expires in {days_until} days",
+                    }
+                )
         except (ValueError, TypeError):
             pass
 
@@ -107,12 +115,15 @@ def _check_oci_risks(opp_id: str) -> List[Dict]:
     """Check for Organizational Conflict of Interest markers."""
     conn = get_connection()
     try:
-        rows = conn.execute("""
+        rows = conn.execute(
+            """
             SELECT tw.partner_name, tw.oci_risk_flag, tw.oci_mitigation
             FROM pg_teaming_workshare tw
             WHERE tw.opportunity_id = ?
             AND tw.oci_risk_flag = 1
-        """, (opp_id,)).fetchall()
+        """,
+            (opp_id,),
+        ).fetchall()
     except Exception:
         return []
     finally:
@@ -121,14 +132,14 @@ def _check_oci_risks(opp_id: str) -> List[Dict]:
     risks = []
     for row in rows:
         has_mitigation = bool(row["oci_mitigation"])
-        risks.append({
-            "partner": row["partner_name"],
-            "severity": "warning" if has_mitigation else "critical",
-            "issue": "OCI risk flagged" + (
-                " (mitigation plan exists)" if has_mitigation
-                else " (NO mitigation plan)"
-            ),
-        })
+        risks.append(
+            {
+                "partner": row["partner_name"],
+                "severity": "warning" if has_mitigation else "critical",
+                "issue": "OCI risk flagged"
+                + (" (mitigation plan exists)" if has_mitigation else " (NO mitigation plan)"),
+            }
+        )
     return risks
 
 
@@ -137,8 +148,7 @@ def _check_workshare_gaps(opp_id: str) -> Dict[str, Any]:
     conn = get_connection()
     try:
         rows = conn.execute(
-            "SELECT id, partner_name, role, workshare_pct "
-            "FROM pg_teaming_workshare WHERE opportunity_id = ?",
+            "SELECT id, partner_name, role, workshare_pct FROM pg_teaming_workshare WHERE opportunity_id = ?",
             (opp_id,),
         ).fetchall()
     except Exception:
@@ -153,10 +163,12 @@ def _check_workshare_gaps(opp_id: str) -> Dict[str, Any]:
         if isinstance(pct, (int, float)):
             total_pct += pct
         if not row["role"] or (row["role"] or "").lower() in ("tbd", "unassigned"):
-            gaps.append({
-                "partner": row["partner_name"],
-                "issue": "Role not assigned",
-            })
+            gaps.append(
+                {
+                    "partner": row["partner_name"],
+                    "issue": "Role not assigned",
+                }
+            )
 
     return {
         "total_partners": len(rows),
@@ -169,6 +181,7 @@ def _check_workshare_gaps(opp_id: str) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
+
 
 def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     """Execute the Team Reflex (R23).
@@ -195,18 +208,20 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         issues = len(ta_issues) + len(oci_risks) + len(workshare.get("gaps", []))
         total_issues += issues
 
-        team_results.append({
-            "opportunity_id": opp_id,
-            "title": opp["title"],
-            "ta_issues": len(ta_issues),
-            "oci_risks": len(oci_risks),
-            "workshare_gap_pct": workshare["workshare_gap"],
-            "unfilled_roles": len(workshare.get("gaps", [])),
-            "total_partners": workshare["total_partners"],
-            "total_issues": issues,
-            "ta_details": ta_issues[:5],
-            "oci_details": oci_risks[:5],
-        })
+        team_results.append(
+            {
+                "opportunity_id": opp_id,
+                "title": opp["title"],
+                "ta_issues": len(ta_issues),
+                "oci_risks": len(oci_risks),
+                "workshare_gap_pct": workshare["workshare_gap"],
+                "unfilled_roles": len(workshare.get("gaps", [])),
+                "total_partners": workshare["total_partners"],
+                "total_issues": issues,
+                "ta_details": ta_issues[:5],
+                "oci_details": oci_risks[:5],
+            }
+        )
 
     # Audit
     conn = get_connection()
@@ -220,10 +235,12 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                 "team_check",
                 "team",
                 "green",
-                json.dumps({
-                    "opportunities_checked": len(opportunities),
-                    "total_issues": total_issues,
-                }),
+                json.dumps(
+                    {
+                        "opportunities_checked": len(opportunities),
+                        "total_issues": total_issues,
+                    }
+                ),
                 1,
                 _utcnow_iso(),
             ),
@@ -243,4 +260,6 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             "team_results": team_results,
         },
     }
+
+
 # CUI // SP-CTI

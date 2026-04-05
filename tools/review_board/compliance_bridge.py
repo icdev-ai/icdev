@@ -88,6 +88,7 @@ def log_to_audit_trail(event_type: str, action: str, details: Dict = None) -> in
     """Write review board event to main ICDEV™ audit trail (NIST AU-2)."""
     try:
         from tools.audit.audit_logger import log_event
+
         return log_event(
             event_type=event_type,
             actor="review-board-daemon",
@@ -114,25 +115,28 @@ def register_cato_evidence(health_score: float, findings_summary: Dict) -> List[
 
             try:
                 # Use INSERT OR REPLACE to update existing evidence for this control
-                conn.execute("""
+                conn.execute(
+                    """
                     INSERT OR REPLACE INTO cato_evidence
                         (project_id, control_id, evidence_type, evidence_source,
                          evidence_path, evidence_hash, collected_at, expires_at,
                          is_fresh, status, automation_frequency)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    "icdev",
-                    control_id,
-                    "scan_result",
-                    "review_board_daemon",
-                    f"review_board/health/{control_id}",
-                    evidence_hash,
-                    now,
-                    expires,
-                    1,
-                    "current",
-                    "daily",
-                ))
+                """,
+                    (
+                        "icdev",
+                        control_id,
+                        "scan_result",
+                        "review_board_daemon",
+                        f"review_board/health/{control_id}",
+                        evidence_hash,
+                        now,
+                        expires,
+                        1,
+                        "current",
+                        "daily",
+                    ),
+                )
                 results.append({"control_id": control_id, "status": "registered"})
             except Exception as e:
                 results.append({"control_id": control_id, "status": "failed", "error": str(e)})
@@ -171,9 +175,14 @@ def get_control_coverage() -> Dict[str, Any]:
                 "description": mapping["description"],
                 "total_reflexes": len(mapping["reflexes"]),
                 "active_reflexes": active_reflexes,
-                "coverage_pct": round((active_reflexes / len(mapping["reflexes"])) * 100, 1) if mapping["reflexes"] else 0,
-                "status": "implemented" if active_reflexes == len(mapping["reflexes"]) else
-                          "partially_implemented" if active_reflexes > 0 else "not_implemented",
+                "coverage_pct": round((active_reflexes / len(mapping["reflexes"])) * 100, 1)
+                if mapping["reflexes"]
+                else 0,
+                "status": "implemented"
+                if active_reflexes == len(mapping["reflexes"])
+                else "partially_implemented"
+                if active_reflexes > 0
+                else "not_implemented",
             }
     except Exception:
         pass
@@ -202,6 +211,7 @@ def sync_all(health_score: float = None) -> Dict[str, Any]:
     if health_score is None:
         try:
             from tools.review_board.health_scorer import get_latest
+
             latest = get_latest()
             health_score = latest.get("score", 0)
         except Exception:
@@ -212,8 +222,7 @@ def sync_all(health_score: float = None) -> Dict[str, Any]:
     findings_summary = {}
     try:
         rows = conn.execute(
-            "SELECT severity, COUNT(*) FROM review_board_findings "
-            "WHERE fix_applied = 0 GROUP BY severity"
+            "SELECT severity, COUNT(*) FROM review_board_findings WHERE fix_applied = 0 GROUP BY severity"
         ).fetchall()
         findings_summary = {r[0]: r[1] for r in rows}
     except Exception:

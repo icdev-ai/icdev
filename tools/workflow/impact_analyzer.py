@@ -153,33 +153,41 @@ def analyze_impact(
         int_type = impact["integration_type"]
 
         if int_type == "extension_hook":
-            recommendations.append({
-                "subsystem": sub_id,
-                "action": f"Check if {sub_id} extension hooks need updating for changes in {triggers}",
-                "severity": "medium",
-                "type": "extension_hook",
-            })
+            recommendations.append(
+                {
+                    "subsystem": sub_id,
+                    "action": f"Check if {sub_id} extension hooks need updating for changes in {triggers}",
+                    "severity": "medium",
+                    "type": "extension_hook",
+                }
+            )
         elif int_type == "bridge_function":
-            recommendations.append({
-                "subsystem": sub_id,
-                "action": f"Verify {sub_id} bridge functions reflect changes in {triggers}",
-                "severity": "medium",
-                "type": "bridge_function",
-            })
+            recommendations.append(
+                {
+                    "subsystem": sub_id,
+                    "action": f"Verify {sub_id} bridge functions reflect changes in {triggers}",
+                    "severity": "medium",
+                    "type": "bridge_function",
+                }
+            )
         elif int_type == "db_query":
-            recommendations.append({
-                "subsystem": sub_id,
-                "action": f"Check if {sub_id} DB queries need updating for schema changes in {triggers}",
-                "severity": "high" if "schema" in str(impact.get("tables", [])) else "medium",
-                "type": "db_query",
-            })
+            recommendations.append(
+                {
+                    "subsystem": sub_id,
+                    "action": f"Check if {sub_id} DB queries need updating for schema changes in {triggers}",
+                    "severity": "high" if "schema" in str(impact.get("tables", [])) else "medium",
+                    "type": "db_query",
+                }
+            )
         else:
-            recommendations.append({
-                "subsystem": sub_id,
-                "action": f"Review {sub_id} for potential integration with {triggers}",
-                "severity": "low",
-                "type": "review",
-            })
+            recommendations.append(
+                {
+                    "subsystem": sub_id,
+                    "action": f"Review {sub_id} for potential integration with {triggers}",
+                    "severity": "low",
+                    "type": "review",
+                }
+            )
 
     return {
         "affected_subsystems": sorted(affected),
@@ -202,11 +210,13 @@ def get_graph() -> Dict[str, Any]:
     nodes = []
     edges = []
     for sub_id, info in matrix.items():
-        nodes.append({
-            "id": sub_id,
-            "tables": info.get("tables", []),
-            "integration_type": info.get("integration_type", ""),
-        })
+        nodes.append(
+            {
+                "id": sub_id,
+                "tables": info.get("tables", []),
+                "integration_type": info.get("integration_type", ""),
+            }
+        )
         for connected in info.get("connects_to", []):
             edges.append({"from": sub_id, "to": connected})
 
@@ -247,9 +257,7 @@ def _format_human(result: Dict[str, Any]) -> str:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Integration Impact Analyzer — cross-subsystem gap detection"
-    )
+    parser = argparse.ArgumentParser(description="Integration Impact Analyzer — cross-subsystem gap detection")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--human", action="store_true")
 
@@ -257,10 +265,8 @@ def main() -> None:
     group.add_argument("--analyze", action="store_true", help="Analyze impact of changes")
     group.add_argument("--graph", action="store_true", help="Show full integration graph")
 
-    parser.add_argument("--changed-files", type=str, default="",
-                        help="Comma-separated changed file paths")
-    parser.add_argument("--changed-tables", type=str, default="",
-                        help="Comma-separated changed table names")
+    parser.add_argument("--changed-files", type=str, default="", help="Comma-separated changed file paths")
+    parser.add_argument("--changed-tables", type=str, default="", help="Comma-separated changed table names")
 
     args = parser.parse_args()
 

@@ -57,6 +57,7 @@ def discover_similar_skills(query, limit=5):
     """
     try:
         from tools.databridge.connectors.clawhub_connector import ClawHubConnector
+
         conn = ClawHubConnector()
         conn.connect({})
         results = conn.search_skills(query, limit=limit)
@@ -88,6 +89,7 @@ def run_innovation_for_skill(skill_name, description):
     """
     try:
         from tools.pulse.engine.scheduler import research_phase
+
         topic = f"{skill_name}: {description[:200]}"
         result = research_phase(topic_override=topic)
         if result.get("status") == "error":
@@ -96,19 +98,23 @@ def run_innovation_for_skill(skill_name, description):
         findings = []
         for r in result.get("research_results", []):
             if isinstance(r, dict):
-                findings.append({
-                    "title": r.get("title", ""),
-                    "summary": r.get("snippet", r.get("summary", ""))[:300],
-                    "url": r.get("url", r.get("link", "")),
-                    "source": "web_research",
-                })
+                findings.append(
+                    {
+                        "title": r.get("title", ""),
+                        "summary": r.get("snippet", r.get("summary", ""))[:300],
+                        "url": r.get("url", r.get("link", "")),
+                        "source": "web_research",
+                    }
+                )
 
         synthesis = result.get("synthesis", {})
         return {
             "success": True,
             "findings_count": len(findings),
             "findings": findings[:10],
-            "synthesis": synthesis.get("text", synthesis.get("summary", "")) if isinstance(synthesis, dict) else str(synthesis)[:500],
+            "synthesis": synthesis.get("text", synthesis.get("summary", ""))
+            if isinstance(synthesis, dict)
+            else str(synthesis)[:500],
         }
     except Exception as exc:
         return {"success": False, "error": str(exc), "findings": []}
@@ -126,6 +132,7 @@ def run_creative_for_skill(skill_name, description):
     """
     try:
         from tools.creative.creative_engine import stage_discover
+
         result = stage_discover(domain=f"{skill_name} {description[:100]}")
         if not result:
             return {"success": True, "alternatives": [], "edge_cases": []}
@@ -134,11 +141,13 @@ def run_creative_for_skill(skill_name, description):
         if isinstance(result, dict):
             for comp in result.get("competitors", result.get("discoveries", [])):
                 if isinstance(comp, dict):
-                    alternatives.append({
-                        "name": comp.get("name", comp.get("title", "")),
-                        "approach": comp.get("description", comp.get("summary", ""))[:200],
-                        "source": "creative_engine",
-                    })
+                    alternatives.append(
+                        {
+                            "name": comp.get("name", comp.get("title", "")),
+                            "approach": comp.get("description", comp.get("summary", ""))[:200],
+                            "source": "creative_engine",
+                        }
+                    )
 
         return {
             "success": True,
@@ -162,6 +171,7 @@ def run_research_for_skill(skill_name, description, focus_areas=None):
     """
     try:
         from tools.research.research_engine import run_pipeline
+
         result = run_pipeline(
             vertical=re.sub(r"[^a-z0-9-]", "-", skill_name.lower())[:30],
             name=f"Skill enrichment: {skill_name}",
@@ -169,7 +179,11 @@ def run_research_for_skill(skill_name, description, focus_areas=None):
             focus_areas=focus_areas or [skill_name],
         )
         if not result or result.get("error"):
-            return {"success": False, "error": result.get("error", "Pipeline failed") if result else "No result", "patterns": []}
+            return {
+                "success": False,
+                "error": result.get("error", "Pipeline failed") if result else "No result",
+                "patterns": [],
+            }
 
         patterns = []
         stages = result.get("stages", {})
@@ -178,12 +192,14 @@ def run_research_for_skill(skill_name, description, focus_areas=None):
                 for key in ("findings", "signals", "challenges", "trends"):
                     for item in stage_data.get(key, []):
                         if isinstance(item, dict):
-                            patterns.append({
-                                "stage": stage_name,
-                                "title": item.get("title", item.get("name", ""))[:100],
-                                "detail": item.get("description", item.get("summary", ""))[:200],
-                                "source": "research_engine",
-                            })
+                            patterns.append(
+                                {
+                                    "stage": stage_name,
+                                    "title": item.get("title", item.get("name", ""))[:100],
+                                    "detail": item.get("description", item.get("summary", ""))[:200],
+                                    "source": "research_engine",
+                                }
+                            )
 
         return {
             "success": True,
@@ -226,6 +242,7 @@ def enrich_skill(skill_path, skip_engines=None):
         return {"success": False, "error": "No SKILL.md found"}
 
     import yaml
+
     content = skill_md.read_text(encoding="utf-8")
     fm_match = re.match(r"^---\s*\n(.*?)\n---\s*\n(.*)$", content, re.DOTALL)
     if fm_match:
@@ -405,7 +422,9 @@ def main():
     group.add_argument("--enrich", metavar="PATH", help="Enrich an imported skill")
     group.add_argument("--discover-similar", metavar="QUERY", help="Find similar skills on ClawHub")
 
-    parser.add_argument("--skip", nargs="*", default=[], help="Engines to skip (innovation, creative, research, discover)")
+    parser.add_argument(
+        "--skip", nargs="*", default=[], help="Engines to skip (innovation, creative, research, discover)"
+    )
     parser.add_argument("--json", action="store_true", help="JSON output")
 
     args = parser.parse_args()

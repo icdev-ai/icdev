@@ -36,65 +36,159 @@ from tools.db.storage import get_connection  # noqa: E402
 
 CAPABILITY_KEYWORDS: dict[str, list[str]] = {
     "compliance": [
-        "compliance", "ato", "fedramp", "cmmc", "nist", "stig", "poam",
-        "ssp", "rmf", "authority to operate", "il4", "il5", "il6",
-        "accreditation", "authorization", "cui", "controlled unclassified",
+        "compliance",
+        "ato",
+        "fedramp",
+        "cmmc",
+        "nist",
+        "stig",
+        "poam",
+        "ssp",
+        "rmf",
+        "authority to operate",
+        "il4",
+        "il5",
+        "il6",
+        "accreditation",
+        "authorization",
+        "cui",
+        "controlled unclassified",
     ],
     "security": [
-        "security", "vulnerability", "cve", "sast", "sbom", "scanning",
-        "penetration", "zero trust", "zta", "encryption", "secrets",
+        "security",
+        "vulnerability",
+        "cve",
+        "sast",
+        "sbom",
+        "scanning",
+        "penetration",
+        "zero trust",
+        "zta",
+        "encryption",
+        "secrets",
     ],
     "mbse": [
-        "mbse", "sysml", "model-based", "digital thread", "reqif",
-        "doors", "systems engineering", "cameo", "magicdraw",
+        "mbse",
+        "sysml",
+        "model-based",
+        "digital thread",
+        "reqif",
+        "doors",
+        "systems engineering",
+        "cameo",
+        "magicdraw",
     ],
     "ricoas": [
-        "requirements", "intake", "elicitation", "user stories",
-        "decomposition", "traceability", "gap analysis", "readiness",
+        "requirements",
+        "intake",
+        "elicitation",
+        "user stories",
+        "decomposition",
+        "traceability",
+        "gap analysis",
+        "readiness",
     ],
     "supply_chain": [
-        "supply chain", "scrm", "sbom", "dependency", "cve", "vendor",
-        "third-party", "open source risk",
+        "supply chain",
+        "scrm",
+        "sbom",
+        "dependency",
+        "cve",
+        "vendor",
+        "third-party",
+        "open source risk",
     ],
     "simulation": [
-        "simulation", "monte carlo", "scenario", "coa", "digital twin",
-        "what-if", "forecast",
+        "simulation",
+        "monte carlo",
+        "scenario",
+        "coa",
+        "digital twin",
+        "what-if",
+        "forecast",
     ],
     "devsecops_zta": [
-        "devsecops", "zero trust", "ci/cd", "pipeline", "devops",
-        "continuous", "automated deploy",
+        "devsecops",
+        "zero trust",
+        "ci/cd",
+        "pipeline",
+        "devops",
+        "continuous",
+        "automated deploy",
     ],
     "ai_security": [
-        "ai security", "prompt injection", "model security", "ai bom",
-        "adversarial", "red team",
+        "ai security",
+        "prompt injection",
+        "model security",
+        "ai bom",
+        "adversarial",
+        "red team",
     ],
     "ai_governance": [
-        "ai governance", "eu ai act", "ai transparency", "model card",
-        "fairness", "bias", "accountability", "ai inventory",
+        "ai governance",
+        "eu ai act",
+        "ai transparency",
+        "model card",
+        "fairness",
+        "bias",
+        "accountability",
+        "ai inventory",
     ],
     "observability": [
-        "observability", "tracing", "monitoring", "metrics", "alerting",
-        "logging", "otel", "opentelemetry",
+        "observability",
+        "tracing",
+        "monitoring",
+        "metrics",
+        "alerting",
+        "logging",
+        "otel",
+        "opentelemetry",
     ],
     "rag": [
-        "rag", "retrieval", "knowledge base", "semantic search",
-        "vector", "embeddings", "knowledge search",
+        "rag",
+        "retrieval",
+        "knowledge base",
+        "semantic search",
+        "vector",
+        "embeddings",
+        "knowledge search",
     ],
     "fine_tuning": [
-        "fine-tune", "finetune", "fine tuning", "training", "dataset",
-        "model training", "qlora", "lora",
+        "fine-tune",
+        "finetune",
+        "fine tuning",
+        "training",
+        "dataset",
+        "model training",
+        "qlora",
+        "lora",
     ],
     "knowledge_graph": [
-        "knowledge graph", "graph", "neo4j", "entity", "relationship",
-        "ontology", "triple",
+        "knowledge graph",
+        "graph",
+        "neo4j",
+        "entity",
+        "relationship",
+        "ontology",
+        "triple",
     ],
     "databridge": [
-        "data bridge", "databridge", "integration", "connector",
-        "sync", "etl", "data pipeline",
+        "data bridge",
+        "databridge",
+        "integration",
+        "connector",
+        "sync",
+        "etl",
+        "data pipeline",
     ],
     "dashboard": [
-        "dashboard", "ui", "web interface", "portal", "visualization",
-        "reporting", "charts",
+        "dashboard",
+        "ui",
+        "web interface",
+        "portal",
+        "visualization",
+        "reporting",
+        "charts",
     ],
 }
 
@@ -124,6 +218,7 @@ def _now_iso() -> str:
 
 
 # ── NL Extraction (deterministic) ────────────────────────────────────
+
 
 def extract_from_description(description: str) -> dict:
     """Extract capabilities, classification, and purpose from NL description.
@@ -190,6 +285,7 @@ def extract_from_description(description: str) -> dict:
 
 # ── Blueprint Generation ─────────────────────────────────────────────
 
+
 def build_blueprint_from_extraction(
     extraction: dict,
     app_name: str,
@@ -216,21 +312,53 @@ def build_blueprint_from_extraction(
 
     # Core agents (always)
     agents = [
-        {"name": "orchestrator", "base_port": 8443, "port_offset": port_offset,
-         "actual_port": 8443 + port_offset, "role": "Task routing, workflow management", "required": True},
-        {"name": "architect", "base_port": 8444, "port_offset": port_offset,
-         "actual_port": 8444 + port_offset, "role": "Design, architecture decisions", "required": True},
-        {"name": "builder", "base_port": 8445, "port_offset": port_offset,
-         "actual_port": 8445 + port_offset, "role": "Code generation, implementation", "required": True},
+        {
+            "name": "orchestrator",
+            "base_port": 8443,
+            "port_offset": port_offset,
+            "actual_port": 8443 + port_offset,
+            "role": "Task routing, workflow management",
+            "required": True,
+        },
+        {
+            "name": "architect",
+            "base_port": 8444,
+            "port_offset": port_offset,
+            "actual_port": 8444 + port_offset,
+            "role": "Design, architecture decisions",
+            "required": True,
+        },
+        {
+            "name": "builder",
+            "base_port": 8445,
+            "port_offset": port_offset,
+            "actual_port": 8445 + port_offset,
+            "role": "Code generation, implementation",
+            "required": True,
+        },
     ]
 
     # Conditional agents
     if caps.get("compliance"):
-        agents.append({"name": "compliance", "base_port": 8446, "port_offset": port_offset,
-                        "actual_port": 8446 + port_offset, "role": "Compliance assessment, ATO artifacts"})
+        agents.append(
+            {
+                "name": "compliance",
+                "base_port": 8446,
+                "port_offset": port_offset,
+                "actual_port": 8446 + port_offset,
+                "role": "Compliance assessment, ATO artifacts",
+            }
+        )
     if caps.get("security"):
-        agents.append({"name": "security", "base_port": 8447, "port_offset": port_offset,
-                        "actual_port": 8447 + port_offset, "role": "Security scanning, vulnerability management"})
+        agents.append(
+            {
+                "name": "security",
+                "base_port": 8447,
+                "port_offset": port_offset,
+                "actual_port": 8447 + port_offset,
+                "role": "Security scanning, vulnerability management",
+            }
+        )
 
     blueprint = {
         "blueprint_id": str(uuid.uuid4()),
@@ -259,6 +387,7 @@ def build_blueprint_from_extraction(
 
 
 # ── Session Management ────────────────────────────────────────────────
+
 
 def create_builder_session(description: str, *, app_name: str | None = None) -> dict:
     """Start an NL app builder session.
@@ -326,9 +455,7 @@ def create_builder_session(description: str, *, app_name: str | None = None) -> 
     }
 
 
-def _build_confirmation_message(
-    app_name: str, extraction: dict, blueprint: dict
-) -> str:
+def _build_confirmation_message(app_name: str, extraction: dict, blueprint: dict) -> str:
     """Build a human-friendly confirmation message."""
     caps = extraction["enabled_capabilities"]
     il = extraction["classification"]
@@ -414,6 +541,7 @@ def execute_build(session_id: str, *, output_dir: str | None = None) -> dict:
 
     try:
         from tools.builder.child_app_generator import generate_child_app
+
         result = generate_child_app(
             blueprint=blueprint,
             project_path=project_path,
@@ -433,6 +561,7 @@ def execute_build(session_id: str, *, output_dir: str | None = None) -> dict:
 
 
 # ── CLI ───────────────────────────────────────────────────────────────
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="ICDEV™ Studio NL App Builder")

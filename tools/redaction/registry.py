@@ -40,21 +40,38 @@ logger = logging.getLogger("icdev.redaction.registry")
 # Surrogate generators
 # ---------------------------------------------------------------------------
 
+
 def _generate_person_surrogate(index: int) -> str:
     """Generate a realistic person name surrogate."""
     try:
         from faker import Faker
+
         fake = Faker()
         Faker.seed(index)
         return fake.name()
     except ImportError:
         # NATO phonetic alphabet fallback
         names = [
-            "Alex Alpha", "Blake Bravo", "Casey Charlie", "Drew Delta",
-            "Eden Echo", "Finley Foxtrot", "Gray Golf", "Harper Hotel",
-            "Indigo India", "Jordan Juliet", "Kai Kilo", "Lane Lima",
-            "Morgan Mike", "Nova November", "Oakley Oscar", "Parker Papa",
-            "Quinn Quebec", "Riley Romeo", "Sage Sierra", "Taylor Tango",
+            "Alex Alpha",
+            "Blake Bravo",
+            "Casey Charlie",
+            "Drew Delta",
+            "Eden Echo",
+            "Finley Foxtrot",
+            "Gray Golf",
+            "Harper Hotel",
+            "Indigo India",
+            "Jordan Juliet",
+            "Kai Kilo",
+            "Lane Lima",
+            "Morgan Mike",
+            "Nova November",
+            "Oakley Oscar",
+            "Parker Papa",
+            "Quinn Quebec",
+            "Riley Romeo",
+            "Sage Sierra",
+            "Taylor Tango",
         ]
         return names[index % len(names)]
 
@@ -63,14 +80,24 @@ def _generate_location_surrogate(index: int) -> str:
     """Generate a realistic location surrogate."""
     try:
         from faker import Faker
+
         fake = Faker()
         Faker.seed(index + 1000)
         return fake.city()
     except ImportError:
         locations = [
-            "Springfield", "Riverside", "Fairview", "Georgetown",
-            "Madison", "Franklin", "Clinton", "Arlington",
-            "Burlington", "Greenville", "Chester", "Salem",
+            "Springfield",
+            "Riverside",
+            "Fairview",
+            "Georgetown",
+            "Madison",
+            "Franklin",
+            "Clinton",
+            "Arlington",
+            "Burlington",
+            "Greenville",
+            "Chester",
+            "Salem",
         ]
         return locations[index % len(locations)]
 
@@ -78,16 +105,23 @@ def _generate_location_surrogate(index: int) -> str:
 def _generate_org_surrogate(index: int) -> str:
     """Generate an organization codename."""
     codenames = [
-        "Organization ALPHA", "Organization BRAVO", "Organization CHARLIE",
-        "Organization DELTA", "Organization ECHO", "Organization FOXTROT",
-        "Organization GOLF", "Organization HOTEL", "Organization INDIA",
-        "Organization JULIET", "Organization KILO", "Organization LIMA",
+        "Organization ALPHA",
+        "Organization BRAVO",
+        "Organization CHARLIE",
+        "Organization DELTA",
+        "Organization ECHO",
+        "Organization FOXTROT",
+        "Organization GOLF",
+        "Organization HOTEL",
+        "Organization INDIA",
+        "Organization JULIET",
+        "Organization KILO",
+        "Organization LIMA",
     ]
     return codenames[index % len(codenames)]
 
 
-def _generate_agency_surrogate(index: int, agency_map: Dict[str, str],
-                                real_value: str) -> str:
+def _generate_agency_surrogate(index: int, agency_map: Dict[str, str], real_value: str) -> str:
     """Generate agency surrogate from map or generic."""
     # Check if there's a configured surrogate
     for agency, codename in agency_map.items():
@@ -95,9 +129,14 @@ def _generate_agency_surrogate(index: int, agency_map: Dict[str, str],
             return codename
     # Generic fallback
     generic = [
-        "Agency ALPHA", "Agency BRAVO", "Agency CHARLIE",
-        "Agency DELTA", "Agency ECHO", "Agency FOXTROT",
-        "Agency GOLF", "Agency HOTEL",
+        "Agency ALPHA",
+        "Agency BRAVO",
+        "Agency CHARLIE",
+        "Agency DELTA",
+        "Agency ECHO",
+        "Agency FOXTROT",
+        "Agency GOLF",
+        "Agency HOTEL",
     ]
     return generic[index % len(generic)]
 
@@ -105,10 +144,18 @@ def _generate_agency_surrogate(index: int, agency_map: Dict[str, str],
 def _generate_program_surrogate(index: int) -> str:
     """Generate a program name surrogate."""
     codenames = [
-        "Project PHOENIX", "Project ATLAS", "Project SENTINEL",
-        "Project MERIDIAN", "Project HORIZON", "Project CITADEL",
-        "Project VANGUARD", "Project KEYSTONE", "Project BASTION",
-        "Project ECLIPSE", "Project TRIDENT", "Project COMPASS",
+        "Project PHOENIX",
+        "Project ATLAS",
+        "Project SENTINEL",
+        "Project MERIDIAN",
+        "Project HORIZON",
+        "Project CITADEL",
+        "Project VANGUARD",
+        "Project KEYSTONE",
+        "Project BASTION",
+        "Project ECLIPSE",
+        "Project TRIDENT",
+        "Project COMPASS",
     ]
     return codenames[index % len(codenames)]
 
@@ -116,10 +163,18 @@ def _generate_program_surrogate(index: int) -> str:
 def _generate_custom_surrogate(index: int) -> str:
     """Generate a generic surrogate for custom terms."""
     codenames = [
-        "[REDACTED-1]", "[REDACTED-2]", "[REDACTED-3]",
-        "[REDACTED-4]", "[REDACTED-5]", "[REDACTED-6]",
-        "[REDACTED-7]", "[REDACTED-8]", "[REDACTED-9]",
-        "[REDACTED-10]", "[REDACTED-11]", "[REDACTED-12]",
+        "[REDACTED-1]",
+        "[REDACTED-2]",
+        "[REDACTED-3]",
+        "[REDACTED-4]",
+        "[REDACTED-5]",
+        "[REDACTED-6]",
+        "[REDACTED-7]",
+        "[REDACTED-8]",
+        "[REDACTED-9]",
+        "[REDACTED-10]",
+        "[REDACTED-11]",
+        "[REDACTED-12]",
     ]
     return codenames[index % len(codenames)]
 
@@ -139,6 +194,7 @@ _SURROGATE_GENERATORS = {
 # Registry
 # ---------------------------------------------------------------------------
 
+
 class RedactionRegistry:
     """Conversation-scoped real<->surrogate mapping with persistence."""
 
@@ -155,15 +211,15 @@ class RedactionRegistry:
     );
     """
 
-    def __init__(self, session_id: Optional[str] = None,
-                 agency_map: Optional[Dict[str, str]] = None,
-                 ttl_hours: int = 72):
+    def __init__(
+        self, session_id: Optional[str] = None, agency_map: Optional[Dict[str, str]] = None, ttl_hours: int = 72
+    ):
         self.session_id = session_id or str(uuid.uuid4().hex[:12])
         self._agency_map = agency_map or {}
         self._ttl_hours = ttl_hours
-        self._cache: Dict[str, str] = {}        # real_hash -> surrogate
-        self._reverse_cache: Dict[str, str] = {} # surrogate -> real_value
-        self._counters: Dict[str, int] = {}      # entity_type -> next index
+        self._cache: Dict[str, str] = {}  # real_hash -> surrogate
+        self._reverse_cache: Dict[str, str] = {}  # surrogate -> real_value
+        self._counters: Dict[str, int] = {}  # entity_type -> next index
         self._ensure_table()
         self._load_session()
 
@@ -184,7 +240,7 @@ class RedactionRegistry:
             rows = conn.execute(
                 "SELECT entity_type, real_hash, surrogate FROM redaction_registry "
                 "WHERE session_id = ? AND (expires_at IS NULL OR expires_at > ?)",
-                (self.session_id, datetime.now(timezone.utc).isoformat())
+                (self.session_id, datetime.now(timezone.utc).isoformat()),
             ).fetchall()
             for row in rows:
                 key = f"{row['entity_type']}:{row['real_hash']}"
@@ -244,8 +300,7 @@ class RedactionRegistry:
                 "INSERT OR IGNORE INTO redaction_registry "
                 "(id, session_id, entity_type, real_hash, surrogate, created_at, expires_at) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (str(uuid.uuid4()), self.session_id, entity_type,
-                 real_hash, surrogate, now.isoformat(), expires)
+                (str(uuid.uuid4()), self.session_id, entity_type, real_hash, surrogate, now.isoformat(), expires),
             )
             conn.commit()
             conn.close()
@@ -263,11 +318,10 @@ class RedactionRegistry:
         """
         result = text
         # Sort by length descending to avoid partial replacements
-        for surrogate, real_value in sorted(
-            self._reverse_cache.items(), key=lambda x: -len(x[0])
-        ):
+        for surrogate, real_value in sorted(self._reverse_cache.items(), key=lambda x: -len(x[0])):
             # Case-insensitive replacement
             import re
+
             result = re.sub(re.escape(surrogate), real_value, result, flags=re.IGNORECASE)
         return result
 
@@ -276,11 +330,13 @@ class RedactionRegistry:
         mappings = []
         for cache_key, surrogate in self._cache.items():
             entity_type, real_hash = cache_key.split(":", 1)
-            mappings.append({
-                "entity_type": entity_type,
-                "real_hash": real_hash,
-                "surrogate": surrogate,
-            })
+            mappings.append(
+                {
+                    "entity_type": entity_type,
+                    "real_hash": real_hash,
+                    "surrogate": surrogate,
+                }
+            )
         return mappings
 
     def cleanup_expired(self) -> int:
@@ -289,7 +345,7 @@ class RedactionRegistry:
             conn = get_connection()
             cursor = conn.execute(
                 "DELETE FROM redaction_registry WHERE expires_at IS NOT NULL AND expires_at < ?",
-                (datetime.now(timezone.utc).isoformat(),)
+                (datetime.now(timezone.utc).isoformat(),),
             )
             count = cursor.rowcount
             conn.commit()
@@ -303,9 +359,7 @@ class RedactionRegistry:
         try:
             conn = get_connection()
             total = conn.execute("SELECT COUNT(*) FROM redaction_registry").fetchone()[0]
-            sessions = conn.execute(
-                "SELECT COUNT(DISTINCT session_id) FROM redaction_registry"
-            ).fetchone()[0]
+            sessions = conn.execute("SELECT COUNT(DISTINCT session_id) FROM redaction_registry").fetchone()[0]
             conn.close()
         except Exception:
             total = 0
@@ -324,6 +378,7 @@ class RedactionRegistry:
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+
 
 def main():
     parser = argparse.ArgumentParser(description="ICDEV™ Redaction Registry")

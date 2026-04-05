@@ -21,14 +21,12 @@ IR_TEMPLATE_PATH = BASE_DIR / "context" / "compliance" / "incident_response_temp
 # Helper functions
 # ---------------------------------------------------------------------------
 
+
 def _get_connection(db_path=None):
     """Get a database connection."""
     path = db_path or DB_PATH
     if not path.exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\n"
-            "Run: python tools/db/init_icdev_db.py"
-        )
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
     conn = get_connection(db_path=str(path))
     return conn
 
@@ -48,9 +46,7 @@ def _load_template(path=None):
 
 def _get_project_data(conn, project_id):
     """Load project record from database."""
-    row = conn.execute(
-        "SELECT * FROM projects WHERE id = ?", (project_id,)
-    ).fetchone()
+    row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
     if not row:
         raise ValueError(f"Project '{project_id}' not found in database.")
     return dict(row)
@@ -61,6 +57,7 @@ def _load_cui_config():
     try:
         sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
         from cui_marker import load_cui_config
+
         return load_cui_config()
     except ImportError:
         return {
@@ -89,6 +86,7 @@ def _load_project_defaults():
     if defaults_path.exists():
         try:
             import yaml  # pyyaml — optional dependency
+
             with open(defaults_path, "r", encoding="utf-8") as f:
                 return yaml.safe_load(f) or {}
         except ImportError:
@@ -124,6 +122,7 @@ def _log_audit_event(conn, project_id, action, details, file_path=None):
 # ---------------------------------------------------------------------------
 # Default IR plan template (used when the on-disk template is missing)
 # ---------------------------------------------------------------------------
+
 
 def _generate_default_template():
     """Return a comprehensive IR plan template with {{variable}} placeholders.
@@ -509,6 +508,7 @@ Responsibilities) and stored in the project compliance directory.
 # Variable substitution
 # ---------------------------------------------------------------------------
 
+
 def _build_variables(project, defaults):
     """Build the {{variable}} substitution dictionary."""
     now = datetime.now(timezone.utc)
@@ -531,12 +531,10 @@ def _build_variables(project, defaults):
         "system_name": project.get("name", "UNNAMED SYSTEM"),
         "system_id": project.get("id", ""),
         "classification": "CUI // SP-CTI",
-
         # Reporting timelines
         "reporting_critical": reporting["critical"],
         "reporting_high": reporting["high"],
         "reporting_moderate": reporting["moderate"],
-
         # POC placeholders — filled from project metadata or left as TBD
         "system_owner": project.get("system_owner", "[TBD]"),
         "issm_name": project.get("issm_name", "[TBD]"),
@@ -548,25 +546,21 @@ def _build_variables(project, defaults):
         "comms_lead": project.get("comms_lead", "[TBD]"),
         "legal_contact": project.get("legal_contact", "[TBD]"),
         "authorizing_official": project.get("authorizing_official", "[TBD]"),
-
         # CSSP SOC contact placeholders
         "cssp_soc_phone": project.get("cssp_soc_phone", "[TBD — Obtain from CSSP]"),
         "cssp_soc_email": project.get("cssp_soc_email", "[TBD — Obtain from CSSP]"),
         "cssp_soc_portal": project.get("cssp_soc_portal", "[TBD — Obtain from CSSP]"),
-
         # Plan metadata
         "plan_version": "1.0",
         "plan_date": now.strftime("%Y-%m-%d"),
         "prepared_by": "ICDEV™ Compliance Engine",
         "revision_description": "Initial Incident Response Plan generation",
-
         # Environment
         "operating_environment": project.get("operating_environment", default_env),
         "system_boundary": project.get(
             "system_boundary",
             "[TBD - Define authorization boundary]",
         ),
-
         # Generation metadata
         "icdev_version": "1.0",
         "generation_date": now.strftime("%Y-%m-%d %H:%M UTC"),
@@ -577,15 +571,18 @@ def _build_variables(project, defaults):
 
 def _substitute_variables(template, variables):
     """Replace {{variable_name}} placeholders in the template."""
+
     def replacer(match):
         key = match.group(1).strip()
         return str(variables.get(key, match.group(0)))
+
     return re.sub(r"\{\{(\w+)\}\}", replacer, template)
 
 
 # ---------------------------------------------------------------------------
 # Core generation function
 # ---------------------------------------------------------------------------
+
 
 def generate_ir_plan(project_id, output_dir=None, db_path=None):
     """Generate a complete Incident Response Plan for a project.
@@ -665,12 +662,18 @@ def generate_ir_plan(project_id, output_dir=None, db_path=None):
             f.write(content)
 
         # 8. Log audit event
-        _log_audit_event(conn, project_id, f"IR Plan v{version} generated", {
-            "version": version,
-            "system_name": variables["system_name"],
-            "output_file": str(out_file),
-            "classification": variables["classification"],
-        }, out_file)
+        _log_audit_event(
+            conn,
+            project_id,
+            f"IR Plan v{version} generated",
+            {
+                "version": version,
+                "system_name": variables["system_name"],
+                "output_file": str(out_file),
+                "classification": variables["classification"],
+            },
+            out_file,
+        )
 
         result = {
             "file_path": str(out_file),
@@ -695,21 +698,15 @@ def generate_ir_plan(project_id, output_dir=None, db_path=None):
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Generate Incident Response Plan"
-    )
+    parser = argparse.ArgumentParser(description="Generate Incident Response Plan")
     parser.add_argument("--project-id", required=True, help="Project ID")
     parser.add_argument("--output-dir", help="Output directory")
-    parser.add_argument(
-        "--db-path", type=Path, default=DB_PATH, help="Database path"
-    )
+    parser.add_argument("--db-path", type=Path, default=DB_PATH, help="Database path")
     parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 
     try:
-        result = generate_ir_plan(
-            args.project_id, args.output_dir, args.db_path
-        )
+        result = generate_ir_plan(args.project_id, args.output_dir, args.db_path)
         print(json.dumps(result, indent=2))
     except (FileNotFoundError, ValueError) as e:
         print(f"ERROR: {e}", file=sys.stderr)

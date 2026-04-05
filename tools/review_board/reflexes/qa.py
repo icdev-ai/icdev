@@ -51,10 +51,12 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                     try:
                         line_count = len(py_file.read_text(encoding="utf-8").splitlines())
                         if line_count > 50:
-                            untested.append({
-                                "module": str(py_file.relative_to(BASE_DIR)),
-                                "lines": line_count,
-                            })
+                            untested.append(
+                                {
+                                    "module": str(py_file.relative_to(BASE_DIR)),
+                                    "lines": line_count,
+                                }
+                            )
                     except Exception:
                         pass
 
@@ -62,18 +64,18 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             # Sort by line count descending — biggest untested modules first
             untested.sort(key=lambda x: x["lines"], reverse=True)
             top_10 = untested[:10]
-            findings.append({
-                "severity": "medium",
-                "category": "untested_modules",
-                "title": f"{len(untested)} tool modules have no dedicated test file",
-                "description": "Top 10 by size: " + ", ".join(
-                    f"{m['module']} ({m['lines']}L)" for m in top_10
-                ),
-                "recommendation": "Create test files for the largest untested modules",
-                "evidence": {"total_untested": len(untested), "top_10": top_10},
-                "confidence": 0.8,
-                "auto_fixable": False,
-            })
+            findings.append(
+                {
+                    "severity": "medium",
+                    "category": "untested_modules",
+                    "title": f"{len(untested)} tool modules have no dedicated test file",
+                    "description": "Top 10 by size: " + ", ".join(f"{m['module']} ({m['lines']}L)" for m in top_10),
+                    "recommendation": "Create test files for the largest untested modules",
+                    "evidence": {"total_untested": len(untested), "top_10": top_10},
+                    "confidence": 0.8,
+                    "auto_fixable": False,
+                }
+            )
         checks_completed += 1
     except Exception:
         checks_completed += 1
@@ -88,28 +90,33 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                 e2e_specs.add(spec.stem.replace("_", "-"))
 
         if dashboard_routes:
-            uncovered = [r for r in dashboard_routes if not any(
-                r.strip("/").replace("/", "-") in spec or
-                spec in r.strip("/").replace("/", "-")
-                for spec in e2e_specs
-            )]
+            uncovered = [
+                r
+                for r in dashboard_routes
+                if not any(
+                    r.strip("/").replace("/", "-") in spec or spec in r.strip("/").replace("/", "-")
+                    for spec in e2e_specs
+                )
+            ]
             min_coverage = thresholds.get("min_e2e_page_coverage_pct", 50)
             coverage_pct = ((len(dashboard_routes) - len(uncovered)) / len(dashboard_routes)) * 100
             if coverage_pct < min_coverage:
-                findings.append({
-                    "severity": "medium",
-                    "category": "e2e_coverage",
-                    "title": f"E2E coverage {coverage_pct:.0f}% below threshold ({min_coverage}%)",
-                    "description": f"Uncovered routes: {', '.join(uncovered[:10])}",
-                    "recommendation": "Add E2E specs for uncovered dashboard pages",
-                    "evidence": {
-                        "total_routes": len(dashboard_routes),
-                        "e2e_specs": len(e2e_specs),
-                        "uncovered": uncovered[:20],
-                    },
-                    "confidence": 0.7,
-                    "auto_fixable": False,
-                })
+                findings.append(
+                    {
+                        "severity": "medium",
+                        "category": "e2e_coverage",
+                        "title": f"E2E coverage {coverage_pct:.0f}% below threshold ({min_coverage}%)",
+                        "description": f"Uncovered routes: {', '.join(uncovered[:10])}",
+                        "recommendation": "Add E2E specs for uncovered dashboard pages",
+                        "evidence": {
+                            "total_routes": len(dashboard_routes),
+                            "e2e_specs": len(e2e_specs),
+                            "uncovered": uncovered[:20],
+                        },
+                        "confidence": 0.7,
+                        "auto_fixable": False,
+                    }
+                )
         checks_completed += 1
     except Exception:
         checks_completed += 1
@@ -134,14 +141,16 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             ratio = test_count / code_count
             min_ratio = thresholds.get("min_test_ratio", 0.3)
             if ratio < min_ratio:
-                findings.append({
-                    "severity": "low",
-                    "category": "test_ratio",
-                    "title": f"Test-to-code ratio {ratio:.2f} below threshold ({min_ratio})",
-                    "description": f"{test_count} test files for {code_count} code modules",
-                    "confidence": 0.7,
-                    "auto_fixable": False,
-                })
+                findings.append(
+                    {
+                        "severity": "low",
+                        "category": "test_ratio",
+                        "title": f"Test-to-code ratio {ratio:.2f} below threshold ({min_ratio})",
+                        "description": f"{test_count} test files for {code_count} code modules",
+                        "confidence": 0.7,
+                        "auto_fixable": False,
+                    }
+                )
         checks_completed += 1
     except Exception:
         checks_completed += 1
@@ -158,22 +167,26 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                     source = py_file.read_text(encoding="utf-8")
                     compile(source, str(py_file), "exec")
                 except SyntaxError as e:
-                    syntax_errors.append({
-                        "file": str(py_file.relative_to(BASE_DIR)),
-                        "line": e.lineno,
-                        "msg": str(e.msg),
-                    })
+                    syntax_errors.append(
+                        {
+                            "file": str(py_file.relative_to(BASE_DIR)),
+                            "line": e.lineno,
+                            "msg": str(e.msg),
+                        }
+                    )
 
         if syntax_errors:
-            findings.append({
-                "severity": "critical",
-                "category": "syntax_errors",
-                "title": f"{len(syntax_errors)} Python files have syntax errors",
-                "description": "; ".join(f"{e['file']}:{e['line']}" for e in syntax_errors[:5]),
-                "evidence": {"errors": syntax_errors},
-                "confidence": 1.0,
-                "auto_fixable": False,
-            })
+            findings.append(
+                {
+                    "severity": "critical",
+                    "category": "syntax_errors",
+                    "title": f"{len(syntax_errors)} Python files have syntax errors",
+                    "description": "; ".join(f"{e['file']}:{e['line']}" for e in syntax_errors[:5]),
+                    "evidence": {"errors": syntax_errors},
+                    "confidence": 1.0,
+                    "auto_fixable": False,
+                }
+            )
         checks_completed += 1
     except Exception:
         checks_completed += 1
@@ -195,6 +208,7 @@ def _extract_dashboard_routes() -> List[str]:
     routes = []
     if app_file.exists():
         import re
+
         content = app_file.read_text(encoding="utf-8")
         for match in re.finditer(r'@app\.route\(["\'](/[^"\']*)["\']', content):
             route = match.group(1)

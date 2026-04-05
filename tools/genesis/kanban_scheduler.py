@@ -34,11 +34,14 @@ logger = logging.getLogger(__name__)
 def main():
     parser = argparse.ArgumentParser(description="Kanban Scheduler")
     parser.add_argument(
-        "--interval", type=int, default=60,
+        "--interval",
+        type=int,
+        default=60,
         help="Seconds between kanban reflex cycles (default: 60)",
     )
     parser.add_argument(
-        "--once", action="store_true",
+        "--once",
+        action="store_true",
         help="Run one cycle and exit (for Task Scheduler)",
     )
     args = parser.parse_args()
@@ -46,6 +49,7 @@ def main():
     # Load .env for Telegram bot token, API keys, etc.
     try:
         from dotenv import load_dotenv
+
         load_dotenv(BASE_DIR / ".env")
     except ImportError:
         pass
@@ -60,22 +64,20 @@ def main():
     # no running subprocess.  Reset them to backlog so they get re-dispatched.
     try:
         from tools.db.storage import get_connection
+
         conn = get_connection()
         try:
-            stuck = conn.execute(
-                "SELECT id, title FROM kanban_tasks WHERE status = 'in_progress'"
-            ).fetchall()
+            stuck = conn.execute("SELECT id, title FROM kanban_tasks WHERE status = 'in_progress'").fetchall()
             if stuck:
                 for row in stuck:
                     conn.execute(
-                        "UPDATE kanban_tasks SET status = 'backlog', "
-                        "updated_at = datetime('now') WHERE id = ?",
+                        "UPDATE kanban_tasks SET status = 'backlog', updated_at = datetime('now') WHERE id = ?",
                         (row["id"],),
                     )
                 conn.commit()
                 logger.info(
-                    "Startup recovery: reset %d orphaned in_progress "
-                    "tasks to backlog", len(stuck),
+                    "Startup recovery: reset %d orphaned in_progress tasks to backlog",
+                    len(stuck),
                 )
         finally:
             conn.close()
@@ -111,8 +113,7 @@ def main():
             if status == "token_retry":
                 retry_count = details.get("retry_count", 0)
                 logger.info(
-                    "Cycle %d: RETRYING token-exhausted task %s "
-                    "(attempt %d)",
+                    "Cycle %d: RETRYING token-exhausted task %s (attempt %d)",
                     cycle,
                     details.get("task_id", "?"),
                     retry_count,
@@ -120,7 +121,11 @@ def main():
             elif activated or completed or running:
                 logger.info(
                     "Cycle %d: status=%s activated=%s completed=%s running=%s",
-                    cycle, status, activated, len(completed), len(running),
+                    cycle,
+                    status,
+                    activated,
+                    len(completed),
+                    len(running),
                 )
             elif cycle % 10 == 0:
                 # Heartbeat every 10 cycles

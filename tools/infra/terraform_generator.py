@@ -2462,31 +2462,46 @@ def generate_scca(project_path: str, project_config: dict = None) -> list:
     files = []
 
     modules = [
-        ("scca-network", [
-            ("main.tf", SCCA_NETWORK_MAIN),
-            ("variables.tf", SCCA_NETWORK_VARIABLES),
-            ("outputs.tf", SCCA_NETWORK_OUTPUTS),
-        ]),
-        ("scca-security", [
-            ("main.tf", SCCA_SECURITY_MAIN),
-            ("variables.tf", SCCA_SECURITY_VARIABLES),
-            ("outputs.tf", SCCA_SECURITY_OUTPUTS),
-        ]),
-        ("scca-logging", [
-            ("main.tf", SCCA_LOGGING_MAIN),
-            ("variables.tf", SCCA_LOGGING_VARIABLES),
-            ("outputs.tf", SCCA_LOGGING_OUTPUTS),
-        ]),
-        ("scca-identity", [
-            ("main.tf", SCCA_IDENTITY_MAIN),
-            ("variables.tf", SCCA_IDENTITY_VARIABLES),
-            ("outputs.tf", SCCA_IDENTITY_OUTPUTS),
-        ]),
-        ("scca-mission-vpc", [
-            ("main.tf", SCCA_MISSION_VPC_MAIN),
-            ("variables.tf", SCCA_MISSION_VPC_VARIABLES),
-            ("outputs.tf", SCCA_MISSION_VPC_OUTPUTS),
-        ]),
+        (
+            "scca-network",
+            [
+                ("main.tf", SCCA_NETWORK_MAIN),
+                ("variables.tf", SCCA_NETWORK_VARIABLES),
+                ("outputs.tf", SCCA_NETWORK_OUTPUTS),
+            ],
+        ),
+        (
+            "scca-security",
+            [
+                ("main.tf", SCCA_SECURITY_MAIN),
+                ("variables.tf", SCCA_SECURITY_VARIABLES),
+                ("outputs.tf", SCCA_SECURITY_OUTPUTS),
+            ],
+        ),
+        (
+            "scca-logging",
+            [
+                ("main.tf", SCCA_LOGGING_MAIN),
+                ("variables.tf", SCCA_LOGGING_VARIABLES),
+                ("outputs.tf", SCCA_LOGGING_OUTPUTS),
+            ],
+        ),
+        (
+            "scca-identity",
+            [
+                ("main.tf", SCCA_IDENTITY_MAIN),
+                ("variables.tf", SCCA_IDENTITY_VARIABLES),
+                ("outputs.tf", SCCA_IDENTITY_OUTPUTS),
+            ],
+        ),
+        (
+            "scca-mission-vpc",
+            [
+                ("main.tf", SCCA_MISSION_VPC_MAIN),
+                ("variables.tf", SCCA_MISSION_VPC_VARIABLES),
+                ("outputs.tf", SCCA_MISSION_VPC_OUTPUTS),
+            ],
+        ),
     ]
 
     for module_name, templates in modules:
@@ -2929,11 +2944,14 @@ def generate_wa_security(project_path: str, project_config: dict = None) -> list
     files = []
 
     modules = [
-        ("wa-security-baseline", [
-            ("main.tf", WA_SECURITY_MAIN),
-            ("variables.tf", WA_SECURITY_VARIABLES),
-            ("outputs.tf", WA_SECURITY_OUTPUTS),
-        ]),
+        (
+            "wa-security-baseline",
+            [
+                ("main.tf", WA_SECURITY_MAIN),
+                ("variables.tf", WA_SECURITY_VARIABLES),
+                ("outputs.tf", WA_SECURITY_OUTPUTS),
+            ],
+        ),
     ]
 
     for module_name, templates in modules:

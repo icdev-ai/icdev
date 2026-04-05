@@ -26,6 +26,7 @@ Usage:
   # JSON output
   python tools/pulse/engine/wordpress_publisher.py --publish --post-id "post-abc" --json
 """
+
 from __future__ import annotations
 
 import argparse
@@ -98,8 +99,14 @@ def _upload_image(wp, image_path: str, post_title: str = "") -> dict | None:
 
     # Determine MIME type from extension
     ext = img_path.suffix.lower()
-    mime_map = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
-                ".webp": "image/webp", ".gif": "image/gif", ".svg": "image/svg+xml"}
+    mime_map = {
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".webp": "image/webp",
+        ".gif": "image/gif",
+        ".svg": "image/svg+xml",
+    }
     mime_type = mime_map.get(ext, "image/png")
 
     filename = img_path.name
@@ -165,6 +172,7 @@ def _strip_hero_image_from_content(content: str) -> str:
     so including it inline in the body causes it to appear twice.
     """
     import re
+
     # Remove markdown hero images: ![Hero](...) — greedy match to handle URLs with parens/query strings
     content = re.sub(r"!\[Hero\]\(.*?\)\s*", "", content)
     # Remove <p> wrapped hero images: <p><img ... alt="Hero" ... /></p>
@@ -203,17 +211,17 @@ def _resolve_local_images(content: str, wp) -> str:
     # Match src="..." or markdown ![...](...) with local-looking paths
     # Local = starts with / (but not //) or doesn't start with http
     local_img_re = re.compile(
-        r'(?:'
+        r"(?:"
         r'(?:src=["\'])(/static/screenshots/[^"\']+)["\']'  # HTML src="/static/..."
-        r'|'
-        r'!\[[^\]]*\]\((/static/screenshots/[^)]+)\)'  # Markdown ![](/static/...)
-        r'|'
+        r"|"
+        r"!\[[^\]]*\]\((/static/screenshots/[^)]+)\)"  # Markdown ![](/static/...)
+        r"|"
         r'(?:src=["\'])((?:tools/|playwright/)[^"\']+\.(?:png|jpg|jpeg|webp|gif))["\']'  # HTML src="playwright/..."
-        r'|'
-        r'!\[[^\]]*\]\(((?:tools/|playwright/)[^)]+\.(?:png|jpg|jpeg|webp|gif))\)'  # Markdown ![](playwright/...)
-        r'|'
-        r'!\[[^\]]*\]\(((?:[A-Z]:\\|/)[^)]+\.(?:png|jpg|jpeg|webp|gif))\)'  # Markdown ![](C:\abs\path.png)
-        r')'
+        r"|"
+        r"!\[[^\]]*\]\(((?:tools/|playwright/)[^)]+\.(?:png|jpg|jpeg|webp|gif))\)"  # Markdown ![](playwright/...)
+        r"|"
+        r"!\[[^\]]*\]\(((?:[A-Z]:\\|/)[^)]+\.(?:png|jpg|jpeg|webp|gif))\)"  # Markdown ![](C:\abs\path.png)
+        r")"
     )
 
     replacements = {}
@@ -424,7 +432,9 @@ def list_wp_posts(count: int = 10) -> dict:
     wp = _get_client()
     try:
         posts = wp.wp.getPosts(
-            WP_BLOG_ID, WP_USERNAME, WP_PASSWORD,
+            WP_BLOG_ID,
+            WP_USERNAME,
+            WP_PASSWORD,
             {"number": count, "post_type": "post"},
             ["post_id", "post_title", "post_status", "post_date", "link"],
         )

@@ -17,58 +17,71 @@ import pytest
 
 # --- Module Import ---
 
+
 def test_cmmc_assessor_imports():
     """Verify module can be imported without errors."""
     try:
-        import tools.compliance.cmmc_assessor
+        import tools.compliance.cmmc_assessor  # noqa: F401
     except ImportError as e:
         pytest.skip(f"Import dependency missing: {e}")
 
 
 # --- Function Signature Tests ---
 
+
 def test_cmmc_assessor_load_cmmc_practices_exists():
     """Verify load_cmmc_practices exists and is callable."""
     try:
         from tools.compliance.cmmc_assessor import load_cmmc_practices
-        assert callable(load_cmmc_practices), 'load_cmmc_practices is not callable'
+
+        assert callable(load_cmmc_practices), "load_cmmc_practices is not callable"
     except ImportError:
         pytest.skip("Module not importable")
+
 
 def test_cmmc_assessor_run_cmmc_assessment_exists():
     """Verify run_cmmc_assessment exists and is callable."""
     try:
         from tools.compliance.cmmc_assessor import run_cmmc_assessment
-        assert callable(run_cmmc_assessment), 'run_cmmc_assessment is not callable'
+
+        assert callable(run_cmmc_assessment), "run_cmmc_assessment is not callable"
     except ImportError:
         pytest.skip("Module not importable")
+
 
 def test_cmmc_assessor_run_cmmc_assessment_signature():
     """Verify run_cmmc_assessment accepts expected parameters."""
     import inspect
+
     try:
         from tools.compliance.cmmc_assessor import run_cmmc_assessment
+
         sig = inspect.signature(run_cmmc_assessment)
         params = list(sig.parameters.keys())
-        assert "project_id" in params, f"Missing parameter \"project_id\" in {params}"
+        assert "project_id" in params, f'Missing parameter "project_id" in {params}'
     except ImportError:
         pytest.skip("Module not importable")
+
 
 def test_cmmc_assessor_assess_project_exists():
     """Verify assess_project exists and is callable."""
     try:
         from tools.compliance.cmmc_assessor import assess_project
-        assert callable(assess_project), 'assess_project is not callable'
+
+        assert callable(assess_project), "assess_project is not callable"
     except ImportError:
         pytest.skip("Module not importable")
+
 
 def test_cmmc_assessor_assess_project_signature():
     """Verify assess_project accepts expected parameters."""
     import inspect
+
     try:
         from tools.compliance.cmmc_assessor import assess_project
+
         sig = inspect.signature(assess_project)
         params = list(sig.parameters.keys())
-        assert "project_id" in params, f"Missing parameter \"project_id\" in {params}"
+        assert "project_id" in params, f'Missing parameter "project_id" in {params}'
     except ImportError:
         pytest.skip("Module not importable")

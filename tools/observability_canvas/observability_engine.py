@@ -7,6 +7,7 @@ gap detection, and MITRE ATT&CK detection coverage analysis.
 No Flask dependency — takes graph data and returns results.
 No LLM dependency — all checks are deterministic.
 """
+
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -20,6 +21,7 @@ from tools.observability_canvas.constants import (
 
 try:
     import yaml as _yaml
+
     _HAS_YAML = True
 except ImportError:
     _HAS_YAML = False
@@ -39,6 +41,7 @@ _ODC_CONFIG = _load_config()
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
+
 
 def _node_types(nodes):
     """Return {node_id: node_type} dict."""
@@ -101,6 +104,7 @@ def _nodes_of_type(nodes, ntypes, target_type):
 
 # ── Rule Check Functions ─────────────────────────────────────────────────────
 
+
 def _check_sources_connected_to_collector(nodes, edges, ntypes, adj):
     """ODC-LOG-001: Every source must connect to at least one collector."""
     findings = []
@@ -110,11 +114,13 @@ def _check_sources_connected_to_collector(nodes, edges, ntypes, adj):
         neighbors = adj.get(src["id"], set())
         connected_to_collector = bool(neighbors & collector_ids)
         if not connected_to_collector:
-            findings.append({
-                "affected_entity": src.get("label", src["id"]),
-                "affected_type": "node",
-                "detail": f"Source '{src.get('label', src['id'])}' is not connected to any collector.",
-            })
+            findings.append(
+                {
+                    "affected_entity": src.get("label", src["id"]),
+                    "affected_type": "node",
+                    "detail": f"Source '{src.get('label', src['id'])}' is not connected to any collector.",
+                }
+            )
     return findings
 
 
@@ -128,11 +134,13 @@ def _check_collectors_forward_to_siem(nodes, edges, ntypes, adj):
         neighbors = adj.get(col["id"], set())
         forwards_to_platform = bool(neighbors & platform_ids)
         if not forwards_to_platform:
-            findings.append({
-                "affected_entity": col.get("label", col["id"]),
-                "affected_type": "node",
-                "detail": f"Collector '{col.get('label', col['id'])}' does not forward to any analytics platform.",
-            })
+            findings.append(
+                {
+                    "affected_entity": col.get("label", col["id"]),
+                    "affected_type": "node",
+                    "detail": f"Collector '{col.get('label', col['id'])}' does not forward to any analytics platform.",
+                }
+            )
     return findings
 
 
@@ -140,8 +148,13 @@ def _check_log_archive_present(nodes, ntypes):
     """ODC-LOG-003: At least one S3/archive destination."""
     archive_nodes = _nodes_of_type(nodes, ntypes, "col-s3")
     if not archive_nodes:
-        return [{"affected_entity": "design", "affected_type": "design",
-                 "detail": "No log archive (S3/object storage) destination for long-term retention."}]
+        return [
+            {
+                "affected_entity": "design",
+                "affected_type": "design",
+                "detail": "No log archive (S3/object storage) destination for long-term retention.",
+            }
+        ]
     return []
 
 
@@ -151,24 +164,38 @@ def _check_os_and_network_logs(nodes, ntypes):
     os_nodes = _nodes_of_type(nodes, ntypes, "src-os-log")
     net_nodes = _nodes_of_type(nodes, ntypes, "src-network-log")
     if not os_nodes:
-        findings.append({"affected_entity": "design", "affected_type": "design",
-                         "detail": "Missing OS/system log source (src-os-log)."})
+        findings.append(
+            {
+                "affected_entity": "design",
+                "affected_type": "design",
+                "detail": "Missing OS/system log source (src-os-log).",
+            }
+        )
     if not net_nodes:
-        findings.append({"affected_entity": "design", "affected_type": "design",
-                         "detail": "Missing network log source (src-network-log)."})
+        findings.append(
+            {
+                "affected_entity": "design",
+                "affected_type": "design",
+                "detail": "Missing network log source (src-network-log).",
+            }
+        )
     return findings
 
 
 def _check_cloud_audit_logs(nodes, ntypes):
     """ODC-LOG-005: If cloud services in scope, cloud audit log must be present."""
     # Detect cloud scope: any cloud-related platform (Sentinel, Chronicle, Datadog) or cloud log
-    cloud_indicators = {"plt-sentinel", "plt-chronicle", "plt-datadog",
-                        "src-container-log", "src-cloud-log"}
+    cloud_indicators = {"plt-sentinel", "plt-chronicle", "plt-datadog", "src-container-log", "src-cloud-log"}
     has_cloud_scope = any(ntypes.get(n["id"], "") in cloud_indicators for n in nodes)
     cloud_log_nodes = _nodes_of_type(nodes, ntypes, "src-cloud-log")
     if has_cloud_scope and not cloud_log_nodes:
-        return [{"affected_entity": "design", "affected_type": "design",
-                 "detail": "Cloud services detected but no cloud audit log source (CloudTrail/Activity Log)."}]
+        return [
+            {
+                "affected_entity": "design",
+                "affected_type": "design",
+                "detail": "Cloud services detected but no cloud audit log source (CloudTrail/Activity Log).",
+            }
+        ]
     return []
 
 
@@ -176,8 +203,13 @@ def _check_alert_rules(nodes, ntypes):
     """ODC-DET-001: At least one alert rule must be defined."""
     alert_nodes = _nodes_of_type(nodes, ntypes, "auto-alert-rule")
     if not alert_nodes:
-        return [{"affected_entity": "design", "affected_type": "design",
-                 "detail": "No alert rules defined — monitoring is passive-only."}]
+        return [
+            {
+                "affected_entity": "design",
+                "affected_type": "design",
+                "detail": "No alert rules defined — monitoring is passive-only.",
+            }
+        ]
     return []
 
 
@@ -187,17 +219,24 @@ def _check_soar_or_runbook(nodes, ntypes, adj):
     alert_nodes = _nodes_of_type(nodes, ntypes, "auto-alert-rule")
     soar_ids = {n["id"] for n in nodes if ntypes.get(n["id"], "") in ("auto-soar", "auto-runbook")}
     if alert_nodes and not soar_ids:
-        findings.append({"affected_entity": "design", "affected_type": "design",
-                         "detail": "Alert rules exist but no SOAR playbook or runbook for automated response."})
+        findings.append(
+            {
+                "affected_entity": "design",
+                "affected_type": "design",
+                "detail": "Alert rules exist but no SOAR playbook or runbook for automated response.",
+            }
+        )
     elif alert_nodes and soar_ids:
         for alert in alert_nodes:
             neighbors = adj.get(alert["id"], set())
             if not (neighbors & soar_ids):
-                findings.append({
-                    "affected_entity": alert.get("label", alert["id"]),
-                    "affected_type": "node",
-                    "detail": f"Alert rule '{alert.get('label', alert['id'])}' not connected to SOAR/runbook.",
-                })
+                findings.append(
+                    {
+                        "affected_entity": alert.get("label", alert["id"]),
+                        "affected_type": "node",
+                        "detail": f"Alert rule '{alert.get('label', alert['id'])}' not connected to SOAR/runbook.",
+                    }
+                )
     return findings
 
 
@@ -205,8 +244,13 @@ def _check_mitre_baseline(nodes, ntypes):
     """ODC-DET-003: Detection baseline node should be present."""
     baseline_nodes = _nodes_of_type(nodes, ntypes, "cmp-baseline")
     if not baseline_nodes:
-        return [{"affected_entity": "design", "affected_type": "design",
-                 "detail": "No MITRE ATT&CK detection baseline node — cannot assess detection coverage."}]
+        return [
+            {
+                "affected_entity": "design",
+                "affected_type": "design",
+                "detail": "No MITRE ATT&CK detection baseline node — cannot assess detection coverage.",
+            }
+        ]
     return []
 
 
@@ -214,8 +258,13 @@ def _check_retention_policy(nodes, ntypes):
     """ODC-RET-001: Log retention policy must be defined."""
     policy_nodes = _nodes_of_type(nodes, ntypes, "cmp-log-policy")
     if not policy_nodes:
-        return [{"affected_entity": "design", "affected_type": "design",
-                 "detail": "No log retention policy defined (DoD requires 1yr online + 7yr archive)."}]
+        return [
+            {
+                "affected_entity": "design",
+                "affected_type": "design",
+                "detail": "No log retention policy defined (DoD requires 1yr online + 7yr archive).",
+            }
+        ]
     return []
 
 
@@ -226,8 +275,7 @@ def _check_log_transport_encrypted(nodes, edges, ntypes):
         src_type = ntypes.get(e["source"], "")
         tgt_type = ntypes.get(e["target"], "")
         # Check collector -> platform edges
-        if (_is_collector(src_type) and _is_platform(tgt_type)) or \
-           (_is_platform(src_type) and _is_collector(tgt_type)):
+        if (_is_collector(src_type) and _is_platform(tgt_type)) or (_is_platform(src_type) and _is_collector(tgt_type)):
             if not e.get("encrypted", False):
                 src_label = e.get("source", "")
                 tgt_label = e.get("target", "")
@@ -237,11 +285,13 @@ def _check_log_transport_encrypted(nodes, edges, ntypes):
                         src_label = n.get("label", e["source"])
                     if n["id"] == e["target"]:
                         tgt_label = n.get("label", e["target"])
-                findings.append({
-                    "affected_entity": f"{src_label} -> {tgt_label}",
-                    "affected_type": "edge",
-                    "detail": f"Unencrypted log transport from {src_label} to {tgt_label}.",
-                })
+                findings.append(
+                    {
+                        "affected_entity": f"{src_label} -> {tgt_label}",
+                        "affected_type": "edge",
+                        "detail": f"Unencrypted log transport from {src_label} to {tgt_label}.",
+                    }
+                )
     return findings
 
 
@@ -249,8 +299,13 @@ def _check_edr_telemetry(nodes, ntypes):
     """ODC-SEC-002: EDR telemetry source should be present."""
     edr_nodes = _nodes_of_type(nodes, ntypes, "src-endpoint")
     if not edr_nodes:
-        return [{"affected_entity": "design", "affected_type": "design",
-                 "detail": "No EDR telemetry source for endpoint visibility."}]
+        return [
+            {
+                "affected_entity": "design",
+                "affected_type": "design",
+                "detail": "No EDR telemetry source for endpoint visibility.",
+            }
+        ]
     return []
 
 
@@ -258,8 +313,13 @@ def _check_iam_logs(nodes, ntypes):
     """ODC-SEC-003: IAM/IdP logs must be collected."""
     iam_nodes = _nodes_of_type(nodes, ntypes, "src-iam")
     if not iam_nodes:
-        return [{"affected_entity": "design", "affected_type": "design",
-                 "detail": "No IAM/IdP log source for authentication event monitoring."}]
+        return [
+            {
+                "affected_entity": "design",
+                "affected_type": "design",
+                "detail": "No IAM/IdP log source for authentication event monitoring.",
+            }
+        ]
     return []
 
 
@@ -268,19 +328,26 @@ def _check_ticket_system(nodes, ntypes, adj):
     ticket_nodes = _nodes_of_type(nodes, ntypes, "auto-ticket")
     soar_nodes = [n for n in nodes if ntypes.get(n["id"], "") in ("auto-soar", "auto-runbook")]
     if soar_nodes and not ticket_nodes:
-        return [{"affected_entity": "design", "affected_type": "design",
-                 "detail": "SOAR/runbook exists but no ticket system for incident tracking."}]
+        return [
+            {
+                "affected_entity": "design",
+                "affected_type": "design",
+                "detail": "SOAR/runbook exists but no ticket system for incident tracking.",
+            }
+        ]
     if ticket_nodes and soar_nodes:
         ticket_ids = {n["id"] for n in ticket_nodes}
         findings = []
         for soar in soar_nodes:
             neighbors = adj.get(soar["id"], set())
             if not (neighbors & ticket_ids):
-                findings.append({
-                    "affected_entity": soar.get("label", soar["id"]),
-                    "affected_type": "node",
-                    "detail": f"'{soar.get('label', soar['id'])}' not connected to ticket system.",
-                })
+                findings.append(
+                    {
+                        "affected_entity": soar.get("label", soar["id"]),
+                        "affected_type": "node",
+                        "detail": f"'{soar.get('label', soar['id'])}' not connected to ticket system.",
+                    }
+                )
         return findings
     return []
 
@@ -305,6 +372,7 @@ _RULE_CHECKS = {
 
 
 # ── Public API ───────────────────────────────────────────────────────────────
+
 
 def assess_observability_design(graph_data: dict, rules: list = None) -> dict:
     """Run all observability compliance rules against a design graph.
@@ -335,17 +403,19 @@ def assess_observability_design(graph_data: dict, rules: list = None) -> dict:
 
         rule_findings = check_fn(nodes, edges, ntypes, adj)
         for rf in rule_findings:
-            findings.append({
-                "id": str(uuid.uuid4())[:8],
-                "rule_id": rule_id,
-                "title": rule["title"],
-                "severity": rule["severity"],
-                "category": rule["category"],
-                "description": rule["description"],
-                "affected_entity": rf.get("affected_entity", ""),
-                "affected_type": rf.get("affected_type", "design"),
-                "detail": rf.get("detail", ""),
-            })
+            findings.append(
+                {
+                    "id": str(uuid.uuid4())[:8],
+                    "rule_id": rule_id,
+                    "title": rule["title"],
+                    "severity": rule["severity"],
+                    "category": rule["category"],
+                    "description": rule["description"],
+                    "affected_entity": rf.get("affected_entity", ""),
+                    "affected_type": rf.get("affected_type", "design"),
+                    "detail": rf.get("detail", ""),
+                }
+            )
             cat = rule["category"]
             by_category.setdefault(cat, {"total": 0, "cat1": 0, "cat2": 0})
             by_category[cat]["total"] += 1
@@ -447,6 +517,7 @@ def compute_mitre_detection_coverage(graph_data: dict) -> dict:
         config = bn.get("config_json", {})
         if isinstance(config, str):
             import json
+
             try:
                 config = json.loads(config)
             except (ValueError, TypeError):
@@ -502,83 +573,103 @@ def detect_observability_gaps(assessment_result: dict) -> dict:
 
         if rule_id == "ODC-LOG-001":
             gaps["disconnected_nodes"].append(f["affected_entity"])
-            recommendations.append({
-                "priority": priority,
-                "action": f"Connect source '{f['affected_entity']}' to a collector (Fluentd, Filebeat, or OTel Collector).",
-                "rule_id": rule_id,
-            })
+            recommendations.append(
+                {
+                    "priority": priority,
+                    "action": f"Connect source '{f['affected_entity']}' to a collector (Fluentd, Filebeat, or OTel Collector).",
+                    "rule_id": rule_id,
+                }
+            )
 
         elif rule_id == "ODC-LOG-002":
             gaps["missing_platforms"].append(f["affected_entity"])
-            recommendations.append({
-                "priority": priority,
-                "action": f"Route collector '{f['affected_entity']}' to a SIEM/analytics platform.",
-                "rule_id": rule_id,
-            })
+            recommendations.append(
+                {
+                    "priority": priority,
+                    "action": f"Route collector '{f['affected_entity']}' to a SIEM/analytics platform.",
+                    "rule_id": rule_id,
+                }
+            )
 
         elif rule_id == "ODC-LOG-003":
             gaps["missing_collectors"].append("col-s3")
-            recommendations.append({
-                "priority": priority,
-                "action": "Add a log archive (S3/GCS/ADLS) for long-term retention compliance.",
-                "rule_id": rule_id,
-            })
+            recommendations.append(
+                {
+                    "priority": priority,
+                    "action": "Add a log archive (S3/GCS/ADLS) for long-term retention compliance.",
+                    "rule_id": rule_id,
+                }
+            )
 
         elif rule_id == "ODC-LOG-004":
             gaps["missing_sources"].append(f["detail"])
-            recommendations.append({
-                "priority": priority,
-                "action": f"Add missing log source: {f['detail']}",
-                "rule_id": rule_id,
-            })
+            recommendations.append(
+                {
+                    "priority": priority,
+                    "action": f"Add missing log source: {f['detail']}",
+                    "rule_id": rule_id,
+                }
+            )
 
         elif rule_id == "ODC-LOG-005":
             gaps["missing_sources"].append("src-cloud-log")
-            recommendations.append({
-                "priority": priority,
-                "action": "Add cloud audit log source (CloudTrail/Activity Log/Audit Log).",
-                "rule_id": rule_id,
-            })
+            recommendations.append(
+                {
+                    "priority": priority,
+                    "action": "Add cloud audit log source (CloudTrail/Activity Log/Audit Log).",
+                    "rule_id": rule_id,
+                }
+            )
 
         elif rule_id in ("ODC-DET-001", "ODC-DET-002", "ODC-DET-003"):
             gaps["missing_automation"].append(f["detail"])
-            recommendations.append({
-                "priority": priority,
-                "action": f["detail"],
-                "rule_id": rule_id,
-            })
+            recommendations.append(
+                {
+                    "priority": priority,
+                    "action": f["detail"],
+                    "rule_id": rule_id,
+                }
+            )
 
         elif rule_id == "ODC-RET-001":
             gaps["missing_compliance"].append("cmp-log-policy")
-            recommendations.append({
-                "priority": priority,
-                "action": "Add a log retention policy node (1yr online + 7yr archive for DoD).",
-                "rule_id": rule_id,
-            })
+            recommendations.append(
+                {
+                    "priority": priority,
+                    "action": "Add a log retention policy node (1yr online + 7yr archive for DoD).",
+                    "rule_id": rule_id,
+                }
+            )
 
         elif rule_id == "ODC-SEC-001":
             gaps["unencrypted_transport"].append(f["affected_entity"])
-            recommendations.append({
-                "priority": priority,
-                "action": f"Enable TLS on log transport: {f['affected_entity']}.",
-                "rule_id": rule_id,
-            })
+            recommendations.append(
+                {
+                    "priority": priority,
+                    "action": f"Enable TLS on log transport: {f['affected_entity']}.",
+                    "rule_id": rule_id,
+                }
+            )
 
         elif rule_id in ("ODC-SEC-002", "ODC-SEC-003"):
             gaps["missing_sources"].append(f["detail"])
-            recommendations.append({
-                "priority": priority,
-                "action": f["detail"],
-                "rule_id": rule_id,
-            })
+            recommendations.append(
+                {
+                    "priority": priority,
+                    "action": f["detail"],
+                    "rule_id": rule_id,
+                }
+            )
 
         elif rule_id == "ODC-INT-001":
             gaps["missing_automation"].append("auto-ticket")
-            recommendations.append({
-                "priority": priority,
-                "action": "Connect SOAR/runbook to a ticket system (ServiceNow/Jira).",
-                "rule_id": rule_id,
-            })
+            recommendations.append(
+                {
+                    "priority": priority,
+                    "action": "Connect SOAR/runbook to a ticket system (ServiceNow/Jira).",
+                    "rule_id": rule_id,
+                }
+            )
 
     # Sort recommendations: critical first
     recommendations.sort(key=lambda r: 0 if r["priority"] == "critical" else 1)

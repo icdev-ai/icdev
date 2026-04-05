@@ -28,6 +28,7 @@ Usage:
     python tools/security_canvas/compliance_kg.py --stride-coverage S --json
     python tools/security_canvas/compliance_kg.py --sdc-ctrl-coverage ctrl-kms --json
 """
+
 from __future__ import annotations
 
 import argparse
@@ -55,56 +56,56 @@ GRAPH_NAME = "sdc-compliance-kg"
 
 # SDC palette control type → NIST 800-53 control IDs
 SDC_CTRL_TO_NIST: Dict[str, List[str]] = {
-    "ctrl-firewall":   ["SC-7", "SC-5", "AC-4", "SC-10", "CM-7"],
-    "ctrl-idp":        ["IA-2", "IA-3", "IA-5", "IA-8", "AC-2", "SC-23"],
-    "ctrl-kms":        ["SC-12", "SC-13", "SC-17", "MP-3", "SC-28"],
-    "ctrl-siem":       ["AU-2", "AU-3", "AU-6", "AU-10", "AU-12", "IR-4", "IR-5", "SI-4"],
-    "ctrl-ids":        ["SI-4", "SC-7", "IR-4", "AU-12", "RA-5"],
-    "ctrl-pam":        ["AC-6", "AC-2", "AC-17", "IA-2", "AC-3"],
-    "ctrl-scanner":    ["RA-5", "SI-2", "CA-7", "CA-2", "SI-3"],
+    "ctrl-firewall": ["SC-7", "SC-5", "AC-4", "SC-10", "CM-7"],
+    "ctrl-idp": ["IA-2", "IA-3", "IA-5", "IA-8", "AC-2", "SC-23"],
+    "ctrl-kms": ["SC-12", "SC-13", "SC-17", "MP-3", "SC-28"],
+    "ctrl-siem": ["AU-2", "AU-3", "AU-6", "AU-10", "AU-12", "IR-4", "IR-5", "SI-4"],
+    "ctrl-ids": ["SI-4", "SC-7", "IR-4", "AU-12", "RA-5"],
+    "ctrl-pam": ["AC-6", "AC-2", "AC-17", "IA-2", "AC-3"],
+    "ctrl-scanner": ["RA-5", "SI-2", "CA-7", "CA-2", "SI-3"],
     "ctrl-encryption": ["SC-8", "SC-13", "SC-28", "SC-12", "MP-5"],
 }
 
 SDC_CTRL_LABELS: Dict[str, str] = {
-    "ctrl-firewall":   "Firewall / WAF",
-    "ctrl-idp":        "IdP / MFA",
-    "ctrl-kms":        "KMS / HSM",
-    "ctrl-siem":       "SIEM / SOC",
-    "ctrl-ids":        "IDS / IPS",
-    "ctrl-pam":        "PAM",
-    "ctrl-scanner":    "Vulnerability Scanner",
+    "ctrl-firewall": "Firewall / WAF",
+    "ctrl-idp": "IdP / MFA",
+    "ctrl-kms": "KMS / HSM",
+    "ctrl-siem": "SIEM / SOC",
+    "ctrl-ids": "IDS / IPS",
+    "ctrl-pam": "PAM",
+    "ctrl-scanner": "Vulnerability Scanner",
     "ctrl-encryption": "Encryptor",
 }
 
 # SDC threat type → STRIDE category codes
 SDC_THREAT_TO_STRIDE: Dict[str, List[str]] = {
-    "threat-actor":    ["S", "E"],
-    "threat-malware":  ["T", "D", "E"],
+    "threat-actor": ["S", "E"],
+    "threat-malware": ["T", "D", "E"],
     "threat-phishing": ["S", "R"],
-    "threat-exploit":  ["T", "E", "I"],
-    "threat-dos":      ["D"],
-    "threat-supply":   ["T", "I", "E"],
-    "threat-insider":  ["R", "I", "E"],
+    "threat-exploit": ["T", "E", "I"],
+    "threat-dos": ["D"],
+    "threat-supply": ["T", "I", "E"],
+    "threat-insider": ["R", "I", "E"],
 }
 
 SDC_THREAT_LABELS: Dict[str, str] = {
-    "threat-actor":    "Threat Actor",
-    "threat-malware":  "Malware",
+    "threat-actor": "Threat Actor",
+    "threat-malware": "Malware",
     "threat-phishing": "Phishing",
-    "threat-exploit":  "Exploit",
-    "threat-dos":      "DoS / DDoS",
-    "threat-supply":   "Supply Chain Attack",
-    "threat-insider":  "Insider Threat",
+    "threat-exploit": "Exploit",
+    "threat-dos": "DoS / DDoS",
+    "threat-supply": "Supply Chain Attack",
+    "threat-insider": "Insider Threat",
 }
 
 # STRIDE → NIST 800-53 controls (from constants.py)
 STRIDE_TO_NIST: Dict[str, List[str]] = {
-    "S": ["IA-2", "IA-3", "IA-5", "IA-8", "SC-23"],      # Spoofing
-    "T": ["SI-7", "SC-8", "SC-28", "AU-10", "CM-3"],      # Tampering
-    "R": ["AU-2", "AU-3", "AU-6", "AU-10", "AU-12"],      # Repudiation
-    "I": ["SC-8", "SC-13", "SC-28", "AC-3", "AC-4"],      # Information Disclosure
-    "D": ["SC-5", "CP-7", "CP-8", "CP-10", "SI-17"],      # Denial of Service
-    "E": ["AC-6", "AC-2", "CM-5", "CM-7", "SC-4"],        # Elevation of Privilege
+    "S": ["IA-2", "IA-3", "IA-5", "IA-8", "SC-23"],  # Spoofing
+    "T": ["SI-7", "SC-8", "SC-28", "AU-10", "CM-3"],  # Tampering
+    "R": ["AU-2", "AU-3", "AU-6", "AU-10", "AU-12"],  # Repudiation
+    "I": ["SC-8", "SC-13", "SC-28", "AC-3", "AC-4"],  # Information Disclosure
+    "D": ["SC-5", "CP-7", "CP-8", "CP-10", "SI-17"],  # Denial of Service
+    "E": ["AC-6", "AC-2", "CM-5", "CM-7", "SC-4"],  # Elevation of Privilege
 }
 
 STRIDE_LABELS: Dict[str, str] = {
@@ -127,42 +128,46 @@ STRIDE_DESCRIPTIONS: Dict[str, str] = {
 
 # Framework keys from control_crosswalk.json (boolean + ID-based)
 FRAMEWORK_BOOL_KEYS = [
-    "fedramp_moderate", "fedramp_high",
-    "il4_required", "il5_required", "il6_required",
+    "fedramp_moderate",
+    "fedramp_high",
+    "il4_required",
+    "il5_required",
+    "il6_required",
 ]
 FRAMEWORK_ID_KEYS = ["nist_800_171", "cmmc_level_2", "cmmc_level_3"]
 FRAMEWORK_LABELS: Dict[str, str] = {
     "fedramp_moderate": "FedRAMP Moderate",
-    "fedramp_high":     "FedRAMP High",
-    "nist_800_171":     "NIST 800-171",
-    "cmmc_level_2":     "CMMC Level 2",
-    "cmmc_level_3":     "CMMC Level 3",
-    "il4_required":     "DoD IL4",
-    "il5_required":     "DoD IL5",
-    "il6_required":     "DoD IL6",
+    "fedramp_high": "FedRAMP High",
+    "nist_800_171": "NIST 800-171",
+    "cmmc_level_2": "CMMC Level 2",
+    "cmmc_level_3": "CMMC Level 3",
+    "il4_required": "DoD IL4",
+    "il5_required": "DoD IL5",
+    "il6_required": "DoD IL6",
 }
 
 PRIORITY_WEIGHTS = {"P1": 1.0, "P2": 0.7, "P3": 0.4}
 
 # CLI aliases for framework names
 FRAMEWORK_ALIASES: Dict[str, List[str]] = {
-    "fedramp":          ["fedramp_moderate", "fedramp_high"],
+    "fedramp": ["fedramp_moderate", "fedramp_high"],
     "fedramp_moderate": ["fedramp_moderate"],
-    "fedramp_high":     ["fedramp_high"],
-    "cmmc":             ["cmmc_level_2", "cmmc_level_3"],
-    "cmmc_level_2":     ["cmmc_level_2"],
-    "cmmc_level_3":     ["cmmc_level_3"],
-    "nist_800_171":     ["nist_800_171"],
-    "800-171":          ["nist_800_171"],
-    "il4":              ["il4_required"],
-    "il5":              ["il5_required"],
-    "il6":              ["il6_required"],
+    "fedramp_high": ["fedramp_high"],
+    "cmmc": ["cmmc_level_2", "cmmc_level_3"],
+    "cmmc_level_2": ["cmmc_level_2"],
+    "cmmc_level_3": ["cmmc_level_3"],
+    "nist_800_171": ["nist_800_171"],
+    "800-171": ["nist_800_171"],
+    "il4": ["il4_required"],
+    "il5": ["il5_required"],
+    "il6": ["il6_required"],
 }
 
 
 # ---------------------------------------------------------------------------
 # Deterministic node/edge ID generators
 # ---------------------------------------------------------------------------
+
 
 def _hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
@@ -204,8 +209,10 @@ def _now() -> str:
 # Database helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_db(db_path: Optional[Path] = None) -> sqlite3.Connection:
     from tools.db.storage import get_connection
+
     conn = get_connection(db_path=str(db_path) if db_path else None)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
@@ -261,6 +268,7 @@ def _load_crosswalk_data() -> Dict[str, Any]:
 # Graph builder
 # ---------------------------------------------------------------------------
 
+
 def build_sdc_kg(
     project_id: Optional[str] = None,
     db_path: Optional[Path] = None,
@@ -294,15 +302,11 @@ def build_sdc_kg(
     graph_id = f"sdc-kg-{_hash(graph_key)}"
 
     # Upsert graph record (idempotent rebuild)
-    existing = conn.execute(
-        "SELECT id FROM kg_graphs WHERE id = ?", (graph_id,)
-    ).fetchone()
+    existing = conn.execute("SELECT id FROM kg_graphs WHERE id = ?", (graph_id,)).fetchone()
     if existing:
         conn.execute("DELETE FROM kg_edges WHERE graph_id = ?", (graph_id,))
         conn.execute("DELETE FROM kg_nodes WHERE graph_id = ?", (graph_id,))
-        conn.execute(
-            "UPDATE kg_graphs SET updated_at = ? WHERE id = ?", (ts, graph_id)
-        )
+        conn.execute("UPDATE kg_graphs SET updated_at = ? WHERE id = ?", (ts, graph_id))
     else:
         conn.execute(
             """INSERT INTO kg_graphs
@@ -310,9 +314,12 @@ def build_sdc_kg(
                 metadata, created_at, updated_at)
                VALUES (?, ?, ?, ?, 0, 0, '{}', ?, ?)""",
             (
-                graph_id, project_id, GRAPH_NAME,
+                graph_id,
+                project_id,
+                GRAPH_NAME,
                 "SDC crosswalk KG: STRIDE→NIST→frameworks + SDC palette objects",
-                ts, ts,
+                ts,
+                ts,
             ),
         )
 
@@ -325,7 +332,10 @@ def build_sdc_kg(
         )
 
     def _upsert_edge(
-        src: str, tgt: str, rel: str, weight: float = 1.0,
+        src: str,
+        tgt: str,
+        rel: str,
+        weight: float = 1.0,
         props: Optional[Dict] = None,
     ) -> str:
         eid = _edge_id(src, tgt, rel)
@@ -335,8 +345,14 @@ def build_sdc_kg(
                 properties, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                eid, graph_id, src, tgt, rel, weight,
-                json.dumps(props or {}, ensure_ascii=False), ts,
+                eid,
+                graph_id,
+                src,
+                tgt,
+                rel,
+                weight,
+                json.dumps(props or {}, ensure_ascii=False),
+                ts,
             ),
         )
         return eid
@@ -349,16 +365,14 @@ def build_sdc_kg(
     for fam in families:
         code, name = fam["code"], fam["name"]
         family_map[code] = name
-        _upsert_node(_fam_node_id(code), f"{code} — {name}", "nist_family",
-                     {"code": code, "name": name})
+        _upsert_node(_fam_node_id(code), f"{code} — {name}", "nist_family", {"code": code, "name": name})
         node_count += 1
 
     # ── 2. Framework nodes ───────────────────────────────────────────────────
     all_fw_keys = set(FRAMEWORK_BOOL_KEYS + FRAMEWORK_ID_KEYS)
     for fw_key in all_fw_keys:
         label = FRAMEWORK_LABELS.get(fw_key, fw_key)
-        _upsert_node(_fw_node_id(fw_key), label, "framework",
-                     {"key": fw_key, "label": label})
+        _upsert_node(_fw_node_id(fw_key), label, "framework", {"key": fw_key, "label": label})
         node_count += 1
 
     # ── 3. STRIDE category nodes ─────────────────────────────────────────────
@@ -366,27 +380,30 @@ def build_sdc_kg(
         label = STRIDE_LABELS[code]
         desc = STRIDE_DESCRIPTIONS[code]
         _upsert_node(
-            _stride_node_id(code), f"STRIDE:{label}", "stride_category",
-            {"code": code, "name": label, "description": desc,
-             "nist_controls": info},
+            _stride_node_id(code),
+            f"STRIDE:{label}",
+            "stride_category",
+            {"code": code, "name": label, "description": desc, "nist_controls": info},
         )
         node_count += 1
 
     # ── 4. SDC control type nodes ────────────────────────────────────────────
     for ctrl_type, label in SDC_CTRL_LABELS.items():
         _upsert_node(
-            _sdc_ctrl_node_id(ctrl_type), f"SDC:{label}", "sdc_control_type",
-            {"type": ctrl_type, "label": label,
-             "nist_controls": SDC_CTRL_TO_NIST.get(ctrl_type, [])},
+            _sdc_ctrl_node_id(ctrl_type),
+            f"SDC:{label}",
+            "sdc_control_type",
+            {"type": ctrl_type, "label": label, "nist_controls": SDC_CTRL_TO_NIST.get(ctrl_type, [])},
         )
         node_count += 1
 
     # ── 5. SDC threat type nodes ─────────────────────────────────────────────
     for threat_type, label in SDC_THREAT_LABELS.items():
         _upsert_node(
-            _sdc_threat_node_id(threat_type), f"SDC:{label}", "sdc_threat_type",
-            {"type": threat_type, "label": label,
-             "stride_codes": SDC_THREAT_TO_STRIDE.get(threat_type, [])},
+            _sdc_threat_node_id(threat_type),
+            f"SDC:{label}",
+            "sdc_threat_type",
+            {"type": threat_type, "label": label, "stride_codes": SDC_THREAT_TO_STRIDE.get(threat_type, [])},
         )
         node_count += 1
 
@@ -400,9 +417,7 @@ def build_sdc_kg(
         all_referenced_controls.update(ctrl_list)
 
     # Build index of crosswalk entries by control ID
-    crosswalk_by_id: Dict[str, Dict] = {
-        e.get("nist_800_53", ""): e for e in crosswalk if e.get("nist_800_53")
-    }
+    crosswalk_by_id: Dict[str, Dict] = {e.get("nist_800_53", ""): e for e in crosswalk if e.get("nist_800_53")}
 
     for entry in crosswalk:
         ctrl_id = entry.get("nist_800_53", "")
@@ -413,13 +428,13 @@ def build_sdc_kg(
         title = entry.get("title", "")
         priority = entry.get("priority", "P3")
         description = entry.get("description", "")
-        baseline_level = {"P1": "low", "P2": "moderate", "P3": "high"}.get(
-            priority, "moderate"
-        )
+        baseline_level = {"P1": "low", "P2": "moderate", "P3": "high"}.get(priority, "moderate")
 
         ctrl_nid = _ctrl_node_id(ctrl_id)
         _upsert_node(
-            ctrl_nid, f"{ctrl_id}: {title}", "nist_control",
+            ctrl_nid,
+            f"{ctrl_id}: {title}",
+            "nist_control",
             {
                 "control_id": ctrl_id,
                 "title": title,
@@ -439,15 +454,15 @@ def build_sdc_kg(
         weight = PRIORITY_WEIGHTS.get(priority, 0.5)
         for fw_key in FRAMEWORK_BOOL_KEYS:
             if entry.get(fw_key):
-                _upsert_edge(ctrl_nid, _fw_node_id(fw_key), "satisfies", weight,
-                             {"priority": priority})
+                _upsert_edge(ctrl_nid, _fw_node_id(fw_key), "satisfies", weight, {"priority": priority})
                 edge_count += 1
                 framework_controls[fw_key].add(ctrl_id)
         for fw_key in FRAMEWORK_ID_KEYS:
             mapped_id = entry.get(fw_key)
             if mapped_id:
-                _upsert_edge(ctrl_nid, _fw_node_id(fw_key), "satisfies", weight,
-                             {"priority": priority, "mapped_id": mapped_id})
+                _upsert_edge(
+                    ctrl_nid, _fw_node_id(fw_key), "satisfies", weight, {"priority": priority, "mapped_id": mapped_id}
+                )
                 edge_count += 1
                 framework_controls[fw_key].add(ctrl_id)
 
@@ -458,8 +473,7 @@ def build_sdc_kg(
             ctrl_nid = _ctrl_node_id(ctrl_id)
             # Only create edge if the NIST control exists in crosswalk
             if ctrl_id in crosswalk_by_id:
-                _upsert_edge(stride_nid, ctrl_nid, "maps_to", 1.0,
-                             {"stride": stride_code, "control": ctrl_id})
+                _upsert_edge(stride_nid, ctrl_nid, "maps_to", 1.0, {"stride": stride_code, "control": ctrl_id})
                 edge_count += 1
 
     # ── 8. SDC control type → NIST edges (implements) ───────────────────────
@@ -467,31 +481,40 @@ def build_sdc_kg(
         sdc_nid = _sdc_ctrl_node_id(ctrl_type)
         for ctrl_id in ctrl_ids:
             if ctrl_id in crosswalk_by_id:
-                _upsert_edge(sdc_nid, _ctrl_node_id(ctrl_id), "implements", 1.0,
-                             {"sdc_type": ctrl_type, "control": ctrl_id})
+                _upsert_edge(
+                    sdc_nid, _ctrl_node_id(ctrl_id), "implements", 1.0, {"sdc_type": ctrl_type, "control": ctrl_id}
+                )
                 edge_count += 1
 
     # ── 9. SDC threat → STRIDE edges (represents) ───────────────────────────
     for threat_type, stride_codes in SDC_THREAT_TO_STRIDE.items():
         threat_nid = _sdc_threat_node_id(threat_type)
         for stride_code in stride_codes:
-            _upsert_edge(threat_nid, _stride_node_id(stride_code), "represents",
-                         1.0, {"threat": threat_type, "stride": stride_code})
+            _upsert_edge(
+                threat_nid,
+                _stride_node_id(stride_code),
+                "represents",
+                1.0,
+                {"threat": threat_type, "stride": stride_code},
+            )
             edge_count += 1
 
     # ── 10. Framework overlaps_with edges ────────────────────────────────────
     fw_keys_list = list(framework_controls.keys())
     for i, fw_a in enumerate(fw_keys_list):
-        for fw_b in fw_keys_list[i + 1:]:
+        for fw_b in fw_keys_list[i + 1 :]:
             shared = framework_controls[fw_a] & framework_controls[fw_b]
             if shared:
                 overlap = len(shared) / max(
                     len(framework_controls[fw_a]),
-                    len(framework_controls[fw_b]), 1,
+                    len(framework_controls[fw_b]),
+                    1,
                 )
                 _upsert_edge(
-                    _fw_node_id(fw_a), _fw_node_id(fw_b),
-                    "overlaps_with", round(overlap, 4),
+                    _fw_node_id(fw_a),
+                    _fw_node_id(fw_b),
+                    "overlaps_with",
+                    round(overlap, 4),
                     {"shared_controls": len(shared), "overlap_ratio": round(overlap, 4)},
                 )
                 edge_count += 1
@@ -527,6 +550,7 @@ def build_sdc_kg(
 # Graph query helpers
 # ---------------------------------------------------------------------------
 
+
 def _load_graph(
     conn: sqlite3.Connection,
     project_id: Optional[str] = None,
@@ -538,39 +562,43 @@ def _load_graph(
             (GRAPH_NAME, project_id),
         ).fetchone()
     else:
-        row = conn.execute(
-            "SELECT id FROM kg_graphs WHERE name = ?", (GRAPH_NAME,)
-        ).fetchone()
+        row = conn.execute("SELECT id FROM kg_graphs WHERE name = ?", (GRAPH_NAME,)).fetchone()
     return dict(row)["id"] if row else None
 
 
 def _load_adj(
-    conn: sqlite3.Connection, graph_id: str,
+    conn: sqlite3.Connection,
+    graph_id: str,
 ) -> Dict[str, List[Dict[str, Any]]]:
     """Load all edges as bidirectional adjacency dict {node_id: [{target, rel, weight}]}."""
     edges = conn.execute(
-        "SELECT source_id, target_id, relationship, weight, properties "
-        "FROM kg_edges WHERE graph_id = ?",
+        "SELECT source_id, target_id, relationship, weight, properties FROM kg_edges WHERE graph_id = ?",
         (graph_id,),
     ).fetchall()
     adj: Dict[str, List[Dict]] = defaultdict(list)
     for e in edges:
         d = dict(e)
-        adj[d["source_id"]].append({
-            "target": d["target_id"],
-            "rel": d["relationship"],
-            "weight": d["weight"],
-        })
-        adj[d["target_id"]].append({
-            "target": d["source_id"],
-            "rel": d["relationship"],
-            "weight": d["weight"],
-        })
+        adj[d["source_id"]].append(
+            {
+                "target": d["target_id"],
+                "rel": d["relationship"],
+                "weight": d["weight"],
+            }
+        )
+        adj[d["target_id"]].append(
+            {
+                "target": d["source_id"],
+                "rel": d["relationship"],
+                "weight": d["weight"],
+            }
+        )
     return adj
 
 
 def _node_by_label(
-    conn: sqlite3.Connection, graph_id: str, label_fragment: str,
+    conn: sqlite3.Connection,
+    graph_id: str,
+    label_fragment: str,
 ) -> Optional[Dict[str, Any]]:
     """Find first node whose label contains label_fragment (case-insensitive)."""
     row = conn.execute(
@@ -588,7 +616,8 @@ def _node_by_label(
 
 
 def _node_by_id(
-    conn: sqlite3.Connection, node_id: str,
+    conn: sqlite3.Connection,
+    node_id: str,
 ) -> Optional[Dict[str, Any]]:
     row = conn.execute(
         "SELECT id, label, entity_type, properties FROM kg_nodes WHERE id = ?",
@@ -620,18 +649,20 @@ def _bfs_path(
             nid = nbr["target"]
             if nid not in visited:
                 visited.add(nid)
-                queue.append((
-                    nid,
-                    path + [nid],
-                    edges + [{"from": current, "to": nid,
-                               "rel": nbr["rel"], "weight": nbr["weight"]}],
-                ))
+                queue.append(
+                    (
+                        nid,
+                        path + [nid],
+                        edges + [{"from": current, "to": nid, "rel": nbr["rel"], "weight": nbr["weight"]}],
+                    )
+                )
     return None
 
 
 # ---------------------------------------------------------------------------
 # Public query functions
 # ---------------------------------------------------------------------------
+
 
 def get_node_info(
     label_or_id: str,
@@ -694,11 +725,13 @@ def get_node_info(
     neighbors_by_rel: Dict[str, List[Dict]] = defaultdict(list)
     for r in rows:
         rd = dict(r)
-        neighbors_by_rel[rd["relationship"]].append({
-            "id": rd["id"],
-            "label": rd["label"],
-            "entity_type": rd["entity_type"],
-        })
+        neighbors_by_rel[rd["relationship"]].append(
+            {
+                "id": rd["id"],
+                "label": rd["label"],
+                "entity_type": rd["entity_type"],
+            }
+        )
 
     conn.close()
     return {
@@ -782,8 +815,7 @@ def get_path(
     for nid in path_ids:
         n = _node_by_id(conn, nid)
         if n:
-            path_nodes.append({"id": nid, "label": n["label"],
-                                "entity_type": n["entity_type"]})
+            path_nodes.append({"id": nid, "label": n["label"], "entity_type": n["entity_type"]})
 
     conn.close()
     return {
@@ -850,12 +882,14 @@ def get_stride_coverage(
         d = dict(row)
         props = json.loads(d.get("properties") or "{}")
         ctrl_id = props.get("control_id", "")
-        nist_controls.append({
-            "control_id": ctrl_id,
-            "title": props.get("title", ""),
-            "priority": props.get("priority", ""),
-            "family": props.get("family", ""),
-        })
+        nist_controls.append(
+            {
+                "control_id": ctrl_id,
+                "title": props.get("title", ""),
+                "priority": props.get("priority", ""),
+                "family": props.get("family", ""),
+            }
+        )
         # Check which frameworks this control satisfies
         fw_rows = conn.execute(
             """SELECT n.label FROM kg_edges e JOIN kg_nodes n ON e.target_id = n.id
@@ -926,12 +960,14 @@ def get_sdc_ctrl_coverage(
         d = dict(row)
         props = json.loads(d.get("properties") or "{}")
         ctrl_id = props.get("control_id", "")
-        nist_controls.append({
-            "control_id": ctrl_id,
-            "title": props.get("title", ""),
-            "priority": props.get("priority", ""),
-            "family": props.get("family", ""),
-        })
+        nist_controls.append(
+            {
+                "control_id": ctrl_id,
+                "title": props.get("title", ""),
+                "priority": props.get("priority", ""),
+                "family": props.get("family", ""),
+            }
+        )
         fw_rows = conn.execute(
             """SELECT n.label FROM kg_edges e JOIN kg_nodes n ON e.target_id = n.id
                WHERE e.graph_id = ? AND e.source_id = ? AND e.relationship = 'satisfies'""",
@@ -958,24 +994,20 @@ def get_sdc_ctrl_coverage(
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="SDC Compliance Knowledge Graph Builder & Query Tool",
     )
-    parser.add_argument("--build", action="store_true",
-                        help="Build/rebuild the sdc-compliance-kg graph")
-    parser.add_argument("--project-id", default=None,
-                        help="Optional project ID to scope the graph")
-    parser.add_argument("--node-info", metavar="LABEL",
-                        help="Get node details + neighbors (e.g. AC-2, S, ctrl-firewall)")
-    parser.add_argument("--path-from", metavar="SOURCE",
-                        help="BFS path source (e.g. ctrl-firewall, threat-phishing)")
-    parser.add_argument("--to", metavar="TARGET",
-                        help="BFS path target (e.g. fedramp, cmmc)")
-    parser.add_argument("--stride-coverage", metavar="CODE",
-                        help="STRIDE coverage (S/T/R/I/D/E or full name)")
-    parser.add_argument("--sdc-ctrl-coverage", metavar="TYPE",
-                        help="SDC control type coverage (e.g. ctrl-firewall)")
+    parser.add_argument("--build", action="store_true", help="Build/rebuild the sdc-compliance-kg graph")
+    parser.add_argument("--project-id", default=None, help="Optional project ID to scope the graph")
+    parser.add_argument(
+        "--node-info", metavar="LABEL", help="Get node details + neighbors (e.g. AC-2, S, ctrl-firewall)"
+    )
+    parser.add_argument("--path-from", metavar="SOURCE", help="BFS path source (e.g. ctrl-firewall, threat-phishing)")
+    parser.add_argument("--to", metavar="TARGET", help="BFS path target (e.g. fedramp, cmmc)")
+    parser.add_argument("--stride-coverage", metavar="CODE", help="STRIDE coverage (S/T/R/I/D/E or full name)")
+    parser.add_argument("--sdc-ctrl-coverage", metavar="TYPE", help="SDC control type coverage (e.g. ctrl-firewall)")
     parser.add_argument("--json", action="store_true", dest="json_output")
     parser.add_argument("--db-path", default=None)
 

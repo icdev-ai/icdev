@@ -7,6 +7,7 @@ estimates from security assessment results.
 No Flask dependency — takes assessment data and returns remediation artifacts.
 No LLM dependency — all logic is deterministic.
 """
+
 import uuid
 from datetime import datetime, timezone, timedelta
 
@@ -38,7 +39,6 @@ _REMEDIATION_STEPS = {
         "effort_hours": 24,
         "auto_fixable": False,
     },
-
     # Encryption
     "boundary_flows_encrypted": {
         "step": "Enable TLS 1.2+ encryption on all data flows crossing trust boundaries. Use mTLS for service-to-service communication.",
@@ -55,7 +55,6 @@ _REMEDIATION_STEPS = {
         "effort_hours": 8,
         "auto_fixable": True,
     },
-
     # Segmentation
     "boundaries_defined": {
         "step": "Define trust boundaries between network zones. Create at least DMZ, application, and data tiers.",
@@ -72,7 +71,6 @@ _REMEDIATION_STEPS = {
         "effort_hours": 4,
         "auto_fixable": True,
     },
-
     # Logging & Monitoring
     "siem_present": {
         "step": "Deploy SIEM solution (Splunk, Elastic, or equivalent). Configure log ingestion from all assets per NIST AU-2.",
@@ -89,7 +87,6 @@ _REMEDIATION_STEPS = {
         "effort_hours": 4,
         "auto_fixable": True,
     },
-
     # Monitoring
     "ids_present": {
         "step": "Deploy IDS/IPS for network traffic inspection. Place at trust boundary crossings and east-west segments.",
@@ -101,14 +98,12 @@ _REMEDIATION_STEPS = {
         "effort_hours": 8,
         "auto_fixable": False,
     },
-
     # Access Control
     "s2s_auth": {
         "step": "Implement service-to-service authentication using mTLS certificates or short-lived tokens (SPIFFE/SPIRE).",
         "effort_hours": 12,
         "auto_fixable": False,
     },
-
     # Data Protection
     "data_classification": {
         "step": "Apply data classification labels (CUI, PII, PHI) to all storage assets. Update asset configuration metadata.",
@@ -120,21 +115,18 @@ _REMEDIATION_STEPS = {
         "effort_hours": 16,
         "auto_fixable": False,
     },
-
     # Incident Response
     "siem_alerting": {
         "step": "Configure SIEM alerting rules and integrate with incident response ticketing system.",
         "effort_hours": 8,
         "auto_fixable": False,
     },
-
     # Supply Chain
     "registry_admission": {
         "step": "Deploy admission controller (Kyverno, OPA Gatekeeper) for container registry. Block unsigned or non-scanned images.",
         "effort_hours": 8,
         "auto_fixable": False,
     },
-
     # Documentation
     "assets_labeled": {
         "step": "Update all asset nodes with descriptive labels matching operational naming conventions.",
@@ -295,20 +287,22 @@ def generate_remediation_plan(assessment: dict, design_data: dict) -> dict:
         p = phases[phase_num]
         if p["actions"]:
             priority = {1: "CRITICAL", 2: "HIGH", 3: "MEDIUM"}[phase_num]
-            phase_list.append({
-                "phase": phase_num,
-                "name": f"Phase {phase_num}: {p['label']}",
-                "priority": priority,
-                "description": {
-                    1: "CAT1 findings that deny or disrupt capability. Must resolve before ATO.",
-                    2: "CAT2 findings that degrade capability. Resolve for full compliance.",
-                    3: "CAT3 findings — minor. Track in POA&M for next review cycle.",
-                }[phase_num],
-                "deadline": p["deadline"],
-                "actions": p["actions"],
-                "total_effort_hours": sum(a["effort_hours"] for a in p["actions"]),
-                "auto_fixable_count": sum(1 for a in p["actions"] if a["auto_fixable"]),
-            })
+            phase_list.append(
+                {
+                    "phase": phase_num,
+                    "name": f"Phase {phase_num}: {p['label']}",
+                    "priority": priority,
+                    "description": {
+                        1: "CAT1 findings that deny or disrupt capability. Must resolve before ATO.",
+                        2: "CAT2 findings that degrade capability. Resolve for full compliance.",
+                        3: "CAT3 findings — minor. Track in POA&M for next review cycle.",
+                    }[phase_num],
+                    "deadline": p["deadline"],
+                    "actions": p["actions"],
+                    "total_effort_hours": sum(a["effort_hours"] for a in p["actions"]),
+                    "auto_fixable_count": sum(1 for a in p["actions"] if a["auto_fixable"]),
+                }
+            )
 
     total_actions = sum(len(p["actions"]) for p in phase_list)
     auto_fixable = sum(p["auto_fixable_count"] for p in phase_list)
@@ -327,7 +321,9 @@ def generate_remediation_plan(assessment: dict, design_data: dict) -> dict:
 
     summary_parts = []
     for p in phase_list:
-        summary_parts.append(f"{len(p['actions'])} {p['priority'].lower()} action{'s' if len(p['actions'])!=1 else ''}")
+        summary_parts.append(
+            f"{len(p['actions'])} {p['priority'].lower()} action{'s' if len(p['actions']) != 1 else ''}"
+        )
     summary_text = ". ".join(summary_parts) + "." if summary_parts else "No actions needed."
     if auto_fixable:
         summary_text += f" {auto_fixable} of {total_actions} can be auto-fixed."
@@ -348,6 +344,7 @@ def generate_remediation_plan(assessment: dict, design_data: dict) -> dict:
 
 
 # ── POA&M Entry Generation ──────────────────────────────────────────────────
+
 
 def generate_poam_entries(remediation_plan: dict) -> list:
     """Convert remediation plan actions to POA&M (Plan of Action & Milestones) entries.
@@ -374,15 +371,18 @@ def generate_poam_entries(remediation_plan: dict) -> list:
                 "weakness_description": action.get("remediation_step", ""),
                 "point_of_contact": action.get("assigned_to", "Security Team"),
                 "resources_required": f"{action.get('effort_hours', 8)} hours — "
-                                      f"{'auto-fixable' if action.get('auto_fixable') else 'manual remediation'}",
+                f"{'auto-fixable' if action.get('auto_fixable') else 'manual remediation'}",
                 "severity": action.get("severity", "CAT3"),
                 "milestone": f"Phase {phase_num}: {action.get('title', 'Remediate finding')}",
                 "milestone_changes": "",
                 "scheduled_completion": deadline,
                 "status": "Open",
                 "comments": f"Affected: {action.get('affected_entity', 'design')}",
-                "risk_level": "High" if action.get("severity") == "CAT1" else
-                              "Medium" if action.get("severity") == "CAT2" else "Low",
+                "risk_level": "High"
+                if action.get("severity") == "CAT1"
+                else "Medium"
+                if action.get("severity") == "CAT2"
+                else "Low",
                 "created_at": now.isoformat(),
             }
             entries.append(entry)
@@ -392,6 +392,7 @@ def generate_poam_entries(remediation_plan: dict) -> list:
 
 
 # ── Effort Estimation ────────────────────────────────────────────────────────
+
 
 def estimate_effort(steps: list) -> str:
     """Sum effort hours from remediation steps and format as human-readable string.

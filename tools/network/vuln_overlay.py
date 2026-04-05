@@ -9,6 +9,7 @@ Usage:
 
 Schema: nc_vuln_scans, nc_vuln_hosts, nc_vuln_findings (see init_db.py)
 """
+
 from __future__ import annotations
 
 import ipaddress
@@ -30,10 +31,10 @@ SEVERITY_LABELS = {
     4: "critical",
 }
 SEVERITY_COLORS = {
-    "info":     "#95a5a6",
-    "low":      "#3498db",
-    "medium":   "#f39c12",
-    "high":     "#e67e22",
+    "info": "#95a5a6",
+    "low": "#3498db",
+    "medium": "#f39c12",
+    "high": "#e67e22",
     "critical": "#e94560",
 }
 
@@ -48,6 +49,7 @@ _RISK_TO_INT = {
 
 
 # ── Parser ─────────────────────────────────────────────────────────────────────
+
 
 def parse_nessus_file(file_path: str | Path) -> dict[str, Any]:
     """Parse a .nessus XML file and return structured scan data.
@@ -156,33 +158,37 @@ def parse_nessus_file(file_path: str | Path) -> dict[str, Any]:
 
             risk_factor = _text(item_el, "risk_factor") or SEVERITY_LABELS.get(sev_int, "none")
 
-            findings.append({
-                "plugin_id": item_el.get("pluginID", ""),
-                "plugin_name": item_el.get("pluginName", ""),
-                "severity": sev_int,
-                "severity_label": sev_label,
-                "risk_factor": risk_factor,
-                "cve": cve_str,
-                "cvss_base_score": _text(item_el, "cvss_base_score") or "",
-                "port": item_el.get("port", ""),
-                "protocol": item_el.get("protocol", ""),
-                "synopsis": _text(item_el, "synopsis") or "",
-                "description": _text(item_el, "description") or "",
-                "solution": _text(item_el, "solution") or "",
-                "plugin_output": _text(item_el, "plugin_output") or "",
-            })
+            findings.append(
+                {
+                    "plugin_id": item_el.get("pluginID", ""),
+                    "plugin_name": item_el.get("pluginName", ""),
+                    "severity": sev_int,
+                    "severity_label": sev_label,
+                    "risk_factor": risk_factor,
+                    "cve": cve_str,
+                    "cvss_base_score": _text(item_el, "cvss_base_score") or "",
+                    "port": item_el.get("port", ""),
+                    "protocol": item_el.get("protocol", ""),
+                    "synopsis": _text(item_el, "synopsis") or "",
+                    "description": _text(item_el, "description") or "",
+                    "solution": _text(item_el, "solution") or "",
+                    "plugin_output": _text(item_el, "plugin_output") or "",
+                }
+            )
 
         # Sort: critical → high → medium → low → info
         findings.sort(key=lambda f: (-f["severity"], f["plugin_name"]))
 
-        hosts.append({
-            "ip": ip,
-            "fqdn": fqdn,
-            "netbios": netbios,
-            "os": os_info,
-            "counts": counts,
-            "findings": findings,
-        })
+        hosts.append(
+            {
+                "ip": ip,
+                "fqdn": fqdn,
+                "netbios": netbios,
+                "os": os_info,
+                "counts": counts,
+                "findings": findings,
+            }
+        )
 
     return {
         "scan_name": scan_name,
@@ -203,8 +209,8 @@ def _text(el: ET.Element, tag: str) -> str | None:
 
 # ── DB persistence ─────────────────────────────────────────────────────────────
 
-def save_scan_to_db(conn, topology_id: str, file_name: str,
-                    parsed: dict) -> str:
+
+def save_scan_to_db(conn, topology_id: str, file_name: str, parsed: dict) -> str:
     """Persist a parsed scan to the DB. Returns scan_id."""
     scan_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
@@ -237,10 +243,17 @@ def save_scan_to_db(conn, topology_id: str, file_name: str,
             "node_id, created_at) "
             "VALUES (?,?,?,?,?,?,?,?,?,?,?,NULL,?)",
             (
-                host_id, scan_id,
-                host["ip"], host["fqdn"], host["netbios"], host["os"],
-                counts["critical"], counts["high"],
-                counts["medium"], counts["low"], counts["info"],
+                host_id,
+                scan_id,
+                host["ip"],
+                host["fqdn"],
+                host["netbios"],
+                host["os"],
+                counts["critical"],
+                counts["high"],
+                counts["medium"],
+                counts["low"],
+                counts["info"],
                 now,
             ),
         )
@@ -253,13 +266,22 @@ def save_scan_to_db(conn, topology_id: str, file_name: str,
                 "synopsis, description, solution, plugin_output) "
                 "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
-                    str(uuid.uuid4()), host_id, scan_id,
-                    f["plugin_id"], f["plugin_name"],
-                    f["severity"], f["severity_label"], f["risk_factor"],
-                    f["cve"], f["cvss_base_score"],
-                    f["port"], f["protocol"],
-                    f["synopsis"], f["description"],
-                    f["solution"], f["plugin_output"],
+                    str(uuid.uuid4()),
+                    host_id,
+                    scan_id,
+                    f["plugin_id"],
+                    f["plugin_name"],
+                    f["severity"],
+                    f["severity_label"],
+                    f["risk_factor"],
+                    f["cve"],
+                    f["cvss_base_score"],
+                    f["port"],
+                    f["protocol"],
+                    f["synopsis"],
+                    f["description"],
+                    f["solution"],
+                    f["plugin_output"],
                 ),
             )
 
@@ -269,9 +291,8 @@ def save_scan_to_db(conn, topology_id: str, file_name: str,
 
 # ── Overlay matching ───────────────────────────────────────────────────────────
 
-def match_hosts_to_nodes(
-    conn, scan_id: str, topology_id: str
-) -> list[dict]:
+
+def match_hosts_to_nodes(conn, scan_id: str, topology_id: str) -> list[dict]:
     """Match scan hosts to canvas nodes by IP/hostname.
 
     For each nc_vuln_host in scan_id, tries to find a topology node whose
@@ -283,9 +304,7 @@ def match_hosts_to_nodes(
     import json as _json  # noqa: F401 — used below via _json.loads
 
     # Load topology graph_json
-    row = conn.execute(
-        "SELECT graph_json FROM topologies WHERE id=?", (topology_id,)
-    ).fetchone()
+    row = conn.execute("SELECT graph_json FROM topologies WHERE id=?", (topology_id,)).fetchone()
     if not row:
         return []
 
@@ -351,19 +370,21 @@ def match_hosts_to_nodes(
                 (node_id, host["id"]),
             )
 
-        results.append({
-            "ip": host_ip,
-            "fqdn": host["fqdn"],
-            "node_id": node_id,
-            "matched": node_id is not None,
-            "counts": {
-                "critical": host["cnt_critical"],
-                "high": host["cnt_high"],
-                "medium": host["cnt_medium"],
-                "low": host["cnt_low"],
-                "info": host["cnt_info"],
-            },
-        })
+        results.append(
+            {
+                "ip": host_ip,
+                "fqdn": host["fqdn"],
+                "node_id": node_id,
+                "matched": node_id is not None,
+                "counts": {
+                    "critical": host["cnt_critical"],
+                    "high": host["cnt_high"],
+                    "medium": host["cnt_medium"],
+                    "low": host["cnt_low"],
+                    "info": host["cnt_info"],
+                },
+            }
+        )
 
     conn.commit()
     return results
@@ -436,14 +457,16 @@ def get_overlay_data(conn, scan_id: str) -> list[dict]:
             "info": r["cnt_info"],
         }
         worst = _worst_severity(counts)
-        result.append({
-            "node_id": r["node_id"],
-            "ip": r["ip"],
-            "fqdn": r["fqdn"],
-            "counts": counts,
-            "worst_severity": worst,
-            "color": SEVERITY_COLORS.get(worst, SEVERITY_COLORS["info"]),
-        })
+        result.append(
+            {
+                "node_id": r["node_id"],
+                "ip": r["ip"],
+                "fqdn": r["fqdn"],
+                "counts": counts,
+                "worst_severity": worst,
+                "color": SEVERITY_COLORS.get(worst, SEVERITY_COLORS["info"]),
+            }
+        )
 
     return result
 
@@ -456,8 +479,7 @@ def _worst_severity(counts: dict) -> str:
     return "info"
 
 
-def get_host_findings(conn, scan_id: str, host_ip: str,
-                      limit: int = 20) -> list[dict]:
+def get_host_findings(conn, scan_id: str, host_ip: str, limit: int = 20) -> list[dict]:
     """Return top N findings for a host in a scan, ordered by severity desc."""
     host = conn.execute(
         "SELECT id FROM nc_vuln_hosts WHERE scan_id=? AND ip=? LIMIT 1",

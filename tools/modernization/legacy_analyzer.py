@@ -25,6 +25,7 @@ Usage:
 
 Classification: CUI // SP-CTI
 """
+
 from __future__ import annotations
 
 import argparse
@@ -76,7 +77,7 @@ LANGUAGE_EXTENSIONS = {
 
 # Comment patterns per language family
 COMMENT_PATTERNS = {
-    "hash": {"line": "#"},                       # Python, Ruby, YAML
+    "hash": {"line": "#"},  # Python, Ruby, YAML
     "slash": {"line": "//", "block_start": "/*", "block_end": "*/"},  # Java, C#, JS, TS, C/C++, Go
 }
 
@@ -102,6 +103,7 @@ PRODUCTIVITY_RATE = 20.0
 # Database helper
 # ---------------------------------------------------------------------------
 
+
 def _get_db():
     """Return a sqlite3 connection to the ICDEV™ operational database.
 
@@ -110,8 +112,7 @@ def _get_db():
     """
     if not DB_PATH.exists():
         raise FileNotFoundError(
-            f"ICDEV™ database not found at {DB_PATH}. "
-            "Run 'python tools/db/init_icdev_db.py' first."
+            f"ICDEV™ database not found at {DB_PATH}. Run 'python tools/db/init_icdev_db.py' first."
         )
     conn = get_connection()
     conn.execute("PRAGMA journal_mode=WAL")
@@ -122,6 +123,7 @@ def _get_db():
 # ---------------------------------------------------------------------------
 # Line counting
 # ---------------------------------------------------------------------------
+
 
 def _count_lines(file_path):
     """Count total, code, comment, and blank lines in a source file.
@@ -194,6 +196,7 @@ def _count_lines(file_path):
 # ---------------------------------------------------------------------------
 # Application registration
 # ---------------------------------------------------------------------------
+
 
 def register_application(project_id, name, source_path, description=None):
     """Register a legacy application in the ICDEV™ database.
@@ -274,9 +277,19 @@ def register_application(project_id, name, source_path, description=None):
                 file_count, source_hash, registered_at)
                VALUES (?, ?, ?, ?, ?, ?, 'registered', ?, ?, ?, ?, ?, ?, ?)""",
             (
-                app_id, project_id, name, description, str(source_path),
-                primary_language, loc_total, loc_code, loc_comment, loc_blank,
-                file_count, source_hash, now,
+                app_id,
+                project_id,
+                name,
+                description,
+                str(source_path),
+                primary_language,
+                loc_total,
+                loc_code,
+                loc_comment,
+                loc_blank,
+                file_count,
+                source_hash,
+                now,
             ),
         )
         conn.commit()
@@ -310,6 +323,7 @@ def register_application(project_id, name, source_path, description=None):
 # ---------------------------------------------------------------------------
 # Python analysis (AST-based)
 # ---------------------------------------------------------------------------
+
 
 class _PythonComplexityVisitor(ast.NodeVisitor):
     """Count branching nodes for cyclomatic complexity estimation."""
@@ -415,8 +429,12 @@ def analyze_python(app_id, source_path):
                         qualified_name, loc, cyclomatic_complexity, properties)
                        VALUES (?, ?, ?, 'module', ?, ?, ?, ?, ?)""",
                     (
-                        module_comp_id, app_id, fname, rel_path,
-                        module_name, line_counts["code"],
+                        module_comp_id,
+                        app_id,
+                        fname,
+                        rel_path,
+                        module_name,
+                        line_counts["code"],
                         _compute_python_complexity(tree),
                         json.dumps({"total_lines": line_counts["total"]}),
                     ),
@@ -428,8 +446,7 @@ def analyze_python(app_id, source_path):
                     if isinstance(node, ast.Import):
                         for alias in node.names:
                             _insert_dependency(
-                                conn, app_id, module_comp_id, None,
-                                "import", evidence=f"import {alias.name}"
+                                conn, app_id, module_comp_id, None, "import", evidence=f"import {alias.name}"
                             )
                             dependencies_added += 1
 
@@ -437,8 +454,7 @@ def analyze_python(app_id, source_path):
                         mod = node.module or ""
                         names = ", ".join(a.name for a in node.names) if node.names else "*"
                         _insert_dependency(
-                            conn, app_id, module_comp_id, None,
-                            "import", evidence=f"from {mod} import {names}"
+                            conn, app_id, module_comp_id, None, "import", evidence=f"from {mod} import {names}"
                         )
                         dependencies_added += 1
 
@@ -463,7 +479,8 @@ def analyze_python(app_id, source_path):
                             "bases": bases,
                             "decorators": decorators,
                             "method_count": sum(
-                                1 for n in ast.iter_child_nodes(node)
+                                1
+                                for n in ast.iter_child_nodes(node)
                                 if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
                             ),
                         }
@@ -475,9 +492,16 @@ def analyze_python(app_id, source_path):
                                 cyclomatic_complexity, properties)
                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                             (
-                                class_id, app_id, node.name, comp_type, rel_path,
-                                f"{module_name}.{node.name}", module_comp_id,
-                                class_loc, class_complexity, json.dumps(props),
+                                class_id,
+                                app_id,
+                                node.name,
+                                comp_type,
+                                rel_path,
+                                f"{module_name}.{node.name}",
+                                module_comp_id,
+                                class_loc,
+                                class_complexity,
+                                json.dumps(props),
                             ),
                         )
                         components_added += 1
@@ -486,8 +510,7 @@ def analyze_python(app_id, source_path):
                         for base_name in bases:
                             if base_name and base_name not in ("object",):
                                 _insert_dependency(
-                                    conn, app_id, class_id, None,
-                                    "inheritance", evidence=f"extends {base_name}"
+                                    conn, app_id, class_id, None, "inheritance", evidence=f"extends {base_name}"
                                 )
                                 dependencies_added += 1
 
@@ -507,8 +530,11 @@ def analyze_python(app_id, source_path):
                                                 path, handler_function, parameters)
                                                VALUES (?, ?, ?, ?, ?, ?, ?)""",
                                             (
-                                                api_id, app_id, class_id,
-                                                route_info["method"], route_info["path"],
+                                                api_id,
+                                                app_id,
+                                                class_id,
+                                                route_info["method"],
+                                                route_info["path"],
                                                 f"{node.name}.{child.name}",
                                                 json.dumps(route_info.get("params", [])),
                                             ),
@@ -529,9 +555,14 @@ def analyze_python(app_id, source_path):
                                 cyclomatic_complexity, properties)
                                VALUES (?, ?, ?, 'function', ?, ?, ?, ?, ?, ?)""",
                             (
-                                func_id, app_id, node.name, rel_path,
-                                f"{module_name}.{node.name}", module_comp_id,
-                                func_loc, func_complexity,
+                                func_id,
+                                app_id,
+                                node.name,
+                                rel_path,
+                                f"{module_name}.{node.name}",
+                                module_comp_id,
+                                func_loc,
+                                func_complexity,
                                 json.dumps({"decorators": decorators}),
                             ),
                         )
@@ -548,8 +579,11 @@ def analyze_python(app_id, source_path):
                                         path, handler_function, parameters)
                                        VALUES (?, ?, ?, ?, ?, ?, ?)""",
                                     (
-                                        api_id, app_id, func_id,
-                                        route_info["method"], route_info["path"],
+                                        api_id,
+                                        app_id,
+                                        func_id,
+                                        route_info["method"],
+                                        route_info["path"],
                                         node.name,
                                         json.dumps(route_info.get("params", [])),
                                     ),
@@ -566,7 +600,9 @@ def analyze_python(app_id, source_path):
                             handler_function)
                            VALUES (?, ?, ?, ?, ?, ?)""",
                         (
-                            api_id, app_id, module_comp_id,
+                            api_id,
+                            app_id,
+                            module_comp_id,
                             url_info.get("method", "ALL"),
                             url_info["path"],
                             url_info.get("handler", ""),
@@ -702,6 +738,7 @@ def _extract_django_urls(source_code, rel_path):
 # Java analysis (regex-based)
 # ---------------------------------------------------------------------------
 
+
 def analyze_java(app_id, source_path):
     """Analyze Java source files using regex pattern matching.
 
@@ -809,7 +846,7 @@ def analyze_java(app_id, source_path):
 
                 # Classes
                 for cm in re_class.finditer(source_code):
-                    kind = cm.group(1)       # class, interface, enum
+                    kind = cm.group(1)  # class, interface, enum
                     class_name = cm.group(2)
                     extends = cm.group(3)
                     implements = cm.group(4)
@@ -838,8 +875,13 @@ def analyze_java(app_id, source_path):
                             qualified_name, loc, cyclomatic_complexity, properties)
                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                         (
-                            comp_id, app_id, class_name, comp_type, rel_path,
-                            qualified, line_counts["code"],
+                            comp_id,
+                            app_id,
+                            class_name,
+                            comp_type,
+                            rel_path,
+                            qualified,
+                            line_counts["code"],
                             _estimate_complexity_regex(source_code),
                             json.dumps(props),
                         ),
@@ -848,10 +890,7 @@ def analyze_java(app_id, source_path):
 
                     # Inheritance dependency
                     if extends:
-                        _insert_dependency(
-                            conn, app_id, comp_id, None,
-                            "inheritance", evidence=f"extends {extends}"
-                        )
+                        _insert_dependency(conn, app_id, comp_id, None, "inheritance", evidence=f"extends {extends}")
                         dependencies_added += 1
 
                     # Implements dependency
@@ -860,26 +899,19 @@ def analyze_java(app_id, source_path):
                             iface = iface.strip()
                             if iface:
                                 _insert_dependency(
-                                    conn, app_id, comp_id, None,
-                                    "inheritance", evidence=f"implements {iface}"
+                                    conn, app_id, comp_id, None, "inheritance", evidence=f"implements {iface}"
                                 )
                                 dependencies_added += 1
 
                     # Import dependencies
                     for imp in import_list:
-                        _insert_dependency(
-                            conn, app_id, comp_id, None,
-                            "import", evidence=f"import {imp}"
-                        )
+                        _insert_dependency(conn, app_id, comp_id, None, "import", evidence=f"import {imp}")
                         dependencies_added += 1
 
                     # Annotation-based dependencies (EJB injection, Spring autowire)
                     for ann in file_annotations:
                         if ann in ("Inject", "Autowired", "EJB", "Resource"):
-                            _insert_dependency(
-                                conn, app_id, comp_id, None,
-                                "injection", evidence=f"@{ann}"
-                            )
+                            _insert_dependency(conn, app_id, comp_id, None, "injection", evidence=f"@{ann}")
                             dependencies_added += 1
 
                     # HTTP endpoint extraction from annotations
@@ -903,8 +935,11 @@ def analyze_java(app_id, source_path):
                                     handler_function)
                                    VALUES (?, ?, ?, ?, ?, ?)""",
                                 (
-                                    api_id, app_id, comp_id,
-                                    http_method.upper(), full_path,
+                                    api_id,
+                                    app_id,
+                                    comp_id,
+                                    http_method.upper(),
+                                    full_path,
                                     f"{class_name}.{ann_name}",
                                 ),
                             )
@@ -938,9 +973,15 @@ def _estimate_complexity_regex(source_code):
     """
     complexity = 1
     branching_keywords = [
-        r"\bif\s*\(", r"\belse\s+if\s*\(", r"\bfor\s*\(",
-        r"\bwhile\s*\(", r"\bcatch\s*\(", r"\bcase\s+",
-        r"\b\?\s*", r"&&", r"\|\|",
+        r"\bif\s*\(",
+        r"\belse\s+if\s*\(",
+        r"\bfor\s*\(",
+        r"\bwhile\s*\(",
+        r"\bcatch\s*\(",
+        r"\bcase\s+",
+        r"\b\?\s*",
+        r"&&",
+        r"\|\|",
     ]
     for pattern in branching_keywords:
         complexity += len(re.findall(pattern, source_code))
@@ -1022,6 +1063,7 @@ def _detect_spring_beans(source_path, app_id, conn):
 # ---------------------------------------------------------------------------
 # C# analysis (regex-based)
 # ---------------------------------------------------------------------------
+
 
 def analyze_csharp(app_id, source_path):
     """Analyze C# source files using regex pattern matching.
@@ -1158,8 +1200,13 @@ def analyze_csharp(app_id, source_path):
                             qualified_name, loc, cyclomatic_complexity, properties)
                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                         (
-                            comp_id, app_id, class_name, comp_type, rel_path,
-                            qualified, line_counts["code"],
+                            comp_id,
+                            app_id,
+                            class_name,
+                            comp_type,
+                            rel_path,
+                            qualified,
+                            line_counts["code"],
                             _estimate_complexity_regex(source_code),
                             json.dumps(props),
                         ),
@@ -1168,35 +1215,26 @@ def analyze_csharp(app_id, source_path):
 
                     # Inheritance / implementation dependencies
                     for base in base_types:
-                        _insert_dependency(
-                            conn, app_id, comp_id, None,
-                            "inheritance", evidence=f"inherits {base}"
-                        )
+                        _insert_dependency(conn, app_id, comp_id, None, "inheritance", evidence=f"inherits {base}")
                         dependencies_added += 1
 
                     # Using dependencies
                     for u in usings:
-                        _insert_dependency(
-                            conn, app_id, comp_id, None,
-                            "import", evidence=f"using {u}"
-                        )
+                        _insert_dependency(conn, app_id, comp_id, None, "import", evidence=f"using {u}")
                         dependencies_added += 1
 
                     # Injection via [Inject] or constructor injection
                     for attr in file_attrs:
                         if attr in ("Inject", "Dependency"):
-                            _insert_dependency(
-                                conn, app_id, comp_id, None,
-                                "injection", evidence=f"[{attr}]"
-                            )
+                            _insert_dependency(conn, app_id, comp_id, None, "injection", evidence=f"[{attr}]")
                             dependencies_added += 1
 
                     # WCF ServiceContract detection
                     if "ServiceContract" in file_attrs and kind == "interface":
                         # Extract OperationContract methods as API endpoints
                         op_pattern = re.compile(
-                            r'\[OperationContract\].*?'
-                            r'(?:public|private|protected|internal)?\s*[\w<>\[\]]+\s+(\w+)\s*\(',
+                            r"\[OperationContract\].*?"
+                            r"(?:public|private|protected|internal)?\s*[\w<>\[\]]+\s+(\w+)\s*\(",
                             re.DOTALL,
                         )
                         for op in op_pattern.finditer(source_code):
@@ -1238,8 +1276,8 @@ def analyze_csharp(app_id, source_path):
                     # Route attribute on methods
                     route_method_pattern = re.compile(
                         r'\[Route\s*\(\s*["\']([^"\']+)["\']\s*\)\]'
-                        r'\s*(?:\[Http(\w+)\])?\s*'
-                        r'(?:public|private|protected|internal)\s+[\w<>\[\]]+\s+(\w+)\s*\(',
+                        r"\s*(?:\[Http(\w+)\])?\s*"
+                        r"(?:public|private|protected|internal)\s+[\w<>\[\]]+\s+(\w+)\s*\(",
                         re.MULTILINE,
                     )
                     for rm in route_method_pattern.finditer(source_code):
@@ -1259,8 +1297,11 @@ def analyze_csharp(app_id, source_path):
                                 handler_function)
                                VALUES (?, ?, ?, ?, ?, ?)""",
                             (
-                                api_id, app_id, comp_id,
-                                r_method.upper(), full_path,
+                                api_id,
+                                app_id,
+                                comp_id,
+                                r_method.upper(),
+                                full_path,
                                 f"{class_name}.{r_handler}",
                             ),
                         )
@@ -1283,6 +1324,7 @@ def analyze_csharp(app_id, source_path):
 # Shared helpers
 # ---------------------------------------------------------------------------
 
+
 def _insert_dependency(conn, app_id, source_comp_id, target_comp_id, dep_type, evidence=None):
     """Insert a dependency record, ignoring duplicates."""
     try:
@@ -1300,6 +1342,7 @@ def _insert_dependency(conn, app_id, source_comp_id, target_comp_id, dep_type, e
 # ---------------------------------------------------------------------------
 # Framework and database detection
 # ---------------------------------------------------------------------------
+
 
 def _detect_framework(source_path, language):
     """Identify the application framework from file/code indicators.
@@ -1488,23 +1531,40 @@ def _detect_database(source_path):
 
     db_indicators = {
         "postgresql": [
-            "psycopg2", "postgresql", "postgres", "org.postgresql",
-            "Npgsql", "5432",
+            "psycopg2",
+            "postgresql",
+            "postgres",
+            "org.postgresql",
+            "Npgsql",
+            "5432",
         ],
         "mysql": [
-            "pymysql", "mysqlclient", "mysql-connector", "com.mysql",
-            "MySql.Data", "3306",
+            "pymysql",
+            "mysqlclient",
+            "mysql-connector",
+            "com.mysql",
+            "MySql.Data",
+            "3306",
         ],
         "oracle": [
-            "cx_Oracle", "oracledb", "oracle.jdbc", "Oracle.ManagedDataAccess",
+            "cx_Oracle",
+            "oracledb",
+            "oracle.jdbc",
+            "Oracle.ManagedDataAccess",
             "1521",
         ],
         "mssql": [
-            "pyodbc", "pymssql", "com.microsoft.sqlserver",
-            "System.Data.SqlClient", "SqlConnection", "1433",
+            "pyodbc",
+            "pymssql",
+            "com.microsoft.sqlserver",
+            "System.Data.SqlClient",
+            "SqlConnection",
+            "1433",
         ],
         "sqlite": [
-            "sqlite3", "org.sqlite", "Microsoft.Data.Sqlite",
+            "sqlite3",
+            "org.sqlite",
+            "Microsoft.Data.Sqlite",
             "System.Data.SQLite",
         ],
         "db2": ["ibm_db", "com.ibm.db2"],
@@ -1513,12 +1573,31 @@ def _detect_database(source_path):
     }
 
     # Scan files for DB indicators
-    scan_extensions = {".py", ".java", ".cs", ".xml", ".json", ".properties", ".yaml", ".yml", ".cfg", ".ini", ".config"}
+    scan_extensions = {
+        ".py",
+        ".java",
+        ".cs",
+        ".xml",
+        ".json",
+        ".properties",
+        ".yaml",
+        ".yml",
+        ".cfg",
+        ".ini",
+        ".config",
+    }
     scan_filenames = {
-        "settings.py", "database.py", "db.py",
-        "application.properties", "application.yml", "application.yaml",
-        "persistence.xml", "hibernate.cfg.xml",
-        "web.config", "appsettings.json", "appsettings.Development.json",
+        "settings.py",
+        "database.py",
+        "db.py",
+        "application.properties",
+        "application.yml",
+        "application.yaml",
+        "persistence.xml",
+        "hibernate.cfg.xml",
+        "web.config",
+        "appsettings.json",
+        "appsettings.Development.json",
     }
 
     for root, _dirs, files in os.walk(str(source_path)):
@@ -1544,6 +1623,7 @@ def _detect_database(source_path):
 # ---------------------------------------------------------------------------
 # Quality metrics
 # ---------------------------------------------------------------------------
+
 
 def _compute_tech_debt(app_id):
     """Estimate technical debt in hours for a legacy application.
@@ -1662,6 +1742,7 @@ def _compute_maintainability_index(app_id):
 # Full analysis orchestrator
 # ---------------------------------------------------------------------------
 
+
 def analyze_full(project_id, app_id, source_path_override=None):
     """Run complete static analysis on a registered legacy application.
 
@@ -1772,9 +1853,13 @@ def analyze_full(project_id, app_id, source_path_override=None):
                    analyzed_at = ?
                WHERE id = ?""",
             (
-                framework, framework_version,
-                tech_debt, maintainability,
-                avg_complexity, now, app_id,
+                framework,
+                framework_version,
+                tech_debt,
+                maintainability,
+                avg_complexity,
+                now,
+                app_id,
             ),
         )
         conn.commit()
@@ -1805,11 +1890,12 @@ def analyze_full(project_id, app_id, source_path_override=None):
     print(f"[INFO] Analysis complete for {row['name']}")
     print(f"       Framework: {framework or 'unknown'} {framework_version or ''}")
     print(f"       Database: {db_type or 'not detected'}")
-    print(f"       Components: {analysis_result['components']} | "
-          f"Dependencies: {analysis_result['dependencies']} | "
-          f"APIs: {analysis_result['apis']}")
-    print(f"       Complexity: {avg_complexity} | Tech Debt: {tech_debt}h | "
-          f"Maintainability: {maintainability}")
+    print(
+        f"       Components: {analysis_result['components']} | "
+        f"Dependencies: {analysis_result['dependencies']} | "
+        f"APIs: {analysis_result['apis']}"
+    )
+    print(f"       Complexity: {avg_complexity} | Tech Debt: {tech_debt}h | Maintainability: {maintainability}")
 
     return summary
 
@@ -1857,6 +1943,7 @@ def _update_dependency_counts(app_id):
 # CLI interface
 # ---------------------------------------------------------------------------
 
+
 def main():
     """Command-line entry point for legacy code analysis."""
     parser = argparse.ArgumentParser(
@@ -1884,11 +1971,13 @@ Classification: CUI // SP-CTI
 
     action_group = parser.add_mutually_exclusive_group(required=True)
     action_group.add_argument(
-        "--register", action="store_true",
+        "--register",
+        action="store_true",
         help="Register a new legacy application for analysis",
     )
     action_group.add_argument(
-        "--analyze", action="store_true",
+        "--analyze",
+        action="store_true",
         help="Run full static analysis on a registered application",
     )
 
@@ -1897,8 +1986,7 @@ Classification: CUI // SP-CTI
     parser.add_argument("--app-id", help="Legacy application ID (required for --analyze)")
     parser.add_argument("--source-path", help="Path to source code root")
     parser.add_argument("--description", help="Application description (for --register)")
-    parser.add_argument("--json", action="store_true", dest="json_output",
-                        help="Output results as JSON")
+    parser.add_argument("--json", action="store_true", dest="json_output", help="Output results as JSON")
 
     args = parser.parse_args()
 

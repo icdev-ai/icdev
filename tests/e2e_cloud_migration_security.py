@@ -99,13 +99,15 @@ def test_page_loads():
         url = f"{BASE_URL}{page['path']}"
         status, body, err = fetch_url(url)
         ok = status == 200
-        results.append({
-            "page": page["path"],
-            "status": status,
-            "ok": ok,
-            "has_content": len(body) > 500 if ok else False,
-            "error": err,
-        })
+        results.append(
+            {
+                "page": page["path"],
+                "status": status,
+                "ok": ok,
+                "has_content": len(body) > 500 if ok else False,
+                "error": err,
+            }
+        )
         symbol = "PASS" if ok else "FAIL"
         print(f"  [{symbol}] {page['path']} -> {status} ({len(body)} bytes)")
     return results
@@ -127,13 +129,15 @@ def test_api_endpoints():
             except json.JSONDecodeError:
                 pass
         ok = status == 200 and is_json
-        results.append({
-            "api": api,
-            "status": status,
-            "ok": ok,
-            "is_json": is_json,
-            "error": err,
-        })
+        results.append(
+            {
+                "api": api,
+                "status": status,
+                "ok": ok,
+                "is_json": is_json,
+                "error": err,
+            }
+        )
         symbol = "PASS" if ok else "FAIL"
         print(f"  [{symbol}] {api} -> {status} {'(JSON)' if is_json else '(not JSON)'}")
     return results
@@ -151,10 +155,12 @@ def test_navbar_links():
     for page in PAGES:
         href = f'href="{page["path"]}"'
         found = href in body
-        results.append({
-            "page": page["path"],
-            "in_navbar": found,
-        })
+        results.append(
+            {
+                "page": page["path"],
+                "in_navbar": found,
+            }
+        )
         symbol = "PASS" if found else "FAIL"
         print(f"  [{symbol}] Navbar link: {page['path']}")
     return results
@@ -197,32 +203,35 @@ def test_selenium_screenshots():
                 # Check for JS errors (exclude favicon 404)
                 logs = driver.get_log("browser")
                 severe_errors = [
-                    log for log in logs
-                    if log["level"] == "SEVERE" and "favicon" not in log.get("message", "").lower()
+                    log for log in logs if log["level"] == "SEVERE" and "favicon" not in log.get("message", "").lower()
                 ]
 
                 driver.save_screenshot(screenshot_path)
                 ok = len(severe_errors) == 0
-                results.append({
-                    "page": page["path"],
-                    "screenshot": screenshot_path,
-                    "js_errors": len(severe_errors),
-                    "error_details": [e["message"] for e in severe_errors[:3]],
-                    "ok": ok,
-                })
+                results.append(
+                    {
+                        "page": page["path"],
+                        "screenshot": screenshot_path,
+                        "js_errors": len(severe_errors),
+                        "error_details": [e["message"] for e in severe_errors[:3]],
+                        "ok": ok,
+                    }
+                )
                 symbol = "PASS" if ok else "WARN"
                 print(f"  [{symbol}] Screenshot: {slug} ({len(severe_errors)} JS errors)")
                 if severe_errors:
                     for err in severe_errors[:2]:
                         print(f"         JS: {err['message'][:120]}")
             except Exception as e:
-                results.append({
-                    "page": page["path"],
-                    "screenshot": None,
-                    "js_errors": -1,
-                    "ok": False,
-                    "error": str(e),
-                })
+                results.append(
+                    {
+                        "page": page["path"],
+                        "screenshot": None,
+                        "js_errors": -1,
+                        "ok": False,
+                        "error": str(e),
+                    }
+                )
                 print(f"  [FAIL] Screenshot {slug}: {e}")
     finally:
         driver.quit()

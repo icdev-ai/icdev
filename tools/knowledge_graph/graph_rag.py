@@ -70,26 +70,87 @@ SCORING_PROFILES: Dict[str, Dict[str, float]] = {
 # Keywords for auto-detecting profile from query text
 PROFILE_KEYWORDS: Dict[str, List[str]] = {
     "compliance": [
-        "compliance", "compliant", "audit", "nist", "fedramp", "cmmc",
-        "stig", "poam", "ssp", "ato", "control", "800-53", "oscal",
-        "hipaa", "pci", "cjis", "regulation", "regulatory", "framework",
-        "authorization", "accreditation", "assessment",
+        "compliance",
+        "compliant",
+        "audit",
+        "nist",
+        "fedramp",
+        "cmmc",
+        "stig",
+        "poam",
+        "ssp",
+        "ato",
+        "control",
+        "800-53",
+        "oscal",
+        "hipaa",
+        "pci",
+        "cjis",
+        "regulation",
+        "regulatory",
+        "framework",
+        "authorization",
+        "accreditation",
+        "assessment",
     ],
     "exploratory": [
-        "explore", "discover", "gap", "gaps", "find", "search", "what",
-        "overview", "landscape", "broad", "unknown", "investigate",
-        "opportunities", "patterns", "trends", "related", "connections",
+        "explore",
+        "discover",
+        "gap",
+        "gaps",
+        "find",
+        "search",
+        "what",
+        "overview",
+        "landscape",
+        "broad",
+        "unknown",
+        "investigate",
+        "opportunities",
+        "patterns",
+        "trends",
+        "related",
+        "connections",
     ],
     "provenance": [
-        "provenance", "lineage", "origin", "trace", "tracing", "source",
-        "chain", "custody", "history", "audit trail", "evidence",
-        "artifact", "derivation", "prov", "w3c",
+        "provenance",
+        "lineage",
+        "origin",
+        "trace",
+        "tracing",
+        "source",
+        "chain",
+        "custody",
+        "history",
+        "audit trail",
+        "evidence",
+        "artifact",
+        "derivation",
+        "prov",
+        "w3c",
     ],
     "security": [
-        "security", "secure", "threat", "vulnerability", "cve", "attack",
-        "injection", "sast", "exploit", "malware", "zero trust", "zta",
-        "encryption", "authentication", "authorization", "rbac",
-        "atlas", "mitre", "owasp", "stride", "penetration",
+        "security",
+        "secure",
+        "threat",
+        "vulnerability",
+        "cve",
+        "attack",
+        "injection",
+        "sast",
+        "exploit",
+        "malware",
+        "zero trust",
+        "zta",
+        "encryption",
+        "authentication",
+        "authorization",
+        "rbac",
+        "atlas",
+        "mitre",
+        "owasp",
+        "stride",
+        "penetration",
     ],
 }
 
@@ -100,6 +161,7 @@ RECENCY_HALF_LIFE_DAYS = 30.0
 # ---------------------------------------------------------------------------
 # DB Helpers
 # ---------------------------------------------------------------------------
+
 
 def _get_db() -> sqlite3.Connection:
     """Get a connection to icdev.db."""
@@ -178,6 +240,7 @@ def _query_hash(query: str) -> str:
 # Profile Auto-Detection (D-KARL-1)
 # ---------------------------------------------------------------------------
 
+
 def _auto_detect_profile(query: str) -> str:
     """Detect scoring profile from query keywords.
 
@@ -217,6 +280,7 @@ def _auto_detect_profile(query: str) -> str:
 # ---------------------------------------------------------------------------
 # Semantic Search Helpers
 # ---------------------------------------------------------------------------
+
 
 def _cosine_similarity(a: bytes, b: bytes) -> float:
     """Compute cosine similarity between two embedding BLOBs.
@@ -261,10 +325,12 @@ def _embed_query(query: str) -> Optional[List[float]]:
         List of floats (768 dimensions for nomic-embed-text), or None.
     """
     try:
-        payload = json.dumps({
-            "model": "nomic-embed-text",
-            "input": query,
-        }).encode("utf-8")
+        payload = json.dumps(
+            {
+                "model": "nomic-embed-text",
+                "input": query,
+            }
+        ).encode("utf-8")
         req = urllib.request.Request(
             "http://localhost:11434/api/embed",
             data=payload,
@@ -277,8 +343,7 @@ def _embed_query(query: str) -> Optional[List[float]]:
         if embeddings and len(embeddings) > 0 and len(embeddings[0]) > 0:
             return embeddings[0]
         return None
-    except (urllib.error.URLError, urllib.error.HTTPError,
-            OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
+    except (urllib.error.URLError, urllib.error.HTTPError, OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
         logger.debug("Query embedding unavailable: %s", exc)
         return None
 
@@ -286,6 +351,7 @@ def _embed_query(query: str) -> Optional[List[float]]:
 # ---------------------------------------------------------------------------
 # Node Scoring (D-KARL-1)
 # ---------------------------------------------------------------------------
+
 
 def _compute_recency_score(created_at: str) -> float:
     """Exponential time-decay recency score.
@@ -366,11 +432,7 @@ def _score_nodes(
 
         recency = _compute_recency_score(created_at)
 
-        base_score = (
-            w_edge * avg_ew
-            + w_centrality * min(centrality, 1.0)
-            + w_recency * recency
-        )
+        base_score = w_edge * avg_ew + w_centrality * min(centrality, 1.0) + w_recency * recency
 
         # Text-match relevance bonus (up to +0.3)
         relevance_bonus = 0.0
@@ -397,6 +459,7 @@ def _score_nodes(
 # ---------------------------------------------------------------------------
 # Context Formatting
 # ---------------------------------------------------------------------------
+
 
 def _format_context(
     nodes: List[Dict[str, Any]],
@@ -444,10 +507,7 @@ def _format_context(
     lines.append("")
 
     # Edges section — only include edges between returned nodes
-    relevant_edges = [
-        e for e in edges
-        if e.get("source_id") in node_ids or e.get("target_id") in node_ids
-    ]
+    relevant_edges = [e for e in edges if e.get("source_id") in node_ids or e.get("target_id") in node_ids]
 
     if relevant_edges:
         lines.append("--- Relationships ---")
@@ -476,6 +536,7 @@ def _format_context(
 # ---------------------------------------------------------------------------
 # Context Compression (D-KARL-2)
 # ---------------------------------------------------------------------------
+
 
 def _compress_context(context: str, query: str) -> str:
     """Compress verbose neighborhood context via scanner-tier LLM.
@@ -524,7 +585,8 @@ def _compress_context(context: str, query: str) -> str:
         if compressed and len(compressed) > 50:
             logger.info(
                 "Context compressed: %d -> %d chars (%.0f%% reduction)",
-                len(context), len(compressed),
+                len(context),
+                len(compressed),
                 (1 - len(compressed) / len(context)) * 100,
             )
             return compressed
@@ -540,6 +602,7 @@ def _compress_context(context: str, query: str) -> str:
 # ---------------------------------------------------------------------------
 # Retrieval Logging (append-only, NIST AU)
 # ---------------------------------------------------------------------------
+
 
 def _log_retrieval(
     conn: sqlite3.Connection,
@@ -579,6 +642,7 @@ def _log_retrieval(
 # ---------------------------------------------------------------------------
 # Main Retrieval Function
 # ---------------------------------------------------------------------------
+
 
 def retrieve(
     query: str,
@@ -660,7 +724,8 @@ def retrieve(
         semantic_search_used = False
         if query_embedding is not None:
             query_embedding_blob = struct.pack(
-                f"{len(query_embedding)}f", *query_embedding,
+                f"{len(query_embedding)}f",
+                *query_embedding,
             )
 
         # Step 2: Search nodes by keyword matching
@@ -748,8 +813,14 @@ def retrieve(
             # Log empty retrieval
             if graph_ids:
                 _log_retrieval(
-                    conn, graph_ids[0], query, selected_profile,
-                    0, 0, False, elapsed_ms,
+                    conn,
+                    graph_ids[0],
+                    query,
+                    selected_profile,
+                    0,
+                    0,
+                    False,
+                    elapsed_ms,
                 )
             return {
                 "status": "ok",
@@ -808,7 +879,10 @@ def retrieve(
 
         # Step 4: Score nodes
         scored_nodes = _score_nodes(
-            matched_nodes, all_edges, selected_profile, query_terms,
+            matched_nodes,
+            all_edges,
+            selected_profile,
+            query_terms,
         )
 
         # Step 5: Take top_k
@@ -816,10 +890,7 @@ def retrieve(
 
         # Filter edges to only those connecting top_k nodes
         top_ids = {n["id"] for n in top_nodes}
-        top_edges = [
-            e for e in all_edges
-            if e.get("source_id") in top_ids or e.get("target_id") in top_ids
-        ]
+        top_edges = [e for e in all_edges if e.get("source_id") in top_ids or e.get("target_id") in top_ids]
 
         # Step 6: Format context
         raw_context = _format_context(top_nodes, top_edges)
@@ -886,34 +957,42 @@ def retrieve(
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main() -> None:
     """CLI entry point."""
     parser = argparse.ArgumentParser(
         description="GraphRAG retrieval with scoring profiles (D-KARL-1/2)",
     )
     parser.add_argument(
-        "--query", required=True,
+        "--query",
+        required=True,
         help="Search query text",
     )
     parser.add_argument(
-        "--project-id", default=None,
+        "--project-id",
+        default=None,
         help="Optional project ID filter",
     )
     parser.add_argument(
-        "--profile", default=None,
+        "--profile",
+        default=None,
         choices=list(SCORING_PROFILES.keys()),
         help="Scoring profile (auto-detected from query if omitted)",
     )
     parser.add_argument(
-        "--top-k", type=int, default=10,
+        "--top-k",
+        type=int,
+        default=10,
         help="Maximum nodes to return (default: 10)",
     )
     parser.add_argument(
-        "--no-compress", action="store_true",
+        "--no-compress",
+        action="store_true",
         help="Skip scanner-tier LLM context compression",
     )
     parser.add_argument(
-        "--json", action="store_true",
+        "--json",
+        action="store_true",
         help="Output as JSON",
     )
 
@@ -937,8 +1016,7 @@ def main() -> None:
         print(f"Status:   {status}")
         print(f"Profile:  {profile}{auto}")
         print(f"Matched:  {result.get('nodes_matched', 0)} nodes")
-        print(f"Returned: {result.get('nodes_returned', 0)} nodes, "
-              f"{result.get('edges_returned', 0)} edges")
+        print(f"Returned: {result.get('nodes_returned', 0)} nodes, {result.get('edges_returned', 0)} edges")
         print(f"Compressed: {result.get('compressed', False)}")
         print(f"Semantic:   {result.get('semantic_search', False)}")
         print(f"Time:     {result.get('retrieval_ms', 0)} ms")

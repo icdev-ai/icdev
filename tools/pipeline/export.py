@@ -89,6 +89,7 @@ def export_pipeline(graph, name, fmt):
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+
 def _group_by_stage(nodes):
     """Group nodes by their pipeline stage."""
     stages = {}
@@ -101,15 +102,31 @@ def _group_by_stage(nodes):
 def _infer_stage(node_type):
     """Infer pipeline stage from node type prefix."""
     prefix_map = {
-        "scm-": "source", "branch-": "source", "commit-": "source",
-        "build-": "build", "cicd-": "build",
-        "scan-": "test", "sbom-": "build",
-        "registry-": "package", "sign-": "package", "attest-": "package",
-        "policy-": "policy_gate", "gate-": "policy_gate", "gcp-binary": "policy_gate",
-        "deploy-": "deploy_prod", "k8s-": "deploy_prod", "aws-eks": "deploy_prod",
-        "az-aks": "deploy_prod", "gcp-gke": "deploy_prod", "oci-oke": "deploy_prod",
-        "openshift": "deploy_prod", "rke2": "deploy_prod", "mesh-": "deploy_prod",
-        "mon-": "monitor", "aws-cloudwatch": "monitor", "az-monitor": "monitor",
+        "scm-": "source",
+        "branch-": "source",
+        "commit-": "source",
+        "build-": "build",
+        "cicd-": "build",
+        "scan-": "test",
+        "sbom-": "build",
+        "registry-": "package",
+        "sign-": "package",
+        "attest-": "package",
+        "policy-": "policy_gate",
+        "gate-": "policy_gate",
+        "gcp-binary": "policy_gate",
+        "deploy-": "deploy_prod",
+        "k8s-": "deploy_prod",
+        "aws-eks": "deploy_prod",
+        "az-aks": "deploy_prod",
+        "gcp-gke": "deploy_prod",
+        "oci-oke": "deploy_prod",
+        "openshift": "deploy_prod",
+        "rke2": "deploy_prod",
+        "mesh-": "deploy_prod",
+        "mon-": "monitor",
+        "aws-cloudwatch": "monitor",
+        "az-monitor": "monitor",
         "comp-": "compliance",
     }
     for prefix, stage in prefix_map.items():
@@ -132,6 +149,7 @@ def _get_stage_order(stage_key):
 
 # ── GitLab CI ─────────────────────────────────────────────────────────────────
 
+
 def _to_gitlab_ci(nodes, edges, name):
     stages_map = _group_by_stage(nodes)
     ordered = sorted(stages_map.keys(), key=_get_stage_order)
@@ -150,13 +168,15 @@ def _to_gitlab_ci(nodes, edges, name):
         stage_nodes = stages_map[stage_key]
         for node in stage_nodes:
             job_name = node.get("label", node.get("type", "job")).replace(" ", "_").lower()
-            lines.extend([
-                f"{job_name}:",
-                f"  stage: {stage_key}",
-                f"  # Tool: {node.get('type', 'unknown')}",
-                "  script:",
-                f"    - echo \"Running {node.get('label', 'step')}\"",
-            ])
+            lines.extend(
+                [
+                    f"{job_name}:",
+                    f"  stage: {stage_key}",
+                    f"  # Tool: {node.get('type', 'unknown')}",
+                    "  script:",
+                    f'    - echo "Running {node.get("label", "step")}"',
+                ]
+            )
             config = node.get("config") or {}
             if config.get("tool"):
                 lines.append(f"    # Tool config: {config['tool']}")
@@ -166,6 +186,7 @@ def _to_gitlab_ci(nodes, edges, name):
 
 
 # ── GitHub Actions ────────────────────────────────────────────────────────────
+
 
 def _to_github_actions(nodes, edges, name):
     stages_map = _group_by_stage(nodes)
@@ -189,20 +210,24 @@ def _to_github_actions(nodes, edges, name):
         stage_nodes = stages_map[stage_key]
         job_id = stage_key.replace("_", "-")
         job_name = PIPELINE_STAGES.get(stage_key, {}).get("label", stage_key)
-        lines.extend([
-            f"  {job_id}:",
-            f"    name: {job_name}",
-            "    runs-on: ubuntu-latest",
-        ])
+        lines.extend(
+            [
+                f"  {job_id}:",
+                f"    name: {job_name}",
+                "    runs-on: ubuntu-latest",
+            ]
+        )
         if prev_jobs:
             lines.append(f"    needs: [{', '.join(prev_jobs)}]")
         lines.append("    steps:")
         lines.append("      - uses: actions/checkout@v4")
         for node in stage_nodes:
-            lines.extend([
-                f"      - name: {node.get('label', 'Step')}",
-                f"        run: echo \"Running {node.get('type', 'tool')}\"",
-            ])
+            lines.extend(
+                [
+                    f"      - name: {node.get('label', 'Step')}",
+                    f'        run: echo "Running {node.get("type", "tool")}"',
+                ]
+            )
         lines.append("")
         prev_jobs = [job_id]
 
@@ -210,6 +235,7 @@ def _to_github_actions(nodes, edges, name):
 
 
 # ── Jenkinsfile ───────────────────────────────────────────────────────────────
+
 
 def _to_jenkinsfile(nodes, edges, name):
     stages_map = _group_by_stage(nodes)
@@ -226,33 +252,40 @@ def _to_jenkinsfile(nodes, edges, name):
     for stage_key in ordered:
         stage_nodes = stages_map[stage_key]
         stage_label = PIPELINE_STAGES.get(stage_key, {}).get("label", stage_key)
-        lines.extend([
-            f"        stage('{stage_label}') {{",
-            "            steps {",
-        ])
+        lines.extend(
+            [
+                f"        stage('{stage_label}') {{",
+                "            steps {",
+            ]
+        )
         for node in stage_nodes:
             node_label = node.get("label", "step")
             node_type = node.get("type", "")
             lines.append(f"                echo 'Running {node_label} ({node_type})'")
-        lines.extend([
-            "            }",
-            "        }",
-        ])
+        lines.extend(
+            [
+                "            }",
+                "        }",
+            ]
+        )
 
-    lines.extend([
-        "    }",
-        "",
-        "    post {",
-        "        always {",
-        "            echo 'Pipeline complete'",
-        "        }",
-        "    }",
-        "}",
-    ])
+    lines.extend(
+        [
+            "    }",
+            "",
+            "    post {",
+            "        always {",
+            "            echo 'Pipeline complete'",
+            "        }",
+            "    }",
+            "}",
+        ]
+    )
     return "\n".join(lines)
 
 
 # ── Tekton ────────────────────────────────────────────────────────────────────
+
 
 def _to_tekton(nodes, edges, name):
     safe = name.replace(" ", "-").lower()
@@ -272,20 +305,23 @@ def _to_tekton(nodes, edges, name):
     prev_task = None
     for stage_key in ordered:
         task_name = stage_key.replace("_", "-")
-        lines.extend([
-            f"    - name: {task_name}",
-            "      taskRef:",
-            f"        name: {task_name}-task",
-        ])
+        lines.extend(
+            [
+                f"    - name: {task_name}",
+                "      taskRef:",
+                f"        name: {task_name}-task",
+            ]
+        )
         if prev_task:
-            lines.append(f"      runAfter: [\"{prev_task}\"]")
-        lines.append(f"      # Nodes: {', '.join(n.get('label','') for n in stages_map[stage_key])}")
+            lines.append(f'      runAfter: ["{prev_task}"]')
+        lines.append(f"      # Nodes: {', '.join(n.get('label', '') for n in stages_map[stage_key])}")
         prev_task = task_name
 
     return "\n".join(lines)
 
 
 # ── Azure Pipelines ──────────────────────────────────────────────────────────
+
 
 def _to_azure_pipelines(nodes, edges, name):
     stages_map = _group_by_stage(nodes)
@@ -305,19 +341,23 @@ def _to_azure_pipelines(nodes, edges, name):
     for stage_key in ordered:
         stage_label = PIPELINE_STAGES.get(stage_key, {}).get("label", stage_key)
         stage_id = stage_key.replace("_", "")
-        lines.extend([
-            f"  - stage: {stage_id}",
-            f"    displayName: '{stage_label}'",
-            "    jobs:",
-            f"      - job: {stage_id}_job",
-            "        steps:",
-        ])
+        lines.extend(
+            [
+                f"  - stage: {stage_id}",
+                f"    displayName: '{stage_label}'",
+                "    jobs:",
+                f"      - job: {stage_id}_job",
+                "        steps:",
+            ]
+        )
         for node in stages_map[stage_key]:
             n_label = node.get("label", "Step")
-            lines.extend([
-                f"          - script: echo 'Running {n_label}'",
-                f"            displayName: '{n_label}'",
-            ])
+            lines.extend(
+                [
+                    f"          - script: echo 'Running {n_label}'",
+                    f"            displayName: '{n_label}'",
+                ]
+            )
         lines.append("")
 
     return "\n".join(lines)
@@ -325,12 +365,13 @@ def _to_azure_pipelines(nodes, edges, name):
 
 # ── draw.io XML ──────────────────────────────────────────────────────────────
 
+
 def _to_drawio(nodes, edges, name):
     cells = ['<?xml version="1.0" encoding="UTF-8"?>']
     cells.append(f'<mxfile host="pipeline-canvas" modified="{datetime.now(timezone.utc).isoformat()}">')
     cells.append(f'  <diagram name="{name}" id="pipeline">')
-    cells.append('    <mxGraphModel>')
-    cells.append('      <root>')
+    cells.append("    <mxGraphModel>")
+    cells.append("      <root>")
     cells.append('        <mxCell id="0"/>')
     cells.append('        <mxCell id="1" parent="0"/>')
 
@@ -351,29 +392,29 @@ def _to_drawio(nodes, edges, name):
             f'source="{edge["source"]}" target="{edge["target"]}"/>'
         )
 
-    cells.append('      </root>')
-    cells.append('    </mxGraphModel>')
-    cells.append('  </diagram>')
-    cells.append('</mxfile>')
+    cells.append("      </root>")
+    cells.append("    </mxGraphModel>")
+    cells.append("  </diagram>")
+    cells.append("</mxfile>")
     return "\n".join(cells)
 
 
 # ── SVG ──────────────────────────────────────────────────────────────────────
+
 
 def _to_svg(nodes, edges, name):
     max_x = max((n.get("x", 0) for n in nodes), default=0) + 200
     max_y = max((n.get("y", 0) for n in nodes), default=0) + 150
 
     lines = [
-        f'<svg xmlns="http://www.w3.org/2000/svg" width="{max_x}" height="{max_y}" '
-        f'viewBox="0 0 {max_x} {max_y}">',
-        f'<title>{name}</title>',
-        '<style>',
-        '  rect { fill: #1a1a2e; stroke: #3498db; stroke-width: 2; rx: 6; }',
-        '  text { fill: #eaeaea; font-family: sans-serif; font-size: 11px; text-anchor: middle; }',
-        '  line { stroke: #e94560; stroke-width: 2; marker-end: url(#arrow); }',
-        '  marker#arrow > path { fill: #e94560; }',
-        '</style>',
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{max_x}" height="{max_y}" viewBox="0 0 {max_x} {max_y}">',
+        f"<title>{name}</title>",
+        "<style>",
+        "  rect { fill: #1a1a2e; stroke: #3498db; stroke-width: 2; rx: 6; }",
+        "  text { fill: #eaeaea; font-family: sans-serif; font-size: 11px; text-anchor: middle; }",
+        "  line { stroke: #e94560; stroke-width: 2; marker-end: url(#arrow); }",
+        "  marker#arrow > path { fill: #e94560; }",
+        "</style>",
         '<defs><marker id="arrow" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">',
         '<path d="M 0 0 L 10 5 L 0 10 z"/></marker></defs>',
     ]
@@ -396,21 +437,25 @@ def _to_svg(nodes, edges, name):
             y2 = tgt.get("y", 0) + 25
             lines.append(f'<line x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}"/>')
 
-    lines.append('</svg>')
+    lines.append("</svg>")
     return "\n".join(lines)
 
 
 # ── CSV ──────────────────────────────────────────────────────────────────────
 
+
 def _to_csv(nodes, edges):
     lines = ["id,label,type,stage,x,y"]
     for n in nodes:
         stage = n.get("stage") or _infer_stage(n.get("type", ""))
-        lines.append(f'{n.get("id","")},{n.get("label","")},{n.get("type","")},{stage},{n.get("x",0)},{n.get("y",0)}')
+        lines.append(
+            f"{n.get('id', '')},{n.get('label', '')},{n.get('type', '')},{stage},{n.get('x', 0)},{n.get('y', 0)}"
+        )
     return "\n".join(lines)
 
 
 # ── AWS CloudFormation ───────────────────────────────────────────────────────
+
 
 def _to_cloudformation(nodes, edges, name):
     """Generate AWS CloudFormation template from pipeline graph."""
@@ -443,18 +488,20 @@ def _to_cloudformation(nodes, edges, name):
     # VPC
     has_k8s = any(n.get("type", "").startswith("aws-eks") or n.get("type", "") == "k8s-cluster" for n in nodes)
     if has_k8s:
-        lines.extend([
-            "  VPC:",
-            "    Type: AWS::EC2::VPC",
-            "    Properties:",
-            "      CidrBlock: !Ref VpcCidr",
-            "      EnableDnsSupport: true",
-            "      EnableDnsHostnames: true",
-            "      Tags:",
-            "        - Key: Name",
-            f"          Value: {safe}-vpc",
-            "",
-        ])
+        lines.extend(
+            [
+                "  VPC:",
+                "    Type: AWS::EC2::VPC",
+                "    Properties:",
+                "      CidrBlock: !Ref VpcCidr",
+                "      EnableDnsSupport: true",
+                "      EnableDnsHostnames: true",
+                "      Tags:",
+                "        - Key: Name",
+                f"          Value: {safe}-vpc",
+                "",
+            ]
+        )
 
     # Map managed AWS resources
     resource_idx = 0
@@ -474,55 +521,83 @@ def _to_cloudformation(nodes, edges, name):
         # Map Terraform resource types to CFN types
         cfn_map = {
             "aws_ecr_repository": ("AWS::ECR::Repository", f"RepositoryName: {safe}-{label.lower()}"),
-            "aws_eks_cluster": ("AWS::EKS::Cluster", f"Name: {safe}-cluster\n      Version: '1.30'\n      RoleArn: !GetAtt EKSRole.Arn"),
-            "aws_kms_key": ("AWS::KMS::Key", f"Description: {safe} encryption key\n      KeyPolicy:\n        Statement:\n          - Effect: Allow\n            Principal:\n              AWS: !Sub 'arn:aws:iam::${{AWS::AccountId}}:root'\n            Action: 'kms:*'\n            Resource: '*'"),
-            "aws_secretsmanager_secret": ("AWS::SecretsManager::Secret", f"Name: {safe}-{label.lower()}\n      Description: Secret for {label}"),
+            "aws_eks_cluster": (
+                "AWS::EKS::Cluster",
+                f"Name: {safe}-cluster\n      Version: '1.30'\n      RoleArn: !GetAtt EKSRole.Arn",
+            ),
+            "aws_kms_key": (
+                "AWS::KMS::Key",
+                f"Description: {safe} encryption key\n      KeyPolicy:\n        Statement:\n          - Effect: Allow\n            Principal:\n              AWS: !Sub 'arn:aws:iam::${{AWS::AccountId}}:root'\n            Action: 'kms:*'\n            Resource: '*'",
+            ),
+            "aws_secretsmanager_secret": (
+                "AWS::SecretsManager::Secret",
+                f"Name: {safe}-{label.lower()}\n      Description: Secret for {label}",
+            ),
             "aws_codepipeline": ("AWS::CodePipeline::Pipeline", f"Name: {safe}-pipeline"),
-            "aws_codebuild_project": ("AWS::CodeBuild::Project", f"Name: {safe}-build\n      ServiceRole: !GetAtt CodeBuildRole.Arn\n      Source:\n        Type: NO_SOURCE\n        BuildSpec: buildspec.yml\n      Environment:\n        Type: LINUX_CONTAINER\n        ComputeType: BUILD_GENERAL1_MEDIUM\n        Image: aws/codebuild/amazonlinux2-x86_64-standard:5.0"),
+            "aws_codebuild_project": (
+                "AWS::CodeBuild::Project",
+                f"Name: {safe}-build\n      ServiceRole: !GetAtt CodeBuildRole.Arn\n      Source:\n        Type: NO_SOURCE\n        BuildSpec: buildspec.yml\n      Environment:\n        Type: LINUX_CONTAINER\n        ComputeType: BUILD_GENERAL1_MEDIUM\n        Image: aws/codebuild/amazonlinux2-x86_64-standard:5.0",
+            ),
             "aws_guardduty_detector": ("AWS::GuardDuty::Detector", "Enable: true"),
             "aws_securityhub_account": ("AWS::SecurityHub::Hub", ""),
             "aws_inspector2_enabler": ("AWS::Inspector::AssessmentTarget", f"AssessmentTargetName: {safe}-inspector"),
-            "aws_config_configuration_recorder": ("AWS::Config::ConfigurationRecorder", f"Name: {safe}-config\n      RecordingGroup:\n        AllSupported: true"),
-            "aws_cloudwatch_log_group": ("AWS::Logs::LogGroup", f"LogGroupName: /devops/{safe}\n      RetentionInDays: 90"),
-            "aws_codedeploy_app": ("AWS::CodeDeploy::Application", f"ApplicationName: {safe}-deploy\n      ComputePlatform: ECS"),
+            "aws_config_configuration_recorder": (
+                "AWS::Config::ConfigurationRecorder",
+                f"Name: {safe}-config\n      RecordingGroup:\n        AllSupported: true",
+            ),
+            "aws_cloudwatch_log_group": (
+                "AWS::Logs::LogGroup",
+                f"LogGroupName: /devops/{safe}\n      RetentionInDays: 90",
+            ),
+            "aws_codedeploy_app": (
+                "AWS::CodeDeploy::Application",
+                f"ApplicationName: {safe}-deploy\n      ComputePlatform: ECS",
+            ),
         }
 
         cfn_type, props = cfn_map.get(aws_type, ("AWS::CloudFormation::WaitConditionHandle", ""))
-        lines.extend([
-            f"  {label}{resource_idx}:",
-            f"    Type: {cfn_type}",
-            "    Properties:",
-            f"      {props}" if props else "      {}",
-            "",
-        ])
+        lines.extend(
+            [
+                f"  {label}{resource_idx}:",
+                f"    Type: {cfn_type}",
+                "    Properties:",
+                f"      {props}" if props else "      {}",
+                "",
+            ]
+        )
 
     # IAM roles for EKS/CodeBuild if needed
     if has_k8s:
-        lines.extend([
-            "  EKSRole:",
-            "    Type: AWS::IAM::Role",
-            "    Properties:",
-            "      AssumeRolePolicyDocument:",
-            "        Statement:",
-            "          - Effect: Allow",
-            "            Principal:",
-            "              Service: eks.amazonaws.com",
-            "            Action: sts:AssumeRole",
-            "      ManagedPolicyArns:",
-            "        - arn:aws:iam::aws:policy/AmazonEKSClusterPolicy",
-            "",
-        ])
+        lines.extend(
+            [
+                "  EKSRole:",
+                "    Type: AWS::IAM::Role",
+                "    Properties:",
+                "      AssumeRolePolicyDocument:",
+                "        Statement:",
+                "          - Effect: Allow",
+                "            Principal:",
+                "              Service: eks.amazonaws.com",
+                "            Action: sts:AssumeRole",
+                "      ManagedPolicyArns:",
+                "        - arn:aws:iam::aws:policy/AmazonEKSClusterPolicy",
+                "",
+            ]
+        )
 
-    lines.extend([
-        "Outputs:",
-        "  StackName:",
-        "    Value: !Ref AWS::StackName",
-    ])
+    lines.extend(
+        [
+            "Outputs:",
+            "  StackName:",
+            "    Value: !Ref AWS::StackName",
+        ]
+    )
 
     return "\n".join(lines)
 
 
 # ── Azure Bicep ──────────────────────────────────────────────────────────────
+
 
 def _to_bicep(nodes, edges, name):
     """Generate Azure Bicep template from pipeline graph."""
@@ -550,24 +625,26 @@ def _to_bicep(nodes, edges, name):
     # AKS if needed
     has_k8s = any(n.get("type", "").startswith("az-aks") or n.get("type", "") == "k8s-cluster" for n in nodes)
     if has_k8s:
-        lines.extend([
-            "resource aks 'Microsoft.ContainerService/managedClusters@2024-01-01' = {",
-            "  name: '${projectName}-aks'",
-            "  location: location",
-            "  identity: { type: 'SystemAssigned' }",
-            "  properties: {",
-            "    kubernetesVersion: '1.30'",
-            "    dnsPrefix: projectName",
-            "    agentPoolProfiles: [{",
-            "      name: 'default'",
-            "      count: 3",
-            "      vmSize: 'Standard_D4s_v3'",
-            "      mode: 'System'",
-            "    }]",
-            "  }",
-            "}",
-            "",
-        ])
+        lines.extend(
+            [
+                "resource aks 'Microsoft.ContainerService/managedClusters@2024-01-01' = {",
+                "  name: '${projectName}-aks'",
+                "  location: location",
+                "  identity: { type: 'SystemAssigned' }",
+                "  properties: {",
+                "    kubernetesVersion: '1.30'",
+                "    dnsPrefix: projectName",
+                "    agentPoolProfiles: [{",
+                "      name: 'default'",
+                "      count: 3",
+                "      vmSize: 'Standard_D4s_v3'",
+                "      mode: 'System'",
+                "    }]",
+                "  }",
+                "}",
+                "",
+            ]
+        )
 
     # Map Azure managed resources
     for node in nodes:
@@ -606,22 +683,27 @@ def _to_bicep(nodes, edges, name):
             continue
         bicep_type, props = entry
 
-        lines.extend([
-            f"resource {label} '{bicep_type}' = {{",
-            f"  {props}",
-            "}",
-            "",
-        ])
+        lines.extend(
+            [
+                f"resource {label} '{bicep_type}' = {{",
+                f"  {props}",
+                "}",
+                "",
+            ]
+        )
 
-    lines.extend([
-        "output projectName string = projectName",
-        "output environment string = environment",
-    ])
+    lines.extend(
+        [
+            "output projectName string = projectName",
+            "output environment string = environment",
+        ]
+    )
 
     return "\n".join(lines)
 
 
 # ── OpenSLO (Phase 4: SRE Export) ────────────────────────────────────────────
+
 
 def _to_openslo(nodes, edges, name):
     """Generate OpenSLO YAML spec from SRE nodes in the canvas."""
@@ -636,7 +718,9 @@ def _to_openslo(nodes, edges, name):
 
     if not slo_nodes:
         # Generate default SLOs for any K8s/deploy targets
-        deploy_nodes = [n for n in nodes if n.get("type", "").startswith(("k8s-", "aws-eks", "az-aks", "gcp-gke", "deploy-"))]
+        deploy_nodes = [
+            n for n in nodes if n.get("type", "").startswith(("k8s-", "aws-eks", "az-aks", "gcp-gke", "deploy-"))
+        ]
         for dn in deploy_nodes:
             svc = dn.get("label", "service").lower().replace(" ", "-")
             lines.extend(_openslo_service_block(svc))
@@ -646,11 +730,13 @@ def _to_openslo(nodes, edges, name):
         for slo_node in slo_nodes:
             svc = slo_node.get("label", "service").lower().replace(" ", "-")
             config = slo_node.get("config") or {}
-            lines.extend(_openslo_service_block(
-                svc,
-                target=config.get("target", 99.9),
-                slo_type=config.get("slo_type", "availability"),
-            ))
+            lines.extend(
+                _openslo_service_block(
+                    svc,
+                    target=config.get("target", 99.9),
+                    slo_type=config.get("slo_type", "availability"),
+                )
+            )
 
     return "\n".join(lines)
 
@@ -676,12 +762,12 @@ def _openslo_service_block(service, target=99.9, slo_type="availability"):
         "    good:",
         "      metricSource:",
         "        type: Prometheus",
-        '        spec:',
+        "        spec:",
         f'          query: sum(rate(http_requests_total{{service="{service}",code=~"2.."}}[5m]))',
         "    total:",
         "      metricSource:",
         "        type: Prometheus",
-        '        spec:',
+        "        spec:",
         f'          query: sum(rate(http_requests_total{{service="{service}"}}[5m]))',
         "---",
         "apiVersion: openslo/v1",
@@ -720,6 +806,7 @@ def _openslo_service_block(service, target=99.9, slo_type="availability"):
 
 # ── Runbook Manifest (Phase 4: SRE Export) ───────────────────────────────────
 
+
 def _to_runbook_manifest(nodes, edges, name):
     """Generate runbook manifest YAML from SRE nodes in the canvas."""
     runbook_nodes = [n for n in nodes if n.get("type") in ("sre-runbook", "sre-self-heal")]
@@ -736,101 +823,109 @@ def _to_runbook_manifest(nodes, edges, name):
 
     if not runbook_nodes:
         # Generate default runbooks for common failure patterns
-        lines.extend([
-            "  - name: auto-restart-unhealthy-pods",
-            "    description: Restart pods failing health checks",
-            "    trigger_pattern: 'pod.*CrashLoopBackOff|readiness.*failed'",
-            "    risk_level: green",
-            "    auto_execute: true",
-            "    steps:",
-            "      - command: kubectl rollout restart deployment/${SERVICE}",
-            "        timeout: 120",
-            "      - command: kubectl rollout status deployment/${SERVICE} --timeout=120s",
-            "        timeout: 130",
-            "",
-            "  - name: scale-up-on-high-cpu",
-            "    description: Scale deployment when CPU exceeds 80%",
-            "    trigger_pattern: 'cpu.*usage.*high|cpu.*exceed.*80'",
-            "    risk_level: green",
-            "    auto_execute: true",
-            "    steps:",
-            "      - command: kubectl scale deployment/${SERVICE} --replicas=$((CURRENT_REPLICAS + 2))",
-            "        timeout: 60",
-            "",
-            "  - name: rollback-failed-deployment",
-            "    description: Rollback to previous version on deploy failure",
-            "    trigger_pattern: 'deploy.*failed|rollout.*failed|ImagePullBackOff'",
-            "    risk_level: yellow",
-            "    auto_execute: false",
-            "    steps:",
-            "      - command: kubectl rollout undo deployment/${SERVICE}",
-            "        timeout: 120",
-            "      - command: kubectl rollout status deployment/${SERVICE} --timeout=120s",
-            "        timeout: 130",
-            "    rollback:",
-            "      - command: kubectl rollout undo deployment/${SERVICE}",
-            "",
-            "  - name: clear-disk-pressure",
-            "    description: Clean up disk when node has DiskPressure",
-            "    trigger_pattern: 'DiskPressure|disk.*full|no.*space'",
-            "    risk_level: green",
-            "    auto_execute: true",
-            "    steps:",
-            "      - command: kubectl exec ${POD} -- find /tmp -type f -mtime +7 -delete",
-            "        timeout: 60",
-        ])
+        lines.extend(
+            [
+                "  - name: auto-restart-unhealthy-pods",
+                "    description: Restart pods failing health checks",
+                "    trigger_pattern: 'pod.*CrashLoopBackOff|readiness.*failed'",
+                "    risk_level: green",
+                "    auto_execute: true",
+                "    steps:",
+                "      - command: kubectl rollout restart deployment/${SERVICE}",
+                "        timeout: 120",
+                "      - command: kubectl rollout status deployment/${SERVICE} --timeout=120s",
+                "        timeout: 130",
+                "",
+                "  - name: scale-up-on-high-cpu",
+                "    description: Scale deployment when CPU exceeds 80%",
+                "    trigger_pattern: 'cpu.*usage.*high|cpu.*exceed.*80'",
+                "    risk_level: green",
+                "    auto_execute: true",
+                "    steps:",
+                "      - command: kubectl scale deployment/${SERVICE} --replicas=$((CURRENT_REPLICAS + 2))",
+                "        timeout: 60",
+                "",
+                "  - name: rollback-failed-deployment",
+                "    description: Rollback to previous version on deploy failure",
+                "    trigger_pattern: 'deploy.*failed|rollout.*failed|ImagePullBackOff'",
+                "    risk_level: yellow",
+                "    auto_execute: false",
+                "    steps:",
+                "      - command: kubectl rollout undo deployment/${SERVICE}",
+                "        timeout: 120",
+                "      - command: kubectl rollout status deployment/${SERVICE} --timeout=120s",
+                "        timeout: 130",
+                "    rollback:",
+                "      - command: kubectl rollout undo deployment/${SERVICE}",
+                "",
+                "  - name: clear-disk-pressure",
+                "    description: Clean up disk when node has DiskPressure",
+                "    trigger_pattern: 'DiskPressure|disk.*full|no.*space'",
+                "    risk_level: green",
+                "    auto_execute: true",
+                "    steps:",
+                "      - command: kubectl exec ${POD} -- find /tmp -type f -mtime +7 -delete",
+                "        timeout: 60",
+            ]
+        )
     else:
         for rb in runbook_nodes:
             rb_name = rb.get("label", "runbook").lower().replace(" ", "-")
             config = rb.get("config") or {}
-            lines.extend([
-                f"  - name: {rb_name}",
-                f"    description: {config.get('description', rb.get('label', ''))}",
-                f"    trigger_pattern: '{config.get('trigger_pattern', '.*')}'",
-                f"    risk_level: {config.get('risk_level', 'green')}",
-                f"    auto_execute: {str(config.get('auto_execute', True)).lower()}",
-                "    steps:",
-                f"      - command: echo 'Implement {rb_name} steps'",
-                "        timeout: 120",
-                "",
-            ])
+            lines.extend(
+                [
+                    f"  - name: {rb_name}",
+                    f"    description: {config.get('description', rb.get('label', ''))}",
+                    f"    trigger_pattern: '{config.get('trigger_pattern', '.*')}'",
+                    f"    risk_level: {config.get('risk_level', 'green')}",
+                    f"    auto_execute: {str(config.get('auto_execute', True)).lower()}",
+                    "    steps:",
+                    f"      - command: echo 'Implement {rb_name} steps'",
+                    "        timeout: 120",
+                    "",
+                ]
+            )
 
     # Chaos experiments
     if chaos_nodes:
         lines.extend(["", "chaos_experiments:"])
         for ch in chaos_nodes:
             ch_name = ch.get("label", "chaos").lower().replace(" ", "-")
-            lines.extend([
-                f"  - name: {ch_name}",
-                f"    type: {ch.get('type', 'sre-chaos')}",
-                "    description: Chaos experiment from pipeline canvas",
-                "    schedule: manual",
-                "    steady_state_hypothesis:",
-                "      - probe: http",
-                "        url: http://localhost/health",
-                "        expected_status: 200",
-                "",
-            ])
+            lines.extend(
+                [
+                    f"  - name: {ch_name}",
+                    f"    type: {ch.get('type', 'sre-chaos')}",
+                    "    description: Chaos experiment from pipeline canvas",
+                    "    schedule: manual",
+                    "    steady_state_hypothesis:",
+                    "      - probe: http",
+                    "        url: http://localhost/health",
+                    "        expected_status: 200",
+                    "",
+                ]
+            )
 
     # Incident escalation policy
     if incident_nodes:
         lines.extend(["", "escalation_policy:"])
-        lines.extend([
-            "  sev1:",
-            "    response_time: 5m",
-            "    escalation_after: 15m",
-            "    notify: [on-call-primary, on-call-secondary, engineering-lead]",
-            "  sev2:",
-            "    response_time: 15m",
-            "    escalation_after: 1h",
-            "    notify: [on-call-primary]",
-            "  sev3:",
-            "    response_time: 1h",
-            "    escalation_after: 4h",
-            "    notify: [team-channel]",
-            "  sev4:",
-            "    response_time: 4h",
-            "    notify: [ticket-system]",
-        ])
+        lines.extend(
+            [
+                "  sev1:",
+                "    response_time: 5m",
+                "    escalation_after: 15m",
+                "    notify: [on-call-primary, on-call-secondary, engineering-lead]",
+                "  sev2:",
+                "    response_time: 15m",
+                "    escalation_after: 1h",
+                "    notify: [on-call-primary]",
+                "  sev3:",
+                "    response_time: 1h",
+                "    escalation_after: 4h",
+                "    notify: [team-channel]",
+                "  sev4:",
+                "    response_time: 4h",
+                "    notify: [ticket-system]",
+            ]
+        )
 
     return "\n".join(lines)

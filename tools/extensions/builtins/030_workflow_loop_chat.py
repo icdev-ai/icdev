@@ -19,6 +19,7 @@ Loaded automatically by ExtensionManager._auto_load_builtins().
 Exports:
     EXTENSION_HOOKS — dict mapping hook point names to handler metadata.
 """
+
 from __future__ import annotations
 
 import logging
@@ -51,6 +52,7 @@ def _record_advisory(context_id: str, turn_number: int):
 # ---------------------------------------------------------------------------
 # Workflow loop status check
 # ---------------------------------------------------------------------------
+
 
 def _table_exists(conn: sqlite3.Connection, name: str) -> bool:
     row = conn.execute(
@@ -118,8 +120,7 @@ def _check_loop_status(project_id: str) -> dict | None:
                     "gap_id": "loop_needs_unify",
                     "severity": "medium",
                     "message": (
-                        f"Loop '{phase}' has all tasks completed. "
-                        "Start UNIFY to reconcile planned vs actual work."
+                        f"Loop '{phase}' has all tasks completed. Start UNIFY to reconcile planned vs actual work."
                     ),
                     "action": f"python tools/workflow/loop_engine.py --start-unify --loop-id {lid} --json",
                     "loop_id": lid,
@@ -147,8 +148,7 @@ def _check_loop_status(project_id: str) -> dict | None:
                     "gap_id": "loop_not_started",
                     "severity": "low",
                     "message": (
-                        f"Loop '{phase}' is planned but not started. "
-                        "Begin the APPLY phase to start executing tasks."
+                        f"Loop '{phase}' is planned but not started. Begin the APPLY phase to start executing tasks."
                     ),
                     "action": f"python tools/workflow/loop_engine.py --start-apply --loop-id {lid} --json",
                     "loop_id": lid,
@@ -166,6 +166,7 @@ def _check_loop_status(project_id: str) -> dict | None:
 # ---------------------------------------------------------------------------
 # Hook handler
 # ---------------------------------------------------------------------------
+
 
 def handle(context: dict) -> dict:
     """chat_message_after handler — inject workflow loop advisory.

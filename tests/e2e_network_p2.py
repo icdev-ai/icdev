@@ -46,7 +46,7 @@ class TestResult:
 
     def summary(self):
         total = len(self.passed) + len(self.failed)
-        rate = f"{len(self.passed)/total*100:.1f}%" if total else "0%"
+        rate = f"{len(self.passed) / total * 100:.1f}%" if total else "0%"
         return {
             "total": total,
             "passed": len(self.passed),
@@ -80,9 +80,7 @@ def check_js_errors(driver):
         for entry in driver.get_log("browser"):
             if entry.get("level") == "SEVERE":
                 msg = entry.get("message", "")
-                if any(x in msg.lower() for x in [
-                    "favicon", "401", "404", "failed to load resource"
-                ]):
+                if any(x in msg.lower() for x in ["favicon", "401", "404", "failed to load resource"]):
                     continue
                 errors.append(msg)
     except Exception:
@@ -133,22 +131,26 @@ def run_tests():
         time.sleep(2)
 
         # Setup: create a project with a linked topology
-        proj_data = api(driver, "POST", "/network/api/projects", {
-            "name": "E2E P2 Compare Project", "status": "in_review",
-            "owner": "e2e-tester", "description": "P2 comparison test"
-        })
+        proj_data = api(
+            driver,
+            "POST",
+            "/network/api/projects",
+            {
+                "name": "E2E P2 Compare Project",
+                "status": "in_review",
+                "owner": "e2e-tester",
+                "description": "P2 comparison test",
+            },
+        )
         proj_id = proj_data.get("id")
 
         topos = api(driver, "GET", "/network/api/topologies")
         topo_id = None
         if topos and len(topos) > 0:
             topo_id = topos[0]["id"]
-            api(driver, "POST",
-                f"/network/api/projects/{proj_id}/topologies",
-                {"topology_id": topo_id})
+            api(driver, "POST", f"/network/api/projects/{proj_id}/topologies", {"topology_id": topo_id})
             # Run audit for comparison data
-            api(driver, "POST",
-                f"/network/api/compliance/{topo_id}/audit")
+            api(driver, "POST", f"/network/api/compliance/{topo_id}/audit")
         time.sleep(1)
 
         # ── 1. Compare page loads ─────────────────────────────────────────
@@ -166,16 +168,14 @@ def run_tests():
         # ── 2. Comparison matrix table ────────────────────────────────────
         try:
             matrix = driver.find_element(By.ID, "compare-matrix")
-            headers = [th.text.upper() for th in
-                       matrix.find_elements(By.CSS_SELECTOR, "thead th")]
+            headers = [th.text.upper() for th in matrix.find_elements(By.CSS_SELECTOR, "thead th")]
             assert "COMPLIANCE" in headers
             assert "CAT1" in headers
             assert "CAPEX" in headers
             assert "MC RESILIENCE" in headers
             rows = matrix.find_elements(By.CSS_SELECTOR, "tbody tr")
             assert len(rows) >= 1, f"Expected 1+ rows, got {len(rows)}"
-            results.ok("compare_matrix_table",
-                        f"{len(rows)} rows, columns: {headers}")
+            results.ok("compare_matrix_table", f"{len(rows)} rows, columns: {headers}")
         except Exception as e:
             results.fail("compare_matrix_table", e)
 
@@ -185,12 +185,10 @@ def run_tests():
             hm_rows = heatmap.find_elements(By.CSS_SELECTOR, ".heatmap-row")
             assert len(hm_rows) >= 1, "No heatmap rows"
             # Check color-coded cells exist
-            colored = heatmap.find_elements(
-                By.CSS_SELECTOR, ".hm-green, .hm-yellow, .hm-red, .hm-gray")
+            colored = heatmap.find_elements(By.CSS_SELECTOR, ".hm-green, .hm-yellow, .hm-red, .hm-gray")
             assert len(colored) >= 3, f"Expected colored cells, got {len(colored)}"
             screenshot(driver, "compare-heatmap")
-            results.ok("risk_heatmap_renders",
-                        f"{len(hm_rows)} rows, {len(colored)} colored cells")
+            results.ok("risk_heatmap_renders", f"{len(hm_rows)} rows, {len(colored)} colored cells")
         except Exception as e:
             results.fail("risk_heatmap_renders", e)
 
@@ -215,15 +213,11 @@ def run_tests():
 
         # ── 6. Clone project via API ──────────────────────────────────────
         try:
-            clone_result = api(driver, "POST",
-                               f"/network/api/projects/{proj_id}/clone",
-                               {"name": "E2E Cloned Project"})
+            clone_result = api(driver, "POST", f"/network/api/projects/{proj_id}/clone", {"name": "E2E Cloned Project"})
             assert clone_result.get("id"), f"No clone ID: {clone_result}"
             clone_id = clone_result["id"]
-            assert clone_result.get("topologies_cloned", 0) >= 1, \
-                f"Expected 1+ topos cloned, got {clone_result}"
-            results.ok("clone_project_api",
-                        f"id={clone_id}, topos={clone_result['topologies_cloned']}")
+            assert clone_result.get("topologies_cloned", 0) >= 1, f"Expected 1+ topos cloned, got {clone_result}"
+            results.ok("clone_project_api", f"id={clone_id}, topos={clone_result['topologies_cloned']}")
         except Exception as e:
             results.fail("clone_project_api", e)
 
@@ -236,11 +230,9 @@ def run_tests():
                 h1 = driver.find_element(By.CSS_SELECTOR, ".page-title")
                 assert "E2E Cloned Project" in h1.text
                 # Check topologies exist
-                topo_rows = driver.find_elements(
-                    By.CSS_SELECTOR, ".data-table tbody tr")
+                topo_rows = driver.find_elements(By.CSS_SELECTOR, ".data-table tbody tr")
                 assert len(topo_rows) >= 1, "No topologies in cloned project"
-                results.ok("cloned_project_detail",
-                            f"Title: {h1.text}, rows: {len(topo_rows)}")
+                results.ok("cloned_project_detail", f"Title: {h1.text}, rows: {len(topo_rows)}")
             except Exception as e:
                 results.fail("cloned_project_detail", e)
 
@@ -251,8 +243,7 @@ def run_tests():
                 time.sleep(2)
                 btns = driver.find_elements(By.CSS_SELECTOR, ".page-actions .btn")
                 btn_texts = [b.text for b in btns]
-                assert "Clone Project" in btn_texts, \
-                    f"No Clone button: {btn_texts}"
+                assert "Clone Project" in btn_texts, f"No Clone button: {btn_texts}"
                 results.ok("clone_button_on_detail")
             except Exception as e:
                 results.fail("clone_button_on_detail", e)
@@ -261,11 +252,9 @@ def run_tests():
         try:
             driver.get(f"{BASE_URL}/network/projects/compare")
             time.sleep(2)
-            clone_btns = driver.find_elements(
-                By.CSS_SELECTOR, "button[title='Clone']")
+            clone_btns = driver.find_elements(By.CSS_SELECTOR, "button[title='Clone']")
             if clone_btns:
-                results.ok("clone_button_on_compare",
-                            f"{len(clone_btns)} clone buttons")
+                results.ok("clone_button_on_compare", f"{len(clone_btns)} clone buttons")
             else:
                 results.ok("clone_button_on_compare", "No projects to clone")
         except Exception as e:
@@ -274,16 +263,12 @@ def run_tests():
         # ── 10. Compliance scores non-negative (bugfix verification) ──────
         try:
             if topo_id:
-                audit = api(driver, "POST",
-                            f"/network/api/compliance/{topo_id}/audit")
+                audit = api(driver, "POST", f"/network/api/compliance/{topo_id}/audit")
                 scores = audit.get("scores", {})
                 for regime, s in scores.items():
-                    assert s["passed"] >= 0, \
-                        f"{regime}: passed={s['passed']} is negative!"
-                    assert s["score_pct"] >= 0, \
-                        f"{regime}: score_pct={s['score_pct']} is negative!"
-                results.ok("compliance_scores_non_negative",
-                            str({r: s["score_pct"] for r, s in scores.items()}))
+                    assert s["passed"] >= 0, f"{regime}: passed={s['passed']} is negative!"
+                    assert s["score_pct"] >= 0, f"{regime}: score_pct={s['score_pct']} is negative!"
+                results.ok("compliance_scores_non_negative", str({r: s["score_pct"] for r, s in scores.items()}))
             else:
                 results.ok("compliance_scores_non_negative", "No topo to test")
         except Exception as e:
@@ -294,8 +279,7 @@ def run_tests():
         time.sleep(2)
         js_errs = check_js_errors(driver)
         if js_errs:
-            results.fail("js_errors_compare",
-                          f"{len(js_errs)}: {js_errs[0][:100]}")
+            results.fail("js_errors_compare", f"{len(js_errs)}: {js_errs[0][:100]}")
         else:
             results.ok("js_errors_compare", "No SEVERE JS errors")
 
@@ -335,8 +319,7 @@ if __name__ == "__main__":
     r = run_tests()
     summary = r.summary()
     print()
-    print(f"Results: {summary['passed']}/{summary['total']} passed "
-          f"({summary['pass_rate']})")
+    print(f"Results: {summary['passed']}/{summary['total']} passed ({summary['pass_rate']})")
     if summary["failures"]:
         print("Failures:")
         for f in summary["failures"]:

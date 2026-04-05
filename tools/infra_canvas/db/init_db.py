@@ -23,9 +23,8 @@ def get_connection():
     if _IDC_BACKEND == "postgresql":
         try:
             from tools.db.storage import get_connection as _icdev_conn
-            return _icdev_conn(
-                db_path=os.environ.get("IDC_PG_DATABASE", "infra_canvas")
-            )
+
+            return _icdev_conn(db_path=os.environ.get("IDC_PG_DATABASE", "infra_canvas"))
         except ImportError:
             pass
     conn = sqlite3.connect(str(DB_PATH))
@@ -112,20 +111,19 @@ CREATE INDEX IF NOT EXISTS idx_idc_collab_design ON idc_collab_sessions(design_i
 
 # ── Templates ────────────────────────────────────────────────────────────────
 
+
 def _uid():
     return uuid.uuid4().hex[:10]
 
 
 def _node(ntype, label, x, y, **kwargs):
-    n = {"id": f"n-{_uid()}", "type": ntype, "label": label,
-         "x": x, "y": y, "metadata": {}}
+    n = {"id": f"n-{_uid()}", "type": ntype, "label": label, "x": x, "y": y, "metadata": {}}
     n.update(kwargs)
     return n
 
 
 def _edge(source_id, target_id, label=""):
-    return {"id": f"e-{_uid()}", "source": source_id, "target": target_id,
-            "label": label}
+    return {"id": f"e-{_uid()}", "source": source_id, "target": target_id, "label": label}
 
 
 def _build_templates():
@@ -155,13 +153,16 @@ def _build_templates():
         _edge(n2["id"], n9["id"], "findings"),
         _edge(n10["id"], n1["id"], "provision"),
     ]
-    templates.append({
-        "id": f"tpl-{_uid()}", "name": "AWS Serverless Three-Tier",
-        "category": "aws",
-        "description": "API Gateway + Lambda + Aurora + S3 + ElastiCache with KMS encryption and IAM",
-        "graph_json": json.dumps({"nodes": nodes, "edges": edges}),
-        "tags": json.dumps(["aws", "serverless", "three-tier", "CUI"]),
-    })
+    templates.append(
+        {
+            "id": f"tpl-{_uid()}",
+            "name": "AWS Serverless Three-Tier",
+            "category": "aws",
+            "description": "API Gateway + Lambda + Aurora + S3 + ElastiCache with KMS encryption and IAM",
+            "graph_json": json.dumps({"nodes": nodes, "edges": edges}),
+            "tags": json.dumps(["aws", "serverless", "three-tier", "CUI"]),
+        }
+    )
 
     # 2. Azure Enterprise K8s
     n1 = _node("az-aks", "AKS Cluster", 300, 100)
@@ -186,13 +187,16 @@ def _build_templates():
         _edge(n10["id"], n1["id"], "GitOps deploy"),
         _edge(n1["id"], n8["id"], "CSPM"),
     ]
-    templates.append({
-        "id": f"tpl-{_uid()}", "name": "Azure Enterprise Kubernetes",
-        "category": "azure",
-        "description": "AKS + ACR + PostgreSQL + Redis + Key Vault + Entra ID + ArgoCD GitOps",
-        "graph_json": json.dumps({"nodes": nodes, "edges": edges}),
-        "tags": json.dumps(["azure", "kubernetes", "enterprise", "CUI"]),
-    })
+    templates.append(
+        {
+            "id": f"tpl-{_uid()}",
+            "name": "Azure Enterprise Kubernetes",
+            "category": "azure",
+            "description": "AKS + ACR + PostgreSQL + Redis + Key Vault + Entra ID + ArgoCD GitOps",
+            "graph_json": json.dumps({"nodes": nodes, "edges": edges}),
+            "tags": json.dumps(["azure", "kubernetes", "enterprise", "CUI"]),
+        }
+    )
 
     # 3. GCP Data Analytics Platform
     n1 = _node("gcp-pubsub", "Pub/Sub", 100, 100)
@@ -216,13 +220,16 @@ def _build_templates():
         _edge(n3["id"], n8["id"], "compliance"),
         _edge(n9["id"], n1["id"], "provision"),
     ]
-    templates.append({
-        "id": f"tpl-{_uid()}", "name": "GCP Data Analytics + AI",
-        "category": "gcp",
-        "description": "Pub/Sub + Functions + GCS data lake + BigQuery warehouse + Vertex AI",
-        "graph_json": json.dumps({"nodes": nodes, "edges": edges}),
-        "tags": json.dumps(["gcp", "analytics", "ai", "data-lake"]),
-    })
+    templates.append(
+        {
+            "id": f"tpl-{_uid()}",
+            "name": "GCP Data Analytics + AI",
+            "category": "gcp",
+            "description": "Pub/Sub + Functions + GCS data lake + BigQuery warehouse + Vertex AI",
+            "graph_json": json.dumps({"nodes": nodes, "edges": edges}),
+            "tags": json.dumps(["gcp", "analytics", "ai", "data-lake"]),
+        }
+    )
 
     # 4. Multi-Cloud Hybrid (AWS + Azure + On-Prem)
     n1 = _node("aws-eks", "EKS (AWS)", 100, 100)
@@ -248,13 +255,16 @@ def _build_templates():
         _edge(n7["id"], n10["id"], "encrypt"),
         _edge(n8["id"], n11["id"], "encrypt"),
     ]
-    templates.append({
-        "id": f"tpl-{_uid()}", "name": "Multi-Cloud Hybrid (AWS + Azure + On-Prem)",
-        "category": "multi_cloud",
-        "description": "EKS + AKS + on-prem K8s managed by Crossplane with per-CSP encryption",
-        "graph_json": json.dumps({"nodes": nodes, "edges": edges}),
-        "tags": json.dumps(["multi-cloud", "hybrid", "kubernetes", "crossplane"]),
-    })
+    templates.append(
+        {
+            "id": f"tpl-{_uid()}",
+            "name": "Multi-Cloud Hybrid (AWS + Azure + On-Prem)",
+            "category": "multi_cloud",
+            "description": "EKS + AKS + on-prem K8s managed by Crossplane with per-CSP encryption",
+            "graph_json": json.dumps({"nodes": nodes, "edges": edges}),
+            "tags": json.dumps(["multi-cloud", "hybrid", "kubernetes", "crossplane"]),
+        }
+    )
 
     # 5. OCI Enterprise (GovCloud)
     n1 = _node("oci-compute", "Compute (Flex)", 100, 100)
@@ -277,13 +287,16 @@ def _build_templates():
         _edge(n2["id"], n7["id"], "posture"),
         _edge(n9["id"], n1["id"], "provision"),
     ]
-    templates.append({
-        "id": f"tpl-{_uid()}", "name": "OCI Enterprise (GovCloud)",
-        "category": "oci",
-        "description": "OCI Compute + OKE + Autonomous DB + Object Storage + Vault + Cloud Guard",
-        "graph_json": json.dumps({"nodes": nodes, "edges": edges}),
-        "tags": json.dumps(["oci", "govcloud", "enterprise", "CUI"]),
-    })
+    templates.append(
+        {
+            "id": f"tpl-{_uid()}",
+            "name": "OCI Enterprise (GovCloud)",
+            "category": "oci",
+            "description": "OCI Compute + OKE + Autonomous DB + Object Storage + Vault + Cloud Guard",
+            "graph_json": json.dumps({"nodes": nodes, "edges": edges}),
+            "tags": json.dumps(["oci", "govcloud", "enterprise", "CUI"]),
+        }
+    )
 
     # 6. IBM Cloud AI Platform
     n1 = _node("ibm-openshift", "ROKS Cluster", 250, 100)
@@ -307,13 +320,16 @@ def _build_templates():
         _edge(n1["id"], n6["id"], "auth"),
         _edge(n9["id"], n1["id"], "provision"),
     ]
-    templates.append({
-        "id": f"tpl-{_uid()}", "name": "IBM Cloud AI Platform",
-        "category": "ibm",
-        "description": "ROKS + watsonx.ai + PostgreSQL + Object Storage + Event Streams + Key Protect",
-        "graph_json": json.dumps({"nodes": nodes, "edges": edges}),
-        "tags": json.dumps(["ibm", "ai", "openshift", "watsonx"]),
-    })
+    templates.append(
+        {
+            "id": f"tpl-{_uid()}",
+            "name": "IBM Cloud AI Platform",
+            "category": "ibm",
+            "description": "ROKS + watsonx.ai + PostgreSQL + Object Storage + Event Streams + Key Protect",
+            "graph_json": json.dumps({"nodes": nodes, "edges": edges}),
+            "tags": json.dumps(["ibm", "ai", "openshift", "watsonx"]),
+        }
+    )
 
     # 7. DoD IL4 Reference Architecture (AWS GovCloud)
     n1 = _node("aws-eks", "EKS (GovCloud)", 230, 50)
@@ -343,13 +359,16 @@ def _build_templates():
         _edge(n1["id"], n11["id"], "runs on"),
         _edge(n12["id"], n1["id"], "provision"),
     ]
-    templates.append({
-        "id": f"tpl-{_uid()}", "name": "DoD IL4 Reference (AWS GovCloud)",
-        "category": "aws",
-        "description": "AWS GovCloud — EKS + Aurora + S3 + KMS FIPS L3 + Dedicated Hosts + Security Hub + Config",
-        "graph_json": json.dumps({"nodes": nodes, "edges": edges}),
-        "tags": json.dumps(["aws", "govcloud", "il4", "dod", "CUI", "FIPS"]),
-    })
+    templates.append(
+        {
+            "id": f"tpl-{_uid()}",
+            "name": "DoD IL4 Reference (AWS GovCloud)",
+            "category": "aws",
+            "description": "AWS GovCloud — EKS + Aurora + S3 + KMS FIPS L3 + Dedicated Hosts + Security Hub + Config",
+            "graph_json": json.dumps({"nodes": nodes, "edges": edges}),
+            "tags": json.dumps(["aws", "govcloud", "il4", "dod", "CUI", "FIPS"]),
+        }
+    )
 
     # 8. AWS SCCA Multi-Account Landing Zone (DoD Reference Architecture)
     # Row 1 (y=50): Management Account & Security/Audit Account
@@ -388,9 +407,35 @@ def _build_templates():
     n26 = _node("aws-ec2", "Active Directory", 840, 830)
     # Bottom (y=950): IaC
     n27 = _node("iac-terraform", "Landing Zone Accelerator (Terraform)", 400, 950)
-    nodes = [n1, n2, n3, n4, n5, n6, n7, n8, n9, n10, n11, n12,
-             n13, n14, n15, n16, n17, n18, n19, n20, n21, n22,
-             n23, n24, n25, n26, n27]
+    nodes = [
+        n1,
+        n2,
+        n3,
+        n4,
+        n5,
+        n6,
+        n7,
+        n8,
+        n9,
+        n10,
+        n11,
+        n12,
+        n13,
+        n14,
+        n15,
+        n16,
+        n17,
+        n18,
+        n19,
+        n20,
+        n21,
+        n22,
+        n23,
+        n24,
+        n25,
+        n26,
+        n27,
+    ]
     edges = [
         # Internet → Firewall subnets
         _edge(n10["id"], n11["id"], "ingress"),
@@ -430,17 +475,32 @@ def _build_templates():
         # LZA Terraform → Organizations
         _edge(n27["id"], n1["id"], "provision"),
     ]
-    templates.append({
-        "id": f"tpl-{_uid()}", "name": "AWS SCCA Multi-Account Landing Zone",
-        "category": "aws",
-        "description": "DoD SCCA multi-account reference architecture on AWS GovCloud — "
-                       "Management, Audit, Log Archive, Network (Inspection VPC), Workload, "
-                       "and Shared Services accounts connected via Transit Gateway. "
-                       "Landing Zone Accelerator (Terraform) provisioning with FIPS 140-2 L3 KMS.",
-        "graph_json": json.dumps({"nodes": nodes, "edges": edges}),
-        "tags": json.dumps(["aws", "scca", "dod", "lza", "govcloud", "il4", "il5",
-                            "multi-account", "transit-gateway", "inspection"]),
-    })
+    templates.append(
+        {
+            "id": f"tpl-{_uid()}",
+            "name": "AWS SCCA Multi-Account Landing Zone",
+            "category": "aws",
+            "description": "DoD SCCA multi-account reference architecture on AWS GovCloud — "
+            "Management, Audit, Log Archive, Network (Inspection VPC), Workload, "
+            "and Shared Services accounts connected via Transit Gateway. "
+            "Landing Zone Accelerator (Terraform) provisioning with FIPS 140-2 L3 KMS.",
+            "graph_json": json.dumps({"nodes": nodes, "edges": edges}),
+            "tags": json.dumps(
+                [
+                    "aws",
+                    "scca",
+                    "dod",
+                    "lza",
+                    "govcloud",
+                    "il4",
+                    "il5",
+                    "multi-account",
+                    "transit-gateway",
+                    "inspection",
+                ]
+            ),
+        }
+    )
 
     # 9. Azure CAF Landing Zone (Hub-Spoke)
     n1 = _node("az-entra", "Entra ID (Tenant)", 100, 50)
@@ -471,13 +531,16 @@ def _build_templates():
         _edge(n12["id"], n3["id"], "hub-spoke"),
         _edge(n13["id"], n7["id"], "encrypt"),
     ]
-    templates.append({
-        "id": f"tpl-{_uid()}", "name": "Azure CAF Landing Zone (Hub-Spoke)",
-        "category": "azure",
-        "description": "Azure Cloud Adoption Framework enterprise-scale landing zone with hub-spoke topology",
-        "graph_json": json.dumps({"nodes": nodes, "edges": edges}),
-        "tags": json.dumps(["azure", "caf", "landing-zone", "hub-spoke", "enterprise-scale"]),
-    })
+    templates.append(
+        {
+            "id": f"tpl-{_uid()}",
+            "name": "Azure CAF Landing Zone (Hub-Spoke)",
+            "category": "azure",
+            "description": "Azure Cloud Adoption Framework enterprise-scale landing zone with hub-spoke topology",
+            "graph_json": json.dumps({"nodes": nodes, "edges": edges}),
+            "tags": json.dumps(["azure", "caf", "landing-zone", "hub-spoke", "enterprise-scale"]),
+        }
+    )
 
     # 10. GCP Enterprise Landing Zone
     n1 = _node("gcp-iam", "Cloud IAM (Org)", 100, 50)
@@ -505,13 +568,16 @@ def _build_templates():
         _edge(n5["id"], n9["id"], "secrets"),
         _edge(n12["id"], n11["id"], "data"),
     ]
-    templates.append({
-        "id": f"tpl-{_uid()}", "name": "GCP Enterprise Landing Zone",
-        "category": "gcp",
-        "description": "Google Cloud organization-based landing zone with Shared VPC and Cloud Foundation Toolkit",
-        "graph_json": json.dumps({"nodes": nodes, "edges": edges}),
-        "tags": json.dumps(["gcp", "landing-zone", "shared-vpc", "organization", "assured-workloads"]),
-    })
+    templates.append(
+        {
+            "id": f"tpl-{_uid()}",
+            "name": "GCP Enterprise Landing Zone",
+            "category": "gcp",
+            "description": "Google Cloud organization-based landing zone with Shared VPC and Cloud Foundation Toolkit",
+            "graph_json": json.dumps({"nodes": nodes, "edges": edges}),
+            "tags": json.dumps(["gcp", "landing-zone", "shared-vpc", "organization", "assured-workloads"]),
+        }
+    )
 
     # 11. OCI Landing Zone (CIS Benchmark)
     n1 = _node("oci-iam", "IAM (Compartments)", 100, 50)
@@ -536,13 +602,16 @@ def _build_templates():
         _edge(n7["id"], n2["id"], "audit"),
         _edge(n10["id"], n8["id"], "persist"),
     ]
-    templates.append({
-        "id": f"tpl-{_uid()}", "name": "OCI Landing Zone (CIS Benchmark)",
-        "category": "oci",
-        "description": "Oracle Cloud compartment-based landing zone with CIS foundations and DRG transit",
-        "graph_json": json.dumps({"nodes": nodes, "edges": edges}),
-        "tags": json.dumps(["oci", "landing-zone", "cis", "compartments", "govcloud"]),
-    })
+    templates.append(
+        {
+            "id": f"tpl-{_uid()}",
+            "name": "OCI Landing Zone (CIS Benchmark)",
+            "category": "oci",
+            "description": "Oracle Cloud compartment-based landing zone with CIS foundations and DRG transit",
+            "graph_json": json.dumps({"nodes": nodes, "edges": edges}),
+            "tags": json.dumps(["oci", "landing-zone", "cis", "compartments", "govcloud"]),
+        }
+    )
 
     # 12. IBM Cloud for Financial Services
     n1 = _node("ibm-iam", "IAM", 100, 50)
@@ -568,13 +637,16 @@ def _build_templates():
         _edge(n9["id"], n6["id"], "encrypt"),
         _edge(n10["id"], n6["id"], "encrypt"),
     ]
-    templates.append({
-        "id": f"tpl-{_uid()}", "name": "IBM Cloud for Financial Services",
-        "category": "ibm",
-        "description": "IBM Cloud landing zone for regulated financial services with ROKS and Key Protect",
-        "graph_json": json.dumps({"nodes": nodes, "edges": edges}),
-        "tags": json.dumps(["ibm", "landing-zone", "financial-services", "regulated", "fs-cloud"]),
-    })
+    templates.append(
+        {
+            "id": f"tpl-{_uid()}",
+            "name": "IBM Cloud for Financial Services",
+            "category": "ibm",
+            "description": "IBM Cloud landing zone for regulated financial services with ROKS and Key Protect",
+            "graph_json": json.dumps({"nodes": nodes, "edges": edges}),
+            "tags": json.dumps(["ibm", "landing-zone", "financial-services", "regulated", "fs-cloud"]),
+        }
+    )
 
     # 13. Healthcare Landing Zone (HIPAA)
     n1 = _node("aws-cognito", "SSO/IdP", 100, 50)
@@ -601,13 +673,16 @@ def _build_templates():
         _edge(n3["id"], n8["id"], "egress"),
         _edge(n4["id"], n3["id"], "inspect"),
     ]
-    templates.append({
-        "id": f"tpl-{_uid()}", "name": "Healthcare Landing Zone (HIPAA)",
-        "category": "aws",
-        "description": "HIPAA-compliant healthcare architecture with PHI encryption and Security Hub monitoring",
-        "graph_json": json.dumps({"nodes": nodes, "edges": edges}),
-        "tags": json.dumps(["aws", "hipaa", "healthcare", "phi", "regulated", "landing-zone"]),
-    })
+    templates.append(
+        {
+            "id": f"tpl-{_uid()}",
+            "name": "Healthcare Landing Zone (HIPAA)",
+            "category": "aws",
+            "description": "HIPAA-compliant healthcare architecture with PHI encryption and Security Hub monitoring",
+            "graph_json": json.dumps({"nodes": nodes, "edges": edges}),
+            "tags": json.dumps(["aws", "hipaa", "healthcare", "phi", "regulated", "landing-zone"]),
+        }
+    )
 
     # 14. Financial Services Landing Zone (PCI-DSS)
     n1 = _node("az-entra", "Entra ID", 100, 50)
@@ -633,13 +708,16 @@ def _build_templates():
         _edge(n12["id"], n1["id"], "provision"),
         _edge(n7["id"], n5["id"], "audit-logs"),
     ]
-    templates.append({
-        "id": f"tpl-{_uid()}", "name": "Financial Services Landing Zone (PCI-DSS)",
-        "category": "azure",
-        "description": "PCI-DSS compliant architecture for financial services with CDE isolation and HSM encryption",
-        "graph_json": json.dumps({"nodes": nodes, "edges": edges}),
-        "tags": json.dumps(["azure", "pci-dss", "financial", "cde", "regulated", "landing-zone"]),
-    })
+    templates.append(
+        {
+            "id": f"tpl-{_uid()}",
+            "name": "Financial Services Landing Zone (PCI-DSS)",
+            "category": "azure",
+            "description": "PCI-DSS compliant architecture for financial services with CDE isolation and HSM encryption",
+            "graph_json": json.dumps({"nodes": nodes, "edges": edges}),
+            "tags": json.dumps(["azure", "pci-dss", "financial", "cde", "regulated", "landing-zone"]),
+        }
+    )
 
     # 15. FedRAMP High Landing Zone
     n1 = _node("aws-ec2", "BCAP/TIC 3.0", 100, 50)
@@ -672,13 +750,16 @@ def _build_templates():
         _edge(n8["id"], n9["id"], "private-access"),
         _edge(n14["id"], n10["id"], "backup"),
     ]
-    templates.append({
-        "id": f"tpl-{_uid()}", "name": "FedRAMP High Landing Zone",
-        "category": "aws",
-        "description": "FedRAMP High baseline architecture on AWS GovCloud with TIC 3.0 and FIPS encryption",
-        "graph_json": json.dumps({"nodes": nodes, "edges": edges}),
-        "tags": json.dumps(["aws", "fedramp", "high", "govcloud", "tic3", "regulated", "landing-zone"]),
-    })
+    templates.append(
+        {
+            "id": f"tpl-{_uid()}",
+            "name": "FedRAMP High Landing Zone",
+            "category": "aws",
+            "description": "FedRAMP High baseline architecture on AWS GovCloud with TIC 3.0 and FIPS encryption",
+            "graph_json": json.dumps({"nodes": nodes, "edges": edges}),
+            "tags": json.dumps(["aws", "fedramp", "high", "govcloud", "tic3", "regulated", "landing-zone"]),
+        }
+    )
 
     # 16. Multi-Cloud Landing Zone
     n1 = _node("iac-terraform", "Terraform Cloud", 100, 50)
@@ -713,13 +794,16 @@ def _build_templates():
         _edge(n12["id"], n13["id"], "images"),
         _edge(n14["id"], n2["id"], "secrets"),
     ]
-    templates.append({
-        "id": f"tpl-{_uid()}", "name": "Multi-Cloud Landing Zone",
-        "category": "multi_cloud",
-        "description": "Enterprise multi-cloud pattern with centralized governance via Crossplane and ArgoCD GitOps",
-        "graph_json": json.dumps({"nodes": nodes, "edges": edges}),
-        "tags": json.dumps(["multi-cloud", "aws", "azure", "gcp", "crossplane", "gitops", "landing-zone"]),
-    })
+    templates.append(
+        {
+            "id": f"tpl-{_uid()}",
+            "name": "Multi-Cloud Landing Zone",
+            "category": "multi_cloud",
+            "description": "Enterprise multi-cloud pattern with centralized governance via Crossplane and ArgoCD GitOps",
+            "graph_json": json.dumps({"nodes": nodes, "edges": edges}),
+            "tags": json.dumps(["multi-cloud", "aws", "azure", "gcp", "crossplane", "gitops", "landing-zone"]),
+        }
+    )
 
     # 17. AWS LZA Account Services Overview
     n1 = _node("aws-iam", "Control Tower", 50, 50)
@@ -751,8 +835,7 @@ def _build_templates():
     n22 = _node("aws-fargate", "Prod Workload Account", 940, 730)
     # IaC
     n23 = _node("iac-terraform", "LZA Accelerator", 50, 830)
-    nodes = [n1, n2, n3, n4, n5, n6, n7, n8, n9, n10, n11, n12, n13,
-             n14, n15, n16, n17, n18, n19, n20, n21, n22, n23]
+    nodes = [n1, n2, n3, n4, n5, n6, n7, n8, n9, n10, n11, n12, n13, n14, n15, n16, n17, n18, n19, n20, n21, n22, n23]
     edges = [
         # Management Account governance
         _edge(n2["id"], n1["id"], "governance"),
@@ -776,17 +859,21 @@ def _build_templates():
         # LZA provisioning
         _edge(n23["id"], n2["id"], "provision"),
     ]
-    templates.append({
-        "id": f"tpl-{_uid()}", "name": "AWS LZA Account Services Overview",
-        "category": "aws",
-        "description": "High-level view of AWS Landing Zone Accelerator showing key services "
-                       "in each account: Management (Control Tower, CI/CD), Security (Security Hub, "
-                       "Config, GuardDuty, Log Archive), Infrastructure (Transit Gateway, Network "
-                       "Firewall, Directory Service), and Workload accounts.",
-        "graph_json": json.dumps({"nodes": nodes, "edges": edges}),
-        "tags": json.dumps(["aws", "lza", "landing-zone", "overview", "multi-account",
-                            "control-tower", "security-hub"]),
-    })
+    templates.append(
+        {
+            "id": f"tpl-{_uid()}",
+            "name": "AWS LZA Account Services Overview",
+            "category": "aws",
+            "description": "High-level view of AWS Landing Zone Accelerator showing key services "
+            "in each account: Management (Control Tower, CI/CD), Security (Security Hub, "
+            "Config, GuardDuty, Log Archive), Infrastructure (Transit Gateway, Network "
+            "Firewall, Directory Service), and Workload accounts.",
+            "graph_json": json.dumps({"nodes": nodes, "edges": edges}),
+            "tags": json.dumps(
+                ["aws", "lza", "landing-zone", "overview", "multi-account", "control-tower", "security-hub"]
+            ),
+        }
+    )
 
     # 18. AWS LZA Deployment Pipeline
     n1 = _node("aws-ec2", "CloudFormation Installer Stack", 50, 50)
@@ -805,8 +892,7 @@ def _build_templates():
     n14 = _node("aws-ec2-asg", "Network Account", 650, 450)
     n15 = _node("aws-ec2", "Workload Accounts", 850, 450)
     n16 = _node("iac-terraform", "Config Files (YAML)", 50, 350)
-    nodes = [n1, n2, n3, n4, n5, n6, n7, n8, n9, n10, n11, n12, n13,
-             n14, n15, n16]
+    nodes = [n1, n2, n3, n4, n5, n6, n7, n8, n9, n10, n11, n12, n13, n14, n15, n16]
     edges = [
         _edge(n1["id"], n2["id"], "deploy"),
         _edge(n2["id"], n3["id"], "trigger"),
@@ -824,18 +910,20 @@ def _build_templates():
         _edge(n10["id"], n15["id"], "deploy"),
         _edge(n16["id"], n5["id"], "upload"),
     ]
-    templates.append({
-        "id": f"tpl-{_uid()}", "name": "AWS LZA Deployment Pipeline",
-        "category": "aws",
-        "description": "AWS Landing Zone Accelerator deployment pipeline showing the 2-stage "
-                       "CodePipeline architecture — Installer stack bootstraps the Core pipeline, "
-                       "which runs CDK synth/deploy through a manual approval gate to provision "
-                       "Management, Log Archive, Audit, Network, and Workload accounts. "
-                       "YAML config files drive all account and service configuration.",
-        "graph_json": json.dumps({"nodes": nodes, "edges": edges}),
-        "tags": json.dumps(["aws", "lza", "pipeline", "cicd", "cdk",
-                            "deployment", "codepipeline"]),
-    })
+    templates.append(
+        {
+            "id": f"tpl-{_uid()}",
+            "name": "AWS LZA Deployment Pipeline",
+            "category": "aws",
+            "description": "AWS Landing Zone Accelerator deployment pipeline showing the 2-stage "
+            "CodePipeline architecture — Installer stack bootstraps the Core pipeline, "
+            "which runs CDK synth/deploy through a manual approval gate to provision "
+            "Management, Log Archive, Audit, Network, and Workload accounts. "
+            "YAML config files drive all account and service configuration.",
+            "graph_json": json.dumps({"nodes": nodes, "edges": edges}),
+            "tags": json.dumps(["aws", "lza", "pipeline", "cicd", "cdk", "deployment", "codepipeline"]),
+        }
+    )
 
     return templates
 
@@ -849,52 +937,64 @@ def _build_snippets():
     n2 = _node("aws-lambda", "Lambda", 200, 50)
     n3 = _node("aws-iam", "IAM Role", 200, 150)
     edges = [_edge(n1["id"], n2["id"], "invoke"), _edge(n2["id"], n3["id"], "assume")]
-    snippets.append({
-        "id": "snp-idc-lambda-apigw", "name": "AWS Lambda + API Gateway",
-        "category": "aws",
-        "description": "Lambda function behind API Gateway with IAM role",
-        "graph_json": json.dumps({"nodes": [n1, n2, n3], "edges": edges}),
-        "tags": json.dumps(["aws", "serverless", "lambda", "api-gateway"]),
-    })
+    snippets.append(
+        {
+            "id": "snp-idc-lambda-apigw",
+            "name": "AWS Lambda + API Gateway",
+            "category": "aws",
+            "description": "Lambda function behind API Gateway with IAM role",
+            "graph_json": json.dumps({"nodes": [n1, n2, n3], "edges": edges}),
+            "tags": json.dumps(["aws", "serverless", "lambda", "api-gateway"]),
+        }
+    )
 
     # 2. EKS + ECR + ArgoCD
     n1 = _node("aws-eks", "EKS Cluster", 100, 50)
     n2 = _node("aws-ecr", "ECR Registry", 50, 150)
     n3 = _node("iac-argocd", "ArgoCD", 250, 150)
     edges = [_edge(n2["id"], n1["id"], "pull images"), _edge(n3["id"], n1["id"], "GitOps deploy")]
-    snippets.append({
-        "id": "snp-idc-eks-ecr-argocd", "name": "EKS + ECR + ArgoCD",
-        "category": "aws",
-        "description": "Kubernetes cluster with container registry and GitOps deployment",
-        "graph_json": json.dumps({"nodes": [n1, n2, n3], "edges": edges}),
-        "tags": json.dumps(["aws", "kubernetes", "eks", "gitops", "argocd"]),
-    })
+    snippets.append(
+        {
+            "id": "snp-idc-eks-ecr-argocd",
+            "name": "EKS + ECR + ArgoCD",
+            "category": "aws",
+            "description": "Kubernetes cluster with container registry and GitOps deployment",
+            "graph_json": json.dumps({"nodes": [n1, n2, n3], "edges": edges}),
+            "tags": json.dumps(["aws", "kubernetes", "eks", "gitops", "argocd"]),
+        }
+    )
 
     # 3. RDS + ElastiCache + KMS
     n1 = _node("aws-aurora", "Aurora PostgreSQL", 50, 50)
     n2 = _node("aws-elasticache", "ElastiCache Redis", 50, 150)
     n3 = _node("aws-kms", "KMS", 250, 100)
     edges = [_edge(n1["id"], n3["id"], "encrypt"), _edge(n2["id"], n3["id"], "encrypt")]
-    snippets.append({
-        "id": "snp-idc-rds-cache-kms", "name": "RDS + ElastiCache + KMS",
-        "category": "aws",
-        "description": "Database with in-memory cache and KMS encryption",
-        "graph_json": json.dumps({"nodes": [n1, n2, n3], "edges": edges}),
-        "tags": json.dumps(["aws", "database", "cache", "encryption"]),
-    })
+    snippets.append(
+        {
+            "id": "snp-idc-rds-cache-kms",
+            "name": "RDS + ElastiCache + KMS",
+            "category": "aws",
+            "description": "Database with in-memory cache and KMS encryption",
+            "graph_json": json.dumps({"nodes": [n1, n2, n3], "edges": edges}),
+            "tags": json.dumps(["aws", "database", "cache", "encryption"]),
+        }
+    )
 
     # 4. S3 + CloudFront
     n1 = _node("aws-s3", "S3 Bucket", 50, 50)
     n2 = _node("aws-cloudfront", "CloudFront CDN", 250, 50)
     n3 = _node("aws-kms", "KMS", 50, 150)
     edges = [_edge(n1["id"], n2["id"], "origin"), _edge(n1["id"], n3["id"], "encrypt")]
-    snippets.append({
-        "id": "snp-idc-s3-cloudfront", "name": "S3 + CloudFront",
-        "category": "aws",
-        "description": "Object storage with CDN distribution and encryption",
-        "graph_json": json.dumps({"nodes": [n1, n2, n3], "edges": edges}),
-        "tags": json.dumps(["aws", "storage", "cdn", "s3"]),
-    })
+    snippets.append(
+        {
+            "id": "snp-idc-s3-cloudfront",
+            "name": "S3 + CloudFront",
+            "category": "aws",
+            "description": "Object storage with CDN distribution and encryption",
+            "graph_json": json.dumps({"nodes": [n1, n2, n3], "edges": edges}),
+            "tags": json.dumps(["aws", "storage", "cdn", "s3"]),
+        }
+    )
 
     # 5. Serverless Event Pipeline
     n1 = _node("aws-eventbridge", "EventBridge", 50, 50)
@@ -906,130 +1006,160 @@ def _build_snippets():
         _edge(n2["id"], n3["id"], "enqueue"),
         _edge(n2["id"], n4["id"], "write"),
     ]
-    snippets.append({
-        "id": "snp-idc-event-pipeline", "name": "Serverless Event Pipeline",
-        "category": "aws",
-        "description": "EventBridge triggers Lambda which writes to SQS and DynamoDB",
-        "graph_json": json.dumps({"nodes": [n1, n2, n3, n4], "edges": edges}),
-        "tags": json.dumps(["aws", "serverless", "event-driven", "eventbridge"]),
-    })
+    snippets.append(
+        {
+            "id": "snp-idc-event-pipeline",
+            "name": "Serverless Event Pipeline",
+            "category": "aws",
+            "description": "EventBridge triggers Lambda which writes to SQS and DynamoDB",
+            "graph_json": json.dumps({"nodes": [n1, n2, n3, n4], "edges": edges}),
+            "tags": json.dumps(["aws", "serverless", "event-driven", "eventbridge"]),
+        }
+    )
 
     # 6. Azure AKS + ACR + Key Vault
     n1 = _node("az-aks", "AKS Cluster", 100, 50)
     n2 = _node("az-acr", "ACR Registry", 50, 150)
     n3 = _node("az-keyvault", "Key Vault", 250, 150)
     edges = [_edge(n2["id"], n1["id"], "pull images"), _edge(n1["id"], n3["id"], "secrets")]
-    snippets.append({
-        "id": "snp-idc-aks-acr-keyvault", "name": "Azure AKS + ACR + Key Vault",
-        "category": "azure",
-        "description": "Azure Kubernetes with container registry and secret management",
-        "graph_json": json.dumps({"nodes": [n1, n2, n3], "edges": edges}),
-        "tags": json.dumps(["azure", "kubernetes", "aks", "keyvault"]),
-    })
+    snippets.append(
+        {
+            "id": "snp-idc-aks-acr-keyvault",
+            "name": "Azure AKS + ACR + Key Vault",
+            "category": "azure",
+            "description": "Azure Kubernetes with container registry and secret management",
+            "graph_json": json.dumps({"nodes": [n1, n2, n3], "edges": edges}),
+            "tags": json.dumps(["azure", "kubernetes", "aks", "keyvault"]),
+        }
+    )
 
     # 7. GCP BigQuery + Pub/Sub
     n1 = _node("gcp-pubsub", "Pub/Sub", 50, 50)
     n2 = _node("gcp-functions", "Cloud Function", 200, 50)
     n3 = _node("gcp-bigquery", "BigQuery", 200, 150)
     edges = [_edge(n1["id"], n2["id"], "trigger"), _edge(n2["id"], n3["id"], "load")]
-    snippets.append({
-        "id": "snp-idc-gcp-bq-pubsub", "name": "GCP BigQuery + Pub/Sub",
-        "category": "gcp",
-        "description": "Analytics pipeline with Pub/Sub ingestion into BigQuery",
-        "graph_json": json.dumps({"nodes": [n1, n2, n3], "edges": edges}),
-        "tags": json.dumps(["gcp", "analytics", "bigquery", "pubsub"]),
-    })
+    snippets.append(
+        {
+            "id": "snp-idc-gcp-bq-pubsub",
+            "name": "GCP BigQuery + Pub/Sub",
+            "category": "gcp",
+            "description": "Analytics pipeline with Pub/Sub ingestion into BigQuery",
+            "graph_json": json.dumps({"nodes": [n1, n2, n3], "edges": edges}),
+            "tags": json.dumps(["gcp", "analytics", "bigquery", "pubsub"]),
+        }
+    )
 
     # 8. Multi-Cloud K8s
     n1 = _node("aws-eks", "EKS (AWS)", 50, 50)
     n2 = _node("az-aks", "AKS (Azure)", 250, 50)
     n3 = _node("iac-crossplane", "Crossplane", 150, 150)
     edges = [_edge(n3["id"], n1["id"], "manage"), _edge(n3["id"], n2["id"], "manage")]
-    snippets.append({
-        "id": "snp-idc-multi-cloud-k8s", "name": "Multi-Cloud K8s",
-        "category": "multi_cloud",
-        "description": "EKS and AKS clusters managed by Crossplane",
-        "graph_json": json.dumps({"nodes": [n1, n2, n3], "edges": edges}),
-        "tags": json.dumps(["multi-cloud", "kubernetes", "crossplane"]),
-    })
+    snippets.append(
+        {
+            "id": "snp-idc-multi-cloud-k8s",
+            "name": "Multi-Cloud K8s",
+            "category": "multi_cloud",
+            "description": "EKS and AKS clusters managed by Crossplane",
+            "graph_json": json.dumps({"nodes": [n1, n2, n3], "edges": edges}),
+            "tags": json.dumps(["multi-cloud", "kubernetes", "crossplane"]),
+        }
+    )
 
     # 9. GPU ML Inference
     n1 = _node("aws-sagemaker", "SageMaker Endpoint", 50, 50)
     n2 = _node("aws-ec2-dedicated", "GPU Instance", 250, 50)
     n3 = _node("aws-s3", "Model Artifacts (S3)", 150, 150)
     edges = [_edge(n3["id"], n1["id"], "load model"), _edge(n1["id"], n2["id"], "inference")]
-    snippets.append({
-        "id": "snp-idc-gpu-ml", "name": "GPU ML Inference",
-        "category": "aws",
-        "description": "SageMaker endpoint with GPU instance and S3 model store",
-        "graph_json": json.dumps({"nodes": [n1, n2, n3], "edges": edges}),
-        "tags": json.dumps(["aws", "ml", "gpu", "sagemaker"]),
-    })
+    snippets.append(
+        {
+            "id": "snp-idc-gpu-ml",
+            "name": "GPU ML Inference",
+            "category": "aws",
+            "description": "SageMaker endpoint with GPU instance and S3 model store",
+            "graph_json": json.dumps({"nodes": [n1, n2, n3], "edges": edges}),
+            "tags": json.dumps(["aws", "ml", "gpu", "sagemaker"]),
+        }
+    )
 
     # 10. FIPS Encryption Stack
     n1 = _node("aws-kms", "KMS (FIPS 140-2 L3)", 50, 50)
     n2 = _node("aws-secrets", "Secrets Manager", 250, 50)
     n3 = _node("aws-ec2-dedicated", "Dedicated Host", 150, 150)
     edges = [_edge(n3["id"], n1["id"], "encrypt"), _edge(n3["id"], n2["id"], "retrieve")]
-    snippets.append({
-        "id": "snp-idc-fips-encryption", "name": "FIPS Encryption Stack",
-        "category": "security",
-        "description": "FIPS 140-2 Level 3 KMS with Secrets Manager on dedicated host",
-        "graph_json": json.dumps({"nodes": [n1, n2, n3], "edges": edges}),
-        "tags": json.dumps(["fips", "encryption", "kms", "compliance", "CUI"]),
-    })
+    snippets.append(
+        {
+            "id": "snp-idc-fips-encryption",
+            "name": "FIPS Encryption Stack",
+            "category": "security",
+            "description": "FIPS 140-2 Level 3 KMS with Secrets Manager on dedicated host",
+            "graph_json": json.dumps({"nodes": [n1, n2, n3], "edges": edges}),
+            "tags": json.dumps(["fips", "encryption", "kms", "compliance", "CUI"]),
+        }
+    )
 
     # 11. SCCA BCAP (Boundary Cloud Access Point)
     n1 = _node("aws-ec2", "BCAP Proxy", 50, 50)
     n2 = _node("aws-ec2", "Network Firewall", 220, 50)
     n3 = _node("aws-ec2-asg", "Transit GW", 390, 50)
     edges = [_edge(n1["id"], n2["id"], "filter"), _edge(n2["id"], n3["id"], "route")]
-    snippets.append({
-        "id": "snp-idc-scca-bcap", "name": "SCCA BCAP (Boundary Cloud Access Point)",
-        "category": "security",
-        "description": "DoD SCCA boundary with BCAP proxy, firewall, and transit gateway",
-        "graph_json": json.dumps({"nodes": [n1, n2, n3], "edges": edges}),
-        "tags": json.dumps(["scca", "bcap", "dod", "boundary", "network"]),
-    })
+    snippets.append(
+        {
+            "id": "snp-idc-scca-bcap",
+            "name": "SCCA BCAP (Boundary Cloud Access Point)",
+            "category": "security",
+            "description": "DoD SCCA boundary with BCAP proxy, firewall, and transit gateway",
+            "graph_json": json.dumps({"nodes": [n1, n2, n3], "edges": edges}),
+            "tags": json.dumps(["scca", "bcap", "dod", "boundary", "network"]),
+        }
+    )
 
     # 12. Azure Hub-Spoke
     n1 = _node("az-fw", "Azure Firewall (Hub)", 150, 50)
     n2 = _node("az-vpn-gw", "VPN Gateway", 50, 170)
     n3 = _node("az-er", "ExpressRoute", 300, 170)
     edges = [_edge(n2["id"], n1["id"], "peering"), _edge(n3["id"], n1["id"], "peering")]
-    snippets.append({
-        "id": "snp-idc-azure-hub-spoke", "name": "Azure Hub-Spoke",
-        "category": "azure",
-        "description": "Azure hub-spoke network with firewall, VPN gateway, and ExpressRoute",
-        "graph_json": json.dumps({"nodes": [n1, n2, n3], "edges": edges}),
-        "tags": json.dumps(["azure", "hub-spoke", "network", "firewall"]),
-    })
+    snippets.append(
+        {
+            "id": "snp-idc-azure-hub-spoke",
+            "name": "Azure Hub-Spoke",
+            "category": "azure",
+            "description": "Azure hub-spoke network with firewall, VPN gateway, and ExpressRoute",
+            "graph_json": json.dumps({"nodes": [n1, n2, n3], "edges": edges}),
+            "tags": json.dumps(["azure", "hub-spoke", "network", "firewall"]),
+        }
+    )
 
     # 13. GCP Shared VPC
     n1 = _node("gcp-vpc", "Shared VPC Host", 150, 50)
     n2 = _node("gcp-router", "Cloud Router", 50, 170)
     n3 = _node("gcp-armor", "Cloud Armor", 300, 170)
     edges = [_edge(n2["id"], n1["id"], "route"), _edge(n3["id"], n1["id"], "protect")]
-    snippets.append({
-        "id": "snp-idc-gcp-shared-vpc", "name": "GCP Shared VPC",
-        "category": "gcp",
-        "description": "GCP Shared VPC host project with Cloud Router and Cloud Armor",
-        "graph_json": json.dumps({"nodes": [n1, n2, n3], "edges": edges}),
-        "tags": json.dumps(["gcp", "shared-vpc", "network", "router", "armor"]),
-    })
+    snippets.append(
+        {
+            "id": "snp-idc-gcp-shared-vpc",
+            "name": "GCP Shared VPC",
+            "category": "gcp",
+            "description": "GCP Shared VPC host project with Cloud Router and Cloud Armor",
+            "graph_json": json.dumps({"nodes": [n1, n2, n3], "edges": edges}),
+            "tags": json.dumps(["gcp", "shared-vpc", "network", "router", "armor"]),
+        }
+    )
 
     # 14. Centralized Logging Stack
     n1 = _node("aws-s3", "Log Archive (S3)", 50, 50)
     n2 = _node("aws-securityhub", "Security Hub", 220, 50)
     n3 = _node("aws-config", "AWS Config", 390, 50)
     edges = [_edge(n3["id"], n2["id"], "findings"), _edge(n2["id"], n1["id"], "archive")]
-    snippets.append({
-        "id": "snp-idc-central-logging", "name": "Centralized Logging Stack",
-        "category": "security",
-        "description": "Centralized logging with AWS Config, Security Hub, and S3 archive",
-        "graph_json": json.dumps({"nodes": [n1, n2, n3], "edges": edges}),
-        "tags": json.dumps(["aws", "logging", "security-hub", "config", "compliance"]),
-    })
+    snippets.append(
+        {
+            "id": "snp-idc-central-logging",
+            "name": "Centralized Logging Stack",
+            "category": "security",
+            "description": "Centralized logging with AWS Config, Security Hub, and S3 archive",
+            "graph_json": json.dumps({"nodes": [n1, n2, n3], "edges": edges}),
+            "tags": json.dumps(["aws", "logging", "security-hub", "config", "compliance"]),
+        }
+    )
 
     # 15. FIPS Encryption Stack (Multi-Cloud)
     n1 = _node("aws-kms", "AWS KMS (FIPS L3)", 50, 50)
@@ -1039,13 +1169,16 @@ def _build_snippets():
         _edge(n3["id"], n1["id"], "federation"),
         _edge(n3["id"], n2["id"], "federation"),
     ]
-    snippets.append({
-        "id": "snp-idc-fips-multicloud", "name": "FIPS Encryption Stack (Multi-Cloud)",
-        "category": "security",
-        "description": "Multi-cloud FIPS encryption with AWS KMS, Azure Key Vault, and HashiCorp Vault federation",
-        "graph_json": json.dumps({"nodes": [n1, n2, n3], "edges": edges}),
-        "tags": json.dumps(["fips", "encryption", "multi-cloud", "kms", "keyvault", "vault"]),
-    })
+    snippets.append(
+        {
+            "id": "snp-idc-fips-multicloud",
+            "name": "FIPS Encryption Stack (Multi-Cloud)",
+            "category": "security",
+            "description": "Multi-cloud FIPS encryption with AWS KMS, Azure Key Vault, and HashiCorp Vault federation",
+            "graph_json": json.dumps({"nodes": [n1, n2, n3], "edges": edges}),
+            "tags": json.dumps(["fips", "encryption", "multi-cloud", "kms", "keyvault", "vault"]),
+        }
+    )
 
     # 16. Zero Trust Identity
     n1 = _node("aws-cognito", "Identity Center", 50, 50)
@@ -1057,26 +1190,32 @@ def _build_snippets():
         _edge(n2["id"], n4["id"], "federate"),
         _edge(n3["id"], n4["id"], "encrypt"),
     ]
-    snippets.append({
-        "id": "snp-idc-zero-trust-identity", "name": "Zero Trust Identity",
-        "category": "security",
-        "description": "Zero trust identity with Identity Center, Entra ID, KMS, and IAM policy enforcement",
-        "graph_json": json.dumps({"nodes": [n1, n2, n3, n4], "edges": edges}),
-        "tags": json.dumps(["zero-trust", "identity", "iam", "entra", "sso"]),
-    })
+    snippets.append(
+        {
+            "id": "snp-idc-zero-trust-identity",
+            "name": "Zero Trust Identity",
+            "category": "security",
+            "description": "Zero trust identity with Identity Center, Entra ID, KMS, and IAM policy enforcement",
+            "graph_json": json.dumps({"nodes": [n1, n2, n3, n4], "edges": edges}),
+            "tags": json.dumps(["zero-trust", "identity", "iam", "entra", "sso"]),
+        }
+    )
 
     # 17. Transit Gateway Hub
     n1 = _node("aws-ec2-asg", "Transit Gateway", 150, 50)
     n2 = _node("aws-ec2", "Inspection VPC", 50, 170)
     n3 = _node("aws-ec2", "Egress VPC", 300, 170)
     edges = [_edge(n1["id"], n2["id"], "inspect"), _edge(n1["id"], n3["id"], "egress")]
-    snippets.append({
-        "id": "snp-idc-transit-gw-hub", "name": "Transit Gateway Hub",
-        "category": "aws",
-        "description": "AWS Transit Gateway with inspection and egress VPC attachments",
-        "graph_json": json.dumps({"nodes": [n1, n2, n3], "edges": edges}),
-        "tags": json.dumps(["aws", "transit-gateway", "network", "inspection", "egress"]),
-    })
+    snippets.append(
+        {
+            "id": "snp-idc-transit-gw-hub",
+            "name": "Transit Gateway Hub",
+            "category": "aws",
+            "description": "AWS Transit Gateway with inspection and egress VPC attachments",
+            "graph_json": json.dumps({"nodes": [n1, n2, n3], "edges": edges}),
+            "tags": json.dumps(["aws", "transit-gateway", "network", "inspection", "egress"]),
+        }
+    )
 
     # 18. VDSS (Virtual Data Center Security Stack)
     n1 = _node("aws-ec2", "Security Groups", 50, 50)
@@ -1084,13 +1223,16 @@ def _build_snippets():
     n3 = _node("aws-ec2", "VPC Endpoints", 390, 50)
     n4 = _node("aws-securityhub", "GuardDuty", 220, 170)
     edges = [_edge(n1["id"], n4["id"], "monitor"), _edge(n2["id"], n4["id"], "monitor")]
-    snippets.append({
-        "id": "snp-idc-vdss", "name": "VDSS (Virtual Data Center Security Stack)",
-        "category": "security",
-        "description": "VDSS with Security Groups, NACLs, VPC Endpoints, and GuardDuty monitoring",
-        "graph_json": json.dumps({"nodes": [n1, n2, n3, n4], "edges": edges}),
-        "tags": json.dumps(["vdss", "security", "guardduty", "vpc", "network"]),
-    })
+    snippets.append(
+        {
+            "id": "snp-idc-vdss",
+            "name": "VDSS (Virtual Data Center Security Stack)",
+            "category": "security",
+            "description": "VDSS with Security Groups, NACLs, VPC Endpoints, and GuardDuty monitoring",
+            "graph_json": json.dumps({"nodes": [n1, n2, n3, n4], "edges": edges}),
+            "tags": json.dumps(["vdss", "security", "guardduty", "vpc", "network"]),
+        }
+    )
 
     # 19. LZA CI/CD Pipeline (Installer + Core)
     n1 = _node("aws-ec2", "CloudFormation (Installer Stack)", 50, 50)
@@ -1104,14 +1246,17 @@ def _build_snippets():
         _edge(n3["id"], n4["id"], "read config"),
         _edge(n2["id"], n5["id"], "encrypt"),
     ]
-    snippets.append({
-        "id": "snp-idc-lza-cicd-pipeline", "name": "LZA CI/CD Pipeline (Installer + Core)",
-        "category": "aws",
-        "description": "LZA 2-stage deployment pipeline — CloudFormation installer bootstraps "
-                       "CodePipeline which runs CodeBuild CDK synth against S3 config bucket",
-        "graph_json": json.dumps({"nodes": [n1, n2, n3, n4, n5], "edges": edges}),
-        "tags": json.dumps(["aws", "lza", "pipeline", "cicd", "cdk"]),
-    })
+    snippets.append(
+        {
+            "id": "snp-idc-lza-cicd-pipeline",
+            "name": "LZA CI/CD Pipeline (Installer + Core)",
+            "category": "aws",
+            "description": "LZA 2-stage deployment pipeline — CloudFormation installer bootstraps "
+            "CodePipeline which runs CodeBuild CDK synth against S3 config bucket",
+            "graph_json": json.dumps({"nodes": [n1, n2, n3, n4, n5], "edges": edges}),
+            "tags": json.dumps(["aws", "lza", "pipeline", "cicd", "cdk"]),
+        }
+    )
 
     # 20. Centralized Inspection (NFW + GWLB + TGW)
     n1 = _node("aws-ec2", "Network Firewall", 50, 50)
@@ -1126,15 +1271,17 @@ def _build_snippets():
         _edge(n2["id"], n5["id"], "forward"),
         _edge(n4["id"], n3["id"], "return"),
     ]
-    snippets.append({
-        "id": "snp-idc-lza-centralized-inspection",
-        "name": "Centralized Inspection (NFW + GWLB + TGW)",
-        "category": "aws",
-        "description": "LZA network security pattern — appliance-mode Transit Gateway routes "
-                       "through Network Firewall and Gateway Load Balancer for centralized inspection",
-        "graph_json": json.dumps({"nodes": [n1, n2, n3, n4, n5], "edges": edges}),
-        "tags": json.dumps(["aws", "lza", "inspection", "nfw", "gwlb", "appliance-mode"]),
-    })
+    snippets.append(
+        {
+            "id": "snp-idc-lza-centralized-inspection",
+            "name": "Centralized Inspection (NFW + GWLB + TGW)",
+            "category": "aws",
+            "description": "LZA network security pattern — appliance-mode Transit Gateway routes "
+            "through Network Firewall and Gateway Load Balancer for centralized inspection",
+            "graph_json": json.dumps({"nodes": [n1, n2, n3, n4, n5], "edges": edges}),
+            "tags": json.dumps(["aws", "lza", "inspection", "nfw", "gwlb", "appliance-mode"]),
+        }
+    )
 
     # 21. IPAM Pool Hierarchy
     n1 = _node("aws-ec2", "IPAM (Base Pool 10.0.0.0/8)", 150, 50)
@@ -1146,14 +1293,17 @@ def _build_snippets():
         _edge(n1["id"], n3["id"], "allocate"),
         _edge(n2["id"], n4["id"], "allocate"),
     ]
-    snippets.append({
-        "id": "snp-idc-lza-ipam-hierarchy", "name": "IPAM Pool Hierarchy",
-        "category": "aws",
-        "description": "AWS IPAM 3-tier pool hierarchy for centralized IP address management "
-                       "— base pool allocates to regional pools which allocate to environment pools",
-        "graph_json": json.dumps({"nodes": [n1, n2, n3, n4], "edges": edges}),
-        "tags": json.dumps(["aws", "lza", "ipam", "ip-management"]),
-    })
+    snippets.append(
+        {
+            "id": "snp-idc-lza-ipam-hierarchy",
+            "name": "IPAM Pool Hierarchy",
+            "category": "aws",
+            "description": "AWS IPAM 3-tier pool hierarchy for centralized IP address management "
+            "— base pool allocates to regional pools which allocate to environment pools",
+            "graph_json": json.dumps({"nodes": [n1, n2, n3, n4], "edges": edges}),
+            "tags": json.dumps(["aws", "lza", "ipam", "ip-management"]),
+        }
+    )
 
     # 22. Route53 DNS Architecture
     n1 = _node("aws-ec2", "Route 53 Private Hosted Zone", 150, 50)
@@ -1165,14 +1315,17 @@ def _build_snippets():
         _edge(n3["id"], n1["id"], "forward"),
         _edge(n4["id"], n1["id"], "filter"),
     ]
-    snippets.append({
-        "id": "snp-idc-lza-dns-architecture", "name": "Route53 DNS Architecture",
-        "category": "aws",
-        "description": "Centralized DNS with Route 53 private hosted zones, resolver inbound/outbound "
-                       "endpoints, and DNS Firewall rule groups for domain filtering",
-        "graph_json": json.dumps({"nodes": [n1, n2, n3, n4], "edges": edges}),
-        "tags": json.dumps(["aws", "lza", "dns", "route53", "resolver"]),
-    })
+    snippets.append(
+        {
+            "id": "snp-idc-lza-dns-architecture",
+            "name": "Route53 DNS Architecture",
+            "category": "aws",
+            "description": "Centralized DNS with Route 53 private hosted zones, resolver inbound/outbound "
+            "endpoints, and DNS Firewall rule groups for domain filtering",
+            "graph_json": json.dumps({"nodes": [n1, n2, n3, n4], "edges": edges}),
+            "tags": json.dumps(["aws", "lza", "dns", "route53", "resolver"]),
+        }
+    )
 
     return snippets
 
@@ -1188,9 +1341,7 @@ def init_db():
         conn.commit()
 
         # Seed templates if empty
-        existing = conn.execute(
-            "SELECT COUNT(*) AS cnt FROM idc_templates"
-        ).fetchone()
+        existing = conn.execute("SELECT COUNT(*) AS cnt FROM idc_templates").fetchone()
         if dict(existing).get("cnt", 0) == 0:
             for tpl in _build_templates():
                 conn.execute(
@@ -1198,8 +1349,12 @@ def init_db():
                     "(id, name, category, description, graph_json, tags) "
                     "VALUES (?,?,?,?,?,?)",
                     (
-                        tpl["id"], tpl["name"], tpl["category"],
-                        tpl["description"], tpl["graph_json"], tpl["tags"],
+                        tpl["id"],
+                        tpl["name"],
+                        tpl["category"],
+                        tpl["description"],
+                        tpl["graph_json"],
+                        tpl["tags"],
                     ),
                 )
             conn.commit()
@@ -1208,16 +1363,11 @@ def init_db():
         # Seed snippets (upsert)
         added = 0
         for snp in _build_snippets():
-            existing_snp = conn.execute(
-                "SELECT 1 FROM idc_snippets WHERE id=?", (snp["id"],)
-            ).fetchone()
+            existing_snp = conn.execute("SELECT 1 FROM idc_snippets WHERE id=?", (snp["id"],)).fetchone()
             if not existing_snp:
                 conn.execute(
-                    "INSERT INTO idc_snippets "
-                    "(id, name, category, description, graph_json, tags) "
-                    "VALUES (?,?,?,?,?,?)",
-                    (snp["id"], snp["name"], snp["category"],
-                     snp["description"], snp["graph_json"], snp["tags"]),
+                    "INSERT INTO idc_snippets (id, name, category, description, graph_json, tags) VALUES (?,?,?,?,?,?)",
+                    (snp["id"], snp["name"], snp["category"], snp["description"], snp["graph_json"], snp["tags"]),
                 )
                 added += 1
         if added:

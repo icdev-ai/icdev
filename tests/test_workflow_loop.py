@@ -35,6 +35,7 @@ from tools.workflow.process_verifier import check_project_processes, verify_loop
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def test_db(tmp_path):
     """Create a temporary test database with required tables."""
@@ -146,6 +147,7 @@ def test_db(tmp_path):
 # Loop Engine Tests
 # ---------------------------------------------------------------------------
 
+
 class TestLoopEngine:
     """Tests for loop_engine.py — PLAN→APPLY→UNIFY lifecycle."""
 
@@ -160,7 +162,9 @@ class TestLoopEngine:
         loop = create_loop("proj-1", "phase-1", db_path=test_db)
         result = add_acceptance_criterion(
             loop["loop_id"],
-            "a user exists", "they log in", "they see the dashboard",
+            "a user exists",
+            "they log in",
+            "they see the dashboard",
             db_path=test_db,
         )
         assert "criterion_id" in result
@@ -177,7 +181,11 @@ class TestLoopEngine:
     def test_finalize_plan_success(self, test_db):
         loop = create_loop("proj-1", "phase-1", db_path=test_db)
         add_acceptance_criterion(
-            loop["loop_id"], "given", "when", "then", db_path=test_db,
+            loop["loop_id"],
+            "given",
+            "when",
+            "then",
+            db_path=test_db,
         )
         result = finalize_plan(loop["loop_id"], "Test plan", 2, db_path=test_db)
         assert result["status"] == "planned"
@@ -309,7 +317,9 @@ class TestLoopEngine:
         loop = create_loop("proj-1", "phase-1", db_path=test_db)
         result = add_acceptance_criterion(
             loop["loop_id"],
-            "user exists", "login", "see dashboard",
+            "user exists",
+            "login",
+            "see dashboard",
             bdd_story_id="sd-abc123",
             db_path=test_db,
         )
@@ -323,7 +333,11 @@ class TestLoopEngine:
         """AC without BDD link should have None."""
         loop = create_loop("proj-1", "phase-1", db_path=test_db)
         result = add_acceptance_criterion(
-            loop["loop_id"], "g", "w", "t", db_path=test_db,
+            loop["loop_id"],
+            "g",
+            "w",
+            "t",
+            db_path=test_db,
         )
         assert result["bdd_story_id"] is None
 
@@ -335,6 +349,7 @@ class TestLoopEngine:
 # ---------------------------------------------------------------------------
 # Reconciler Tests
 # ---------------------------------------------------------------------------
+
 
 class TestReconciler:
     """Tests for reconciler.py — planned-vs-actual delta."""
@@ -390,6 +405,7 @@ class TestReconciler:
 # Next Action Tests
 # ---------------------------------------------------------------------------
 
+
 class TestNextAction:
     """Tests for next_action.py — single next action recommender."""
 
@@ -425,6 +441,7 @@ class TestNextAction:
 # ---------------------------------------------------------------------------
 # Handoff Generator Tests
 # ---------------------------------------------------------------------------
+
 
 class TestHandoffGenerator:
     """Tests for handoff_generator.py — structured session handoffs."""
@@ -472,6 +489,7 @@ class TestHandoffGenerator:
 # Process Verifier Tests
 # ---------------------------------------------------------------------------
 
+
 class TestProcessVerifier:
     """Tests for process_verifier.py — required process invocation check."""
 
@@ -486,9 +504,10 @@ class TestProcessVerifier:
         # Add audit trail entries for invoked processes
         # Use ISO format matching _now() so timestamp comparison works
         from datetime import datetime, timezone
+
         now_ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         conn = sqlite3.connect(str(test_db))
-        for proc in (processes or []):
+        for proc in processes or []:
             conn.execute(
                 "INSERT INTO audit_trail (event_type, actor, action, project_id, created_at) "
                 "VALUES (?, 'builder', ?, 'proj-1', ?)",
@@ -499,10 +518,15 @@ class TestProcessVerifier:
         return lid
 
     def test_verify_all_processes_present(self, test_db):
-        lid = self._setup_loop_with_audit(test_db, [
-            "security.sast", "security.secret_detection",
-            "compliance.cui_marking", "testing.unit",
-        ])
+        lid = self._setup_loop_with_audit(
+            test_db,
+            [
+                "security.sast",
+                "security.secret_detection",
+                "compliance.cui_marking",
+                "testing.unit",
+            ],
+        )
         result = verify_loop_processes(lid, test_db)
         assert result["all_invoked"] is True
         assert result["pass_rate"] == 1.0
@@ -538,6 +562,7 @@ class TestProcessVerifier:
 # ---------------------------------------------------------------------------
 # Integration Tests
 # ---------------------------------------------------------------------------
+
 
 class TestIntegration:
     """End-to-end integration tests."""
@@ -604,11 +629,13 @@ class TestIntegration:
 # Workflow Extension Tests
 # ---------------------------------------------------------------------------
 
+
 class TestWorkflowExtension:
     """Tests for 030_workflow_loop_chat.py extension."""
 
     def _load_ext(self):
         import importlib
+
         return importlib.import_module("tools.extensions.builtins.030_workflow_loop_chat")
 
     def test_extension_exports(self):
@@ -625,10 +652,14 @@ class TestWorkflowExtension:
 
     def test_handle_skips_no_project(self):
         mod = self._load_ext()
-        result = mod.handle({
-            "role": "assistant", "context_id": "ctx-1",
-            "turn_number": 1, "project_id": "",
-        })
+        result = mod.handle(
+            {
+                "role": "assistant",
+                "context_id": "ctx-1",
+                "turn_number": 1,
+                "project_id": "",
+            }
+        )
         assert "workflow_advisory" not in result
 
 
@@ -636,12 +667,14 @@ class TestWorkflowExtension:
 # Handoff Chat Context Link Tests
 # ---------------------------------------------------------------------------
 
+
 class TestHandoffChatLink:
     """Tests for chat_context_id on handoff documents."""
 
     def test_handoff_with_chat_context(self, test_db):
         result = generate_handoff(
-            "proj-1", created_by="dev",
+            "proj-1",
+            created_by="dev",
             chat_context_id="ctx-abc123",
             db_path=test_db,
         )
@@ -660,6 +693,7 @@ class TestHandoffChatLink:
 # ---------------------------------------------------------------------------
 # Intake Bridge Tests
 # ---------------------------------------------------------------------------
+
 
 class TestIntakeBridge:
     """Tests for intake → workflow loop bridge."""
@@ -779,6 +813,7 @@ class TestIntakeBridge:
 
     def test_check_readiness_ready(self, bridge_db):
         from tools.workflow.intake_bridge import check_bridge_readiness
+
         result = check_bridge_readiness("sess-001", bridge_db)
         assert result["ready"] is True
         assert result["story_count"] == 2
@@ -786,17 +821,20 @@ class TestIntakeBridge:
 
     def test_check_readiness_too_low(self, bridge_db):
         from tools.workflow.intake_bridge import check_bridge_readiness
+
         result = check_bridge_readiness("sess-low", bridge_db)
         assert result["ready"] is False
         assert "below" in result["reason"].lower()
 
     def test_check_readiness_not_found(self, bridge_db):
         from tools.workflow.intake_bridge import check_bridge_readiness
+
         result = check_bridge_readiness("nonexistent", bridge_db)
         assert result["ready"] is False
 
     def test_bridge_creates_loop(self, bridge_db):
         from tools.workflow.intake_bridge import bridge_intake_to_loop
+
         result = bridge_intake_to_loop("sess-001", db_path=bridge_db)
         assert "loop_id" in result
         assert result["task_count"] == 2
@@ -805,6 +843,7 @@ class TestIntakeBridge:
 
     def test_bridge_parses_gherkin(self, bridge_db):
         from tools.workflow.intake_bridge import bridge_intake_to_loop
+
         result = bridge_intake_to_loop("sess-001", db_path=bridge_db)
 
         # Verify criteria were parsed from Gherkin
@@ -823,5 +862,6 @@ class TestIntakeBridge:
 
     def test_bridge_rejects_low_readiness(self, bridge_db):
         from tools.workflow.intake_bridge import bridge_intake_to_loop
+
         result = bridge_intake_to_loop("sess-low", db_path=bridge_db)
         assert "error" in result

@@ -39,16 +39,19 @@ def oscal_status():
     """Detect available OSCAL ecosystem tools."""
     try:
         from tools.compliance.oscal_tools import detect_oscal_tools
+
         result = detect_oscal_tools()
         return jsonify(result)
     except ImportError:
-        return jsonify({
-            "java_available": False,
-            "oscal_cli_available": False,
-            "oscal_pydantic_available": False,
-            "nist_catalog_available": False,
-            "error": "oscal_tools module not available",
-        })
+        return jsonify(
+            {
+                "java_available": False,
+                "oscal_cli_available": False,
+                "oscal_pydantic_available": False,
+                "nist_catalog_available": False,
+                "error": "oscal_tools module not available",
+            }
+        )
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -58,6 +61,7 @@ def detect_tools():
     """Force re-detection of OSCAL tools."""
     try:
         from tools.compliance.oscal_tools import detect_oscal_tools
+
         result = detect_oscal_tools()
         return jsonify(result)
     except Exception as e:
@@ -85,7 +89,8 @@ def list_validations():
         ).fetchall()
 
         total = conn.execute(
-            f"SELECT COUNT(*) FROM oscal_validation_log {where}", params  # nosec B608 -- table/column names are internal constants, not user input
+            f"SELECT COUNT(*) FROM oscal_validation_log {where}",
+            params,  # nosec B608 -- table/column names are internal constants, not user input
         ).fetchone()[0]
 
         conn.close()
@@ -115,7 +120,8 @@ def list_artifacts():
         ).fetchall()
 
         total = conn.execute(
-            f"SELECT COUNT(*) FROM oscal_artifacts {where}", params  # nosec B608 -- table/column names are internal constants, not user input
+            f"SELECT COUNT(*) FROM oscal_artifacts {where}",
+            params,  # nosec B608 -- table/column names are internal constants, not user input
         ).fetchone()[0]
 
         conn.close()
@@ -132,6 +138,7 @@ def catalog_stats():
     """Get OSCAL catalog statistics."""
     try:
         from tools.compliance.oscal_catalog_adapter import OscalCatalogAdapter
+
         adapter = OscalCatalogAdapter()
         stats = adapter.get_catalog_stats()
         return jsonify(stats)
@@ -146,6 +153,7 @@ def catalog_lookup(control_id: str):
     """Look up a specific control from the OSCAL catalog."""
     try:
         from tools.compliance.oscal_catalog_adapter import OscalCatalogAdapter
+
         adapter = OscalCatalogAdapter()
         control = adapter.get_control(control_id)
         if not control:
@@ -171,6 +179,7 @@ def validate_file():
 
     try:
         from tools.compliance.oscal_tools import validate_oscal_deep
+
         result = validate_oscal_deep(file_path)
         return jsonify(result)
     except ImportError:

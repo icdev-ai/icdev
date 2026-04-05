@@ -9,6 +9,7 @@ Usage:
     python tools/network/netbox_client.py --url http://netbox:8000 --token <token> --pull devices --json
     python tools/network/netbox_client.py --url http://netbox:8000 --token <token> --pull all --json
 """
+
 from __future__ import annotations
 
 import json
@@ -111,7 +112,7 @@ class NetBoxClient:
             next_url: str | None = data.get("next")
             if next_url:
                 # next_url is absolute — strip base so _request can prefix it
-                url_path = next_url[len(self.base_url):]
+                url_path = next_url[len(self.base_url) :]
             else:
                 url_path = None  # type: ignore[assignment]
         return results
@@ -346,6 +347,7 @@ class NetBoxClient:
 
 # ── Canvas graph builder ───────────────────────────────────────────────────────
 
+
 def devices_to_canvas_nodes(devices: list[dict], start_x: int = 100, start_y: int = 100) -> list[dict]:
     """Convert NetBox device list to canvas node list for graph_json."""
     nodes = []
@@ -372,23 +374,27 @@ def devices_to_canvas_nodes(devices: list[dict], start_x: int = 100, start_y: in
 def prefixes_to_ipam_blocks(prefixes: list[dict]) -> list[dict]:
     """Convert NetBox prefixes to nc_ipam_blocks rows."""
     import uuid
+
     blocks = []
     for p in prefixes:
         vlan_id = p.get("vlan_id")
-        blocks.append({
-            "id": str(uuid.uuid4()),
-            "network": p["prefix"],
-            "vlan_id": vlan_id,
-            "vrf": p.get("vrf", "global"),
-            "description": p.get("description", ""),
-            "site_id": None,
-        })
+        blocks.append(
+            {
+                "id": str(uuid.uuid4()),
+                "network": p["prefix"],
+                "vlan_id": vlan_id,
+                "vrf": p.get("vrf", "global"),
+                "description": p.get("description", ""),
+                "site_id": None,
+            }
+        )
     return blocks
 
 
 def circuits_to_nc_circuits(circuits: list[dict], topology_id: str) -> list[dict]:
     """Convert NetBox circuits to nc_circuits rows."""
     import uuid
+
     rows = []
     for c in circuits:
         bw = ""
@@ -400,17 +406,19 @@ def circuits_to_nc_circuits(circuits: list[dict], topology_id: str) -> list[dict
                 bw = f"{kbps // 1_000}Mbps"
             else:
                 bw = f"{kbps}Kbps"
-        rows.append({
-            "id": str(uuid.uuid4()),
-            "topology_id": topology_id,
-            "circuit_id": c["circuit_id"],
-            "carrier": c.get("provider", ""),
-            "circuit_type": c.get("circuit_type", ""),
-            "bandwidth": bw,
-            "handoff_a": c.get("site_a", ""),
-            "handoff_z": c.get("site_z", ""),
-            "install_status": c.get("status", "active"),
-        })
+        rows.append(
+            {
+                "id": str(uuid.uuid4()),
+                "topology_id": topology_id,
+                "circuit_id": c["circuit_id"],
+                "carrier": c.get("provider", ""),
+                "circuit_type": c.get("circuit_type", ""),
+                "bandwidth": bw,
+                "handoff_a": c.get("site_a", ""),
+                "handoff_z": c.get("site_z", ""),
+                "install_status": c.get("status", "active"),
+            }
+        )
     return rows
 
 
@@ -423,8 +431,9 @@ if __name__ == "__main__":
     parser.add_argument("--url", required=True, help="NetBox base URL (e.g. http://netbox:8000)")
     parser.add_argument("--token", required=True, help="NetBox API token")
     parser.add_argument("--test", action="store_true", help="Test connection only")
-    parser.add_argument("--pull", choices=["devices", "ips", "vlans", "prefixes", "racks", "circuits", "all"],
-                        help="Pull resource type")
+    parser.add_argument(
+        "--pull", choices=["devices", "ips", "vlans", "prefixes", "racks", "circuits", "all"], help="Pull resource type"
+    )
     parser.add_argument("--site", default=None, help="Filter by site slug")
     parser.add_argument("--json", action="store_true", help="Output as JSON")
     parser.add_argument("--gate", action="store_true", help="Exit 1 if connection fails")

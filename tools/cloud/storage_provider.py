@@ -46,6 +46,7 @@ class StorageProvider(ABC):
 # ============================================================
 try:
     import boto3 as _boto3_s3
+
     _HAS_BOTO3_S3 = True
 except ImportError:
     _HAS_BOTO3_S3 = False
@@ -124,6 +125,7 @@ class AWSS3Provider(StorageProvider):
 try:
     from azure.storage.blob import BlobServiceClient
     from azure.identity import DefaultAzureCredential as _AzureCredBlob
+
     _HAS_AZURE_BLOB = True
 except ImportError:
     _HAS_AZURE_BLOB = False
@@ -197,6 +199,7 @@ class AzureBlobProvider(StorageProvider):
 # ============================================================
 try:
     from google.cloud import storage as _gcs
+
     _HAS_GCS = True
 except ImportError:
     _HAS_GCS = False
@@ -309,6 +312,7 @@ class OCIObjectStorageProvider(StorageProvider):
 try:
     import ibm_boto3
     from ibm_botocore.client import Config as _IBMBotoConfig
+
     _HAS_IBM_COS = True
 except ImportError:
     _HAS_IBM_COS = False
@@ -317,8 +321,7 @@ except ImportError:
 class IBMStorageProvider(StorageProvider):
     """IBM Cloud Object Storage (S3-compatible) implementation (D237)."""
 
-    def __init__(self, api_key: str = "", instance_id: str = "",
-                 region: str = "us-south"):
+    def __init__(self, api_key: str = "", instance_id: str = "", region: str = "us-south"):
         self._api_key = api_key or os.environ.get("IBM_CLOUD_API_KEY", "")
         self._instance_id = instance_id or os.environ.get("IBM_COS_INSTANCE_ID", "")
         self._region = region

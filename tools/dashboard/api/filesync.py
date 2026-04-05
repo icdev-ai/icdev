@@ -27,13 +27,20 @@ def _get_db():
 
 # ── Stats ────────────────────────────────────────────────────────────
 
+
 @filesync_api.route("/stats", methods=["GET"])
 def filesync_stats():
     """GET /api/filesync/stats — Sync module overview statistics."""
     conn = _get_db()
     try:
-        stats = {"total_jobs": 0, "active_jobs": 0, "completed_syncs": 0,
-                 "failed_syncs": 0, "pending_conflicts": 0, "total_bytes": 0}
+        stats = {
+            "total_jobs": 0,
+            "active_jobs": 0,
+            "completed_syncs": 0,
+            "failed_syncs": 0,
+            "pending_conflicts": 0,
+            "total_bytes": 0,
+        }
         try:
             row = conn.execute("SELECT COUNT(*) as cnt FROM sync_jobs").fetchone()
             stats["total_jobs"] = row["cnt"]
@@ -47,30 +54,22 @@ def filesync_stats():
         except Exception:
             pass
         try:
-            row = conn.execute(
-                "SELECT COUNT(*) as cnt FROM sync_log WHERE action = 'sync_completed'"
-            ).fetchone()
+            row = conn.execute("SELECT COUNT(*) as cnt FROM sync_log WHERE action = 'sync_completed'").fetchone()
             stats["completed_syncs"] = row["cnt"]
         except Exception:
             pass
         try:
-            row = conn.execute(
-                "SELECT COUNT(*) as cnt FROM sync_log WHERE action = 'error'"
-            ).fetchone()
+            row = conn.execute("SELECT COUNT(*) as cnt FROM sync_log WHERE action = 'error'").fetchone()
             stats["failed_syncs"] = row["cnt"]
         except Exception:
             pass
         try:
-            row = conn.execute(
-                "SELECT COUNT(*) as cnt FROM sync_conflicts WHERE resolution = 'pending'"
-            ).fetchone()
+            row = conn.execute("SELECT COUNT(*) as cnt FROM sync_conflicts WHERE resolution = 'pending'").fetchone()
             stats["pending_conflicts"] = row["cnt"]
         except Exception:
             pass
         try:
-            row = conn.execute(
-                "SELECT COALESCE(SUM(bytes_transferred), 0) as total FROM sync_log"
-            ).fetchone()
+            row = conn.execute("SELECT COALESCE(SUM(bytes_transferred), 0) as total FROM sync_log").fetchone()
             stats["total_bytes"] = row["total"]
         except Exception:
             pass
@@ -81,14 +80,13 @@ def filesync_stats():
 
 # ── Jobs CRUD ────────────────────────────────────────────────────────
 
+
 @filesync_api.route("/jobs", methods=["GET"])
 def list_jobs():
     """GET /api/filesync/jobs — List all sync jobs."""
     conn = _get_db()
     try:
-        rows = conn.execute(
-            "SELECT * FROM sync_jobs ORDER BY created_at DESC"
-        ).fetchall()
+        rows = conn.execute("SELECT * FROM sync_jobs ORDER BY created_at DESC").fetchall()
         return jsonify({"jobs": [dict(r) for r in rows], "count": len(rows)})
     except Exception as e:
         return jsonify({"jobs": [], "count": 0, "error": str(e)})
@@ -101,6 +99,7 @@ def create_job():
     """POST /api/filesync/jobs — Create a new sync job."""
     try:
         from tools.filesync.sync_engine import create_job as _create_job
+
         data = request.get_json(force=True)
         result = _create_job(
             name=data.get("name", "Unnamed"),
@@ -121,6 +120,7 @@ def get_job(job_id):
     """GET /api/filesync/jobs/<id> — Get job details."""
     try:
         from tools.filesync.sync_engine import get_job_status
+
         return jsonify(get_job_status(job_id))
     except Exception as e:
         return jsonify({"status": "error", "error": str(e)}), 500
@@ -131,6 +131,7 @@ def delete_job(job_id):
     """DELETE /api/filesync/jobs/<id> — Delete a sync job."""
     try:
         from tools.filesync.sync_engine import delete_job as _delete_job
+
         return jsonify(_delete_job(job_id))
     except Exception as e:
         return jsonify({"status": "error", "error": str(e)}), 500
@@ -138,11 +139,13 @@ def delete_job(job_id):
 
 # ── Sync Execution ───────────────────────────────────────────────────
 
+
 @filesync_api.route("/jobs/<job_id>/run", methods=["POST"])
 def run_job(job_id):
     """POST /api/filesync/jobs/<id>/run — Execute a sync job."""
     try:
         from tools.filesync.sync_engine import run_sync
+
         data = request.get_json(silent=True) or {}
         dry_run = data.get("dry_run", False)
         result = run_sync(job_id, dry_run=dry_run)
@@ -156,12 +159,14 @@ def run_all_jobs():
     """POST /api/filesync/run-all — Execute all idle sync jobs."""
     try:
         from tools.filesync.sync_engine import run_all_jobs as _run_all
+
         return jsonify(_run_all())
     except Exception as e:
         return jsonify({"status": "error", "error": str(e)}), 500
 
 
 # ── Sync Log ─────────────────────────────────────────────────────────
+
 
 @filesync_api.route("/log", methods=["GET"])
 def sync_log():
@@ -188,6 +193,7 @@ def sync_log():
 
 
 # ── Conflicts ────────────────────────────────────────────────────────
+
 
 @filesync_api.route("/conflicts", methods=["GET"])
 def list_conflicts():
@@ -216,6 +222,7 @@ def resolve_conflict(conflict_id):
     """POST /api/filesync/conflicts/<id>/resolve — Resolve a conflict."""
     try:
         from tools.filesync.sync_engine import resolve_conflict as _resolve
+
         data = request.get_json(force=True)
         resolution = data.get("resolution", "source_wins")
         return jsonify(_resolve(conflict_id, resolution))
@@ -225,11 +232,13 @@ def resolve_conflict(conflict_id):
 
 # ── FIM ─────────────────────────────────────────────────────────────
 
+
 @filesync_api.route("/jobs/<job_id>/fim", methods=["POST"])
 def fim_check(job_id):
     """POST /api/filesync/jobs/<id>/fim — Run FIM integrity check."""
     try:
         from tools.filesync.sync_engine import check_fim
+
         return jsonify(check_fim(job_id))
     except Exception as e:
         return jsonify({"status": "error", "error": str(e)}), 500
@@ -237,11 +246,13 @@ def fim_check(job_id):
 
 # ── Watch ────────────────────────────────────────────────────────────
 
+
 @filesync_api.route("/jobs/<job_id>/watch", methods=["POST"])
 def start_watch(job_id):
     """POST /api/filesync/jobs/<id>/watch — Start file watcher on job source."""
     try:
         from tools.filesync.sync_engine import watch_job
+
         return jsonify(watch_job(job_id, blocking=False))
     except Exception as e:
         return jsonify({"status": "error", "error": str(e)}), 500
@@ -252,6 +263,7 @@ def stop_watch(job_id):
     """DELETE /api/filesync/jobs/<id>/watch — Stop file watcher."""
     try:
         from tools.filesync.sync_engine import stop_watching
+
         return jsonify(stop_watching(job_id))
     except Exception as e:
         return jsonify({"status": "error", "error": str(e)}), 500
@@ -262,6 +274,7 @@ def list_watchers():
     """GET /api/filesync/watchers — List active file watchers."""
     try:
         from tools.filesync.sync_engine import get_watch_status
+
         return jsonify(get_watch_status())
     except Exception as e:
         return jsonify({"status": "error", "error": str(e)}), 500
@@ -269,11 +282,13 @@ def list_watchers():
 
 # ── Versions (D-SYNC-16) ─────────────────────────────────────────────
 
+
 @filesync_api.route("/jobs/<job_id>/versions", methods=["GET"])
 def list_versions(job_id):
     """GET /api/filesync/jobs/<id>/versions — List file versions."""
     try:
         from tools.filesync.versioner import FileVersioner
+
         rel_path = request.args.get("file_path")
         limit = int(request.args.get("limit", "50"))
         versioner = FileVersioner(str(DB_PATH))
@@ -289,6 +304,7 @@ def restore_version(version_id):
     """POST /api/filesync/versions/<id>/restore — Restore a file version."""
     try:
         from tools.filesync.versioner import FileVersioner
+
         data = request.get_json(force=True)
         dest_base = data.get("dest_base", "")
         if not dest_base:
@@ -301,11 +317,13 @@ def restore_version(version_id):
 
 # ── Health ───────────────────────────────────────────────────────────
 
+
 @filesync_api.route("/health", methods=["GET"])
 def filesync_health():
     """GET /api/filesync/health — Module health check."""
     try:
         from tools.filesync.sync_engine import get_health
+
         return jsonify(get_health())
     except Exception as e:
         return jsonify({"status": "error", "error": str(e)}), 500

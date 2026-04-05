@@ -139,9 +139,9 @@ class ClassificationResolver:
 
         if not self._profile:
             logger.warning(
-                "Classification level '%s' not found in profiles; "
-                "falling back to '%s'",
-                self._level, DEFAULT_LEVEL,
+                "Classification level '%s' not found in profiles; falling back to '%s'",
+                self._level,
+                DEFAULT_LEVEL,
             )
             self._level = DEFAULT_LEVEL
             self._profile = self._config.get("profiles", {}).get(DEFAULT_LEVEL, {})
@@ -217,16 +217,12 @@ class ClassificationResolver:
     @property
     def enforce_cui_marking_gate(self) -> bool:
         """Whether the CUI marking gate blocks merges."""
-        return self._profile.get("security_gates", {}).get(
-            "enforce_cui_marking_gate", False
-        )
+        return self._profile.get("security_gates", {}).get("enforce_cui_marking_gate", False)
 
     @property
     def enforce_classification_gate(self) -> bool:
         """Whether the classification gate is enforced."""
-        return self._profile.get("security_gates", {}).get(
-            "enforce_classification_gate", False
-        )
+        return self._profile.get("security_gates", {}).get("enforce_classification_gate", False)
 
     def is_gate_enforced(self, gate_name: str) -> bool:
         """Check if a specific security gate is enforced for this classification."""
@@ -266,9 +262,7 @@ class ClassificationResolver:
     @property
     def strip_classification_tools(self) -> bool:
         """Whether to strip classification-related tools from child apps."""
-        return self._profile.get("generation", {}).get(
-            "strip_classification_tools", True
-        )
+        return self._profile.get("generation", {}).get("strip_classification_tools", True)
 
     # ----- Helpers -----
 
@@ -299,11 +293,13 @@ class ClassificationResolver:
         result = []
         for level_name in config.get("levels", []):
             profile = config.get("profiles", {}).get(level_name, {})
-            result.append({
-                "level": level_name,
-                "display_name": profile.get("display_name", level_name),
-                "description": profile.get("description", ""),
-            })
+            result.append(
+                {
+                    "level": level_name,
+                    "display_name": profile.get("display_name", level_name),
+                    "description": profile.get("description", ""),
+                }
+            )
         return result
 
     @staticmethod
@@ -321,18 +317,10 @@ def resolve_classification(level: Optional[str] = None) -> Dict[str, Any]:
 
 def main():
     """CLI entry point."""
-    parser = argparse.ArgumentParser(
-        description="ICDEV™ Classification Resolver — resolve classification settings"
-    )
-    parser.add_argument(
-        "--level", help="Classification level to resolve (e.g., public, cui, secret)"
-    )
-    parser.add_argument(
-        "--list", action="store_true", help="List all available classification levels"
-    )
-    parser.add_argument(
-        "--check", help="Check a specific setting (e.g., banner_enabled)"
-    )
+    parser = argparse.ArgumentParser(description="ICDEV™ Classification Resolver — resolve classification settings")
+    parser.add_argument("--level", help="Classification level to resolve (e.g., public, cui, secret)")
+    parser.add_argument("--list", action="store_true", help="List all available classification levels")
+    parser.add_argument("--check", help="Check a specific setting (e.g., banner_enabled)")
     parser.add_argument("--json", action="store_true", help="Output as JSON")
     args = parser.parse_args()
 

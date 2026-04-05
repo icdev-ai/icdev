@@ -97,7 +97,9 @@ class TestFeedbackCycle:
     def test_cycle_result_has_expected_keys(self):
         with patch("tools.finetune.quality_monitor.check_quality") as mock_check:
             mock_check.return_value = {
-                "status": "ok", "metrics": {}, "alerts": [],
+                "status": "ok",
+                "metrics": {},
+                "alerts": [],
                 "retrain_recommended": False,
             }
             result = run_feedback_cycle()
@@ -109,7 +111,8 @@ class TestFeedbackCycle:
     @patch("tools.finetune.quality_monitor.check_quality")
     def test_auto_remediate_disabled(self, mock_check):
         mock_check.return_value = {
-            "status": "ok", "metrics": {},
+            "status": "ok",
+            "metrics": {},
             "alerts": [{"metric": "ndcg", "retrain_recommended": True}],
             "retrain_recommended": True,
         }

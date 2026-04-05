@@ -190,13 +190,22 @@ def _now():
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _insert_signal(db_path, signal_id=None, source="github", source_type="issue",
-                   title="Test signal", description="A test description",
-                   status="new", community_score=0.5, category=None,
-                   innovation_score=None):
+def _insert_signal(
+    db_path,
+    signal_id=None,
+    source="github",
+    source_type="issue",
+    title="Test signal",
+    description="A test description",
+    status="new",
+    community_score=0.5,
+    category=None,
+    innovation_score=None,
+):
     """Insert a test signal into the database."""
     sig_id = signal_id or f"sig-{uuid.uuid4().hex[:12]}"
     import hashlib
+
     content_hash = hashlib.sha256(sig_id.encode()).hexdigest()
 
     conn = sqlite3.connect(str(db_path))
@@ -206,10 +215,21 @@ def _insert_signal(db_path, signal_id=None, source="github", source_type="issue"
             community_score, content_hash, discovered_at, status, category,
             innovation_score)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (sig_id, source, source_type, title, description,
-         f"https://example.com/{sig_id}", "{}",
-         community_score, content_hash, _now(), status, category,
-         innovation_score),
+        (
+            sig_id,
+            source,
+            source_type,
+            title,
+            description,
+            f"https://example.com/{sig_id}",
+            "{}",
+            community_score,
+            content_hash,
+            _now(),
+            status,
+            category,
+            innovation_score,
+        ),
     )
     conn.commit()
     conn.close()
@@ -225,6 +245,7 @@ class TestWebScanner:
     def test_import(self):
         """web_scanner module imports successfully."""
         from icdev.tools.innovation import web_scanner
+
         assert hasattr(web_scanner, "run_scan")
         assert hasattr(web_scanner, "list_sources")
         assert hasattr(web_scanner, "store_signals")
@@ -232,6 +253,7 @@ class TestWebScanner:
     def test_list_sources(self):
         """list_sources returns configured sources."""
         from icdev.tools.innovation.web_scanner import list_sources
+
         result = list_sources()
         assert "sources" in result
         assert "total" in result
@@ -295,6 +317,7 @@ class TestWebScanner:
     def test_signal_id_format(self):
         """Signal IDs follow sig-xxx format."""
         from icdev.tools.innovation.web_scanner import _signal_id
+
         sig_id = _signal_id()
         assert sig_id.startswith("sig-")
         assert len(sig_id) == 16  # "sig-" + 12 hex chars
@@ -302,6 +325,7 @@ class TestWebScanner:
     def test_content_hash_deterministic(self):
         """content_hash is deterministic for same input."""
         from icdev.tools.innovation.web_scanner import _content_hash
+
         h1 = _content_hash("test content")
         h2 = _content_hash("test content")
         assert h1 == h2
@@ -321,6 +345,7 @@ class TestWebScanner:
     def test_source_scanners_registered(self):
         """SOURCE_SCANNERS dict has expected entries."""
         from icdev.tools.innovation.web_scanner import SOURCE_SCANNERS
+
         assert "github" in SOURCE_SCANNERS
         assert "cve_databases" in SOURCE_SCANNERS
         assert "stackoverflow" in SOURCE_SCANNERS
@@ -336,6 +361,7 @@ class TestSignalRanker:
     def test_import(self):
         """signal_ranker module imports successfully."""
         from icdev.tools.innovation import signal_ranker
+
         assert hasattr(signal_ranker, "score_signal")
         assert hasattr(signal_ranker, "score_all_new")
         assert hasattr(signal_ranker, "get_top_signals")
@@ -345,7 +371,8 @@ class TestSignalRanker:
         from icdev.tools.innovation.signal_ranker import score_signal
 
         sig_id = _insert_signal(
-            innovation_db, title="Kubernetes security vulnerability scanner",
+            innovation_db,
+            title="Kubernetes security vulnerability scanner",
             description="A new tool for scanning K8s clusters for CVEs",
             community_score=0.7,
         )
@@ -381,12 +408,18 @@ class TestSignalRanker:
 
         # Insert scored signals
         _insert_signal(
-            innovation_db, title="High score", status="scored",
-            innovation_score=0.9, community_score=0.9,
+            innovation_db,
+            title="High score",
+            status="scored",
+            innovation_score=0.9,
+            community_score=0.9,
         )
         _insert_signal(
-            innovation_db, title="Low score", status="scored",
-            innovation_score=0.2, community_score=0.2,
+            innovation_db,
+            title="Low score",
+            status="scored",
+            innovation_score=0.2,
+            community_score=0.2,
         )
 
         result = get_top_signals(limit=10, min_score=0.5, db_path=innovation_db)
@@ -402,6 +435,7 @@ class TestTriageEngine:
     def test_import(self):
         """triage_engine module imports successfully."""
         from icdev.tools.innovation import triage_engine
+
         assert hasattr(triage_engine, "triage_signal")
         assert hasattr(triage_engine, "triage_all_scored")
 
@@ -455,6 +489,7 @@ class TestTrendDetector:
     def test_import(self):
         """trend_detector module imports successfully."""
         from icdev.tools.innovation import trend_detector
+
         assert hasattr(trend_detector, "detect_trends")
         assert hasattr(trend_detector, "get_trend_report")
 
@@ -485,6 +520,7 @@ class TestTrendDetector:
         """extract_keywords returns meaningful keywords."""
         try:
             from icdev.tools.innovation.trend_detector import extract_keywords
+
             keywords = extract_keywords("Kubernetes security vulnerability scanner tool")
             assert isinstance(keywords, list)
             assert len(keywords) > 0
@@ -504,6 +540,7 @@ class TestSolutionGenerator:
     def test_import(self):
         """solution_generator module imports successfully."""
         from icdev.tools.innovation import solution_generator
+
         assert hasattr(solution_generator, "generate_solution_spec")
 
     def test_generate_solution_spec(self, innovation_db):
@@ -551,6 +588,7 @@ class TestInnovationManager:
     def test_import(self):
         """innovation_manager module imports successfully."""
         from icdev.tools.innovation import innovation_manager
+
         assert hasattr(innovation_manager, "run_full_pipeline")
         assert hasattr(innovation_manager, "get_status")
         assert hasattr(innovation_manager, "get_pipeline_report")
@@ -605,8 +643,7 @@ class TestInnovationManager:
         from icdev.tools.innovation.innovation_manager import stage_discover
 
         # Mock web_scanner.run_scan to avoid live network requests
-        with patch("icdev.tools.innovation.web_scanner.run_scan",
-                   return_value={"signals_stored": 0, "source": "mock"}):
+        with patch("icdev.tools.innovation.web_scanner.run_scan", return_value={"signals_stored": 0, "source": "mock"}):
             result = stage_discover(db_path=innovation_db)
         assert "stage" in result
         assert result["stage"] == "discover"
@@ -621,6 +658,7 @@ class TestIntrospectiveAnalyzer:
     def test_import(self):
         """introspective_analyzer module imports successfully."""
         from icdev.tools.innovation import introspective_analyzer
+
         assert hasattr(introspective_analyzer, "analyze_all")
 
     def test_analyze_all(self, innovation_db):
@@ -651,6 +689,7 @@ class TestInnovationMigration:
 
         # Import and run migration via dynamic import (file-based path)
         import importlib.util
+
         migration_path = str(BASE_DIR / "tools" / "db" / "migrations" / "004_innovation_engine" / "up.py")
         spec = importlib.util.spec_from_file_location("migration_004_up", migration_path)
         mod = importlib.util.module_from_spec(spec)
@@ -658,9 +697,7 @@ class TestInnovationMigration:
         mod.up(conn)
 
         # Verify tables exist
-        cursor = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
-        )
+        cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
         tables = [row[0] for row in cursor.fetchall()]
         conn.close()
 
@@ -683,6 +720,7 @@ class TestInnovationMigration:
 
         try:
             import importlib.util
+
             spec = importlib.util.spec_from_file_location(
                 "migration_004_up",
                 str(BASE_DIR / "tools" / "db" / "migrations" / "004_innovation_engine" / "up.py"),
@@ -716,6 +754,7 @@ class TestInnovationPipelineIntegration:
         # Step 2: Score
         try:
             from icdev.tools.innovation.signal_ranker import score_signal
+
             score_result = score_signal(sig_id, db_path=innovation_db)
             assert "error" not in score_result or True  # May fail due to missing config
         except Exception:
@@ -731,7 +770,8 @@ class TestInnovationPipelineIntegration:
         # Step 3: Triage
         try:
             from icdev.tools.innovation.triage_engine import triage_signal
-            triage_result = triage_signal(sig_id, db_path=innovation_db)
+
+            triage_signal(sig_id, db_path=innovation_db)
         except Exception:
             # Manually triage
             conn = sqlite3.connect(str(innovation_db))
@@ -746,6 +786,7 @@ class TestInnovationPipelineIntegration:
         # Step 4: Generate solution
         try:
             from icdev.tools.innovation.solution_generator import generate_solution_spec
+
             gen_result = generate_solution_spec(sig_id, db_path=innovation_db)
             assert isinstance(gen_result, dict)
         except Exception:
@@ -770,6 +811,7 @@ class TestInnovationPipelineIntegration:
             pytest.skip("innovation_config.yaml not found")
 
         import yaml
+
         with open(config_path, "r") as f:
             config = yaml.safe_load(f)
 
@@ -790,6 +832,7 @@ class TestInnovationPipelineIntegration:
             pytest.skip("innovation_config.yaml not found")
 
         import yaml
+
         with open(config_path, "r") as f:
             config = yaml.safe_load(f)
 

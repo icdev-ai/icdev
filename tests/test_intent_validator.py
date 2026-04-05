@@ -14,7 +14,6 @@ from tools.network.intent_validator import (
     _matches_selector,
     _build_adjacency,
     _shortest_hop_count,
-    _path_has_firewall,
 )
 
 
@@ -57,14 +56,16 @@ class TestBandwidthParsing:
 class TestBandwidthConstraint:
     def test_all_links_above_threshold_pass(self):
         result = validate_intent_policy(
-            "t1", _sample_graph(),
+            "t1",
+            _sample_graph(),
             [{"constraint_type": "bandwidth", "rule_json": {"min_bandwidth_mbps": 500, "selector": "all"}}],
         )
         assert result["status"] == "PASS"
 
     def test_links_below_threshold_fail(self):
         result = validate_intent_policy(
-            "t1", _sample_graph(),
+            "t1",
+            _sample_graph(),
             [{"constraint_type": "bandwidth", "rule_json": {"min_bandwidth_mbps": 5000, "selector": "all"}}],
         )
         assert result["status"] == "FAIL"
@@ -77,7 +78,8 @@ class TestBandwidthConstraint:
 class TestRedundancyConstraint:
     def test_core_router_passes_min_2(self):
         result = validate_intent_policy(
-            "t1", _sample_graph(),
+            "t1",
+            _sample_graph(),
             [{"constraint_type": "redundancy", "rule_json": {"min_links": 2, "selector": "type:router"}}],
         )
         # r1 has 3 links
@@ -85,7 +87,8 @@ class TestRedundancyConstraint:
 
     def test_cloud_fails_min_2(self):
         result = validate_intent_policy(
-            "t1", _sample_graph(),
+            "t1",
+            _sample_graph(),
             [{"constraint_type": "redundancy", "rule_json": {"min_links": 2, "selector": "type:cloud"}}],
         )
         assert result["status"] == "FAIL"
@@ -97,21 +100,36 @@ class TestIsolationConstraint:
     def test_cloud_to_switch_via_firewall_pass(self):
         # cloud1 -> fw1 -> r1 -> sw1: firewall is in path
         result = validate_intent_policy(
-            "t1", _sample_graph(),
-            [{"constraint_type": "isolation", "rule_json": {
-                "zone_a": "type:cloud", "zone_b": "type:switch-l3", "require_firewall": True,
-            }}],
+            "t1",
+            _sample_graph(),
+            [
+                {
+                    "constraint_type": "isolation",
+                    "rule_json": {
+                        "zone_a": "type:cloud",
+                        "zone_b": "type:switch-l3",
+                        "require_firewall": True,
+                    },
+                }
+            ],
         )
         assert result["status"] == "PASS"
 
     def test_switch_to_switch_no_firewall_fail(self):
         # sw1 -> r1 -> sw2: no firewall in path
         result = validate_intent_policy(
-            "t1", _sample_graph(),
-            [{"constraint_type": "isolation", "rule_json": {
-                "zone_a": "label:Dist-Switch-1", "zone_b": "label:Dist-Switch-2",
-                "require_firewall": True,
-            }}],
+            "t1",
+            _sample_graph(),
+            [
+                {
+                    "constraint_type": "isolation",
+                    "rule_json": {
+                        "zone_a": "label:Dist-Switch-1",
+                        "zone_b": "label:Dist-Switch-2",
+                        "require_firewall": True,
+                    },
+                }
+            ],
         )
         assert result["status"] == "FAIL"
 
@@ -120,19 +138,35 @@ class TestIsolationConstraint:
 class TestLatencyConstraint:
     def test_adjacent_nodes_within_bound(self):
         result = validate_intent_policy(
-            "t1", _sample_graph(),
-            [{"constraint_type": "latency", "rule_json": {
-                "max_hops": 1, "source_selector": "type:router", "target_selector": "type:switch-l3",
-            }}],
+            "t1",
+            _sample_graph(),
+            [
+                {
+                    "constraint_type": "latency",
+                    "rule_json": {
+                        "max_hops": 1,
+                        "source_selector": "type:router",
+                        "target_selector": "type:switch-l3",
+                    },
+                }
+            ],
         )
         assert result["status"] == "PASS"
 
     def test_far_nodes_exceed_bound(self):
         result = validate_intent_policy(
-            "t1", _sample_graph(),
-            [{"constraint_type": "latency", "rule_json": {
-                "max_hops": 1, "source_selector": "type:switch-l3", "target_selector": "type:cloud",
-            }}],
+            "t1",
+            _sample_graph(),
+            [
+                {
+                    "constraint_type": "latency",
+                    "rule_json": {
+                        "max_hops": 1,
+                        "source_selector": "type:switch-l3",
+                        "target_selector": "type:cloud",
+                    },
+                }
+            ],
         )
         # sw1 -> r1 -> fw1 -> cloud1 = 3 hops > 1
         assert result["status"] == "FAIL"
@@ -142,7 +176,8 @@ class TestLatencyConstraint:
 class TestEncryptionConstraint:
     def test_wan_links_unencrypted_fail(self):
         result = validate_intent_policy(
-            "t1", _sample_graph(),
+            "t1",
+            _sample_graph(),
             [{"constraint_type": "encryption", "rule_json": {"selector": "all_wan", "min_level": "any"}}],
         )
         # cloud1 is WAN type, link fw1-cloud1 has no encryption
@@ -150,8 +185,9 @@ class TestEncryptionConstraint:
 
     def test_non_wan_selector_pass(self):
         # No WAN-type nodes match type:switch-l3
-        result = validate_intent_policy(
-            "t1", _sample_graph(),
+        validate_intent_policy(
+            "t1",
+            _sample_graph(),
             [{"constraint_type": "encryption", "rule_json": {"selector": "type:switch-l3", "min_level": "any"}}],
         )
         # sw1 and sw2 links to r1 are not encrypted, but encryptor adjacency check...
@@ -160,7 +196,8 @@ class TestEncryptionConstraint:
         graph["nodes"].append({"id": "enc1", "type": "fips-140-l2", "label": "FIPS-Encryptor"})
         graph["edges"].append({"source": "sw1", "target": "enc1", "label": "10G"})
         result2 = validate_intent_policy(
-            "t1", graph,
+            "t1",
+            graph,
             [{"constraint_type": "encryption", "rule_json": {"selector": "label:Dist-Switch-1", "min_level": "any"}}],
         )
         # sw1 has adjacent encryptor
@@ -172,43 +209,66 @@ class TestCustomConstraint:
     def test_no_spof_detects_bridge(self):
         # r1 is a bridge node (removing it disconnects sw1/sw2 from fw1/cloud1)
         result = validate_intent_policy(
-            "t1", _sample_graph(),
-            [{"constraint_type": "custom", "rule_json": {
-                "check": "no_single_point_of_failure", "params": {},
-            }}],
+            "t1",
+            _sample_graph(),
+            [
+                {
+                    "constraint_type": "custom",
+                    "rule_json": {
+                        "check": "no_single_point_of_failure",
+                        "params": {},
+                    },
+                }
+            ],
         )
         assert result["status"] == "FAIL"
         assert any("single point of failure" in v["message"] for v in result["violations"])
 
     def test_max_node_count_pass(self):
         result = validate_intent_policy(
-            "t1", _sample_graph(),
+            "t1",
+            _sample_graph(),
             [{"constraint_type": "custom", "rule_json": {"check": "max_node_count", "params": {"max": 10}}}],
         )
         assert result["status"] == "PASS"
 
     def test_max_node_count_fail(self):
         result = validate_intent_policy(
-            "t1", _sample_graph(),
+            "t1",
+            _sample_graph(),
             [{"constraint_type": "custom", "rule_json": {"check": "max_node_count", "params": {"max": 3}}}],
         )
         assert result["status"] == "FAIL"
 
     def test_required_node_type_pass(self):
         result = validate_intent_policy(
-            "t1", _sample_graph(),
-            [{"constraint_type": "custom", "rule_json": {
-                "check": "required_node_type", "params": {"type": "firewall", "min_count": 1},
-            }}],
+            "t1",
+            _sample_graph(),
+            [
+                {
+                    "constraint_type": "custom",
+                    "rule_json": {
+                        "check": "required_node_type",
+                        "params": {"type": "firewall", "min_count": 1},
+                    },
+                }
+            ],
         )
         assert result["status"] == "PASS"
 
     def test_required_node_type_fail(self):
         result = validate_intent_policy(
-            "t1", _sample_graph(),
-            [{"constraint_type": "custom", "rule_json": {
-                "check": "required_node_type", "params": {"type": "hsm", "min_count": 1},
-            }}],
+            "t1",
+            _sample_graph(),
+            [
+                {
+                    "constraint_type": "custom",
+                    "rule_json": {
+                        "check": "required_node_type",
+                        "params": {"type": "hsm", "min_count": 1},
+                    },
+                }
+            ],
         )
         assert result["status"] == "FAIL"
 
@@ -229,8 +289,7 @@ class TestMultiConstraintPolicy:
 
     def test_severity_override(self):
         constraints = [
-            {"constraint_type": "redundancy", "severity": "CAT3",
-             "rule_json": {"min_links": 5, "selector": "all"}},
+            {"constraint_type": "redundancy", "severity": "CAT3", "rule_json": {"min_links": 5, "selector": "all"}},
         ]
         result = validate_intent_policy("t1", _sample_graph(), constraints)
         assert all(v["severity"] == "CAT3" for v in result["violations"])
@@ -278,9 +337,13 @@ class TestHelpers:
 # ── Empty / edge cases ────────────────────────────────────────────────────
 class TestEdgeCases:
     def test_empty_graph(self):
-        result = validate_intent_policy("t1", {"nodes": [], "edges": []}, [
-            {"constraint_type": "bandwidth", "rule_json": {"min_bandwidth_mbps": 1000, "selector": "all"}},
-        ])
+        result = validate_intent_policy(
+            "t1",
+            {"nodes": [], "edges": []},
+            [
+                {"constraint_type": "bandwidth", "rule_json": {"min_bandwidth_mbps": 1000, "selector": "all"}},
+            ],
+        )
         assert result["status"] == "PASS"
 
     def test_no_constraints(self):
@@ -289,15 +352,26 @@ class TestEdgeCases:
         assert result["status"] == "PASS"
 
     def test_unknown_constraint_type_skipped(self):
-        result = validate_intent_policy("t1", _sample_graph(), [
-            {"constraint_type": "nonexistent", "rule_json": {}},
-        ])
+        result = validate_intent_policy(
+            "t1",
+            _sample_graph(),
+            [
+                {"constraint_type": "nonexistent", "rule_json": {}},
+            ],
+        )
         assert result["total_constraints"] == 0
 
     def test_rule_json_as_string(self):
         import json
-        result = validate_intent_policy("t1", _sample_graph(), [
-            {"constraint_type": "bandwidth",
-             "rule_json": json.dumps({"min_bandwidth_mbps": 500, "selector": "all"})},
-        ])
+
+        result = validate_intent_policy(
+            "t1",
+            _sample_graph(),
+            [
+                {
+                    "constraint_type": "bandwidth",
+                    "rule_json": json.dumps({"min_bandwidth_mbps": 500, "selector": "all"}),
+                },
+            ],
+        )
         assert result["status"] == "PASS"

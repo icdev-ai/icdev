@@ -45,6 +45,7 @@ logger = logging.getLogger("icdev.finetune.quality_monitor")
 # Config
 # ---------------------------------------------------------------------------
 
+
 def _load_config() -> Dict[str, Any]:
     """Load quality_feedback config from finetune_config.yaml."""
     config_path = BASE_DIR / "args" / "finetune_config.yaml"
@@ -52,6 +53,7 @@ def _load_config() -> Dict[str, Any]:
         return {}
     try:
         import yaml
+
         with open(config_path, "r", encoding="utf-8") as f:
             cfg = yaml.safe_load(f) or {}
         return cfg.get("quality_feedback", {})
@@ -83,12 +85,13 @@ def _get_config() -> Dict[str, Any]:
 # Database
 # ---------------------------------------------------------------------------
 
+
 def _get_db():
     from tools.db.storage import get_connection
+
     conn = get_connection()
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
-
 
 
 def _gen_id(prefix: str = "qsnap") -> str:
@@ -115,6 +118,7 @@ def _ensure_tables(conn: sqlite3.Connection) -> None:
 # ---------------------------------------------------------------------------
 # Metric collection
 # ---------------------------------------------------------------------------
+
 
 def _collect_rag_metrics(conn: sqlite3.Connection) -> Dict[str, float]:
     """Collect recent RAG evaluation metrics."""
@@ -154,8 +158,11 @@ def _collect_rag_metrics(conn: sqlite3.Connection) -> Dict[str, float]:
 
 
 def _record_snapshot(
-    conn: sqlite3.Connection, metric_name: str, metric_value: float,
-    baseline: float, below: bool,
+    conn: sqlite3.Connection,
+    metric_name: str,
+    metric_value: float,
+    baseline: float,
+    below: bool,
 ) -> None:
     """Record a quality snapshot (append-only)."""
     conn.execute(
@@ -168,7 +175,8 @@ def _record_snapshot(
 
 
 def _count_consecutive_failures(
-    conn: sqlite3.Connection, metric_name: str,
+    conn: sqlite3.Connection,
+    metric_name: str,
 ) -> int:
     """Count consecutive recent snapshots that are below threshold."""
     rows = conn.execute(
@@ -190,6 +198,7 @@ def _count_consecutive_failures(
 # ---------------------------------------------------------------------------
 # Quality check
 # ---------------------------------------------------------------------------
+
 
 def check_quality(conn: Optional[sqlite3.Connection] = None) -> Dict[str, Any]:
     """Check current RAG quality against thresholds (D-KARL-8).
@@ -270,9 +279,7 @@ def get_quality_status(conn: Optional[sqlite3.Connection] = None) -> Dict[str, A
         ).fetchall()
 
         total = conn.execute("SELECT COUNT(*) FROM ft_quality_snapshots").fetchone()[0]
-        below_count = conn.execute(
-            "SELECT COUNT(*) FROM ft_quality_snapshots WHERE below_threshold = 1"
-        ).fetchone()[0]
+        below_count = conn.execute("SELECT COUNT(*) FROM ft_quality_snapshots WHERE below_threshold = 1").fetchone()[0]
 
         return {
             "status": "ok",
@@ -290,6 +297,7 @@ def get_quality_status(conn: Optional[sqlite3.Connection] = None) -> Dict[str, A
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+
 
 def main():
     parser = argparse.ArgumentParser(

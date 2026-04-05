@@ -5,6 +5,7 @@ Reads args/llm_config.yaml and resolves each ICDEV™ function to a
 provider + model via fallback chain. Probes provider availability
 and caches results.
 """
+
 from __future__ import annotations
 
 import copy
@@ -121,6 +122,7 @@ class LLMRouter:
         enabled = self._config.get("rl_routing", {}).get("enabled", True)
         try:
             from tools.llm.rl_router import RLRouter
+
             LLMRouter._rl_router_instance = RLRouter(enabled=enabled)
         except Exception as exc:
             logger.debug("RL router unavailable, using passthrough: %s", exc)
@@ -401,11 +403,17 @@ class LLMRouter:
         return route.get("chain", [])
 
     def _log_telemetry(
-        self, function: str, request, response,
-        model_id: str, provider_name: str, latency_ms: int,
+        self,
+        function: str,
+        request,
+        response,
+        model_id: str,
+        provider_name: str,
+        latency_ms: int,
     ) -> None:
         """Log AI interaction to ai_telemetry table (D218)."""
         import hashlib
+
         prompt_text = " ".join(m.get("content", "") for m in (request.messages or []) if isinstance(m, dict))
         prompt_hash = hashlib.sha256(prompt_text.encode("utf-8", errors="replace")).hexdigest()[:32]
         response_hash = hashlib.sha256(
@@ -414,6 +422,7 @@ class LLMRouter:
 
         try:
             from tools.security.ai_telemetry_logger import AITelemetryLogger
+
             logger_inst = AITelemetryLogger()
             logger_inst.log_ai_interaction(
                 model_id=getattr(response, "model_id", model_id) or model_id,
@@ -487,12 +496,16 @@ class LLMRouter:
     def _get_sanitizer(self):
         """Get or create cached GovConSanitizer singleton."""
         import time as _t
+
         now = _t.time()
-        if (LLMRouter._redaction_sanitizer is not None
-                and (now - LLMRouter._redaction_sanitizer_ts) < self._REDACTION_CACHE_TTL):
+        if (
+            LLMRouter._redaction_sanitizer is not None
+            and (now - LLMRouter._redaction_sanitizer_ts) < self._REDACTION_CACHE_TTL
+        ):
             return LLMRouter._redaction_sanitizer
         try:
             from tools.redaction.govcon_sanitizer import GovConSanitizer
+
             LLMRouter._redaction_sanitizer = GovConSanitizer()
             LLMRouter._redaction_sanitizer_ts = now
             return LLMRouter._redaction_sanitizer
@@ -524,17 +537,14 @@ class LLMRouter:
             return None
 
         try:
-
             # Check if routing is local-only for this function
             chain = self._get_chain_for_function(function)
             is_local = all(
-                self._get_model_config(m).get("provider") == "ollama"
-                for m in chain
-                if self._get_model_config(m)
+                self._get_model_config(m).get("provider") == "ollama" for m in chain if self._get_model_config(m)
             )
 
             # Extract text from messages
-            for msg in (request.messages or []):
+            for msg in request.messages or []:
                 if isinstance(msg, dict):
                     content = msg.get("content", "")
                     if isinstance(content, str) and content.strip():
@@ -564,9 +574,7 @@ class LLMRouter:
             logger.debug("Pre-invoke redaction failed (non-blocking): %s", exc)
             return None
 
-    def _post_invoke_deanonymize(
-        self, response, redaction_session: Optional[str]
-    ):
+    def _post_invoke_deanonymize(self, response, redaction_session: Optional[str]):
         """Restore original values in LLM response using redaction registry.
 
         Round-trip de-anonymization: surrogates inserted by _pre_invoke_redaction
@@ -597,8 +605,11 @@ class LLMRouter:
         return response
 
     def _audit_redaction(
-        self, function: str, redaction_session: Optional[str],
-        detection_count: int = 0, entity_types: Optional[list] = None,
+        self,
+        function: str,
+        redaction_session: Optional[str],
+        detection_count: int = 0,
+        entity_types: Optional[list] = None,
         impact_level: str = "IL4",
     ):
         """Log redaction event to append-only redaction_audit table."""
@@ -609,21 +620,24 @@ class LLMRouter:
             return
         try:
             conn = get_connection()
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT INTO redaction_audit
                     (id, session_id, function, detection_count,
                      entity_types_json, impact_level, action, created_at)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-            """, (
-                f"raud-{redaction_session[:8]}-{function[:20]}",
-                redaction_session,
-                function,
-                detection_count,
-                json.dumps(entity_types or []),
-                impact_level,
-                "redacted",
-                datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            ))
+            """,
+                (
+                    f"raud-{redaction_session[:8]}-{function[:20]}",
+                    redaction_session,
+                    function,
+                    detection_count,
+                    json.dumps(entity_types or []),
+                    impact_level,
+                    "redacted",
+                    datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                ),
+            )
             conn.commit()
             conn.close()
         except Exception as exc:
@@ -1036,13 +1050,12 @@ class LLMRouter:
         if request.agent_id:
             try:
                 from tools.agent.token_tracker import check_budget, BudgetExceededError
+
                 budget = check_budget(request.agent_id)
                 if budget["action"] == "block":
                     raise BudgetExceededError(request.agent_id, budget)
                 if budget["action"] == "warn":
-                    logger.warning(
-                        "Budget warning for %s: %s", request.agent_id, budget["message"]
-                    )
+                    logger.warning("Budget warning for %s: %s", request.agent_id, budget["message"])
             except ImportError:
                 pass  # token_tracker not available — skip budget check
             except BudgetExceededError:
@@ -1058,7 +1071,7 @@ class LLMRouter:
                 raise RuntimeError(
                     "Prompt injection detected with high confidence — request blocked. "
                     "Review the input content for injection patterns."
-            )
+                )
 
         # D-RDT-1: Pre-invoke redaction — sanitize PII before sending to LLM
         # Applies to ALL modules. Skips for local-only routing if configured.
@@ -1131,8 +1144,11 @@ class LLMRouter:
                 # D218: Log AI telemetry for usage dashboard
                 try:
                     self._log_telemetry(
-                        function=function, request=request, response=response,
-                        model_id=model_id, provider_name=provider_name,
+                        function=function,
+                        request=request,
+                        response=response,
+                        model_id=model_id,
+                        provider_name=provider_name,
                         latency_ms=_latency,
                     )
                 except Exception:
@@ -1142,9 +1158,7 @@ class LLMRouter:
                 response = self._post_invoke_deanonymize(response, _redaction_session)
 
                 # RL: record success so this model's Q-value improves
-                self._get_rl_router().record_outcome(
-                    function, model_name, success=True, latency_ms=_latency
-                )
+                self._get_rl_router().record_outcome(function, model_name, success=True, latency_ms=_latency)
 
                 return response
             except Exception as exc:
@@ -1170,9 +1184,7 @@ class LLMRouter:
                 # Mark model as unavailable in cache so next call skips it
                 self._availability_cache[model_name] = False
                 # RL: record failure so this model's Q-value decreases
-                self._get_rl_router().record_outcome(
-                    function, model_name, success=False
-                )
+                self._get_rl_router().record_outcome(function, model_name, success=False)
                 continue
 
         raise RuntimeError(

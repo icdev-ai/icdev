@@ -78,23 +78,29 @@ def main():
     parser.add_argument("--name", help="Name (account or contact)")
     parser.add_argument("--agency", default="")
     parser.add_argument("--sub-agency", default="")
-    parser.add_argument("--account-type", default="government",
-                        choices=["government", "prime", "subcontractor", "partner", "other"])
+    parser.add_argument(
+        "--account-type", default="government", choices=["government", "prime", "subcontractor", "partner", "other"]
+    )
     parser.add_argument("--website", default="")
     parser.add_argument("--naics-codes", default="")
     parser.add_argument("--set-asides", default="")
     parser.add_argument("--notes", default="")
-    parser.add_argument("--status", default="active",
-                        choices=["active", "inactive", "prospect"])
+    parser.add_argument("--status", default="active", choices=["active", "inactive", "prospect"])
     parser.add_argument("--title", default="", help="Contact title/role")
     parser.add_argument("--email", default="")
     parser.add_argument("--phone", default="")
     parser.add_argument("--role-in-procurement", default="")
-    parser.add_argument("--influence-level", default="unknown",
-                        choices=["decision_maker", "influencer", "evaluator", "end_user", "unknown"])
-    parser.add_argument("--type", dest="interaction_type", default="meeting",
-                        choices=["meeting", "call", "email", "conference",
-                                 "site_visit", "rfi_response", "industry_day", "other"])
+    parser.add_argument(
+        "--influence-level",
+        default="unknown",
+        choices=["decision_maker", "influencer", "evaluator", "end_user", "unknown"],
+    )
+    parser.add_argument(
+        "--type",
+        dest="interaction_type",
+        default="meeting",
+        choices=["meeting", "call", "email", "conference", "site_visit", "rfi_response", "industry_day", "other"],
+    )
     parser.add_argument("--subject", default="")
     parser.add_argument("--opportunity-id", default="")
     parser.add_argument("--interaction-date", default=None)
@@ -207,6 +213,7 @@ def main():
     # ── Interaction operations ──────────────────────────────────────────────
     elif args.list_interactions:
         from tools.proposal_genesis.reflexes.engage import get_connection
+
         conn = get_connection()
         try:
             query = (

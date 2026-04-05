@@ -116,20 +116,16 @@ SEED_PROJECT_ID = "proj-exp-001"
 def _seed_platform(conn):
     """Insert seed data for expansion tests."""
     conn.execute(
-        "INSERT OR IGNORE INTO tenants (id, name, slug, tier, impact_level, status) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT OR IGNORE INTO tenants (id, name, slug, tier, impact_level, status) VALUES (?, ?, ?, ?, ?, ?)",
         (SEED_TENANT_ID, "Expansion Org", "exp-org", "professional", "IL4", "active"),
     )
     conn.execute(
-        "INSERT OR IGNORE INTO users (id, tenant_id, email, role, display_name) "
-        "VALUES (?, ?, ?, ?, ?)",
+        "INSERT OR IGNORE INTO users (id, tenant_id, email, role, display_name) VALUES (?, ?, ?, ?, ?)",
         (SEED_USER_ID, SEED_TENANT_ID, "admin@exp.gov", "admin", "Exp Admin"),
     )
     # Seed usage records with known timestamps for period filtering
     now_ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    old_ts = (datetime.now(timezone.utc) - timedelta(days=60)).strftime(
-        "%Y-%m-%dT%H:%M:%SZ"
-    )
+    old_ts = (datetime.now(timezone.utc) - timedelta(days=60)).strftime("%Y-%m-%dT%H:%M:%SZ")
     conn.execute(
         "INSERT INTO usage_records (tenant_id, endpoint, method, status_code, "
         "duration_ms, tokens_used, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -144,8 +140,7 @@ def _seed_platform(conn):
     conn.execute(
         "INSERT INTO audit_platform (tenant_id, actor, action, resource_type, "
         "resource_id, details, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (SEED_TENANT_ID, "admin@exp.gov", "project.create", "project",
-         "proj-exp-001", "Created project", now_ts),
+        (SEED_TENANT_ID, "admin@exp.gov", "project.create", "project", "proj-exp-001", "Created project", now_ts),
     )
     conn.commit()
 
@@ -153,6 +148,7 @@ def _seed_platform(conn):
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture()
 def platform_db_path(tmp_path):
@@ -236,22 +232,19 @@ def _mock_tenant_db(verify_result=True):
 # DEVSECOPS PROFILE
 # ============================================================================
 
+
 class TestDevSecOpsProfile:
     """Tests for GET/POST /api/v1/projects/<id>/devsecops."""
 
     def test_get_devsecops_returns_profile(self, client):
         """GET /devsecops returns profile when tool and project exist."""
-        mock_profile = {"id": "dsp-abc", "project_id": SEED_PROJECT_ID,
-                        "maturity_level": "level_3_defined"}
+        mock_profile = {"id": "dsp-abc", "project_id": SEED_PROJECT_ID, "maturity_level": "level_3_defined"}
         with patch("icdev.tools.saas.rest_api._import_tenant_db") as mock_imp:
             mock_imp.return_value = _mock_tenant_db(True)
             mock_imp.return_value[0].return_value = mock_profile
-            with patch.dict("sys.modules",
-                            {"icdev.tools.devsecops.profile_manager": MagicMock()}):
-                with patch("icdev.tools.saas.rest_api.get_profile",
-                           create=True):
-                    resp = client.get(
-                        "/api/v1/projects/{}/devsecops".format(SEED_PROJECT_ID))
+            with patch.dict("sys.modules", {"icdev.tools.devsecops.profile_manager": MagicMock()}):
+                with patch("icdev.tools.saas.rest_api.get_profile", create=True):
+                    resp = client.get("/api/v1/projects/{}/devsecops".format(SEED_PROJECT_ID))
                     assert resp.status_code in (200, 500)
 
     def test_get_devsecops_404_for_missing_project(self, client):
@@ -270,23 +263,23 @@ class TestDevSecOpsProfile:
             # Force ImportError on the inner import — rest_api uses
             # ``from tools.devsecops.profile_manager import get_profile``
             # so both module paths must be poisoned.
-            with patch.dict("sys.modules", {
-                "tools.devsecops.profile_manager": None,
-                "icdev.tools.devsecops.profile_manager": None,
-            }):
-                resp = client.get(
-                    "/api/v1/projects/{}/devsecops".format(SEED_PROJECT_ID))
+            with patch.dict(
+                "sys.modules",
+                {
+                    "tools.devsecops.profile_manager": None,
+                    "icdev.tools.devsecops.profile_manager": None,
+                },
+            ):
+                resp = client.get("/api/v1/projects/{}/devsecops".format(SEED_PROJECT_ID))
                 assert resp.status_code == 503
 
     def test_post_devsecops_creates_profile(self, client):
         """POST /devsecops creates a profile (admin role)."""
-        mock_result = {"id": "dsp-new", "maturity_level": "level_2_managed",
-                       "status": "created"}
+        mock_result = {"id": "dsp-new", "maturity_level": "level_2_managed", "status": "created"}
         with patch("icdev.tools.saas.rest_api._import_tenant_db") as mock_imp:
             mock_imp.return_value = _mock_tenant_db(True)
             mock_imp.return_value[0].return_value = mock_result
-            with patch.dict("sys.modules",
-                            {"icdev.tools.devsecops.profile_manager": MagicMock()}):
+            with patch.dict("sys.modules", {"icdev.tools.devsecops.profile_manager": MagicMock()}):
                 resp = client.post(
                     "/api/v1/projects/{}/devsecops".format(SEED_PROJECT_ID),
                     data=json.dumps({"maturity_level": "level_2_managed"}),
@@ -310,6 +303,7 @@ class TestDevSecOpsProfile:
 # ZTA MATURITY
 # ============================================================================
 
+
 class TestZTAMaturity:
     """Tests for GET /api/v1/projects/<id>/zta."""
 
@@ -319,10 +313,8 @@ class TestZTAMaturity:
         with patch("icdev.tools.saas.rest_api._import_tenant_db") as mock_imp:
             mock_imp.return_value = _mock_tenant_db(True)
             mock_imp.return_value[0].return_value = mock_scores
-            with patch.dict("sys.modules",
-                            {"icdev.tools.devsecops.zta_maturity_scorer": MagicMock()}):
-                resp = client.get(
-                    "/api/v1/projects/{}/zta".format(SEED_PROJECT_ID))
+            with patch.dict("sys.modules", {"icdev.tools.devsecops.zta_maturity_scorer": MagicMock()}):
+                resp = client.get("/api/v1/projects/{}/zta".format(SEED_PROJECT_ID))
                 assert resp.status_code in (200, 500)
 
     def test_get_zta_404_for_missing_project(self, client):
@@ -336,12 +328,14 @@ class TestZTAMaturity:
         """GET /zta returns 503 when scorer import fails."""
         with patch("icdev.tools.saas.rest_api._import_tenant_db") as mock_imp:
             mock_imp.return_value = _mock_tenant_db(True)
-            with patch.dict("sys.modules", {
-                "tools.devsecops.zta_maturity_scorer": None,
-                "icdev.tools.devsecops.zta_maturity_scorer": None,
-            }):
-                resp = client.get(
-                    "/api/v1/projects/{}/zta".format(SEED_PROJECT_ID))
+            with patch.dict(
+                "sys.modules",
+                {
+                    "tools.devsecops.zta_maturity_scorer": None,
+                    "icdev.tools.devsecops.zta_maturity_scorer": None,
+                },
+            ):
+                resp = client.get("/api/v1/projects/{}/zta".format(SEED_PROJECT_ID))
                 assert resp.status_code == 503
 
 
@@ -349,15 +343,14 @@ class TestZTAMaturity:
 # MARKETPLACE SEARCH
 # ============================================================================
 
+
 class TestMarketplaceSearch:
     """Tests for GET /api/v1/marketplace/search."""
 
     def test_search_returns_results(self, client):
         """GET /marketplace/search?q=... returns search results."""
-        mock_results = {"results": [{"id": "asset-1", "name": "STIG checker"}],
-                        "total": 1}
-        with patch("tools.marketplace.search_engine.search_assets",
-                    return_value=mock_results):
+        mock_results = {"results": [{"id": "asset-1", "name": "STIG checker"}], "total": 1}
+        with patch("tools.marketplace.search_engine.search_assets", return_value=mock_results):
             resp = client.get("/api/v1/marketplace/search?q=STIG")
             assert resp.status_code == 200
             data = resp.get_json()
@@ -378,30 +371,29 @@ class TestMarketplaceSearch:
     def test_search_passes_filters(self, client):
         """GET /marketplace/search passes asset_type and impact_level."""
         mock_results = {"results": [], "total": 0}
-        with patch("tools.marketplace.search_engine.search_assets",
-                    return_value=mock_results) as mock_search:
-            resp = client.get(
-                "/api/v1/marketplace/search?q=test&asset_type=skill&impact_level=IL4&limit=10")
+        with patch("tools.marketplace.search_engine.search_assets", return_value=mock_results) as mock_search:
+            resp = client.get("/api/v1/marketplace/search?q=test&asset_type=skill&impact_level=IL4&limit=10")
             assert resp.status_code == 200
             mock_search.assert_called_once()
             call_kwargs = mock_search.call_args
-            assert call_kwargs.kwargs.get("asset_type") == "skill" or \
-                call_kwargs[1].get("asset_type") == "skill"
+            assert call_kwargs.kwargs.get("asset_type") == "skill" or call_kwargs[1].get("asset_type") == "skill"
 
     def test_search_503_when_tool_missing(self, client):
         """GET /marketplace/search returns 503 when search_engine unavailable."""
-        with patch.dict("sys.modules", {
-            "tools.marketplace.search_engine": None,
-            "icdev.tools.marketplace.search_engine": None,
-        }):
+        with patch.dict(
+            "sys.modules",
+            {
+                "tools.marketplace.search_engine": None,
+                "icdev.tools.marketplace.search_engine": None,
+            },
+        ):
             resp = client.get("/api/v1/marketplace/search?q=test")
             assert resp.status_code == 503
 
     def test_search_caps_limit_at_200(self, client):
         """GET /marketplace/search caps limit at 200."""
         mock_results = {"results": [], "total": 0}
-        with patch("tools.marketplace.search_engine.search_assets",
-                    return_value=mock_results) as mock_search:
+        with patch("tools.marketplace.search_engine.search_assets", return_value=mock_results) as mock_search:
             resp = client.get("/api/v1/marketplace/search?q=test&limit=9999")
             assert resp.status_code == 200
             call_kwargs = mock_search.call_args
@@ -414,6 +406,7 @@ class TestMarketplaceSearch:
 # SIMULATIONS
 # ============================================================================
 
+
 class TestSimulations:
     """Tests for GET/POST /api/v1/projects/<id>/simulations."""
 
@@ -423,10 +416,8 @@ class TestSimulations:
         with patch("icdev.tools.saas.rest_api._import_tenant_db") as mock_imp:
             mock_imp.return_value = _mock_tenant_db(True)
             mock_imp.return_value[0].return_value = mock_list
-            with patch.dict("sys.modules",
-                            {"icdev.tools.simulation.simulation_engine": MagicMock()}):
-                resp = client.get(
-                    "/api/v1/projects/{}/simulations".format(SEED_PROJECT_ID))
+            with patch.dict("sys.modules", {"icdev.tools.simulation.simulation_engine": MagicMock()}):
+                resp = client.get("/api/v1/projects/{}/simulations".format(SEED_PROJECT_ID))
                 assert resp.status_code in (200, 500)
 
     def test_get_simulations_404_missing_project(self, client):
@@ -442,15 +433,16 @@ class TestSimulations:
         with patch("icdev.tools.saas.rest_api._import_tenant_db") as mock_imp:
             mock_imp.return_value = _mock_tenant_db(True)
             mock_imp.return_value[0].return_value = mock_result
-            with patch.dict("sys.modules",
-                            {"icdev.tools.simulation.simulation_engine": MagicMock()}):
+            with patch.dict("sys.modules", {"icdev.tools.simulation.simulation_engine": MagicMock()}):
                 resp = client.post(
                     "/api/v1/projects/{}/simulations".format(SEED_PROJECT_ID),
-                    data=json.dumps({
-                        "scenario_name": "Add auth module",
-                        "scenario_type": "what_if",
-                        "modifications": {"add_requirements": 3},
-                    }),
+                    data=json.dumps(
+                        {
+                            "scenario_name": "Add auth module",
+                            "scenario_type": "what_if",
+                            "modifications": {"add_requirements": 3},
+                        }
+                    ),
                     content_type="application/json",
                 )
                 assert resp.status_code in (201, 500)
@@ -472,10 +464,12 @@ class TestSimulations:
             mock_imp.return_value = _mock_tenant_db(True)
             resp = client.post(
                 "/api/v1/projects/{}/simulations".format(SEED_PROJECT_ID),
-                data=json.dumps({
-                    "scenario_name": "test",
-                    "scenario_type": "invalid_type",
-                }),
+                data=json.dumps(
+                    {
+                        "scenario_name": "test",
+                        "scenario_type": "invalid_type",
+                    }
+                ),
                 content_type="application/json",
             )
             assert resp.status_code == 400
@@ -492,10 +486,12 @@ class TestSimulations:
             mock_imp.return_value = _mock_tenant_db(False)
             resp = client.post(
                 "/api/v1/projects/proj-missing/simulations",
-                data=json.dumps({
-                    "scenario_name": "test",
-                    "scenario_type": "what_if",
-                }),
+                data=json.dumps(
+                    {
+                        "scenario_name": "test",
+                        "scenario_type": "what_if",
+                    }
+                ),
                 content_type="application/json",
             )
             assert resp.status_code == 404
@@ -504,18 +500,21 @@ class TestSimulations:
         """GET /simulations returns 503 when simulation_engine unavailable."""
         with patch("icdev.tools.saas.rest_api._import_tenant_db") as mock_imp:
             mock_imp.return_value = _mock_tenant_db(True)
-            with patch.dict("sys.modules", {
-                "tools.simulation.simulation_engine": None,
-                "icdev.tools.simulation.simulation_engine": None,
-            }):
-                resp = client.get(
-                    "/api/v1/projects/{}/simulations".format(SEED_PROJECT_ID))
+            with patch.dict(
+                "sys.modules",
+                {
+                    "tools.simulation.simulation_engine": None,
+                    "icdev.tools.simulation.simulation_engine": None,
+                },
+            ):
+                resp = client.get("/api/v1/projects/{}/simulations".format(SEED_PROJECT_ID))
                 assert resp.status_code == 503
 
 
 # ============================================================================
 # MOSA ASSESSMENT
 # ============================================================================
+
 
 class TestMOSAAssessment:
     """Tests for GET /api/v1/projects/<id>/mosa."""
@@ -528,10 +527,8 @@ class TestMOSAAssessment:
             mock_imp.return_value[0].return_value = mock_result
             mock_assessor = MagicMock()
             mock_assessor.assess = MagicMock(return_value=mock_result)
-            with patch("icdev.tools.compliance.mosa_assessor.MOSAAssessor",
-                        return_value=mock_assessor):
-                resp = client.get(
-                    "/api/v1/projects/{}/mosa".format(SEED_PROJECT_ID))
+            with patch("icdev.tools.compliance.mosa_assessor.MOSAAssessor", return_value=mock_assessor):
+                resp = client.get("/api/v1/projects/{}/mosa".format(SEED_PROJECT_ID))
                 assert resp.status_code in (200, 500)
 
     def test_get_mosa_404_for_missing_project(self, client):
@@ -545,18 +542,21 @@ class TestMOSAAssessment:
         """GET /mosa returns 503 when mosa_assessor import fails."""
         with patch("icdev.tools.saas.rest_api._import_tenant_db") as mock_imp:
             mock_imp.return_value = _mock_tenant_db(True)
-            with patch.dict("sys.modules", {
-                "tools.compliance.mosa_assessor": None,
-                "icdev.tools.compliance.mosa_assessor": None,
-            }):
-                resp = client.get(
-                    "/api/v1/projects/{}/mosa".format(SEED_PROJECT_ID))
+            with patch.dict(
+                "sys.modules",
+                {
+                    "tools.compliance.mosa_assessor": None,
+                    "icdev.tools.compliance.mosa_assessor": None,
+                },
+            ):
+                resp = client.get("/api/v1/projects/{}/mosa".format(SEED_PROJECT_ID))
                 assert resp.status_code == 503
 
 
 # ============================================================================
 # SUPPLY CHAIN GRAPH
 # ============================================================================
+
 
 class TestSupplyChainGraph:
     """Tests for GET /api/v1/projects/<id>/supply-chain/graph."""
@@ -567,38 +567,36 @@ class TestSupplyChainGraph:
         with patch("icdev.tools.saas.rest_api._import_tenant_db") as mock_imp:
             mock_imp.return_value = _mock_tenant_db(True)
             mock_imp.return_value[0].return_value = mock_graph
-            with patch.dict("sys.modules",
-                            {"icdev.tools.supply_chain.dependency_graph": MagicMock()}):
-                resp = client.get(
-                    "/api/v1/projects/{}/supply-chain/graph".format(
-                        SEED_PROJECT_ID))
+            with patch.dict("sys.modules", {"icdev.tools.supply_chain.dependency_graph": MagicMock()}):
+                resp = client.get("/api/v1/projects/{}/supply-chain/graph".format(SEED_PROJECT_ID))
                 assert resp.status_code in (200, 500)
 
     def test_get_graph_404_for_missing_project(self, client):
         """GET /supply-chain/graph returns 404 for missing project."""
         with patch("icdev.tools.saas.rest_api._import_tenant_db") as mock_imp:
             mock_imp.return_value = _mock_tenant_db(False)
-            resp = client.get(
-                "/api/v1/projects/proj-missing/supply-chain/graph")
+            resp = client.get("/api/v1/projects/proj-missing/supply-chain/graph")
             assert resp.status_code == 404
 
     def test_get_graph_503_when_tool_missing(self, client):
         """GET /supply-chain/graph returns 503 when unavailable."""
         with patch("icdev.tools.saas.rest_api._import_tenant_db") as mock_imp:
             mock_imp.return_value = _mock_tenant_db(True)
-            with patch.dict("sys.modules", {
-                "tools.supply_chain.dependency_graph": None,
-                "icdev.tools.supply_chain.dependency_graph": None,
-            }):
-                resp = client.get(
-                    "/api/v1/projects/{}/supply-chain/graph".format(
-                        SEED_PROJECT_ID))
+            with patch.dict(
+                "sys.modules",
+                {
+                    "tools.supply_chain.dependency_graph": None,
+                    "icdev.tools.supply_chain.dependency_graph": None,
+                },
+            ):
+                resp = client.get("/api/v1/projects/{}/supply-chain/graph".format(SEED_PROJECT_ID))
                 assert resp.status_code == 503
 
 
 # ============================================================================
 # SSE EVENTS
 # ============================================================================
+
 
 class TestSSEEvents:
     """Tests for GET /api/v1/events."""
@@ -632,6 +630,7 @@ class TestSSEEvents:
 # ============================================================================
 # USAGE PERIOD FILTERING
 # ============================================================================
+
 
 class TestUsagePeriodFiltering:
     """Tests for GET /api/v1/usage with period query parameter."""
@@ -689,6 +688,7 @@ class TestUsagePeriodFiltering:
 # CROSS-CUTTING: Response format consistency
 # ============================================================================
 
+
 class TestExpansionResponseFormats:
     """Cross-cutting tests for new endpoint response formatting."""
 
@@ -729,8 +729,6 @@ class TestExpansionResponseFormats:
             mock_imp.return_value = _mock_tenant_db(False)
             for ep in endpoints:
                 resp = client.get(ep)
-                assert resp.status_code == 404, (
-                    "Expected 404 for {}, got {}".format(ep, resp.status_code))
+                assert resp.status_code == 404, "Expected 404 for {}, got {}".format(ep, resp.status_code)
                 data = resp.get_json()
-                assert data is not None, (
-                    "Expected JSON body for 404 on {}".format(ep))
+                assert data is not None, "Expected JSON body for 404 on {}".format(ep)

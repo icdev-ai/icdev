@@ -104,10 +104,13 @@ class EgressMonitor:
                 """INSERT INTO child_telemetry
                    (id, child_id, metric_type, metric_data, health_status, collected_at)
                    VALUES (?, ?, 'egress', ?, ?, ?)""",
-                (telemetry_id, egress_data["child_id"],
-                 json.dumps(egress_data, default=str),
-                 "healthy" if not egress_data.get("error") else "degraded",
-                 egress_data.get("collected_at", _now())),
+                (
+                    telemetry_id,
+                    egress_data["child_id"],
+                    json.dumps(egress_data, default=str),
+                    "healthy" if not egress_data.get("error") else "degraded",
+                    egress_data.get("collected_at", _now()),
+                ),
             )
             conn.commit()
         except Exception as e:
@@ -165,11 +168,13 @@ class EgressMonitor:
             dest = conn_entry.get("dest", conn_entry.get("host", ""))
             port = conn_entry.get("port", 0)
             if not self._is_allowed(dest, port, allowed_hosts):
-                violations.append({
-                    "dest": dest,
-                    "port": port,
-                    "reason": "not_in_egress_policy",
-                })
+                violations.append(
+                    {
+                        "dest": dest,
+                        "port": port,
+                        "reason": "not_in_egress_policy",
+                    }
+                )
 
         return {
             "child_id": child_id,
@@ -221,6 +226,7 @@ class EgressMonitor:
         """Load allowed hosts from egress policy for role."""
         try:
             from tools.security.egress_policy_manager import EgressPolicyManager
+
             mgr = EgressPolicyManager(db_path=self._db_path)
             policy = mgr.resolve_policy(role)
             if "error" not in policy:
@@ -246,8 +252,7 @@ class EgressMonitor:
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Network Egress Monitor — NemoClaw child network tracking (D-NC-6)")
+    parser = argparse.ArgumentParser(description="Network Egress Monitor — NemoClaw child network tracking (D-NC-6)")
     parser.add_argument("--collect", action="store_true", help="Collect egress from child endpoint")
     parser.add_argument("--evaluate", action="store_true", help="Evaluate egress against policy")
     parser.add_argument("--summary", action="store_true", help="Get egress summary")

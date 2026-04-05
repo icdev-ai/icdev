@@ -11,6 +11,7 @@ Usage in ICDEV dashboard app.py:
     if bp:
         app.register_blueprint(bp, url_prefix="/network")
 """
+
 from __future__ import annotations
 
 import json
@@ -23,8 +24,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from flask import (
-    Blueprint, abort, g, jsonify, render_template,
-    request, session,
+    Blueprint,
+    abort,
+    g,
+    jsonify,
+    render_template,
+    request,
+    session,
 )
 
 logger = logging.getLogger("icdev.network")
@@ -36,14 +42,21 @@ _TEMPLATE_DIR = _ICDEV_ROOT / "tools" / "dashboard" / "templates"
 
 # ── Import helper modules ──────────────────────────────────────────────────────
 from tools.network.constants import (  # noqa: E402
-    CLOUD_OBJECTS, CSP_GROUP_DEFAULTS, COMPLIANCE_REGIMES, BOM_COSTS,
+    CLOUD_OBJECTS,
+    CSP_GROUP_DEFAULTS,
+    COMPLIANCE_REGIMES,
+    BOM_COSTS,
 )
 from tools.network.simulation import (  # noqa: E402
-    _run_simulation, _add_narrative,
+    _run_simulation,
+    _add_narrative,
 )
 from tools.network.compliance import (  # noqa: E402
-    run_compliance_audit, apply_compliance_fix, generate_xacta_export,
-    generate_fips_coverage_report, export_fips_report_html,
+    run_compliance_audit,
+    apply_compliance_fix,
+    generate_xacta_export,
+    generate_fips_coverage_report,
+    export_fips_report_html,
 )
 from tools.network.montecarlo import run_monte_carlo  # noqa: E402
 from tools.network.ato_generator import (  # noqa: E402
@@ -53,14 +66,22 @@ from tools.network.ato_generator import (  # noqa: E402
     export_pps_as_ssp_table,
 )
 from tools.network.export_import import (  # noqa: E402
-    to_drawio, to_svg, to_vdx, import_drawio, import_vdx, import_svg,
+    to_drawio,
+    to_svg,
+    to_vdx,
+    import_drawio,
+    import_vdx,
+    import_svg,
 )
 from tools.network.visio_export import export_vsdx, export_ops_csvs  # noqa: E402
 from tools.network.inventory_export import (  # noqa: E402
-    to_ansible_inventory, to_terraform_hcl,
+    to_ansible_inventory,
+    to_terraform_hcl,
 )
 from tools.network.config_generator import (  # noqa: E402
-    generate_device_configs, generate_device_configs_zip, list_configurable_nodes,
+    generate_device_configs,
+    generate_device_configs_zip,
+    list_configurable_nodes,
 )
 from tools.network.stig_import import import_stig_file  # noqa: E402
 
@@ -78,6 +99,7 @@ def create_network_blueprint():
     # Initialize DB
     try:
         from tools.network.db.init_db import init_db
+
         init_db()
     except Exception as exc:
         logger.warning("Network DB init failed: %s", exc)
@@ -91,14 +113,21 @@ def create_network_blueprint():
     # ── Helpers (imported from blueprint_helpers.py) ────────────────────────
     from tools.network.db.init_db import get_connection
     from tools.network.blueprint_helpers import (
-        nc_login_required, _now, _row_to_dict, _audit, _notify,
-        _crud_list, _crud_create, _crud_delete,
+        nc_login_required,
+        _now,
+        _row_to_dict,
+        _audit,
+        _notify,
+        _crud_list,
+        _crud_create,
+        _crud_delete,
         _NDC_LIFECYCLE,
     )
 
     # ── Load config ────────────────────────────────────────────────────────
     try:
         import yaml
+
         _config_path = _ICDEV_ROOT / "args" / "network_canvas_config.yaml"
         if _config_path.exists():
             with open(_config_path, encoding="utf-8") as f:
@@ -132,33 +161,46 @@ def create_network_blueprint():
         # Project filter support
         filter_project = request.args.get("project", "")
         if filter_project:
-            topologies = [_row_to_dict(r) for r in conn.execute(
-                "SELECT t.id, t.name, t.description, t.classification, t.created_at, t.updated_at, "
-                "json_array_length(json_extract(t.graph_json,'$.nodes')) AS node_count, "
-                "json_array_length(json_extract(t.graph_json,'$.edges')) AS edge_count "
-                "FROM topologies t JOIN nc_project_topologies pt ON pt.topology_id=t.id "
-                "WHERE pt.project_id=? ORDER BY t.updated_at DESC LIMIT 20", (filter_project,)
-            ).fetchall()]
+            topologies = [
+                _row_to_dict(r)
+                for r in conn.execute(
+                    "SELECT t.id, t.name, t.description, t.classification, t.created_at, t.updated_at, "
+                    "json_array_length(json_extract(t.graph_json,'$.nodes')) AS node_count, "
+                    "json_array_length(json_extract(t.graph_json,'$.edges')) AS edge_count "
+                    "FROM topologies t JOIN nc_project_topologies pt ON pt.topology_id=t.id "
+                    "WHERE pt.project_id=? ORDER BY t.updated_at DESC LIMIT 20",
+                    (filter_project,),
+                ).fetchall()
+            ]
         else:
-            topologies = [_row_to_dict(r) for r in conn.execute(
-                "SELECT id, name, description, classification, created_at, updated_at, "
-                "json_array_length(json_extract(graph_json,'$.nodes')) AS node_count, "
-                "json_array_length(json_extract(graph_json,'$.edges')) AS edge_count "
-                "FROM topologies ORDER BY updated_at DESC LIMIT 20"
-            ).fetchall()]
-        templates = [_row_to_dict(r) for r in conn.execute(
-            "SELECT id, name, category, description, tags FROM nc_templates ORDER BY category, name"
-        ).fetchall()]
-        sims = [_row_to_dict(r) for r in conn.execute(
-            "SELECT sr.id, sr.sim_type, sr.ran_at, t.name AS topology_name, sr.result_json "
-            "FROM simulation_results sr JOIN topologies t ON t.id=sr.topology_id "
-            "ORDER BY sr.ran_at DESC LIMIT 10"
-        ).fetchall()]
+            topologies = [
+                _row_to_dict(r)
+                for r in conn.execute(
+                    "SELECT id, name, description, classification, created_at, updated_at, "
+                    "json_array_length(json_extract(graph_json,'$.nodes')) AS node_count, "
+                    "json_array_length(json_extract(graph_json,'$.edges')) AS edge_count "
+                    "FROM topologies ORDER BY updated_at DESC LIMIT 20"
+                ).fetchall()
+            ]
+        templates = [
+            _row_to_dict(r)
+            for r in conn.execute(
+                "SELECT id, name, category, description, tags FROM nc_templates ORDER BY category, name"
+            ).fetchall()
+        ]
+        sims = [
+            _row_to_dict(r)
+            for r in conn.execute(
+                "SELECT sr.id, sr.sim_type, sr.ran_at, t.name AS topology_name, sr.result_json "
+                "FROM simulation_results sr JOIN topologies t ON t.id=sr.topology_id "
+                "ORDER BY sr.ran_at DESC LIMIT 10"
+            ).fetchall()
+        ]
         total_sims = conn.execute("SELECT COUNT(*) FROM simulation_results").fetchone()[0]
         # Load projects list for filter dropdown
-        all_projects = [_row_to_dict(r) for r in conn.execute(
-            "SELECT id, name FROM nc_projects ORDER BY name"
-        ).fetchall()]
+        all_projects = [
+            _row_to_dict(r) for r in conn.execute("SELECT id, name FROM nc_projects ORDER BY name").fetchall()
+        ]
         # Active project name for display
         active_project = None
         if filter_project:
@@ -178,15 +220,16 @@ def create_network_blueprint():
             except Exception:
                 s["summary"] = "—"
 
-        return render_template("network/index.html",
-                               topologies=topologies, templates=templates[:6],
-                               simulations=sims,
-                               all_projects=all_projects,
-                               filter_project=filter_project,
-                               active_project=active_project,
-                               stats={"topologies": len(topologies),
-                                      "simulations": total_sims,
-                                      "templates": len(templates)})
+        return render_template(
+            "network/index.html",
+            topologies=topologies,
+            templates=templates[:6],
+            simulations=sims,
+            all_projects=all_projects,
+            filter_project=filter_project,
+            active_project=active_project,
+            stats={"topologies": len(topologies), "simulations": total_sims, "templates": len(templates)},
+        )
 
     @bp.route("/api/morning-dashboard", methods=["GET"])
     @nc_login_required
@@ -196,36 +239,42 @@ def create_network_blueprint():
         now = datetime.now(timezone.utc)
 
         # My projects (recent activity)
-        projects = [_row_to_dict(r) for r in conn.execute(
-            "SELECT id, name, status, owner, updated_at "
-            "FROM nc_projects ORDER BY updated_at DESC LIMIT 10"
-        ).fetchall()]
+        projects = [
+            _row_to_dict(r)
+            for r in conn.execute(
+                "SELECT id, name, status, owner, updated_at FROM nc_projects ORDER BY updated_at DESC LIMIT 10"
+            ).fetchall()
+        ]
 
         # Pending reviews
-        pending_reviews = [_row_to_dict(r) for r in conn.execute(
-            "SELECT br.id, br.phase, br.scheduled_date, "
-            "rb.short_name AS board, rb.name AS board_name, "
-            "p.name AS project_name "
-            "FROM nc_board_reviews br "
-            "JOIN nc_review_boards rb ON rb.id=br.board_id "
-            "JOIN nc_projects p ON p.id=br.project_id "
-            "WHERE br.status='pending' "
-            "ORDER BY br.scheduled_date"
-        ).fetchall()]
+        pending_reviews = [
+            _row_to_dict(r)
+            for r in conn.execute(
+                "SELECT br.id, br.phase, br.scheduled_date, "
+                "rb.short_name AS board, rb.name AS board_name, "
+                "p.name AS project_name "
+                "FROM nc_board_reviews br "
+                "JOIN nc_review_boards rb ON rb.id=br.board_id "
+                "JOIN nc_projects p ON p.id=br.project_id "
+                "WHERE br.status='pending' "
+                "ORDER BY br.scheduled_date"
+            ).fetchall()
+        ]
 
         # Compliance alerts (projects below 80%)
         compliance_alerts = []
         for p in projects:
-            topo_ids = [r[0] for r in conn.execute(
-                "SELECT topology_id FROM nc_project_topologies "
-                "WHERE project_id=?", (p["id"],)
-            ).fetchall()]
+            topo_ids = [
+                r[0]
+                for r in conn.execute(
+                    "SELECT topology_id FROM nc_project_topologies WHERE project_id=?", (p["id"],)
+                ).fetchall()
+            ]
             tp = tf = 0
             for tid in topo_ids:
                 row = conn.execute(
-                    "SELECT passed, failed FROM nc_compliance_checks "
-                    "WHERE topology_id=? ORDER BY ran_at DESC LIMIT 1",
-                    (tid,)
+                    "SELECT passed, failed FROM nc_compliance_checks WHERE topology_id=? ORDER BY ran_at DESC LIMIT 1",
+                    (tid,),
                 ).fetchone()
                 if row:
                     tp += row[0] or 0
@@ -234,18 +283,17 @@ def create_network_blueprint():
             if total > 0:
                 pct = round(tp * 100 / total)
                 if pct < 80:
-                    compliance_alerts.append({
-                        "project": p["name"],
-                        "project_id": p["id"],
-                        "compliance_pct": pct,
-                    })
+                    compliance_alerts.append(
+                        {
+                            "project": p["name"],
+                            "project_id": p["id"],
+                            "compliance_pct": pct,
+                        }
+                    )
 
         # Upcoming EOL (devices across all topologies)
         eol_alerts = []
-        for r in conn.execute(
-            "SELECT t.name AS topo_name, t.graph_json "
-            "FROM topologies t LIMIT 20"
-        ).fetchall():
+        for r in conn.execute("SELECT t.name AS topo_name, t.graph_json FROM topologies t LIMIT 20").fetchall():
             try:
                 graph = json.loads(r["graph_json"])
             except Exception:
@@ -256,70 +304,65 @@ def create_network_blueprint():
                 if eol:
                     try:
                         dt = datetime.fromisoformat(
-                            eol + "T00:00:00+00:00"
-                            if "T" not in eol else
-                            eol.replace("Z", "+00:00"))
+                            eol + "T00:00:00+00:00" if "T" not in eol else eol.replace("Z", "+00:00")
+                        )
                         months = (dt - now).days / 30.44
                         if months <= 12:
-                            eol_alerts.append({
-                                "device": n.get("label", ""),
-                                "model": cfg.get("model", ""),
-                                "eol_date": eol,
-                                "months_remaining": round(months, 1),
-                                "topology": r["name"],
-                                "past_eol": months <= 0,
-                            })
+                            eol_alerts.append(
+                                {
+                                    "device": n.get("label", ""),
+                                    "model": cfg.get("model", ""),
+                                    "eol_date": eol,
+                                    "months_remaining": round(months, 1),
+                                    "topology": r["name"],
+                                    "past_eol": months <= 0,
+                                }
+                            )
                     except (ValueError, TypeError):
                         pass
 
         # Recent activity
-        activity = [_row_to_dict(r) for r in conn.execute(
-            "SELECT action, entity_type, details, ts "
-            "FROM nc_audit ORDER BY ts DESC LIMIT 15"
-        ).fetchall()]
+        activity = [
+            _row_to_dict(r)
+            for r in conn.execute(
+                "SELECT action, entity_type, details, ts FROM nc_audit ORDER BY ts DESC LIMIT 15"
+            ).fetchall()
+        ]
 
         # Unread notifications
-        unread = conn.execute(
-            "SELECT COUNT(*) FROM nc_notifications WHERE is_read=0"
-        ).fetchone()[0]
+        unread = conn.execute("SELECT COUNT(*) FROM nc_notifications WHERE is_read=0").fetchone()[0]
 
         # Quick stats
-        total_projects = conn.execute(
-            "SELECT COUNT(*) FROM nc_projects"
-        ).fetchone()[0]
-        total_topos = conn.execute(
-            "SELECT COUNT(*) FROM topologies"
-        ).fetchone()[0]
-        total_peers = conn.execute(
-            "SELECT COUNT(*) FROM nc_peering_agreements "
-            "WHERE status='operational'"
-        ).fetchone()[0]
+        total_projects = conn.execute("SELECT COUNT(*) FROM nc_projects").fetchone()[0]
+        total_topos = conn.execute("SELECT COUNT(*) FROM topologies").fetchone()[0]
+        total_peers = conn.execute("SELECT COUNT(*) FROM nc_peering_agreements WHERE status='operational'").fetchone()[
+            0
+        ]
 
         conn.close()
-        return jsonify({
-            "projects": projects,
-            "pending_reviews": pending_reviews,
-            "compliance_alerts": compliance_alerts,
-            "eol_alerts": sorted(
-                eol_alerts, key=lambda x: x["months_remaining"]
-            )[:10],
-            "activity": activity,
-            "unread_notifications": unread,
-            "stats": {
-                "total_projects": total_projects,
-                "total_topologies": total_topos,
-                "active_peering": total_peers,
-                "pending_reviews": len(pending_reviews),
-                "compliance_alerts": len(compliance_alerts),
-                "eol_alerts": len(eol_alerts),
-            },
-        })
+        return jsonify(
+            {
+                "projects": projects,
+                "pending_reviews": pending_reviews,
+                "compliance_alerts": compliance_alerts,
+                "eol_alerts": sorted(eol_alerts, key=lambda x: x["months_remaining"])[:10],
+                "activity": activity,
+                "unread_notifications": unread,
+                "stats": {
+                    "total_projects": total_projects,
+                    "total_topologies": total_topos,
+                    "active_peering": total_peers,
+                    "pending_reviews": len(pending_reviews),
+                    "compliance_alerts": len(compliance_alerts),
+                    "eol_alerts": len(eol_alerts),
+                },
+            }
+        )
 
     @bp.route("/canvas/new")
     @nc_login_required
     def nc_canvas_new():
-        return render_template("network/canvas.html",
-                               topology_id="new", topology_name="Untitled Topology")
+        return render_template("network/canvas.html", topology_id="new", topology_name="Untitled Topology")
 
     @bp.route("/canvas/<topo_id>")
     @nc_login_required
@@ -331,27 +374,38 @@ def create_network_blueprint():
             abort(404)
         topo = _row_to_dict(row)
         # Find projects this topology belongs to
-        topo_projects = [_row_to_dict(r) for r in conn.execute(
-            "SELECT p.id, p.name, p.status FROM nc_projects p "
-            "JOIN nc_project_topologies pt ON pt.project_id=p.id "
-            "WHERE pt.topology_id=? ORDER BY p.name", (topo_id,)
-        ).fetchall()]
+        topo_projects = [
+            _row_to_dict(r)
+            for r in conn.execute(
+                "SELECT p.id, p.name, p.status FROM nc_projects p "
+                "JOIN nc_project_topologies pt ON pt.project_id=p.id "
+                "WHERE pt.topology_id=? ORDER BY p.name",
+                (topo_id,),
+            ).fetchall()
+        ]
         # All projects for quick-switch
-        all_projects = [_row_to_dict(r) for r in conn.execute(
-            "SELECT id, name, status FROM nc_projects ORDER BY name"
-        ).fetchall()]
+        all_projects = [
+            _row_to_dict(r) for r in conn.execute("SELECT id, name, status FROM nc_projects ORDER BY name").fetchall()
+        ]
         conn.close()
-        return render_template("network/canvas.html",
-                               topology_id=topo_id, topology_name=topo["name"],
-                               topo_projects=topo_projects, all_projects=all_projects)
+        return render_template(
+            "network/canvas.html",
+            topology_id=topo_id,
+            topology_name=topo["name"],
+            topo_projects=topo_projects,
+            all_projects=all_projects,
+        )
 
     @bp.route("/templates")
     @nc_login_required
     def nc_templates():
         conn = get_connection()
-        templates = [_row_to_dict(r) for r in conn.execute(
-            "SELECT id, name, category, description, tags FROM nc_templates ORDER BY category, name"
-        ).fetchall()]
+        templates = [
+            _row_to_dict(r)
+            for r in conn.execute(
+                "SELECT id, name, category, description, tags FROM nc_templates ORDER BY category, name"
+            ).fetchall()
+        ]
         conn.close()
         for t in templates:
             try:
@@ -361,8 +415,7 @@ def create_network_blueprint():
         categories = {}
         for t in templates:
             categories.setdefault(t.get("category") or "Other", []).append(t)
-        return render_template("network/templates_gallery.html",
-                               categories=categories, templates=templates)
+        return render_template("network/templates_gallery.html", categories=categories, templates=templates)
 
     @bp.route("/simulation/<sim_id>")
     @nc_login_required
@@ -370,7 +423,8 @@ def create_network_blueprint():
         conn = get_connection()
         row = conn.execute(
             "SELECT sr.*, t.name AS topology_name FROM simulation_results sr "
-            "JOIN topologies t ON t.id=sr.topology_id WHERE sr.id=?", (sim_id,)
+            "JOIN topologies t ON t.id=sr.topology_id WHERE sr.id=?",
+            (sim_id,),
         ).fetchone()
         conn.close()
         if not row:
@@ -412,9 +466,12 @@ def create_network_blueprint():
         if not topo:
             conn.close()
             abort(404)
-        versions = [_row_to_dict(r) for r in conn.execute(
-            "SELECT * FROM nc_versions WHERE topology_id=? ORDER BY version_num", (topo_id,)
-        ).fetchall()]
+        versions = [
+            _row_to_dict(r)
+            for r in conn.execute(
+                "SELECT * FROM nc_versions WHERE topology_id=? ORDER BY version_num", (topo_id,)
+            ).fetchall()
+        ]
         conn.close()
         return render_template("network/versions.html", topology=_row_to_dict(topo), versions=versions)
 
@@ -427,31 +484,50 @@ def create_network_blueprint():
             conn.close()
             abort(404)
 
-        scenarios = [_row_to_dict(r) for r in conn.execute(
-            "SELECT * FROM nc_mc_scenarios WHERE topology_id=? ORDER BY created_at DESC", (topo_id,)
-        ).fetchall()]
+        scenarios = [
+            _row_to_dict(r)
+            for r in conn.execute(
+                "SELECT * FROM nc_mc_scenarios WHERE topology_id=? ORDER BY created_at DESC", (topo_id,)
+            ).fetchall()
+        ]
 
         _auto_run_scenario = None
         if not scenarios:
             now = _now()
             defaults = [
-                ("Random Failure (5% links)", "random", "Random 5% link failure probability per iteration",
-                 json.dumps({"iterations": 1000, "node_failure_prob": 0.02, "edge_failure_prob": 0.05})),
-                ("Major Outage (20% links)", "random", "Stress test — 20% link failure probability",
-                 json.dumps({"iterations": 1000, "node_failure_prob": 0.05, "edge_failure_prob": 0.20})),
-                ("Single Node Failure", "random", "What happens when one critical node goes down?",
-                 json.dumps({"iterations": 500, "node_failure_prob": 0.08, "edge_failure_prob": 0.0})),
+                (
+                    "Random Failure (5% links)",
+                    "random",
+                    "Random 5% link failure probability per iteration",
+                    json.dumps({"iterations": 1000, "node_failure_prob": 0.02, "edge_failure_prob": 0.05}),
+                ),
+                (
+                    "Major Outage (20% links)",
+                    "random",
+                    "Stress test — 20% link failure probability",
+                    json.dumps({"iterations": 1000, "node_failure_prob": 0.05, "edge_failure_prob": 0.20}),
+                ),
+                (
+                    "Single Node Failure",
+                    "random",
+                    "What happens when one critical node goes down?",
+                    json.dumps({"iterations": 500, "node_failure_prob": 0.08, "edge_failure_prob": 0.0}),
+                ),
             ]
             for name, stype, desc, cfg in defaults:
                 sid = str(_uuid.uuid4())
                 conn.execute(
                     "INSERT INTO nc_mc_scenarios (id, topology_id, name, scenario_type, description, config_json, created_at) "
-                    "VALUES (?,?,?,?,?,?,?)", (sid, topo_id, name, stype, desc, cfg, now)
+                    "VALUES (?,?,?,?,?,?,?)",
+                    (sid, topo_id, name, stype, desc, cfg, now),
                 )
             conn.commit()
-            scenarios = [_row_to_dict(r) for r in conn.execute(
-                "SELECT * FROM nc_mc_scenarios WHERE topology_id=? ORDER BY created_at DESC", (topo_id,)
-            ).fetchall()]
+            scenarios = [
+                _row_to_dict(r)
+                for r in conn.execute(
+                    "SELECT * FROM nc_mc_scenarios WHERE topology_id=? ORDER BY created_at DESC", (topo_id,)
+                ).fetchall()
+            ]
             try:
                 graph = json.loads(topo["graph_json"])
                 if graph.get("nodes") and graph.get("edges"):
@@ -459,19 +535,27 @@ def create_network_blueprint():
             except Exception:
                 pass
 
-        runs = [_row_to_dict(r) for r in conn.execute(
-            "SELECT r.id, r.iterations, r.ran_at, s.name AS scenario_name, s.scenario_type "
-            "FROM nc_mc_runs r JOIN nc_mc_scenarios s ON s.id=r.scenario_id "
-            "WHERE r.topology_id=? ORDER BY r.ran_at DESC LIMIT 20", (topo_id,)
-        ).fetchall()]
+        runs = [
+            _row_to_dict(r)
+            for r in conn.execute(
+                "SELECT r.id, r.iterations, r.ran_at, s.name AS scenario_name, s.scenario_type "
+                "FROM nc_mc_runs r JOIN nc_mc_scenarios s ON s.id=r.scenario_id "
+                "WHERE r.topology_id=? ORDER BY r.ran_at DESC LIMIT 20",
+                (topo_id,),
+            ).fetchall()
+        ]
 
         if scenarios and not runs and not _auto_run_scenario:
             _auto_run_scenario = scenarios[-1]["id"]
 
         conn.close()
-        return render_template("network/montecarlo.html", topology=_row_to_dict(topo),
-                               scenarios=scenarios, runs=runs,
-                               auto_run_scenario=_auto_run_scenario)
+        return render_template(
+            "network/montecarlo.html",
+            topology=_row_to_dict(topo),
+            scenarios=scenarios,
+            runs=runs,
+            auto_run_scenario=_auto_run_scenario,
+        )
 
     @bp.route("/compliance/<topo_id>")
     @nc_login_required
@@ -490,15 +574,22 @@ def create_network_blueprint():
             profile = conn.execute("SELECT * FROM nc_compliance_profiles WHERE id=?", (pid,)).fetchone()
         profile = _row_to_dict(profile)
 
-        audits = [_row_to_dict(r) for r in conn.execute(
-            "SELECT id, check_type, passed, failed, ran_at FROM nc_compliance_checks "
-            "WHERE topology_id=? ORDER BY ran_at DESC LIMIT 10", (topo_id,)
-        ).fetchall()]
+        audits = [
+            _row_to_dict(r)
+            for r in conn.execute(
+                "SELECT id, check_type, passed, failed, ran_at FROM nc_compliance_checks "
+                "WHERE topology_id=? ORDER BY ran_at DESC LIMIT 10",
+                (topo_id,),
+            ).fetchall()
+        ]
 
-        open_findings = [_row_to_dict(r) for r in conn.execute(
-            "SELECT * FROM nc_compliance_findings WHERE topology_id=? AND status='open' ORDER BY severity, rule_id",
-            (topo_id,)
-        ).fetchall()]
+        open_findings = [
+            _row_to_dict(r)
+            for r in conn.execute(
+                "SELECT * FROM nc_compliance_findings WHERE topology_id=? AND status='open' ORDER BY severity, rule_id",
+                (topo_id,),
+            ).fetchall()
+        ]
 
         conn.close()
 
@@ -507,13 +598,15 @@ def create_network_blueprint():
         except Exception:
             regimes = ["fisma_high"]
 
-        return render_template("network/compliance_audit.html",
-                               topology=_row_to_dict(topo),
-                               profile=profile,
-                               regimes=regimes,
-                               all_regimes=COMPLIANCE_REGIMES,
-                               audits=audits,
-                               open_findings=open_findings)
+        return render_template(
+            "network/compliance_audit.html",
+            topology=_row_to_dict(topo),
+            profile=profile,
+            regimes=regimes,
+            all_regimes=COMPLIANCE_REGIMES,
+            audits=audits,
+            open_findings=open_findings,
+        )
 
     @bp.route("/circuits")
     @nc_login_required
@@ -521,42 +614,54 @@ def create_network_blueprint():
         conn = get_connection()
         filter_project = request.args.get("project", "")
         if filter_project:
-            circuits = [_row_to_dict(r) for r in conn.execute(
-                "SELECT * FROM nc_circuits WHERE topology_id IN "
-                "(SELECT topology_id FROM nc_project_topologies WHERE project_id=?) "
-                "ORDER BY updated_at DESC", (filter_project,)
-            ).fetchall()]
+            circuits = [
+                _row_to_dict(r)
+                for r in conn.execute(
+                    "SELECT * FROM nc_circuits WHERE topology_id IN "
+                    "(SELECT topology_id FROM nc_project_topologies WHERE project_id=?) "
+                    "ORDER BY updated_at DESC",
+                    (filter_project,),
+                ).fetchall()
+            ]
         else:
-            circuits = [_row_to_dict(r) for r in conn.execute(
-                "SELECT * FROM nc_circuits ORDER BY updated_at DESC"
-            ).fetchall()]
+            circuits = [
+                _row_to_dict(r) for r in conn.execute("SELECT * FROM nc_circuits ORDER BY updated_at DESC").fetchall()
+            ]
         stats = {
             "total": len(circuits),
             "installed": sum(1 for c in circuits if c.get("install_status") == "installed"),
             "planned": sum(1 for c in circuits if c.get("install_status") == "planned"),
             "monthly_cost": sum(c.get("monthly_cost_usd") or 0 for c in circuits),
         }
-        all_projects = [_row_to_dict(r) for r in conn.execute(
-            "SELECT id, name FROM nc_projects ORDER BY name"
-        ).fetchall()]
+        all_projects = [
+            _row_to_dict(r) for r in conn.execute("SELECT id, name FROM nc_projects ORDER BY name").fetchall()
+        ]
         active_project = None
         if filter_project:
             ap_row = conn.execute("SELECT id, name FROM nc_projects WHERE id=?", (filter_project,)).fetchone()
             active_project = _row_to_dict(ap_row) if ap_row else None
         conn.close()
-        return render_template("network/circuits.html", circuits=circuits, stats=stats,
-                               all_projects=all_projects, filter_project=filter_project,
-                               active_project=active_project)
+        return render_template(
+            "network/circuits.html",
+            circuits=circuits,
+            stats=stats,
+            all_projects=all_projects,
+            filter_project=filter_project,
+            active_project=active_project,
+        )
 
     @bp.route("/customers")
     @nc_login_required
     def nc_customers():
         conn = get_connection()
         customers = [_row_to_dict(r) for r in conn.execute("SELECT * FROM nc_customers ORDER BY name").fetchall()]
-        sites = [_row_to_dict(r) for r in conn.execute(
-            "SELECT s.*, c.name AS customer_name FROM nc_sites s "
-            "LEFT JOIN nc_customers c ON c.id=s.customer_id ORDER BY s.name"
-        ).fetchall()]
+        sites = [
+            _row_to_dict(r)
+            for r in conn.execute(
+                "SELECT s.*, c.name AS customer_name FROM nc_sites s "
+                "LEFT JOIN nc_customers c ON c.id=s.customer_id ORDER BY s.name"
+            ).fetchall()
+        ]
         conn.close()
         return render_template("network/customers.html", customers=customers, sites=sites)
 
@@ -566,24 +671,32 @@ def create_network_blueprint():
         conn = get_connection()
         filter_project = request.args.get("project", "")
         if filter_project:
-            blocks = [_row_to_dict(r) for r in conn.execute(
-                "SELECT * FROM nc_ipam_blocks WHERE topology_id IN "
-                "(SELECT topology_id FROM nc_project_topologies WHERE project_id=?) "
-                "ORDER BY network", (filter_project,)
-            ).fetchall()]
+            blocks = [
+                _row_to_dict(r)
+                for r in conn.execute(
+                    "SELECT * FROM nc_ipam_blocks WHERE topology_id IN "
+                    "(SELECT topology_id FROM nc_project_topologies WHERE project_id=?) "
+                    "ORDER BY network",
+                    (filter_project,),
+                ).fetchall()
+            ]
         else:
             blocks = [_row_to_dict(r) for r in conn.execute("SELECT * FROM nc_ipam_blocks ORDER BY network").fetchall()]
-        all_projects = [_row_to_dict(r) for r in conn.execute(
-            "SELECT id, name FROM nc_projects ORDER BY name"
-        ).fetchall()]
+        all_projects = [
+            _row_to_dict(r) for r in conn.execute("SELECT id, name FROM nc_projects ORDER BY name").fetchall()
+        ]
         active_project = None
         if filter_project:
             ap_row = conn.execute("SELECT id, name FROM nc_projects WHERE id=?", (filter_project,)).fetchone()
             active_project = _row_to_dict(ap_row) if ap_row else None
         conn.close()
-        return render_template("network/ipam.html", blocks=blocks,
-                               all_projects=all_projects, filter_project=filter_project,
-                               active_project=active_project)
+        return render_template(
+            "network/ipam.html",
+            blocks=blocks,
+            all_projects=all_projects,
+            filter_project=filter_project,
+            active_project=active_project,
+        )
 
     @bp.route("/cables")
     @nc_login_required
@@ -597,9 +710,9 @@ def create_network_blueprint():
     @nc_login_required
     def nc_cross_connects():
         conn = get_connection()
-        xconns = [_row_to_dict(r) for r in conn.execute(
-            "SELECT * FROM nc_cross_connects ORDER BY updated_at DESC"
-        ).fetchall()]
+        xconns = [
+            _row_to_dict(r) for r in conn.execute("SELECT * FROM nc_cross_connects ORDER BY updated_at DESC").fetchall()
+        ]
         stats = {
             "total": len(xconns),
             "active": sum(1 for x in xconns if x.get("status") == "active"),
@@ -627,14 +740,10 @@ def create_network_blueprint():
         ).fetchall()
         cached_counts = {r[0]: r[1] for r in obj_rows}
         # Recent sync log
-        log_rows = conn.execute(
-            "SELECT * FROM nc_netbox_sync_log ORDER BY ran_at DESC LIMIT 50"
-        ).fetchall()
+        log_rows = conn.execute("SELECT * FROM nc_netbox_sync_log ORDER BY ran_at DESC LIMIT 50").fetchall()
         sync_log = [_row_to_dict(r) for r in log_rows]
         # Topologies for the import-to-canvas picker
-        topo_rows = conn.execute(
-            "SELECT id, name FROM topologies ORDER BY updated_at DESC LIMIT 100"
-        ).fetchall()
+        topo_rows = conn.execute("SELECT id, name FROM topologies ORDER BY updated_at DESC LIMIT 100").fetchall()
         topologies = [_row_to_dict(r) for r in topo_rows]
         conn.close()
         airgap = os.environ.get("NETWORK_AIRGAP", "").lower() in ("1", "true", "yes")
@@ -651,26 +760,34 @@ def create_network_blueprint():
     @nc_login_required
     def nc_projects():
         conn = get_connection()
-        projects = [_row_to_dict(r) for r in conn.execute(
-            "SELECT p.*, c.name AS customer_name, "
-            "(SELECT COUNT(*) FROM nc_project_topologies pt WHERE pt.project_id=p.id) AS topo_count "
-            "FROM nc_projects p LEFT JOIN nc_customers c ON c.id=p.customer_id ORDER BY p.updated_at DESC"
-        ).fetchall()]
-        customers = [_row_to_dict(r) for r in conn.execute("SELECT id, name FROM nc_customers ORDER BY name").fetchall()]
+        projects = [
+            _row_to_dict(r)
+            for r in conn.execute(
+                "SELECT p.*, c.name AS customer_name, "
+                "(SELECT COUNT(*) FROM nc_project_topologies pt WHERE pt.project_id=p.id) AS topo_count "
+                "FROM nc_projects p LEFT JOIN nc_customers c ON c.id=p.customer_id ORDER BY p.updated_at DESC"
+            ).fetchall()
+        ]
+        customers = [
+            _row_to_dict(r) for r in conn.execute("SELECT id, name FROM nc_customers ORDER BY name").fetchall()
+        ]
 
         # ── Portfolio health data per project ─────────────────────────────
         for p in projects:
             pid = p["id"]
-            topo_ids = [r[0] for r in conn.execute(
-                "SELECT topology_id FROM nc_project_topologies WHERE project_id=?", (pid,)
-            ).fetchall()]
+            topo_ids = [
+                r[0]
+                for r in conn.execute(
+                    "SELECT topology_id FROM nc_project_topologies WHERE project_id=?", (pid,)
+                ).fetchall()
+            ]
             # Compliance: latest audit pass/fail across topologies
             total_passed = total_failed = 0
             open_findings = 0
             for tid in topo_ids:
                 row = conn.execute(
-                    "SELECT passed, failed FROM nc_compliance_checks WHERE topology_id=? "
-                    "ORDER BY ran_at DESC LIMIT 1", (tid,)
+                    "SELECT passed, failed FROM nc_compliance_checks WHERE topology_id=? ORDER BY ran_at DESC LIMIT 1",
+                    (tid,),
                 ).fetchone()
                 if row:
                     total_passed += row[0] or 0
@@ -685,7 +802,8 @@ def create_network_blueprint():
             # Cost: sum of circuit monthly costs
             cost_row = conn.execute(
                 "SELECT COALESCE(SUM(monthly_cost_usd), 0) FROM nc_circuits WHERE topology_id IN "
-                "(SELECT topology_id FROM nc_project_topologies WHERE project_id=?)", (pid,)
+                "(SELECT topology_id FROM nc_project_topologies WHERE project_id=?)",
+                (pid,),
             ).fetchone()
             p["monthly_cost"] = cost_row[0] if cost_row else 0
             # Node/edge totals
@@ -693,14 +811,16 @@ def create_network_blueprint():
                 "SELECT COALESCE(SUM(json_array_length(json_extract(t.graph_json,'$.nodes'))),0), "
                 "COALESCE(SUM(json_array_length(json_extract(t.graph_json,'$.edges'))),0) "
                 "FROM topologies t JOIN nc_project_topologies pt ON pt.topology_id=t.id "
-                "WHERE pt.project_id=?", (pid,)
+                "WHERE pt.project_id=?",
+                (pid,),
             ).fetchone()
             p["total_nodes"] = ne[0] if ne else 0
             p["total_edges"] = ne[1] if ne else 0
             # Last simulation date
             sim_row = conn.execute(
                 "SELECT MAX(ran_at) FROM simulation_results WHERE topology_id IN "
-                "(SELECT topology_id FROM nc_project_topologies WHERE project_id=?)", (pid,)
+                "(SELECT topology_id FROM nc_project_topologies WHERE project_id=?)",
+                (pid,),
             ).fetchone()
             p["last_sim"] = sim_row[0] if sim_row and sim_row[0] else None
 
@@ -716,16 +836,21 @@ def create_network_blueprint():
             portfolio_stats["by_status"][s] = portfolio_stats["by_status"].get(s, 0) + 1
 
         # P1: Portfolio-wide activity feed (recent 20 events)
-        portfolio_activity = [_row_to_dict(r) for r in conn.execute(
-            "SELECT action, entity_type, entity_id, details, "
-            "user_id, ts FROM nc_audit "
-            "ORDER BY ts DESC LIMIT 20"
-        ).fetchall()]
+        portfolio_activity = [
+            _row_to_dict(r)
+            for r in conn.execute(
+                "SELECT action, entity_type, entity_id, details, user_id, ts FROM nc_audit ORDER BY ts DESC LIMIT 20"
+            ).fetchall()
+        ]
 
         conn.close()
-        return render_template("network/projects.html", projects=projects,
-                               customers=customers, portfolio=portfolio_stats,
-                               activity=portfolio_activity)
+        return render_template(
+            "network/projects.html",
+            projects=projects,
+            customers=customers,
+            portfolio=portfolio_stats,
+            activity=portfolio_activity,
+        )
 
     @bp.route("/projects/<proj_id>")
     @nc_login_required
@@ -733,28 +858,35 @@ def create_network_blueprint():
         conn = get_connection()
         proj = conn.execute(
             "SELECT p.*, c.name AS customer_name FROM nc_projects p "
-            "LEFT JOIN nc_customers c ON c.id=p.customer_id WHERE p.id=?", (proj_id,)
+            "LEFT JOIN nc_customers c ON c.id=p.customer_id WHERE p.id=?",
+            (proj_id,),
         ).fetchone()
         if not proj:
             conn.close()
             abort(404)
         proj = _row_to_dict(proj)
-        topos = [_row_to_dict(r) for r in conn.execute(
-            "SELECT t.id, t.name, t.description, t.classification, "
-            "t.updated_at, t.graph_json, "
-            "json_array_length(json_extract(t.graph_json,'$.nodes')) AS node_count, "
-            "json_array_length(json_extract(t.graph_json,'$.edges')) AS edge_count "
-            "FROM topologies t JOIN nc_project_topologies pt ON pt.topology_id=t.id "
-            "WHERE pt.project_id=? ORDER BY t.updated_at DESC", (proj_id,)
-        ).fetchall()]
-        circuits = [_row_to_dict(r) for r in conn.execute(
-            "SELECT * FROM nc_circuits WHERE topology_id IN "
-            "(SELECT topology_id FROM nc_project_topologies WHERE project_id=?) "
-            "ORDER BY circuit_id", (proj_id,)
-        ).fetchall()]
-        all_topos = [_row_to_dict(r) for r in conn.execute(
-            "SELECT id, name FROM topologies ORDER BY name"
-        ).fetchall()]
+        topos = [
+            _row_to_dict(r)
+            for r in conn.execute(
+                "SELECT t.id, t.name, t.description, t.classification, "
+                "t.updated_at, t.graph_json, "
+                "json_array_length(json_extract(t.graph_json,'$.nodes')) AS node_count, "
+                "json_array_length(json_extract(t.graph_json,'$.edges')) AS edge_count "
+                "FROM topologies t JOIN nc_project_topologies pt ON pt.topology_id=t.id "
+                "WHERE pt.project_id=? ORDER BY t.updated_at DESC",
+                (proj_id,),
+            ).fetchall()
+        ]
+        circuits = [
+            _row_to_dict(r)
+            for r in conn.execute(
+                "SELECT * FROM nc_circuits WHERE topology_id IN "
+                "(SELECT topology_id FROM nc_project_topologies WHERE project_id=?) "
+                "ORDER BY circuit_id",
+                (proj_id,),
+            ).fetchall()
+        ]
+        all_topos = [_row_to_dict(r) for r in conn.execute("SELECT id, name FROM topologies ORDER BY name").fetchall()]
 
         # ── P1: Compliance rollup per topology ────────────────────────────
         topo_compliance = []
@@ -764,7 +896,8 @@ def create_network_blueprint():
             tid = t["id"]
             audit_row = conn.execute(
                 "SELECT passed, failed, ran_at FROM nc_compliance_checks "
-                "WHERE topology_id=? ORDER BY ran_at DESC LIMIT 1", (tid,)
+                "WHERE topology_id=? ORDER BY ran_at DESC LIMIT 1",
+                (tid,),
             ).fetchone()
             passed = (audit_row[0] or 0) if audit_row else 0
             failed = (audit_row[1] or 0) if audit_row else 0
@@ -774,8 +907,7 @@ def create_network_blueprint():
             agg_passed += passed
             agg_failed += failed
             of_row = conn.execute(
-                "SELECT COUNT(*) FROM nc_compliance_findings "
-                "WHERE topology_id=? AND status='open'", (tid,)
+                "SELECT COUNT(*) FROM nc_compliance_findings WHERE topology_id=? AND status='open'", (tid,)
             ).fetchone()
             open_f = of_row[0] if of_row else 0
             total_open_findings += open_f
@@ -783,27 +915,31 @@ def create_network_blueprint():
             sev_rows = conn.execute(
                 "SELECT severity, COUNT(*) FROM nc_compliance_findings "
                 "WHERE topology_id=? AND status='open' "
-                "GROUP BY severity", (tid,)
+                "GROUP BY severity",
+                (tid,),
             ).fetchall()
             by_sev = {r[0]: r[1] for r in sev_rows}
-            topo_compliance.append({
-                "id": tid, "name": t["name"],
-                "passed": passed, "failed": failed,
-                "pct": pct, "open_findings": open_f,
-                "cat1": by_sev.get("CAT1", 0),
-                "cat2": by_sev.get("CAT2", 0),
-                "cat3": by_sev.get("CAT3", 0),
-                "last_audit": last_audit,
-            })
+            topo_compliance.append(
+                {
+                    "id": tid,
+                    "name": t["name"],
+                    "passed": passed,
+                    "failed": failed,
+                    "pct": pct,
+                    "open_findings": open_f,
+                    "cat1": by_sev.get("CAT1", 0),
+                    "cat2": by_sev.get("CAT2", 0),
+                    "cat3": by_sev.get("CAT3", 0),
+                    "last_audit": last_audit,
+                }
+            )
         agg_total = agg_passed + agg_failed
         agg_pct = round(agg_passed * 100 / agg_total) if agg_total else None
 
         # ── P1: BOM cost rollup per topology ──────────────────────────────
         topo_bom = []
         total_capex = 0
-        total_circuit_cost = sum(
-            c.get("monthly_cost_usd") or 0 for c in circuits
-        )
+        total_circuit_cost = sum(c.get("monthly_cost_usd") or 0 for c in circuits)
         for t in topos:
             try:
                 graph = json.loads(t.get("graph_json") or '{"nodes":[]}')
@@ -813,82 +949,96 @@ def create_network_blueprint():
             for n in graph.get("nodes", []):
                 nt = n.get("type", "unknown")
                 type_counts[nt] = type_counts.get(nt, 0) + 1
-            capex = sum(
-                BOM_COSTS.get(dt, 0) * cnt
-                for dt, cnt in type_counts.items()
-            )
+            capex = sum(BOM_COSTS.get(dt, 0) * cnt for dt, cnt in type_counts.items())
             total_capex += capex
-            topo_bom.append({
-                "id": t["id"], "name": t["name"],
-                "devices": sum(type_counts.values()),
-                "unique_types": len(type_counts),
-                "capex": capex,
-            })
+            topo_bom.append(
+                {
+                    "id": t["id"],
+                    "name": t["name"],
+                    "devices": sum(type_counts.values()),
+                    "unique_types": len(type_counts),
+                    "capex": capex,
+                }
+            )
 
         # ── P1: Activity feed from nc_audit ───────────────────────────────
         topo_ids = [t["id"] for t in topos]
         if topo_ids:
             placeholders = ",".join("?" for _ in topo_ids)
-            activity = [_row_to_dict(r) for r in conn.execute(
-                "SELECT action, entity_type, entity_id, details, "
-                "user_id, ts FROM nc_audit "
-                "WHERE entity_id IN (" + placeholders + ") "  # nosec B608
-                "OR (entity_type='project' AND entity_id=?) "
-                "ORDER BY ts DESC LIMIT 30",
-                topo_ids + [proj_id]
-            ).fetchall()]
+            activity = [
+                _row_to_dict(r)
+                for r in conn.execute(
+                    "SELECT action, entity_type, entity_id, details, "
+                    "user_id, ts FROM nc_audit "
+                    "WHERE entity_id IN (" + placeholders + ") "  # nosec B608
+                    "OR (entity_type='project' AND entity_id=?) "
+                    "ORDER BY ts DESC LIMIT 30",
+                    topo_ids + [proj_id],
+                ).fetchall()
+            ]
         else:
-            activity = [_row_to_dict(r) for r in conn.execute(
-                "SELECT action, entity_type, entity_id, details, "
-                "user_id, ts FROM nc_audit "
-                "WHERE entity_type='project' AND entity_id=? "
-                "ORDER BY ts DESC LIMIT 30", (proj_id,)
-            ).fetchall()]
+            activity = [
+                _row_to_dict(r)
+                for r in conn.execute(
+                    "SELECT action, entity_type, entity_id, details, "
+                    "user_id, ts FROM nc_audit "
+                    "WHERE entity_type='project' AND entity_id=? "
+                    "ORDER BY ts DESC LIMIT 30",
+                    (proj_id,),
+                ).fetchall()
+            ]
 
         # Strip graph_json from topos (large, not needed in template)
         for t in topos:
             t.pop("graph_json", None)
 
         # P3: Milestones, Notes, Tags, Assignees
-        milestones = [_row_to_dict(r) for r in conn.execute(
-            "SELECT * FROM nc_project_milestones "
-            "WHERE project_id=? ORDER BY due_date", (proj_id,)
-        ).fetchall()]
-        notes = [_row_to_dict(r) for r in conn.execute(
-            "SELECT * FROM nc_project_notes "
-            "WHERE project_id=? ORDER BY created_at DESC", (proj_id,)
-        ).fetchall()]
-        project_tags = [r[0] for r in conn.execute(
-            "SELECT tag FROM nc_tags "
-            "WHERE entity_type='project' AND entity_id=? ORDER BY tag",
-            (proj_id,)
-        ).fetchall()]
+        milestones = [
+            _row_to_dict(r)
+            for r in conn.execute(
+                "SELECT * FROM nc_project_milestones WHERE project_id=? ORDER BY due_date", (proj_id,)
+            ).fetchall()
+        ]
+        notes = [
+            _row_to_dict(r)
+            for r in conn.execute(
+                "SELECT * FROM nc_project_notes WHERE project_id=? ORDER BY created_at DESC", (proj_id,)
+            ).fetchall()
+        ]
+        project_tags = [
+            r[0]
+            for r in conn.execute(
+                "SELECT tag FROM nc_tags WHERE entity_type='project' AND entity_id=? ORDER BY tag", (proj_id,)
+            ).fetchall()
+        ]
         # Assignees per topology
         topo_assignees = {}
         for r in conn.execute(
-            "SELECT topology_id, assignee FROM nc_project_topologies "
-            "WHERE project_id=? AND assignee != ''", (proj_id,)
+            "SELECT topology_id, assignee FROM nc_project_topologies WHERE project_id=? AND assignee != ''", (proj_id,)
         ).fetchall():
             topo_assignees[r[0]] = r[1]
 
         # Phase A: Review board pipeline
-        review_boards = [_row_to_dict(r) for r in conn.execute(
-            "SELECT * FROM nc_review_boards ORDER BY sort_order"
-        ).fetchall()]
-        board_reviews = [_row_to_dict(r) for r in conn.execute(
-            "SELECT br.*, rb.name AS board_name, rb.short_name "
-            "FROM nc_board_reviews br "
-            "JOIN nc_review_boards rb ON rb.id=br.board_id "
-            "WHERE br.project_id=? ORDER BY rb.sort_order, br.phase",
-            (proj_id,)
-        ).fetchall()]
-        project_phases = [_row_to_dict(r) for r in conn.execute(
-            "SELECT * FROM nc_project_phases WHERE project_id=? "
-            "ORDER BY phase_num", (proj_id,)
-        ).fetchall()]
-        safe_bridge = conn.execute(
-            "SELECT * FROM nc_safe_bridge WHERE project_id=?", (proj_id,)
-        ).fetchone()
+        review_boards = [
+            _row_to_dict(r) for r in conn.execute("SELECT * FROM nc_review_boards ORDER BY sort_order").fetchall()
+        ]
+        board_reviews = [
+            _row_to_dict(r)
+            for r in conn.execute(
+                "SELECT br.*, rb.name AS board_name, rb.short_name "
+                "FROM nc_board_reviews br "
+                "JOIN nc_review_boards rb ON rb.id=br.board_id "
+                "WHERE br.project_id=? ORDER BY rb.sort_order, br.phase",
+                (proj_id,),
+            ).fetchall()
+        ]
+        project_phases = [
+            _row_to_dict(r)
+            for r in conn.execute(
+                "SELECT * FROM nc_project_phases WHERE project_id=? ORDER BY phase_num", (proj_id,)
+            ).fetchall()
+        ]
+        safe_bridge = conn.execute("SELECT * FROM nc_safe_bridge WHERE project_id=?", (proj_id,)).fetchone()
         safe_bridge = _row_to_dict(safe_bridge) if safe_bridge else None
         if safe_bridge and safe_bridge.get("roi_json"):
             try:
@@ -897,24 +1047,28 @@ def create_network_blueprint():
                 safe_bridge["roi"] = {}
 
         conn.close()
-        return render_template("network/project_detail.html",
-                               project=proj, topologies=topos,
-                               circuits=circuits, all_topos=all_topos,
-                               topo_compliance=topo_compliance,
-                               agg_compliance_pct=agg_pct,
-                               total_open_findings=total_open_findings,
-                               topo_bom=topo_bom,
-                               total_capex=total_capex,
-                               total_circuit_cost=total_circuit_cost,
-                               activity=activity,
-                               milestones=milestones,
-                               notes=notes,
-                               project_tags=project_tags,
-                               topo_assignees=topo_assignees,
-                               review_boards=review_boards,
-                               board_reviews=board_reviews,
-                               project_phases=project_phases,
-                               safe_bridge=safe_bridge)
+        return render_template(
+            "network/project_detail.html",
+            project=proj,
+            topologies=topos,
+            circuits=circuits,
+            all_topos=all_topos,
+            topo_compliance=topo_compliance,
+            agg_compliance_pct=agg_pct,
+            total_open_findings=total_open_findings,
+            topo_bom=topo_bom,
+            total_capex=total_capex,
+            total_circuit_cost=total_circuit_cost,
+            activity=activity,
+            milestones=milestones,
+            notes=notes,
+            project_tags=project_tags,
+            topo_assignees=topo_assignees,
+            review_boards=review_boards,
+            board_reviews=board_reviews,
+            project_phases=project_phases,
+            safe_bridge=safe_bridge,
+        )
 
     # ══════════════════════════════════════════════════════════════════════
     # P2: Cross-Project Comparison
@@ -924,31 +1078,35 @@ def create_network_blueprint():
     @nc_login_required
     def nc_project_compare():
         conn = get_connection()
-        projects = [_row_to_dict(r) for r in conn.execute(
-            "SELECT p.*, c.name AS customer_name, "
-            "(SELECT COUNT(*) FROM nc_project_topologies pt "
-            " WHERE pt.project_id=p.id) AS topo_count "
-            "FROM nc_projects p "
-            "LEFT JOIN nc_customers c ON c.id=p.customer_id "
-            "ORDER BY p.name"
-        ).fetchall()]
+        projects = [
+            _row_to_dict(r)
+            for r in conn.execute(
+                "SELECT p.*, c.name AS customer_name, "
+                "(SELECT COUNT(*) FROM nc_project_topologies pt "
+                " WHERE pt.project_id=p.id) AS topo_count "
+                "FROM nc_projects p "
+                "LEFT JOIN nc_customers c ON c.id=p.customer_id "
+                "ORDER BY p.name"
+            ).fetchall()
+        ]
 
         comparison = []
         for p in projects:
             pid = p["id"]
-            topo_ids = [r[0] for r in conn.execute(
-                "SELECT topology_id FROM nc_project_topologies "
-                "WHERE project_id=?", (pid,)
-            ).fetchall()]
+            topo_ids = [
+                r[0]
+                for r in conn.execute(
+                    "SELECT topology_id FROM nc_project_topologies WHERE project_id=?", (pid,)
+                ).fetchall()
+            ]
 
             # Compliance aggregate
             total_passed = total_failed = 0
             open_findings = cat1 = cat2 = cat3 = 0
             for tid in topo_ids:
                 row = conn.execute(
-                    "SELECT passed, failed FROM nc_compliance_checks "
-                    "WHERE topology_id=? ORDER BY ran_at DESC LIMIT 1",
-                    (tid,)
+                    "SELECT passed, failed FROM nc_compliance_checks WHERE topology_id=? ORDER BY ran_at DESC LIMIT 1",
+                    (tid,),
                 ).fetchone()
                 if row:
                     total_passed += row[0] or 0
@@ -956,7 +1114,8 @@ def create_network_blueprint():
                 sev_rows = conn.execute(
                     "SELECT severity, COUNT(*) FROM nc_compliance_findings "
                     "WHERE topology_id=? AND status='open' "
-                    "GROUP BY severity", (tid,)
+                    "GROUP BY severity",
+                    (tid,),
                 ).fetchall()
                 for sr in sev_rows:
                     if sr[0] == "CAT1":
@@ -968,16 +1127,15 @@ def create_network_blueprint():
                     open_findings += sr[1]
 
             total_checks = total_passed + total_failed
-            comp_pct = round(
-                total_passed * 100 / total_checks
-            ) if total_checks else None
+            comp_pct = round(total_passed * 100 / total_checks) if total_checks else None
 
             # Cost
             cost_row = conn.execute(
                 "SELECT COALESCE(SUM(monthly_cost_usd), 0) "
                 "FROM nc_circuits WHERE topology_id IN "
                 "(SELECT topology_id FROM nc_project_topologies "
-                " WHERE project_id=?)", (pid,)
+                " WHERE project_id=?)",
+                (pid,),
             ).fetchone()
             circuit_cost = cost_row[0] if cost_row else 0
 
@@ -985,10 +1143,7 @@ def create_network_blueprint():
             capex = 0
             total_devices = 0
             for tid in topo_ids:
-                trow = conn.execute(
-                    "SELECT graph_json FROM topologies WHERE id=?",
-                    (tid,)
-                ).fetchone()
+                trow = conn.execute("SELECT graph_json FROM topologies WHERE id=?", (tid,)).fetchone()
                 if trow:
                     try:
                         g = json.loads(trow["graph_json"])
@@ -1008,7 +1163,8 @@ def create_network_blueprint():
                 "  json_extract(t.graph_json,'$.edges'))),0) "
                 "FROM topologies t "
                 "JOIN nc_project_topologies pt ON pt.topology_id=t.id "
-                "WHERE pt.project_id=?", (pid,)
+                "WHERE pt.project_id=?",
+                (pid,),
             ).fetchone()
 
             # Last MC resilience score
@@ -1017,7 +1173,8 @@ def create_network_blueprint():
                 "WHERE topology_id IN "
                 "(SELECT topology_id FROM nc_project_topologies "
                 " WHERE project_id=?) "
-                "ORDER BY ran_at DESC LIMIT 1", (pid,)
+                "ORDER BY ran_at DESC LIMIT 1",
+                (pid,),
             ).fetchone()
             mc_score = None
             if mc_row:
@@ -1027,27 +1184,28 @@ def create_network_blueprint():
                 except Exception:
                     pass
 
-            comparison.append({
-                "id": pid,
-                "name": p["name"],
-                "status": p["status"],
-                "customer": p.get("customer_name", ""),
-                "topo_count": p["topo_count"],
-                "nodes": ne[0] if ne else 0,
-                "edges": ne[1] if ne else 0,
-                "compliance_pct": comp_pct,
-                "open_findings": open_findings,
-                "cat1": cat1,
-                "cat2": cat2,
-                "cat3": cat3,
-                "circuit_cost": circuit_cost,
-                "capex": capex,
-                "devices": total_devices,
-                "mc_resilience": mc_score,
-            })
+            comparison.append(
+                {
+                    "id": pid,
+                    "name": p["name"],
+                    "status": p["status"],
+                    "customer": p.get("customer_name", ""),
+                    "topo_count": p["topo_count"],
+                    "nodes": ne[0] if ne else 0,
+                    "edges": ne[1] if ne else 0,
+                    "compliance_pct": comp_pct,
+                    "open_findings": open_findings,
+                    "cat1": cat1,
+                    "cat2": cat2,
+                    "cat3": cat3,
+                    "circuit_cost": circuit_cost,
+                    "capex": capex,
+                    "devices": total_devices,
+                    "mc_resilience": mc_score,
+                }
+            )
         conn.close()
-        return render_template("network/compare.html",
-                               comparison=comparison)
+        return render_template("network/compare.html", comparison=comparison)
 
     # ══════════════════════════════════════════════════════════════════════
     # P2: Clone Project API
@@ -1059,9 +1217,7 @@ def create_network_blueprint():
         data = request.get_json(force=True, silent=True) or {}
         new_name = data.get("name", "")
         conn = get_connection()
-        orig = conn.execute(
-            "SELECT * FROM nc_projects WHERE id=?", (pid,)
-        ).fetchone()
+        orig = conn.execute("SELECT * FROM nc_projects WHERE id=?", (pid,)).fetchone()
         if not orig:
             conn.close()
             return jsonify({"error": "Project not found"}), 404
@@ -1073,24 +1229,24 @@ def create_network_blueprint():
             "INSERT INTO nc_projects "
             "(id, name, customer_id, description, status, owner, "
             " created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)",
-            (new_pid,
-             new_name or f"{orig['name']} (Copy)",
-             orig.get("customer_id"),
-             orig.get("description", ""),
-             "draft", orig.get("owner", ""), now, now)
+            (
+                new_pid,
+                new_name or f"{orig['name']} (Copy)",
+                orig.get("customer_id"),
+                orig.get("description", ""),
+                "draft",
+                orig.get("owner", ""),
+                now,
+                now,
+            ),
         )
 
         # Deep-copy topologies
         topo_map = {}  # old_id -> new_id
-        orig_topos = conn.execute(
-            "SELECT topology_id FROM nc_project_topologies "
-            "WHERE project_id=?", (pid,)
-        ).fetchall()
+        orig_topos = conn.execute("SELECT topology_id FROM nc_project_topologies WHERE project_id=?", (pid,)).fetchall()
         for row in orig_topos:
             old_tid = row[0]
-            topo = conn.execute(
-                "SELECT * FROM topologies WHERE id=?", (old_tid,)
-            ).fetchone()
+            topo = conn.execute("SELECT * FROM topologies WHERE id=?", (old_tid,)).fetchone()
             if not topo:
                 continue
             topo = _row_to_dict(topo)
@@ -1101,40 +1257,41 @@ def create_network_blueprint():
                 "(id, name, description, graph_json, template_id, "
                 " classification, created_at, updated_at) "
                 "VALUES (?,?,?,?,?,?,?,?)",
-                (new_tid, f"{topo['name']} (Copy)",
-                 topo.get("description", ""),
-                 topo.get("graph_json", '{"nodes":[],"edges":[]}'),
-                 topo.get("template_id"),
-                 topo.get("classification", "public"), now, now)
+                (
+                    new_tid,
+                    f"{topo['name']} (Copy)",
+                    topo.get("description", ""),
+                    topo.get("graph_json", '{"nodes":[],"edges":[]}'),
+                    topo.get("template_id"),
+                    topo.get("classification", "public"),
+                    now,
+                    now,
+                ),
             )
-            conn.execute(
-                "INSERT INTO nc_project_topologies "
-                "(project_id, topology_id) VALUES (?,?)",
-                (new_pid, new_tid)
-            )
+            conn.execute("INSERT INTO nc_project_topologies (project_id, topology_id) VALUES (?,?)", (new_pid, new_tid))
 
             # Copy compliance profile
-            profile = conn.execute(
-                "SELECT * FROM nc_compliance_profiles "
-                "WHERE topology_id=?", (old_tid,)
-            ).fetchone()
+            profile = conn.execute("SELECT * FROM nc_compliance_profiles WHERE topology_id=?", (old_tid,)).fetchone()
             if profile:
                 conn.execute(
                     "INSERT INTO nc_compliance_profiles "
                     "(id, topology_id, regimes, classification, "
                     " environment, auto_audit, created_at, updated_at) "
                     "VALUES (?,?,?,?,?,?,?,?)",
-                    (str(_uuid.uuid4()), new_tid,
-                     profile["regimes"], profile["classification"],
-                     profile["environment"], profile["auto_audit"],
-                     now, now)
+                    (
+                        str(_uuid.uuid4()),
+                        new_tid,
+                        profile["regimes"],
+                        profile["classification"],
+                        profile["environment"],
+                        profile["auto_audit"],
+                        now,
+                        now,
+                    ),
                 )
 
             # Copy circuits
-            circuits = conn.execute(
-                "SELECT * FROM nc_circuits WHERE topology_id=?",
-                (old_tid,)
-            ).fetchall()
+            circuits = conn.execute("SELECT * FROM nc_circuits WHERE topology_id=?", (old_tid,)).fetchall()
             for c in circuits:
                 c = _row_to_dict(c)
                 conn.execute(
@@ -1145,23 +1302,30 @@ def create_network_blueprint():
                     " contract_start, contract_end, sla_uptime_pct, "
                     " install_status, notes, created_at, updated_at) "
                     "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                    (str(_uuid.uuid4()), new_tid,
-                     c["circuit_id"], c.get("carrier"),
-                     c.get("circuit_type"), c.get("bandwidth"),
-                     c.get("handoff_a"), c.get("handoff_z"),
-                     c.get("customer"), c.get("site"),
-                     c.get("monthly_cost_usd", 0),
-                     c.get("contract_start"), c.get("contract_end"),
-                     c.get("sla_uptime_pct", 99.9),
-                     c.get("install_status", "planned"),
-                     c.get("notes"), now, now)
+                    (
+                        str(_uuid.uuid4()),
+                        new_tid,
+                        c["circuit_id"],
+                        c.get("carrier"),
+                        c.get("circuit_type"),
+                        c.get("bandwidth"),
+                        c.get("handoff_a"),
+                        c.get("handoff_z"),
+                        c.get("customer"),
+                        c.get("site"),
+                        c.get("monthly_cost_usd", 0),
+                        c.get("contract_start"),
+                        c.get("contract_end"),
+                        c.get("sla_uptime_pct", 99.9),
+                        c.get("install_status", "planned"),
+                        c.get("notes"),
+                        now,
+                        now,
+                    ),
                 )
 
             # Copy IPAM blocks
-            blocks = conn.execute(
-                "SELECT * FROM nc_ipam_blocks WHERE topology_id=?",
-                (old_tid,)
-            ).fetchall()
+            blocks = conn.execute("SELECT * FROM nc_ipam_blocks WHERE topology_id=?", (old_tid,)).fetchall()
             for b in blocks:
                 b = _row_to_dict(b)
                 conn.execute(
@@ -1170,24 +1334,31 @@ def create_network_blueprint():
                     " description, site_id, gateway, "
                     " utilization_pct, created_at) "
                     "VALUES (?,?,?,?,?,?,?,?,?,?)",
-                    (str(_uuid.uuid4()), new_tid,
-                     b["network"], b.get("vlan_id"),
-                     b.get("vrf", "global"),
-                     b.get("description"), b.get("site_id"),
-                     b.get("gateway"),
-                     b.get("utilization_pct", 0), now)
+                    (
+                        str(_uuid.uuid4()),
+                        new_tid,
+                        b["network"],
+                        b.get("vlan_id"),
+                        b.get("vrf", "global"),
+                        b.get("description"),
+                        b.get("site_id"),
+                        b.get("gateway"),
+                        b.get("utilization_pct", 0),
+                        now,
+                    ),
                 )
 
         conn.commit()
         conn.close()
-        _audit("CLONE", "project", new_pid,
-               f"Cloned from {orig['name']} ({pid})")
-        return jsonify({
-            "id": new_pid,
-            "name": new_name or f"{orig['name']} (Copy)",
-            "topologies_cloned": len(topo_map),
-            "source_id": pid,
-        }), 201
+        _audit("CLONE", "project", new_pid, f"Cloned from {orig['name']} ({pid})")
+        return jsonify(
+            {
+                "id": new_pid,
+                "name": new_name or f"{orig['name']} (Copy)",
+                "topologies_cloned": len(topo_map),
+                "source_id": pid,
+            }
+        ), 201
 
     # ══════════════════════════════════════════════════════════════════════
     # API: Health
@@ -1231,8 +1402,16 @@ def create_network_blueprint():
         conn.execute(
             "INSERT INTO topologies (id, name, description, graph_json, template_id, classification, created_at, updated_at) "
             "VALUES (?,?,?,?,?,?,?,?)",
-            (topo_id, name, data.get("description", ""), graph,
-             data.get("template_id"), data.get("classification", "public"), now, now),
+            (
+                topo_id,
+                name,
+                data.get("description", ""),
+                graph,
+                data.get("template_id"),
+                data.get("classification", "public"),
+                now,
+                now,
+            ),
         )
         conn.commit()
         conn.close()
@@ -1247,19 +1426,34 @@ def create_network_blueprint():
         # Delete child tables first (FK constraints require this order)
         child_tables = [
             "nc_device_geo",
-            "nc_routing_entries", "nc_collected_configs",
-            "nc_intent_validations", "nc_intent_policies",
-            "nc_change_request_items", "nc_change_requests",
-            "nc_stig_imports", "nc_ato_packages",
-            "nc_boundaries", "nc_netbox_objects", "nc_netbox_sync_log",
-            "nc_discovery_diffs", "nc_discovery_scans",
-            "nc_mc_runs", "nc_mc_scenarios",
-            "simulation_results", "nc_objects",
-            "nc_circuits", "nc_cables", "nc_cross_connects",
-            "nc_versions", "nc_compliance_findings",
-            "nc_compliance_checks", "nc_compliance_profiles",
-            "nc_ipam_blocks", "nc_project_topologies",
-            "nc_groups", "nc_interconnects",
+            "nc_routing_entries",
+            "nc_collected_configs",
+            "nc_intent_validations",
+            "nc_intent_policies",
+            "nc_change_request_items",
+            "nc_change_requests",
+            "nc_stig_imports",
+            "nc_ato_packages",
+            "nc_boundaries",
+            "nc_netbox_objects",
+            "nc_netbox_sync_log",
+            "nc_discovery_diffs",
+            "nc_discovery_scans",
+            "nc_mc_runs",
+            "nc_mc_scenarios",
+            "simulation_results",
+            "nc_objects",
+            "nc_circuits",
+            "nc_cables",
+            "nc_cross_connects",
+            "nc_versions",
+            "nc_compliance_findings",
+            "nc_compliance_checks",
+            "nc_compliance_profiles",
+            "nc_ipam_blocks",
+            "nc_project_topologies",
+            "nc_groups",
+            "nc_interconnects",
         ]
         for tbl in child_tables:
             conn.execute(f"DELETE FROM {tbl}")  # nosec B608 -- table/column names are internal constants, not user input
@@ -1320,12 +1514,14 @@ def create_network_blueprint():
         # Hook: notify Security Design Canvas of topology change
         try:
             from tools.security_canvas.agent import on_ndc_topology_saved
+
             on_ndc_topology_saved(topo_id)
         except Exception:
             pass  # Security Canvas is optional
         # Incremental KG update: re-extract only if graph_json changed
         try:
             from tools.canvas.kg_builder import rebuild_canvas_kg
+
             rebuild_canvas_kg("ndc", topo_id)
         except Exception:
             pass
@@ -1367,7 +1563,7 @@ def create_network_blueprint():
         conn.execute(
             "INSERT INTO simulation_results (id, topology_id, sim_type, input_json, result_json, ran_at) "
             "VALUES (?,?,?,?,?,?)",
-            (sim_id, topo_id, sim_type, json.dumps(data), json.dumps(result), now)
+            (sim_id, topo_id, sim_type, json.dumps(data), json.dumps(result), now),
         )
         conn.commit()
         conn.close()
@@ -1470,7 +1666,9 @@ def create_network_blueprint():
             values.append(json.dumps(data["tags"]) if isinstance(data["tags"], list) else data["tags"])
         if "graph_json" in data:
             fields.append("graph_json=?")
-            values.append(json.dumps(data["graph_json"]) if isinstance(data["graph_json"], dict) else data["graph_json"])
+            values.append(
+                json.dumps(data["graph_json"]) if isinstance(data["graph_json"], dict) else data["graph_json"]
+            )
         if not fields:
             conn.close()
             return jsonify({"error": "No fields to update"}), 400
@@ -1519,9 +1717,7 @@ def create_network_blueprint():
     def nc_api_get_snippet(snippet_id):
         """Return full snippet including graph_json for insertion onto canvas."""
         conn = get_connection()
-        row = conn.execute(
-            "SELECT * FROM nc_enclave_snippets WHERE id=?", (snippet_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM nc_enclave_snippets WHERE id=?", (snippet_id,)).fetchone()
         conn.close()
         if not row:
             return jsonify({"error": "Snippet not found"}), 404
@@ -1609,12 +1805,14 @@ def create_network_blueprint():
         content = to_ansible_inventory(graph, topo["name"], boundaries=boundaries)
         safe_name = topo["name"].replace(" ", "_")
         _audit("EXPORT", "topology", topo_id, "ansible")
-        return jsonify({
-            "format": "ansible",
-            "filename": f"{safe_name}_inventory.ini",
-            "content": content,
-            "enclave_count": len(boundaries),
-        })
+        return jsonify(
+            {
+                "format": "ansible",
+                "filename": f"{safe_name}_inventory.ini",
+                "content": content,
+                "enclave_count": len(boundaries),
+            }
+        )
 
     @bp.route("/api/export/<topo_id>/terraform", methods=["POST"])
     @nc_login_required
@@ -1645,12 +1843,14 @@ def create_network_blueprint():
         content = to_terraform_hcl(graph, topo["name"], boundaries=boundaries)
         safe_name = topo["name"].replace(" ", "_")
         _audit("EXPORT", "topology", topo_id, "terraform")
-        return jsonify({
-            "format": "terraform",
-            "filename": f"{safe_name}_main.tf",
-            "content": content,
-            "enclave_count": len(boundaries),
-        })
+        return jsonify(
+            {
+                "format": "terraform",
+                "filename": f"{safe_name}_main.tf",
+                "content": content,
+                "enclave_count": len(boundaries),
+            }
+        )
 
     @bp.route("/api/export/<topo_id>/device-configs", methods=["POST"])
     @nc_login_required
@@ -1686,24 +1886,28 @@ def create_network_blueprint():
         if fmt == "json":
             configs = generate_device_configs(graph, topo["name"])
             _audit("EXPORT", "topology", topo_id, f"device-configs json devices={len(configs)}")
-            return jsonify({
-                "format": "json",
-                "topo_name": topo["name"],
-                "device_count": len(configs),
-                "configs": configs,
-            })
+            return jsonify(
+                {
+                    "format": "json",
+                    "topo_name": topo["name"],
+                    "device_count": len(configs),
+                    "configs": configs,
+                }
+            )
 
         # Default: ZIP
         zip_bytes = generate_device_configs_zip(graph, topo["name"])
         encoded = base64.b64encode(zip_bytes).decode("ascii")
         device_count = len(list_configurable_nodes(graph))
         _audit("EXPORT", "topology", topo_id, f"device-configs zip devices={device_count}")
-        return jsonify({
-            "format": "zip",
-            "filename": f"{safe_name}_device_configs.zip",
-            "content_b64": encoded,
-            "device_count": device_count,
-        })
+        return jsonify(
+            {
+                "format": "zip",
+                "filename": f"{safe_name}_device_configs.zip",
+                "content_b64": encoded,
+                "device_count": device_count,
+            }
+        )
 
     @bp.route("/api/export/<topo_id>/device-configs/preview", methods=["GET"])
     @nc_login_required
@@ -1737,15 +1941,18 @@ def create_network_blueprint():
             graph = {"nodes": [], "edges": []}
         import base64
         import re as _re
+
         vsdx_bytes = export_vsdx(topo["name"], graph)
         encoded = base64.b64encode(vsdx_bytes).decode("ascii")
-        safe_name = _re.sub(r'[^a-zA-Z0-9_-]', '_', topo["name"])
+        safe_name = _re.sub(r"[^a-zA-Z0-9_-]", "_", topo["name"])
         _audit("EXPORT", "topology", topo_id, "vsdx")
-        return jsonify({
-            "format": "vsdx",
-            "filename": f"{safe_name}.vsdx",
-            "content_b64": encoded,
-        })
+        return jsonify(
+            {
+                "format": "vsdx",
+                "filename": f"{safe_name}.vsdx",
+                "content_b64": encoded,
+            }
+        )
 
     @bp.route("/api/export/<topo_id>/csv", methods=["POST"])
     @nc_login_required
@@ -1765,18 +1972,21 @@ def create_network_blueprint():
         import base64
         import io as _io
         import re as _re
+
         buf = _io.BytesIO()
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
             for fname, content in csv_files.items():
                 zf.writestr(fname, content)
         encoded = base64.b64encode(buf.getvalue()).decode("ascii")
-        safe_name = _re.sub(r'[^a-zA-Z0-9_-]', '_', topo["name"])
+        safe_name = _re.sub(r"[^a-zA-Z0-9_-]", "_", topo["name"])
         _audit("EXPORT", "topology", topo_id, "csv")
-        return jsonify({
-            "format": "csv",
-            "filename": f"{safe_name}_ops_csvs.zip",
-            "content_b64": encoded,
-        })
+        return jsonify(
+            {
+                "format": "csv",
+                "filename": f"{safe_name}_ops_csvs.zip",
+                "content_b64": encoded,
+            }
+        )
 
     @bp.route("/api/export/<topo_id>/inventory", methods=["GET"])
     @nc_login_required
@@ -1798,29 +2008,31 @@ def create_network_blueprint():
             if ntype in ("draw-rect", "zone", "boundary", "text-annotation"):
                 continue
             cfg = n.get("config", {})
-            devices.append({
-                "id": n.get("id", ""),
-                "label": n.get("label", ""),
-                "type": ntype,
-                "hostname": cfg.get("hostname", ""),
-                "ip": cfg.get("ip", ""),
-                "model": cfg.get("model", ""),
-                "serial": cfg.get("serial", ""),
-                "asset_tag": cfg.get("asset_tag", ""),
-                "site": cfg.get("site", ""),
-                "location": cfg.get("location", ""),
-                "rack": cfg.get("rack", ""),
-                "slot": cfg.get("slot", ""),
-                "port": cfg.get("port", ""),
-                "port_type": cfg.get("port_type", ""),
-                "bandwidth": cfg.get("bandwidth", ""),
-                "vlan": cfg.get("vlan", ""),
-                "vrf": cfg.get("vrf", ""),
-                "asn": cfg.get("asn", ""),
-                "peer_asn": cfg.get("peer_asn", ""),
-                "peer_ip": cfg.get("peer_ip", ""),
-                "peering_type": cfg.get("peering_type", ""),
-            })
+            devices.append(
+                {
+                    "id": n.get("id", ""),
+                    "label": n.get("label", ""),
+                    "type": ntype,
+                    "hostname": cfg.get("hostname", ""),
+                    "ip": cfg.get("ip", ""),
+                    "model": cfg.get("model", ""),
+                    "serial": cfg.get("serial", ""),
+                    "asset_tag": cfg.get("asset_tag", ""),
+                    "site": cfg.get("site", ""),
+                    "location": cfg.get("location", ""),
+                    "rack": cfg.get("rack", ""),
+                    "slot": cfg.get("slot", ""),
+                    "port": cfg.get("port", ""),
+                    "port_type": cfg.get("port_type", ""),
+                    "bandwidth": cfg.get("bandwidth", ""),
+                    "vlan": cfg.get("vlan", ""),
+                    "vrf": cfg.get("vrf", ""),
+                    "asn": cfg.get("asn", ""),
+                    "peer_asn": cfg.get("peer_asn", ""),
+                    "peer_ip": cfg.get("peer_ip", ""),
+                    "peering_type": cfg.get("peering_type", ""),
+                }
+            )
         return jsonify({"topology": topo["name"], "device_count": len(devices), "devices": devices})
 
     @bp.route("/api/import", methods=["POST"])
@@ -1846,23 +2058,20 @@ def create_network_blueprint():
         conn.execute(
             "INSERT INTO topologies (id, name, description, graph_json, classification, created_at, updated_at) "
             "VALUES (?,?,?,?,?,?,?)",
-            (topo_id, name, f"Imported from {fmt}", json.dumps(graph), "public", now, now)
+            (topo_id, name, f"Imported from {fmt}", json.dumps(graph), "public", now, now),
         )
         conn.commit()
         conn.close()
         # Phase 1: auto-classify imported nodes
         graph = _classify_imported_nodes(graph)
         conn = get_connection()
-        conn.execute(
-            "UPDATE topologies SET graph_json=? WHERE id=?",
-            (json.dumps(graph), topo_id)
-        )
+        conn.execute("UPDATE topologies SET graph_json=? WHERE id=?", (json.dumps(graph), topo_id))
         conn.commit()
         conn.close()
         _audit("IMPORT", "topology", topo_id, fmt)
-        return jsonify({"id": topo_id, "name": name,
-                         "nodes": len(graph.get("nodes", [])),
-                         "edges": len(graph.get("edges", []))}), 201
+        return jsonify(
+            {"id": topo_id, "name": name, "nodes": len(graph.get("nodes", [])), "edges": len(graph.get("edges", []))}
+        ), 201
 
     # ══════════════════════════════════════════════════════════════════════
     # Phase 1: Intelligent Import & Stitching
@@ -1903,6 +2112,7 @@ def create_network_blueprint():
         """Auto-classify imported nodes from generic 'imported' type
         to specific device types using label pattern matching."""
         import re as _re
+
         for n in graph.get("nodes", []):
             if n.get("type") not in ("imported", "", None):
                 continue
@@ -1955,29 +2165,31 @@ def create_network_blueprint():
                 "(id, name, description, graph_json, "
                 " classification, created_at, updated_at) "
                 "VALUES (?,?,?,?,?,?,?)",
-                (topo_id, name, f"Bulk import ({fmt})",
-                 json.dumps(graph), "public", now, now)
+                (topo_id, name, f"Bulk import ({fmt})", json.dumps(graph), "public", now, now),
             )
             if project_id:
                 conn.execute(
-                    "INSERT OR IGNORE INTO nc_project_topologies "
-                    "(project_id, topology_id) VALUES (?,?)",
-                    (project_id, topo_id)
+                    "INSERT OR IGNORE INTO nc_project_topologies (project_id, topology_id) VALUES (?,?)",
+                    (project_id, topo_id),
                 )
-            results.append({
-                "id": topo_id, "name": name,
-                "nodes": len(graph.get("nodes", [])),
-                "edges": len(graph.get("edges", [])),
-            })
+            results.append(
+                {
+                    "id": topo_id,
+                    "name": name,
+                    "nodes": len(graph.get("nodes", [])),
+                    "edges": len(graph.get("edges", [])),
+                }
+            )
         conn.commit()
         conn.close()
-        _audit("BULK_IMPORT", "topology", "",
-               f"{len(results)} files imported")
-        return jsonify({
-            "imported": len([r for r in results if "id" in r]),
-            "failed": len([r for r in results if "error" in r]),
-            "results": results,
-        }), 201
+        _audit("BULK_IMPORT", "topology", "", f"{len(results)} files imported")
+        return jsonify(
+            {
+                "imported": len([r for r in results if "id" in r]),
+                "failed": len([r for r in results if "error" in r]),
+                "results": results,
+            }
+        ), 201
 
     @bp.route("/api/import/stitch", methods=["POST"])
     @nc_login_required
@@ -1997,10 +2209,7 @@ def create_network_blueprint():
         offset_x = 0
 
         for tid in topo_ids:
-            row = conn.execute(
-                "SELECT name, graph_json FROM topologies WHERE id=?",
-                (tid,)
-            ).fetchone()
+            row = conn.execute("SELECT name, graph_json FROM topologies WHERE id=?", (tid,)).fetchone()
             if not row:
                 continue
             try:
@@ -2012,32 +2221,40 @@ def create_network_blueprint():
             # Offset nodes horizontally and namespace IDs
             for n in g.get("nodes", []):
                 new_id = f"{prefix}_{n['id']}"
-                merged_nodes.append({
-                    **n, "id": new_id,
-                    "x": (n.get("x") or 0) + offset_x,
-                    "config": {
-                        **(n.get("config") or n.get("configData") or {}),
-                        "_source_topology": topo_name,
-                        "_source_id": n["id"],
-                    },
-                })
+                merged_nodes.append(
+                    {
+                        **n,
+                        "id": new_id,
+                        "x": (n.get("x") or 0) + offset_x,
+                        "config": {
+                            **(n.get("config") or n.get("configData") or {}),
+                            "_source_topology": topo_name,
+                            "_source_id": n["id"],
+                        },
+                    }
+                )
             for e in g.get("edges", []):
-                merged_edges.append({
-                    **e, "id": f"{prefix}_{e.get('id', '')}",
-                    "source": f"{prefix}_{e['source']}",
-                    "target": f"{prefix}_{e['target']}",
-                })
+                merged_edges.append(
+                    {
+                        **e,
+                        "id": f"{prefix}_{e.get('id', '')}",
+                        "source": f"{prefix}_{e['source']}",
+                        "target": f"{prefix}_{e['target']}",
+                    }
+                )
             offset_x += 700
 
         # Add user-defined interconnect edges
         for ic in interconnects:
-            merged_edges.append({
-                "id": str(_uuid.uuid4())[:8],
-                "source": ic.get("source_node_id", ""),
-                "target": ic.get("target_node_id", ""),
-                "label": ic.get("label", "Interconnect"),
-                "protocol": ic.get("protocol", ""),
-            })
+            merged_edges.append(
+                {
+                    "id": str(_uuid.uuid4())[:8],
+                    "source": ic.get("source_node_id", ""),
+                    "target": ic.get("target_node_id", ""),
+                    "label": ic.get("label", "Interconnect"),
+                    "protocol": ic.get("protocol", ""),
+                }
+            )
 
         merged_graph = {"nodes": merged_nodes, "edges": merged_edges}
         topo_id = str(_uuid.uuid4())
@@ -2047,20 +2264,20 @@ def create_network_blueprint():
             "(id, name, description, graph_json, "
             " classification, created_at, updated_at) "
             "VALUES (?,?,?,?,?,?,?)",
-            (topo_id, name,
-             f"Stitched from {len(topo_ids)} topologies",
-             json.dumps(merged_graph), "public", now, now)
+            (topo_id, name, f"Stitched from {len(topo_ids)} topologies", json.dumps(merged_graph), "public", now, now),
         )
         conn.commit()
         conn.close()
-        _audit("STITCH", "topology", topo_id,
-               f"Merged {len(topo_ids)} topologies")
-        return jsonify({
-            "id": topo_id, "name": name,
-            "nodes": len(merged_nodes),
-            "edges": len(merged_edges),
-            "source_topologies": len(topo_ids),
-        }), 201
+        _audit("STITCH", "topology", topo_id, f"Merged {len(topo_ids)} topologies")
+        return jsonify(
+            {
+                "id": topo_id,
+                "name": name,
+                "nodes": len(merged_nodes),
+                "edges": len(merged_edges),
+                "source_topologies": len(topo_ids),
+            }
+        ), 201
 
     @bp.route("/api/import/audit", methods=["POST"])
     @nc_login_required
@@ -2092,14 +2309,12 @@ def create_network_blueprint():
             "(id, name, description, graph_json, "
             " classification, created_at, updated_at) "
             "VALUES (?,?,?,?,?,?,?)",
-            (topo_id, name, f"Audit import ({fmt})",
-             json.dumps(graph), "CUI", now, now)
+            (topo_id, name, f"Audit import ({fmt})", json.dumps(graph), "CUI", now, now),
         )
         conn.commit()
 
         # Run compliance audit
-        audit_result = run_compliance_audit(
-            topo_id, graph, ["fisma_high", "stig"], "CUI")
+        audit_result = run_compliance_audit(topo_id, graph, ["fisma_high", "stig"], "CUI")
         total_p = sum(s["passed"] for s in audit_result["scores"].values())
         total_f = sum(s["failed"] for s in audit_result["scores"].values())
         audit_id = str(_uuid.uuid4())
@@ -2107,32 +2322,34 @@ def create_network_blueprint():
             "INSERT INTO nc_compliance_checks "
             "(id, topology_id, check_type, passed, failed, "
             " findings_json, ran_at) VALUES (?,?,?,?,?,?,?)",
-            (audit_id, topo_id, "fisma_high,stig",
-             total_p, total_f,
-             json.dumps(audit_result["findings"]), now)
+            (audit_id, topo_id, "fisma_high,stig", total_p, total_f, json.dumps(audit_result["findings"]), now),
         )
         conn.commit()
         conn.close()
 
         _audit("IMPORT_AUDIT", "topology", topo_id, fmt)
 
-        return jsonify({
-            "id": topo_id, "name": name,
-            "nodes": len(graph.get("nodes", [])),
-            "edges": len(graph.get("edges", [])),
-            "compliance": {
-                "passed": total_p, "failed": total_f,
-                "findings": len(audit_result["findings"]),
-                "scores": audit_result["scores"],
-            },
-            "classified_types": dict(
-                sorted(
-                    {n["type"]: sum(1 for m in graph["nodes"]
-                                    if m["type"] == n["type"])
-                     for n in graph["nodes"]}.items()
-                )
-            ),
-        }), 201
+        return jsonify(
+            {
+                "id": topo_id,
+                "name": name,
+                "nodes": len(graph.get("nodes", [])),
+                "edges": len(graph.get("edges", [])),
+                "compliance": {
+                    "passed": total_p,
+                    "failed": total_f,
+                    "findings": len(audit_result["findings"]),
+                    "scores": audit_result["scores"],
+                },
+                "classified_types": dict(
+                    sorted(
+                        {
+                            n["type"]: sum(1 for m in graph["nodes"] if m["type"] == n["type"]) for n in graph["nodes"]
+                        }.items()
+                    )
+                ),
+            }
+        ), 201
 
     @bp.route("/api/classify-nodes", methods=["POST"])
     @nc_login_required
@@ -2144,9 +2361,7 @@ def create_network_blueprint():
         if not topo_id:
             return jsonify({"error": "topology_id required"}), 400
         conn = get_connection()
-        row = conn.execute(
-            "SELECT graph_json FROM topologies WHERE id=?", (topo_id,)
-        ).fetchone()
+        row = conn.execute("SELECT graph_json FROM topologies WHERE id=?", (topo_id,)).fetchone()
         if not row:
             conn.close()
             return jsonify({"error": "Not found"}), 404
@@ -2164,14 +2379,11 @@ def create_network_blueprint():
                 if n["type"] != old_type:
                     changed += 1
         conn.execute(
-            "UPDATE topologies SET graph_json=?, updated_at=? "
-            "WHERE id=?",
-            (json.dumps(graph), _now(), topo_id)
+            "UPDATE topologies SET graph_json=?, updated_at=? WHERE id=?", (json.dumps(graph), _now(), topo_id)
         )
         conn.commit()
         conn.close()
-        return jsonify({"reclassified": changed,
-                         "total_nodes": len(graph.get("nodes", []))})
+        return jsonify({"reclassified": changed, "total_nodes": len(graph.get("nodes", []))})
 
     # ══════════════════════════════════════════════════════════════════════
     # Phase 2: Device Command Profiles + Non-Intrusive Discovery
@@ -2193,9 +2405,7 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_get_device_profile(pid):
         conn = get_connection()
-        row = conn.execute(
-            "SELECT * FROM nc_device_profiles WHERE id=?", (pid,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM nc_device_profiles WHERE id=?", (pid,)).fetchone()
         conn.close()
         if not row:
             return jsonify({"error": "Not found"}), 404
@@ -2221,16 +2431,19 @@ def create_network_blueprint():
             "(id, vendor, platform, description, commands_json, "
             " is_builtin, created_by, created_at) "
             "VALUES (?,?,?,?,?,0,?,?)",
-            (pid, data.get("vendor", "Custom"),
-             data.get("platform", "Custom"),
-             data.get("description", ""),
-             commands,
-             data.get("created_by", ""), _now())
+            (
+                pid,
+                data.get("vendor", "Custom"),
+                data.get("platform", "Custom"),
+                data.get("description", ""),
+                commands,
+                data.get("created_by", ""),
+                _now(),
+            ),
         )
         conn.commit()
         conn.close()
-        _audit("CREATE", "device_profile", pid,
-               f"{data.get('vendor')} {data.get('platform')}")
+        _audit("CREATE", "device_profile", pid, f"{data.get('vendor')} {data.get('platform')}")
         return jsonify({"id": pid}), 201
 
     @bp.route("/api/device-profiles/<pid>", methods=["PUT"])
@@ -2238,10 +2451,7 @@ def create_network_blueprint():
     def nc_api_update_device_profile(pid):
         data = request.get_json(force=True, silent=True) or {}
         conn = get_connection()
-        row = conn.execute(
-            "SELECT is_builtin FROM nc_device_profiles WHERE id=?",
-            (pid,)
-        ).fetchone()
+        row = conn.execute("SELECT is_builtin FROM nc_device_profiles WHERE id=?", (pid,)).fetchone()
         if not row:
             conn.close()
             return jsonify({"error": "Not found"}), 404
@@ -2258,10 +2468,7 @@ def create_network_blueprint():
                 values.append(v)
         # Allow adding commands to built-in profiles
         if row[0] and "commands" in data:
-            existing = conn.execute(
-                "SELECT commands_json FROM nc_device_profiles "
-                "WHERE id=?", (pid,)
-            ).fetchone()
+            existing = conn.execute("SELECT commands_json FROM nc_device_profiles WHERE id=?", (pid,)).fetchone()
             try:
                 cmds = json.loads(existing[0] or "{}")
             except Exception:
@@ -2273,7 +2480,8 @@ def create_network_blueprint():
             values.append(pid)
             conn.execute(
                 f"UPDATE nc_device_profiles "  # nosec B608
-                f"SET {', '.join(fields)} WHERE id=?", values
+                f"SET {', '.join(fields)} WHERE id=?",
+                values,
             )
             conn.commit()
         conn.close()
@@ -2283,16 +2491,11 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_delete_device_profile(pid):
         conn = get_connection()
-        row = conn.execute(
-            "SELECT is_builtin FROM nc_device_profiles WHERE id=?",
-            (pid,)
-        ).fetchone()
+        row = conn.execute("SELECT is_builtin FROM nc_device_profiles WHERE id=?", (pid,)).fetchone()
         if row and row[0]:
             conn.close()
-            return jsonify(
-                {"error": "Cannot delete built-in profile"}), 403
-        conn.execute(
-            "DELETE FROM nc_device_profiles WHERE id=?", (pid,))
+            return jsonify({"error": "Cannot delete built-in profile"}), 403
+        conn.execute("DELETE FROM nc_device_profiles WHERE id=?", (pid,))
         conn.commit()
         conn.close()
         return jsonify({"ok": True})
@@ -2342,18 +2545,23 @@ def create_network_blueprint():
             " hop_limit, max_devices, whitelist_subnets, "
             " blacklist_subnets, created_at) "
             "VALUES (?,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?)",
-            (cid, data.get("name", "Discovery Scan"),
-             data.get("profile_id"),
-             targets,
-             data.get("credential_ref", ""),
-             data.get("method", "ssh"),
-             data.get("rate_limit_per_sec", 1.0),
-             data.get("max_concurrent", 5),
-             data.get("timeout_per_cmd", 10),
-             data.get("timeout_per_device", 60),
-             data.get("hop_limit", 2),
-             data.get("max_devices", 100),
-             wl, bl, _now())
+            (
+                cid,
+                data.get("name", "Discovery Scan"),
+                data.get("profile_id"),
+                targets,
+                data.get("credential_ref", ""),
+                data.get("method", "ssh"),
+                data.get("rate_limit_per_sec", 1.0),
+                data.get("max_concurrent", 5),
+                data.get("timeout_per_cmd", 10),
+                data.get("timeout_per_device", 60),
+                data.get("hop_limit", 2),
+                data.get("max_devices", 100),
+                wl,
+                bl,
+                _now(),
+            ),
         )
         conn.commit()
         conn.close()
@@ -2364,8 +2572,7 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_delete_discovery_config(cid):
         conn = get_connection()
-        conn.execute(
-            "DELETE FROM nc_discovery_configs WHERE id=?", (cid,))
+        conn.execute("DELETE FROM nc_discovery_configs WHERE id=?", (cid,))
         conn.commit()
         conn.close()
         return jsonify({"ok": True})
@@ -2381,7 +2588,7 @@ def create_network_blueprint():
                 "SELECT id, device_ip, hostname, command_name, "
                 "collected_at FROM nc_collected_configs "
                 "WHERE device_ip=? ORDER BY collected_at DESC",
-                (device_ip,)
+                (device_ip,),
             ).fetchall()
         else:
             rows = conn.execute(
@@ -2396,9 +2603,7 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_get_collected_config(cid):
         conn = get_connection()
-        row = conn.execute(
-            "SELECT * FROM nc_collected_configs WHERE id=?", (cid,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM nc_collected_configs WHERE id=?", (cid,)).fetchone()
         conn.close()
         if not row:
             return jsonify({"error": "Not found"}), 404
@@ -2421,23 +2626,25 @@ def create_network_blueprint():
         conn = get_connection()
         # Dedup: keep latest per device_ip + command_name
         conn.execute(
-            "DELETE FROM nc_collected_configs "
-            "WHERE device_ip=? AND command_name=?",
-            (data.get("device_ip", ""),
-             data.get("command_name", "manual"))
+            "DELETE FROM nc_collected_configs WHERE device_ip=? AND command_name=?",
+            (data.get("device_ip", ""), data.get("command_name", "manual")),
         )
         conn.execute(
             "INSERT INTO nc_collected_configs "
             "(id, device_ip, hostname, profile_id, command_name, "
             " output_text, parsed_json, collected_at, topology_id) "
             "VALUES (?,?,?,?,?,?,?,?,?)",
-            (cid, data.get("device_ip", ""),
-             data.get("hostname", ""),
-             data.get("profile_id"),
-             data.get("command_name", "manual"),
-             data.get("output_text", ""),
-             parsed, _now(),
-             data.get("topology_id"))
+            (
+                cid,
+                data.get("device_ip", ""),
+                data.get("hostname", ""),
+                data.get("profile_id"),
+                data.get("command_name", "manual"),
+                data.get("output_text", ""),
+                parsed,
+                _now(),
+                data.get("topology_id"),
+            ),
         )
         conn.commit()
         conn.close()
@@ -2454,8 +2661,7 @@ def create_network_blueprint():
         conn = get_connection()
         if topo_id:
             rows = conn.execute(
-                "SELECT * FROM nc_device_geo WHERE topology_id=? "
-                "ORDER BY site_name, label", (topo_id,)
+                "SELECT * FROM nc_device_geo WHERE topology_id=? ORDER BY site_name, label", (topo_id,)
             ).fetchall()
         else:
             rows = conn.execute(
@@ -2475,9 +2681,8 @@ def create_network_blueprint():
         conn = get_connection()
         # Dedup
         conn.execute(
-            "DELETE FROM nc_device_geo "
-            "WHERE topology_id=? AND node_id=?",
-            (data.get("topology_id"), data.get("node_id"))
+            "DELETE FROM nc_device_geo WHERE topology_id=? AND node_id=?",
+            (data.get("topology_id"), data.get("node_id")),
         )
         gid = str(_uuid.uuid4())
         conn.execute(
@@ -2486,13 +2691,20 @@ def create_network_blueprint():
             " latitude, longitude, city, state, country, "
             " facility, created_at) "
             "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-            (gid, data.get("topology_id"),
-             data.get("node_id"), data.get("label", ""),
-             data.get("site_name", ""),
-             data.get("latitude", 0), data.get("longitude", 0),
-             data.get("city", ""), data.get("state", ""),
-             data.get("country", "US"),
-             data.get("facility", ""), _now())
+            (
+                gid,
+                data.get("topology_id"),
+                data.get("node_id"),
+                data.get("label", ""),
+                data.get("site_name", ""),
+                data.get("latitude", 0),
+                data.get("longitude", 0),
+                data.get("city", ""),
+                data.get("state", ""),
+                data.get("country", "US"),
+                data.get("facility", ""),
+                _now(),
+            ),
         )
         conn.commit()
         conn.close()
@@ -2508,9 +2720,7 @@ def create_network_blueprint():
         count = 0
         for d in devices:
             conn.execute(
-                "DELETE FROM nc_device_geo "
-                "WHERE topology_id=? AND node_id=?",
-                (d.get("topology_id"), d.get("node_id"))
+                "DELETE FROM nc_device_geo WHERE topology_id=? AND node_id=?", (d.get("topology_id"), d.get("node_id"))
             )
             conn.execute(
                 "INSERT INTO nc_device_geo "
@@ -2518,13 +2728,20 @@ def create_network_blueprint():
                 " latitude, longitude, city, state, country, "
                 " facility, created_at) "
                 "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-                (str(_uuid.uuid4()), d.get("topology_id"),
-                 d.get("node_id"), d.get("label", ""),
-                 d.get("site_name", ""),
-                 d.get("latitude", 0), d.get("longitude", 0),
-                 d.get("city", ""), d.get("state", ""),
-                 d.get("country", "US"),
-                 d.get("facility", ""), _now())
+                (
+                    str(_uuid.uuid4()),
+                    d.get("topology_id"),
+                    d.get("node_id"),
+                    d.get("label", ""),
+                    d.get("site_name", ""),
+                    d.get("latitude", 0),
+                    d.get("longitude", 0),
+                    d.get("city", ""),
+                    d.get("state", ""),
+                    d.get("country", "US"),
+                    d.get("facility", ""),
+                    _now(),
+                ),
             )
             count += 1
         conn.commit()
@@ -2584,9 +2801,10 @@ def create_network_blueprint():
     @nc_login_required
     def nc_map_view():
         if os.environ.get("NETWORK_MAP_ENABLED", "true").lower() not in ("1", "true", "yes"):
-            return render_template("network/index.html",
-                                   flash_msg="Map view is disabled in air-gap mode. "
-                                   "Set NETWORK_MAP_ENABLED=true to enable.")
+            return render_template(
+                "network/index.html",
+                flash_msg="Map view is disabled in air-gap mode. Set NETWORK_MAP_ENABLED=true to enable.",
+            )
         return render_template("network/map.html")
 
     # ══════════════════════════════════════════════════════════════════════
@@ -2600,25 +2818,23 @@ def create_network_blueprint():
         conn = get_connection()
         # Get history
         rows = conn.execute(
-            "SELECT project_id, compliance_pct, recorded_at "
-            "FROM nc_compliance_history "
-            "ORDER BY recorded_at"
+            "SELECT project_id, compliance_pct, recorded_at FROM nc_compliance_history ORDER BY recorded_at"
         ).fetchall()
         # Group by project
         by_project = {}
         for r in rows:
             r = _row_to_dict(r)
             pid = r.get("project_id", "")
-            by_project.setdefault(pid, []).append({
-                "pct": r.get("compliance_pct", 0),
-                "date": (r.get("recorded_at") or "")[:10],
-            })
+            by_project.setdefault(pid, []).append(
+                {
+                    "pct": r.get("compliance_pct", 0),
+                    "date": (r.get("recorded_at") or "")[:10],
+                }
+            )
         # Add project names
         projects = {}
         for pid in by_project:
-            name_row = conn.execute(
-                "SELECT name FROM nc_projects WHERE id=?", (pid,)
-            ).fetchone()
+            name_row = conn.execute("SELECT name FROM nc_projects WHERE id=?", (pid,)).fetchone()
             projects[pid] = {
                 "name": name_row[0] if name_row else pid[:8],
                 "data": by_project[pid],
@@ -2635,29 +2851,30 @@ def create_network_blueprint():
         recorded = 0
         for p in conn.execute("SELECT id FROM nc_projects").fetchall():
             pid = p[0]
-            tids = [r[0] for r in conn.execute(
-                "SELECT topology_id FROM nc_project_topologies "
-                "WHERE project_id=?", (pid,)
-            ).fetchall()]
+            tids = [
+                r[0]
+                for r in conn.execute(
+                    "SELECT topology_id FROM nc_project_topologies WHERE project_id=?", (pid,)
+                ).fetchall()
+            ]
             tp = tf = cat1 = findings = 0
             for tid in tids:
                 row = conn.execute(
-                    "SELECT passed, failed FROM nc_compliance_checks "
-                    "WHERE topology_id=? ORDER BY ran_at DESC LIMIT 1",
-                    (tid,)
+                    "SELECT passed, failed FROM nc_compliance_checks WHERE topology_id=? ORDER BY ran_at DESC LIMIT 1",
+                    (tid,),
                 ).fetchone()
                 if row:
                     tp += row[0] or 0
                     tf += row[1] or 0
                 of = conn.execute(
-                    "SELECT COUNT(*) FROM nc_compliance_findings "
-                    "WHERE topology_id=? AND status='open'", (tid,)
+                    "SELECT COUNT(*) FROM nc_compliance_findings WHERE topology_id=? AND status='open'", (tid,)
                 ).fetchone()
                 findings += of[0] if of else 0
                 c1 = conn.execute(
                     "SELECT COUNT(*) FROM nc_compliance_findings "
                     "WHERE topology_id=? AND status='open' "
-                    "AND severity='CAT1'", (tid,)
+                    "AND severity='CAT1'",
+                    (tid,),
                 ).fetchone()
                 cat1 += c1[0] if c1 else 0
             total = tp + tf
@@ -2667,7 +2884,7 @@ def create_network_blueprint():
                     "INSERT INTO nc_compliance_history "
                     "(id, project_id, compliance_pct, open_findings, "
                     " cat1_count, recorded_at) VALUES (?,?,?,?,?,?)",
-                    (str(_uuid.uuid4()), pid, pct, findings, cat1, now)
+                    (str(_uuid.uuid4()), pid, pct, findings, cat1, now),
                 )
                 recorded += 1
         conn.commit()
@@ -2687,30 +2904,27 @@ def create_network_blueprint():
             "FROM nc_facilities ORDER BY name"
         ).fetchall():
             f = _row_to_dict(f)
-            facilities.append({
-                "name": f["name"],
-                "power_pct": round(
-                    (f.get("used_power_kw") or 0) * 100 /
-                    max(f.get("total_power_kw") or 1, 1)),
-                "cooling_pct": round(
-                    (f.get("used_cooling_tons") or 0) * 100 /
-                    max(f.get("total_cooling_tons") or 1, 1)),
-                "rack_pct": round(
-                    (f.get("used_racks") or 0) * 100 /
-                    max(f.get("total_racks") or 1, 1)),
-            })
+            facilities.append(
+                {
+                    "name": f["name"],
+                    "power_pct": round((f.get("used_power_kw") or 0) * 100 / max(f.get("total_power_kw") or 1, 1)),
+                    "cooling_pct": round(
+                        (f.get("used_cooling_tons") or 0) * 100 / max(f.get("total_cooling_tons") or 1, 1)
+                    ),
+                    "rack_pct": round((f.get("used_racks") or 0) * 100 / max(f.get("total_racks") or 1, 1)),
+                }
+            )
         ports = []
         for p in conn.execute(
-            "SELECT device_label, total_ports, used_ports "
-            "FROM nc_port_inventory ORDER BY device_label"
+            "SELECT device_label, total_ports, used_ports FROM nc_port_inventory ORDER BY device_label"
         ).fetchall():
             p = _row_to_dict(p)
-            ports.append({
-                "device": p["device_label"],
-                "pct": round(
-                    (p.get("used_ports") or 0) * 100 /
-                    max(p.get("total_ports") or 1, 1)),
-            })
+            ports.append(
+                {
+                    "device": p["device_label"],
+                    "pct": round((p.get("used_ports") or 0) * 100 / max(p.get("total_ports") or 1, 1)),
+                }
+            )
         conn.close()
         return jsonify({"facilities": facilities, "ports": ports})
 
@@ -2720,50 +2934,34 @@ def create_network_blueprint():
         """CapEx vs OpEx breakdown across all projects."""
         conn = get_connection()
         # BOM CapEx
-        bom_total = conn.execute(
-            "SELECT COALESCE(SUM(extended_cost), 0) "
-            "FROM nc_bom_items"
-        ).fetchone()[0]
-        maint_total = conn.execute(
-            "SELECT COALESCE(SUM(annual_maint), 0) "
-            "FROM nc_bom_items"
-        ).fetchone()[0]
-        license_total = conn.execute(
-            "SELECT COALESCE(SUM(license_cost), 0) "
-            "FROM nc_bom_items"
-        ).fetchone()[0]
+        bom_total = conn.execute("SELECT COALESCE(SUM(extended_cost), 0) FROM nc_bom_items").fetchone()[0]
+        maint_total = conn.execute("SELECT COALESCE(SUM(annual_maint), 0) FROM nc_bom_items").fetchone()[0]
+        license_total = conn.execute("SELECT COALESCE(SUM(license_cost), 0) FROM nc_bom_items").fetchone()[0]
         # Circuit OpEx
-        circuit_monthly = conn.execute(
-            "SELECT COALESCE(SUM(monthly_cost_usd), 0) "
-            "FROM nc_circuits"
-        ).fetchone()[0]
+        circuit_monthly = conn.execute("SELECT COALESCE(SUM(monthly_cost_usd), 0) FROM nc_circuits").fetchone()[0]
         # Peering cost
-        peering_monthly = conn.execute(
-            "SELECT COALESCE(SUM(monthly_cost), 0) "
-            "FROM nc_peering_agreements"
-        ).fetchone()[0]
+        peering_monthly = conn.execute("SELECT COALESCE(SUM(monthly_cost), 0) FROM nc_peering_agreements").fetchone()[0]
         # Labor
-        labor = conn.execute(
-            "SELECT COALESCE(SUM(hours * rate_per_hour), 0) "
-            "FROM nc_resource_plan"
-        ).fetchone()[0]
+        labor = conn.execute("SELECT COALESCE(SUM(hours * rate_per_hour), 0) FROM nc_resource_plan").fetchone()[0]
         conn.close()
-        return jsonify({
-            "capex": {
-                "hardware": round(bom_total, 2),
-                "labor": round(labor, 2),
-            },
-            "opex_annual": {
-                "circuits": round(circuit_monthly * 12, 2),
-                "peering": round(peering_monthly * 12, 2),
-                "maintenance": round(maint_total, 2),
-                "licensing": round(license_total, 2),
-            },
-            "total_capex": round(bom_total + labor, 2),
-            "total_opex_annual": round(
-                circuit_monthly * 12 + peering_monthly * 12 +
-                maint_total + license_total, 2),
-        })
+        return jsonify(
+            {
+                "capex": {
+                    "hardware": round(bom_total, 2),
+                    "labor": round(labor, 2),
+                },
+                "opex_annual": {
+                    "circuits": round(circuit_monthly * 12, 2),
+                    "peering": round(peering_monthly * 12, 2),
+                    "maintenance": round(maint_total, 2),
+                    "licensing": round(license_total, 2),
+                },
+                "total_capex": round(bom_total + labor, 2),
+                "total_opex_annual": round(
+                    circuit_monthly * 12 + peering_monthly * 12 + maint_total + license_total, 2
+                ),
+            }
+        )
 
     @bp.route("/charts")
     @nc_login_required
@@ -2788,10 +2986,16 @@ def create_network_blueprint():
             "INSERT INTO nc_projects "
             "(id, name, customer_id, description, status, owner, "
             " created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)",
-            (pid, data.get("name", "New Network Build"),
-             data.get("customer_id"),
-             data.get("description", ""),
-             "draft", data.get("owner", ""), now, now)
+            (
+                pid,
+                data.get("name", "New Network Build"),
+                data.get("customer_id"),
+                data.get("description", ""),
+                "draft",
+                data.get("owner", ""),
+                now,
+                now,
+            ),
         )
 
         # Step 2: Create topology (optional template)
@@ -2803,27 +3007,33 @@ def create_network_blueprint():
             "INSERT INTO topologies "
             "(id, name, description, graph_json, classification, "
             " created_at, updated_at) VALUES (?,?,?,?,?,?,?)",
-            (topo_id, data.get("topology_name",
-                               data.get("name", "New Topology")),
-             "", graph, data.get("classification", "public"),
-             now, now)
+            (
+                topo_id,
+                data.get("topology_name", data.get("name", "New Topology")),
+                "",
+                graph,
+                data.get("classification", "public"),
+                now,
+                now,
+            ),
         )
-        conn.execute(
-            "INSERT INTO nc_project_topologies "
-            "(project_id, topology_id) VALUES (?,?)",
-            (pid, topo_id)
-        )
+        conn.execute("INSERT INTO nc_project_topologies (project_id, topology_id) VALUES (?,?)", (pid, topo_id))
 
         # Step 3: Initialize phases
-        for num, name in [(1, "Concept"), (2, "Design"),
-                          (3, "Approval"), (4, "Post-Deploy")]:
+        for num, name in [(1, "Concept"), (2, "Design"), (3, "Approval"), (4, "Post-Deploy")]:
             conn.execute(
                 "INSERT INTO nc_project_phases "
                 "(id, project_id, phase_num, phase_name, status, "
                 " entered_at, created_at) VALUES (?,?,?,?,?,?,?)",
-                (str(_uuid.uuid4()), pid, num, name,
-                 "active" if num == 1 else "pending",
-                 now if num == 1 else None, now)
+                (
+                    str(_uuid.uuid4()),
+                    pid,
+                    num,
+                    name,
+                    "active" if num == 1 else "pending",
+                    now if num == 1 else None,
+                    now,
+                ),
             )
 
         # Step 4: Initialize case workflow
@@ -2832,27 +3042,25 @@ def create_network_blueprint():
             "INSERT INTO nc_case_workflows "
             "(id, project_id, current_state, lifecycle_json, "
             " created_at, updated_at) VALUES (?,?,?,?,?,?)",
-            (wid, pid, "concept",
-             json.dumps(_NDC_LIFECYCLE), now, now)
+            (wid, pid, "concept", json.dumps(_NDC_LIFECYCLE), now, now),
         )
         conn.execute(
-            "INSERT INTO nc_case_history "
-            "(workflow_id, from_state, to_state, comment, changed_at) "
-            "VALUES (?,?,?,?,?)",
-            (wid, "", "concept", "Created via New Build Wizard", now)
+            "INSERT INTO nc_case_history (workflow_id, from_state, to_state, comment, changed_at) VALUES (?,?,?,?,?)",
+            (wid, "", "concept", "Created via New Build Wizard", now),
         )
 
         conn.commit()
         conn.close()
-        _audit("WIZARD_NEW_BUILD", "project", pid,
-               data.get("name", ""))
-        return jsonify({
-            "project_id": pid,
-            "topology_id": topo_id,
-            "workflow_id": wid,
-            "phases": 4,
-            "next_step": f"/network/canvas/{topo_id}",
-        }), 201
+        _audit("WIZARD_NEW_BUILD", "project", pid, data.get("name", ""))
+        return jsonify(
+            {
+                "project_id": pid,
+                "topology_id": topo_id,
+                "workflow_id": wid,
+                "phases": 4,
+                "next_step": f"/network/canvas/{topo_id}",
+            }
+        ), 201
 
     @bp.route("/wizard")
     @nc_login_required
@@ -2864,9 +3072,7 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_list_alert_rules():
         conn = get_connection()
-        rows = conn.execute(
-            "SELECT * FROM nc_alert_rules ORDER BY metric, name"
-        ).fetchall()
+        rows = conn.execute("SELECT * FROM nc_alert_rules ORDER BY metric, name").fetchall()
         conn.close()
         return jsonify([_row_to_dict(r) for r in rows])
 
@@ -2874,9 +3080,9 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_create_alert_rule():
         data = request.get_json(force=True, silent=True) or {}
-        return _crud_create("nc_alert_rules", "", data,
-                            ["name", "metric", "operator", "threshold",
-                             "severity", "enabled"])
+        return _crud_create(
+            "nc_alert_rules", "", data, ["name", "metric", "operator", "threshold", "severity", "enabled"]
+        )
 
     @bp.route("/api/alert-rules/<rid>", methods=["DELETE"])
     @nc_login_required
@@ -2887,27 +3093,22 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_list_alert_events():
         conn = get_connection()
-        rows = conn.execute(
-            "SELECT * FROM nc_alert_events "
-            "ORDER BY created_at DESC LIMIT 50"
-        ).fetchall()
-        unack = conn.execute(
-            "SELECT COUNT(*) FROM nc_alert_events WHERE acknowledged=0"
-        ).fetchone()[0]
+        rows = conn.execute("SELECT * FROM nc_alert_events ORDER BY created_at DESC LIMIT 50").fetchall()
+        unack = conn.execute("SELECT COUNT(*) FROM nc_alert_events WHERE acknowledged=0").fetchone()[0]
         conn.close()
-        return jsonify({
-            "events": [_row_to_dict(r) for r in rows],
-            "unacknowledged": unack,
-        })
+        return jsonify(
+            {
+                "events": [_row_to_dict(r) for r in rows],
+                "unacknowledged": unack,
+            }
+        )
 
     @bp.route("/api/alert-events/run-check", methods=["POST"])
     @nc_login_required
     def nc_api_run_alert_check():
         """Evaluate all enabled alert rules against current data."""
         conn = get_connection()
-        rules = [_row_to_dict(r) for r in conn.execute(
-            "SELECT * FROM nc_alert_rules WHERE enabled=1"
-        ).fetchall()]
+        rules = [_row_to_dict(r) for r in conn.execute("SELECT * FROM nc_alert_rules WHERE enabled=1").fetchall()]
         now = _now()
         new_events = 0
 
@@ -2933,27 +3134,35 @@ def create_network_blueprint():
                         "(id, rule_id, rule_name, severity, message, "
                         " entity_type, entity_id, created_at) "
                         "VALUES (?,?,?,?,?,?,?,?)",
-                        (str(_uuid.uuid4()), rule["id"],
-                         rule["name"], rule.get("severity", "warning"),
-                         msg, entity_type, entity_id, now)
+                        (
+                            str(_uuid.uuid4()),
+                            rule["id"],
+                            rule["name"],
+                            rule.get("severity", "warning"),
+                            msg,
+                            entity_type,
+                            entity_id,
+                            now,
+                        ),
                     )
                     new_events += 1
 
             if metric == "compliance_pct":
-                for p in conn.execute(
-                    "SELECT id, name FROM nc_projects"
-                ).fetchall():
-                    tids = [r[0] for r in conn.execute(
-                        "SELECT topology_id FROM nc_project_topologies "
-                        "WHERE project_id=?", (p[0],)
-                    ).fetchall()]
+                for p in conn.execute("SELECT id, name FROM nc_projects").fetchall():
+                    tids = [
+                        r[0]
+                        for r in conn.execute(
+                            "SELECT topology_id FROM nc_project_topologies WHERE project_id=?", (p[0],)
+                        ).fetchall()
+                    ]
                     tp = tf = 0
                     for tid in tids:
                         row = conn.execute(
                             "SELECT passed, failed "
                             "FROM nc_compliance_checks "
                             "WHERE topology_id=? "
-                            "ORDER BY ran_at DESC LIMIT 1", (tid,)
+                            "ORDER BY ran_at DESC LIMIT 1",
+                            (tid,),
                         ).fetchone()
                         if row:
                             tp += row[0] or 0
@@ -2961,35 +3170,27 @@ def create_network_blueprint():
                     total = tp + tf
                     if total:
                         pct = round(tp * 100 / total)
-                        _check(pct, "project", p[0],
-                               f"{p[1]}: compliance {pct}%")
+                        _check(pct, "project", p[0], f"{p[1]}: compliance {pct}%")
 
             elif metric == "port_utilization":
-                for pi in conn.execute(
-                    "SELECT * FROM nc_port_inventory"
-                ).fetchall():
+                for pi in conn.execute("SELECT * FROM nc_port_inventory").fetchall():
                     pi = _row_to_dict(pi)
                     total = pi.get("total_ports", 0) or 1
                     used = pi.get("used_ports", 0)
                     pct = round(used * 100 / total)
-                    _check(pct, "device", pi.get("device_label", ""),
-                           f"{pi['device_label']}: port util {pct}%")
+                    _check(pct, "device", pi.get("device_label", ""), f"{pi['device_label']}: port util {pct}%")
 
             elif metric == "power_pct":
-                for f in conn.execute(
-                    "SELECT * FROM nc_facilities"
-                ).fetchall():
+                for f in conn.execute("SELECT * FROM nc_facilities").fetchall():
                     f = _row_to_dict(f)
                     total = f.get("total_power_kw", 0) or 1
                     used = f.get("used_power_kw", 0)
                     pct = round(used * 100 / max(total, 1))
-                    _check(pct, "facility", f.get("name", ""),
-                           f"{f['name']}: power {pct}%")
+                    _check(pct, "facility", f.get("name", ""), f"{f['name']}: power {pct}%")
 
         conn.commit()
         conn.close()
-        return jsonify({"rules_checked": len(rules),
-                        "events_created": new_events})
+        return jsonify({"rules_checked": len(rules), "events_created": new_events})
 
     # ── Cross-Module Auto-Validation ──────────────────────────────────────
     @bp.route("/api/cross-validate/<pid>", methods=["POST"])
@@ -3001,80 +3202,79 @@ def create_network_blueprint():
         findings = []
 
         # 1. Peering ↔ Capacity: check if peering ports fit device inventory
-        peers = [_row_to_dict(r) for r in conn.execute(
-            "SELECT * FROM nc_peering_agreements WHERE project_id=?",
-            (pid,)
-        ).fetchall()]
-        ports = [_row_to_dict(r) for r in conn.execute(
-            "SELECT * FROM nc_port_inventory WHERE topology_id IN "
-            "(SELECT topology_id FROM nc_project_topologies "
-            " WHERE project_id=?)", (pid,)
-        ).fetchall()]
-        total_avail = sum(
-            (p.get("total_ports", 0) or 0) - (p.get("used_ports", 0) or 0)
-            for p in ports)
+        peers = [
+            _row_to_dict(r)
+            for r in conn.execute("SELECT * FROM nc_peering_agreements WHERE project_id=?", (pid,)).fetchall()
+        ]
+        ports = [
+            _row_to_dict(r)
+            for r in conn.execute(
+                "SELECT * FROM nc_port_inventory WHERE topology_id IN "
+                "(SELECT topology_id FROM nc_project_topologies "
+                " WHERE project_id=?)",
+                (pid,),
+            ).fetchall()
+        ]
+        total_avail = sum((p.get("total_ports", 0) or 0) - (p.get("used_ports", 0) or 0) for p in ports)
         if peers and total_avail < len(peers):
-            findings.append({
-                "module": "peering↔capacity",
-                "severity": "high",
-                "message": f"{len(peers)} peering agreements but only "
-                           f"{total_avail} available ports",
-            })
+            findings.append(
+                {
+                    "module": "peering↔capacity",
+                    "severity": "high",
+                    "message": f"{len(peers)} peering agreements but only {total_avail} available ports",
+                }
+            )
 
         # 2. Compliance → auto-flag if CAT1 findings exist
-        topo_ids = [r[0] for r in conn.execute(
-            "SELECT topology_id FROM nc_project_topologies "
-            "WHERE project_id=?", (pid,)
-        ).fetchall()]
+        topo_ids = [
+            r[0]
+            for r in conn.execute("SELECT topology_id FROM nc_project_topologies WHERE project_id=?", (pid,)).fetchall()
+        ]
         cat1_count = 0
         for tid in topo_ids:
             c1 = conn.execute(
-                "SELECT COUNT(*) FROM nc_compliance_findings "
-                "WHERE topology_id=? AND status='open' "
-                "AND severity='CAT1'", (tid,)
+                "SELECT COUNT(*) FROM nc_compliance_findings WHERE topology_id=? AND status='open' AND severity='CAT1'",
+                (tid,),
             ).fetchone()
             cat1_count += c1[0] if c1 else 0
         if cat1_count > 0:
-            findings.append({
-                "module": "compliance",
-                "severity": "critical",
-                "message": f"{cat1_count} open CAT1 findings — "
-                           f"blocks deployment",
-            })
+            findings.append(
+                {
+                    "module": "compliance",
+                    "severity": "critical",
+                    "message": f"{cat1_count} open CAT1 findings — blocks deployment",
+                }
+            )
 
         # 3. Facilities → check rack/power for project
-        facs = [_row_to_dict(r) for r in conn.execute(
-            "SELECT * FROM nc_facilities"
-        ).fetchall()]
+        facs = [_row_to_dict(r) for r in conn.execute("SELECT * FROM nc_facilities").fetchall()]
         for f in facs:
-            power_pct = round(
-                (f.get("used_power_kw", 0) or 0) * 100 /
-                max(f.get("total_power_kw", 1) or 1, 1))
+            power_pct = round((f.get("used_power_kw", 0) or 0) * 100 / max(f.get("total_power_kw", 1) or 1, 1))
             if power_pct > 80:
-                findings.append({
-                    "module": "facilities",
-                    "severity": "warning",
-                    "message": f"{f['name']}: power at {power_pct}% — "
-                               f"augment before adding equipment",
-                })
+                findings.append(
+                    {
+                        "module": "facilities",
+                        "severity": "warning",
+                        "message": f"{f['name']}: power at {power_pct}% — augment before adding equipment",
+                    }
+                )
 
         conn.close()
-        return jsonify({
-            "project_id": pid,
-            "findings": findings,
-            "total_findings": len(findings),
-            "has_blockers": any(
-                f["severity"] == "critical" for f in findings),
-        })
+        return jsonify(
+            {
+                "project_id": pid,
+                "findings": findings,
+                "total_findings": len(findings),
+                "has_blockers": any(f["severity"] == "critical" for f in findings),
+            }
+        )
 
     # ── Favorites / Pinned Views ──────────────────────────────────────────
     @bp.route("/api/favorites", methods=["GET"])
     @nc_login_required
     def nc_api_list_favorites():
         conn = get_connection()
-        rows = conn.execute(
-            "SELECT * FROM nc_favorites ORDER BY created_at DESC"
-        ).fetchall()
+        rows = conn.execute("SELECT * FROM nc_favorites ORDER BY created_at DESC").fetchall()
         conn.close()
         return jsonify([_row_to_dict(r) for r in rows])
 
@@ -3088,10 +3288,14 @@ def create_network_blueprint():
                 "INSERT OR IGNORE INTO nc_favorites "
                 "(id, entity_type, entity_id, label, user_id, "
                 " created_at) VALUES (?,?,?,?,?,?)",
-                (str(_uuid.uuid4()), data.get("entity_type", ""),
-                 data.get("entity_id", ""),
-                 data.get("label", ""),
-                 data.get("user_id", ""), _now())
+                (
+                    str(_uuid.uuid4()),
+                    data.get("entity_type", ""),
+                    data.get("entity_id", ""),
+                    data.get("label", ""),
+                    data.get("user_id", ""),
+                    _now(),
+                ),
             )
             conn.commit()
         except Exception:
@@ -3109,8 +3313,12 @@ def create_network_blueprint():
     # ══════════════════════════════════════════════════════════════════════
 
     _PEERING_LIFECYCLE = [
-        "evaluation", "negotiation", "agreement_signed",
-        "technical_design", "implemented", "operational",
+        "evaluation",
+        "negotiation",
+        "agreement_signed",
+        "technical_design",
+        "implemented",
+        "operational",
         "decommissioned",
     ]
 
@@ -3118,10 +3326,7 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_list_peering():
         conn = get_connection()
-        rows = conn.execute(
-            "SELECT * FROM nc_peering_agreements "
-            "ORDER BY status, peer_name"
-        ).fetchall()
+        rows = conn.execute("SELECT * FROM nc_peering_agreements ORDER BY status, peer_name").fetchall()
         conn.close()
         items = [_row_to_dict(r) for r in rows]
         for it in items:
@@ -3150,29 +3355,38 @@ def create_network_blueprint():
             " noc_contact, noc_email, noc_phone, legal_entity, "
             " notes, project_id, created_at, updated_at) "
             "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (pid, data.get("peer_name", ""),
-             data.get("peer_asn"), data.get("our_asn"),
-             data.get("peering_type", "settlement_free"),
-             data.get("routing_method", "bgp"),
-             data.get("status", "evaluation"),
-             data.get("purpose", ""),
-             data.get("purpose_category", "connectivity"),
-             data.get("business_justification", ""),
-             locs, data.get("port_speed"),
-             data.get("contract_start"), data.get("contract_end"),
-             data.get("monthly_cost", 0),
-             data.get("traffic_commit"),
-             data.get("ratio_limit"),
-             data.get("sla_uptime_pct", 99.9),
-             data.get("noc_contact"), data.get("noc_email"),
-             data.get("noc_phone"), data.get("legal_entity"),
-             data.get("notes"), data.get("project_id"),
-             _now(), _now())
+            (
+                pid,
+                data.get("peer_name", ""),
+                data.get("peer_asn"),
+                data.get("our_asn"),
+                data.get("peering_type", "settlement_free"),
+                data.get("routing_method", "bgp"),
+                data.get("status", "evaluation"),
+                data.get("purpose", ""),
+                data.get("purpose_category", "connectivity"),
+                data.get("business_justification", ""),
+                locs,
+                data.get("port_speed"),
+                data.get("contract_start"),
+                data.get("contract_end"),
+                data.get("monthly_cost", 0),
+                data.get("traffic_commit"),
+                data.get("ratio_limit"),
+                data.get("sla_uptime_pct", 99.9),
+                data.get("noc_contact"),
+                data.get("noc_email"),
+                data.get("noc_phone"),
+                data.get("legal_entity"),
+                data.get("notes"),
+                data.get("project_id"),
+                _now(),
+                _now(),
+            ),
         )
         conn.commit()
         conn.close()
-        _audit("CREATE", "peering_agreement", pid,
-               data.get("peer_name", ""))
+        _audit("CREATE", "peering_agreement", pid, data.get("peer_name", ""))
         return jsonify({"id": pid}), 201
 
     @bp.route("/api/peering-agreements/<aid>", methods=["PUT"])
@@ -3181,13 +3395,28 @@ def create_network_blueprint():
         data = request.get_json(force=True, silent=True) or {}
         conn = get_connection()
         allowed = [
-            "peer_name", "peer_asn", "our_asn", "peering_type",
-            "routing_method", "status", "purpose", "purpose_category",
-            "business_justification", "port_speed",
-            "contract_start", "contract_end", "monthly_cost",
-            "traffic_commit", "ratio_limit", "sla_uptime_pct",
-            "noc_contact", "noc_email", "noc_phone",
-            "legal_entity", "notes", "project_id",
+            "peer_name",
+            "peer_asn",
+            "our_asn",
+            "peering_type",
+            "routing_method",
+            "status",
+            "purpose",
+            "purpose_category",
+            "business_justification",
+            "port_speed",
+            "contract_start",
+            "contract_end",
+            "monthly_cost",
+            "traffic_commit",
+            "ratio_limit",
+            "sla_uptime_pct",
+            "noc_contact",
+            "noc_email",
+            "noc_phone",
+            "legal_entity",
+            "notes",
+            "project_id",
         ]
         fields, values = [], []
         for k in allowed:
@@ -3206,7 +3435,8 @@ def create_network_blueprint():
             values.append(aid)
             conn.execute(
                 f"UPDATE nc_peering_agreements "  # nosec B608
-                f"SET {', '.join(fields)} WHERE id=?", values
+                f"SET {', '.join(fields)} WHERE id=?",
+                values,
             )
             conn.commit()
         conn.close()
@@ -3216,11 +3446,8 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_delete_peering(aid):
         conn = get_connection()
-        conn.execute(
-            "DELETE FROM nc_peering_sessions WHERE agreement_id=?",
-            (aid,))
-        conn.execute(
-            "DELETE FROM nc_peering_agreements WHERE id=?", (aid,))
+        conn.execute("DELETE FROM nc_peering_sessions WHERE agreement_id=?", (aid,))
+        conn.execute("DELETE FROM nc_peering_agreements WHERE id=?", (aid,))
         conn.commit()
         conn.close()
         return jsonify({"ok": True})
@@ -3241,25 +3468,38 @@ def create_network_blueprint():
         comms = data.get("communities", [])
         if isinstance(comms, list):
             data["communities"] = json.dumps(comms)
-        data["md5_enabled"] = str(
-            1 if data.get("md5_enabled") else 0)
-        return _crud_create("nc_peering_sessions", aid, data,
-                            ["location", "routing_method", "our_ip",
-                             "peer_ip", "our_ipv6", "peer_ipv6",
-                             "our_asn", "peer_asn", "prefix_limit",
-                             "md5_enabled", "local_pref", "med",
-                             "communities", "static_routes", "status",
-                             "port_speed", "notes"])
+        data["md5_enabled"] = str(1 if data.get("md5_enabled") else 0)
+        return _crud_create(
+            "nc_peering_sessions",
+            aid,
+            data,
+            [
+                "location",
+                "routing_method",
+                "our_ip",
+                "peer_ip",
+                "our_ipv6",
+                "peer_ipv6",
+                "our_asn",
+                "peer_asn",
+                "prefix_limit",
+                "md5_enabled",
+                "local_pref",
+                "med",
+                "communities",
+                "static_routes",
+                "status",
+                "port_speed",
+                "notes",
+            ],
+        )
 
     # Peering evaluations
     @bp.route("/api/peering-evaluations", methods=["GET"])
     @nc_login_required
     def nc_api_list_peering_evals():
         conn = get_connection()
-        rows = conn.execute(
-            "SELECT * FROM nc_peering_evaluations "
-            "ORDER BY score DESC"
-        ).fetchall()
+        rows = conn.execute("SELECT * FROM nc_peering_evaluations ORDER BY score DESC").fetchall()
         conn.close()
         return jsonify([_row_to_dict(r) for r in rows])
 
@@ -3280,36 +3520,44 @@ def create_network_blueprint():
         data["recommendation"] = rec
         data["prefix_count"] = str(data.get("prefix_count", 0))
         data["traffic_volume"] = str(data.get("traffic_volume", 0))
-        return _crud_create("nc_peering_evaluations", "", data,
-                            ["peer_name", "peer_asn", "traffic_volume",
-                             "geographic_overlap", "noc_quality",
-                             "network_capacity", "prefix_count",
-                             "peering_policy", "score", "recommendation",
-                             "notes"])
+        return _crud_create(
+            "nc_peering_evaluations",
+            "",
+            data,
+            [
+                "peer_name",
+                "peer_asn",
+                "traffic_volume",
+                "geographic_overlap",
+                "noc_quality",
+                "network_capacity",
+                "prefix_count",
+                "peering_policy",
+                "score",
+                "recommendation",
+                "notes",
+            ],
+        )
 
     # Peering cost-benefit
     @bp.route("/api/peering-cost-benefit/<aid>", methods=["GET"])
     @nc_login_required
     def nc_api_peering_cost_benefit(aid):
         conn = get_connection()
-        agr = conn.execute(
-            "SELECT * FROM nc_peering_agreements WHERE id=?", (aid,)
-        ).fetchone()
+        agr = conn.execute("SELECT * FROM nc_peering_agreements WHERE id=?", (aid,)).fetchone()
         if not agr:
             conn.close()
             return jsonify({"error": "Not found"}), 404
         agr = _row_to_dict(agr)
         # Get traffic data
-        sessions = conn.execute(
-            "SELECT id FROM nc_peering_sessions WHERE agreement_id=?",
-            (aid,)
-        ).fetchall()
+        sessions = conn.execute("SELECT id FROM nc_peering_sessions WHERE agreement_id=?", (aid,)).fetchall()
         total_in = total_out = 0
         for s in sessions:
             t = conn.execute(
                 "SELECT inbound_mbps, outbound_mbps "
                 "FROM nc_peering_traffic WHERE session_id=? "
-                "ORDER BY measured_at DESC LIMIT 1", (s[0],)
+                "ORDER BY measured_at DESC LIMIT 1",
+                (s[0],),
             ).fetchone()
             if t:
                 total_in += t[0] or 0
@@ -3321,15 +3569,17 @@ def create_network_blueprint():
         total_traffic = total_in + total_out
         transit_cost = total_traffic * transit_rate
         savings = transit_cost - peer_cost
-        return jsonify({
-            "peer_name": agr.get("peer_name"),
-            "peering_cost_monthly": peer_cost,
-            "transit_equivalent_monthly": round(transit_cost, 2),
-            "monthly_savings": round(savings, 2),
-            "annual_savings": round(savings * 12, 2),
-            "traffic_mbps": {"inbound": total_in, "outbound": total_out},
-            "transit_rate_per_mbps": transit_rate,
-        })
+        return jsonify(
+            {
+                "peer_name": agr.get("peer_name"),
+                "peering_cost_monthly": peer_cost,
+                "transit_equivalent_monthly": round(transit_cost, 2),
+                "monthly_savings": round(savings, 2),
+                "annual_savings": round(savings * 12, 2),
+                "traffic_mbps": {"inbound": total_in, "outbound": total_out},
+                "transit_rate_per_mbps": transit_rate,
+            }
+        )
 
     @bp.route("/peering")
     @nc_login_required
@@ -3344,15 +3594,12 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_list_port_inventory():
         conn = get_connection()
-        rows = conn.execute(
-            "SELECT * FROM nc_port_inventory ORDER BY device_label"
-        ).fetchall()
+        rows = conn.execute("SELECT * FROM nc_port_inventory ORDER BY device_label").fetchall()
         conn.close()
         items = [_row_to_dict(r) for r in rows]
         for it in items:
             try:
-                it["port_breakdown"] = json.loads(
-                    it.get("port_breakdown") or "{}")
+                it["port_breakdown"] = json.loads(it.get("port_breakdown") or "{}")
             except Exception:
                 it["port_breakdown"] = {}
         return jsonify(items)
@@ -3367,18 +3614,23 @@ def create_network_blueprint():
         conn = get_connection()
         # Dedup by device_label + topology
         conn.execute(
-            "DELETE FROM nc_port_inventory "
-            "WHERE device_label=? AND topology_id=?",
-            (data.get("device_label"), data.get("topology_id")))
+            "DELETE FROM nc_port_inventory WHERE device_label=? AND topology_id=?",
+            (data.get("device_label"), data.get("topology_id")),
+        )
         rid = str(_uuid.uuid4())
         conn.execute(
             "INSERT INTO nc_port_inventory "
             "(id, device_label, topology_id, total_ports, used_ports, "
             " port_breakdown, last_updated) VALUES (?,?,?,?,?,?,?)",
-            (rid, data.get("device_label", ""),
-             data.get("topology_id"),
-             data.get("total_ports", 0),
-             data.get("used_ports", 0), pb, _now())
+            (
+                rid,
+                data.get("device_label", ""),
+                data.get("topology_id"),
+                data.get("total_ports", 0),
+                data.get("used_ports", 0),
+                pb,
+                _now(),
+            ),
         )
         conn.commit()
         conn.close()
@@ -3388,9 +3640,7 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_list_fiber():
         conn = get_connection()
-        rows = conn.execute(
-            "SELECT * FROM nc_fiber_inventory ORDER BY path_name"
-        ).fetchall()
+        rows = conn.execute("SELECT * FROM nc_fiber_inventory ORDER BY path_name").fetchall()
         conn.close()
         return jsonify([_row_to_dict(r) for r in rows])
 
@@ -3398,28 +3648,38 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_create_fiber():
         data = request.get_json(force=True, silent=True) or {}
-        data["available_strands"] = str(
-            int(data.get("total_strands", 0) or 0) -
-            int(data.get("lit_strands", 0) or 0))
+        data["available_strands"] = str(int(data.get("total_strands", 0) or 0) - int(data.get("lit_strands", 0) or 0))
         data["available_lambdas"] = str(
-            int(data.get("total_lambdas", 0) or 0) -
-            int(data.get("active_lambdas", 0) or 0))
-        return _crud_create("nc_fiber_inventory", "", data,
-                            ["path_name", "path_a", "path_z",
-                             "fiber_type", "total_strands", "lit_strands",
-                             "available_strands", "total_lambdas",
-                             "active_lambdas", "available_lambdas",
-                             "per_lambda_gbps", "conduit_ducts",
-                             "conduit_used", "diverse_path", "notes"])
+            int(data.get("total_lambdas", 0) or 0) - int(data.get("active_lambdas", 0) or 0)
+        )
+        return _crud_create(
+            "nc_fiber_inventory",
+            "",
+            data,
+            [
+                "path_name",
+                "path_a",
+                "path_z",
+                "fiber_type",
+                "total_strands",
+                "lit_strands",
+                "available_strands",
+                "total_lambdas",
+                "active_lambdas",
+                "available_lambdas",
+                "per_lambda_gbps",
+                "conduit_ducts",
+                "conduit_used",
+                "diverse_path",
+                "notes",
+            ],
+        )
 
     @bp.route("/api/carrier-availability", methods=["GET"])
     @nc_login_required
     def nc_api_list_carrier_avail():
         conn = get_connection()
-        rows = conn.execute(
-            "SELECT * FROM nc_carrier_availability "
-            "ORDER BY carrier, path_name"
-        ).fetchall()
+        rows = conn.execute("SELECT * FROM nc_carrier_availability ORDER BY carrier, path_name").fetchall()
         conn.close()
         return jsonify([_row_to_dict(r) for r in rows])
 
@@ -3427,10 +3687,21 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_create_carrier_avail():
         data = request.get_json(force=True, silent=True) or {}
-        return _crud_create("nc_carrier_availability", "", data,
-                            ["carrier", "path_name", "service_type",
-                             "available_bandwidth", "lead_time_days",
-                             "monthly_cost_est", "contract_term", "notes"])
+        return _crud_create(
+            "nc_carrier_availability",
+            "",
+            data,
+            [
+                "carrier",
+                "path_name",
+                "service_type",
+                "available_bandwidth",
+                "lead_time_days",
+                "monthly_cost_est",
+                "contract_term",
+                "notes",
+            ],
+        )
 
     @bp.route("/capacity")
     @nc_login_required
@@ -3445,9 +3716,7 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_list_facilities():
         conn = get_connection()
-        rows = conn.execute(
-            "SELECT * FROM nc_facilities ORDER BY name"
-        ).fetchall()
+        rows = conn.execute("SELECT * FROM nc_facilities ORDER BY name").fetchall()
         conn.close()
         return jsonify([_row_to_dict(r) for r in rows])
 
@@ -3455,16 +3724,33 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_create_facility():
         data = request.get_json(force=True, silent=True) or {}
-        return _crud_create("nc_facilities", "", data,
-                            ["name", "facility_type", "address", "city",
-                             "state", "country", "operator",
-                             "total_racks", "used_racks",
-                             "total_power_kw", "used_power_kw",
-                             "total_cooling_tons", "used_cooling_tons",
-                             "ups_capacity_kva", "ups_load_kva",
-                             "ups_runtime_min",
-                             "generator_kw", "generator_load_kw",
-                             "generator_fuel_hours", "notes"])
+        return _crud_create(
+            "nc_facilities",
+            "",
+            data,
+            [
+                "name",
+                "facility_type",
+                "address",
+                "city",
+                "state",
+                "country",
+                "operator",
+                "total_racks",
+                "used_racks",
+                "total_power_kw",
+                "used_power_kw",
+                "total_cooling_tons",
+                "used_cooling_tons",
+                "ups_capacity_kva",
+                "ups_load_kva",
+                "ups_runtime_min",
+                "generator_kw",
+                "generator_load_kw",
+                "generator_fuel_hours",
+                "notes",
+            ],
+        )
 
     @bp.route("/api/facilities/<fid>", methods=["DELETE"])
     @nc_login_required
@@ -3481,7 +3767,8 @@ def create_network_blueprint():
                 "SELECT r.*, f.name AS facility_name "
                 "FROM nc_racks r "
                 "LEFT JOIN nc_facilities f ON f.id=r.facility_id "
-                "WHERE r.facility_id=? ORDER BY r.rack_name", (fid,)
+                "WHERE r.facility_id=? ORDER BY r.rack_name",
+                (fid,),
             ).fetchall()
         else:
             rows = conn.execute(
@@ -3497,13 +3784,25 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_create_rack():
         data = request.get_json(force=True, silent=True) or {}
-        return _crud_create("nc_racks", "", data,
-                            ["facility_id", "rack_name", "total_ru",
-                             "used_ru", "reserved_ru",
-                             "power_circuit_a", "power_circuit_b",
-                             "max_power_kw", "current_power_kw",
-                             "weight_capacity_lbs",
-                             "current_weight_lbs", "notes"])
+        return _crud_create(
+            "nc_racks",
+            "",
+            data,
+            [
+                "facility_id",
+                "rack_name",
+                "total_ru",
+                "used_ru",
+                "reserved_ru",
+                "power_circuit_a",
+                "power_circuit_b",
+                "max_power_kw",
+                "current_power_kw",
+                "weight_capacity_lbs",
+                "current_weight_lbs",
+                "notes",
+            ],
+        )
 
     @bp.route("/api/racks/<rid>", methods=["DELETE"])
     @nc_login_required
@@ -3532,96 +3831,96 @@ def create_network_blueprint():
             "SELECT COUNT(*) FROM nc_peering_agreements "
             "WHERE project_id=? AND status IN "
             "('agreement_signed','technical_design','implemented','operational')",
-            (pid,)
+            (pid,),
         ).fetchone()[0]
-        checks.append({
-            "layer": "peering",
-            "check": "Active peering agreements",
-            "passed": peer_count > 0,
-            "detail": f"{peer_count} active agreements",
-        })
+        checks.append(
+            {
+                "layer": "peering",
+                "check": "Active peering agreements",
+                "passed": peer_count > 0,
+                "detail": f"{peer_count} active agreements",
+            }
+        )
 
         # Ports
         port_rows = conn.execute(
             "SELECT * FROM nc_port_inventory "
             "WHERE topology_id IN "
             "(SELECT topology_id FROM nc_project_topologies "
-            " WHERE project_id=?)", (pid,)
+            " WHERE project_id=?)",
+            (pid,),
         ).fetchall()
-        ports_avail = sum(
-            (r["total_ports"] or 0) - (r["used_ports"] or 0)
-            for r in port_rows
+        ports_avail = sum((r["total_ports"] or 0) - (r["used_ports"] or 0) for r in port_rows)
+        checks.append(
+            {
+                "layer": "ports",
+                "check": "Available device ports",
+                "passed": ports_avail > 0 or len(port_rows) == 0,
+                "detail": f"{ports_avail} ports available" if port_rows else "No port inventory data",
+            }
         )
-        checks.append({
-            "layer": "ports",
-            "check": "Available device ports",
-            "passed": ports_avail > 0 or len(port_rows) == 0,
-            "detail": f"{ports_avail} ports available"
-            if port_rows else "No port inventory data",
-        })
 
         # Fiber
-        fiber_rows = conn.execute(
-            "SELECT * FROM nc_fiber_inventory"
-        ).fetchall()
-        fiber_avail = sum(
-            (r["available_strands"] or 0) for r in fiber_rows)
-        checks.append({
-            "layer": "fiber",
-            "check": "Available fiber strands",
-            "passed": fiber_avail > 0 or len(fiber_rows) == 0,
-            "detail": f"{fiber_avail} strands available"
-            if fiber_rows else "No fiber inventory data",
-        })
+        fiber_rows = conn.execute("SELECT * FROM nc_fiber_inventory").fetchall()
+        fiber_avail = sum((r["available_strands"] or 0) for r in fiber_rows)
+        checks.append(
+            {
+                "layer": "fiber",
+                "check": "Available fiber strands",
+                "passed": fiber_avail > 0 or len(fiber_rows) == 0,
+                "detail": f"{fiber_avail} strands available" if fiber_rows else "No fiber inventory data",
+            }
+        )
 
         # Facilities
-        fac_rows = conn.execute(
-            "SELECT * FROM nc_facilities"
-        ).fetchall()
+        fac_rows = conn.execute("SELECT * FROM nc_facilities").fetchall()
         for f in fac_rows:
             f = _row_to_dict(f)
-            avail_ru = (f.get("total_racks", 0) or 0) * 42 - \
-                sum(r["used_ru"] or 0 for r in conn.execute(
-                    "SELECT used_ru FROM nc_racks "
-                    "WHERE facility_id=?", (f["id"],)).fetchall())
-            avail_power = (f.get("total_power_kw", 0) or 0) - \
-                (f.get("used_power_kw", 0) or 0)
-            avail_cooling = (f.get("total_cooling_tons", 0) or 0) - \
-                (f.get("used_cooling_tons", 0) or 0)
-            power_pct = round(
-                (f.get("used_power_kw", 0) or 0) * 100 /
-                max(f.get("total_power_kw", 1) or 1, 1))
-            checks.append({
-                "layer": "facility",
-                "check": f"Rack space at {f['name']}",
-                "passed": avail_ru > 4,
-                "detail": f"{avail_ru} RU available",
-            })
-            checks.append({
-                "layer": "power",
-                "check": f"Power at {f['name']}",
-                "passed": power_pct < 80,
-                "detail": f"{avail_power:.1f} kW available ({power_pct}% used)",
-            })
-            checks.append({
-                "layer": "cooling",
-                "check": f"Cooling at {f['name']}",
-                "passed": avail_cooling > 0,
-                "detail": f"{avail_cooling:.1f} tons available",
-            })
+            avail_ru = (f.get("total_racks", 0) or 0) * 42 - sum(
+                r["used_ru"] or 0
+                for r in conn.execute("SELECT used_ru FROM nc_racks WHERE facility_id=?", (f["id"],)).fetchall()
+            )
+            avail_power = (f.get("total_power_kw", 0) or 0) - (f.get("used_power_kw", 0) or 0)
+            avail_cooling = (f.get("total_cooling_tons", 0) or 0) - (f.get("used_cooling_tons", 0) or 0)
+            power_pct = round((f.get("used_power_kw", 0) or 0) * 100 / max(f.get("total_power_kw", 1) or 1, 1))
+            checks.append(
+                {
+                    "layer": "facility",
+                    "check": f"Rack space at {f['name']}",
+                    "passed": avail_ru > 4,
+                    "detail": f"{avail_ru} RU available",
+                }
+            )
+            checks.append(
+                {
+                    "layer": "power",
+                    "check": f"Power at {f['name']}",
+                    "passed": power_pct < 80,
+                    "detail": f"{avail_power:.1f} kW available ({power_pct}% used)",
+                }
+            )
+            checks.append(
+                {
+                    "layer": "cooling",
+                    "check": f"Cooling at {f['name']}",
+                    "passed": avail_cooling > 0,
+                    "detail": f"{avail_cooling:.1f} tons available",
+                }
+            )
 
         conn.close()
         passed = sum(1 for c in checks if c["passed"])
         total = len(checks)
-        return jsonify({
-            "project_id": pid,
-            "checks": checks,
-            "passed": passed,
-            "total": total,
-            "ready": passed == total,
-            "readiness_pct": round(
-                passed * 100 / max(total, 1)),
-        })
+        return jsonify(
+            {
+                "project_id": pid,
+                "checks": checks,
+                "passed": passed,
+                "total": total,
+                "ready": passed == total,
+                "readiness_pct": round(passed * 100 / max(total, 1)),
+            }
+        )
 
     # ══════════════════════════════════════════════════════════════════════
     # Phase 7: Innovation Flywheel
@@ -3637,10 +3936,7 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_list_ideas():
         conn = get_connection()
-        rows = conn.execute(
-            "SELECT * FROM nc_innovation_ideas "
-            "ORDER BY total_score DESC, created_at DESC"
-        ).fetchall()
+        rows = conn.execute("SELECT * FROM nc_innovation_ideas ORDER BY total_score DESC, created_at DESC").fetchall()
         conn.close()
         return jsonify([_row_to_dict(r) for r in rows])
 
@@ -3660,26 +3956,30 @@ def create_network_blueprint():
             " impact_score, feasibility_score, cost_score, "
             " total_score, status, created_at) "
             "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-            (iid, data.get("title", ""),
-             data.get("description", ""),
-             data.get("category", "improvement"),
-             data.get("submitted_by", ""),
-             imp, feas, cost, total, "submitted", _now())
+            (
+                iid,
+                data.get("title", ""),
+                data.get("description", ""),
+                data.get("category", "improvement"),
+                data.get("submitted_by", ""),
+                imp,
+                feas,
+                cost,
+                total,
+                "submitted",
+                _now(),
+            ),
         )
         conn.commit()
         conn.close()
-        _audit("SUBMIT_IDEA", "innovation", iid,
-               data.get("title", ""))
+        _audit("SUBMIT_IDEA", "innovation", iid, data.get("title", ""))
         return jsonify({"id": iid, "total_score": total}), 201
 
     @bp.route("/api/innovation-ideas/<iid>/vote", methods=["POST"])
     @nc_login_required
     def nc_api_vote_idea(iid):
         conn = get_connection()
-        conn.execute(
-            "UPDATE nc_innovation_ideas SET votes=votes+1 WHERE id=?",
-            (iid,)
-        )
+        conn.execute("UPDATE nc_innovation_ideas SET votes=votes+1 WHERE id=?", (iid,))
         conn.commit()
         conn.close()
         return jsonify({"ok": True})
@@ -3699,7 +3999,8 @@ def create_network_blueprint():
             values.append(iid)
             conn.execute(
                 f"UPDATE nc_innovation_ideas "  # nosec B608
-                f"SET {', '.join(fields)} WHERE id=?", values
+                f"SET {', '.join(fields)} WHERE id=?",
+                values,
             )
             conn.commit()
         conn.close()
@@ -3709,8 +4010,7 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_delete_idea(iid):
         conn = get_connection()
-        conn.execute(
-            "DELETE FROM nc_innovation_ideas WHERE id=?", (iid,))
+        conn.execute("DELETE FROM nc_innovation_ideas WHERE id=?", (iid,))
         conn.commit()
         conn.close()
         return jsonify({"ok": True})
@@ -3720,9 +4020,7 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_list_tech_radar():
         conn = get_connection()
-        rows = conn.execute(
-            "SELECT * FROM nc_tech_radar ORDER BY ring, technology"
-        ).fetchall()
+        rows = conn.execute("SELECT * FROM nc_tech_radar ORDER BY ring, technology").fetchall()
         conn.close()
         items = [_row_to_dict(r) for r in rows]
         by_ring = {"adopt": [], "trial": [], "assess": [], "hold": []}
@@ -3742,11 +4040,16 @@ def create_network_blueprint():
             "(id, technology, ring, category, description, "
             " updated_by, created_at, updated_at) "
             "VALUES (?,?,?,?,?,?,?,?)",
-            (tid, data.get("technology", ""),
-             data.get("ring", "assess"),
-             data.get("category", "networking"),
-             data.get("description", ""),
-             data.get("updated_by", ""), _now(), _now())
+            (
+                tid,
+                data.get("technology", ""),
+                data.get("ring", "assess"),
+                data.get("category", "networking"),
+                data.get("description", ""),
+                data.get("updated_by", ""),
+                _now(),
+                _now(),
+            ),
         )
         conn.commit()
         conn.close()
@@ -3757,13 +4060,10 @@ def create_network_blueprint():
     def nc_api_update_tech_radar(tid):
         data = request.get_json(force=True, silent=True) or {}
         conn = get_connection()
-        old = conn.execute(
-            "SELECT ring FROM nc_tech_radar WHERE id=?", (tid,)
-        ).fetchone()
+        old = conn.execute("SELECT ring FROM nc_tech_radar WHERE id=?", (tid,)).fetchone()
         new_ring = data.get("ring", "")
         fields, values = [], []
-        for k in ["technology", "ring", "category", "description",
-                   "updated_by"]:
+        for k in ["technology", "ring", "category", "description", "updated_by"]:
             if k in data:
                 fields.append(f"{k}=?")
                 values.append(data[k])
@@ -3776,7 +4076,8 @@ def create_network_blueprint():
             values.append(tid)
             conn.execute(
                 f"UPDATE nc_tech_radar "  # nosec B608
-                f"SET {', '.join(fields)} WHERE id=?", values
+                f"SET {', '.join(fields)} WHERE id=?",
+                values,
             )
             conn.commit()
         conn.close()
@@ -3803,7 +4104,7 @@ def create_network_blueprint():
                 "FROM nc_lessons_learned ll "
                 "LEFT JOIN nc_projects p ON p.id=ll.project_id "
                 "WHERE ll.project_id=? ORDER BY ll.created_at DESC",
-                (pid,)
+                (pid,),
             ).fetchall()
         else:
             rows = conn.execute(
@@ -3826,14 +4127,18 @@ def create_network_blueprint():
             "(id, project_id, title, category, what_happened, "
             " root_cause, lesson, recommendation, submitted_by, "
             " created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
-            (lid, data.get("project_id"),
-             data.get("title", ""),
-             data.get("category", "technical"),
-             data.get("what_happened", ""),
-             data.get("root_cause", ""),
-             data.get("lesson", ""),
-             data.get("recommendation", ""),
-             data.get("submitted_by", ""), _now())
+            (
+                lid,
+                data.get("project_id"),
+                data.get("title", ""),
+                data.get("category", "technical"),
+                data.get("what_happened", ""),
+                data.get("root_cause", ""),
+                data.get("lesson", ""),
+                data.get("recommendation", ""),
+                data.get("submitted_by", ""),
+                _now(),
+            ),
         )
         conn.commit()
         conn.close()
@@ -3843,8 +4148,7 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_delete_lesson(lid):
         conn = get_connection()
-        conn.execute(
-            "DELETE FROM nc_lessons_learned WHERE id=?", (lid,))
+        conn.execute("DELETE FROM nc_lessons_learned WHERE id=?", (lid,))
         conn.commit()
         conn.close()
         return jsonify({"ok": True})
@@ -3857,9 +4161,7 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_list_replacement_map():
         conn = get_connection()
-        rows = conn.execute(
-            "SELECT * FROM nc_replacement_map ORDER BY old_vendor, old_model"
-        ).fetchall()
+        rows = conn.execute("SELECT * FROM nc_replacement_map ORDER BY old_vendor, old_model").fetchall()
         conn.close()
         return jsonify([_row_to_dict(r) for r in rows])
 
@@ -3874,13 +4176,17 @@ def create_network_blueprint():
             "(id, old_vendor, old_model, new_vendor, new_model, "
             " new_cost, migration_effort, notes, is_builtin, created_at) "
             "VALUES (?,?,?,?,?,?,?,?,0,?)",
-            (rid, data.get("old_vendor", ""),
-             data.get("old_model", ""),
-             data.get("new_vendor", ""),
-             data.get("new_model", ""),
-             data.get("new_cost", 0),
-             data.get("migration_effort", "medium"),
-             data.get("notes", ""), _now())
+            (
+                rid,
+                data.get("old_vendor", ""),
+                data.get("old_model", ""),
+                data.get("new_vendor", ""),
+                data.get("new_model", ""),
+                data.get("new_cost", 0),
+                data.get("migration_effort", "medium"),
+                data.get("notes", ""),
+                _now(),
+            ),
         )
         conn.commit()
         conn.close()
@@ -3900,8 +4206,7 @@ def create_network_blueprint():
     def nc_api_list_refresh_plan(pid):
         conn = get_connection()
         rows = conn.execute(
-            "SELECT * FROM nc_refresh_plans WHERE project_id=? "
-            "ORDER BY target_year, priority DESC", (pid,)
+            "SELECT * FROM nc_refresh_plans WHERE project_id=? ORDER BY target_year, priority DESC", (pid,)
         ).fetchall()
         items = [_row_to_dict(r) for r in rows]
         # Budget summary by year
@@ -3911,11 +4216,13 @@ def create_network_blueprint():
             by_year.setdefault(yr, 0)
             by_year[yr] += it.get("replacement_cost", 0) or 0
         conn.close()
-        return jsonify({
-            "items": items,
-            "budget_by_year": by_year,
-            "total_cost": sum(by_year.values()),
-        })
+        return jsonify(
+            {
+                "items": items,
+                "budget_by_year": by_year,
+                "total_cost": sum(by_year.values()),
+            }
+        )
 
     @bp.route("/api/projects/<pid>/refresh-plan", methods=["POST"])
     @nc_login_required
@@ -3929,15 +4236,20 @@ def create_network_blueprint():
             " priority, replacement_model, replacement_cost, "
             " target_year, status, notes, created_at) "
             "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-            (rid, pid, data.get("device_label", ""),
-             data.get("old_model", ""),
-             data.get("eol_date", ""),
-             data.get("priority", "medium"),
-             data.get("replacement_model", ""),
-             data.get("replacement_cost", 0),
-             data.get("target_year", 2026),
-             data.get("status", "planned"),
-             data.get("notes", ""), _now())
+            (
+                rid,
+                pid,
+                data.get("device_label", ""),
+                data.get("old_model", ""),
+                data.get("eol_date", ""),
+                data.get("priority", "medium"),
+                data.get("replacement_model", ""),
+                data.get("replacement_cost", 0),
+                data.get("target_year", 2026),
+                data.get("status", "planned"),
+                data.get("notes", ""),
+                _now(),
+            ),
         )
         conn.commit()
         conn.close()
@@ -3959,25 +4271,22 @@ def create_network_blueprint():
         Scans all project topologies for EOL/EOS devices and creates
         refresh items with replacement suggestions from the map."""
         conn = get_connection()
-        topo_ids = [r[0] for r in conn.execute(
-            "SELECT topology_id FROM nc_project_topologies "
-            "WHERE project_id=?", (pid,)
-        ).fetchall()]
+        topo_ids = [
+            r[0]
+            for r in conn.execute("SELECT topology_id FROM nc_project_topologies WHERE project_id=?", (pid,)).fetchall()
+        ]
 
         # Load replacement map
         rep_map = {}
         for r in conn.execute(
-            "SELECT old_model, new_model, new_cost, migration_effort "
-            "FROM nc_replacement_map"
+            "SELECT old_model, new_model, new_cost, migration_effort FROM nc_replacement_map"
         ).fetchall():
             rep_map[r[0].lower()] = _row_to_dict(r)
 
         now = datetime.now(timezone.utc)
         items_created = 0
         for tid in topo_ids:
-            row = conn.execute(
-                "SELECT graph_json FROM topologies WHERE id=?", (tid,)
-            ).fetchone()
+            row = conn.execute("SELECT graph_json FROM topologies WHERE id=?", (tid,)).fetchone()
             if not row:
                 continue
             try:
@@ -3994,8 +4303,7 @@ def create_network_blueprint():
                 priority = "low"
                 if eol:
                     try:
-                        eol_dt = datetime.fromisoformat(
-                            eol + "T00:00:00+00:00")
+                        eol_dt = datetime.fromisoformat(eol + "T00:00:00+00:00")
                         months = (eol_dt - now).days / 30.44
                         if months <= 0:
                             priority = "critical"
@@ -4019,19 +4327,25 @@ def create_network_blueprint():
                     " eol_date, priority, replacement_model, "
                     " replacement_cost, target_year, status, "
                     " created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                    (str(_uuid.uuid4()), pid,
-                     n.get("label", ""),
-                     model, eol, priority,
-                     rep.get("new_model", ""),
-                     rep.get("new_cost", 0),
-                     target_yr, "planned", _now())
+                    (
+                        str(_uuid.uuid4()),
+                        pid,
+                        n.get("label", ""),
+                        model,
+                        eol,
+                        priority,
+                        rep.get("new_model", ""),
+                        rep.get("new_cost", 0),
+                        target_yr,
+                        "planned",
+                        _now(),
+                    ),
                 )
                 items_created += 1
 
         conn.commit()
         conn.close()
-        _audit("AUTO_REFRESH", "project", pid,
-               f"{items_created} items")
+        _audit("AUTO_REFRESH", "project", pid, f"{items_created} items")
         return jsonify({"items_created": items_created}), 201
 
     @bp.route("/api/budget-forecast", methods=["GET"])
@@ -4049,10 +4363,12 @@ def create_network_blueprint():
         conn.close()
         forecast = [_row_to_dict(r) for r in rows]
         grand_total = sum(f.get("total_cost", 0) or 0 for f in forecast)
-        return jsonify({
-            "forecast": forecast,
-            "grand_total": grand_total,
-        })
+        return jsonify(
+            {
+                "forecast": forecast,
+                "grand_total": grand_total,
+            }
+        )
 
     # ══════════════════════════════════════════════════════════════════════
     # Phase 5: Discovered Data -> Simulation/Impact/What-If Bridge
@@ -4071,9 +4387,9 @@ def create_network_blueprint():
 
         conn = get_connection()
         # Get all routing entries
-        all_routes = [_row_to_dict(r) for r in conn.execute(
-            "SELECT * FROM nc_routing_entries ORDER BY device_ip"
-        ).fetchall()]
+        all_routes = [
+            _row_to_dict(r) for r in conn.execute("SELECT * FROM nc_routing_entries ORDER BY device_ip").fetchall()
+        ]
         conn.close()
 
         # Build forwarding table per device
@@ -4089,7 +4405,8 @@ def create_network_blueprint():
                 # This route goes through the failed link
                 # Check if there's an alternate path
                 alternates = [
-                    alt for alt in fwd.get(r["device_ip"], [])
+                    alt
+                    for alt in fwd.get(r["device_ip"], [])
                     if alt["prefix"] == r["prefix"]
                     and alt["next_hop"] != failed_link_dst
                     and alt["next_hop"] != "0.0.0.0"  # nosec B104 — route filter, not socket bind
@@ -4100,9 +4417,7 @@ def create_network_blueprint():
                     "failed_next_hop": failed_link_dst,
                     "alternate_paths": len(alternates),
                     "alternates": [
-                        {"next_hop": a["next_hop"],
-                         "protocol": a["protocol"],
-                         "metric": a.get("metric", 0)}
+                        {"next_hop": a["next_hop"], "protocol": a["protocol"], "metric": a.get("metric", 0)}
                         for a in alternates
                     ],
                 }
@@ -4111,14 +4426,16 @@ def create_network_blueprint():
                 else:
                     affected_prefixes.append(entry)
 
-        return jsonify({
-            "scenario": f"Link failure: {failed_link_src} -> {failed_link_dst}",
-            "affected_prefixes": affected_prefixes,
-            "surviving_prefixes": surviving_prefixes,
-            "total_affected": len(affected_prefixes),
-            "total_surviving": len(surviving_prefixes),
-            "has_full_redundancy": len(affected_prefixes) == 0,
-        })
+        return jsonify(
+            {
+                "scenario": f"Link failure: {failed_link_src} -> {failed_link_dst}",
+                "affected_prefixes": affected_prefixes,
+                "surviving_prefixes": surviving_prefixes,
+                "total_affected": len(affected_prefixes),
+                "total_surviving": len(surviving_prefixes),
+                "has_full_redundancy": len(affected_prefixes) == 0,
+            }
+        )
 
     @bp.route("/api/what-if/device-failure", methods=["POST"])
     @nc_login_required
@@ -4131,9 +4448,9 @@ def create_network_blueprint():
             return jsonify({"error": "device_ip required"}), 400
 
         conn = get_connection()
-        all_routes = [_row_to_dict(r) for r in conn.execute(
-            "SELECT * FROM nc_routing_entries ORDER BY device_ip"
-        ).fetchall()]
+        all_routes = [
+            _row_to_dict(r) for r in conn.execute("SELECT * FROM nc_routing_entries ORDER BY device_ip").fetchall()
+        ]
         conn.close()
 
         # Find all routes whose next_hop is the failed device
@@ -4146,28 +4463,27 @@ def create_network_blueprint():
                         "hostname": r.get("hostname", dip),
                         "lost_prefixes": [],
                     }
-                impacted_devices[dip]["lost_prefixes"].append({
-                    "prefix": r["prefix"],
-                    "protocol": r["protocol"],
-                })
+                impacted_devices[dip]["lost_prefixes"].append(
+                    {
+                        "prefix": r["prefix"],
+                        "protocol": r["protocol"],
+                    }
+                )
 
         # Prefixes hosted by the failed device (connected routes)
         hosted_prefixes = [
-            r["prefix"] for r in all_routes
-            if r["device_ip"] == failed_device
-            and r.get("protocol") == "connected"
+            r["prefix"] for r in all_routes if r["device_ip"] == failed_device and r.get("protocol") == "connected"
         ]
 
-        return jsonify({
-            "scenario": f"Device failure: {failed_device}",
-            "impacted_devices": [
-                {"device_ip": k, **v}
-                for k, v in impacted_devices.items()
-            ],
-            "total_impacted_devices": len(impacted_devices),
-            "hosted_prefixes_lost": hosted_prefixes,
-            "total_hosted_lost": len(hosted_prefixes),
-        })
+        return jsonify(
+            {
+                "scenario": f"Device failure: {failed_device}",
+                "impacted_devices": [{"device_ip": k, **v} for k, v in impacted_devices.items()],
+                "total_impacted_devices": len(impacted_devices),
+                "hosted_prefixes_lost": hosted_prefixes,
+                "total_hosted_lost": len(hosted_prefixes),
+            }
+        )
 
     @bp.route("/api/what-if/add-link", methods=["POST"])
     @nc_login_required
@@ -4182,14 +4498,14 @@ def create_network_blueprint():
 
         conn = get_connection()
         # Get current routes from src device
-        src_routes = [_row_to_dict(r) for r in conn.execute(
-            "SELECT * FROM nc_routing_entries WHERE device_ip=?",
-            (src,)
-        ).fetchall()]
-        dst_routes = [_row_to_dict(r) for r in conn.execute(
-            "SELECT * FROM nc_routing_entries WHERE device_ip=?",
-            (dst,)
-        ).fetchall()]
+        src_routes = [
+            _row_to_dict(r)
+            for r in conn.execute("SELECT * FROM nc_routing_entries WHERE device_ip=?", (src,)).fetchall()
+        ]
+        dst_routes = [
+            _row_to_dict(r)
+            for r in conn.execute("SELECT * FROM nc_routing_entries WHERE device_ip=?", (dst,)).fetchall()
+        ]
         conn.close()
 
         # Prefixes reachable via new link (dst's connected/local prefixes)
@@ -4197,46 +4513,46 @@ def create_network_blueprint():
         for r in dst_routes:
             if r.get("protocol") in ("connected", "local"):
                 # Check if src already has a route to this prefix
-                existing = [
-                    e for e in src_routes if e["prefix"] == r["prefix"]
-                ]
+                existing = [e for e in src_routes if e["prefix"] == r["prefix"]]
                 if existing:
                     best = min(existing, key=lambda x: x.get("metric", 999))
                     if metric < best.get("metric", 999):
-                        new_reachable.append({
-                            "prefix": r["prefix"],
-                            "improvement": "better_metric",
-                            "old_metric": best.get("metric", 0),
-                            "new_metric": metric,
-                        })
+                        new_reachable.append(
+                            {
+                                "prefix": r["prefix"],
+                                "improvement": "better_metric",
+                                "old_metric": best.get("metric", 0),
+                                "new_metric": metric,
+                            }
+                        )
                     else:
-                        new_reachable.append({
-                            "prefix": r["prefix"],
-                            "improvement": "redundant_path",
-                            "old_metric": best.get("metric", 0),
-                            "new_metric": metric,
-                        })
+                        new_reachable.append(
+                            {
+                                "prefix": r["prefix"],
+                                "improvement": "redundant_path",
+                                "old_metric": best.get("metric", 0),
+                                "new_metric": metric,
+                            }
+                        )
                 else:
-                    new_reachable.append({
-                        "prefix": r["prefix"],
-                        "improvement": "new_reachability",
-                        "new_metric": metric,
-                    })
+                    new_reachable.append(
+                        {
+                            "prefix": r["prefix"],
+                            "improvement": "new_reachability",
+                            "new_metric": metric,
+                        }
+                    )
 
-        return jsonify({
-            "scenario": f"Add link: {src} -> {dst} ({protocol}, metric {metric})",
-            "new_reachable_prefixes": new_reachable,
-            "total_improvements": len(new_reachable),
-            "new_reachability": sum(
-                1 for p in new_reachable
-                if p["improvement"] == "new_reachability"),
-            "better_metric": sum(
-                1 for p in new_reachable
-                if p["improvement"] == "better_metric"),
-            "redundant_paths": sum(
-                1 for p in new_reachable
-                if p["improvement"] == "redundant_path"),
-        })
+        return jsonify(
+            {
+                "scenario": f"Add link: {src} -> {dst} ({protocol}, metric {metric})",
+                "new_reachable_prefixes": new_reachable,
+                "total_improvements": len(new_reachable),
+                "new_reachability": sum(1 for p in new_reachable if p["improvement"] == "new_reachability"),
+                "better_metric": sum(1 for p in new_reachable if p["improvement"] == "better_metric"),
+                "redundant_paths": sum(1 for p in new_reachable if p["improvement"] == "redundant_path"),
+            }
+        )
 
     # ══════════════════════════════════════════════════════════════════════
     # Connect & Collect + Diagram Data Extraction
@@ -4261,10 +4577,7 @@ def create_network_blueprint():
 
         # Load profile commands
         conn = get_connection()
-        prof_row = conn.execute(
-            "SELECT commands_json FROM nc_device_profiles WHERE id=?",
-            (profile_id,)
-        ).fetchone()
+        prof_row = conn.execute("SELECT commands_json FROM nc_device_profiles WHERE id=?", (profile_id,)).fetchone()
         if not prof_row:
             conn.close()
             return jsonify({"error": "Profile not found"}), 404
@@ -4283,9 +4596,7 @@ def create_network_blueprint():
                     continue
                 # Dedup
                 conn.execute(
-                    "DELETE FROM nc_collected_configs "
-                    "WHERE device_ip=? AND command_name=?",
-                    (device_ip, cmd_name)
+                    "DELETE FROM nc_collected_configs WHERE device_ip=? AND command_name=?", (device_ip, cmd_name)
                 )
                 conn.execute(
                     "INSERT INTO nc_collected_configs "
@@ -4293,19 +4604,21 @@ def create_network_blueprint():
                     " command_name, output_text, parsed_json, "
                     " collected_at, topology_id) "
                     "VALUES (?,?,?,?,?,?,?,?,?)",
-                    (str(_uuid.uuid4()), device_ip, hostname,
-                     profile_id, cmd_name, output, "{}",
-                     now, topology_id)
+                    (str(_uuid.uuid4()), device_ip, hostname, profile_id, cmd_name, output, "{}", now, topology_id),
                 )
-                results.append({
-                    "command": cmd_name, "status": "stored",
-                    "lines": len(output.splitlines()),
-                })
+                results.append(
+                    {
+                        "command": cmd_name,
+                        "status": "stored",
+                        "lines": len(output.splitlines()),
+                    }
+                )
         else:
             # SSH mode — attempt live connection
             ssh_ok = False
             try:
                 from netmiko import ConnectHandler
+
                 ssh_ok = True
             except ImportError:
                 pass
@@ -4327,13 +4640,11 @@ def create_network_blueprint():
                         cli_cmd = cmd_info.get("command", "")
                         timeout = cmd_info.get("timeout_sec", 10)
                         try:
-                            output = net_connect.send_command(
-                                cli_cmd, read_timeout=timeout)
+                            output = net_connect.send_command(cli_cmd, read_timeout=timeout)
                             # Dedup and store
                             conn.execute(
-                                "DELETE FROM nc_collected_configs "
-                                "WHERE device_ip=? AND command_name=?",
-                                (device_ip, cmd_name)
+                                "DELETE FROM nc_collected_configs WHERE device_ip=? AND command_name=?",
+                                (device_ip, cmd_name),
                             )
                             conn.execute(
                                 "INSERT INTO nc_collected_configs "
@@ -4341,45 +4652,63 @@ def create_network_blueprint():
                                 " command_name, output_text, parsed_json, "
                                 " collected_at, topology_id) "
                                 "VALUES (?,?,?,?,?,?,?,?,?)",
-                                (str(_uuid.uuid4()), device_ip, hostname,
-                                 profile_id, cmd_name, output, "{}",
-                                 now, topology_id)
+                                (
+                                    str(_uuid.uuid4()),
+                                    device_ip,
+                                    hostname,
+                                    profile_id,
+                                    cmd_name,
+                                    output,
+                                    "{}",
+                                    now,
+                                    topology_id,
+                                ),
                             )
-                            results.append({
-                                "command": cmd_name, "status": "collected",
-                                "lines": len(output.splitlines()),
-                            })
+                            results.append(
+                                {
+                                    "command": cmd_name,
+                                    "status": "collected",
+                                    "lines": len(output.splitlines()),
+                                }
+                            )
                         except Exception as cmd_err:
-                            results.append({
-                                "command": cmd_name, "status": "failed",
-                                "error": str(cmd_err)[:100],
-                            })
+                            results.append(
+                                {
+                                    "command": cmd_name,
+                                    "status": "failed",
+                                    "error": str(cmd_err)[:100],
+                                }
+                            )
                     net_connect.disconnect()
                 except Exception as ssh_err:
                     conn.close()
-                    return jsonify({
-                        "error": f"SSH connection failed: {str(ssh_err)[:200]}",
-                        "hint": "Use mode='manual' to paste command outputs instead",
-                    }), 502
+                    return jsonify(
+                        {
+                            "error": f"SSH connection failed: {str(ssh_err)[:200]}",
+                            "hint": "Use mode='manual' to paste command outputs instead",
+                        }
+                    ), 502
             else:
                 conn.close()
-                return jsonify({
-                    "error": "netmiko not available for SSH",
-                    "hint": "Use mode='manual' to paste command outputs, "
-                            "or install netmiko: pip install netmiko",
-                }), 501
+                return jsonify(
+                    {
+                        "error": "netmiko not available for SSH",
+                        "hint": "Use mode='manual' to paste command outputs, or install netmiko: pip install netmiko",
+                    }
+                ), 501
 
         conn.commit()
         conn.close()
-        _audit("CONNECT_COLLECT", "device", device_ip,
-               f"profile={profile_id}, commands={len(results)}")
-        return jsonify({
-            "device_ip": device_ip,
-            "hostname": hostname,
-            "mode": mode,
-            "commands_executed": len(results),
-            "results": results,
-        })
+        _audit("CONNECT_COLLECT", "device", device_ip, f"profile={profile_id}, commands={len(results)}")
+        return jsonify(
+            {
+                "device_ip": device_ip,
+                "hostname": hostname,
+                "mode": mode,
+                "commands_executed": len(results),
+                "results": results,
+            }
+        )
 
     @bp.route("/api/import/extract-data", methods=["POST"])
     @nc_login_required
@@ -4413,15 +4742,13 @@ def create_network_blueprint():
             "INSERT INTO topologies "
             "(id, name, description, graph_json, classification, "
             " created_at, updated_at) VALUES (?,?,?,?,?,?,?)",
-            (topo_id, name, f"Data extraction ({fmt})",
-             json.dumps(graph), "public", now, now)
+            (topo_id, name, f"Data extraction ({fmt})", json.dumps(graph), "public", now, now),
         )
 
         if project_id:
             conn.execute(
-                "INSERT OR IGNORE INTO nc_project_topologies "
-                "(project_id, topology_id) VALUES (?,?)",
-                (project_id, topo_id)
+                "INSERT OR IGNORE INTO nc_project_topologies (project_id, topology_id) VALUES (?,?)",
+                (project_id, topo_id),
             )
 
         # Extract data from nodes
@@ -4439,9 +4766,8 @@ def create_network_blueprint():
             if not ip:
                 # Try to extract IP from label (e.g., "10.0.0.1/24")
                 import re as _re
-                ip_match = _re.search(
-                    r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?:/\d{1,2})?)',
-                    label)
+
+                ip_match = _re.search(r"(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?:/\d{1,2})?)", label)
                 if ip_match:
                     ip = ip_match.group(1)
             if ip and "/" in ip:
@@ -4451,21 +4777,19 @@ def create_network_blueprint():
                     octets = parts[0].split(".")
                     mask = int(parts[1])
                     # Simple network calculation
-                    network = ".".join(octets[:mask // 8]) + ".0" * (4 - mask // 8) + "/" + parts[1]
+                    network = ".".join(octets[: mask // 8]) + ".0" * (4 - mask // 8) + "/" + parts[1]
                     conn.execute(
                         "INSERT OR IGNORE INTO nc_ipam_blocks "
                         "(id, topology_id, network, description, "
                         " created_at) VALUES (?,?,?,?,?)",
-                        (str(_uuid.uuid4()), topo_id, network,
-                         f"Extracted from {label}", now)
+                        (str(_uuid.uuid4()), topo_id, network, f"Extracted from {label}", now),
                     )
                     ipam_extracted += 1
                 except (ValueError, IndexError):
                     pass
 
             # Store device as collected config (properties)
-            if ntype not in ("text", "heading", "badge", "rect",
-                             "circle", "imported", ""):
+            if ntype not in ("text", "heading", "badge", "rect", "circle", "imported", ""):
                 devices_extracted += 1
 
         # Extract circuits from edges
@@ -4478,50 +4802,60 @@ def create_network_blueprint():
                     "(id, topology_id, circuit_id, carrier, "
                     " circuit_type, bandwidth, install_status, "
                     " created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)",
-                    (str(_uuid.uuid4()), topo_id,
-                     elabel or f"link-{e.get('id', '')[:8]}",
-                     "", proto or "ethernet", "",
-                     "installed", now, now)
+                    (
+                        str(_uuid.uuid4()),
+                        topo_id,
+                        elabel or f"link-{e.get('id', '')[:8]}",
+                        "",
+                        proto or "ethernet",
+                        "",
+                        "installed",
+                        now,
+                        now,
+                    ),
                 )
                 circuits_extracted += 1
 
         # Run compliance audit
-        audit_result = run_compliance_audit(
-            topo_id, graph, ["fisma_high"], "CUI")
+        audit_result = run_compliance_audit(topo_id, graph, ["fisma_high"], "CUI")
         total_p = sum(s["passed"] for s in audit_result["scores"].values())
         total_f = sum(s["failed"] for s in audit_result["scores"].values())
         conn.execute(
             "INSERT INTO nc_compliance_checks "
             "(id, topology_id, check_type, passed, failed, "
             " findings_json, ran_at) VALUES (?,?,?,?,?,?,?)",
-            (str(_uuid.uuid4()), topo_id, "fisma_high",
-             total_p, total_f,
-             json.dumps(audit_result["findings"]), now)
+            (str(_uuid.uuid4()), topo_id, "fisma_high", total_p, total_f, json.dumps(audit_result["findings"]), now),
         )
 
         conn.commit()
         conn.close()
         _audit("IMPORT_EXTRACT", "topology", topo_id, fmt)
 
-        return jsonify({
-            "id": topo_id, "name": name,
-            "nodes": len(graph.get("nodes", [])),
-            "edges": len(graph.get("edges", [])),
-            "extracted": {
-                "devices": devices_extracted,
-                "ipam_blocks": ipam_extracted,
-                "circuits": circuits_extracted,
-            },
-            "compliance": {
-                "passed": total_p, "failed": total_f,
-                "findings": len(audit_result["findings"]),
-            },
-            "classified_types": dict(sorted({
-                n["type"]: sum(1 for m in graph["nodes"]
-                               if m["type"] == n["type"])
-                for n in graph["nodes"]
-            }.items())),
-        }), 201
+        return jsonify(
+            {
+                "id": topo_id,
+                "name": name,
+                "nodes": len(graph.get("nodes", [])),
+                "edges": len(graph.get("edges", [])),
+                "extracted": {
+                    "devices": devices_extracted,
+                    "ipam_blocks": ipam_extracted,
+                    "circuits": circuits_extracted,
+                },
+                "compliance": {
+                    "passed": total_p,
+                    "failed": total_f,
+                    "findings": len(audit_result["findings"]),
+                },
+                "classified_types": dict(
+                    sorted(
+                        {
+                            n["type"]: sum(1 for m in graph["nodes"] if m["type"] == n["type"]) for n in graph["nodes"]
+                        }.items()
+                    )
+                ),
+            }
+        ), 201
 
     @bp.route("/collect")
     @nc_login_required
@@ -4546,10 +4880,7 @@ def create_network_blueprint():
         conn = get_connection()
         now = _now()
         # Dedup: remove existing entries for this device before inserting
-        conn.execute(
-            "DELETE FROM nc_routing_entries WHERE device_ip=?",
-            (device_ip,)
-        )
+        conn.execute("DELETE FROM nc_routing_entries WHERE device_ip=?", (device_ip,))
         count = 0
         for e in entries:
             conn.execute(
@@ -4558,14 +4889,21 @@ def create_network_blueprint():
                 " protocol, metric, admin_distance, interface, "
                 " vrf, address_family, collected_at, topology_id) "
                 "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (str(_uuid.uuid4()), device_ip, hostname,
-                 e.get("prefix", ""), e.get("next_hop", ""),
-                 e.get("protocol", ""), e.get("metric", 0),
-                 e.get("admin_distance", 0),
-                 e.get("interface", ""),
-                 e.get("vrf", "default"),
-                 e.get("address_family", "ipv4"),
-                 now, topo_id)
+                (
+                    str(_uuid.uuid4()),
+                    device_ip,
+                    hostname,
+                    e.get("prefix", ""),
+                    e.get("next_hop", ""),
+                    e.get("protocol", ""),
+                    e.get("metric", 0),
+                    e.get("admin_distance", 0),
+                    e.get("interface", ""),
+                    e.get("vrf", "default"),
+                    e.get("address_family", "ipv4"),
+                    now,
+                    topo_id,
+                ),
             )
             count += 1
         conn.commit()
@@ -4579,15 +4917,10 @@ def create_network_blueprint():
         conn = get_connection()
         if device_ip:
             rows = conn.execute(
-                "SELECT * FROM nc_routing_entries "
-                "WHERE device_ip=? ORDER BY prefix",
-                (device_ip,)
+                "SELECT * FROM nc_routing_entries WHERE device_ip=? ORDER BY prefix", (device_ip,)
             ).fetchall()
         else:
-            rows = conn.execute(
-                "SELECT * FROM nc_routing_entries "
-                "ORDER BY device_ip, prefix LIMIT 500"
-            ).fetchall()
+            rows = conn.execute("SELECT * FROM nc_routing_entries ORDER BY device_ip, prefix LIMIT 500").fetchall()
         conn.close()
         return jsonify([_row_to_dict(r) for r in rows])
 
@@ -4607,13 +4940,11 @@ def create_network_blueprint():
             rows = conn.execute(
                 f"SELECT * FROM nc_routing_entries "  # nosec B608
                 f"WHERE device_ip IN ({placeholders}) "
-                f"ORDER BY device_ip, prefix", device_ips
+                f"ORDER BY device_ip, prefix",
+                device_ips,
             ).fetchall()
         else:
-            rows = conn.execute(
-                "SELECT * FROM nc_routing_entries "
-                "ORDER BY device_ip, prefix"
-            ).fetchall()
+            rows = conn.execute("SELECT * FROM nc_routing_entries ORDER BY device_ip, prefix").fetchall()
 
         # Build device set and next-hop relationships
         devices = {}  # ip -> {hostname, protocols, prefixes}
@@ -4653,18 +4984,19 @@ def create_network_blueprint():
         for ip, info in sorted(devices.items()):
             nid = str(_uuid.uuid4())[:8]
             ip_to_id[ip] = nid
-            nodes.append({
-                "id": nid,
-                "label": info["hostname"],
-                "type": "router",
-                "x": x_pos % 800,
-                "y": (x_pos // 800) * 200,
-                "config": {
-                    "ip": ip,
-                    "protocol": ", ".join(
-                        sorted(info["protocols"] - {""})),
-                },
-            })
+            nodes.append(
+                {
+                    "id": nid,
+                    "label": info["hostname"],
+                    "type": "router",
+                    "x": x_pos % 800,
+                    "y": (x_pos // 800) * 200,
+                    "config": {
+                        "ip": ip,
+                        "protocol": ", ".join(sorted(info["protocols"] - {""})),
+                    },
+                }
+            )
             x_pos += 200
 
         edges = []
@@ -4672,15 +5004,15 @@ def create_network_blueprint():
             src_id = ip_to_id.get(src)
             dst_id = ip_to_id.get(dst)
             if src_id and dst_id and src_id != dst_id:
-                edges.append({
-                    "id": str(_uuid.uuid4())[:8],
-                    "source": src_id,
-                    "target": dst_id,
-                    "label": ", ".join(
-                        sorted(info["protocols"] - {""})),
-                    "protocol": ", ".join(
-                        sorted(info["protocols"] - {""})),
-                })
+                edges.append(
+                    {
+                        "id": str(_uuid.uuid4())[:8],
+                        "source": src_id,
+                        "target": dst_id,
+                        "label": ", ".join(sorted(info["protocols"] - {""})),
+                        "protocol": ", ".join(sorted(info["protocols"] - {""})),
+                    }
+                )
 
         graph = {"nodes": nodes, "edges": edges}
         graph = _classify_imported_nodes(graph)
@@ -4692,19 +5024,28 @@ def create_network_blueprint():
             "(id, name, description, graph_json, "
             " classification, created_at, updated_at) "
             "VALUES (?,?,?,?,?,?,?)",
-            (topo_id, name,
-             f"Generated from {len(devices)} device routing tables",
-             json.dumps(graph), "public", now, now)
+            (
+                topo_id,
+                name,
+                f"Generated from {len(devices)} device routing tables",
+                json.dumps(graph),
+                "public",
+                now,
+                now,
+            ),
         )
         conn.commit()
         conn.close()
-        _audit("ROUTING_TOPO", "topology", topo_id,
-               f"{len(nodes)} devices, {len(edges)} links")
-        return jsonify({
-            "id": topo_id, "name": name,
-            "nodes": len(nodes), "edges": len(edges),
-            "devices_discovered": len(devices),
-        }), 201
+        _audit("ROUTING_TOPO", "topology", topo_id, f"{len(nodes)} devices, {len(edges)} links")
+        return jsonify(
+            {
+                "id": topo_id,
+                "name": name,
+                "nodes": len(nodes),
+                "edges": len(edges),
+                "devices_discovered": len(devices),
+            }
+        ), 201
 
     @bp.route("/api/config-to-canvas/<topo_id>", methods=["POST"])
     @nc_login_required
@@ -4712,9 +5053,7 @@ def create_network_blueprint():
         """Sync collected config data into canvas device properties.
         Matches by hostname or IP address."""
         conn = get_connection()
-        row = conn.execute(
-            "SELECT graph_json FROM topologies WHERE id=?", (topo_id,)
-        ).fetchone()
+        row = conn.execute("SELECT graph_json FROM topologies WHERE id=?", (topo_id,)).fetchone()
         if not row:
             conn.close()
             return jsonify({"error": "Not found"}), 404
@@ -4729,12 +5068,13 @@ def create_network_blueprint():
             "SELECT device_ip, hostname, command_name, parsed_json "
             "FROM nc_collected_configs "
             "WHERE topology_id=? OR topology_id IS NULL "
-            "ORDER BY collected_at DESC", (topo_id,)
+            "ORDER BY collected_at DESC",
+            (topo_id,),
         ).fetchall()
 
         # Build lookup by hostname and IP
         config_by_host = {}  # hostname -> {cmd: parsed}
-        config_by_ip = {}    # ip -> {cmd: parsed}
+        config_by_ip = {}  # ip -> {cmd: parsed}
         for c in configs:
             c = _row_to_dict(c)
             host = (c.get("hostname") or "").lower()
@@ -4776,8 +5116,7 @@ def create_network_blueprint():
                 elif cmd_name == "interfaces" and parsed:
                     if parsed.get("mgmt_ip"):
                         cfg["ip"] = parsed["mgmt_ip"]
-                elif cmd_name in ("routing_table_v4",
-                                   "routing_table_v6") and parsed:
+                elif cmd_name in ("routing_table_v4", "routing_table_v6") and parsed:
                     if parsed.get("protocol"):
                         cfg["protocol"] = parsed["protocol"]
 
@@ -4787,17 +5126,15 @@ def create_network_blueprint():
             updated += 1
 
         now = _now()
-        conn.execute(
-            "UPDATE topologies SET graph_json=?, updated_at=? "
-            "WHERE id=?",
-            (json.dumps(graph), now, topo_id)
-        )
+        conn.execute("UPDATE topologies SET graph_json=?, updated_at=? WHERE id=?", (json.dumps(graph), now, topo_id))
         conn.commit()
         conn.close()
-        return jsonify({
-            "updated_devices": updated,
-            "total_nodes": len(graph.get("nodes", [])),
-        })
+        return jsonify(
+            {
+                "updated_devices": updated,
+                "total_nodes": len(graph.get("nodes", [])),
+            }
+        )
 
     # ══════════════════════════════════════════════════════════════════════
     # API: Circuits CRUD
@@ -4823,12 +5160,26 @@ def create_network_blueprint():
             "handoff_a, handoff_z, customer, site, monthly_cost_usd, contract_start, contract_end, "
             "sla_uptime_pct, install_status, notes, created_at, updated_at) "
             "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (cid, data.get("topology_id"), data.get("circuit_id", ""), data.get("carrier", ""),
-             data.get("circuit_type", ""), data.get("bandwidth", ""), data.get("handoff_a", ""),
-             data.get("handoff_z", ""), data.get("customer", ""), data.get("site", ""),
-             data.get("monthly_cost_usd", 0), data.get("contract_start"), data.get("contract_end"),
-             data.get("sla_uptime_pct", 99.9), data.get("install_status", "planned"),
-             data.get("notes", ""), now, now)
+            (
+                cid,
+                data.get("topology_id"),
+                data.get("circuit_id", ""),
+                data.get("carrier", ""),
+                data.get("circuit_type", ""),
+                data.get("bandwidth", ""),
+                data.get("handoff_a", ""),
+                data.get("handoff_z", ""),
+                data.get("customer", ""),
+                data.get("site", ""),
+                data.get("monthly_cost_usd", 0),
+                data.get("contract_start"),
+                data.get("contract_end"),
+                data.get("sla_uptime_pct", 99.9),
+                data.get("install_status", "planned"),
+                data.get("notes", ""),
+                now,
+                now,
+            ),
         )
         conn.commit()
         conn.close()
@@ -4844,9 +5195,23 @@ def create_network_blueprint():
         if not row:
             conn.close()
             return jsonify({"error": "Not found"}), 404
-        allowed = ["circuit_id", "carrier", "circuit_type", "bandwidth", "handoff_a", "handoff_z",
-                   "customer", "site", "monthly_cost_usd", "contract_start", "contract_end",
-                   "sla_uptime_pct", "install_status", "notes", "topology_id"]
+        allowed = [
+            "circuit_id",
+            "carrier",
+            "circuit_type",
+            "bandwidth",
+            "handoff_a",
+            "handoff_z",
+            "customer",
+            "site",
+            "monthly_cost_usd",
+            "contract_start",
+            "contract_end",
+            "sla_uptime_pct",
+            "install_status",
+            "notes",
+            "topology_id",
+        ]
         fields, values = [], []
         for k in allowed:
             if k in data:
@@ -4896,9 +5261,16 @@ def create_network_blueprint():
         conn.execute(
             "INSERT INTO nc_customers (id, name, customer_type, contact_name, contact_email, contract_ref, notes, created_at) "
             "VALUES (?,?,?,?,?,?,?,?)",
-            (cid, data.get("name", ""), data.get("customer_type", "customer"),
-             data.get("contact_name", ""), data.get("contact_email", ""),
-             data.get("contract_ref", ""), data.get("notes", ""), now)
+            (
+                cid,
+                data.get("name", ""),
+                data.get("customer_type", "customer"),
+                data.get("contact_name", ""),
+                data.get("contact_email", ""),
+                data.get("contract_ref", ""),
+                data.get("notes", ""),
+                now,
+            ),
         )
         conn.commit()
         conn.close()
@@ -4958,9 +5330,18 @@ def create_network_blueprint():
         conn.execute(
             "INSERT INTO nc_sites (id, customer_id, name, address, city, state, country, site_type, classification, created_at) "
             "VALUES (?,?,?,?,?,?,?,?,?,?)",
-            (sid, data.get("customer_id"), data.get("name", ""), data.get("address", ""),
-             data.get("city", ""), data.get("state", ""), data.get("country", "US"),
-             data.get("site_type", "office"), data.get("classification", "public"), now)
+            (
+                sid,
+                data.get("customer_id"),
+                data.get("name", ""),
+                data.get("address", ""),
+                data.get("city", ""),
+                data.get("state", ""),
+                data.get("country", "US"),
+                data.get("site_type", "office"),
+                data.get("classification", "public"),
+                now,
+            ),
         )
         conn.commit()
         conn.close()
@@ -5020,9 +5401,18 @@ def create_network_blueprint():
         conn.execute(
             "INSERT INTO nc_ipam_blocks (id, topology_id, network, vlan_id, vrf, description, site_id, gateway, utilization_pct, created_at) "
             "VALUES (?,?,?,?,?,?,?,?,?,?)",
-            (bid, data.get("topology_id"), data.get("network", ""), data.get("vlan_id"),
-             data.get("vrf", "global"), data.get("description", ""), data.get("site_id"),
-             data.get("gateway", ""), data.get("utilization_pct", 0), now)
+            (
+                bid,
+                data.get("topology_id"),
+                data.get("network", ""),
+                data.get("vlan_id"),
+                data.get("vrf", "global"),
+                data.get("description", ""),
+                data.get("site_id"),
+                data.get("gateway", ""),
+                data.get("utilization_pct", 0),
+                now,
+            ),
         )
         conn.commit()
         conn.close()
@@ -5083,10 +5473,21 @@ def create_network_blueprint():
             "INSERT INTO nc_cables (id, topology_id, cable_id, cable_type, src_device, src_port, "
             "dst_device, dst_port, patch_panel, length_m, status, notes, created_at) "
             "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (cid, data.get("topology_id"), data.get("cable_id", ""), data.get("cable_type", ""),
-             data.get("src_device", ""), data.get("src_port", ""), data.get("dst_device", ""),
-             data.get("dst_port", ""), data.get("patch_panel", ""), data.get("length_m"),
-             data.get("status", "active"), data.get("notes", ""), now)
+            (
+                cid,
+                data.get("topology_id"),
+                data.get("cable_id", ""),
+                data.get("cable_type", ""),
+                data.get("src_device", ""),
+                data.get("src_port", ""),
+                data.get("dst_device", ""),
+                data.get("dst_port", ""),
+                data.get("patch_panel", ""),
+                data.get("length_m"),
+                data.get("status", "active"),
+                data.get("notes", ""),
+                now,
+            ),
         )
         conn.commit()
         conn.close()
@@ -5098,8 +5499,19 @@ def create_network_blueprint():
     def nc_api_update_cable(cid):
         data = request.get_json(force=True, silent=True) or {}
         conn = get_connection()
-        allowed = ["cable_id", "cable_type", "src_device", "src_port", "dst_device", "dst_port",
-                   "patch_panel", "length_m", "status", "notes", "topology_id"]
+        allowed = [
+            "cable_id",
+            "cable_type",
+            "src_device",
+            "src_port",
+            "dst_device",
+            "dst_port",
+            "patch_panel",
+            "length_m",
+            "status",
+            "notes",
+            "topology_id",
+        ]
         fields, values = [], []
         for k in allowed:
             if k in data:
@@ -5134,9 +5546,7 @@ def create_network_blueprint():
     def nc_api_cable_plant_report(topo_id):
         """Export cable plant report as CSV from edge cableData annotations."""
         conn = get_connection()
-        row = conn.execute(
-            "SELECT graph_json, name FROM topologies WHERE id=?", (topo_id,)
-        ).fetchone()
+        row = conn.execute("SELECT graph_json, name FROM topologies WHERE id=?", (topo_id,)).fetchone()
         conn.close()
         if not row:
             return jsonify({"error": "Topology not found"}), 404
@@ -5152,13 +5562,22 @@ def create_network_blueprint():
 
         import io
         import csv
+
         buf = io.StringIO()
         writer = csv.writer(buf)
-        writer.writerow([
-            "Link ID", "Source Device", "Target Device",
-            "Cable Type", "Distance (m)", "Conduit ID",
-            "Fiber Strands", "Pull Tension (lbs)", "Notes",
-        ])
+        writer.writerow(
+            [
+                "Link ID",
+                "Source Device",
+                "Target Device",
+                "Cable Type",
+                "Distance (m)",
+                "Conduit ID",
+                "Fiber Strands",
+                "Pull Tension (lbs)",
+                "Notes",
+            ]
+        )
 
         edges = (gj or {}).get("edges", [])
         cable_count = 0
@@ -5167,17 +5586,19 @@ def create_network_blueprint():
             if not cable:
                 continue
             cable_count += 1
-            writer.writerow([
-                e.get("id", ""),
-                nodes_map.get(e.get("source", ""), e.get("source", "")),
-                nodes_map.get(e.get("target", ""), e.get("target", "")),
-                cable.get("cable_type", ""),
-                cable.get("distance_m", ""),
-                cable.get("conduit_id", ""),
-                cable.get("fiber_strands", ""),
-                cable.get("pull_tension_lbs", ""),
-                cable.get("notes", ""),
-            ])
+            writer.writerow(
+                [
+                    e.get("id", ""),
+                    nodes_map.get(e.get("source", ""), e.get("source", "")),
+                    nodes_map.get(e.get("target", ""), e.get("target", "")),
+                    cable.get("cable_type", ""),
+                    cable.get("distance_m", ""),
+                    cable.get("conduit_id", ""),
+                    cable.get("fiber_strands", ""),
+                    cable.get("pull_tension_lbs", ""),
+                    cable.get("notes", ""),
+                ]
+            )
 
         topo_name = (topo.get("name") or "topology").replace(" ", "_")
         filename = f"cable-plant-{topo_name}.csv"
@@ -5209,15 +5630,28 @@ def create_network_blueprint():
             "provider_a, provider_z, loa_status, monthly_cost_usd, install_date, "
             "status, notes, created_at, updated_at) "
             "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (cid, data.get("topology_id"), data.get("xconn_id", ""),
-             data.get("facility", ""), data.get("meet_me_room", ""),
-             data.get("src_device", ""), data.get("src_port", ""),
-             data.get("dst_device", ""), data.get("dst_port", ""),
-             data.get("media_type", "SMF"), data.get("bandwidth", ""),
-             data.get("provider_a", ""), data.get("provider_z", ""),
-             data.get("loa_status", "pending"), data.get("monthly_cost_usd", 0),
-             data.get("install_date"), data.get("status", "planned"),
-             data.get("notes", ""), now, now)
+            (
+                cid,
+                data.get("topology_id"),
+                data.get("xconn_id", ""),
+                data.get("facility", ""),
+                data.get("meet_me_room", ""),
+                data.get("src_device", ""),
+                data.get("src_port", ""),
+                data.get("dst_device", ""),
+                data.get("dst_port", ""),
+                data.get("media_type", "SMF"),
+                data.get("bandwidth", ""),
+                data.get("provider_a", ""),
+                data.get("provider_z", ""),
+                data.get("loa_status", "pending"),
+                data.get("monthly_cost_usd", 0),
+                data.get("install_date"),
+                data.get("status", "planned"),
+                data.get("notes", ""),
+                now,
+                now,
+            ),
         )
         conn.commit()
         conn.close()
@@ -5233,10 +5667,25 @@ def create_network_blueprint():
         if not row:
             conn.close()
             return jsonify({"error": "Not found"}), 404
-        allowed = ["xconn_id", "facility", "meet_me_room", "src_device", "src_port",
-                   "dst_device", "dst_port", "media_type", "bandwidth",
-                   "provider_a", "provider_z", "loa_status", "monthly_cost_usd",
-                   "install_date", "status", "notes", "topology_id"]
+        allowed = [
+            "xconn_id",
+            "facility",
+            "meet_me_room",
+            "src_device",
+            "src_port",
+            "dst_device",
+            "dst_port",
+            "media_type",
+            "bandwidth",
+            "provider_a",
+            "provider_z",
+            "loa_status",
+            "monthly_cost_usd",
+            "install_date",
+            "status",
+            "notes",
+            "topology_id",
+        ]
         fields, values = [], []
         for k in allowed:
             if k in data:
@@ -5274,7 +5723,8 @@ def create_network_blueprint():
         conn = get_connection()
         rows = conn.execute(
             "SELECT id, topology_id, version_num, label, phase, created_by, notes, created_at "
-            "FROM nc_versions WHERE topology_id=? ORDER BY version_num", (topo_id,)
+            "FROM nc_versions WHERE topology_id=? ORDER BY version_num",
+            (topo_id,),
         ).fetchall()
         conn.close()
         return jsonify([_row_to_dict(r) for r in rows])
@@ -5295,9 +5745,17 @@ def create_network_blueprint():
         conn.execute(
             "INSERT INTO nc_versions (id, topology_id, version_num, label, phase, graph_json, created_by, notes, created_at) "
             "VALUES (?,?,?,?,?,?,?,?,?)",
-            (vid, topo_id, ver_num, data.get("label", f"v{ver_num}"),
-             data.get("phase", "as-is"), topo["graph_json"],
-             data.get("created_by", ""), data.get("notes", ""), now)
+            (
+                vid,
+                topo_id,
+                ver_num,
+                data.get("label", f"v{ver_num}"),
+                data.get("phase", "as-is"),
+                topo["graph_json"],
+                data.get("created_by", ""),
+                data.get("notes", ""),
+                now,
+            ),
         )
         conn.commit()
         conn.close()
@@ -5327,15 +5785,20 @@ def create_network_blueprint():
         n2_ids = {n["id"] for n in g2.get("nodes", [])}
         e1_ids = {e["id"] for e in g1.get("edges", []) if "id" in e}
         e2_ids = {e["id"] for e in g2.get("edges", []) if "id" in e}
-        return jsonify({
-            "version_a": {"id": v1_id, "label": r1["label"], "phase": r1["phase"]},
-            "version_b": {"id": v2_id, "label": r2["label"], "phase": r2["phase"]},
-            "nodes_added": len(n2_ids - n1_ids), "nodes_removed": len(n1_ids - n2_ids),
-            "nodes_unchanged": len(n1_ids & n2_ids),
-            "edges_added": len(e2_ids - e1_ids), "edges_removed": len(e1_ids - e2_ids),
-            "edges_unchanged": len(e1_ids & e2_ids),
-            "added_node_ids": list(n2_ids - n1_ids), "removed_node_ids": list(n1_ids - n2_ids),
-        })
+        return jsonify(
+            {
+                "version_a": {"id": v1_id, "label": r1["label"], "phase": r1["phase"]},
+                "version_b": {"id": v2_id, "label": r2["label"], "phase": r2["phase"]},
+                "nodes_added": len(n2_ids - n1_ids),
+                "nodes_removed": len(n1_ids - n2_ids),
+                "nodes_unchanged": len(n1_ids & n2_ids),
+                "edges_added": len(e2_ids - e1_ids),
+                "edges_removed": len(e1_ids - e2_ids),
+                "edges_unchanged": len(e1_ids & e2_ids),
+                "added_node_ids": list(n2_ids - n1_ids),
+                "removed_node_ids": list(n1_ids - n2_ids),
+            }
+        )
 
     # ══════════════════════════════════════════════════════════════════════
     # API: Bill of Materials & Capacity Planning
@@ -5363,11 +5826,23 @@ def create_network_blueprint():
             unit_cost = BOM_COSTS.get(device_type, 0)
             line_total = unit_cost * count
             total += line_total
-            bom_items.append({"device_type": device_type, "quantity": count,
-                              "unit_cost_usd": unit_cost, "line_total_usd": line_total})
-        return jsonify({"topology": row["name"], "items": bom_items,
-                         "total_capex_usd": total, "device_count": sum(type_counts.values()),
-                         "unique_types": len(type_counts)})
+            bom_items.append(
+                {
+                    "device_type": device_type,
+                    "quantity": count,
+                    "unit_cost_usd": unit_cost,
+                    "line_total_usd": line_total,
+                }
+            )
+        return jsonify(
+            {
+                "topology": row["name"],
+                "items": bom_items,
+                "total_capex_usd": total,
+                "device_count": sum(type_counts.values()),
+                "unique_types": len(type_counts),
+            }
+        )
 
     @bp.route("/api/topologies/<topo_id>/capacity", methods=["POST"])
     @nc_login_required
@@ -5403,24 +5878,34 @@ def create_network_blueprint():
             user_impact = round(additional_users * user_bw_mbps / max(link_bw_mbps, 1) * 100, 1)
             projected = round(base_util + user_impact, 1)
             status = "critical" if projected > 80 else "warning" if projected > 60 else "ok"
-            analysis.append({
-                "edge_id": e.get("id", ""), "label": e.get("label", ""),
-                "source": e.get("source", ""), "target": e.get("target", ""),
-                "current_util_pct": base_util,
-                "growth_projected_pct": round(base_util * (1 + growth_pct / 100), 1),
-                "with_users_pct": projected, "link_bw_mbps": link_bw_mbps,
-                "status": status, "upgrade_needed": projected > 75,
-            })
+            analysis.append(
+                {
+                    "edge_id": e.get("id", ""),
+                    "label": e.get("label", ""),
+                    "source": e.get("source", ""),
+                    "target": e.get("target", ""),
+                    "current_util_pct": base_util,
+                    "growth_projected_pct": round(base_util * (1 + growth_pct / 100), 1),
+                    "with_users_pct": projected,
+                    "link_bw_mbps": link_bw_mbps,
+                    "status": status,
+                    "upgrade_needed": projected > 75,
+                }
+            )
         critical = [a for a in analysis if a["status"] == "critical"]
-        return jsonify({
-            "links": analysis, "total_links": len(analysis),
-            "critical_count": len(critical), "growth_pct": growth_pct,
-            "additional_users": additional_users,
-            "recommendations": [
-                f"Upgrade {a['label'] or a['edge_id']}: {a['current_util_pct']}% -> {a['with_users_pct']}%"
-                for a in critical
-            ],
-        })
+        return jsonify(
+            {
+                "links": analysis,
+                "total_links": len(analysis),
+                "critical_count": len(critical),
+                "growth_pct": growth_pct,
+                "additional_users": additional_users,
+                "recommendations": [
+                    f"Upgrade {a['label'] or a['edge_id']}: {a['current_util_pct']}% -> {a['with_users_pct']}%"
+                    for a in critical
+                ],
+            }
+        )
 
     # ══════════════════════════════════════════════════════════════════════
     # API: Compliance (quick check)
@@ -5444,24 +5929,42 @@ def create_network_blueprint():
         node_types = [n.get("type", "") for n in nodes]
         findings = []
         if not any(t == "firewall" for t in node_types):
-            findings.append({"check": "STIG-NET-001", "severity": "CAT1", "type": "stig",
-                             "finding": "No firewall in topology"})
-        encrypted = sum(1 for e in edges if "ipsec" in (e.get("protocol") or "").lower() or "tls" in (e.get("protocol") or "").lower())
+            findings.append(
+                {"check": "STIG-NET-001", "severity": "CAT1", "type": "stig", "finding": "No firewall in topology"}
+            )
+        encrypted = sum(
+            1
+            for e in edges
+            if "ipsec" in (e.get("protocol") or "").lower() or "tls" in (e.get("protocol") or "").lower()
+        )
         if encrypted == 0 and edges:
-            findings.append({"check": "FIPS-001", "severity": "HIGH", "type": "fips",
-                             "finding": "No encrypted links detected"})
+            findings.append(
+                {"check": "FIPS-001", "severity": "HIGH", "type": "fips", "finding": "No encrypted links detected"}
+            )
         if not any(t in ("firewall", "aws-nfw", "az-fw", "gcp-armor") for t in node_types):
-            findings.append({"check": "ZTA-001", "severity": "HIGH", "type": "zta",
-                             "finding": "No network segmentation"})
+            findings.append(
+                {"check": "ZTA-001", "severity": "HIGH", "type": "zta", "finding": "No network segmentation"}
+            )
         from collections import Counter
+
         degree = Counter()
         for e in edges:
             degree[e.get("source")] += 1
             degree[e.get("target")] += 1
-        spof = [n["id"] for n in nodes if degree.get(n["id"], 0) <= 1 and n.get("type") in ("router", "switch-l3", "firewall")]
+        spof = [
+            n["id"]
+            for n in nodes
+            if degree.get(n["id"], 0) <= 1 and n.get("type") in ("router", "switch-l3", "firewall")
+        ]
         if spof:
-            findings.append({"check": "BP-REDUNDANCY", "severity": "MEDIUM", "type": "best_practice",
-                             "finding": f"{len(spof)} critical device(s) with single connection"})
+            findings.append(
+                {
+                    "check": "BP-REDUNDANCY",
+                    "severity": "MEDIUM",
+                    "type": "best_practice",
+                    "finding": f"{len(spof)} critical device(s) with single connection",
+                }
+            )
         passed = max(0, 10 - len(findings))
         failed = len(findings)
         check_id = str(_uuid.uuid4())
@@ -5469,13 +5972,19 @@ def create_network_blueprint():
         conn.execute(
             "INSERT INTO nc_compliance_checks (id, topology_id, check_type, passed, failed, findings_json, ran_at) "
             "VALUES (?,?,?,?,?,?,?)",
-            (check_id, topo_id, "full", passed, failed, json.dumps(findings), now)
+            (check_id, topo_id, "full", passed, failed, json.dumps(findings), now),
         )
         conn.commit()
         conn.close()
-        return jsonify({"check_id": check_id, "passed": passed, "failed": failed,
-                         "score_pct": round(passed / max(passed + failed, 1) * 100, 1),
-                         "findings": findings})
+        return jsonify(
+            {
+                "check_id": check_id,
+                "passed": passed,
+                "failed": failed,
+                "score_pct": round(passed / max(passed + failed, 1) * 100, 1),
+                "findings": findings,
+            }
+        )
 
     # ══════════════════════════════════════════════════════════════════════
     # API: Full Compliance Audit Engine
@@ -5541,8 +6050,7 @@ def create_network_blueprint():
         conn.execute(
             "INSERT INTO nc_compliance_checks (id, topology_id, check_type, passed, failed, findings_json, ran_at) "
             "VALUES (?,?,?,?,?,?,?)",
-            (audit_id, topo_id, ",".join(regimes), total_passed, total_failed,
-             json.dumps(result["findings"]), now)
+            (audit_id, topo_id, ",".join(regimes), total_passed, total_failed, json.dumps(result["findings"]), now),
         )
         existing_rule_ids = set()
         for r in conn.execute(
@@ -5554,7 +6062,7 @@ def create_network_blueprint():
             new_rule_ids.add(f["rule_id"])
             exists = conn.execute(
                 "SELECT id FROM nc_compliance_findings WHERE topology_id=? AND rule_id=? AND status='open'",
-                (topo_id, f["rule_id"])
+                (topo_id, f["rule_id"]),
             ).fetchone()
             if not exists:
                 fid = str(_uuid.uuid4())
@@ -5562,16 +6070,27 @@ def create_network_blueprint():
                     "INSERT INTO nc_compliance_findings (id, topology_id, audit_id, rule_id, regime, severity, "
                     "title, description, affected_entity, affected_type, fix_action, created_at) "
                     "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-                    (fid, topo_id, audit_id, f["rule_id"], ",".join(f["regimes"]), f["severity"],
-                     f["title"], f["description"], f.get("affected_entity", ""),
-                     f.get("affected_type", "topology"),
-                     json.dumps(f.get("fix_action")) if f.get("fix_action") else None, now)
+                    (
+                        fid,
+                        topo_id,
+                        audit_id,
+                        f["rule_id"],
+                        ",".join(f["regimes"]),
+                        f["severity"],
+                        f["title"],
+                        f["description"],
+                        f.get("affected_entity", ""),
+                        f.get("affected_type", "topology"),
+                        json.dumps(f.get("fix_action")) if f.get("fix_action") else None,
+                        now,
+                    ),
                 )
         remediated_rules = existing_rule_ids - new_rule_ids
         for rid in remediated_rules:
             conn.execute(
                 "UPDATE nc_compliance_findings SET status='remediated', remediated_at=? "
-                "WHERE topology_id=? AND rule_id=? AND status='open'", (now, topo_id, rid)
+                "WHERE topology_id=? AND rule_id=? AND status='open'",
+                (now, topo_id, rid),
             )
         conn.commit()
         conn.close()
@@ -5613,23 +6132,35 @@ def create_network_blueprint():
         applied, detail = apply_compliance_fix(graph, fix_action)
         action = fix_action.get("action", "")
         if not applied and action == "create_version":
-            last = conn.execute("SELECT MAX(version_num) FROM nc_versions WHERE topology_id=?", (topo_id,)).fetchone()[0]
+            last = conn.execute("SELECT MAX(version_num) FROM nc_versions WHERE topology_id=?", (topo_id,)).fetchone()[
+                0
+            ]
             ver_num = (last or 0) + 1
             vid = str(_uuid.uuid4())
             conn.execute(
                 "INSERT INTO nc_versions (id, topology_id, version_num, label, phase, graph_json, created_at) "
                 "VALUES (?,?,?,?,?,?,?)",
-                (vid, topo_id, ver_num, fix_action.get("label", "As-Built"),
-                 fix_action.get("phase", "as-is"), topo["graph_json"], _now())
+                (
+                    vid,
+                    topo_id,
+                    ver_num,
+                    fix_action.get("label", "As-Built"),
+                    fix_action.get("phase", "as-is"),
+                    topo["graph_json"],
+                    _now(),
+                ),
             )
             applied = True
             detail = f"Created version v{ver_num}"
         if applied:
             if action != "create_version":
-                conn.execute("UPDATE topologies SET graph_json=?, updated_at=? WHERE id=?",
-                             (json.dumps(graph), _now(), topo_id))
-            conn.execute("UPDATE nc_compliance_findings SET status='remediated', remediated_at=? WHERE id=?",
-                         (_now(), finding_id))
+                conn.execute(
+                    "UPDATE topologies SET graph_json=?, updated_at=? WHERE id=?", (json.dumps(graph), _now(), topo_id)
+                )
+            conn.execute(
+                "UPDATE nc_compliance_findings SET status='remediated', remediated_at=? WHERE id=?",
+                (_now(), finding_id),
+            )
             conn.commit()
             conn.close()
             _audit("COMPLIANCE_FIX", "topology", topo_id, detail)
@@ -5646,18 +6177,29 @@ def create_network_blueprint():
             conn.close()
             return jsonify({"error": "Not found"}), 404
         profile = conn.execute("SELECT * FROM nc_compliance_profiles WHERE topology_id=?", (topo_id,)).fetchone()
-        findings = [_row_to_dict(r) for r in conn.execute(
-            "SELECT * FROM nc_compliance_findings WHERE topology_id=? ORDER BY severity, rule_id", (topo_id,)
-        ).fetchall()]
+        findings = [
+            _row_to_dict(r)
+            for r in conn.execute(
+                "SELECT * FROM nc_compliance_findings WHERE topology_id=? ORDER BY severity, rule_id", (topo_id,)
+            ).fetchall()
+        ]
         conn.close()
         profile = _row_to_dict(profile) if profile else {}
         xml = generate_xacta_export(
-            topo["name"], profile.get("classification", "CUI"),
-            profile.get("environment", "IL4"), profile.get("regimes", "[]"), findings,
+            topo["name"],
+            profile.get("classification", "CUI"),
+            profile.get("environment", "IL4"),
+            profile.get("regimes", "[]"),
+            findings,
         )
-        return jsonify({"format": "xacta_xml",
-                         "filename": f"{topo['name']}_compliance_report.xml",
-                         "content": xml, "findings_count": len(findings)})
+        return jsonify(
+            {
+                "format": "xacta_xml",
+                "filename": f"{topo['name']}_compliance_report.xml",
+                "content": xml,
+                "findings_count": len(findings),
+            }
+        )
 
     # ══════════════════════════════════════════════════════════════════════
     # API: FIPS 140 Encryption Coverage Report Export
@@ -5674,9 +6216,7 @@ def create_network_blueprint():
           {"format": "json" | "html"}   // default "json"
         """
         conn = get_connection()
-        topo = conn.execute(
-            "SELECT name, graph_json FROM topologies WHERE id=?", (topo_id,)
-        ).fetchone()
+        topo = conn.execute("SELECT name, graph_json FROM topologies WHERE id=?", (topo_id,)).fetchone()
         if not topo:
             conn.close()
             return jsonify({"error": "Topology not found"}), 404
@@ -5706,19 +6246,22 @@ def create_network_blueprint():
         data = request.get_json(force=True, silent=True) or {}
         fmt = data.get("format", "json")
 
-        _audit("FIPS_REPORT", "topology", topo_id,
-               f"coverage={report['summary']['coverage_pct']}% "
-               f"risk={report['summary']['risk_level']} format={fmt}")
+        _audit(
+            "FIPS_REPORT",
+            "topology",
+            topo_id,
+            f"coverage={report['summary']['coverage_pct']}% risk={report['summary']['risk_level']} format={fmt}",
+        )
 
         if fmt == "html":
             html = export_fips_report_html(report)
             from flask import Response
+
             return Response(
                 html,
                 mimetype="text/html",
                 headers={
-                    "Content-Disposition":
-                        f'attachment; filename="{topo["name"]}_fips_report.html"',
+                    "Content-Disposition": f'attachment; filename="{topo["name"]}_fips_report.html"',
                 },
             )
 
@@ -5737,9 +6280,7 @@ def create_network_blueprint():
         color (green/yellow/red).
         """
         conn = get_connection()
-        topo = conn.execute(
-            "SELECT graph_json, name FROM topologies WHERE id=?", (topo_id,)
-        ).fetchone()
+        topo = conn.execute("SELECT graph_json, name FROM topologies WHERE id=?", (topo_id,)).fetchone()
         if not topo:
             conn.close()
             return jsonify({"error": "Topology not found"}), 404
@@ -5780,10 +6321,18 @@ def create_network_blueprint():
             "(id, topology_id, filename, format, stig_name, stig_version, "
             "total_hosts, matched_hosts, result_json, imported_at) "
             "VALUES (?,?,?,?,?,?,?,?,?,?)",
-            (import_id, topo_id, filename, result.get("format", ""),
-             result.get("stig_name", ""), result.get("stig_version", ""),
-             result.get("total_hosts", 0), result.get("total_matched", 0),
-             json.dumps(result), now),
+            (
+                import_id,
+                topo_id,
+                filename,
+                result.get("format", ""),
+                result.get("stig_name", ""),
+                result.get("stig_version", ""),
+                result.get("total_hosts", 0),
+                result.get("total_matched", 0),
+                json.dumps(result),
+                now,
+            ),
         )
 
         # Also create compliance findings for failed STIG checks
@@ -5794,8 +6343,15 @@ def create_network_blueprint():
             "INSERT INTO nc_compliance_checks "
             "(id, topology_id, check_type, passed, failed, findings_json, ran_at) "
             "VALUES (?,?,?,?,?,?,?)",
-            (audit_id, topo_id, f"stig_import:{filename}",
-             total_pass, total_fail, json.dumps(result.get("matched", [])), now),
+            (
+                audit_id,
+                topo_id,
+                f"stig_import:{filename}",
+                total_pass,
+                total_fail,
+                json.dumps(result.get("matched", [])),
+                now,
+            ),
         )
 
         # Insert individual findings for each failed check on matched devices
@@ -5814,16 +6370,29 @@ def create_network_blueprint():
                         "(id, topology_id, audit_id, rule_id, regime, severity, "
                         "title, description, affected_entity, affected_type, created_at) "
                         "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                        (fid, topo_id, audit_id, rule_id, "stig",
-                         f.get("severity", "CAT2"), f.get("title", rule_id),
-                         f.get("finding_details", ""),
-                         device["label"], "node", now),
+                        (
+                            fid,
+                            topo_id,
+                            audit_id,
+                            rule_id,
+                            "stig",
+                            f.get("severity", "CAT2"),
+                            f.get("title", rule_id),
+                            f.get("finding_details", ""),
+                            device["label"],
+                            "node",
+                            now,
+                        ),
                     )
 
         conn.commit()
         conn.close()
-        _audit("STIG_IMPORT", "topology", topo_id,
-               f"{filename}: {result.get('total_matched', 0)}/{result.get('total_hosts', 0)} hosts matched")
+        _audit(
+            "STIG_IMPORT",
+            "topology",
+            topo_id,
+            f"{filename}: {result.get('total_matched', 0)}/{result.get('total_hosts', 0)} hosts matched",
+        )
 
         result["import_id"] = import_id
         result["audit_id"] = audit_id
@@ -5843,14 +6412,14 @@ def create_network_blueprint():
         conn.close()
         return jsonify([_row_to_dict(r) for r in rows])
 
-
     # ── Project routes (extracted to routes/projects.py) ──────────────────
     from tools.network.routes.projects import register_projects_routes
-    register_projects_routes(bp)
 
+    register_projects_routes(bp)
 
     # ── Governance routes (extracted to routes/governance.py) ─────────────
     from tools.network.routes.governance import register_governance_routes
+
     register_governance_routes(bp)
 
     # ══════════════════════════════════════════════════════════════════════
@@ -5868,14 +6437,14 @@ def create_network_blueprint():
             "LEFT JOIN nc_projects p ON p.id=n.project_id "
             "ORDER BY n.created_at DESC LIMIT 50"
         ).fetchall()
-        unread = conn.execute(
-            "SELECT COUNT(*) FROM nc_notifications WHERE is_read=0"
-        ).fetchone()[0]
+        unread = conn.execute("SELECT COUNT(*) FROM nc_notifications WHERE is_read=0").fetchone()[0]
         conn.close()
-        return jsonify({
-            "notifications": [_row_to_dict(r) for r in rows],
-            "unread": unread,
-        })
+        return jsonify(
+            {
+                "notifications": [_row_to_dict(r) for r in rows],
+                "unread": unread,
+            }
+        )
 
     @bp.route("/api/notifications/mark-read", methods=["POST"])
     @nc_login_required
@@ -5897,14 +6466,8 @@ def create_network_blueprint():
         if not topo_a_id or not topo_b_id:
             return jsonify({"error": "topology_a and topology_b required"}), 400
         conn = get_connection()
-        a_row = conn.execute(
-            "SELECT name, graph_json FROM topologies WHERE id=?",
-            (topo_a_id,)
-        ).fetchone()
-        b_row = conn.execute(
-            "SELECT name, graph_json FROM topologies WHERE id=?",
-            (topo_b_id,)
-        ).fetchone()
+        a_row = conn.execute("SELECT name, graph_json FROM topologies WHERE id=?", (topo_a_id,)).fetchone()
+        b_row = conn.execute("SELECT name, graph_json FROM topologies WHERE id=?", (topo_b_id,)).fetchone()
         conn.close()
         if not a_row or not b_row:
             return jsonify({"error": "Topology not found"}), 404
@@ -5927,12 +6490,8 @@ def create_network_blueprint():
         a_keys = set(a_nodes.keys())
         b_keys = set(b_nodes.keys())
 
-        only_a = [{"label": a_nodes[k].get("label"),
-                    "type": a_nodes[k].get("type")}
-                   for k in sorted(a_keys - b_keys)]
-        only_b = [{"label": b_nodes[k].get("label"),
-                    "type": b_nodes[k].get("type")}
-                   for k in sorted(b_keys - a_keys)]
+        only_a = [{"label": a_nodes[k].get("label"), "type": a_nodes[k].get("type")} for k in sorted(a_keys - b_keys)]
+        only_b = [{"label": b_nodes[k].get("label"), "type": b_nodes[k].get("type")} for k in sorted(b_keys - a_keys)]
         common = sorted(a_keys & b_keys)
 
         # Edges diff
@@ -5954,38 +6513,47 @@ def create_network_blueprint():
             t = n.get("type", "unknown")
             b_types[t] = b_types.get(t, 0) + 1
 
-        return jsonify({
-            "topology_a": {"id": topo_a_id, "name": a_row["name"],
-                           "nodes": len(ga.get("nodes", [])),
-                           "edges": len(ga.get("edges", [])),
-                           "types": a_types},
-            "topology_b": {"id": topo_b_id, "name": b_row["name"],
-                           "nodes": len(gb.get("nodes", [])),
-                           "edges": len(gb.get("edges", [])),
-                           "types": b_types},
-            "nodes_only_a": only_a,
-            "nodes_only_b": only_b,
-            "nodes_common": len(common),
-            "edges_only_a": len(a_ekeys - b_ekeys),
-            "edges_only_b": len(b_ekeys - a_ekeys),
-            "edges_common": len(a_ekeys & b_ekeys),
-            "similarity_pct": round(
-                len(common) * 100 / max(len(a_keys | b_keys), 1)
-            ),
-        })
+        return jsonify(
+            {
+                "topology_a": {
+                    "id": topo_a_id,
+                    "name": a_row["name"],
+                    "nodes": len(ga.get("nodes", [])),
+                    "edges": len(ga.get("edges", [])),
+                    "types": a_types,
+                },
+                "topology_b": {
+                    "id": topo_b_id,
+                    "name": b_row["name"],
+                    "nodes": len(gb.get("nodes", [])),
+                    "edges": len(gb.get("edges", [])),
+                    "types": b_types,
+                },
+                "nodes_only_a": only_a,
+                "nodes_only_b": only_b,
+                "nodes_common": len(common),
+                "edges_only_a": len(a_ekeys - b_ekeys),
+                "edges_only_b": len(b_ekeys - a_ekeys),
+                "edges_common": len(a_ekeys & b_ekeys),
+                "similarity_pct": round(len(common) * 100 / max(len(a_keys | b_keys), 1)),
+            }
+        )
 
     @bp.route("/projects/diff")
     @nc_login_required
     def nc_topology_diff_page():
         conn = get_connection()
-        topos = [_row_to_dict(r) for r in conn.execute(
-            "SELECT t.id, t.name, p.name AS project_name "
-            "FROM topologies t "
-            "LEFT JOIN nc_project_topologies pt "
-            "  ON pt.topology_id=t.id "
-            "LEFT JOIN nc_projects p ON p.id=pt.project_id "
-            "ORDER BY t.name"
-        ).fetchall()]
+        topos = [
+            _row_to_dict(r)
+            for r in conn.execute(
+                "SELECT t.id, t.name, p.name AS project_name "
+                "FROM topologies t "
+                "LEFT JOIN nc_project_topologies pt "
+                "  ON pt.topology_id=t.id "
+                "LEFT JOIN nc_projects p ON p.id=pt.project_id "
+                "ORDER BY t.name"
+            ).fetchall()
+        ]
         conn.close()
         return render_template("network/diff.html", topologies=topos)
 
@@ -5996,80 +6564,80 @@ def create_network_blueprint():
         """Auto-generate SAFe Feature + Stories from network project.
         Stores in nc_safe_bridge and returns the decomposition."""
         conn = get_connection()
-        proj = conn.execute(
-            "SELECT * FROM nc_projects WHERE id=?", (pid,)
-        ).fetchone()
+        proj = conn.execute("SELECT * FROM nc_projects WHERE id=?", (pid,)).fetchone()
         if not proj:
             conn.close()
             return jsonify({"error": "Not found"}), 404
         proj = _row_to_dict(proj)
 
-        topos = [_row_to_dict(r) for r in conn.execute(
-            "SELECT t.id, t.name, t.classification, "
-            "json_array_length(json_extract(t.graph_json,'$.nodes')) "
-            "  AS node_count "
-            "FROM topologies t "
-            "JOIN nc_project_topologies pt ON pt.topology_id=t.id "
-            "WHERE pt.project_id=?", (pid,)
-        ).fetchall()]
-        circuits = [_row_to_dict(r) for r in conn.execute(
-            "SELECT circuit_id, circuit_type, bandwidth "
-            "FROM nc_circuits WHERE topology_id IN "
-            "(SELECT topology_id FROM nc_project_topologies "
-            " WHERE project_id=?)", (pid,)
-        ).fetchall()]
+        topos = [
+            _row_to_dict(r)
+            for r in conn.execute(
+                "SELECT t.id, t.name, t.classification, "
+                "json_array_length(json_extract(t.graph_json,'$.nodes')) "
+                "  AS node_count "
+                "FROM topologies t "
+                "JOIN nc_project_topologies pt ON pt.topology_id=t.id "
+                "WHERE pt.project_id=?",
+                (pid,),
+            ).fetchall()
+        ]
+        circuits = [
+            _row_to_dict(r)
+            for r in conn.execute(
+                "SELECT circuit_id, circuit_type, bandwidth "
+                "FROM nc_circuits WHERE topology_id IN "
+                "(SELECT topology_id FROM nc_project_topologies "
+                " WHERE project_id=?)",
+                (pid,),
+            ).fetchall()
+        ]
 
         # Build SAFe hierarchy
         feature = {
             "level": "feature",
             "title": f"[Feature] {proj['name']}",
             "description": proj.get("description", ""),
-            "t_shirt_size": "L" if len(topos) > 2 else "M"
-                            if len(topos) > 0 else "S",
+            "t_shirt_size": "L" if len(topos) > 2 else "M" if len(topos) > 0 else "S",
             "status": "draft",
         }
         stories = []
         for t in topos:
             size = "M" if (t.get("node_count") or 0) > 20 else "S"
-            stories.append({
-                "level": "story",
-                "title": f"[Story] Implement {t['name']}",
-                "description": f"Network topology: {t['name']} "
-                               f"({t.get('node_count', 0)} nodes, "
-                               f"{t.get('classification', 'public')})",
-                "t_shirt_size": size,
-                "source_topology_id": t["id"],
-                "status": "draft",
-            })
+            stories.append(
+                {
+                    "level": "story",
+                    "title": f"[Story] Implement {t['name']}",
+                    "description": f"Network topology: {t['name']} "
+                    f"({t.get('node_count', 0)} nodes, "
+                    f"{t.get('classification', 'public')})",
+                    "t_shirt_size": size,
+                    "source_topology_id": t["id"],
+                    "status": "draft",
+                }
+            )
         enablers = []
         for c in circuits:
-            enablers.append({
-                "level": "enabler",
-                "title": f"[Enabler] Provision {c['circuit_id']}",
-                "description": f"{c.get('circuit_type', '')} "
-                               f"{c.get('bandwidth', '')}",
-                "t_shirt_size": "S",
-                "status": "draft",
-            })
+            enablers.append(
+                {
+                    "level": "enabler",
+                    "title": f"[Enabler] Provision {c['circuit_id']}",
+                    "description": f"{c.get('circuit_type', '')} {c.get('bandwidth', '')}",
+                    "t_shirt_size": "S",
+                    "status": "draft",
+                }
+            )
 
         # WSJF scoring (simplified)
         tshirt_pts = {"XS": 1, "S": 2, "M": 3, "L": 5, "XL": 8}
-        feature["wsjf_score"] = round(
-            7 / tshirt_pts.get(feature["t_shirt_size"], 3), 1
-        )
+        feature["wsjf_score"] = round(7 / tshirt_pts.get(feature["t_shirt_size"], 3), 1)
         for s in stories:
-            s["wsjf_score"] = round(
-                5 / tshirt_pts.get(s["t_shirt_size"], 2), 1
-            )
+            s["wsjf_score"] = round(5 / tshirt_pts.get(s["t_shirt_size"], 2), 1)
         for e in enablers:
-            e["wsjf_score"] = round(
-                4 / tshirt_pts.get(e["t_shirt_size"], 2), 1
-            )
+            e["wsjf_score"] = round(4 / tshirt_pts.get(e["t_shirt_size"], 2), 1)
 
         # Update SAFe bridge
-        bridge = conn.execute(
-            "SELECT id FROM nc_safe_bridge WHERE project_id=?", (pid,)
-        ).fetchone()
+        bridge = conn.execute("SELECT id FROM nc_safe_bridge WHERE project_id=?", (pid,)).fetchone()
         now = _now()
         decomposition = {
             "feature": feature,
@@ -6079,34 +6647,36 @@ def create_network_blueprint():
         decomp_json = json.dumps(decomposition)
         if bridge:
             conn.execute(
-                "UPDATE nc_safe_bridge SET safe_feature_id=?, "
-                "updated_at=? WHERE project_id=?",
-                (decomp_json, now, pid)
+                "UPDATE nc_safe_bridge SET safe_feature_id=?, updated_at=? WHERE project_id=?", (decomp_json, now, pid)
             )
         else:
             conn.execute(
                 "INSERT INTO nc_safe_bridge "
                 "(id, project_id, safe_feature_id, created_at, "
                 " updated_at) VALUES (?,?,?,?,?)",
-                (str(_uuid.uuid4()), pid, decomp_json, now, now)
+                (str(_uuid.uuid4()), pid, decomp_json, now, now),
             )
         conn.commit()
 
-        _notify(conn, pid, "decomposition",
-                f"SAFe decomposition: 1 Feature, {len(stories)} Stories, "
-                f"{len(enablers)} Enablers",
-                f"WSJF={feature['wsjf_score']}")
+        _notify(
+            conn,
+            pid,
+            "decomposition",
+            f"SAFe decomposition: 1 Feature, {len(stories)} Stories, {len(enablers)} Enablers",
+            f"WSJF={feature['wsjf_score']}",
+        )
         conn.commit()
         conn.close()
-        _audit("DECOMPOSE", "project", pid,
-               f"{len(stories)} stories, {len(enablers)} enablers")
+        _audit("DECOMPOSE", "project", pid, f"{len(stories)} stories, {len(enablers)} enablers")
 
-        return jsonify({
-            "feature": feature,
-            "stories": stories,
-            "enablers": enablers,
-            "total_items": 1 + len(stories) + len(enablers),
-        })
+        return jsonify(
+            {
+                "feature": feature,
+                "stories": stories,
+                "enablers": enablers,
+                "total_items": 1 + len(stories) + len(enablers),
+            }
+        )
 
     # ── Global Topology Canvas (JointJS read-only composite) ──────────────
     @bp.route("/global/canvas")
@@ -6128,9 +6698,7 @@ def create_network_blueprint():
             "WHERE p.status IN ('approved','deployed') "
             "ORDER BY p.name, t.name"
         ).fetchall()
-        interconnects = [_row_to_dict(r) for r in conn.execute(
-            "SELECT * FROM nc_interconnects"
-        ).fetchall()]
+        interconnects = [_row_to_dict(r) for r in conn.execute("SELECT * FROM nc_interconnects").fetchall()]
         conn.close()
 
         # Build composite graph with project-namespaced node IDs
@@ -6148,48 +6716,59 @@ def create_network_blueprint():
             group_nodes = []
             for n in g.get("nodes", []):
                 nid = f"{prefix}_{n['id']}"
-                all_nodes.append({
-                    "id": nid,
-                    "label": n.get("label", ""),
-                    "type": n.get("type", ""),
-                    "x": (n.get("x", 0) or 0) + offset_x,
-                    "y": n.get("y", 0) or 0,
-                    "project": r["project_name"],
-                    "topology": r["name"],
-                })
+                all_nodes.append(
+                    {
+                        "id": nid,
+                        "label": n.get("label", ""),
+                        "type": n.get("type", ""),
+                        "x": (n.get("x", 0) or 0) + offset_x,
+                        "y": n.get("y", 0) or 0,
+                        "project": r["project_name"],
+                        "topology": r["name"],
+                    }
+                )
                 group_nodes.append(nid)
             for e in g.get("edges", []):
-                all_edges.append({
-                    "source": f"{prefix}_{e['source']}",
-                    "target": f"{prefix}_{e['target']}",
-                    "label": e.get("label", ""),
-                    "protocol": e.get("protocol", ""),
-                })
-            project_groups.append({
-                "project": r["project_name"],
-                "topology": r["name"],
-                "node_ids": group_nodes,
-                "x": offset_x, "y": 0,
-            })
+                all_edges.append(
+                    {
+                        "source": f"{prefix}_{e['source']}",
+                        "target": f"{prefix}_{e['target']}",
+                        "label": e.get("label", ""),
+                        "protocol": e.get("protocol", ""),
+                    }
+                )
+            project_groups.append(
+                {
+                    "project": r["project_name"],
+                    "topology": r["name"],
+                    "node_ids": group_nodes,
+                    "x": offset_x,
+                    "y": 0,
+                }
+            )
             offset_x += 600
 
         # Add interconnect edges
         for ic in interconnects:
-            all_edges.append({
-                "source": f"ic_src_{ic['id'][:8]}",
-                "target": f"ic_dst_{ic['id'][:8]}",
-                "label": ic.get("circuit_id", ""),
-                "protocol": ic.get("protocol", ""),
-                "is_interconnect": True,
-            })
+            all_edges.append(
+                {
+                    "source": f"ic_src_{ic['id'][:8]}",
+                    "target": f"ic_dst_{ic['id'][:8]}",
+                    "label": ic.get("circuit_id", ""),
+                    "protocol": ic.get("protocol", ""),
+                    "is_interconnect": True,
+                }
+            )
 
-        return jsonify({
-            "nodes": all_nodes,
-            "edges": all_edges,
-            "groups": project_groups,
-            "total_nodes": len(all_nodes),
-            "total_edges": len(all_edges),
-        })
+        return jsonify(
+            {
+                "nodes": all_nodes,
+                "edges": all_edges,
+                "groups": project_groups,
+                "total_nodes": len(all_nodes),
+                "total_edges": len(all_edges),
+            }
+        )
 
     # ══════════════════════════════════════════════════════════════════════
     # API: CSP Groups
@@ -6224,13 +6803,20 @@ def create_network_blueprint():
                     graph = {"nodes": [], "edges": []}
                 for comp in CSP_GROUP_DEFAULTS[csp]:
                     nid = f"{csp}-{str(_uuid.uuid4())[:8]}"
-                    graph["nodes"].append({
-                        "id": nid, "label": comp["label"], "type": comp["type"],
-                        "x": pos_x + comp["dx"], "y": pos_y + comp["dy"], "group_id": gid,
-                    })
+                    graph["nodes"].append(
+                        {
+                            "id": nid,
+                            "label": comp["label"],
+                            "type": comp["type"],
+                            "x": pos_x + comp["dx"],
+                            "y": pos_y + comp["dy"],
+                            "group_id": gid,
+                        }
+                    )
                     auto_nodes.append(nid)
-                conn.execute("UPDATE topologies SET graph_json=?, updated_at=? WHERE id=?",
-                             (json.dumps(graph), now, topo_id))
+                conn.execute(
+                    "UPDATE topologies SET graph_json=?, updated_at=? WHERE id=?", (json.dumps(graph), now, topo_id)
+                )
                 conn.commit()
             conn.close()
         csp_labels = {"aws": "AWS", "azure": "Azure", "gcp": "GCP", "oci": "OCI", "ibm": "IBM Cloud"}
@@ -6240,10 +6826,23 @@ def create_network_blueprint():
             "INSERT INTO nc_groups (id, topology_id, parent_id, csp, group_type, label, description, "
             "auto_nodes_json, pos_x, pos_y, width, height, color, collapsed, created_at) "
             "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (gid, topo_id, data.get("parent_id"), csp, group_type, label,
-             data.get("description", ""), json.dumps(auto_nodes),
-             pos_x, pos_y, data.get("width", 400), data.get("height", 300),
-             data.get("color"), 0, now)
+            (
+                gid,
+                topo_id,
+                data.get("parent_id"),
+                csp,
+                group_type,
+                label,
+                data.get("description", ""),
+                json.dumps(auto_nodes),
+                pos_x,
+                pos_y,
+                data.get("width", 400),
+                data.get("height", 300),
+                data.get("color"),
+                0,
+                now,
+            ),
         )
         conn.commit()
         conn.close()
@@ -6255,7 +6854,18 @@ def create_network_blueprint():
     def nc_api_update_group(topo_id, gid):
         data = request.get_json(force=True, silent=True) or {}
         conn = get_connection()
-        allowed = ["parent_id", "label", "description", "pos_x", "pos_y", "width", "height", "color", "collapsed", "group_type"]
+        allowed = [
+            "parent_id",
+            "label",
+            "description",
+            "pos_x",
+            "pos_y",
+            "width",
+            "height",
+            "color",
+            "collapsed",
+            "group_type",
+        ]
         fields, values = [], []
         for k in allowed:
             if k in data:
@@ -6283,9 +6893,13 @@ def create_network_blueprint():
                     if topo:
                         graph = json.loads(topo["graph_json"])
                         graph["nodes"] = [n for n in graph["nodes"] if n["id"] not in auto_ids]
-                        graph["edges"] = [e for e in graph["edges"] if e["source"] not in auto_ids and e["target"] not in auto_ids]
-                        conn.execute("UPDATE topologies SET graph_json=?, updated_at=? WHERE id=?",
-                                     (json.dumps(graph), _now(), topo_id))
+                        graph["edges"] = [
+                            e for e in graph["edges"] if e["source"] not in auto_ids and e["target"] not in auto_ids
+                        ]
+                        conn.execute(
+                            "UPDATE topologies SET graph_json=?, updated_at=? WHERE id=?",
+                            (json.dumps(graph), _now(), topo_id),
+                        )
             except Exception:
                 pass
         conn.execute("DELETE FROM nc_groups WHERE parent_id=?", (gid,))
@@ -6309,9 +6923,19 @@ def create_network_blueprint():
             tags.add("NET-BND-001: Perimeter Firewall Boundary")
         # Encryption devices → FIPS boundary
         enc_types = {
-            "fips-140-l1", "fips-140-l2", "fips-140-l3", "fips-140-l4",
-            "hsm", "type1-encryptor", "kg-175d", "kg-175g", "kg-250",
-            "kg-340", "kg-245x", "kg-255", "macsec",
+            "fips-140-l1",
+            "fips-140-l2",
+            "fips-140-l3",
+            "fips-140-l4",
+            "hsm",
+            "type1-encryptor",
+            "kg-175d",
+            "kg-175g",
+            "kg-250",
+            "kg-340",
+            "kg-245x",
+            "kg-255",
+            "macsec",
         }
         if type_set & enc_types:
             tags.add("NET-ENC-BND: FIPS 140 Encryption Boundary")
@@ -6381,9 +7005,7 @@ def create_network_blueprint():
         node_types = []
         if node_ids:
             conn = get_connection()
-            topo = conn.execute(
-                "SELECT graph_json FROM topologies WHERE id=?", (topo_id,)
-            ).fetchone()
+            topo = conn.execute("SELECT graph_json FROM topologies WHERE id=?", (topo_id,)).fetchone()
             conn.close()
             if topo:
                 try:
@@ -6391,9 +7013,7 @@ def create_network_blueprint():
                 except Exception:
                     graph = {"nodes": []}
                 nid_set = set(node_ids)
-                node_types = [
-                    n["type"] for n in graph.get("nodes", []) if n["id"] in nid_set
-                ]
+                node_types = [n["type"] for n in graph.get("nodes", []) if n["id"] in nid_set]
 
         stig_tags = data.get("stig_tags") or _auto_stig_tags(node_types)
 
@@ -6423,21 +7043,42 @@ def create_network_blueprint():
             "node_ids, stig_tags, pos_x, pos_y, width, height, snap_grid, notes, "
             "created_at, updated_at) "
             "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (bid, topo_id, label, classification, color,
-             data.get("fill_opacity", 0.08),
-             json.dumps(node_ids), json.dumps(stig_tags),
-             pos_x, pos_y, width, height, snap,
-             data.get("notes", ""), now, now),
+            (
+                bid,
+                topo_id,
+                label,
+                classification,
+                color,
+                data.get("fill_opacity", 0.08),
+                json.dumps(node_ids),
+                json.dumps(stig_tags),
+                pos_x,
+                pos_y,
+                width,
+                height,
+                snap,
+                data.get("notes", ""),
+                now,
+                now,
+            ),
         )
         conn.commit()
         conn.close()
         _audit("CREATE", "boundary", bid, f"{classification} — {label}")
-        return jsonify({
-            "id": bid, "label": label, "classification": classification,
-            "color": color, "stig_tags": stig_tags,
-            "pos_x": pos_x, "pos_y": pos_y, "width": width, "height": height,
-            "node_ids": node_ids,
-        }), 201
+        return jsonify(
+            {
+                "id": bid,
+                "label": label,
+                "classification": classification,
+                "color": color,
+                "stig_tags": stig_tags,
+                "pos_x": pos_x,
+                "pos_y": pos_y,
+                "width": width,
+                "height": height,
+                "node_ids": node_ids,
+            }
+        ), 201
 
     @bp.route("/api/boundaries/<topo_id>/<bid>", methods=["PUT"])
     @nc_login_required
@@ -6445,9 +7086,18 @@ def create_network_blueprint():
         data = request.get_json(force=True, silent=True) or {}
         conn = get_connection()
         allowed = [
-            "label", "classification", "color", "fill_opacity",
-            "node_ids", "stig_tags", "pos_x", "pos_y", "width", "height",
-            "snap_grid", "notes",
+            "label",
+            "classification",
+            "color",
+            "fill_opacity",
+            "node_ids",
+            "stig_tags",
+            "pos_x",
+            "pos_y",
+            "width",
+            "height",
+            "snap_grid",
+            "notes",
         ]
         fields, values = [], []
         for k in allowed:
@@ -6496,9 +7146,7 @@ def create_network_blueprint():
         padding = data.get("padding", 40)
 
         conn = get_connection()
-        topo = conn.execute(
-            "SELECT graph_json FROM topologies WHERE id=?", (topo_id,)
-        ).fetchone()
+        topo = conn.execute("SELECT graph_json FROM topologies WHERE id=?", (topo_id,)).fetchone()
         conn.close()
         if not topo:
             return jsonify({"error": "Topology not found"}), 404
@@ -6556,20 +7204,44 @@ def create_network_blueprint():
             "node_ids, stig_tags, pos_x, pos_y, width, height, snap_grid, notes, "
             "created_at, updated_at) "
             "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (bid, topo_id, label, classification, color, 0.08,
-             json.dumps(node_ids), json.dumps(stig_tags),
-             pos_x, pos_y, width, height, snap,
-             data.get("notes", ""), now, now),
+            (
+                bid,
+                topo_id,
+                label,
+                classification,
+                color,
+                0.08,
+                json.dumps(node_ids),
+                json.dumps(stig_tags),
+                pos_x,
+                pos_y,
+                width,
+                height,
+                snap,
+                data.get("notes", ""),
+                now,
+                now,
+            ),
         )
         conn.commit()
         conn.close()
         _audit("CREATE", "boundary", bid, f"auto-fence {classification} — {len(matched)} nodes")
-        return jsonify({
-            "id": bid, "label": label, "classification": classification,
-            "color": color, "fill_opacity": 0.08, "stig_tags": stig_tags,
-            "pos_x": pos_x, "pos_y": pos_y, "width": width, "height": height,
-            "node_ids": node_ids, "node_count": len(matched),
-        }), 201
+        return jsonify(
+            {
+                "id": bid,
+                "label": label,
+                "classification": classification,
+                "color": color,
+                "fill_opacity": 0.08,
+                "stig_tags": stig_tags,
+                "pos_x": pos_x,
+                "pos_y": pos_y,
+                "width": width,
+                "height": height,
+                "node_ids": node_ids,
+                "node_count": len(matched),
+            }
+        ), 201
 
     # ══════════════════════════════════════════════════════════════════════
     # API: Monte Carlo Simulation
@@ -6579,7 +7251,9 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_list_mc_scenarios(topo_id):
         conn = get_connection()
-        rows = conn.execute("SELECT * FROM nc_mc_scenarios WHERE topology_id=? ORDER BY created_at DESC", (topo_id,)).fetchall()
+        rows = conn.execute(
+            "SELECT * FROM nc_mc_scenarios WHERE topology_id=? ORDER BY created_at DESC", (topo_id,)
+        ).fetchall()
         conn.close()
         return jsonify([_row_to_dict(r) for r in rows])
 
@@ -6593,9 +7267,15 @@ def create_network_blueprint():
         conn.execute(
             "INSERT INTO nc_mc_scenarios (id, topology_id, name, scenario_type, description, config_json, created_at) "
             "VALUES (?,?,?,?,?,?,?)",
-            (sid, topo_id, data.get("name", "Untitled Scenario"),
-             data.get("scenario_type", "random"), data.get("description", ""),
-             json.dumps(data.get("config", {})), now)
+            (
+                sid,
+                topo_id,
+                data.get("name", "Untitled Scenario"),
+                data.get("scenario_type", "random"),
+                data.get("description", ""),
+                json.dumps(data.get("config", {})),
+                now,
+            ),
         )
         conn.commit()
         conn.close()
@@ -6627,16 +7307,27 @@ def create_network_blueprint():
             config = {}
         data = request.get_json(force=True, silent=True) or {}
         iterations = data.get("iterations", config.get("iterations", 1000))
-        result = run_monte_carlo(graph=graph, scenario_name=scenario["name"],
-                                  scenario_type=scenario["scenario_type"],
-                                  config=config, iterations=iterations)
+        result = run_monte_carlo(
+            graph=graph,
+            scenario_name=scenario["name"],
+            scenario_type=scenario["scenario_type"],
+            config=config,
+            iterations=iterations,
+        )
         run_id = str(_uuid.uuid4())
         now = _now()
         conn.execute(
             "INSERT INTO nc_mc_runs (id, scenario_id, topology_id, iterations, result_json, ai_recommendations, ran_at) "
             "VALUES (?,?,?,?,?,?,?)",
-            (run_id, scenario_id, topo_id, iterations, json.dumps(result),
-             "\n".join(result.get("recommendations", [])), now)
+            (
+                run_id,
+                scenario_id,
+                topo_id,
+                iterations,
+                json.dumps(result),
+                "\n".join(result.get("recommendations", [])),
+                now,
+            ),
         )
         conn.commit()
         conn.close()
@@ -6651,7 +7342,8 @@ def create_network_blueprint():
             "SELECT r.id, r.scenario_id, r.iterations, r.ran_at, r.ai_recommendations, "
             "s.name AS scenario_name, s.scenario_type "
             "FROM nc_mc_runs r JOIN nc_mc_scenarios s ON s.id=r.scenario_id "
-            "WHERE r.topology_id=? ORDER BY r.ran_at DESC", (topo_id,)
+            "WHERE r.topology_id=? ORDER BY r.ran_at DESC",
+            (topo_id,),
         ).fetchall()
         conn.close()
         return jsonify([_row_to_dict(r) for r in rows])
@@ -6712,8 +7404,15 @@ def create_network_blueprint():
             conn.execute(
                 "INSERT INTO nc_backups (id, backup_type, file_path, file_size_bytes, includes_json, notes, created_at) "
                 "VALUES (?,?,?,?,?,?,?)",
-                (backup_id, data.get("backup_type", "manual"), str(zip_path), file_size,
-                 json.dumps(includes), data.get("notes", ""), now)
+                (
+                    backup_id,
+                    data.get("backup_type", "manual"),
+                    str(zip_path),
+                    file_size,
+                    json.dumps(includes),
+                    data.get("notes", ""),
+                    now,
+                ),
             )
             conn.commit()
             conn.close()
@@ -6771,7 +7470,7 @@ def create_network_blueprint():
         conn.execute(
             "INSERT INTO topologies (id, name, description, graph_json, template_id, classification, created_at, updated_at) "
             "VALUES (?,?,?,?,?,?,?,?)",
-            (new_id, name, row["description"], row["graph_json"], row["template_id"], row["classification"], now, now)
+            (new_id, name, row["description"], row["graph_json"], row["template_id"], row["classification"], now, now),
         )
         conn.commit()
         conn.close()
@@ -6793,7 +7492,7 @@ def create_network_blueprint():
         tags = json.dumps(data.get("tags", ["custom", "user-created"]))
         conn.execute(
             "INSERT INTO nc_templates (id, name, category, description, graph_json, tags) VALUES (?,?,?,?,?,?)",
-            (tpl_id, name, category, data.get("description", row["description"] or ""), row["graph_json"], tags)
+            (tpl_id, name, category, data.get("description", row["description"] or ""), row["graph_json"], tags),
         )
         conn.commit()
         conn.close()
@@ -6888,7 +7587,7 @@ Output ONLY the JSON object. No other text."""
         def _parse_llm_response(content):
             """Extract and validate JSON from LLM response text."""
             text = content.strip()
-            text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip()
+            text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
             if text.startswith("```"):
                 lines = text.split("\n")
                 lines = [ln for ln in lines if not ln.strip().startswith("```")]
@@ -6992,18 +7691,21 @@ Output ONLY the JSON object. No other text."""
             # Apply deterministic style rules (zone ordering, label deconfliction, legend)
             try:
                 from tools.network.topology_styler import style_topology
+
                 graph_json = style_topology(graph_json)
             except Exception as style_err:
                 logger.warning("Topology styler failed (non-fatal): %s", style_err)
 
             _audit("AI_GENERATE", "topology", "", f"[{used_provider}] Generated from: {description[:100]}")
-            return jsonify({
-                "graph_json": graph_json,
-                "description": description,
-                "node_count": len(graph_json["nodes"]),
-                "edge_count": len(graph_json["edges"]),
-                "provider": used_provider,
-            })
+            return jsonify(
+                {
+                    "graph_json": graph_json,
+                    "description": description,
+                    "node_count": len(graph_json["nodes"]),
+                    "edge_count": len(graph_json["edges"]),
+                    "provider": used_provider,
+                }
+            )
 
         except _req.exceptions.ConnectionError:
             return jsonify({"error": "Cannot connect to LLM provider"}), 503
@@ -7060,9 +7762,7 @@ Output ONLY the JSON object. No other text."""
         # Load groups for region filtering
         groups = []
         if region_id:
-            rows = conn.execute(
-                "SELECT * FROM nc_groups WHERE topology_id=?", (topo_id,)
-            ).fetchall()
+            rows = conn.execute("SELECT * FROM nc_groups WHERE topology_id=?", (topo_id,)).fetchall()
             groups = [_row_to_dict(r) for r in rows]
 
         # Check for as-built version
@@ -7100,21 +7800,31 @@ Output ONLY the JSON object. No other text."""
             "compliance_score, created_by, created_at) "
             "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
-                pkg_id, topo_id, region_id, system_name, classification,
-                json.dumps(regimes), json.dumps(package),
+                pkg_id,
+                topo_id,
+                region_id,
+                system_name,
+                classification,
+                json.dumps(regimes),
+                json.dumps(package),
                 json.dumps(package["summary"]),
                 package["summary"]["overall_readiness"],
                 package["summary"]["stig_pass_rate"],
                 package["summary"]["compliance_score"],
-                user_id, now,
+                user_id,
+                now,
             ),
         )
         conn.commit()
         conn.close()
 
-        _audit("ATO_GENERATE", "topology", topo_id,
-               f"ATO package {pkg_id[:8]} | readiness={package['summary']['overall_readiness']} "
-               f"| region={region_id or 'full'}")
+        _audit(
+            "ATO_GENERATE",
+            "topology",
+            topo_id,
+            f"ATO package {pkg_id[:8]} | readiness={package['summary']['overall_readiness']} "
+            f"| region={region_id or 'full'}",
+        )
 
         return jsonify(package), 201
 
@@ -7194,7 +7904,8 @@ Output ONLY the JSON object. No other text."""
         metric = request.args.get("metric", "bandwidth")
         conn = get_connection()
         topo = conn.execute(
-            "SELECT id, graph_json FROM topologies WHERE id=?", (topo_id,),
+            "SELECT id, graph_json FROM topologies WHERE id=?",
+            (topo_id,),
         ).fetchone()
         if not topo:
             conn.close()
@@ -7252,8 +7963,7 @@ Output ONLY the JSON object. No other text."""
         elif metric == "stig":
             # STIG import results — per-host pass rate
             stig_rows = conn.execute(
-                "SELECT result_json FROM nc_stig_imports "
-                "WHERE topology_id=? ORDER BY imported_at DESC LIMIT 1",
+                "SELECT result_json FROM nc_stig_imports WHERE topology_id=? ORDER BY imported_at DESC LIMIT 1",
                 (topo_id,),
             ).fetchone()
             host_compliance = {}
@@ -7294,39 +8004,34 @@ Output ONLY the JSON object. No other text."""
                     if dval:
                         try:
                             dt = datetime.fromisoformat(
-                                dval + "T00:00:00+00:00"
-                                if "T" not in dval else
-                                dval.replace("Z", "+00:00"))
+                                dval + "T00:00:00+00:00" if "T" not in dval else dval.replace("Z", "+00:00")
+                            )
                             if now >= dt:
                                 score = max(score, weight)
                                 pass  # past EOL/EOS/EoSup
                             else:
                                 months_left = (dt - now).days / 30.44
                                 if months_left < 6:
-                                    score = max(
-                                        score, weight * 0.8)
+                                    score = max(score, weight * 0.8)
                                 elif months_left < 12:
-                                    score = max(
-                                        score, weight * 0.5)
+                                    score = max(score, weight * 0.5)
                                 elif months_left < 24:
-                                    score = max(
-                                        score, weight * 0.2)
+                                    score = max(score, weight * 0.2)
                         except (ValueError, TypeError):
                             pass
 
                 # Fall back to install_date age
                 if score == 0.0:
-                    install_date = (cfg.get("install_date")
-                                    or cfg.get("installDate"))
+                    install_date = cfg.get("install_date") or cfg.get("installDate")
                     if install_date:
                         try:
                             dt = datetime.fromisoformat(
                                 install_date + "T00:00:00+00:00"
-                                if "T" not in install_date else
-                                install_date.replace("Z", "+00:00"))
+                                if "T" not in install_date
+                                else install_date.replace("Z", "+00:00")
+                            )
                             age_years = (now - dt).days / 365.25
-                            score = max(
-                                0.0, min(1.0, age_years / 10.0))
+                            score = max(0.0, min(1.0, age_years / 10.0))
                             pass  # age computed
                         except (ValueError, TypeError):
                             pass
@@ -7334,11 +8039,13 @@ Output ONLY the JSON object. No other text."""
                 node_values[n["id"]] = round(score, 3)
 
         conn.close()
-        return jsonify({
-            "metric": metric,
-            "node_values": node_values,
-            "link_values": link_values,
-        })
+        return jsonify(
+            {
+                "metric": metric,
+                "node_values": node_values,
+                "link_values": link_values,
+            }
+        )
 
     # ── Tech Debt Analysis ──────────────────────────────────────────────
     @bp.route("/api/tech-debt/<topo_id>", methods=["GET"])
@@ -7346,10 +8053,7 @@ Output ONLY the JSON object. No other text."""
     def nc_api_tech_debt(topo_id):
         """Analyze lifecycle/tech debt across all devices in a topology."""
         conn = get_connection()
-        row = conn.execute(
-            "SELECT graph_json, name FROM topologies WHERE id=?",
-            (topo_id,)
-        ).fetchone()
+        row = conn.execute("SELECT graph_json, name FROM topologies WHERE id=?", (topo_id,)).fetchone()
         conn.close()
         if not row:
             return jsonify({"error": "Not found"}), 404
@@ -7370,10 +8074,22 @@ Output ONLY the JSON object. No other text."""
             cfg = n.get("config") or n.get("configData") or {}
             ntype = n.get("type", "")
             # Skip drawing shapes and text
-            if ntype in ("rect", "circle", "text", "heading",
-                         "badge", "hline", "vline", "arrow",
-                         "diamond", "ellipse", "triangle",
-                         "hexagon", "star", "roundedrect"):
+            if ntype in (
+                "rect",
+                "circle",
+                "text",
+                "heading",
+                "badge",
+                "hline",
+                "vline",
+                "arrow",
+                "diamond",
+                "ellipse",
+                "triangle",
+                "hexagon",
+                "star",
+                "roundedrect",
+            ):
                 continue
 
             device = {
@@ -7402,12 +8118,10 @@ Output ONLY the JSON object. No other text."""
                     has_lifecycle = True
                     try:
                         dt = datetime.fromisoformat(
-                            dval + "T00:00:00+00:00"
-                            if "T" not in dval else
-                            dval.replace("Z", "+00:00"))
+                            dval + "T00:00:00+00:00" if "T" not in dval else dval.replace("Z", "+00:00")
+                        )
                         if now >= dt:
-                            device["issues"].append(
-                                f"PAST {label}: {dval}")
+                            device["issues"].append(f"PAST {label}: {dval}")
                             if dkey == "eol_date":
                                 past_eol += 1
                             elif dkey == "eos_date":
@@ -7417,9 +8131,7 @@ Output ONLY the JSON object. No other text."""
                         else:
                             months = (dt - now).days / 30.44
                             if months < 12:
-                                device["issues"].append(
-                                    f"{label} in {int(months)} months: "
-                                    f"{dval}")
+                                device["issues"].append(f"{label} in {int(months)} months: {dval}")
                                 if dkey == "eol_date":
                                     approaching_eol += 1
                     except (ValueError, TypeError):
@@ -7430,13 +8142,11 @@ Output ONLY the JSON object. No other text."""
                 has_lifecycle = True
                 try:
                     dt = datetime.fromisoformat(
-                        install + "T00:00:00+00:00"
-                        if "T" not in install else
-                        install.replace("Z", "+00:00"))
+                        install + "T00:00:00+00:00" if "T" not in install else install.replace("Z", "+00:00")
+                    )
                     age = (now - dt).days / 365.25
                     if age > 7:
-                        device["issues"].append(
-                            f"Equipment age: {age:.1f} years (>7yr)")
+                        device["issues"].append(f"Equipment age: {age:.1f} years (>7yr)")
                 except (ValueError, TypeError):
                     pass
 
@@ -7462,24 +8172,23 @@ Output ONLY the JSON object. No other text."""
         critical = sum(1 for d in devices if d["risk_level"] == "critical")
         high = sum(1 for d in devices if d["risk_level"] == "high")
 
-        return jsonify({
-            "topology": row["name"],
-            "total_devices": total,
-            "devices": devices,
-            "summary": {
-                "past_eol": past_eol,
-                "past_eos": past_eos,
-                "past_eosup": past_eosup,
-                "approaching_eol_12mo": approaching_eol,
-                "no_lifecycle_data": no_lifecycle,
-                "critical_risk": critical,
-                "high_risk": high,
-                "tech_debt_score": round(
-                    (critical * 4 + high * 2 + approaching_eol) /
-                    max(total, 1) * 25, 1
-                ),
-            },
-        })
+        return jsonify(
+            {
+                "topology": row["name"],
+                "total_devices": total,
+                "devices": devices,
+                "summary": {
+                    "past_eol": past_eol,
+                    "past_eos": past_eos,
+                    "past_eosup": past_eosup,
+                    "approaching_eol_12mo": approaching_eol,
+                    "no_lifecycle_data": no_lifecycle,
+                    "critical_risk": critical,
+                    "high_risk": high,
+                    "tech_debt_score": round((critical * 4 + high * 2 + approaching_eol) / max(total, 1) * 25, 1),
+                },
+            }
+        )
 
     # ── IPv6 Readiness Assessment ───────────────────────────────────────
     @bp.route("/api/ipv6-readiness/<topo_id>", methods=["GET"])
@@ -7488,10 +8197,7 @@ Output ONLY the JSON object. No other text."""
         """Assess IPv6 readiness of a topology: device capability,
         addressing gaps, migration status."""
         conn = get_connection()
-        row = conn.execute(
-            "SELECT graph_json, name FROM topologies WHERE id=?",
-            (topo_id,)
-        ).fetchone()
+        row = conn.execute("SELECT graph_json, name FROM topologies WHERE id=?", (topo_id,)).fetchone()
         conn.close()
         if not row:
             return jsonify({"error": "Not found"}), 404
@@ -7506,9 +8212,18 @@ Output ONLY the JSON object. No other text."""
         has_v6_addr = 0
         has_v4_only = 0
         dual_stack = 0
-        infra_types = {"router", "switch-l3", "switch-l2", "firewall",
-                       "mpls-pe", "mpls-p", "route-reflector",
-                       "load-balancer", "sdwan-edge", "wlc"}
+        infra_types = {
+            "router",
+            "switch-l3",
+            "switch-l2",
+            "firewall",
+            "mpls-pe",
+            "mpls-p",
+            "route-reflector",
+            "load-balancer",
+            "sdwan-edge",
+            "wlc",
+        }
 
         for n in nodes:
             ntype = n.get("type", "")
@@ -7538,39 +8253,31 @@ Output ONLY the JSON object. No other text."""
 
             issues = []
             if cap == "no":
-                issues.append("Device does NOT support IPv6 — "
-                              "requires hardware/software upgrade")
+                issues.append("Device does NOT support IPv6 — requires hardware/software upgrade")
             elif cap == "partial":
-                issues.append("Limited IPv6 support — "
-                              "verify feature set")
+                issues.append("Limited IPv6 support — verify feature set")
             elif cap == "":
-                issues.append("IPv6 capability unknown — "
-                              "verify and update device properties")
+                issues.append("IPv6 capability unknown — verify and update device properties")
             if has_v4 and not has_v6 and af != "ipv4":
-                issues.append("IPv4 configured but no IPv6 address — "
-                              "add IPv6 for dual-stack")
+                issues.append("IPv4 configured but no IPv6 address — add IPv6 for dual-stack")
 
-            devices.append({
-                "id": n.get("id"),
-                "label": n.get("label", ""),
-                "type": ntype,
-                "ipv6_capable": cap or "unknown",
-                "address_family": af or ("dual-stack" if has_v6 and has_v4
-                                         else "ipv6" if has_v6
-                                         else "ipv4" if has_v4
-                                         else "none"),
-                "has_ipv4": has_v4,
-                "has_ipv6": has_v6,
-                "issues": issues,
-            })
+            devices.append(
+                {
+                    "id": n.get("id"),
+                    "label": n.get("label", ""),
+                    "type": ntype,
+                    "ipv6_capable": cap or "unknown",
+                    "address_family": af
+                    or ("dual-stack" if has_v6 and has_v4 else "ipv6" if has_v6 else "ipv4" if has_v4 else "none"),
+                    "has_ipv4": has_v4,
+                    "has_ipv6": has_v6,
+                    "issues": issues,
+                }
+            )
 
         total = len(devices)
-        ready_pct = round(
-            capable_yes * 100 / max(total, 1)
-        )
-        dual_pct = round(
-            dual_stack * 100 / max(total, 1)
-        )
+        ready_pct = round(capable_yes * 100 / max(total, 1))
+        dual_pct = round(dual_stack * 100 / max(total, 1))
 
         # Migration recommendation
         if capable_no > 0:
@@ -7592,14 +8299,14 @@ Output ONLY the JSON object. No other text."""
             )
         else:
             recommendation = (
-                "All infrastructure devices are dual-stack. "
-                "Proceed to Phase 4: Access layer and endpoint rollout."
+                "All infrastructure devices are dual-stack. Proceed to Phase 4: Access layer and endpoint rollout."
             )
 
         # Load IPv6 rules from design rules
         _dr = {}
         try:
             import yaml as _yaml_v6
+
             _v6_path = _ICDEV_ROOT / "args" / "network_design_rules.yaml"
             if _v6_path.exists():
                 with open(_v6_path, encoding="utf-8") as _v6f:
@@ -7608,28 +8315,28 @@ Output ONLY the JSON object. No other text."""
             pass
         ipv6_rules = _dr.get("ipv6_rules", {})
 
-        return jsonify({
-            "topology": row["name"],
-            "total_devices": total,
-            "devices": devices,
-            "summary": {
-                "capable_yes": capable_yes,
-                "capable_no": capable_no,
-                "capable_partial": capable_partial,
-                "capable_unknown": capable_unknown,
-                "readiness_pct": ready_pct,
-                "dual_stack_count": dual_stack,
-                "dual_stack_pct": dual_pct,
-                "ipv4_only_count": has_v4_only,
-                "ipv6_only_count": has_v6_addr,
-            },
-            "recommendation": recommendation,
-            "migration_phases": ipv6_rules.get(
-                "migration_phases", {}),
-            "transition_mechanisms": ipv6_rules.get(
-                "transition_mechanisms", {}),
-            "security_checklist": ipv6_rules.get("security", []),
-        })
+        return jsonify(
+            {
+                "topology": row["name"],
+                "total_devices": total,
+                "devices": devices,
+                "summary": {
+                    "capable_yes": capable_yes,
+                    "capable_no": capable_no,
+                    "capable_partial": capable_partial,
+                    "capable_unknown": capable_unknown,
+                    "readiness_pct": ready_pct,
+                    "dual_stack_count": dual_stack,
+                    "dual_stack_pct": dual_pct,
+                    "ipv4_only_count": has_v4_only,
+                    "ipv6_only_count": has_v6_addr,
+                },
+                "recommendation": recommendation,
+                "migration_phases": ipv6_rules.get("migration_phases", {}),
+                "transition_mechanisms": ipv6_rules.get("transition_mechanisms", {}),
+                "security_checklist": ipv6_rules.get("security", []),
+            }
+        )
 
     # ══════════════════════════════════════════════════════════════════════
     # PPS Matrix Generator — Enclave / Device Pair
@@ -7653,9 +8360,9 @@ Output ONLY the JSON object. No other text."""
         except Exception:
             graph = {"nodes": [], "edges": []}
 
-        groups = [_row_to_dict(r) for r in conn.execute(
-            "SELECT * FROM nc_groups WHERE topology_id=?", (topo_id,)
-        ).fetchall()]
+        groups = [
+            _row_to_dict(r) for r in conn.execute("SELECT * FROM nc_groups WHERE topology_id=?", (topo_id,)).fetchall()
+        ]
         conn.close()
 
         meta = get_topology_enclaves(graph, groups)
@@ -7674,9 +8381,7 @@ Output ONLY the JSON object. No other text."""
     def nc_api_pps_enclaves(topo_id):
         """Return enclaves and nodes available for pair selection."""
         conn = get_connection()
-        topo = conn.execute(
-            "SELECT graph_json FROM topologies WHERE id=?", (topo_id,)
-        ).fetchone()
+        topo = conn.execute("SELECT graph_json FROM topologies WHERE id=?", (topo_id,)).fetchone()
         if not topo:
             conn.close()
             return jsonify({"error": "Topology not found"}), 404
@@ -7686,9 +8391,9 @@ Output ONLY the JSON object. No other text."""
         except Exception:
             graph = {"nodes": [], "edges": []}
 
-        groups = [_row_to_dict(r) for r in conn.execute(
-            "SELECT * FROM nc_groups WHERE topology_id=?", (topo_id,)
-        ).fetchall()]
+        groups = [
+            _row_to_dict(r) for r in conn.execute("SELECT * FROM nc_groups WHERE topology_id=?", (topo_id,)).fetchall()
+        ]
         conn.close()
 
         return jsonify(get_topology_enclaves(graph, groups))
@@ -7706,9 +8411,7 @@ Output ONLY the JSON object. No other text."""
           }
         """
         conn = get_connection()
-        topo = conn.execute(
-            "SELECT graph_json FROM topologies WHERE id=?", (topo_id,)
-        ).fetchone()
+        topo = conn.execute("SELECT graph_json FROM topologies WHERE id=?", (topo_id,)).fetchone()
         if not topo:
             conn.close()
             return jsonify({"error": "Topology not found"}), 404
@@ -7733,9 +8436,9 @@ Output ONLY the JSON object. No other text."""
             conn.close()
             return jsonify({"error": "Bad graph JSON"}), 500
 
-        groups = [_row_to_dict(r) for r in conn.execute(
-            "SELECT * FROM nc_groups WHERE topology_id=?", (topo_id,)
-        ).fetchall()]
+        groups = [
+            _row_to_dict(r) for r in conn.execute("SELECT * FROM nc_groups WHERE topology_id=?", (topo_id,)).fetchall()
+        ]
         conn.close()
 
         result = generate_pps_matrix_for_pair(
@@ -7745,9 +8448,12 @@ Output ONLY the JSON object. No other text."""
             selector_type=selector_type,
             groups=groups,
         )
-        _audit("PPS_GENERATE", "topology", topo_id,
-               f"pair={source}<->{dest} type={selector_type} "
-               f"protocols={result['total_protocols']}")
+        _audit(
+            "PPS_GENERATE",
+            "topology",
+            topo_id,
+            f"pair={source}<->{dest} type={selector_type} protocols={result['total_protocols']}",
+        )
         return jsonify(result)
 
     @bp.route("/api/pps/<topo_id>/export", methods=["POST"])
@@ -7761,9 +8467,7 @@ Output ONLY the JSON object. No other text."""
           }
         """
         conn = get_connection()
-        topo = conn.execute(
-            "SELECT graph_json FROM topologies WHERE id=?", (topo_id,)
-        ).fetchone()
+        topo = conn.execute("SELECT graph_json FROM topologies WHERE id=?", (topo_id,)).fetchone()
         if not topo:
             conn.close()
             return jsonify({"error": "Topology not found"}), 404
@@ -7788,9 +8492,9 @@ Output ONLY the JSON object. No other text."""
             conn.close()
             return jsonify({"error": "Bad graph JSON"}), 500
 
-        groups = [_row_to_dict(r) for r in conn.execute(
-            "SELECT * FROM nc_groups WHERE topology_id=?", (topo_id,)
-        ).fetchall()]
+        groups = [
+            _row_to_dict(r) for r in conn.execute("SELECT * FROM nc_groups WHERE topology_id=?", (topo_id,)).fetchall()
+        ]
         conn.close()
 
         result = generate_pps_matrix_for_pair(
@@ -7806,6 +8510,7 @@ Output ONLY the JSON object. No other text."""
         filename = f"pps_ssp_{src_slug}_to_{dst_slug}.{'csv' if fmt == 'csv' else 'md'}"
 
         from flask import Response
+
         mime = "text/csv" if fmt == "csv" else "text/markdown"
         return Response(
             content,
@@ -7813,14 +8518,15 @@ Output ONLY the JSON object. No other text."""
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
 
-
     # ── Analysis routes (extracted to routes/analysis.py) ────────────────
     from tools.network.routes.analysis import register_analysis_routes
+
     register_analysis_routes(bp)
 
     # ── Collaboration (Task 18) ───────────────────────────────────────────────
     import uuid as _uuid_mod
     from tools.canvas.collaboration import CanvasCollabManager as _NDCCollabMgr
+
     _ndc_collab = _NDCCollabMgr("nc")
 
     @bp.route("/api/collab/<design_id>/join", methods=["POST"])
@@ -7872,6 +8578,5 @@ Output ONLY the JSON object. No other text."""
         return jsonify({"participants": _ndc_collab.get_participants(design_id)})
 
     # ── Done ───────────────────────────────────────────────────────────────
-    logger.info("Network Design Canvas Blueprint created (%d routes)",
-                len(bp.deferred_functions))
+    logger.info("Network Design Canvas Blueprint created (%d routes)", len(bp.deferred_functions))
     return bp

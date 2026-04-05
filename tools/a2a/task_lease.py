@@ -75,15 +75,16 @@ def _connect() -> sqlite3.Connection:
     return conn
 
 
-
 def _expire_time(ttl_seconds: int) -> str:
     from datetime import timedelta
+
     return (datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds)).isoformat()
 
 
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def cleanup_expired(conn: Optional[sqlite3.Connection] = None) -> int:
     """Mark expired leases so they can be reclaimed. Returns count expired."""
@@ -244,10 +245,7 @@ def release_task(task_id: str, agent_id: str) -> Dict:
             if existing["agent_id"] != agent_id:
                 return {
                     "status": "error",
-                    "message": (
-                        f"Task '{task_id}' is held by '{existing['agent_id']}', "
-                        f"not '{agent_id}'"
-                    ),
+                    "message": (f"Task '{task_id}' is held by '{existing['agent_id']}', not '{agent_id}'"),
                 }
             return {
                 "status": "error",
@@ -324,10 +322,9 @@ def get_active_leases(agent_id: str = None) -> Dict:
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Atomic task checkout — lease-based single-assignee enforcement"
-    )
+    parser = argparse.ArgumentParser(description="Atomic task checkout — lease-based single-assignee enforcement")
     parser.add_argument("--checkout", action="store_true", help="Claim a task")
     parser.add_argument("--release", action="store_true", help="Release a task lease")
     parser.add_argument("--status", action="store_true", help="Check lease status")
@@ -335,12 +332,14 @@ def main() -> None:
     parser.add_argument("--cleanup", action="store_true", help="Clean up expired leases")
     parser.add_argument("--task-id", help="Task ID")
     parser.add_argument("--agent-id", help="Agent ID")
-    parser.add_argument("--ttl", type=int, default=DEFAULT_LEASE_TTL_SECONDS,
-                        help=f"Lease TTL in seconds (default: {DEFAULT_LEASE_TTL_SECONDS})")
-    parser.add_argument("--json", action="store_true", dest="json_output",
-                        help="Output as JSON")
-    parser.add_argument("--gate", action="store_true",
-                        help="Exit 1 on conflict/error")
+    parser.add_argument(
+        "--ttl",
+        type=int,
+        default=DEFAULT_LEASE_TTL_SECONDS,
+        help=f"Lease TTL in seconds (default: {DEFAULT_LEASE_TTL_SECONDS})",
+    )
+    parser.add_argument("--json", action="store_true", dest="json_output", help="Output as JSON")
+    parser.add_argument("--gate", action="store_true", help="Exit 1 on conflict/error")
     args = parser.parse_args()
 
     result = {}

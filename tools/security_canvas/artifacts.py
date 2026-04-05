@@ -4,15 +4,18 @@
 Pure functions for generating SSP, SAR, and POA&M documents from
 security design assessment data.  Markdown output, no LLM dependency.
 """
+
 from datetime import datetime, timezone
 
 from tools.security_canvas.security_engine import (
-    run_security_assessment, compute_nist_coverage,
+    run_security_assessment,
+    compute_nist_coverage,
 )
 from tools.security_canvas.remediation import generate_remediation_plan
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
 
 def _now():
     return datetime.now(timezone.utc).isoformat()
@@ -20,9 +23,10 @@ def _now():
 
 # ── SSP Generator ─────────────────────────────────────────────────────────────
 
-def generate_ssp_artifact(design_name: str, design_id: str,
-                          graph_data: dict, assessment: dict,
-                          nist_coverage: dict) -> str:
+
+def generate_ssp_artifact(
+    design_name: str, design_id: str, graph_data: dict, assessment: dict, nist_coverage: dict
+) -> str:
     """Generate a System Security Plan (SSP) as Markdown.
 
     Args:
@@ -68,10 +72,12 @@ def generate_ssp_artifact(design_name: str, design_id: str,
     # System Description
     lines.append("## 1. System Description")
     lines.append("")
-    lines.append(f"This System Security Plan documents the security controls "
-                 f"implemented for **{design_name}**. The system comprises "
-                 f"{len(nodes)} components and {len(boundaries)} trust "
-                 f"boundaries.")
+    lines.append(
+        f"This System Security Plan documents the security controls "
+        f"implemented for **{design_name}**. The system comprises "
+        f"{len(nodes)} components and {len(boundaries)} trust "
+        f"boundaries."
+    )
     lines.append("")
 
     # Authorization Boundary
@@ -81,11 +87,9 @@ def generate_ssp_artifact(design_name: str, design_id: str,
         lines.append("| Boundary | Type |")
         lines.append("|----------|------|")
         for b in boundaries:
-            lines.append(f"| {b.get('label', b.get('id', ''))} "
-                         f"| {b.get('type', 'boundary')} |")
+            lines.append(f"| {b.get('label', b.get('id', ''))} | {b.get('type', 'boundary')} |")
     else:
-        lines.append("*No authorization boundaries defined. "
-                     "Use FedRAMP Boundary Auto-Draw to generate.*")
+        lines.append("*No authorization boundaries defined. Use FedRAMP Boundary Auto-Draw to generate.*")
     lines.append("")
 
     # Information Types & Impact Level
@@ -100,8 +104,7 @@ def generate_ssp_artifact(design_name: str, design_id: str,
     # Security Control Implementation
     lines.append("## 4. Security Control Implementation")
     lines.append("")
-    lines.append(f"Overall NIST 800-53 coverage: **{overall_pct}%** "
-                 f"({covered}/{total} families addressed)")
+    lines.append(f"Overall NIST 800-53 coverage: **{overall_pct}%** ({covered}/{total} families addressed)")
     lines.append("")
     lines.append("| Family | Name | Coverage | Status |")
     lines.append("|--------|------|----------|--------|")
@@ -109,10 +112,10 @@ def generate_ssp_artifact(design_name: str, design_id: str,
         fam = families[fam_code]
         pct = fam.get("coverage_pct", 0)
         status = fam.get("status", "none")
-        status_icon = {"full": "Implemented", "partial": "Partially Implemented",
-                       "none": "Not Implemented"}.get(status, "Unknown")
-        lines.append(f"| {fam_code} | {fam.get('name', '')} "
-                     f"| {pct}% | {status_icon} |")
+        status_icon = {"full": "Implemented", "partial": "Partially Implemented", "none": "Not Implemented"}.get(
+            status, "Unknown"
+        )
+        lines.append(f"| {fam_code} | {fam.get('name', '')} | {pct}% | {status_icon} |")
     lines.append("")
 
     # Findings Summary
@@ -145,8 +148,7 @@ def generate_ssp_artifact(design_name: str, design_id: str,
     # Appendices
     lines.append("## Appendices")
     lines.append("")
-    lines.append("- Appendix A: Network Architecture Diagram (see Security "
-                 "Design Canvas)")
+    lines.append("- Appendix A: Network Architecture Diagram (see Security Design Canvas)")
     lines.append("- Appendix B: NIST 800-53 Control Matrix")
     lines.append("- Appendix C: POA&M (see POA&M artifact)")
     lines.append("")
@@ -158,8 +160,8 @@ def generate_ssp_artifact(design_name: str, design_id: str,
 
 # ── SAR Generator ─────────────────────────────────────────────────────────────
 
-def generate_sar_artifact(design_name: str, assessment: dict,
-                          remediation_plan: dict) -> str:
+
+def generate_sar_artifact(design_name: str, assessment: dict, remediation_plan: dict) -> str:
     """Generate a Security Assessment Report (SAR) as Markdown.
 
     Args:
@@ -207,24 +209,26 @@ def generate_sar_artifact(design_name: str, assessment: dict,
     # Assessment Methodology
     lines.append("## 2. Assessment Methodology")
     lines.append("")
-    lines.append("Deterministic rule-based assessment using 25 NIST 800-53 "
-                 "controls mapped across 7 security domains: Authentication, "
-                 "Encryption, Segmentation, Logging, Monitoring, Access "
-                 "Control, and Data Protection.")
+    lines.append(
+        "Deterministic rule-based assessment using 25 NIST 800-53 "
+        "controls mapped across 7 security domains: Authentication, "
+        "Encryption, Segmentation, Logging, Monitoring, Access "
+        "Control, and Data Protection."
+    )
     lines.append("")
-    lines.append("Assessment checks are applied against the system's security "
-                 "design graph, which models components, data flows, trust "
-                 "boundaries, and security controls.")
+    lines.append(
+        "Assessment checks are applied against the system's security "
+        "design graph, which models components, data flows, trust "
+        "boundaries, and security controls."
+    )
     lines.append("")
 
     # Findings Detail
     lines.append("## 3. Findings Detail")
     lines.append("")
     if findings:
-        lines.append("| # | Rule ID | Title | Severity | Category | "
-                     "Affected Entity |")
-        lines.append("|---|---------|-------|----------|----------|"
-                     "----------------|")
+        lines.append("| # | Rule ID | Title | Severity | Category | Affected Entity |")
+        lines.append("|---|---------|-------|----------|----------|----------------|")
         for i, f in enumerate(findings, 1):
             lines.append(
                 f"| {i} | {f.get('rule_id', '')} | {f.get('title', '')} "
@@ -232,25 +236,23 @@ def generate_sar_artifact(design_name: str, assessment: dict,
                 f"| {f.get('affected_entity', '')} |"
             )
     else:
-        lines.append("*No findings identified. System meets all assessed "
-                     "controls.*")
+        lines.append("*No findings identified. System meets all assessed controls.*")
     lines.append("")
 
     # Risk Summary
     lines.append("## 4. Risk Summary")
     lines.append("")
-    lines.append(f"The system achieved a risk score of **{risk_score}/100** "
-                 f"(grade: **{posture_grade}**). ")
+    lines.append(f"The system achieved a risk score of **{risk_score}/100** (grade: **{posture_grade}**). ")
     if by_sev.get("CAT1", 0) > 0:
-        lines.append(f"**{by_sev['CAT1']} CAT1 (critical) findings** must be "
-                     f"resolved before Authorization to Operate (ATO) can be "
-                     f"granted.")
+        lines.append(
+            f"**{by_sev['CAT1']} CAT1 (critical) findings** must be "
+            f"resolved before Authorization to Operate (ATO) can be "
+            f"granted."
+        )
     elif by_sev.get("CAT2", 0) > 0:
-        lines.append(f"{by_sev['CAT2']} CAT2 (high) findings should be "
-                     f"resolved or documented in the POA&M.")
+        lines.append(f"{by_sev['CAT2']} CAT2 (high) findings should be resolved or documented in the POA&M.")
     else:
-        lines.append("No critical or high findings. System is a strong "
-                     "candidate for ATO.")
+        lines.append("No critical or high findings. System is a strong candidate for ATO.")
     lines.append("")
 
     # Recommendations
@@ -260,8 +262,7 @@ def generate_sar_artifact(design_name: str, assessment: dict,
     if phases:
         for phase in phases:
             lines.append(f"### {phase.get('name', '')}")
-            lines.append(f"*Priority: {phase.get('priority', '')} "
-                         f"| Deadline: {phase.get('deadline', '')}*")
+            lines.append(f"*Priority: {phase.get('priority', '')} | Deadline: {phase.get('deadline', '')}*")
             lines.append("")
             for action in phase.get("actions", []):
                 lines.append(f"- {action.get('remediation_step', '')}")
@@ -278,8 +279,8 @@ def generate_sar_artifact(design_name: str, assessment: dict,
 
 # ── POA&M Generator ──────────────────────────────────────────────────────────
 
-def generate_poam_artifact(design_name: str,
-                           remediation_plan: dict) -> str:
+
+def generate_poam_artifact(design_name: str, remediation_plan: dict) -> str:
     """Generate a Plan of Action & Milestones (POA&M) as Markdown.
 
     Args:
@@ -300,16 +301,12 @@ def generate_poam_artifact(design_name: str,
     lines.append("")
     lines.append(f"**System:** {design_name}  ")
     lines.append(f"**Generated:** {generated_at}  ")
-    lines.append(f"**Overall Risk:** "
-                 f"{remediation_plan.get('overall_risk', 'N/A')}  ")
-    lines.append(f"**Total Actions:** "
-                 f"{remediation_plan.get('total_actions', 0)}")
+    lines.append(f"**Overall Risk:** {remediation_plan.get('overall_risk', 'N/A')}  ")
+    lines.append(f"**Total Actions:** {remediation_plan.get('total_actions', 0)}")
     lines.append("")
 
-    lines.append("| POAM-ID | Weakness | Severity | Milestone | "
-                 "Scheduled Completion | Status | Resources Required |")
-    lines.append("|---------|----------|----------|-----------|"
-                 "---------------------|--------|-------------------|")
+    lines.append("| POAM-ID | Weakness | Severity | Milestone | Scheduled Completion | Status | Resources Required |")
+    lines.append("|---------|----------|----------|-----------|---------------------|--------|-------------------|")
 
     poam_num = 1
     for phase in phases:
@@ -324,10 +321,7 @@ def generate_poam_artifact(design_name: str,
             resources = f"{effort}h engineering"
             if action.get("auto_fixable"):
                 resources += " (auto-fixable)"
-            lines.append(
-                f"| {poam_id} | {weakness} | {severity} | {milestone} "
-                f"| {deadline} | {status} | {resources} |"
-            )
+            lines.append(f"| {poam_id} | {weakness} | {severity} | {milestone} | {deadline} | {status} | {resources} |")
             poam_num += 1
 
     if poam_num == 1:
@@ -342,8 +336,8 @@ def generate_poam_artifact(design_name: str,
 
 # ── Bundle Orchestrator ───────────────────────────────────────────────────────
 
-def generate_artifact_bundle(design_id: str, design_name: str,
-                             graph_data: dict) -> dict:
+
+def generate_artifact_bundle(design_id: str, design_name: str, graph_data: dict) -> dict:
     """Orchestrate generation of SSP, SAR, and POA&M artifacts.
 
     Loads assessment data, computes NIST coverage, generates a remediation
@@ -362,7 +356,11 @@ def generate_artifact_bundle(design_id: str, design_name: str,
     remediation_plan = generate_remediation_plan(assessment, graph_data)
 
     ssp = generate_ssp_artifact(
-        design_name, design_id, graph_data, assessment, nist_coverage,
+        design_name,
+        design_id,
+        graph_data,
+        assessment,
+        nist_coverage,
     )
     sar = generate_sar_artifact(design_name, assessment, remediation_plan)
     poam = generate_poam_artifact(design_name, remediation_plan)

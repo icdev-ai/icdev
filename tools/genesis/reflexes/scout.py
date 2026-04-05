@@ -193,17 +193,23 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             continue
 
         # Injection scan on external text fields (description, topics)
-        scannable = " ".join(filter(None, [
-            info.get("description", ""),
-            " ".join(info.get("topics", [])),
-        ]))
+        scannable = " ".join(
+            filter(
+                None,
+                [
+                    info.get("description", ""),
+                    " ".join(info.get("topics", [])),
+                ],
+            )
+        )
         if scannable:
             findings = scan_text(scannable, source=f"github:{repo}")
             critical = [f for f in findings if f["severity"] == "critical"]
             if critical:
                 logger.warning(
                     "Injection attempt blocked from github:%s: %s",
-                    repo, [f["category"] for f in critical],
+                    repo,
+                    [f["category"] for f in critical],
                 )
                 errors += 1
                 targets_data.append({"repo": repo, "category": target.get("category", ""), "info": {}, "error": True})
@@ -220,7 +226,8 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                 if rel_critical:
                     logger.warning(
                         "Injection in release notes blocked from github:%s: %s",
-                        repo, [f["category"] for f in rel_critical],
+                        repo,
+                        [f["category"] for f in rel_critical],
                     )
                     release["body"] = "[REDACTED — injection detected]"
 

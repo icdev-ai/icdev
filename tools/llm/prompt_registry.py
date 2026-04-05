@@ -112,14 +112,14 @@ def _extract_variables(template_text: str) -> List[str]:
     return sorted(jinja_vars | python_vars)
 
 
-def _audit(conn, prompt_name: str, version: Optional[int], action: str,
-           actor: str = "system", details: Optional[dict] = None) -> None:
+def _audit(
+    conn, prompt_name: str, version: Optional[int], action: str, actor: str = "system", details: Optional[dict] = None
+) -> None:
     """Write to append-only audit log."""
     conn.execute(
         "INSERT INTO prompt_audit_log (id, prompt_name, version, action, actor, details, created_at) "
         "VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (_new_id("paud-"), prompt_name, version, action, actor,
-         json.dumps(details or {}), _now()),
+        (_new_id("paud-"), prompt_name, version, action, actor, json.dumps(details or {}), _now()),
     )
 
 
@@ -127,9 +127,10 @@ def _audit(conn, prompt_name: str, version: Optional[int], action: str,
 # Public API
 # ---------------------------------------------------------------------------
 
-def register_prompt(name: str, template_text: str, function_name: str,
-                    variables: Optional[List[str]] = None,
-                    created_by: str = "system") -> Dict[str, Any]:
+
+def register_prompt(
+    name: str, template_text: str, function_name: str, variables: Optional[List[str]] = None, created_by: str = "system"
+) -> Dict[str, Any]:
     """Register a new version of a prompt template.
 
     Auto-increments version for the given name.  Deduplicates by hash — if the
@@ -156,8 +157,12 @@ def register_prompt(name: str, template_text: str, function_name: str,
             ).fetchone()
             existing_hash = existing["template_hash"] if isinstance(existing, dict) else existing[4]
             if existing_hash == t_hash:
-                return {"status": "duplicate", "prompt_name": name,
-                        "version": max_ver, "message": "Template unchanged from latest version"}
+                return {
+                    "status": "duplicate",
+                    "prompt_name": name,
+                    "version": max_ver,
+                    "message": "Template unchanged from latest version",
+                }
 
         detected_vars = variables or _extract_variables(template_text)
         now = _now()
@@ -168,14 +173,29 @@ def register_prompt(name: str, template_text: str, function_name: str,
             "(id, prompt_name, version, template_text, template_hash, variables, "
             " function_name, status, ab_weight, created_by, created_at, updated_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, 'draft', 1.0, ?, ?, ?)",
-            (pid, name, next_ver, template_text, t_hash,
-             json.dumps(detected_vars), function_name, created_by, now, now),
+            (
+                pid,
+                name,
+                next_ver,
+                template_text,
+                t_hash,
+                json.dumps(detected_vars),
+                function_name,
+                created_by,
+                now,
+                now,
+            ),
         )
-        _audit(conn, name, next_ver, "created", created_by,
-               {"hash": t_hash, "function_name": function_name})
+        _audit(conn, name, next_ver, "created", created_by, {"hash": t_hash, "function_name": function_name})
         conn.commit()
-        return {"status": "ok", "prompt_name": name, "version": next_ver,
-                "id": pid, "hash": t_hash, "variables": detected_vars}
+        return {
+            "status": "ok",
+            "prompt_name": name,
+            "version": next_ver,
+            "id": pid,
+            "hash": t_hash,
+            "variables": detected_vars,
+        }
     finally:
         conn.close()
 
@@ -201,14 +221,12 @@ def activate_prompt(name: str, version: int, actor: str = "system") -> Dict[str,
         # Activate requested version
         now = _now()
         conn.execute(
-            "UPDATE prompt_versions SET status = 'active', updated_at = ? "
-            "WHERE prompt_name = ? AND version = ?",
+            "UPDATE prompt_versions SET status = 'active', updated_at = ? WHERE prompt_name = ? AND version = ?",
             (now, name, version),
         )
         _audit(conn, name, version, "activated", actor)
         conn.commit()
-        return {"status": "ok", "prompt_name": name, "version": version,
-                "message": f"v{version} is now active"}
+        return {"status": "ok", "prompt_name": name, "version": version, "message": f"v{version} is now active"}
     finally:
         conn.close()
 
@@ -242,8 +260,7 @@ def get_active_prompt(name: str) -> Optional[Dict[str, Any]]:
 
         # No A/B — return active version
         row = conn.execute(
-            "SELECT * FROM prompt_versions WHERE prompt_name = ? AND status = 'active' "
-            "ORDER BY version DESC LIMIT 1",
+            "SELECT * FROM prompt_versions WHERE prompt_name = ? AND status = 'active' ORDER BY version DESC LIMIT 1",
             (name,),
         ).fetchone()
         if row:
@@ -272,14 +289,12 @@ def rollback_prompt(name: str, to_version: int, actor: str = "system") -> Dict[s
         )
         now = _now()
         conn.execute(
-            "UPDATE prompt_versions SET status = 'active', updated_at = ? "
-            "WHERE prompt_name = ? AND version = ?",
+            "UPDATE prompt_versions SET status = 'active', updated_at = ? WHERE prompt_name = ? AND version = ?",
             (now, name, to_version),
         )
         _audit(conn, name, to_version, "rolled_back", actor)
         conn.commit()
-        return {"status": "ok", "prompt_name": name, "version": to_version,
-                "message": f"Rolled back to v{to_version}"}
+        return {"status": "ok", "prompt_name": name, "version": to_version, "message": f"Rolled back to v{to_version}"}
     finally:
         conn.close()
 
@@ -303,29 +318,35 @@ def diff_versions(name: str, v1: int, v2: int) -> Dict[str, Any]:
                 missing.append(f"v{v1}")
             if not r2:
                 missing.append(f"v{v2}")
-            return {"status": "error",
-                    "message": f"Version(s) not found: {', '.join(missing)}"}
+            return {"status": "error", "message": f"Version(s) not found: {', '.join(missing)}"}
 
         text1 = r1["template_text"] if isinstance(r1, dict) else r1[0]
         text2 = r2["template_text"] if isinstance(r2, dict) else r2[0]
 
-        diff_lines = list(difflib.unified_diff(
-            text1.splitlines(keepends=True),
-            text2.splitlines(keepends=True),
-            fromfile=f"{name} v{v1}",
-            tofile=f"{name} v{v2}",
-        ))
-        return {"status": "ok", "prompt_name": name,
-                "from_version": v1, "to_version": v2,
-                "diff": "".join(diff_lines),
-                "lines_added": sum(1 for line in diff_lines if line.startswith("+") and not line.startswith("+++")),
-                "lines_removed": sum(1 for line in diff_lines if line.startswith("-") and not line.startswith("---"))}
+        diff_lines = list(
+            difflib.unified_diff(
+                text1.splitlines(keepends=True),
+                text2.splitlines(keepends=True),
+                fromfile=f"{name} v{v1}",
+                tofile=f"{name} v{v2}",
+            )
+        )
+        return {
+            "status": "ok",
+            "prompt_name": name,
+            "from_version": v1,
+            "to_version": v2,
+            "diff": "".join(diff_lines),
+            "lines_added": sum(1 for line in diff_lines if line.startswith("+") and not line.startswith("+++")),
+            "lines_removed": sum(1 for line in diff_lines if line.startswith("-") and not line.startswith("---")),
+        }
     finally:
         conn.close()
 
 
-def start_ab_test(name: str, version_a: int, version_b: int,
-                  split: float = 0.5, actor: str = "system") -> Dict[str, Any]:
+def start_ab_test(
+    name: str, version_a: int, version_b: int, split: float = 0.5, actor: str = "system"
+) -> Dict[str, Any]:
     """Start an A/B test between two prompt versions."""
     if not 0.0 <= split <= 1.0:
         return {"status": "error", "message": "split must be between 0.0 and 1.0"}
@@ -356,22 +377,30 @@ def start_ab_test(name: str, version_a: int, version_b: int,
             "(id, prompt_name, variant_a_version, variant_b_version, "
             " traffic_split, status, metrics_json, created_at) "
             "VALUES (?, ?, ?, ?, ?, 'active', ?, ?)",
-            (test_id, name, version_a, version_b, split,
-             json.dumps({"a": [], "b": []}), now),
+            (test_id, name, version_a, version_b, split, json.dumps({"a": [], "b": []}), now),
         )
-        _audit(conn, name, None, "ab_started", actor,
-               {"test_id": test_id, "variant_a": version_a,
-                "variant_b": version_b, "split": split})
+        _audit(
+            conn,
+            name,
+            None,
+            "ab_started",
+            actor,
+            {"test_id": test_id, "variant_a": version_a, "variant_b": version_b, "split": split},
+        )
         conn.commit()
-        return {"status": "ok", "test_id": test_id, "prompt_name": name,
-                "variant_a": version_a, "variant_b": version_b,
-                "traffic_split": split}
+        return {
+            "status": "ok",
+            "test_id": test_id,
+            "prompt_name": name,
+            "variant_a": version_a,
+            "variant_b": version_b,
+            "traffic_split": split,
+        }
     finally:
         conn.close()
 
 
-def record_ab_result(test_id: str, variant: str,
-                     quality_score: float) -> Dict[str, Any]:
+def record_ab_result(test_id: str, variant: str, quality_score: float) -> Dict[str, Any]:
     """Record a quality score for an A/B test variant."""
     if variant not in ("a", "b"):
         return {"status": "error", "message": "variant must be 'a' or 'b'"}
@@ -398,9 +427,14 @@ def record_ab_result(test_id: str, variant: str,
             (json.dumps(metrics), test_id),
         )
         conn.commit()
-        return {"status": "ok", "test_id": test_id, "variant": variant,
-                "score": quality_score,
-                "total_a": len(metrics["a"]), "total_b": len(metrics["b"])}
+        return {
+            "status": "ok",
+            "test_id": test_id,
+            "variant": variant,
+            "score": quality_score,
+            "total_a": len(metrics["a"]),
+            "total_b": len(metrics["b"]),
+        }
     finally:
         conn.close()
 
@@ -418,22 +452,22 @@ def complete_ab_test(test_id: str, actor: str = "system") -> Dict[str, Any]:
             return {"status": "error", "message": f"Active test {test_id} not found"}
 
         row_dict = dict(row) if isinstance(row, sqlite3.Row) else row
-        metrics = json.loads(row_dict["metrics_json"] if isinstance(row_dict, dict)
-                             else row_dict[6])
+        metrics = json.loads(row_dict["metrics_json"] if isinstance(row_dict, dict) else row_dict[6])
 
         avg_a = sum(metrics["a"]) / len(metrics["a"]) if metrics["a"] else 0.0
         avg_b = sum(metrics["b"]) / len(metrics["b"]) if metrics["b"] else 0.0
         winner = "b" if avg_b > avg_a else "a"
 
         prompt_name = row_dict["prompt_name"] if isinstance(row_dict, dict) else row_dict[1]
-        winner_ver = (row_dict["variant_b_version"] if isinstance(row_dict, dict) else row_dict[3]) \
-            if winner == "b" else \
-            (row_dict["variant_a_version"] if isinstance(row_dict, dict) else row_dict[2])
+        winner_ver = (
+            (row_dict["variant_b_version"] if isinstance(row_dict, dict) else row_dict[3])
+            if winner == "b"
+            else (row_dict["variant_a_version"] if isinstance(row_dict, dict) else row_dict[2])
+        )
 
         now = _now()
         conn.execute(
-            "UPDATE prompt_ab_tests SET status = 'completed', winner = ?, completed_at = ? "
-            "WHERE id = ?",
+            "UPDATE prompt_ab_tests SET status = 'completed', winner = ?, completed_at = ? WHERE id = ?",
             (winner, now, test_id),
         )
 
@@ -444,19 +478,35 @@ def complete_ab_test(test_id: str, actor: str = "system") -> Dict[str, Any]:
             (now, prompt_name),
         )
         conn.execute(
-            "UPDATE prompt_versions SET status = 'active', updated_at = ? "
-            "WHERE prompt_name = ? AND version = ?",
+            "UPDATE prompt_versions SET status = 'active', updated_at = ? WHERE prompt_name = ? AND version = ?",
             (now, prompt_name, winner_ver),
         )
 
-        _audit(conn, prompt_name, winner_ver, "ab_completed", actor,
-               {"test_id": test_id, "winner": winner,
-                "avg_a": round(avg_a, 4), "avg_b": round(avg_b, 4),
-                "samples_a": len(metrics["a"]), "samples_b": len(metrics["b"])})
+        _audit(
+            conn,
+            prompt_name,
+            winner_ver,
+            "ab_completed",
+            actor,
+            {
+                "test_id": test_id,
+                "winner": winner,
+                "avg_a": round(avg_a, 4),
+                "avg_b": round(avg_b, 4),
+                "samples_a": len(metrics["a"]),
+                "samples_b": len(metrics["b"]),
+            },
+        )
         conn.commit()
-        return {"status": "ok", "test_id": test_id, "winner": winner,
-                "winner_version": winner_ver, "prompt_name": prompt_name,
-                "avg_a": round(avg_a, 4), "avg_b": round(avg_b, 4)}
+        return {
+            "status": "ok",
+            "test_id": test_id,
+            "winner": winner,
+            "winner_version": winner_ver,
+            "prompt_name": prompt_name,
+            "avg_a": round(avg_a, 4),
+            "avg_b": round(avg_b, 4),
+        }
     finally:
         conn.close()
 
@@ -476,12 +526,19 @@ def list_prompts() -> List[Dict[str, Any]]:
             if isinstance(r, (dict, sqlite3.Row)):
                 results.append(dict(r))
             else:
-                results.append({
-                    "prompt_name": r[0], "version": r[1], "status": r[2],
-                    "function_name": r[3], "template_hash": r[4],
-                    "ab_weight": r[5], "created_by": r[6],
-                    "created_at": r[7], "updated_at": r[8],
-                })
+                results.append(
+                    {
+                        "prompt_name": r[0],
+                        "version": r[1],
+                        "status": r[2],
+                        "function_name": r[3],
+                        "template_hash": r[4],
+                        "ab_weight": r[5],
+                        "created_by": r[6],
+                        "created_at": r[7],
+                        "updated_at": r[8],
+                    }
+                )
         return results
     finally:
         conn.close()
@@ -510,8 +567,13 @@ def import_from_hardprompts(directory: Optional[Path] = None) -> Dict[str, Any]:
             activate_prompt(name, result["version"])
             imported.append({"name": name, "version": result["version"]})
 
-    return {"status": "ok", "imported": imported, "skipped": skipped,
-            "total_imported": len(imported), "total_skipped": len(skipped)}
+    return {
+        "status": "ok",
+        "imported": imported,
+        "skipped": skipped,
+        "total_imported": len(imported),
+        "total_skipped": len(skipped),
+    }
 
 
 def gate_check() -> Dict[str, Any]:
@@ -526,16 +588,19 @@ def gate_check() -> Dict[str, Any]:
             "SELECT DISTINCT prompt_name FROM prompt_versions",
         ).fetchall()
         if not all_names:
-            return {"status": "ok", "gate": "pass",
-                    "message": "No prompts registered — gate passes vacuously",
-                    "total": 0, "missing_active": []}
+            return {
+                "status": "ok",
+                "gate": "pass",
+                "message": "No prompts registered — gate passes vacuously",
+                "total": 0,
+                "missing_active": [],
+            }
 
         missing = []
         for row in all_names:
             name = row["prompt_name"] if isinstance(row, dict) else row[0]
             active = conn.execute(
-                "SELECT 1 FROM prompt_versions "
-                "WHERE prompt_name = ? AND status = 'active' LIMIT 1",
+                "SELECT 1 FROM prompt_versions WHERE prompt_name = ? AND status = 'active' LIMIT 1",
                 (name,),
             ).fetchone()
             if not active:
@@ -543,12 +608,20 @@ def gate_check() -> Dict[str, Any]:
 
         total = len(all_names)
         if missing:
-            return {"status": "error", "gate": "fail",
-                    "message": f"{len(missing)}/{total} prompt(s) lack an active version",
-                    "total": total, "missing_active": missing}
-        return {"status": "ok", "gate": "pass",
-                "message": f"All {total} prompt(s) have an active version",
-                "total": total, "missing_active": []}
+            return {
+                "status": "error",
+                "gate": "fail",
+                "message": f"{len(missing)}/{total} prompt(s) lack an active version",
+                "total": total,
+                "missing_active": missing,
+            }
+        return {
+            "status": "ok",
+            "gate": "pass",
+            "message": f"All {total} prompt(s) have an active version",
+            "total": total,
+            "missing_active": [],
+        }
     finally:
         conn.close()
 
@@ -557,14 +630,14 @@ def gate_check() -> Dict[str, Any]:
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         description="ICDEV™ Prompt Version Control",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p.add_argument("--json", action="store_true", help="JSON output")
-    p.add_argument("--gate", action="store_true",
-                   help="Gate check — exit 1 if any prompt lacks active version")
+    p.add_argument("--gate", action="store_true", help="Gate check — exit 1 if any prompt lacks active version")
 
     g = p.add_mutually_exclusive_group()
     g.add_argument("--list", action="store_true", help="List all prompts")
@@ -572,8 +645,7 @@ def _build_parser() -> argparse.ArgumentParser:
     g.add_argument("--activate", action="store_true", help="Activate a prompt version")
     g.add_argument("--rollback", action="store_true", help="Rollback to a previous version")
     g.add_argument("--diff", action="store_true", help="Diff two prompt versions")
-    g.add_argument("--import-hardprompts", action="store_true",
-                   help="Import templates from hardprompts/ directory")
+    g.add_argument("--import-hardprompts", action="store_true", help="Import templates from hardprompts/ directory")
     g.add_argument("--start-ab", action="store_true", help="Start an A/B test")
 
     p.add_argument("--name", help="Prompt name")
@@ -586,8 +658,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--v2", type=int, help="Second version for diff")
     p.add_argument("--va", type=int, help="A/B test variant A version")
     p.add_argument("--vb", type=int, help="A/B test variant B version")
-    p.add_argument("--split", type=float, default=0.5,
-                   help="A/B traffic split (0.0-1.0, portion going to B)")
+    p.add_argument("--split", type=float, default=0.5, help="A/B traffic split (0.0-1.0, portion going to B)")
     return p
 
 
@@ -619,7 +690,8 @@ def main() -> None:
         else:
             template = args.template_text
         result = register_prompt(
-            args.name, template,
+            args.name,
+            template,
             args.function_name or args.name.replace("-", "_"),
         )
 

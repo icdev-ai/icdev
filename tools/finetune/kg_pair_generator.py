@@ -45,6 +45,7 @@ logger = logging.getLogger("icdev.finetune.kg_pair_generator")
 # Config
 # ---------------------------------------------------------------------------
 
+
 def _load_config() -> Dict[str, Any]:
     """Load kg_ft_pipeline config from finetune_config.yaml."""
     config_path = BASE_DIR / "args" / "finetune_config.yaml"
@@ -52,6 +53,7 @@ def _load_config() -> Dict[str, Any]:
         return {}
     try:
         import yaml
+
         with open(config_path, "r", encoding="utf-8") as f:
             cfg = yaml.safe_load(f) or {}
         return cfg.get("kg_ft_pipeline", {})
@@ -72,8 +74,10 @@ DEFAULT_CONFIG = {
 # Database
 # ---------------------------------------------------------------------------
 
+
 def _get_db():
     from tools.db.storage import get_connection
+
     conn = get_connection()
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
@@ -90,6 +94,7 @@ def _content_hash(text: str) -> str:
 # ---------------------------------------------------------------------------
 # Graph loading
 # ---------------------------------------------------------------------------
+
 
 def _load_graph(conn: sqlite3.Connection, graph_id: str) -> Dict[str, Any]:
     """Load graph with nodes and edges from DB."""
@@ -173,7 +178,8 @@ ANSWER_TEMPLATES = {
 
 
 def _generate_entity_relationship_pairs(
-    graph_data: Dict[str, Any], max_pairs: int = 50,
+    graph_data: Dict[str, Any],
+    max_pairs: int = 50,
 ) -> List[Dict[str, Any]]:
     """Generate Q&A pairs from entity relationships."""
     pairs = []
@@ -202,24 +208,28 @@ def _generate_entity_relationship_pairs(
             "{source} ({source_type}) has a {rel} relationship with {target} ({target_type}).",
         )
         answer = answer_template.format(
-            source=src_label, target=tgt_label,
-            source_type=src_type, target_type=tgt_type,
+            source=src_label,
+            target=tgt_label,
+            source_type=src_type,
+            target_type=tgt_type,
             rel=rel,
         )
 
-        pairs.append({
-            "user_input": question,
-            "expected_output": answer,
-            "system_prompt": "You are a compliance and systems engineering assistant.",
-            "source": "kg_entity_relationship",
-            "metadata": {
-                "strategy": "entity_relationship",
-                "edge_id": edge["id"],
-                "relationship": rel,
-                "source_entity": src_label,
-                "target_entity": tgt_label,
-            },
-        })
+        pairs.append(
+            {
+                "user_input": question,
+                "expected_output": answer,
+                "system_prompt": "You are a compliance and systems engineering assistant.",
+                "source": "kg_entity_relationship",
+                "metadata": {
+                    "strategy": "entity_relationship",
+                    "edge_id": edge["id"],
+                    "relationship": rel,
+                    "source_entity": src_label,
+                    "target_entity": tgt_label,
+                },
+            }
+        )
 
     return pairs
 
@@ -228,8 +238,11 @@ def _generate_entity_relationship_pairs(
 # Strategy 2: Community Cluster Pairs
 # ---------------------------------------------------------------------------
 
+
 def _generate_community_cluster_pairs(
-    graph_data: Dict[str, Any], min_size: int = 3, max_pairs: int = 20,
+    graph_data: Dict[str, Any],
+    min_size: int = 3,
+    max_pairs: int = 20,
 ) -> List[Dict[str, Any]]:
     """Generate Q&A pairs from graph community clusters."""
     pairs = []
@@ -267,18 +280,20 @@ def _generate_community_cluster_pairs(
             f"where entities share direct or transitive relationships."
         )
 
-        pairs.append({
-            "user_input": question,
-            "expected_output": answer,
-            "system_prompt": "You are a knowledge graph analyst explaining entity clusters.",
-            "source": "kg_community_cluster",
-            "metadata": {
-                "strategy": "community_cluster",
-                "community_size": len(members),
-                "dominant_type": dominant_type,
-                "central_entity": highest_centrality.get("label", ""),
-            },
-        })
+        pairs.append(
+            {
+                "user_input": question,
+                "expected_output": answer,
+                "system_prompt": "You are a knowledge graph analyst explaining entity clusters.",
+                "source": "kg_community_cluster",
+                "metadata": {
+                    "strategy": "community_cluster",
+                    "community_size": len(members),
+                    "dominant_type": dominant_type,
+                    "central_entity": highest_centrality.get("label", ""),
+                },
+            }
+        )
 
     return pairs
 
@@ -287,8 +302,10 @@ def _generate_community_cluster_pairs(
 # Strategy 3: Compliance Crosswalk Pairs
 # ---------------------------------------------------------------------------
 
+
 def _generate_compliance_crosswalk_pairs(
-    graph_data: Dict[str, Any], max_pairs: int = 20,
+    graph_data: Dict[str, Any],
+    max_pairs: int = 20,
 ) -> List[Dict[str, Any]]:
     """Generate Q&A pairs from control↔standard edges."""
     pairs = []
@@ -321,18 +338,20 @@ def _generate_compliance_crosswalk_pairs(
             f"and must be implemented to achieve compliance."
         )
 
-        pairs.append({
-            "user_input": question,
-            "expected_output": answer,
-            "system_prompt": "You are a compliance crosswalk expert mapping controls to standards.",
-            "source": "kg_compliance_crosswalk",
-            "metadata": {
-                "strategy": "compliance_crosswalk",
-                "standard": standard,
-                "control_count": len(controls),
-                "controls": sorted(controls),
-            },
-        })
+        pairs.append(
+            {
+                "user_input": question,
+                "expected_output": answer,
+                "system_prompt": "You are a compliance crosswalk expert mapping controls to standards.",
+                "source": "kg_compliance_crosswalk",
+                "metadata": {
+                    "strategy": "compliance_crosswalk",
+                    "standard": standard,
+                    "control_count": len(controls),
+                    "controls": sorted(controls),
+                },
+            }
+        )
 
     return pairs
 
@@ -340,6 +359,7 @@ def _generate_compliance_crosswalk_pairs(
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
+
 
 def generate_pairs_from_graph(
     graph_id: str,
@@ -399,11 +419,7 @@ def generate_pairs_from_graph(
     if store and dataset_id and all_pairs:
         try:
             for pair in all_pairs:
-                ch = _content_hash(
-                    pair.get("system_prompt", "") +
-                    pair["user_input"] +
-                    pair["expected_output"]
-                )
+                ch = _content_hash(pair.get("system_prompt", "") + pair["user_input"] + pair["expected_output"])
                 # Check dedup
                 existing = conn.execute(
                     "SELECT id FROM ft_dataset_examples WHERE content_hash = ? AND dataset_id = ?",
@@ -417,10 +433,15 @@ def generate_pairs_from_graph(
                        (dataset_id, system_prompt, user_input, expected_output,
                         source, quality_score, content_hash, classification, created_at)
                        VALUES (?, ?, ?, ?, ?, 0.7, ?, 'CUI', ?)""",
-                    (dataset_id, pair.get("system_prompt", ""),
-                     pair["user_input"], pair["expected_output"],
-                     pair.get("source", "kg_auto_generated"),
-                     ch, _now()),
+                    (
+                        dataset_id,
+                        pair.get("system_prompt", ""),
+                        pair["user_input"],
+                        pair["expected_output"],
+                        pair.get("source", "kg_auto_generated"),
+                        ch,
+                        _now(),
+                    ),
                 )
                 stored_count += 1
             conn.commit()
@@ -444,6 +465,7 @@ def generate_pairs_from_graph(
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+
 
 def main():
     parser = argparse.ArgumentParser(

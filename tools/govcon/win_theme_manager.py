@@ -41,31 +41,118 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from tools.db.storage import get_connection  # noqa: E402
+
 _DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(_ROOT / "data" / "icdev.db")))
 
 # Theme types supported
 THEME_TYPES = ("win_theme", "discriminator", "ghost_strategy")
 
 # English stopwords for keyword extraction (deterministic, no NLTK dependency)
-_STOPWORDS = frozenset({
-    "a", "an", "the", "and", "or", "but", "in", "on", "at", "to", "for",
-    "of", "with", "by", "from", "as", "is", "was", "are", "were", "be",
-    "been", "being", "have", "has", "had", "do", "does", "did", "will",
-    "would", "could", "should", "may", "might", "shall", "can", "this",
-    "that", "these", "those", "it", "its", "we", "our", "us", "they",
-    "them", "their", "he", "she", "him", "her", "not", "no", "all",
-    "each", "every", "both", "few", "more", "most", "other", "some",
-    "such", "than", "too", "very", "just", "also", "any", "into",
-    "over", "after", "before", "between", "through", "during", "about",
-    "up", "out", "if", "then", "so", "because", "while", "where",
-    "when", "which", "who", "whom", "how", "what", "there",
-})
+_STOPWORDS = frozenset(
+    {
+        "a",
+        "an",
+        "the",
+        "and",
+        "or",
+        "but",
+        "in",
+        "on",
+        "at",
+        "to",
+        "for",
+        "of",
+        "with",
+        "by",
+        "from",
+        "as",
+        "is",
+        "was",
+        "are",
+        "were",
+        "be",
+        "been",
+        "being",
+        "have",
+        "has",
+        "had",
+        "do",
+        "does",
+        "did",
+        "will",
+        "would",
+        "could",
+        "should",
+        "may",
+        "might",
+        "shall",
+        "can",
+        "this",
+        "that",
+        "these",
+        "those",
+        "it",
+        "its",
+        "we",
+        "our",
+        "us",
+        "they",
+        "them",
+        "their",
+        "he",
+        "she",
+        "him",
+        "her",
+        "not",
+        "no",
+        "all",
+        "each",
+        "every",
+        "both",
+        "few",
+        "more",
+        "most",
+        "other",
+        "some",
+        "such",
+        "than",
+        "too",
+        "very",
+        "just",
+        "also",
+        "any",
+        "into",
+        "over",
+        "after",
+        "before",
+        "between",
+        "through",
+        "during",
+        "about",
+        "up",
+        "out",
+        "if",
+        "then",
+        "so",
+        "because",
+        "while",
+        "where",
+        "when",
+        "which",
+        "who",
+        "whom",
+        "how",
+        "what",
+        "there",
+    }
+)
 
 # Minimum keyword match ratio to consider a theme present in text
 _THEME_PRESENCE_THRESHOLD = 0.60
 
 
 # ── Helpers ──────────────────────────────────────────────────────────
+
 
 def _get_db():
     conn = get_connection()
@@ -126,9 +213,16 @@ def _word_count(text):
 
 # ── Theme CRUD ───────────────────────────────────────────────────────
 
-def register_theme(opportunity_id, theme_type, theme_statement,
-                   supporting_evidence=None, target_eval_factor=None,
-                   ghost_competitor=None, priority=1):
+
+def register_theme(
+    opportunity_id,
+    theme_type,
+    theme_statement,
+    supporting_evidence=None,
+    target_eval_factor=None,
+    ghost_competitor=None,
+    priority=1,
+):
     """Register a win theme, discriminator, or ghost competitor strategy.
 
     Args:
@@ -179,8 +273,7 @@ def register_theme(opportunity_id, theme_type, theme_statement,
                 now,
             ),
         )
-        _audit(conn, "register_theme",
-               f"Registered {theme_type} for {opportunity_id}: {theme_statement[:80]}")
+        _audit(conn, "register_theme", f"Registered {theme_type} for {opportunity_id}: {theme_statement[:80]}")
         conn.commit()
     except Exception as exc:
         conn.close()
@@ -249,8 +342,12 @@ def update_theme(theme_id, **kwargs):
         return {"status": "error", "message": f"Theme {theme_id} not found"}
 
     updatable = [
-        "theme_statement", "supporting_evidence", "target_eval_factor",
-        "ghost_competitor", "priority", "status",
+        "theme_statement",
+        "supporting_evidence",
+        "target_eval_factor",
+        "ghost_competitor",
+        "priority",
+        "status",
     ]
     sets = []
     params = []
@@ -313,6 +410,7 @@ def archive_theme(theme_id):
 
 # ── Theme Tracking ───────────────────────────────────────────────────
 
+
 def track_implementation(theme_id, section_id, status, density_score=None, notes=None):
     """Record theme implementation in a proposal section.
 
@@ -351,8 +449,11 @@ def track_implementation(theme_id, section_id, status, density_score=None, notes
         "VALUES (?, ?, ?, ?, ?, ?, ?)",
         (tracking_id, theme_id, section_id, status, density_score, notes, now),
     )
-    _audit(conn, "track_implementation",
-           f"Theme {theme_id} in section {section_id}: status={status}, density={density_score}")
+    _audit(
+        conn,
+        "track_implementation",
+        f"Theme {theme_id} in section {section_id}: status={status}, density={density_score}",
+    )
     conn.commit()
     conn.close()
 
@@ -360,6 +461,7 @@ def track_implementation(theme_id, section_id, status, density_score=None, notes
 
 
 # ── Theme Presence Detection ─────────────────────────────────────────
+
 
 def check_theme_presence(text, themes):
     """Find which themes are present in the given text (deterministic keyword matching).
@@ -401,20 +503,23 @@ def check_theme_presence(text, themes):
 
         if match_ratio >= _THEME_PRESENCE_THRESHOLD:
             density = (len(matched) / (wc / 1000.0)) if wc > 0 else 0.0
-            results.append({
-                "theme_id": theme.get("id", "unknown"),
-                "theme_type": theme.get("theme_type", "unknown"),
-                "theme_statement": theme.get("theme_statement", ""),
-                "total_keywords": len(keywords),
-                "matched_keywords": matched,
-                "match_ratio": round(match_ratio, 3),
-                "density_score": round(density, 2),
-            })
+            results.append(
+                {
+                    "theme_id": theme.get("id", "unknown"),
+                    "theme_type": theme.get("theme_type", "unknown"),
+                    "theme_statement": theme.get("theme_statement", ""),
+                    "total_keywords": len(keywords),
+                    "matched_keywords": matched,
+                    "match_ratio": round(match_ratio, 3),
+                    "density_score": round(density, 2),
+                }
+            )
 
     return results
 
 
 # ── Reports ──────────────────────────────────────────────────────────
+
 
 def get_implementation_report(opportunity_id):
     """Generate theme coverage report across all sections.
@@ -429,8 +534,7 @@ def get_implementation_report(opportunity_id):
 
     # Get all active themes
     themes = conn.execute(
-        "SELECT * FROM pg_win_themes WHERE opportunity_id = ? AND status != 'archived' "
-        "ORDER BY priority ASC",
+        "SELECT * FROM pg_win_themes WHERE opportunity_id = ? AND status != 'archived' ORDER BY priority ASC",
         (opportunity_id,),
     ).fetchall()
 
@@ -483,18 +587,20 @@ def get_implementation_report(opportunity_id):
             coverage = "uncovered"
             uncovered += 1
 
-        report_themes.append({
-            "theme_id": theme_id,
-            "theme_type": theme["theme_type"],
-            "theme_statement": theme["theme_statement"],
-            "priority": theme["priority"],
-            "coverage": coverage,
-            "sections_woven": woven_count,
-            "sections_planned": planned_count,
-            "sections_missing": missing_count,
-            "total_sections": len(sections),
-            "sections": list(sections.values()),
-        })
+        report_themes.append(
+            {
+                "theme_id": theme_id,
+                "theme_type": theme["theme_type"],
+                "theme_statement": theme["theme_statement"],
+                "priority": theme["priority"],
+                "coverage": coverage,
+                "sections_woven": woven_count,
+                "sections_planned": planned_count,
+                "sections_missing": missing_count,
+                "total_sections": len(sections),
+                "sections": list(sections.values()),
+            }
+        )
 
     conn.close()
 
@@ -572,18 +678,17 @@ def get_density_scores(opportunity_id):
     # Compute averages
     section_list = []
     for sid, sec in sections.items():
-        densities = [
-            th["density_score"] for th in sec["themes"].values()
-            if th["density_score"] is not None
-        ]
+        densities = [th["density_score"] for th in sec["themes"].values() if th["density_score"] is not None]
         avg = sum(densities) / len(densities) if densities else 0.0
-        section_list.append({
-            "section_id": sid,
-            "theme_count": len(sec["themes"]),
-            "themes": list(sec["themes"].values()),
-            "avg_density": round(avg, 2),
-            "density_rated": densities,
-        })
+        section_list.append(
+            {
+                "section_id": sid,
+                "theme_count": len(sec["themes"]),
+                "themes": list(sec["themes"].values()),
+                "avg_density": round(avg, 2),
+                "density_rated": densities,
+            }
+        )
 
     # Overall average
     all_densities = [s["avg_density"] for s in section_list if s["avg_density"] > 0]
@@ -600,10 +705,9 @@ def get_density_scores(opportunity_id):
 
 # ── CLI ──────────────────────────────────────────────────────────────
 
+
 def main():
-    parser = argparse.ArgumentParser(
-        description="ICDEV™ Proposal Genesis — Win Theme & Discriminator Registry (§3.17)"
-    )
+    parser = argparse.ArgumentParser(description="ICDEV™ Proposal Genesis — Win Theme & Discriminator Registry (§3.17)")
 
     # Actions
     group = parser.add_mutually_exclusive_group(required=True)
@@ -621,8 +725,7 @@ def main():
     parser.add_argument("--section-id", help="Section UUID (for --track)")
 
     # Theme fields
-    parser.add_argument("--type", dest="theme_type", choices=THEME_TYPES,
-                        help="Theme type")
+    parser.add_argument("--type", dest="theme_type", choices=THEME_TYPES, help="Theme type")
     parser.add_argument("--statement", help="Theme statement text")
     parser.add_argument("--evidence", help="Supporting evidence")
     parser.add_argument("--eval-factor", help="Target evaluation factor")
@@ -644,8 +747,7 @@ def main():
 
     if args.register:
         if not args.opportunity_id or not args.theme_type or not args.statement:
-            print("Error: --opportunity-id, --type, and --statement required for --register",
-                  file=sys.stderr)
+            print("Error: --opportunity-id, --type, and --statement required for --register", file=sys.stderr)
             sys.exit(1)
         result = register_theme(
             opportunity_id=args.opportunity_id,
@@ -691,8 +793,7 @@ def main():
 
     elif args.track:
         if not args.theme_id or not args.section_id or not args.status:
-            print("Error: --theme-id, --section-id, and --status required for --track",
-                  file=sys.stderr)
+            print("Error: --theme-id, --section-id, and --status required for --track", file=sys.stderr)
             sys.exit(1)
         result = track_implementation(
             theme_id=args.theme_id,
@@ -730,10 +831,12 @@ def main():
                 print(f"  [P{prio}] ({ttype}) {stmt}... {cov}")
         if "summary" in result:
             s = result["summary"]
-            print(f"\n  Total: {s.get('total', 0)} | "
-                  f"Covered: {s.get('fully_covered', 0)} | "
-                  f"Partial: {s.get('partially_covered', 0)} | "
-                  f"Uncovered: {s.get('uncovered', 0)}")
+            print(
+                f"\n  Total: {s.get('total', 0)} | "
+                f"Covered: {s.get('fully_covered', 0)} | "
+                f"Partial: {s.get('partially_covered', 0)} | "
+                f"Uncovered: {s.get('uncovered', 0)}"
+            )
             if "coverage_rate" in s:
                 print(f"  Coverage Rate: {s['coverage_rate']:.0%}")
         print()

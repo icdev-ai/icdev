@@ -47,43 +47,64 @@ LSP_SERVERS: Dict[str, Dict[str, Any]] = {
         "command": ["pylsp"],
         "alt_command": ["pyright-langserver", "--stdio"],
         "install_hint": "pip install python-lsp-server",
-        "capabilities": ["diagnostics", "hover", "completion", "definition",
-                         "references", "rename", "formatting", "type_check"],
+        "capabilities": [
+            "diagnostics",
+            "hover",
+            "completion",
+            "definition",
+            "references",
+            "rename",
+            "formatting",
+            "type_check",
+        ],
     },
     "typescript": {
         "name": "typescript-language-server",
         "command": ["typescript-language-server", "--stdio"],
         "install_hint": "npm install -g typescript-language-server typescript",
-        "capabilities": ["diagnostics", "hover", "completion", "definition",
-                         "references", "rename", "formatting", "type_check"],
+        "capabilities": [
+            "diagnostics",
+            "hover",
+            "completion",
+            "definition",
+            "references",
+            "rename",
+            "formatting",
+            "type_check",
+        ],
     },
     "go": {
         "name": "gopls",
         "command": ["gopls", "serve"],
         "install_hint": "go install golang.org/x/tools/gopls@latest",
-        "capabilities": ["diagnostics", "hover", "completion", "definition",
-                         "references", "rename", "formatting"],
+        "capabilities": ["diagnostics", "hover", "completion", "definition", "references", "rename", "formatting"],
     },
     "rust": {
         "name": "rust-analyzer",
         "command": ["rust-analyzer"],
         "install_hint": "rustup component add rust-analyzer",
-        "capabilities": ["diagnostics", "hover", "completion", "definition",
-                         "references", "rename", "formatting", "type_check"],
+        "capabilities": [
+            "diagnostics",
+            "hover",
+            "completion",
+            "definition",
+            "references",
+            "rename",
+            "formatting",
+            "type_check",
+        ],
     },
     "java": {
         "name": "jdtls",
         "command": ["jdtls"],
         "install_hint": "Install Eclipse JDT Language Server",
-        "capabilities": ["diagnostics", "hover", "completion", "definition",
-                         "references", "rename", "formatting"],
+        "capabilities": ["diagnostics", "hover", "completion", "definition", "references", "rename", "formatting"],
     },
     "csharp": {
         "name": "omnisharp",
         "command": ["omnisharp", "--languageserver"],
         "install_hint": "dotnet tool install -g omnisharp",
-        "capabilities": ["diagnostics", "hover", "completion", "definition",
-                         "references", "rename", "formatting"],
+        "capabilities": ["diagnostics", "hover", "completion", "definition", "references", "rename", "formatting"],
     },
 }
 
@@ -115,6 +136,7 @@ def check_available_servers() -> Dict[str, Any]:
 # Lightweight LSP Client (subprocess-based, no async)
 # ---------------------------------------------------------------------------
 
+
 def _run_diagnostics(file_path: str, language: str) -> Dict[str, Any]:
     """Run diagnostics on a file using language-specific tools.
 
@@ -131,21 +153,25 @@ def _run_diagnostics(file_path: str, language: str) -> Dict[str, Any]:
             try:
                 result = subprocess.run(
                     ["ruff", "check", "--output-format", "json", file_path],
-                    capture_output=True, text=True, timeout=30,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
                     stdin=subprocess.DEVNULL,
                 )
                 if result.stdout.strip():
                     try:
                         items = json.loads(result.stdout)
                         for item in items:
-                            diags.append({
-                                "line": item.get("location", {}).get("row", 0),
-                                "column": item.get("location", {}).get("column", 0),
-                                "severity": "warning",
-                                "code": item.get("code", ""),
-                                "message": item.get("message", ""),
-                                "source": "ruff",
-                            })
+                            diags.append(
+                                {
+                                    "line": item.get("location", {}).get("row", 0),
+                                    "column": item.get("location", {}).get("column", 0),
+                                    "severity": "warning",
+                                    "code": item.get("code", ""),
+                                    "message": item.get("message", ""),
+                                    "source": "ruff",
+                                }
+                            )
                     except json.JSONDecodeError:
                         pass
             except Exception:
@@ -154,9 +180,10 @@ def _run_diagnostics(file_path: str, language: str) -> Dict[str, Any]:
         if shutil.which("mypy"):
             try:
                 result = subprocess.run(
-                    ["mypy", "--ignore-missing-imports", "--no-error-summary",
-                     "--output", "json", file_path],
-                    capture_output=True, text=True, timeout=60,
+                    ["mypy", "--ignore-missing-imports", "--no-error-summary", "--output", "json", file_path],
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
                     stdin=subprocess.DEVNULL,
                 )
                 for line in (result.stdout + result.stderr).splitlines():
@@ -165,27 +192,31 @@ def _run_diagnostics(file_path: str, language: str) -> Dict[str, Any]:
                         continue
                     try:
                         item = json.loads(line)
-                        diags.append({
-                            "line": item.get("line", 0),
-                            "column": item.get("column", 0),
-                            "severity": item.get("severity", "error"),
-                            "code": item.get("code", ""),
-                            "message": item.get("message", ""),
-                            "source": "mypy",
-                        })
+                        diags.append(
+                            {
+                                "line": item.get("line", 0),
+                                "column": item.get("column", 0),
+                                "severity": item.get("severity", "error"),
+                                "code": item.get("code", ""),
+                                "message": item.get("message", ""),
+                                "source": "mypy",
+                            }
+                        )
                     except json.JSONDecodeError:
                         # Parse classic format: file:line: severity: message
                         if ":" in line:
                             parts = line.split(":", 3)
                             if len(parts) >= 4:
                                 try:
-                                    diags.append({
-                                        "line": int(parts[1].strip()),
-                                        "column": 0,
-                                        "severity": parts[2].strip().split()[0] if parts[2].strip() else "error",
-                                        "message": parts[3].strip(),
-                                        "source": "mypy",
-                                    })
+                                    diags.append(
+                                        {
+                                            "line": int(parts[1].strip()),
+                                            "column": 0,
+                                            "severity": parts[2].strip().split()[0] if parts[2].strip() else "error",
+                                            "message": parts[3].strip(),
+                                            "source": "mypy",
+                                        }
+                                    )
                                 except (ValueError, IndexError):
                                     pass
             except Exception:
@@ -198,17 +229,22 @@ def _run_diagnostics(file_path: str, language: str) -> Dict[str, Any]:
             try:
                 result = subprocess.run(
                     ["npx", "tsc", "--noEmit", "--pretty", "false", file_path],
-                    capture_output=True, text=True, timeout=60,
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
                     stdin=subprocess.DEVNULL,
                 )
                 for line in result.stdout.splitlines():
                     if "error TS" in line:
-                        diagnostics.append({
-                            "line": 0, "column": 0,
-                            "severity": "error",
-                            "message": line.strip(),
-                            "source": "tsc",
-                        })
+                        diagnostics.append(
+                            {
+                                "line": 0,
+                                "column": 0,
+                                "severity": "error",
+                                "message": line.strip(),
+                                "source": "tsc",
+                            }
+                        )
             except Exception:
                 pass
 
@@ -217,17 +253,22 @@ def _run_diagnostics(file_path: str, language: str) -> Dict[str, Any]:
             try:
                 result = subprocess.run(
                     ["go", "vet", file_path],
-                    capture_output=True, text=True, timeout=30,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
                     stdin=subprocess.DEVNULL,
                 )
                 for line in result.stderr.splitlines():
                     if line.strip():
-                        diagnostics.append({
-                            "line": 0, "column": 0,
-                            "severity": "warning",
-                            "message": line.strip(),
-                            "source": "go vet",
-                        })
+                        diagnostics.append(
+                            {
+                                "line": 0,
+                                "column": 0,
+                                "severity": "warning",
+                                "message": line.strip(),
+                                "source": "go vet",
+                            }
+                        )
             except Exception:
                 pass
 
@@ -236,7 +277,9 @@ def _run_diagnostics(file_path: str, language: str) -> Dict[str, Any]:
             try:
                 result = subprocess.run(
                     ["cargo", "check", "--message-format", "json"],
-                    capture_output=True, text=True, timeout=120,
+                    capture_output=True,
+                    text=True,
+                    timeout=120,
                     cwd=str(Path(file_path).parent),
                     stdin=subprocess.DEVNULL,
                 )
@@ -245,12 +288,15 @@ def _run_diagnostics(file_path: str, language: str) -> Dict[str, Any]:
                         msg = json.loads(line)
                         if msg.get("reason") == "compiler-message":
                             m = msg.get("message", {})
-                            diagnostics.append({
-                                "line": 0, "column": 0,
-                                "severity": m.get("level", "error"),
-                                "message": m.get("message", ""),
-                                "source": "rustc",
-                            })
+                            diagnostics.append(
+                                {
+                                    "line": 0,
+                                    "column": 0,
+                                    "severity": m.get("level", "error"),
+                                    "message": m.get("message", ""),
+                                    "source": "rustc",
+                                }
+                            )
                     except json.JSONDecodeError:
                         pass
             except Exception:
@@ -273,6 +319,7 @@ def _get_hover_info(file_path: str, line: int, column: int, language: str) -> Di
         # Fall back to AST-based type extraction
         try:
             import ast
+
             with open(file_path, "r", encoding="utf-8") as f:
                 source = f.read()
             tree = ast.parse(source)
@@ -281,12 +328,13 @@ def _get_hover_info(file_path: str, line: int, column: int, language: str) -> Di
                 if hasattr(node, "lineno") and node.lineno == line:
                     if isinstance(node, ast.FunctionDef):
                         args_str = ", ".join(
-                            a.arg + (f": {ast.dump(a.annotation)}" if a.annotation else "")
-                            for a in node.args.args
+                            a.arg + (f": {ast.dump(a.annotation)}" if a.annotation else "") for a in node.args.args
                         )
                         returns = f" -> {ast.dump(node.returns)}" if node.returns else ""
                         return {
-                            "file": file_path, "line": line, "column": column,
+                            "file": file_path,
+                            "line": line,
+                            "column": column,
                             "kind": "function",
                             "signature": f"def {node.name}({args_str}){returns}",
                             "docstring": ast.get_docstring(node) or "",
@@ -294,7 +342,9 @@ def _get_hover_info(file_path: str, line: int, column: int, language: str) -> Di
                     elif isinstance(node, ast.ClassDef):
                         bases = ", ".join(ast.dump(b) for b in node.bases)
                         return {
-                            "file": file_path, "line": line, "column": column,
+                            "file": file_path,
+                            "line": line,
+                            "column": column,
                             "kind": "class",
                             "signature": f"class {node.name}({bases})" if bases else f"class {node.name}",
                             "docstring": ast.get_docstring(node) or "",
@@ -303,7 +353,9 @@ def _get_hover_info(file_path: str, line: int, column: int, language: str) -> Di
             pass
 
     return {
-        "file": file_path, "line": line, "column": column,
+        "file": file_path,
+        "line": line,
+        "column": column,
         "kind": "unknown",
         "info": f"Hover info not available for {language} at {line}:{column}",
     }
@@ -326,8 +378,12 @@ def _find_definitions(file_path: str, symbol: str, language: str, project_dir: s
 
     lang_patterns = patterns.get(language, [f"{symbol}"])
     lang_exts = {
-        "python": [".py"], "typescript": [".ts", ".tsx"], "go": [".go"],
-        "rust": [".rs"], "java": [".java"], "csharp": [".cs"],
+        "python": [".py"],
+        "typescript": [".ts", ".tsx"],
+        "go": [".go"],
+        "rust": [".rs"],
+        "java": [".java"],
+        "csharp": [".cs"],
     }
     exts = lang_exts.get(language, [])
 
@@ -344,12 +400,14 @@ def _find_definitions(file_path: str, symbol: str, language: str, project_dir: s
                     for i, line in enumerate(f, 1):
                         for pat in lang_patterns:
                             if pat in line:
-                                definitions.append({
-                                    "file": fpath,
-                                    "line": i,
-                                    "text": line.strip()[:200],
-                                    "pattern": pat,
-                                })
+                                definitions.append(
+                                    {
+                                        "file": fpath,
+                                        "line": i,
+                                        "text": line.strip()[:200],
+                                        "pattern": pat,
+                                    }
+                                )
             except Exception:
                 continue
 
@@ -424,9 +482,15 @@ MCP_TOOLS = [
 
 # Language extension map
 _EXT_TO_LANG = {
-    ".py": "python", ".java": "java", ".go": "go",
-    ".rs": "rust", ".cs": "csharp", ".ts": "typescript", ".tsx": "typescript",
-    ".js": "javascript", ".jsx": "javascript",
+    ".py": "python",
+    ".java": "java",
+    ".go": "go",
+    ".rs": "rust",
+    ".cs": "csharp",
+    ".ts": "typescript",
+    ".tsx": "typescript",
+    ".js": "javascript",
+    ".jsx": "javascript",
 }
 
 
@@ -468,6 +532,7 @@ def handle_tool_call(tool_name: str, arguments: Dict) -> Any:
         repair = arguments.get("repair", False)
         project_dir = arguments.get("project_dir", "")
         from tools.analysis.verify_loop import verify_file
+
         return verify_file(file_path, language, repair=repair, project_dir=project_dir)
 
     return {"error": f"Unknown tool: {tool_name}"}
@@ -476,6 +541,7 @@ def handle_tool_call(tool_name: str, arguments: Dict) -> Any:
 # ---------------------------------------------------------------------------
 # MCP Stdio Server
 # ---------------------------------------------------------------------------
+
 
 def _mcp_server():
     """Run MCP server over stdio (JSON-RPC 2.0)."""
@@ -493,7 +559,8 @@ def _mcp_server():
 
         if method == "tools/list":
             response = {
-                "jsonrpc": "2.0", "id": req_id,
+                "jsonrpc": "2.0",
+                "id": req_id,
                 "result": {"tools": MCP_TOOLS},
             }
         elif method == "tools/call":
@@ -503,19 +570,22 @@ def _mcp_server():
             try:
                 result = handle_tool_call(tool_name, arguments)
                 response = {
-                    "jsonrpc": "2.0", "id": req_id,
+                    "jsonrpc": "2.0",
+                    "id": req_id,
                     "result": {
                         "content": [{"type": "text", "text": json.dumps(result, indent=2, default=str)}],
                     },
                 }
             except Exception as e:
                 response = {
-                    "jsonrpc": "2.0", "id": req_id,
+                    "jsonrpc": "2.0",
+                    "id": req_id,
                     "error": {"code": -1, "message": str(e)},
                 }
         elif method == "initialize":
             response = {
-                "jsonrpc": "2.0", "id": req_id,
+                "jsonrpc": "2.0",
+                "id": req_id,
                 "result": {
                     "protocolVersion": "2024-11-05",
                     "capabilities": {"tools": {"listChanged": False}},
@@ -526,7 +596,8 @@ def _mcp_server():
             continue
         else:
             response = {
-                "jsonrpc": "2.0", "id": req_id,
+                "jsonrpc": "2.0",
+                "id": req_id,
                 "result": {},
             }
 
@@ -536,6 +607,7 @@ def _mcp_server():
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+
 
 def main():
     parser = argparse.ArgumentParser(description="LSP-over-MCP Server (LeanStral-adapted)")

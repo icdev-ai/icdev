@@ -72,14 +72,16 @@ def _match_vehicles_to_opportunities() -> List[Dict]:
         text = ((row["title"] or "") + " " + (row["description"] or "")).lower()
         for vehicle_name, info in KNOWN_VEHICLES.items():
             if vehicle_name.lower() in text:
-                matches.append({
-                    "opportunity_id": row["id"],
-                    "title": row["title"],
-                    "vehicle": vehicle_name,
-                    "vehicle_type": info["type"],
-                    "vehicle_agency": info["agency"],
-                    "vehicle_status": info["status"],
-                })
+                matches.append(
+                    {
+                        "opportunity_id": row["id"],
+                        "title": row["title"],
+                        "vehicle": vehicle_name,
+                        "vehicle_type": info["type"],
+                        "vehicle_agency": info["agency"],
+                        "vehicle_status": info["status"],
+                    }
+                )
 
     return matches
 
@@ -113,6 +115,7 @@ def _check_vehicle_eligibility() -> Dict[str, Any]:
 # Main entry point
 # ---------------------------------------------------------------------------
 
+
 def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     """Execute the Vehicle Reflex (R19).
 
@@ -143,11 +146,13 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                 "vehicle_check",
                 "vehicle",
                 "green",
-                json.dumps({
-                    "vehicles_checked": vehicles_checked,
-                    "matches_found": len(vehicle_matches),
-                    "vehicles_held": eligibility["vehicles_held"],
-                }),
+                json.dumps(
+                    {
+                        "vehicles_checked": vehicles_checked,
+                        "matches_found": len(vehicle_matches),
+                        "vehicles_held": eligibility["vehicles_held"],
+                    }
+                ),
                 1,
                 _utcnow_iso(),
             ),
@@ -168,4 +173,6 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             "match_details": vehicle_matches[:15],
         },
     }
+
+
 # CUI // SP-CTI

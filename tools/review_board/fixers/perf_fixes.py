@@ -83,9 +83,7 @@ def verify_temp_size(finding: Dict[str, Any]) -> Dict[str, Any]:
     if not tmp_dir.exists():
         return {"passed": True, "size_mb": 0}
 
-    total_size = sum(
-        f.stat().st_size for f in tmp_dir.rglob("*") if f.is_file()
-    )
+    total_size = sum(f.stat().st_size for f in tmp_dir.rglob("*") if f.is_file())
     size_mb = total_size / (1024 * 1024)
 
     return {

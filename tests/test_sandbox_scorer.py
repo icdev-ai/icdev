@@ -69,22 +69,11 @@ def empty_db(tmp_path):
 def populated_db(scorer_db):
     """Scorer DB pre-populated with passing data in all tables."""
     conn = sqlite3.connect(str(scorer_db))
-    conn.execute(
-        "INSERT INTO credential_broker_log VALUES ('1','agent','fn','grant','2026-01-01')"
-    )
-    conn.execute(
-        "INSERT INTO egress_policy_audit VALUES ('1','builder','hash','resolve','2026-01-01')"
-    )
-    conn.execute(
-        "INSERT INTO blueprint_digests VALUES "
-        "('1','capability','cap-1','abc123',5,1024,'2026-01-01','pass')"
-    )
-    conn.execute(
-        "INSERT INTO prov_entities VALUES ('1','agent','2026-01-01')"
-    )
-    conn.execute(
-        "INSERT INTO audit_trail VALUES ('1','test','2026-01-01')"
-    )
+    conn.execute("INSERT INTO credential_broker_log VALUES ('1','agent','fn','grant','2026-01-01')")
+    conn.execute("INSERT INTO egress_policy_audit VALUES ('1','builder','hash','resolve','2026-01-01')")
+    conn.execute("INSERT INTO blueprint_digests VALUES ('1','capability','cap-1','abc123',5,1024,'2026-01-01','pass')")
+    conn.execute("INSERT INTO prov_entities VALUES ('1','agent','2026-01-01')")
+    conn.execute("INSERT INTO audit_trail VALUES ('1','test','2026-01-01')")
     conn.commit()
     conn.close()
     return scorer_db
@@ -154,15 +143,9 @@ class TestSandboxScoring:
 
     def test_db_checks_with_broker_data(self, scorer_db):
         conn = sqlite3.connect(str(scorer_db))
-        conn.execute(
-            "INSERT INTO credential_broker_log VALUES ('1','agent','fn','grant','2026-01-01')"
-        )
-        conn.execute(
-            "INSERT INTO egress_policy_audit VALUES ('1','builder','hash','resolve','2026-01-01')"
-        )
-        conn.execute(
-            "INSERT INTO audit_trail VALUES ('1','test','2026-01-01')"
-        )
+        conn.execute("INSERT INTO credential_broker_log VALUES ('1','agent','fn','grant','2026-01-01')")
+        conn.execute("INSERT INTO egress_policy_audit VALUES ('1','builder','hash','resolve','2026-01-01')")
+        conn.execute("INSERT INTO audit_trail VALUES ('1','test','2026-01-01')")
         conn.commit()
         conn.close()
         result = score_sandbox(db_path=scorer_db)
@@ -317,8 +300,7 @@ class TestSandboxRubricDimensions:
             },
             db_path=scorer_db,
         )
-        expected = (1.0 * RUBRIC["credential_isolation"]
-                    + 0.2 * RUBRIC["runtime_isolation"])
+        expected = 1.0 * RUBRIC["credential_isolation"] + 0.2 * RUBRIC["runtime_isolation"]
         assert abs(result["score"] - round(expected, 4)) < 0.001
         assert result["breakdown"]["credential_isolation"] == 1.0
 
@@ -335,8 +317,7 @@ class TestSandboxRubricDimensions:
             },
             db_path=scorer_db,
         )
-        expected = (1.0 * RUBRIC["network_restriction"]
-                    + 0.2 * RUBRIC["runtime_isolation"])
+        expected = 1.0 * RUBRIC["network_restriction"] + 0.2 * RUBRIC["runtime_isolation"]
         assert abs(result["score"] - round(expected, 4)) < 0.001
         assert result["breakdown"]["network_restriction"] == 1.0
 
@@ -353,8 +334,7 @@ class TestSandboxRubricDimensions:
             },
             db_path=scorer_db,
         )
-        expected = (1.0 * RUBRIC["digest_verified"]
-                    + 0.2 * RUBRIC["runtime_isolation"])
+        expected = 1.0 * RUBRIC["digest_verified"] + 0.2 * RUBRIC["runtime_isolation"]
         assert abs(result["score"] - round(expected, 4)) < 0.001
         assert result["breakdown"]["digest_verified"] == 1.0
 
@@ -371,8 +351,7 @@ class TestSandboxRubricDimensions:
             },
             db_path=scorer_db,
         )
-        expected = (1.0 * RUBRIC["provenance_chain"]
-                    + 0.2 * RUBRIC["runtime_isolation"])
+        expected = 1.0 * RUBRIC["provenance_chain"] + 0.2 * RUBRIC["runtime_isolation"]
         assert abs(result["score"] - round(expected, 4)) < 0.001
         assert result["breakdown"]["provenance_chain"] == 1.0
 
@@ -406,8 +385,7 @@ class TestSandboxRubricDimensions:
             },
             db_path=scorer_db,
         )
-        expected = (1.0 * RUBRIC["audit_completeness"]
-                    + 0.2 * RUBRIC["runtime_isolation"])
+        expected = 1.0 * RUBRIC["audit_completeness"] + 0.2 * RUBRIC["runtime_isolation"]
         assert abs(result["score"] - round(expected, 4)) < 0.001
         assert result["breakdown"]["audit_completeness"] == 1.0
 
@@ -475,8 +453,7 @@ class TestSandboxDBChecks:
         """Digest with verification_result='pass' scores 1.0, 'fail' scores 0.5."""
         conn = sqlite3.connect(str(scorer_db))
         conn.execute(
-            "INSERT INTO blueprint_digests VALUES "
-            "('1','capability','cap-1','abc','5','1024','2026-01-01','pass')"
+            "INSERT INTO blueprint_digests VALUES ('1','capability','cap-1','abc','5','1024','2026-01-01','pass')"
         )
         conn.commit()
         conn.close()
@@ -490,8 +467,7 @@ class TestSandboxDBChecks:
         """Digest with verification_result='fail' scores 0.5."""
         conn = sqlite3.connect(str(scorer_db))
         conn.execute(
-            "INSERT INTO blueprint_digests VALUES "
-            "('1','capability','cap-2','abc','5','1024','2026-01-01','fail')"
+            "INSERT INTO blueprint_digests VALUES ('1','capability','cap-2','abc','5','1024','2026-01-01','fail')"
         )
         conn.commit()
         conn.close()
@@ -650,21 +626,25 @@ class TestSandboxGateThreshold:
 class TestSandboxCLI:
     def test_cli_score_json_output(self, scorer_db):
         """CLI --score --json should produce valid JSON with expected keys."""
-        meta = json.dumps({
-            "has_broker": True,
-            "has_egress_policy": True,
-            "has_digest": True,
-            "has_provenance": True,
-            "runs_in_container": True,
-            "has_audit_trail": True,
-        })
+        meta = json.dumps(
+            {
+                "has_broker": True,
+                "has_egress_policy": True,
+                "has_digest": True,
+                "has_provenance": True,
+                "runs_in_container": True,
+                "has_audit_trail": True,
+            }
+        )
         proc = subprocess.run(
             [
                 sys.executable,
                 "tools/registry/sandbox_scorer.py",
                 "--score",
-                "--source-metadata", meta,
-                "--db-path", str(scorer_db),
+                "--source-metadata",
+                meta,
+                "--db-path",
+                str(scorer_db),
                 "--json",
             ],
             capture_output=True,
@@ -681,21 +661,25 @@ class TestSandboxCLI:
 
     def test_cli_gate_pass(self, scorer_db):
         """CLI --gate --json with full isolation should exit 0 (pass)."""
-        meta = json.dumps({
-            "has_broker": True,
-            "has_egress_policy": True,
-            "has_digest": True,
-            "has_provenance": True,
-            "runs_in_container": True,
-            "has_audit_trail": True,
-        })
+        meta = json.dumps(
+            {
+                "has_broker": True,
+                "has_egress_policy": True,
+                "has_digest": True,
+                "has_provenance": True,
+                "runs_in_container": True,
+                "has_audit_trail": True,
+            }
+        )
         proc = subprocess.run(
             [
                 sys.executable,
                 "tools/registry/sandbox_scorer.py",
                 "--gate",
-                "--source-metadata", meta,
-                "--db-path", str(scorer_db),
+                "--source-metadata",
+                meta,
+                "--db-path",
+                str(scorer_db),
                 "--json",
             ],
             capture_output=True,
@@ -710,21 +694,25 @@ class TestSandboxCLI:
 
     def test_cli_gate_fail(self, scorer_db):
         """CLI --gate --json with no isolation should exit 1 (fail)."""
-        meta = json.dumps({
-            "has_broker": False,
-            "has_egress_policy": False,
-            "has_digest": False,
-            "has_provenance": False,
-            "runs_in_container": False,
-            "has_audit_trail": False,
-        })
+        meta = json.dumps(
+            {
+                "has_broker": False,
+                "has_egress_policy": False,
+                "has_digest": False,
+                "has_provenance": False,
+                "runs_in_container": False,
+                "has_audit_trail": False,
+            }
+        )
         proc = subprocess.run(
             [
                 sys.executable,
                 "tools/registry/sandbox_scorer.py",
                 "--gate",
-                "--source-metadata", meta,
-                "--db-path", str(scorer_db),
+                "--source-metadata",
+                meta,
+                "--db-path",
+                str(scorer_db),
                 "--json",
             ],
             capture_output=True,

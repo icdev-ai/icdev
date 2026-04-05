@@ -96,6 +96,7 @@ FRAMEWORK_CLI_ALIASES = {
 # Deterministic ID helpers
 # ---------------------------------------------------------------------------
 
+
 def _content_hash(text: str) -> str:
     """SHA-256 content hash (first 12 hex chars) for deterministic IDs."""
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
@@ -126,9 +127,11 @@ def _edge_id(source_id: str, target_id: str, relationship: str) -> str:
 # Database helpers (same patterns as graph_rag.py)
 # ---------------------------------------------------------------------------
 
+
 def _get_db(db_path: Optional[Path] = None):
     """Get a connection to icdev.db."""
     from tools.db.storage import get_connection
+
     conn = get_connection(db_path=str(db_path) if db_path else None)
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
@@ -185,6 +188,7 @@ def _now() -> str:
 # Crosswalk data loader
 # ---------------------------------------------------------------------------
 
+
 def _load_crosswalk_data() -> Dict[str, Any]:
     """Load crosswalk JSON from context/compliance/control_crosswalk.json.
 
@@ -194,8 +198,7 @@ def _load_crosswalk_data() -> Dict[str, Any]:
     crosswalk_path = BASE_DIR / "context" / "compliance" / "control_crosswalk.json"
     if not crosswalk_path.exists():
         raise FileNotFoundError(
-            f"Crosswalk data not found: {crosswalk_path}\n"
-            "Expected: context/compliance/control_crosswalk.json"
+            f"Crosswalk data not found: {crosswalk_path}\nExpected: context/compliance/control_crosswalk.json"
         )
     with open(crosswalk_path, "r", encoding="utf-8") as f:
         data = json.load(f)
@@ -205,6 +208,7 @@ def _load_crosswalk_data() -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Build compliance graph
 # ---------------------------------------------------------------------------
+
 
 def build_compliance_graph(
     project_id: Optional[str] = None,
@@ -238,9 +242,7 @@ def build_compliance_graph(
     graph_id = f"kg-graph-{_content_hash(graph_key)}"
 
     # Upsert graph record
-    existing = conn.execute(
-        "SELECT id FROM kg_graphs WHERE id = ?", (graph_id,)
-    ).fetchone()
+    existing = conn.execute("SELECT id FROM kg_graphs WHERE id = ?", (graph_id,)).fetchone()
 
     if existing:
         # Clear existing nodes/edges for idempotent rebuild
@@ -260,8 +262,7 @@ def build_compliance_graph(
                 graph_id,
                 project_id,
                 GRAPH_NAME,
-                "NIST 800-53 crosswalk as knowledge graph — controls, "
-                "families, and framework mappings",
+                "NIST 800-53 crosswalk as knowledge graph — controls, families, and framework mappings",
                 timestamp,
                 timestamp,
             ),
@@ -332,9 +333,7 @@ def build_compliance_graph(
         description = entry.get("description", "")
 
         # Determine baseline from priority (P1 = high, P2 = moderate, P3 = low)
-        baseline_level = {"P1": "low", "P2": "moderate", "P3": "high"}.get(
-            priority, "moderate"
-        )
+        baseline_level = {"P1": "low", "P2": "moderate", "P3": "high"}.get(priority, "moderate")
 
         # Create control node
         ctrl_node_id = _ctrl_id(ctrl_id_str)
@@ -383,8 +382,14 @@ def build_compliance_graph(
                         weight, properties, created_at)
                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
-                        sat_edge_id, graph_id, ctrl_node_id, fw_node_id,
-                        "satisfies", weight, edge_props, timestamp,
+                        sat_edge_id,
+                        graph_id,
+                        ctrl_node_id,
+                        fw_node_id,
+                        "satisfies",
+                        weight,
+                        edge_props,
+                        timestamp,
                     ),
                 )
                 edge_count += 1
@@ -406,8 +411,14 @@ def build_compliance_graph(
                         weight, properties, created_at)
                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
-                        sat_edge_id, graph_id, ctrl_node_id, fw_node_id,
-                        "satisfies", weight, edge_props, timestamp,
+                        sat_edge_id,
+                        graph_id,
+                        ctrl_node_id,
+                        fw_node_id,
+                        "satisfies",
+                        weight,
+                        edge_props,
+                        timestamp,
                     ),
                 )
                 edge_count += 1
@@ -416,7 +427,7 @@ def build_compliance_graph(
     # --- Create overlaps_with edges between frameworks sharing controls ---
     fw_keys_list = list(framework_controls.keys())
     for i, fw_a in enumerate(fw_keys_list):
-        for fw_b in fw_keys_list[i + 1:]:
+        for fw_b in fw_keys_list[i + 1 :]:
             shared = framework_controls[fw_a] & framework_controls[fw_b]
             if shared:
                 overlap_weight = len(shared) / max(
@@ -437,9 +448,14 @@ def build_compliance_graph(
                         weight, properties, created_at)
                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
-                        ov_edge_id, graph_id, fw_a_node, fw_b_node,
-                        "overlaps_with", round(overlap_weight, 4),
-                        ov_props, timestamp,
+                        ov_edge_id,
+                        graph_id,
+                        fw_a_node,
+                        fw_b_node,
+                        "overlaps_with",
+                        round(overlap_weight, 4),
+                        ov_props,
+                        timestamp,
                     ),
                 )
                 edge_count += 1
@@ -463,10 +479,13 @@ def build_compliance_graph(
         "family_count": len(families),
         "control_count": len(crosswalk),
         "overlap_edges": sum(
-            1 for i, a in enumerate(fw_keys_list)
-            for b in fw_keys_list[i + 1:]
+            1
+            for i, a in enumerate(fw_keys_list)
+            for b in fw_keys_list[i + 1 :]
             if framework_controls[a] & framework_controls[b]
-        ) if 'fw_keys_list' in dir() else 0,
+        )
+        if "fw_keys_list" in dir()
+        else 0,
         "built_at": timestamp,
     }
 
@@ -474,6 +493,7 @@ def build_compliance_graph(
 # ---------------------------------------------------------------------------
 # Crosswalk path (BFS)
 # ---------------------------------------------------------------------------
+
 
 def get_crosswalk_path(
     source_control: str,
@@ -536,9 +556,7 @@ def get_crosswalk_path(
         }
 
     # Find graph_id from source node
-    graph_id = conn.execute(
-        "SELECT graph_id FROM kg_nodes WHERE id = ?", (source_node_id,)
-    ).fetchone()
+    graph_id = conn.execute("SELECT graph_id FROM kg_nodes WHERE id = ?", (source_node_id,)).fetchone()
     if not graph_id:
         conn.close()
         return {"status": "error", "error": "Source node has no graph"}
@@ -554,18 +572,22 @@ def get_crosswalk_path(
     adj: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
     for e in edges:
         e_dict = dict(e)
-        adj[e_dict["source_id"]].append({
-            "target": e_dict["target_id"],
-            "relationship": e_dict["relationship"],
-            "weight": e_dict["weight"],
-            "properties": e_dict["properties"],
-        })
-        adj[e_dict["target_id"]].append({
-            "target": e_dict["source_id"],
-            "relationship": e_dict["relationship"],
-            "weight": e_dict["weight"],
-            "properties": e_dict["properties"],
-        })
+        adj[e_dict["source_id"]].append(
+            {
+                "target": e_dict["target_id"],
+                "relationship": e_dict["relationship"],
+                "weight": e_dict["weight"],
+                "properties": e_dict["properties"],
+            }
+        )
+        adj[e_dict["target_id"]].append(
+            {
+                "target": e_dict["source_id"],
+                "relationship": e_dict["relationship"],
+                "weight": e_dict["weight"],
+                "properties": e_dict["properties"],
+            }
+        )
 
     # BFS from source_node_id to any target_node_id
     visited: Set[str] = {source_node_id}
@@ -587,16 +609,21 @@ def get_crosswalk_path(
             next_id = neighbor["target"]
             if next_id not in visited:
                 visited.add(next_id)
-                queue.append((
-                    next_id,
-                    path + [next_id],
-                    path_edges + [{
-                        "from": current,
-                        "to": next_id,
-                        "relationship": neighbor["relationship"],
-                        "weight": neighbor["weight"],
-                    }],
-                ))
+                queue.append(
+                    (
+                        next_id,
+                        path + [next_id],
+                        path_edges
+                        + [
+                            {
+                                "from": current,
+                                "to": next_id,
+                                "relationship": neighbor["relationship"],
+                                "weight": neighbor["weight"],
+                            }
+                        ],
+                    )
+                )
 
     if not found_path:
         conn.close()
@@ -617,12 +644,14 @@ def get_crosswalk_path(
         ).fetchone()
         if row:
             row_dict = dict(row)
-            path_nodes.append({
-                "id": nid,
-                "label": row_dict["label"],
-                "entity_type": row_dict["entity_type"],
-                "properties": json.loads(row_dict.get("properties", "{}") or "{}"),
-            })
+            path_nodes.append(
+                {
+                    "id": nid,
+                    "label": row_dict["label"],
+                    "entity_type": row_dict["entity_type"],
+                    "properties": json.loads(row_dict.get("properties", "{}") or "{}"),
+                }
+            )
 
     conn.close()
 
@@ -640,6 +669,7 @@ def get_crosswalk_path(
 # ---------------------------------------------------------------------------
 # Framework coverage
 # ---------------------------------------------------------------------------
+
 
 def get_framework_coverage(
     framework: str,
@@ -690,9 +720,7 @@ def get_framework_coverage(
             (GRAPH_NAME, project_id),
         ).fetchone()
     else:
-        graph_row = conn.execute(
-            "SELECT id FROM kg_graphs WHERE name = ?", (GRAPH_NAME,)
-        ).fetchone()
+        graph_row = conn.execute("SELECT id FROM kg_graphs WHERE name = ?", (GRAPH_NAME,)).fetchone()
 
     if not graph_row:
         conn.close()
@@ -738,11 +766,13 @@ def get_framework_coverage(
     coverage_by_family = []
     for fam_code in sorted(family_groups.keys()):
         controls = sorted(family_groups[fam_code].values(), key=lambda c: c["control_id"])
-        coverage_by_family.append({
-            "family": fam_code,
-            "control_count": len(controls),
-            "controls": controls,
-        })
+        coverage_by_family.append(
+            {
+                "family": fam_code,
+                "control_count": len(controls),
+                "controls": controls,
+            }
+        )
 
     conn.close()
 
@@ -760,37 +790,48 @@ def get_framework_coverage(
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main() -> None:
     """CLI entry point."""
     parser = argparse.ArgumentParser(
         description="Compliance Framework Crosswalk Knowledge Graph",
     )
     parser.add_argument(
-        "--build", action="store_true",
+        "--build",
+        action="store_true",
         help="Build or rebuild the compliance crosswalk graph",
     )
     parser.add_argument(
-        "--project-id", default=None,
+        "--project-id",
+        default=None,
         help="Optional project ID to associate with graph",
     )
     parser.add_argument(
-        "--crosswalk", default=None, metavar="CONTROL",
+        "--crosswalk",
+        default=None,
+        metavar="CONTROL",
         help="Find crosswalk path from a control (e.g., AC-2)",
     )
     parser.add_argument(
-        "--target", default=None,
+        "--target",
+        default=None,
         help="Target framework for crosswalk path (e.g., cmmc, fedramp)",
     )
     parser.add_argument(
-        "--coverage", default=None, metavar="FRAMEWORK",
+        "--coverage",
+        default=None,
+        metavar="FRAMEWORK",
         help="Get coverage report for a framework (e.g., fedramp, cmmc_level_2)",
     )
     parser.add_argument(
-        "--json", action="store_true", dest="json_output",
+        "--json",
+        action="store_true",
+        dest="json_output",
         help="Output as JSON",
     )
     parser.add_argument(
-        "--db-path", default=None,
+        "--db-path",
+        default=None,
         help="Optional database path override",
     )
 

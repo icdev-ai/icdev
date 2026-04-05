@@ -248,9 +248,7 @@ def _ensure_workflow_loop_id_column(conn) -> bool:
         col_names = [c["name"] if isinstance(c, dict) else c[1] for c in cols]
         if "workflow_loop_id" in col_names:
             return True
-        conn.execute(
-            "ALTER TABLE proposal_opportunities ADD COLUMN workflow_loop_id TEXT"
-        )
+        conn.execute("ALTER TABLE proposal_opportunities ADD COLUMN workflow_loop_id TEXT")
         conn.commit()
         return True
     except Exception:
@@ -338,12 +336,14 @@ def create_opportunity_loop(
         _audit(
             conn,
             f"Created lifecycle loop {loop_id} for opportunity {opportunity_id}",
-            json.dumps({
-                "loop_id": loop_id,
-                "opportunity_id": opportunity_id,
-                "sam_gov_id": sam_gov_id,
-                "criteria_count": len(TRANSITION_CRITERIA),
-            }),
+            json.dumps(
+                {
+                    "loop_id": loop_id,
+                    "opportunity_id": opportunity_id,
+                    "sam_gov_id": sam_gov_id,
+                    "criteria_count": len(TRANSITION_CRITERIA),
+                }
+            ),
             project_id,
         )
         conn.commit()
@@ -364,6 +364,7 @@ def create_opportunity_loop(
 # ---------------------------------------------------------------------------
 # Phase transition verification
 # ---------------------------------------------------------------------------
+
 
 def _check_capture_to_extract(conn, opportunity_id: str) -> Tuple[bool, str]:
     """CAPTURE->EXTRACT: SAM.gov data complete (title, agency, response_date)."""
@@ -391,8 +392,7 @@ def _check_capture_to_extract(conn, opportunity_id: str) -> Tuple[bool, str]:
 def _check_extract_to_map(conn, opportunity_id: str) -> Tuple[bool, str]:
     """EXTRACT->MAP: shall statement count >= 5."""
     row = conn.execute(
-        "SELECT COUNT(*) as cnt FROM rfp_shall_statements "
-        "WHERE proposal_opportunity_id = ?",
+        "SELECT COUNT(*) as cnt FROM rfp_shall_statements WHERE proposal_opportunity_id = ?",
         (opportunity_id,),
     ).fetchone()
     count = row["cnt"] if isinstance(row, dict) else row[0]
@@ -404,16 +404,14 @@ def _check_extract_to_map(conn, opportunity_id: str) -> Tuple[bool, str]:
 def _check_map_to_draft(conn, opportunity_id: str) -> Tuple[bool, str]:
     """MAP->DRAFT: capability coverage >= 60%."""
     rows = conn.execute(
-        "SELECT compliance_status FROM pg_compliance_matrix "
-        "WHERE opportunity_id = ?",
+        "SELECT compliance_status FROM pg_compliance_matrix WHERE opportunity_id = ?",
         (opportunity_id,),
     ).fetchall()
     if not rows:
         return False, "No compliance matrix entries found"
     total = len(rows)
     addressed = sum(
-        1 for r in rows
-        if (r["compliance_status"] if isinstance(r, dict) else r[0]) in ("addressed", "partial")
+        1 for r in rows if (r["compliance_status"] if isinstance(r, dict) else r[0]) in ("addressed", "partial")
     )
     coverage = addressed / total if total > 0 else 0.0
     if coverage >= 0.60:
@@ -424,8 +422,7 @@ def _check_map_to_draft(conn, opportunity_id: str) -> Tuple[bool, str]:
 def _check_draft_to_polish(conn, opportunity_id: str) -> Tuple[bool, str]:
     """DRAFT->POLISH: all drafts substantive (word_count > 50)."""
     rows = conn.execute(
-        "SELECT id, draft_content FROM proposal_section_drafts "
-        "WHERE opportunity_id = ?",
+        "SELECT id, draft_content FROM proposal_section_drafts WHERE opportunity_id = ?",
         (opportunity_id,),
     ).fetchall()
     if not rows:
@@ -445,16 +442,12 @@ def _check_draft_to_polish(conn, opportunity_id: str) -> Tuple[bool, str]:
 def _check_polish_to_decide(conn, opportunity_id: str) -> Tuple[bool, str]:
     """POLISH->DECIDE: average quality composite_score >= 0.70."""
     rows = conn.execute(
-        "SELECT composite_score FROM pg_proposal_quality_scores "
-        "WHERE opportunity_id = ?",
+        "SELECT composite_score FROM pg_proposal_quality_scores WHERE opportunity_id = ?",
         (opportunity_id,),
     ).fetchall()
     if not rows:
         return False, "No quality scores found"
-    scores = [
-        (r["composite_score"] if isinstance(r, dict) else r[0])
-        for r in rows
-    ]
+    scores = [(r["composite_score"] if isinstance(r, dict) else r[0]) for r in rows]
     # Filter out None values
     scores = [s for s in scores if s is not None]
     if not scores:
@@ -468,8 +461,7 @@ def _check_polish_to_decide(conn, opportunity_id: str) -> Tuple[bool, str]:
 def _check_decide_to_deliver(conn, opportunity_id: str) -> Tuple[bool, str]:
     """DECIDE->DELIVER: human bid approval received (recommendation = 'bid')."""
     row = conn.execute(
-        "SELECT decision, decided_by FROM pg_bid_decisions "
-        "WHERE opportunity_id = ? ORDER BY created_at DESC LIMIT 1",
+        "SELECT decision, decided_by FROM pg_bid_decisions WHERE opportunity_id = ? ORDER BY created_at DESC LIMIT 1",
         (opportunity_id,),
     ).fetchone()
     if not row:
@@ -528,8 +520,7 @@ def verify_phase_transition(
             for tc in TRANSITION_CRITERIA:
                 if tc["from"] == key[0] and tc["to"] == key[1]:
                     row = conn.execute(
-                        "SELECT id FROM workflow_acceptance_criteria "
-                        "WHERE loop_id = ? AND then_text = ?",
+                        "SELECT id FROM workflow_acceptance_criteria WHERE loop_id = ? AND then_text = ?",
                         (loop_id, tc["then"]),
                     ).fetchone()
                     if row:
@@ -567,12 +558,14 @@ def verify_phase_transition(
         _audit(
             conn,
             f"Phase transition verified: {from_phase}->{to_phase} = {status}",
-            json.dumps({
-                "opportunity_id": opportunity_id,
-                "transition": f"{from_phase}->{to_phase}",
-                "passed": passed,
-                "details": details,
-            }),
+            json.dumps(
+                {
+                    "opportunity_id": opportunity_id,
+                    "transition": f"{from_phase}->{to_phase}",
+                    "passed": passed,
+                    "details": details,
+                }
+            ),
             f"pg-{opportunity_id}",
         )
         conn.commit()
@@ -627,13 +620,15 @@ def reconcile_reflex(
 
         recon_id = _gen_id("wr")
         now = _now()
-        deviations = json.dumps({
-            "reflex": reflex_name,
-            "expected": expected_count,
-            "actual": actual_count,
-            "gap_pct": round(gap_pct, 4),
-            "severity": severity,
-        })
+        deviations = json.dumps(
+            {
+                "reflex": reflex_name,
+                "expected": expected_count,
+                "actual": actual_count,
+                "gap_pct": round(gap_pct, 4),
+                "severity": severity,
+            }
+        )
 
         overall = "success" if severity == "minor" else ("partial" if severity == "moderate" else "failed")
 
@@ -706,29 +701,27 @@ def generate_handoff(opportunity_id: str) -> Dict[str, Any]:
 
         # Shall statement count
         shall_row = conn.execute(
-            "SELECT COUNT(*) as cnt FROM rfp_shall_statements "
-            "WHERE proposal_opportunity_id = ?",
+            "SELECT COUNT(*) as cnt FROM rfp_shall_statements WHERE proposal_opportunity_id = ?",
             (opportunity_id,),
         ).fetchone()
         shall_count = shall_row["cnt"] if isinstance(shall_row, dict) else shall_row[0]
 
         # Capability coverage
         cmatrix_rows = conn.execute(
-            "SELECT compliance_status FROM pg_compliance_matrix "
-            "WHERE opportunity_id = ?",
+            "SELECT compliance_status FROM pg_compliance_matrix WHERE opportunity_id = ?",
             (opportunity_id,),
         ).fetchall()
         total_reqs = len(cmatrix_rows)
         addressed = sum(
-            1 for r in cmatrix_rows
+            1
+            for r in cmatrix_rows
             if (r["compliance_status"] if isinstance(r, dict) else r[0]) in ("addressed", "partial")
         )
         coverage = addressed / total_reqs if total_reqs > 0 else 0.0
 
         # Quality scores
         quality_rows = conn.execute(
-            "SELECT composite_score FROM pg_proposal_quality_scores "
-            "WHERE opportunity_id = ?",
+            "SELECT composite_score FROM pg_proposal_quality_scores WHERE opportunity_id = ?",
             (opportunity_id,),
         ).fetchall()
         quality_scores = [
@@ -779,11 +772,13 @@ def generate_handoff(opportunity_id: str) -> Dict[str, Any]:
                 (loop_id,),
             ).fetchall()
             for ac in ac_rows:
-                criteria_summary.append({
-                    "criterion": ac["then_text"] if isinstance(ac, dict) else ac[0],
-                    "status": ac["status"] if isinstance(ac, dict) else ac[1],
-                    "evidence": (ac["evidence"] if isinstance(ac, dict) else ac[2]) or "",
-                })
+                criteria_summary.append(
+                    {
+                        "criterion": ac["then_text"] if isinstance(ac, dict) else ac[0],
+                        "status": ac["status"] if isinstance(ac, dict) else ac[1],
+                        "evidence": (ac["evidence"] if isinstance(ac, dict) else ac[2]) or "",
+                    }
+                )
 
         # Generate markdown
         md_lines = [
@@ -846,21 +841,23 @@ def generate_handoff(opportunity_id: str) -> Dict[str, Any]:
             md_lines.append("No open deviations.")
 
         # Next steps
-        md_lines.extend([
-            "",
-            "## Next Steps",
-            "",
-            "1. Review this handoff document",
-            "2. Verify acceptance criteria pass/fail status",
-            "3. Address any open deviations before proceeding",
-            "4. Approve or reject bid decision",
-            "",
-            "---",
-            "",
-            f"*Generated: {_now()} by opportunity-lifecycle*",
-            "",
-            "# CUI // SP-CTI",
-        ])
+        md_lines.extend(
+            [
+                "",
+                "## Next Steps",
+                "",
+                "1. Review this handoff document",
+                "2. Verify acceptance criteria pass/fail status",
+                "3. Address any open deviations before proceeding",
+                "4. Approve or reject bid decision",
+                "",
+                "---",
+                "",
+                f"*Generated: {_now()} by opportunity-lifecycle*",
+                "",
+                "# CUI // SP-CTI",
+            ]
+        )
 
         markdown = "\n".join(md_lines)
 
@@ -960,8 +957,7 @@ def next_action_recommender(limit: int = 10) -> Dict[str, Any]:
 
             # --- staleness: days since last audit event for this opp ---
             last_event = conn.execute(
-                "SELECT MAX(created_at) as latest FROM audit_trail "
-                "WHERE project_id = ?",
+                "SELECT MAX(created_at) as latest FROM audit_trail WHERE project_id = ?",
                 (f"pg-{opp_id}",),
             ).fetchone()
             staleness_days = 999.0
@@ -989,8 +985,7 @@ def next_action_recommender(limit: int = 10) -> Dict[str, Any]:
 
             # --- quality gap: 1.0 - avg quality ---
             quality_rows = conn.execute(
-                "SELECT composite_score FROM pg_proposal_quality_scores "
-                "WHERE opportunity_id = ?",
+                "SELECT composite_score FROM pg_proposal_quality_scores WHERE opportunity_id = ?",
                 (opp_id,),
             ).fetchall()
             scores = [
@@ -1029,8 +1024,7 @@ def next_action_recommender(limit: int = 10) -> Dict[str, Any]:
             handoff_norm = 0.0
             if loop_id:
                 hrow = conn.execute(
-                    "SELECT MAX(created_at) as latest FROM workflow_handoffs "
-                    "WHERE loop_id = ?",
+                    "SELECT MAX(created_at) as latest FROM workflow_handoffs WHERE loop_id = ?",
                     (loop_id,),
                 ).fetchone()
                 if hrow:
@@ -1065,23 +1059,25 @@ def next_action_recommender(limit: int = 10) -> Dict[str, Any]:
             else:
                 action = "Check opportunity status and advance pipeline"
 
-            recommendations.append({
-                "opportunity_id": opp_id,
-                "title": opp_title,
-                "agency": opp_agency,
-                "due_date": opp_due,
-                "status": opp_status,
-                "loop_status": loop_status,
-                "priority": round(priority, 4),
-                "action": action,
-                "scores": {
-                    "staleness": round(staleness_norm, 3),
-                    "deadline_proximity": round(deadline_norm, 3),
-                    "quality_gap": round(quality_gap, 3),
-                    "loop_state": round(loop_penalty, 3),
-                    "handoff_age": round(handoff_norm, 3),
-                },
-            })
+            recommendations.append(
+                {
+                    "opportunity_id": opp_id,
+                    "title": opp_title,
+                    "agency": opp_agency,
+                    "due_date": opp_due,
+                    "status": opp_status,
+                    "loop_status": loop_status,
+                    "priority": round(priority, 4),
+                    "action": action,
+                    "scores": {
+                        "staleness": round(staleness_norm, 3),
+                        "deadline_proximity": round(deadline_norm, 3),
+                        "quality_gap": round(quality_gap, 3),
+                        "loop_state": round(loop_penalty, 3),
+                        "handoff_age": round(handoff_norm, 3),
+                    },
+                }
+            )
 
         # Sort by priority descending
         recommendations.sort(key=lambda x: x["priority"], reverse=True)
@@ -1168,16 +1164,18 @@ def get_lifecycle_status(opportunity_id: str) -> Dict[str, Any]:
         ).fetchall()
         criteria = []
         for ac in ac_rows:
-            criteria.append({
-                "id": ac["id"] if isinstance(ac, dict) else ac[0],
-                "number": ac["criterion_number"] if isinstance(ac, dict) else ac[1],
-                "given": ac["given_text"] if isinstance(ac, dict) else ac[2],
-                "when": ac["when_text"] if isinstance(ac, dict) else ac[3],
-                "then": ac["then_text"] if isinstance(ac, dict) else ac[4],
-                "status": ac["status"] if isinstance(ac, dict) else ac[5],
-                "evidence": (ac["evidence"] if isinstance(ac, dict) else ac[6]) or "",
-                "verified_at": ac["verified_at"] if isinstance(ac, dict) else ac[7],
-            })
+            criteria.append(
+                {
+                    "id": ac["id"] if isinstance(ac, dict) else ac[0],
+                    "number": ac["criterion_number"] if isinstance(ac, dict) else ac[1],
+                    "given": ac["given_text"] if isinstance(ac, dict) else ac[2],
+                    "when": ac["when_text"] if isinstance(ac, dict) else ac[3],
+                    "then": ac["then_text"] if isinstance(ac, dict) else ac[4],
+                    "status": ac["status"] if isinstance(ac, dict) else ac[5],
+                    "evidence": (ac["evidence"] if isinstance(ac, dict) else ac[6]) or "",
+                    "verified_at": ac["verified_at"] if isinstance(ac, dict) else ac[7],
+                }
+            )
         result["acceptance_criteria"] = criteria
 
         # Reconciliations
@@ -1195,14 +1193,16 @@ def get_lifecycle_status(opportunity_id: str) -> Dict[str, Any]:
                 dev_data = json.loads(dev_raw)
             except (json.JSONDecodeError, TypeError):
                 dev_data = {"raw": dev_raw}
-            reconciliations.append({
-                "id": rr["id"] if isinstance(rr, dict) else rr[0],
-                "planned": rr["planned_tasks"] if isinstance(rr, dict) else rr[1],
-                "completed": rr["completed_tasks"] if isinstance(rr, dict) else rr[2],
-                "deviations": dev_data,
-                "overall_result": rr["overall_result"] if isinstance(rr, dict) else rr[4],
-                "reconciled_at": rr["reconciled_at"] if isinstance(rr, dict) else rr[5],
-            })
+            reconciliations.append(
+                {
+                    "id": rr["id"] if isinstance(rr, dict) else rr[0],
+                    "planned": rr["planned_tasks"] if isinstance(rr, dict) else rr[1],
+                    "completed": rr["completed_tasks"] if isinstance(rr, dict) else rr[2],
+                    "deviations": dev_data,
+                    "overall_result": rr["overall_result"] if isinstance(rr, dict) else rr[4],
+                    "reconciled_at": rr["reconciled_at"] if isinstance(rr, dict) else rr[5],
+                }
+            )
         result["reconciliations"] = reconciliations
 
         # Handoffs
@@ -1214,12 +1214,14 @@ def get_lifecycle_status(opportunity_id: str) -> Dict[str, Any]:
         ).fetchall()
         handoffs = []
         for hr in handoff_rows:
-            handoffs.append({
-                "id": hr["id"] if isinstance(hr, dict) else hr[0],
-                "loop_status": hr["loop_status"] if isinstance(hr, dict) else hr[1],
-                "summary_preview": ((hr["context_summary"] if isinstance(hr, dict) else hr[2]) or "")[:200],
-                "created_at": hr["created_at"] if isinstance(hr, dict) else hr[3],
-            })
+            handoffs.append(
+                {
+                    "id": hr["id"] if isinstance(hr, dict) else hr[0],
+                    "loop_status": hr["loop_status"] if isinstance(hr, dict) else hr[1],
+                    "summary_preview": ((hr["context_summary"] if isinstance(hr, dict) else hr[2]) or "")[:200],
+                    "created_at": hr["created_at"] if isinstance(hr, dict) else hr[3],
+                }
+            )
         result["handoffs"] = handoffs
 
         return result
@@ -1243,10 +1245,7 @@ def _format_human(data: Dict[str, Any]) -> str:
         lines.append(f"Next Actions ({data.get('count', 0)} recommendations):")
         lines.append("-" * 70)
         for rec in data["recommendations"]:
-            lines.append(
-                f"  [{rec['priority']:.3f}] {rec['title'][:50]} "
-                f"({rec['agency'][:20]}) — {rec['status']}"
-            )
+            lines.append(f"  [{rec['priority']:.3f}] {rec['title'][:50]} ({rec['agency'][:20]}) — {rec['status']}")
             lines.append(f"          Action: {rec['action']}")
             lines.append(f"          Due: {rec.get('due_date', 'N/A')}")
         return "\n".join(lines)

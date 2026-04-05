@@ -35,6 +35,7 @@ def _load_config() -> dict:
         return {}
     try:
         import yaml
+
         with open(config_path, encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
     except ImportError:
@@ -92,17 +93,23 @@ def score_experiment_candidate(
     if config is None:
         config = _load_config()
 
-    weights = config.get("scoring", {}).get("weights", {
-        "posterior_shift": 0.30,
-        "discriminability": 0.25,
-        "diversity": 0.25,
-        "complexity_match": 0.20,
-    })
-    thresholds = config.get("scoring", {}).get("thresholds", {
-        "auto_run": 0.75,
-        "suggest": 0.50,
-        "exclude": 0.30,
-    })
+    weights = config.get("scoring", {}).get(
+        "weights",
+        {
+            "posterior_shift": 0.30,
+            "discriminability": 0.25,
+            "diversity": 0.25,
+            "complexity_match": 0.20,
+        },
+    )
+    thresholds = config.get("scoring", {}).get(
+        "thresholds",
+        {
+            "auto_run": 0.75,
+            "suggest": 0.50,
+            "exclude": 0.30,
+        },
+    )
 
     # Extract features from hypothesis text
     hypothesis = candidate.get("hypothesis", "")
@@ -117,18 +124,15 @@ def score_experiment_candidate(
             n_hyp = max(3, len(selected_so_far) + 1)
             prior_distribution = [1.0 / n_hyp] * n_hyp
 
-        hyp_features = [_text_to_features(s.get("hypothesis", ""))
-                        for s in selected_so_far[:5]]
+        hyp_features = [_text_to_features(s.get("hypothesis", "")) for s in selected_so_far[:5]]
         if not hyp_features:
             hyp_features = [[0.5] * len(features)]
 
         bt_result = bt_score(
-            candidate={"id": candidate.get("id", ""), "features": features,
-                        "content": hypothesis},
+            candidate={"id": candidate.get("id", ""), "features": features, "content": hypothesis},
             prior_distribution=prior_distribution,
             hypothesis_features=hyp_features,
-            selected_so_far=[{"features": _text_to_features(s.get("hypothesis", ""))}
-                             for s in selected_so_far],
+            selected_so_far=[{"features": _text_to_features(s.get("hypothesis", ""))} for s in selected_so_far],
             config={"weights": weights},
         )
         info_gain = bt_result.get("info_gain_score", 0.5)
@@ -136,10 +140,7 @@ def score_experiment_candidate(
     except (ImportError, Exception):
         # Fallback: simple scoring
         dimensions = _fallback_score(features, selected_so_far, hypothesis)
-        info_gain = sum(
-            weights.get(dim, 0.25) * dimensions.get(dim, 0.5)
-            for dim in weights
-        )
+        info_gain = sum(weights.get(dim, 0.25) * dimensions.get(dim, 0.5) for dim in weights)
 
     # Determine threshold band
     if info_gain >= thresholds.get("auto_run", 0.75):
@@ -159,8 +160,7 @@ def score_experiment_candidate(
     }
 
 
-def _fallback_score(features: list, selected_so_far: list,
-                    hypothesis: str) -> dict:
+def _fallback_score(features: list, selected_so_far: list, hypothesis: str) -> dict:
     """Fallback scoring when bayesian_teacher is unavailable."""
     # Posterior shift: proxy via feature variance
     variance = sum((f - 0.5) ** 2 for f in features) / max(len(features), 1)
@@ -237,8 +237,7 @@ def select_next_experiment(
 
     filtered = []
     for c in candidates:
-        c_hash = c.get("content_hash", hashlib.sha256(
-            c.get("hypothesis", "").encode()).hexdigest()[:16])
+        c_hash = c.get("content_hash", hashlib.sha256(c.get("hypothesis", "").encode()).hexdigest()[:16])
         if c_hash in seen_hashes:
             continue
         seen_hashes.add(c_hash)
@@ -249,8 +248,7 @@ def select_next_experiment(
 
     # Step 2: Cosine similarity dedup against recent experiments
     if recent_experiments:
-        recent_features = [_text_to_features(e.get("hypothesis", ""))
-                           for e in recent_experiments]
+        recent_features = [_text_to_features(e.get("hypothesis", "")) for e in recent_experiments]
         novel = []
         for c in filtered:
             c_features = _text_to_features(c.get("hypothesis", ""))
@@ -267,7 +265,10 @@ def select_next_experiment(
     selected_so_far = []
     for c in filtered:
         result = score_experiment_candidate(
-            c, domain, selected_so_far=selected_so_far, config=config,
+            c,
+            domain,
+            selected_so_far=selected_so_far,
+            config=config,
         )
         result["candidate"] = c
         scored.append(result)
@@ -281,6 +282,7 @@ def select_next_experiment(
         # Use trust engine if available, otherwise simple Thompson
         try:
             from tools.autonomy.trust_engine import get_trust_state
+
             state = get_trust_state("run_experiment")
             alpha = state.get("alpha", 2.0)
             beta_val = state.get("beta", 8.0)
@@ -328,6 +330,7 @@ def estimate_experiment_count(domain: str, categories: list = None) -> dict:
     """
     if not categories:
         from tools.autoresearch.hypothesis_generator import _load_program
+
         config = _load_program(domain)
         categories = list(config.get("categories", {}).keys())
 
@@ -343,8 +346,7 @@ def estimate_experiment_count(domain: str, categories: list = None) -> dict:
         from tools.intelligence.bayesian_teacher import teaching_dimension
 
         # Build item pool from category names
-        item_pool = [{"id": f"cat-{i}", "features": [float(i) / len(categories)]}
-                     for i in range(len(categories))]
+        item_pool = [{"id": f"cat-{i}", "features": [float(i) / len(categories)]} for i in range(len(categories))]
         concept_labels = {f"cat-{i}": categories[i] for i in range(len(categories))}
 
         result = teaching_dimension(
@@ -375,6 +377,7 @@ def get_category_order(domain: str) -> dict:
 
     if not deps:
         from tools.autoresearch.hypothesis_generator import _load_program
+
         program = _load_program(domain)
         order = program.get("category_order", [])
         return {
@@ -436,6 +439,7 @@ def check_dedup(hypothesis: str, domain: str, threshold: float = 0.85) -> dict:
     # Check DB for recent experiments
     try:
         from tools.db.storage import get_connection
+
         with get_connection() as conn:
             rows = conn.execute(
                 "SELECT hypothesis, content_hash FROM experiment_candidates "
@@ -447,16 +451,14 @@ def check_dedup(hypothesis: str, domain: str, threshold: float = 0.85) -> dict:
         # Exact hash match
         for row in rows:
             if row["content_hash"] == content_hash:
-                return {"is_duplicate": True, "method": "content_hash",
-                        "similarity": 1.0}
+                return {"is_duplicate": True, "method": "content_hash", "similarity": 1.0}
 
         # Cosine similarity check
         for row in rows:
             existing_features = _text_to_features(row["hypothesis"])
             sim = _cosine_similarity(features, existing_features)
             if sim >= threshold:
-                return {"is_duplicate": True, "method": "cosine",
-                        "similarity": round(sim, 4)}
+                return {"is_duplicate": True, "method": "cosine", "similarity": round(sim, 4)}
 
     except (ImportError, Exception):
         pass
@@ -470,11 +472,13 @@ def health_check() -> dict:
     te_available = False
     try:
         from tools.intelligence.bayesian_teacher import score_candidate  # noqa: F401
+
         bt_available = True
     except (ImportError, Exception):
         pass
     try:
         from tools.autonomy.trust_engine import should_act  # noqa: F401
+
         te_available = True
     except (ImportError, Exception):
         pass
@@ -489,6 +493,7 @@ def health_check() -> dict:
 
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
+
 
 def main():
     parser = argparse.ArgumentParser(description="Bayesian Experiment Selector")
@@ -510,16 +515,14 @@ def main():
     elif args.score or args.select:
         # Generate sample candidates for demo
         from tools.autoresearch.hypothesis_generator import generate_hypotheses
+
         hyp = generate_hypotheses(args.domain, max_hypotheses=5)
         candidates = hyp.get("hypotheses", [])
         if args.select:
             result = select_next_experiment(candidates, args.domain)
         else:
             result = {
-                "scores": [
-                    score_experiment_candidate(c, args.domain)
-                    for c in candidates
-                ],
+                "scores": [score_experiment_candidate(c, args.domain) for c in candidates],
             }
     else:
         parser.print_help()

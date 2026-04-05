@@ -582,7 +582,6 @@ def _get_db(db_path=None):
     return conn
 
 
-
 def _pp_id():
     """Generate unique pain point ID with pp- prefix."""
     return f"pp-{uuid.uuid4().hex[:12]}"

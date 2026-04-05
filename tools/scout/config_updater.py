@@ -35,6 +35,7 @@ def _now() -> str:
 def _load_yaml(path: Path) -> dict:
     try:
         import yaml
+
         with open(path, "r", encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
     except Exception:
@@ -43,9 +44,9 @@ def _load_yaml(path: Path) -> dict:
 
 def _save_yaml(path: Path, data: dict) -> None:
     import yaml
+
     with open(path, "w", encoding="utf-8") as f:
-        yaml.safe_dump(data, f, default_flow_style=False, allow_unicode=True,
-                       sort_keys=False, width=120)
+        yaml.safe_dump(data, f, default_flow_style=False, allow_unicode=True, sort_keys=False, width=120)
 
 
 def _get_tracked_repos(config: dict) -> set:

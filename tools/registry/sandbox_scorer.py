@@ -134,10 +134,7 @@ def score_sandbox(
         recommendations.append("Ensure all operations are logged to append-only audit trail (D6)")
 
     # Weighted average
-    total = sum(
-        breakdown[dim] * weight
-        for dim, weight in RUBRIC.items()
-    )
+    total = sum(breakdown[dim] * weight for dim, weight in RUBRIC.items())
     total = round(total, 4)
 
     return {
@@ -153,9 +150,7 @@ def _check_credential_broker(cap: Dict, db_path: Path) -> float:
     """Check if credential broker has active grants."""
     try:
         conn = _get_db(db_path)
-        count = conn.execute(
-            "SELECT COUNT(*) FROM credential_broker_log WHERE action = 'grant'"
-        ).fetchone()[0]
+        count = conn.execute("SELECT COUNT(*) FROM credential_broker_log WHERE action = 'grant'").fetchone()[0]
         conn.close()
         return 1.0 if count > 0 else 0.0
     except Exception:
@@ -166,9 +161,7 @@ def _check_egress_policy(cap: Dict, db_path: Path) -> float:
     """Check if egress policies have been resolved."""
     try:
         conn = _get_db(db_path)
-        count = conn.execute(
-            "SELECT COUNT(*) FROM egress_policy_audit WHERE action = 'resolve'"
-        ).fetchone()[0]
+        count = conn.execute("SELECT COUNT(*) FROM egress_policy_audit WHERE action = 'resolve'").fetchone()[0]
         conn.close()
         return 1.0 if count > 0 else 0.0
     except Exception:
@@ -205,9 +198,7 @@ def _check_provenance(cap: Dict, db_path: Path) -> float:
     """Check if PROV-AGENT provenance records exist."""
     try:
         conn = _get_db(db_path)
-        count = conn.execute(
-            "SELECT COUNT(*) FROM prov_entities"
-        ).fetchone()[0]
+        count = conn.execute("SELECT COUNT(*) FROM prov_entities").fetchone()[0]
         conn.close()
         return 1.0 if count > 0 else 0.0
     except Exception:
@@ -226,6 +217,7 @@ def _check_runtime_isolation(cap: Dict) -> float:
     # D-SEC-10: Attempt real container health check via SandboxExecutor
     try:
         from tools.security.sandbox_executor import SandboxExecutor
+
         executor = SandboxExecutor()
         if executor._available:
             health = executor.health_check()
@@ -241,9 +233,7 @@ def _check_audit_completeness(cap: Dict, db_path: Path) -> float:
     """Check if audit trail has entries."""
     try:
         conn = _get_db(db_path)
-        count = conn.execute(
-            "SELECT COUNT(*) FROM audit_trail"
-        ).fetchone()[0]
+        count = conn.execute("SELECT COUNT(*) FROM audit_trail").fetchone()[0]
         conn.close()
         return 1.0 if count > 0 else 0.0
     except Exception:
@@ -251,8 +241,7 @@ def _check_audit_completeness(cap: Dict, db_path: Path) -> float:
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Sandbox Security Scorer — 8th evaluation dimension (D-NC-4)")
+    parser = argparse.ArgumentParser(description="Sandbox Security Scorer — 8th evaluation dimension (D-NC-4)")
     parser.add_argument("--score", action="store_true", help="Score sandbox security")
     parser.add_argument("--gate", action="store_true", help="Gate evaluation (exit 1 if score < threshold)")
     parser.add_argument("--capability-id", type=str, default="", help="Capability ID")

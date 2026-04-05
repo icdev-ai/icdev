@@ -130,6 +130,7 @@ TO_STATUSES = ("draft", "in_progress", "submitted", "awarded", "completed", "can
 
 # ── Helpers ───────────────────────────────────────────────────────────
 
+
 def _now():
     return datetime.now(timezone.utc).isoformat()
 
@@ -149,8 +150,7 @@ def _audit(conn, event_type, action, details):
             "INSERT INTO audit_trail "
             "(id, timestamp, event_type, actor, action, details, project_id, session_id) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (_gen_id("aud"), _now(), event_type, "idiq_factory",
-             action, det, None, None),
+            (_gen_id("aud"), _now(), event_type, "idiq_factory", action, det, None, None),
         )
     except Exception:
         try:
@@ -196,8 +196,6 @@ def _ensure_tables(conn):
     conn.commit()
 
 
-
-
 # ── Core Functions ────────────────────────────────────────────────────
 
 
@@ -230,16 +228,20 @@ def create_standing_team(vehicle_name, team_members, team_name=None):
         "INSERT INTO pg_standing_teams "
         "(id, vehicle_name, team_name, members, total_fte, created_at, updated_at) "
         "VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (team_id, vehicle_name, team_name or f"{vehicle_name} Team",
-         json.dumps(team_members), total_fte, now, now),
+        (team_id, vehicle_name, team_name or f"{vehicle_name} Team", json.dumps(team_members), total_fte, now, now),
     )
 
-    _audit(conn, "idiq.team_created", "create_standing_team", {
-        "team_id": team_id,
-        "vehicle": vehicle_name,
-        "members_count": len(team_members),
-        "total_fte": total_fte,
-    })
+    _audit(
+        conn,
+        "idiq.team_created",
+        "create_standing_team",
+        {
+            "team_id": team_id,
+            "vehicle": vehicle_name,
+            "members_count": len(team_members),
+            "total_fte": total_fte,
+        },
+    )
     conn.commit()
 
     return {
@@ -276,10 +278,7 @@ def list_standing_teams(vehicle_name=None):
         except (json.JSONDecodeError, TypeError):
             members = []
         d["members_count"] = len(members)
-        d["members_summary"] = [
-            {"name": m.get("name", ""), "role": m.get("role", "")}
-            for m in members[:5]
-        ]
+        d["members_summary"] = [{"name": m.get("name", ""), "role": m.get("role", "")} for m in members[:5]]
         teams.append(d)
 
     return {
@@ -335,18 +334,15 @@ def generate_task_order_template(vehicle_name, contract_type="t_and_m"):
         "",
         "### 1. Understanding of Requirements",
         "",
-        "*[Demonstrate understanding of the task order requirements. "
-        "Reference specific PWS/SOW paragraphs.]*",
+        "*[Demonstrate understanding of the task order requirements. Reference specific PWS/SOW paragraphs.]*",
         "",
         "### 2. Technical Solution",
         "",
-        "*[Describe the proposed technical approach, tools, methodologies, "
-        "and technologies.]*",
+        "*[Describe the proposed technical approach, tools, methodologies, and technologies.]*",
         "",
         "### 3. Quality Assurance",
         "",
-        "*[Describe QA/QC processes, deliverable review procedures, "
-        "and continuous improvement.]*",
+        "*[Describe QA/QC processes, deliverable review procedures, and continuous improvement.]*",
         "",
         "---",
         "",
@@ -360,8 +356,7 @@ def generate_task_order_template(vehicle_name, contract_type="t_and_m"):
         "",
         "### 2. Staffing Plan",
         "",
-        "*[Map labor categories to requirements. Include key personnel "
-        "qualifications and availability.]*",
+        "*[Map labor categories to requirements. Include key personnel qualifications and availability.]*",
         "",
         "### 3. Transition Plan",
         "",
@@ -383,43 +378,49 @@ def generate_task_order_template(vehicle_name, contract_type="t_and_m"):
     lines.append("")
 
     if contract_type == "t_and_m":
-        lines.extend([
-            "### Labor Rate Table",
-            "",
-            "| Labor Category | Direct Rate | Wrap Rate | Ceiling Rate |",
-            "|---------------|------------|-----------|--------------|",
-            "| *[Category]* | *[$X.XX]* | *[$X.XX]* | *[$X.XX]* |",
-            "",
-            "### Level of Effort",
-            "",
-            "| Task | Labor Category | Hours | Cost |",
-            "|------|---------------|-------|------|",
-            "| *[Task]* | *[Category]* | *[XXX]* | *[$X,XXX]* |",
-            "",
-        ])
+        lines.extend(
+            [
+                "### Labor Rate Table",
+                "",
+                "| Labor Category | Direct Rate | Wrap Rate | Ceiling Rate |",
+                "|---------------|------------|-----------|--------------|",
+                "| *[Category]* | *[$X.XX]* | *[$X.XX]* | *[$X.XX]* |",
+                "",
+                "### Level of Effort",
+                "",
+                "| Task | Labor Category | Hours | Cost |",
+                "|------|---------------|-------|------|",
+                "| *[Task]* | *[Category]* | *[XXX]* | *[$X,XXX]* |",
+                "",
+            ]
+        )
     elif contract_type == "ffp":
-        lines.extend([
-            "### Fixed Price Schedule",
-            "",
-            "| CLIN | Description | Quantity | Unit Price | Total |",
-            "|------|------------|----------|------------|-------|",
-            "| *[0001]* | *[Description]* | *[1]* | *[$X,XXX]* | *[$X,XXX]* |",
-            "",
-        ])
+        lines.extend(
+            [
+                "### Fixed Price Schedule",
+                "",
+                "| CLIN | Description | Quantity | Unit Price | Total |",
+                "|------|------------|----------|------------|-------|",
+                "| *[0001]* | *[Description]* | *[1]* | *[$X,XXX]* | *[$X,XXX]* |",
+                "",
+            ]
+        )
     else:
-        lines.extend([
-            "### Cost Breakdown",
-            "",
-            "| Element | Amount |",
-            "|---------|--------|",
-            "| Direct Labor | *[$X,XXX]* |",
-            "| Fringe | *[$X,XXX]* |",
-            "| Overhead | *[$X,XXX]* |",
-            "| G&A | *[$X,XXX]* |",
-            "| Fee | *[$X,XXX]* |",
-            "| **Total** | **$X,XXX** |",
-            "",
-        ])
+        lines.extend(
+            [
+                "### Cost Breakdown",
+                "",
+                "| Element | Amount |",
+                "|---------|--------|",
+                "| Direct Labor | *[$X,XXX]* |",
+                "| Fringe | *[$X,XXX]* |",
+                "| Overhead | *[$X,XXX]* |",
+                "| G&A | *[$X,XXX]* |",
+                "| Fee | *[$X,XXX]* |",
+                "| **Total** | **$X,XXX** |",
+                "",
+            ]
+        )
 
     # Vehicle-specific compliance section
     if vehicle_info["compliance_notes"]:
@@ -539,9 +540,7 @@ def track_to_capacity(vehicle_name):
             "message": f"No standing teams registered for {vehicle_name}",
         }
 
-    total_available = sum(
-        float(row_to_dict(t).get("total_fte", 0)) for t in teams
-    )
+    total_available = sum(float(row_to_dict(t).get("total_fte", 0)) for t in teams)
 
     # Get active task orders for this vehicle
     active_tos = conn.execute(
@@ -549,26 +548,24 @@ def track_to_capacity(vehicle_name):
         (vehicle_name, "in_progress", "awarded"),
     ).fetchall()
 
-    committed = sum(
-        float(row_to_dict(to).get("committed_fte", 0)) for to in active_tos
-    )
+    committed = sum(float(row_to_dict(to).get("committed_fte", 0)) for to in active_tos)
 
     remaining = total_available - committed
-    utilization_pct = round(
-        (committed / total_available * 100) if total_available > 0 else 0, 1
-    )
+    utilization_pct = round((committed / total_available * 100) if total_available > 0 else 0, 1)
     at_risk = utilization_pct > 85
 
     active_to_list = []
     for to_row in active_tos:
         d = row_to_dict(to_row)
-        active_to_list.append({
-            "id": d.get("id"),
-            "title": d.get("title"),
-            "to_number": d.get("to_number"),
-            "committed_fte": d.get("committed_fte", 0),
-            "status": d.get("status"),
-        })
+        active_to_list.append(
+            {
+                "id": d.get("id"),
+                "title": d.get("title"),
+                "to_number": d.get("to_number"),
+                "committed_fte": d.get("committed_fte", 0),
+                "status": d.get("status"),
+            }
+        )
 
     return {
         "status": "ok",
@@ -593,22 +590,16 @@ def main():
     )
 
     group = parser.add_mutually_exclusive_group()
-    group.add_argument("--create-team", action="store_true",
-                       help="Register a standing team for a contract vehicle")
-    group.add_argument("--list-teams", action="store_true",
-                       help="List registered standing teams")
-    group.add_argument("--generate-template", action="store_true",
-                       help="Generate task order response template")
-    group.add_argument("--estimate-timeline", action="store_true",
-                       help="Estimate task order response timeline")
-    group.add_argument("--track-capacity", action="store_true",
-                       help="Track team capacity across active TOs")
+    group.add_argument("--create-team", action="store_true", help="Register a standing team for a contract vehicle")
+    group.add_argument("--list-teams", action="store_true", help="List registered standing teams")
+    group.add_argument("--generate-template", action="store_true", help="Generate task order response template")
+    group.add_argument("--estimate-timeline", action="store_true", help="Estimate task order response timeline")
+    group.add_argument("--track-capacity", action="store_true", help="Track team capacity across active TOs")
 
     parser.add_argument("--vehicle", help="Contract vehicle name (OASIS+, Polaris, CIO-SP4, GSA MAS, SEWP)")
     parser.add_argument("--members", help="JSON array of team members for --create-team")
     parser.add_argument("--team-name", help="Optional team name for --create-team")
-    parser.add_argument("--contract-type", default="t_and_m",
-                        help="Contract type: ffp, t_and_m, cpff, cpaf, idiq")
+    parser.add_argument("--contract-type", default="t_and_m", help="Contract type: ffp, t_and_m, cpff, cpaf, idiq")
     parser.add_argument("--page-limit", type=int, help="Page limit for --estimate-timeline")
     parser.add_argument("--eval-factors", type=int, help="Number of evaluation factors")
     parser.add_argument("--team-size", type=int, help="Team size for --estimate-timeline")
@@ -635,8 +626,7 @@ def main():
 
     elif args.estimate_timeline:
         if not all([args.page_limit, args.eval_factors, args.team_size]):
-            result = {"status": "error",
-                      "message": "Provide --page-limit, --eval-factors, --team-size"}
+            result = {"status": "error", "message": "Provide --page-limit, --eval-factors, --team-size"}
         else:
             result = estimate_to_timeline(args.page_limit, args.eval_factors, args.team_size)
 

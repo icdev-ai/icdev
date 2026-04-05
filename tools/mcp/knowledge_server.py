@@ -29,6 +29,7 @@ def _import_tool(module_path, func_name):
     """Dynamically import a function. Returns None if unavailable."""
     try:
         import importlib
+
         mod = importlib.import_module(module_path)
         return getattr(mod, func_name, None)
     except (ImportError, ModuleNotFoundError, AttributeError):
@@ -43,6 +44,7 @@ def _get_db() -> sqlite3.Connection:
 # ---------------------------------------------------------------------------
 # Tool handlers
 # ---------------------------------------------------------------------------
+
 
 def handle_search_knowledge(args: dict) -> dict:
     """Search the knowledge base for patterns matching a query."""
@@ -81,16 +83,18 @@ def handle_search_knowledge(args: dict) -> dict:
 
         patterns = []
         for row in rows:
-            patterns.append({
-                "id": row["id"],
-                "name": row["name"],
-                "pattern_type": row["pattern_type"],
-                "description": row["description"],
-                "detection_rule": row["detection_rule"],
-                "solution": row["solution"],
-                "confidence": row["confidence"],
-                "use_count": row["use_count"],
-            })
+            patterns.append(
+                {
+                    "id": row["id"],
+                    "name": row["name"],
+                    "pattern_type": row["pattern_type"],
+                    "description": row["description"],
+                    "detection_rule": row["detection_rule"],
+                    "solution": row["solution"],
+                    "confidence": row["confidence"],
+                    "use_count": row["use_count"],
+                }
+            )
     finally:
         conn.close()
 
@@ -228,12 +232,14 @@ def handle_analyze_failure(args: dict) -> dict:
         }
 
         for p in patterns:
-            analysis["matching_patterns"].append({
-                "name": p["name"],
-                "confidence": p["confidence"],
-                "solution": p["solution"],
-                "auto_healable": bool(p["auto_healable"]),
-            })
+            analysis["matching_patterns"].append(
+                {
+                    "name": p["name"],
+                    "confidence": p["confidence"],
+                    "solution": p["solution"],
+                    "auto_healable": bool(p["auto_healable"]),
+                }
+            )
             if not analysis["root_cause"]:
                 analysis["root_cause"] = p["description"]
             analysis["suggested_actions"].append(p["solution"])
@@ -264,9 +270,7 @@ def handle_self_heal(args: dict) -> dict:
     conn = _get_db()
     try:
         # Check pattern confidence and auto_healable flag
-        pattern = conn.execute(
-            "SELECT * FROM knowledge_patterns WHERE id = ?", (pattern_id,)
-        ).fetchone()
+        pattern = conn.execute("SELECT * FROM knowledge_patterns WHERE id = ?", (pattern_id,)).fetchone()
 
         if not pattern:
             return {"error": f"Pattern not found: {pattern_id}"}
@@ -329,6 +333,7 @@ def handle_self_heal(args: dict) -> dict:
 # Server setup
 # ---------------------------------------------------------------------------
 
+
 def create_server() -> MCPServer:
     server = MCPServer(name="icdev-knowledge", version="1.0.0")
 
@@ -365,9 +370,16 @@ def create_server() -> MCPServer:
                     "default": "error",
                 },
                 "description": {"type": "string", "description": "Detailed description of the pattern"},
-                "detection_rule": {"type": "string", "description": "How to detect this pattern (regex, log pattern, metric threshold)"},
+                "detection_rule": {
+                    "type": "string",
+                    "description": "How to detect this pattern (regex, log pattern, metric threshold)",
+                },
                 "solution": {"type": "string", "description": "How to resolve when this pattern is detected"},
-                "auto_healable": {"type": "boolean", "description": "Whether this can be auto-remediated", "default": False},
+                "auto_healable": {
+                    "type": "boolean",
+                    "description": "Whether this can be auto-remediated",
+                    "default": False,
+                },
                 "confidence": {"type": "number", "description": "Confidence score 0.0-1.0", "default": 0.5},
             },
             "required": ["name"],
@@ -395,7 +407,10 @@ def create_server() -> MCPServer:
             "type": "object",
             "properties": {
                 "failure_id": {"type": "string", "description": "ID of a logged failure (from failure_log table)"},
-                "error_message": {"type": "string", "description": "Error message to analyze (alternative to failure_id)"},
+                "error_message": {
+                    "type": "string",
+                    "description": "Error message to analyze (alternative to failure_id)",
+                },
                 "log_data": {"type": "string", "description": "Raw log data for context"},
             },
         },

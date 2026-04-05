@@ -22,23 +22,19 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 # Helper functions
 # ---------------------------------------------------------------------------
 
+
 def _get_connection(db_path=None):
     """Get a database connection with Row factory."""
     path = db_path or DB_PATH
     if not path.exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\n"
-            "Run: python tools/db/init_icdev_db.py"
-        )
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
     conn = get_connection(db_path=str(path))
     return conn
 
 
 def _get_project(conn, project_id):
     """Load project data from the projects table."""
-    row = conn.execute(
-        "SELECT * FROM projects WHERE id = ?", (project_id,)
-    ).fetchone()
+    row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
     if not row:
         raise ValueError(f"Project '{project_id}' not found.")
     return dict(row)
@@ -51,6 +47,7 @@ def _load_cui_config():
     """
     try:
         from tools.compliance.cui_marker import load_cui_config as _load
+
         return _load()
     except Exception:
         pass
@@ -59,9 +56,8 @@ def _load_cui_config():
         cui_marker_path = Path(__file__).resolve().parent / "cui_marker.py"
         if cui_marker_path.exists():
             import importlib.util
-            spec = importlib.util.spec_from_file_location(
-                "cui_marker", cui_marker_path
-            )
+
+            spec = importlib.util.spec_from_file_location("cui_marker", cui_marker_path)
             mod = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(mod)
             return mod.load_cui_config()
@@ -109,9 +105,7 @@ def _log_audit_event(conn, project_id, action, details, file_path):
         )
         conn.commit()
     except Exception as e:
-        print(
-            f"Warning: Could not log audit event: {e}", file=sys.stderr
-        )
+        print(f"Warning: Could not log audit event: {e}", file=sys.stderr)
 
 
 def _normalize_name(name):
@@ -135,14 +129,68 @@ def _extract_keywords(text):
     Filters out common stop words and short tokens.
     """
     stop_words = {
-        "the", "a", "an", "is", "are", "was", "were", "be", "been",
-        "being", "have", "has", "had", "do", "does", "did", "will",
-        "shall", "should", "may", "might", "must", "can", "could",
-        "would", "and", "but", "or", "nor", "not", "so", "yet",
-        "for", "of", "in", "on", "at", "to", "from", "by", "with",
-        "as", "into", "through", "during", "before", "after", "above",
-        "below", "between", "under", "over", "test", "tests", "spec",
-        "src", "lib", "app", "init", "main", "index", "module",
+        "the",
+        "a",
+        "an",
+        "is",
+        "are",
+        "was",
+        "were",
+        "be",
+        "been",
+        "being",
+        "have",
+        "has",
+        "had",
+        "do",
+        "does",
+        "did",
+        "will",
+        "shall",
+        "should",
+        "may",
+        "might",
+        "must",
+        "can",
+        "could",
+        "would",
+        "and",
+        "but",
+        "or",
+        "nor",
+        "not",
+        "so",
+        "yet",
+        "for",
+        "of",
+        "in",
+        "on",
+        "at",
+        "to",
+        "from",
+        "by",
+        "with",
+        "as",
+        "into",
+        "through",
+        "during",
+        "before",
+        "after",
+        "above",
+        "below",
+        "between",
+        "under",
+        "over",
+        "test",
+        "tests",
+        "spec",
+        "src",
+        "lib",
+        "app",
+        "init",
+        "main",
+        "index",
+        "module",
     }
     normalized = _normalize_name(text)
     words = normalized.split()
@@ -169,6 +217,7 @@ def _keyword_overlap(keywords_a, keywords_b):
 # ---------------------------------------------------------------------------
 # Discovery functions
 # ---------------------------------------------------------------------------
+
 
 def _discover_requirements(project_dir):
     """Discover requirements from the project directory.
@@ -197,12 +246,14 @@ def _discover_requirements(project_dir):
                 title = fpath.stem.replace("_", " ").replace("-", " ").title()
 
             req_id = f"REQ-{req_counter:03d}"
-            requirements.append({
-                "id": req_id,
-                "title": title,
-                "source_file": str(fpath.relative_to(project_path)),
-                "type": "feature",
-            })
+            requirements.append(
+                {
+                    "id": req_id,
+                    "title": title,
+                    "source_file": str(fpath.relative_to(project_path)),
+                    "type": "feature",
+                }
+            )
             req_counter += 1
         except (OSError, UnicodeDecodeError):
             continue
@@ -225,32 +276,33 @@ def _discover_requirements(project_dir):
                 continue
             seen_files.add(fpath)
             try:
-                content = fpath.read_text(
-                    encoding="utf-8", errors="replace"
-                )
+                content = fpath.read_text(encoding="utf-8", errors="replace")
                 # Extract heading-level requirements (## or ### headings)
-                headings = re.findall(
-                    r"^#{2,4}\s+(.+)$", content, re.MULTILINE
-                )
+                headings = re.findall(r"^#{2,4}\s+(.+)$", content, re.MULTILINE)
                 for heading in headings:
                     title = heading.strip()
                     # Skip generic headings
                     if title.lower() in (
-                        "overview", "introduction", "references",
-                        "table of contents", "toc", "changelog",
-                        "appendix", "glossary",
+                        "overview",
+                        "introduction",
+                        "references",
+                        "table of contents",
+                        "toc",
+                        "changelog",
+                        "appendix",
+                        "glossary",
                     ):
                         continue
 
                     req_id = f"REQ-{req_counter:03d}"
-                    requirements.append({
-                        "id": req_id,
-                        "title": title,
-                        "source_file": str(
-                            fpath.relative_to(project_path)
-                        ),
-                        "type": "markdown",
-                    })
+                    requirements.append(
+                        {
+                            "id": req_id,
+                            "title": title,
+                            "source_file": str(fpath.relative_to(project_path)),
+                            "type": "markdown",
+                        }
+                    )
                     req_counter += 1
             except (OSError, UnicodeDecodeError):
                 continue
@@ -289,12 +341,14 @@ def _discover_design_artifacts(project_dir):
                 continue
             seen_files.add(fpath)
             title = fpath.stem.replace("_", " ").replace("-", " ").title()
-            artifacts.append({
-                "id": f"DES-{artifact_counter:03d}",
-                "title": title,
-                "file_path": str(fpath.relative_to(project_path)),
-                "type": "document",
-            })
+            artifacts.append(
+                {
+                    "id": f"DES-{artifact_counter:03d}",
+                    "title": title,
+                    "file_path": str(fpath.relative_to(project_path)),
+                    "type": "document",
+                }
+            )
             artifact_counter += 1
 
     # Design directories
@@ -315,12 +369,14 @@ def _discover_design_artifacts(project_dir):
                 continue
             seen_files.add(fpath)
             title = fpath.stem.replace("_", " ").replace("-", " ").title()
-            artifacts.append({
-                "id": f"DES-{artifact_counter:03d}",
-                "title": title,
-                "file_path": str(fpath.relative_to(project_path)),
-                "type": "adr" if "adr" in str(dir_name) else "design",
-            })
+            artifacts.append(
+                {
+                    "id": f"DES-{artifact_counter:03d}",
+                    "title": title,
+                    "file_path": str(fpath.relative_to(project_path)),
+                    "type": "adr" if "adr" in str(dir_name) else "design",
+                }
+            )
             artifact_counter += 1
 
     return artifacts
@@ -387,19 +443,30 @@ def _discover_code_modules(project_dir):
 
                 seen_files.add(fpath)
                 name = fpath.stem
-                modules.append({
-                    "id": f"MOD-{module_counter:03d}",
-                    "name": name,
-                    "file_path": str(fpath.relative_to(project_path)),
-                    "language": lang,
-                })
+                modules.append(
+                    {
+                        "id": f"MOD-{module_counter:03d}",
+                        "name": name,
+                        "file_path": str(fpath.relative_to(project_path)),
+                        "language": lang,
+                    }
+                )
                 module_counter += 1
 
     # Scan root for main application files
     root_app_patterns = [
-        "main.py", "app.py", "server.py", "index.py",
-        "main.js", "app.js", "server.js", "index.js",
-        "main.ts", "app.ts", "server.ts", "index.ts",
+        "main.py",
+        "app.py",
+        "server.py",
+        "index.py",
+        "main.js",
+        "app.js",
+        "server.js",
+        "index.js",
+        "main.ts",
+        "app.ts",
+        "server.ts",
+        "index.ts",
     ]
     for pattern in root_app_patterns:
         fpath = project_path / pattern
@@ -407,12 +474,14 @@ def _discover_code_modules(project_dir):
             seen_files.add(fpath)
             ext = fpath.suffix
             lang = ext_lang.get(ext, "unknown")
-            modules.append({
-                "id": f"MOD-{module_counter:03d}",
-                "name": fpath.stem,
-                "file_path": str(fpath.relative_to(project_path)),
-                "language": lang,
-            })
+            modules.append(
+                {
+                    "id": f"MOD-{module_counter:03d}",
+                    "name": fpath.stem,
+                    "file_path": str(fpath.relative_to(project_path)),
+                    "language": lang,
+                }
+            )
             module_counter += 1
 
     return modules
@@ -435,10 +504,18 @@ def _discover_tests(project_dir):
 
     # Test directories to scan
     test_dirs = [
-        "tests", "test", "spec", "specs",
-        "e2e", "integration",
-        "tests/unit", "tests/integration", "tests/e2e",
-        "test/unit", "test/integration", "test/e2e",
+        "tests",
+        "test",
+        "spec",
+        "specs",
+        "e2e",
+        "integration",
+        "tests/unit",
+        "tests/integration",
+        "tests/e2e",
+        "test/unit",
+        "test/integration",
+        "test/e2e",
     ]
 
     # Test file patterns
@@ -466,10 +543,7 @@ def _discover_tests(project_dir):
             for fpath in sorted(dir_path.rglob(pattern)):
                 if fpath in seen_files:
                     continue
-                if (
-                    "__pycache__" in str(fpath)
-                    or "node_modules" in str(fpath)
-                ):
+                if "__pycache__" in str(fpath) or "node_modules" in str(fpath):
                     continue
                 seen_files.add(fpath)
                 name = fpath.stem
@@ -486,12 +560,14 @@ def _discover_tests(project_dir):
                 else:
                     test_type = "unit"
 
-                tests.append({
-                    "id": f"TST-{test_counter:03d}",
-                    "name": name,
-                    "file_path": str(fpath.relative_to(project_path)),
-                    "type": test_type,
-                })
+                tests.append(
+                    {
+                        "id": f"TST-{test_counter:03d}",
+                        "name": name,
+                        "file_path": str(fpath.relative_to(project_path)),
+                        "type": test_type,
+                    }
+                )
                 test_counter += 1
 
     # Also scan root-level test files
@@ -501,12 +577,14 @@ def _discover_tests(project_dir):
                 continue
             if fpath.is_file():
                 seen_files.add(fpath)
-                tests.append({
-                    "id": f"TST-{test_counter:03d}",
-                    "name": fpath.stem,
-                    "file_path": str(fpath.relative_to(project_path)),
-                    "type": "unit",
-                })
+                tests.append(
+                    {
+                        "id": f"TST-{test_counter:03d}",
+                        "name": fpath.stem,
+                        "file_path": str(fpath.relative_to(project_path)),
+                        "type": "unit",
+                    }
+                )
                 test_counter += 1
 
     # Scan features/ for step definition files
@@ -524,12 +602,14 @@ def _discover_tests(project_dir):
             if fpath.name.startswith("__"):
                 continue
             seen_files.add(fpath)
-            tests.append({
-                "id": f"TST-{test_counter:03d}",
-                "name": fpath.stem,
-                "file_path": str(fpath.relative_to(project_path)),
-                "type": "bdd_step",
-            })
+            tests.append(
+                {
+                    "id": f"TST-{test_counter:03d}",
+                    "name": fpath.stem,
+                    "file_path": str(fpath.relative_to(project_path)),
+                    "type": "bdd_step",
+                }
+            )
             test_counter += 1
 
     return tests
@@ -538,6 +618,7 @@ def _discover_tests(project_dir):
 # ---------------------------------------------------------------------------
 # Traceability functions
 # ---------------------------------------------------------------------------
+
 
 def _build_forward_trace(requirements, design, code, tests):
     """Build forward traceability from requirements to design/code/tests.
@@ -563,49 +644,49 @@ def _build_forward_trace(requirements, design, code, tests):
         for d in design:
             d_keywords = _extract_keywords(d["title"])
             d_path_keywords = _extract_keywords(d.get("file_path", ""))
-            overlap = _keyword_overlap(
-                all_req_keywords, d_keywords + d_path_keywords
-            )
+            overlap = _keyword_overlap(all_req_keywords, d_keywords + d_path_keywords)
             if overlap >= match_threshold:
-                matched_design.append({
-                    "id": d["id"],
-                    "title": d["title"],
-                    "file_path": d.get("file_path", ""),
-                    "confidence": round(overlap, 2),
-                })
+                matched_design.append(
+                    {
+                        "id": d["id"],
+                        "title": d["title"],
+                        "file_path": d.get("file_path", ""),
+                        "confidence": round(overlap, 2),
+                    }
+                )
 
         # Match to code modules
         matched_code = []
         for m in code:
             m_keywords = _extract_keywords(m["name"])
             m_path_keywords = _extract_keywords(m.get("file_path", ""))
-            overlap = _keyword_overlap(
-                all_req_keywords, m_keywords + m_path_keywords
-            )
+            overlap = _keyword_overlap(all_req_keywords, m_keywords + m_path_keywords)
             if overlap >= match_threshold:
-                matched_code.append({
-                    "id": m["id"],
-                    "name": m["name"],
-                    "file_path": m.get("file_path", ""),
-                    "confidence": round(overlap, 2),
-                })
+                matched_code.append(
+                    {
+                        "id": m["id"],
+                        "name": m["name"],
+                        "file_path": m.get("file_path", ""),
+                        "confidence": round(overlap, 2),
+                    }
+                )
 
         # Match to tests
         matched_tests = []
         for t in tests:
             t_keywords = _extract_keywords(t["name"])
             t_path_keywords = _extract_keywords(t.get("file_path", ""))
-            overlap = _keyword_overlap(
-                all_req_keywords, t_keywords + t_path_keywords
-            )
+            overlap = _keyword_overlap(all_req_keywords, t_keywords + t_path_keywords)
             if overlap >= match_threshold:
-                matched_tests.append({
-                    "id": t["id"],
-                    "name": t["name"],
-                    "file_path": t.get("file_path", ""),
-                    "type": t.get("type", "unknown"),
-                    "confidence": round(overlap, 2),
-                })
+                matched_tests.append(
+                    {
+                        "id": t["id"],
+                        "name": t["name"],
+                        "file_path": t.get("file_path", ""),
+                        "type": t.get("type", "unknown"),
+                        "confidence": round(overlap, 2),
+                    }
+                )
 
         # Determine trace status
         has_design = len(matched_design) > 0
@@ -621,16 +702,18 @@ def _build_forward_trace(requirements, design, code, tests):
         else:
             status = "Gap"
 
-        trace.append({
-            "requirement_id": req["id"],
-            "requirement_title": req["title"],
-            "source_file": req.get("source_file", ""),
-            "requirement_type": req.get("type", "unknown"),
-            "design_artifacts": matched_design,
-            "code_modules": matched_code,
-            "test_files": matched_tests,
-            "status": status,
-        })
+        trace.append(
+            {
+                "requirement_id": req["id"],
+                "requirement_title": req["title"],
+                "source_file": req.get("source_file", ""),
+                "requirement_type": req.get("type", "unknown"),
+                "design_artifacts": matched_design,
+                "code_modules": matched_code,
+                "test_files": matched_tests,
+                "status": status,
+            }
+        )
 
     return trace
 
@@ -656,29 +739,29 @@ def _build_backward_trace(tests, code, design, requirements):
         matched_reqs = []
         for req in requirements:
             req_keywords = _extract_keywords(req["title"])
-            source_keywords = _extract_keywords(
-                req.get("source_file", "")
-            )
-            overlap = _keyword_overlap(
-                all_test_keywords, req_keywords + source_keywords
-            )
+            source_keywords = _extract_keywords(req.get("source_file", ""))
+            overlap = _keyword_overlap(all_test_keywords, req_keywords + source_keywords)
             if overlap >= match_threshold:
-                matched_reqs.append({
-                    "id": req["id"],
-                    "title": req["title"],
-                    "confidence": round(overlap, 2),
-                })
+                matched_reqs.append(
+                    {
+                        "id": req["id"],
+                        "title": req["title"],
+                        "confidence": round(overlap, 2),
+                    }
+                )
 
         status = "Traced" if matched_reqs else "Orphan"
 
-        trace.append({
-            "test_id": t["id"],
-            "test_name": t["name"],
-            "test_file": t.get("file_path", ""),
-            "test_type": t.get("type", "unknown"),
-            "matched_requirements": matched_reqs,
-            "status": status,
-        })
+        trace.append(
+            {
+                "test_id": t["id"],
+                "test_name": t["name"],
+                "test_file": t.get("file_path", ""),
+                "test_type": t.get("type", "unknown"),
+                "matched_requirements": matched_reqs,
+                "status": status,
+            }
+        )
 
     return trace
 
@@ -735,9 +818,7 @@ def _calculate_coverage(forward_trace):
     if total == 0:
         return 0.0, 0, 0
 
-    traced = sum(
-        1 for ft in forward_trace if ft["test_files"]
-    )
+    traced = sum(1 for ft in forward_trace if ft["test_files"])
     coverage = 100.0 * traced / total
     return round(coverage, 1), traced, total
 
@@ -746,10 +827,20 @@ def _calculate_coverage(forward_trace):
 # Report generation
 # ---------------------------------------------------------------------------
 
+
 def _generate_rtm_markdown(
-    forward_trace, backward_trace, gaps, coverage,
-    traced_count, total_count, project, cui_config,
-    requirements, design, code, tests,
+    forward_trace,
+    backward_trace,
+    gaps,
+    coverage,
+    traced_count,
+    total_count,
+    project,
+    cui_config,
+    requirements,
+    design,
+    code,
+    tests,
 ):
     """Generate the RTM markdown report.
 
@@ -770,9 +861,7 @@ def _generate_rtm_markdown(
     lines.append(f"**Project:** {project.get('name', 'N/A')}")
     lines.append(f"**Project ID:** {project.get('id', 'N/A')}")
     lines.append(f"**Classification:** {project.get('classification', 'CUI')}")
-    lines.append(
-        f"**Generated:** {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}"
-    )
+    lines.append(f"**Generated:** {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}")
     lines.append("**Generator:** ICDEV™ RTM Generator v1.0")
     lines.append("")
     lines.append("---")
@@ -793,9 +882,7 @@ def _generate_rtm_markdown(
     lines.append("## 2. Coverage Summary")
     lines.append("")
     lines.append(f"**Forward Traceability Coverage:** {coverage:.1f}%")
-    lines.append(
-        f"**Requirements with Full Trace:** {traced_count} / {total_count}"
-    )
+    lines.append(f"**Requirements with Full Trace:** {traced_count} / {total_count}")
 
     gap_data = gaps
     untested_count = len(gap_data.get("untested_requirements", []))
@@ -817,11 +904,7 @@ def _generate_rtm_markdown(
     lines.append("|-------------|------:|-----------:|")
     for status in ["Traced", "Partial", "Gap"]:
         cnt = status_counts[status]
-        pct = (
-            f"{100.0 * cnt / total_count:.1f}%"
-            if total_count > 0
-            else "N/A"
-        )
+        pct = f"{100.0 * cnt / total_count:.1f}%" if total_count > 0 else "N/A"
         lines.append(f"| {status} | {cnt} | {pct} |")
     lines.append("")
     lines.append("---")
@@ -830,27 +913,17 @@ def _generate_rtm_markdown(
     # Forward trace table
     lines.append("## 3. Forward Traceability (Requirements -> Artifacts)")
     lines.append("")
-    lines.append(
-        "| Req ID | Title | Design | Code | Tests | Status |"
-    )
-    lines.append(
-        "|--------|-------|--------|------|-------|--------|"
-    )
+    lines.append("| Req ID | Title | Design | Code | Tests | Status |")
+    lines.append("|--------|-------|--------|------|-------|--------|")
     for ft in forward_trace:
         req_id = ft["requirement_id"]
         title = ft["requirement_title"]
         if len(title) > 40:
             title = title[:37] + "..."
 
-        design_ids = ", ".join(
-            d["id"] for d in ft["design_artifacts"]
-        ) or "--"
-        code_ids = ", ".join(
-            m["id"] for m in ft["code_modules"]
-        ) or "--"
-        test_ids = ", ".join(
-            t["id"] for t in ft["test_files"]
-        ) or "--"
+        design_ids = ", ".join(d["id"] for d in ft["design_artifacts"]) or "--"
+        code_ids = ", ".join(m["id"] for m in ft["code_modules"]) or "--"
+        test_ids = ", ".join(t["id"] for t in ft["test_files"]) or "--"
 
         # Truncate long ID lists
         if len(design_ids) > 30:
@@ -867,10 +940,7 @@ def _generate_rtm_markdown(
             "Gap": "**GAP**",
         }.get(status, status)
 
-        lines.append(
-            f"| {req_id} | {title} | {design_ids} "
-            f"| {code_ids} | {test_ids} | {status_mark} |"
-        )
+        lines.append(f"| {req_id} | {title} | {design_ids} | {code_ids} | {test_ids} | {status_mark} |")
     lines.append("")
     lines.append("---")
     lines.append("")
@@ -878,12 +948,8 @@ def _generate_rtm_markdown(
     # Backward trace table
     lines.append("## 4. Backward Traceability (Tests -> Requirements)")
     lines.append("")
-    lines.append(
-        "| Test ID | Test Name | Type | Matched Requirements | Status |"
-    )
-    lines.append(
-        "|---------|-----------|------|---------------------|--------|"
-    )
+    lines.append("| Test ID | Test Name | Type | Matched Requirements | Status |")
+    lines.append("|---------|-----------|------|---------------------|--------|")
     for bt in backward_trace:
         test_id = bt["test_id"]
         test_name = bt["test_name"]
@@ -891,21 +957,14 @@ def _generate_rtm_markdown(
             test_name = test_name[:32] + "..."
         test_type = bt.get("test_type", "unknown")
 
-        matched = ", ".join(
-            r["id"] for r in bt["matched_requirements"]
-        ) or "--"
+        matched = ", ".join(r["id"] for r in bt["matched_requirements"]) or "--"
         if len(matched) > 30:
             matched = matched[:27] + "..."
 
         status = bt["status"]
-        status_mark = (
-            "Traced" if status == "Traced" else "**ORPHAN**"
-        )
+        status_mark = "Traced" if status == "Traced" else "**ORPHAN**"
 
-        lines.append(
-            f"| {test_id} | {test_name} | {test_type} "
-            f"| {matched} | {status_mark} |"
-        )
+        lines.append(f"| {test_id} | {test_name} | {test_type} | {matched} | {status_mark} |")
     lines.append("")
     lines.append("---")
     lines.append("")
@@ -919,10 +978,7 @@ def _generate_rtm_markdown(
     lines.append("")
     untested = gap_data.get("untested_requirements", [])
     if untested:
-        lines.append(
-            f"The following {len(untested)} requirement(s) have no "
-            "matching test files:"
-        )
+        lines.append(f"The following {len(untested)} requirement(s) have no matching test files:")
         lines.append("")
         lines.append("| Req ID | Title | Source File |")
         lines.append("|--------|-------|-------------|")
@@ -930,10 +986,7 @@ def _generate_rtm_markdown(
             title = ur["requirement_title"]
             if len(title) > 50:
                 title = title[:47] + "..."
-            lines.append(
-                f"| {ur['requirement_id']} | {title} "
-                f"| {ur.get('source_file', 'N/A')} |"
-            )
+            lines.append(f"| {ur['requirement_id']} | {title} | {ur.get('source_file', 'N/A')} |")
         lines.append("")
     else:
         lines.append("*All requirements have at least one matching test.*")
@@ -944,18 +997,12 @@ def _generate_rtm_markdown(
     lines.append("")
     orphans = gap_data.get("orphan_tests", [])
     if orphans:
-        lines.append(
-            f"The following {len(orphans)} test(s) have no matching "
-            "requirement:"
-        )
+        lines.append(f"The following {len(orphans)} test(s) have no matching requirement:")
         lines.append("")
         lines.append("| Test ID | Test Name | Test File |")
         lines.append("|---------|-----------|-----------|")
         for ot in orphans:
-            lines.append(
-                f"| {ot['test_id']} | {ot['test_name']} "
-                f"| {ot.get('test_file', 'N/A')} |"
-            )
+            lines.append(f"| {ot['test_id']} | {ot['test_name']} | {ot.get('test_file', 'N/A')} |")
         lines.append("")
     else:
         lines.append("*All tests trace to at least one requirement.*")
@@ -964,8 +1011,7 @@ def _generate_rtm_markdown(
     lines.append("---")
     lines.append("")
     lines.append(
-        "*Generated by ICDEV™ RTM Generator v1.0 on "
-        f"{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}*"
+        f"*Generated by ICDEV™ RTM Generator v1.0 on {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}*"
     )
     lines.append("")
 
@@ -981,6 +1027,7 @@ def _generate_rtm_markdown(
 # ---------------------------------------------------------------------------
 # Core function
 # ---------------------------------------------------------------------------
+
 
 def generate_rtm(project_id, project_dir=None, output_path=None, db_path=None):
     """Generate a Requirements Traceability Matrix for a project.
@@ -1032,9 +1079,7 @@ def generate_rtm(project_id, project_dir=None, output_path=None, db_path=None):
                     )
 
         if not proj_dir.is_dir():
-            raise FileNotFoundError(
-                f"Project directory does not exist: {proj_dir}"
-            )
+            raise FileNotFoundError(f"Project directory does not exist: {proj_dir}")
 
         # 3. Discover artifacts
         requirements = _discover_requirements(str(proj_dir))
@@ -1043,27 +1088,30 @@ def generate_rtm(project_id, project_dir=None, output_path=None, db_path=None):
         tests = _discover_tests(str(proj_dir))
 
         # 4. Build forward and backward traces
-        forward_trace = _build_forward_trace(
-            requirements, design, code, tests
-        )
-        backward_trace = _build_backward_trace(
-            tests, code, design, requirements
-        )
+        forward_trace = _build_forward_trace(requirements, design, code, tests)
+        backward_trace = _build_backward_trace(tests, code, design, requirements)
 
         # 5. Identify gaps and calculate coverage
         gaps = _identify_gaps(forward_trace, backward_trace)
-        coverage, traced_count, total_count = _calculate_coverage(
-            forward_trace
-        )
+        coverage, traced_count, total_count = _calculate_coverage(forward_trace)
 
         # 6. Load CUI config
         cui_config = _load_cui_config()
 
         # 7. Generate markdown report
         report_md = _generate_rtm_markdown(
-            forward_trace, backward_trace, gaps, coverage,
-            traced_count, total_count, project, cui_config,
-            requirements, design, code, tests,
+            forward_trace,
+            backward_trace,
+            gaps,
+            coverage,
+            traced_count,
+            total_count,
+            project,
+            cui_config,
+            requirements,
+            design,
+            code,
+            tests,
         )
 
         # 8. Generate JSON data (machine-readable RTM)
@@ -1102,10 +1150,7 @@ def generate_rtm(project_id, project_dir=None, output_path=None, db_path=None):
             if dir_path:
                 out_dir = Path(dir_path) / "compliance" / "rtm"
             else:
-                out_dir = (
-                    BASE_DIR / "projects" / project_name
-                    / "compliance" / "rtm"
-                )
+                out_dir = BASE_DIR / "projects" / project_name / "compliance" / "rtm"
 
         out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1125,9 +1170,7 @@ def generate_rtm(project_id, project_dir=None, output_path=None, db_path=None):
             "traced": traced_count,
             "total_requirements": total_count,
             "gap_count": gaps["gap_count"],
-            "untested_requirements": len(
-                gaps["untested_requirements"]
-            ),
+            "untested_requirements": len(gaps["untested_requirements"]),
             "orphan_tests": len(gaps["orphan_tests"]),
             "requirements_discovered": len(requirements),
             "design_artifacts_discovered": len(design),
@@ -1138,8 +1181,7 @@ def generate_rtm(project_id, project_dir=None, output_path=None, db_path=None):
         _log_audit_event(
             conn,
             project_id,
-            f"RTM generated — {coverage:.1f}% coverage, "
-            f"{gaps['gap_count']} gap(s)",
+            f"RTM generated — {coverage:.1f}% coverage, {gaps['gap_count']} gap(s)",
             audit_details,
             md_file,
         )
@@ -1165,9 +1207,7 @@ def generate_rtm(project_id, project_dir=None, output_path=None, db_path=None):
             "traced": traced_count,
             "gaps": gaps["gap_count"],
             "total_requirements": total_count,
-            "untested_requirements": len(
-                gaps["untested_requirements"]
-            ),
+            "untested_requirements": len(gaps["untested_requirements"]),
             "orphan_tests": len(gaps["orphan_tests"]),
             "requirements_discovered": len(requirements),
             "design_artifacts_discovered": len(design),
@@ -1183,6 +1223,7 @@ def generate_rtm(project_id, project_dir=None, output_path=None, db_path=None):
 # ---------------------------------------------------------------------------
 # CLI entry point
 # ---------------------------------------------------------------------------
+
 
 def _format_json_output(result):
     """Format result as JSON for machine-readable output."""
@@ -1221,10 +1262,7 @@ def _format_text_output(result):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description=(
-            "Generate Requirements Traceability Matrix (RTM) — "
-            "a core IV&V artifact"
-        )
+        description=("Generate Requirements Traceability Matrix (RTM) — a core IV&V artifact")
     )
     parser.add_argument(
         "--project-id",
@@ -1233,16 +1271,11 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--project-dir",
-        help=(
-            "Project directory to scan (default: from DB or "
-            "projects/{name})"
-        ),
+        help=("Project directory to scan (default: from DB or projects/{name})"),
     )
     parser.add_argument(
         "--output-dir",
-        help=(
-            "Output directory (default: {project_dir}/compliance/rtm/)"
-        ),
+        help=("Output directory (default: {project_dir}/compliance/rtm/)"),
     )
     parser.add_argument(
         "--db-path",

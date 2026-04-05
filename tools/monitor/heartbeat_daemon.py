@@ -199,10 +199,7 @@ def _notify(
     2. SSE broadcast (best-effort HTTP POST to dashboard)
     3. Gateway mailbox broadcast (if configured, best-effort)
     """
-    event_type = (
-        "heartbeat_check_critical" if severity == "critical"
-        else "heartbeat_check_warning"
-    )
+    event_type = "heartbeat_check_critical" if severity == "critical" else "heartbeat_check_warning"
 
     # --- 1. Audit trail ---------------------------------------------------
     try:
@@ -220,15 +217,18 @@ def _notify(
 
     # --- 2. SSE broadcast --------------------------------------------------
     try:
-        payload = json.dumps({
-            "event_type": event_type,
-            "check_type": check_type,
-            "severity": severity,
-            "title": title,
-            "details": details,
-            "timestamp": _utcnow_iso(),
-        }).encode("utf-8")
+        payload = json.dumps(
+            {
+                "event_type": event_type,
+                "check_type": check_type,
+                "severity": severity,
+                "title": title,
+                "details": details,
+                "timestamp": _utcnow_iso(),
+            }
+        ).encode("utf-8")
         import os as _os
+
         _dash_port = _os.environ.get("ICDEV_DASHBOARD_PORT", "5000")
         req = urllib.request.Request(
             f"http://localhost:{_dash_port}/api/events/ingest",
@@ -445,14 +445,17 @@ def check_memory_maintenance(
     # D181: Flush auto-capture buffer as first step
     try:
         from tools.memory.auto_capture import flush_buffer, buffer_status
+
         buf = buffer_status(db_path=mem_path)
         if buf.get("total_buffered", 0) > 0:
             flush_result = flush_buffer(db_path=mem_path)
-            items.append({
-                "type": "buffer_flush",
-                "flushed": flush_result.get("flushed", 0),
-                "duplicates": flush_result.get("duplicates", 0),
-            })
+            items.append(
+                {
+                    "type": "buffer_flush",
+                    "flushed": flush_result.get("flushed", 0),
+                    "duplicates": flush_result.get("duplicates", 0),
+                }
+            )
     except (ImportError, Exception):
         pass  # auto_capture not available
 
@@ -480,8 +483,7 @@ def check_memory_maintenance(
         status = "warning" if count > 0 else "ok"
         return {"status": status, "count": count, "items": items}
     except Exception as exc:
-        return {"status": "ok", "count": len(items), "items": items,
-                "note": f"table not found or error: {exc}"}
+        return {"status": "ok", "count": len(items), "items": items, "note": f"table not found or error: {exc}"}
 
 
 def check_coherence_health(
@@ -496,17 +498,20 @@ def check_coherence_health(
     """
     try:
         from tools.workflow.coherence_checker import run_checks
+
         report = run_checks()
         if not report.overall_pass:
             return {
                 "status": "warning",
                 "count": report.failed_checks + report.warned_checks,
                 "items": [
-                    {"type": "coherence_drift",
-                     "failed": report.failed_checks,
-                     "warned": report.warned_checks,
-                     "passed": report.passed_checks,
-                     "total": report.total_checks}
+                    {
+                        "type": "coherence_drift",
+                        "failed": report.failed_checks,
+                        "warned": report.warned_checks,
+                        "passed": report.passed_checks,
+                        "total": report.total_checks,
+                    }
                 ],
             }
         return {
@@ -524,7 +529,8 @@ def check_coherence_health(
 
 
 def check_review_board_health(
-    config: dict = None, db_path=None,
+    config: dict = None,
+    db_path=None,
 ) -> Dict[str, Any]:
     """Check Review Board daemon health — circuit breakers, critical findings."""
     try:
@@ -533,8 +539,7 @@ def check_review_board_health(
             # Check for tripped circuit breakers
             try:
                 cb_rows = conn.execute(
-                    "SELECT reflex_name FROM review_board_reflex_state "
-                    "WHERE circuit_breaker_open = 1"
+                    "SELECT reflex_name FROM review_board_reflex_state WHERE circuit_breaker_open = 1"
                 ).fetchall()
             except Exception:
                 cb_rows = []
@@ -542,8 +547,7 @@ def check_review_board_health(
             # Check for unfixed critical findings
             try:
                 critical = conn.execute(
-                    "SELECT COUNT(*) FROM review_board_findings "
-                    "WHERE severity = 'critical' AND fix_applied = 0"
+                    "SELECT COUNT(*) FROM review_board_findings WHERE severity = 'critical' AND fix_applied = 0"
                 ).fetchone()
                 critical_count = critical[0] if critical else 0
             except Exception:
@@ -560,8 +564,7 @@ def check_review_board_health(
         finally:
             conn.close()
     except Exception as exc:
-        return {"status": "ok", "count": 0, "items": [],
-                "note": f"Review board tables not available: {exc}"}
+        return {"status": "ok", "count": 0, "items": [], "note": f"Review board tables not available: {exc}"}
 
 
 # ---------------------------------------------------------------------------
@@ -826,9 +829,7 @@ def _format_status_human(statuses: List[dict]) -> str:
 # ---------------------------------------------------------------------------
 def main() -> None:
     """CLI entry point for the heartbeat daemon."""
-    parser = argparse.ArgumentParser(
-        description="ICDEV™ Heartbeat Daemon (D141) — proactive check loop"
-    )
+    parser = argparse.ArgumentParser(description="ICDEV™ Heartbeat Daemon (D141) — proactive check loop")
     parser.add_argument("--once", action="store_true", help="Single pass, then exit")
     parser.add_argument("--check", type=str, help="Run a specific check only")
     parser.add_argument("--status", action="store_true", help="Show latest check statuses")

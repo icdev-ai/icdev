@@ -54,21 +54,35 @@ from tools.common.helpers import row_to_dict  # noqa: E402
 
 # pg_teaming_partners.partner_type CHECK values
 PARTNER_TYPES = (
-    "prime", "subcontractor", "consultant",
-    "technology_partner", "mentor_protege",
+    "prime",
+    "subcontractor",
+    "consultant",
+    "technology_partner",
+    "mentor_protege",
 )
 
 # pg_teaming_workshare statuses
 WS_STATUSES = (
-    "proposed", "agreed", "contracted", "disputed",
+    "proposed",
+    "agreed",
+    "contracted",
+    "disputed",
 )
 
 TA_STATUSES = (
-    "none", "draft", "negotiating", "executed", "expired",
+    "none",
+    "draft",
+    "negotiating",
+    "executed",
+    "expired",
 )
 
 OCI_RISK_LEVELS = (
-    "none", "low", "medium", "high", "disqualifying",
+    "none",
+    "low",
+    "medium",
+    "high",
+    "disqualifying",
 )
 
 # Partner score dimension weights (sum to 1.0)
@@ -87,6 +101,7 @@ SB_SUBCONTRACTING_MIN_PCT = 23.0
 
 # ── Helpers ───────────────────────────────────────────────────
 
+
 def _now():
     return datetime.now(timezone.utc).isoformat()
 
@@ -100,10 +115,7 @@ def _get_db():
 
 
 def _audit(conn, event_type, action, details, opp_id=None):
-    det = (
-        json.dumps(details)
-        if isinstance(details, dict) else str(details)
-    )
+    det = json.dumps(details) if isinstance(details, dict) else str(details)
     try:
         conn.execute(
             "INSERT INTO audit_trail "
@@ -111,9 +123,14 @@ def _audit(conn, event_type, action, details, opp_id=None):
             "action, details, project_id, session_id) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
-                _gen_id("aud"), _now(), event_type,
-                "teaming_hub", action, det,
-                opp_id, None,
+                _gen_id("aud"),
+                _now(),
+                event_type,
+                "teaming_hub",
+                action,
+                det,
+                opp_id,
+                None,
             ),
         )
     except Exception:
@@ -125,18 +142,20 @@ def _audit(conn, event_type, action, details, opp_id=None):
                 "action, details, session_id) "
                 "VALUES (?, ?, ?, ?, ?, ?)",
                 (
-                    opp_id, event_type,
-                    "teaming_hub", action,
-                    det, None,
+                    opp_id,
+                    event_type,
+                    "teaming_hub",
+                    action,
+                    det,
+                    None,
                 ),
             )
         except Exception:
             pass  # audit is best-effort
 
 
-
-
 # ── Core Functions ────────────────────────────────────────────
+
 
 def add_partner(
     opportunity_id,
@@ -158,24 +177,17 @@ def add_partner(
         conn.close()
         return {
             "status": "error",
-            "message": (
-                f"Invalid partner_type '{partner_type}'. "
-                f"Must be one of {PARTNER_TYPES}"
-            ),
+            "message": (f"Invalid partner_type '{partner_type}'. Must be one of {PARTNER_TYPES}"),
         }
 
     # Check if partner exists in global registry
     existing = conn.execute(
-        "SELECT id FROM pg_teaming_partners "
-        "WHERE name = ?",
+        "SELECT id FROM pg_teaming_partners WHERE name = ?",
         (partner_name,),
     ).fetchone()
 
     if existing:
-        partner_id = (
-            existing["id"]
-            if isinstance(existing, dict) else existing[0]
-        )
+        partner_id = existing["id"] if isinstance(existing, dict) else existing[0]
     else:
         partner_id = _gen_id("tp")
         certs = cage or ""
@@ -187,9 +199,17 @@ def add_partner(
             "created_at, updated_at) "
             "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
             (
-                partner_id, partner_name, partner_type,
-                "", "", "", certs, "", "active",
-                now, now,
+                partner_id,
+                partner_name,
+                partner_type,
+                "",
+                "",
+                "",
+                certs,
+                "",
+                "active",
+                now,
+                now,
             ),
         )
 
@@ -204,16 +224,26 @@ def add_partner(
         "created_at, updated_at) "
         "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (
-            ws_id, opportunity_id, partner_id, None,
-            workshare_pct or 0.0, None, "proposed",
-            "none", None, "none",
-            socioeconomic_status or "", None,
-            now, now,
+            ws_id,
+            opportunity_id,
+            partner_id,
+            None,
+            workshare_pct or 0.0,
+            None,
+            "proposed",
+            "none",
+            None,
+            "none",
+            socioeconomic_status or "",
+            None,
+            now,
+            now,
         ),
     )
 
     _audit(
-        conn, "teaming.add_partner",
+        conn,
+        "teaming.add_partner",
         f"Registered {partner_name} for {opportunity_id}",
         {
             "partner_id": partner_id,
@@ -268,21 +298,16 @@ def score_partner(partner_id):
 
     # Find opportunity via workshare link
     ws = conn.execute(
-        "SELECT opportunity_id FROM pg_teaming_workshare "
-        "WHERE partner_id = ? LIMIT 1",
+        "SELECT opportunity_id FROM pg_teaming_workshare WHERE partner_id = ? LIMIT 1",
         (partner_id,),
     ).fetchone()
     opp_id = None
     opp = None
     if ws:
-        opp_id = (
-            ws["opportunity_id"]
-            if isinstance(ws, dict) else ws[0]
-        )
+        opp_id = ws["opportunity_id"] if isinstance(ws, dict) else ws[0]
         try:
             opp_row = conn.execute(
-                "SELECT * FROM proposal_opportunities "
-                "WHERE id = ?",
+                "SELECT * FROM proposal_opportunities WHERE id = ?",
                 (opp_id,),
             ).fetchone()
             if opp_row:
@@ -296,19 +321,13 @@ def score_partner(partner_id):
     pp_score = 0.3
     try:
         awards = conn.execute(
-            "SELECT naics_code "
-            "FROM govcon_awards "
-            "WHERE awardee_name LIKE ?",
+            "SELECT naics_code FROM govcon_awards WHERE awardee_name LIKE ?",
             (f"%{partner_name}%",),
         ).fetchall()
         if awards:
             pp_score = min(1.0, 0.3 + len(awards) * 0.1)
             if opp and opp.get("naics_code"):
-                match = [
-                    a for a in awards
-                    if row_to_dict(a).get("naics_code")
-                    == opp["naics_code"]
-                ]
+                match = [a for a in awards if row_to_dict(a).get("naics_code") == opp["naics_code"]]
                 if match:
                     pp_score = min(1.0, pp_score + 0.3)
     except Exception:
@@ -320,19 +339,11 @@ def score_partner(partner_id):
     if opp:
         try:
             cnt_row = conn.execute(
-                "SELECT COUNT(*) as cnt "
-                "FROM govcon_awards "
-                "WHERE awardee_name LIKE ? "
-                "AND naics_code = ?",
-                (f"%{partner_name}%",
-                 opp.get("naics_code") or ""),
+                "SELECT COUNT(*) as cnt FROM govcon_awards WHERE awardee_name LIKE ? AND naics_code = ?",
+                (f"%{partner_name}%", opp.get("naics_code") or ""),
             ).fetchone()
             if cnt_row:
-                cnt = (
-                    cnt_row["cnt"]
-                    if isinstance(cnt_row, dict)
-                    else cnt_row[0]
-                )
+                cnt = cnt_row["cnt"] if isinstance(cnt_row, dict) else cnt_row[0]
                 if cnt > 0:
                     cap_score = min(1.0, 0.5 + cnt * 0.1)
         except Exception:
@@ -343,16 +354,11 @@ def score_partner(partner_id):
     rel_score = 0.5
     try:
         prior = conn.execute(
-            "SELECT COUNT(*) as cnt "
-            "FROM pg_teaming_workshare "
-            "WHERE partner_id = ?",
+            "SELECT COUNT(*) as cnt FROM pg_teaming_workshare WHERE partner_id = ?",
             (partner_id,),
         ).fetchone()
         if prior:
-            cnt = (
-                prior["cnt"]
-                if isinstance(prior, dict) else prior[0]
-            )
+            cnt = prior["cnt"] if isinstance(prior, dict) else prior[0]
             if cnt > 1:
                 rel_score = min(1.0, 0.5 + cnt * 0.1)
     except Exception:
@@ -364,12 +370,19 @@ def score_partner(partner_id):
     certs = (p.get("certifications") or "").lower()
     if "cmmc" in certs:
         cert_score += 0.3
-    if any(kw in certs for kw in (
-        "secret", "ts", "ts/sci", "clearance",
-    )):
+    if any(
+        kw in certs
+        for kw in (
+            "secret",
+            "ts",
+            "ts/sci",
+            "clearance",
+        )
+    ):
         cert_score += 0.3
     scores["certification_match"] = round(
-        min(1.0, cert_score), 3,
+        min(1.0, cert_score),
+        3,
     )
 
     # 5. Geographic fit
@@ -378,38 +391,30 @@ def score_partner(partner_id):
     # 6. Socioeconomic fit
     socio_score = 0.5
     ws_rows = conn.execute(
-        "SELECT socioeconomic_status "
-        "FROM pg_teaming_workshare "
-        "WHERE partner_id = ?",
+        "SELECT socioeconomic_status FROM pg_teaming_workshare WHERE partner_id = ?",
         (partner_id,),
     ).fetchall()
     for wr in ws_rows:
-        se = (
-            row_to_dict(wr).get("socioeconomic_status")
-            or ""
-        ).lower()
+        se = (row_to_dict(wr).get("socioeconomic_status") or "").lower()
         if se and se not in ("", "none", "large_business"):
             socio_score = 0.7
             break
     scores["socioeconomic_fit"] = round(socio_score, 3)
 
     # Composite
-    composite = sum(
-        scores[d] * SCORE_WEIGHTS[d] for d in SCORE_WEIGHTS
-    )
+    composite = sum(scores[d] * SCORE_WEIGHTS[d] for d in SCORE_WEIGHTS)
     composite = round(composite, 3)
 
     # Update reliability in workshare records
     now = _now()
     conn.execute(
-        "UPDATE pg_teaming_workshare "
-        "SET reliability_score = ?, updated_at = ? "
-        "WHERE partner_id = ?",
+        "UPDATE pg_teaming_workshare SET reliability_score = ?, updated_at = ? WHERE partner_id = ?",
         (composite, now, partner_id),
     )
 
     _audit(
-        conn, "teaming.score_partner",
+        conn,
+        "teaming.score_partner",
         f"Scored {partner_name}: {composite}",
         {
             "partner_id": partner_id,
@@ -460,58 +465,36 @@ def track_workshare(opportunity_id):
         }
 
     partners = [row_to_dict(r) for r in rows]
-    total_pct = sum(
-        float(p.get("workshare_pct") or 0)
-        for p in partners
-    )
+    total_pct = sum(float(p.get("workshare_pct") or 0) for p in partners)
 
     issues = []
     warnings = []
 
     if total_pct < 98.0:
         remaining = 100.0 - total_pct
-        issues.append(
-            f"Under-allocated: {total_pct:.1f}% assigned, "
-            f"{remaining:.1f}% unaccounted"
-        )
+        issues.append(f"Under-allocated: {total_pct:.1f}% assigned, {remaining:.1f}% unaccounted")
     elif total_pct > 102.0:
-        issues.append(
-            f"Over-allocated: {total_pct:.1f}% "
-            "exceeds 100%"
-        )
+        issues.append(f"Over-allocated: {total_pct:.1f}% exceeds 100%")
 
     # FAR 52.219-9 check
     sb_pct = sum(
         float(p.get("workshare_pct") or 0)
         for p in partners
-        if (p.get("socioeconomic_status") or "")
-        not in ("", "none", "large_business")
+        if (p.get("socioeconomic_status") or "") not in ("", "none", "large_business")
     )
     if total_pct > 0 and sb_pct < SB_SUBCONTRACTING_MIN_PCT:
-        issues.append(
-            f"FAR 52.219-9: SB at {sb_pct:.1f}% "
-            f"(min {SB_SUBCONTRACTING_MIN_PCT:.0f}%)"
-        )
+        issues.append(f"FAR 52.219-9: SB at {sb_pct:.1f}% (min {SB_SUBCONTRACTING_MIN_PCT:.0f}%)")
 
-    no_ws = [
-        p.get("name", "?") for p in partners
-        if not p.get("workshare_pct")
-    ]
+    no_ws = [p.get("name", "?") for p in partners if not p.get("workshare_pct")]
     if no_ws:
-        warnings.append(
-            "No workshare: " + ", ".join(no_ws)
-        )
+        warnings.append("No workshare: " + ", ".join(no_ws))
 
     breakdown = [
         {
             "partner_name": p.get("name"),
             "partner_type": p.get("partner_type"),
-            "socioeconomic_status": (
-                p.get("socioeconomic_status")
-            ),
-            "workshare_pct": float(
-                p.get("workshare_pct") or 0
-            ),
+            "socioeconomic_status": (p.get("socioeconomic_status")),
+            "workshare_pct": float(p.get("workshare_pct") or 0),
         }
         for p in partners
     ]
@@ -591,14 +574,15 @@ def manage_ta_lifecycle(opportunity_id):
             for o in others:
                 od = row_to_dict(o)
                 if od.get("ta_status") in (
-                    "executed", "negotiating",
+                    "executed",
+                    "negotiating",
                 ):
-                    conflicts.append({
-                        "competing_opportunity": (
-                            od.get("opportunity_id")
-                        ),
-                        "conflict_type": "exclusivity",
-                    })
+                    conflicts.append(
+                        {
+                            "competing_opportunity": (od.get("opportunity_id")),
+                            "conflict_type": "exclusivity",
+                        }
+                    )
         except Exception:
             pass
 
@@ -615,31 +599,24 @@ def manage_ta_lifecycle(opportunity_id):
         if conflicts:
             flags.append("exclusivity_conflict")
 
-        results.append({
-            "partner_id": pid,
-            "partner_name": name,
-            "ta_status": ta_st,
-            "ta_expiry_date": ta_exp,
-            "days_until_expiry": days_left,
-            "conflicts": conflicts,
-            "flags": flags,
-        })
+        results.append(
+            {
+                "partner_id": pid,
+                "partner_name": name,
+                "ta_status": ta_st,
+                "ta_expiry_date": ta_exp,
+                "days_until_expiry": days_left,
+                "conflicts": conflicts,
+                "flags": flags,
+            }
+        )
 
     conn.close()
 
-    expired = sum(
-        1 for r in results if "expired_ta" in r["flags"]
-    )
-    expiring = sum(
-        1 for r in results if "expiring_ta" in r["flags"]
-    )
-    missing = sum(
-        1 for r in results if "missing_ta" in r["flags"]
-    )
-    conflict_n = sum(
-        1 for r in results
-        if "exclusivity_conflict" in r["flags"]
-    )
+    expired = sum(1 for r in results if "expired_ta" in r["flags"])
+    expiring = sum(1 for r in results if "expiring_ta" in r["flags"])
+    missing = sum(1 for r in results if "missing_ta" in r["flags"])
+    conflict_n = sum(1 for r in results if "exclusivity_conflict" in r["flags"])
 
     return {
         "status": "ok",
@@ -669,8 +646,7 @@ def screen_oci(opportunity_id, partner_name):
     opp = None
     try:
         opp_row = conn.execute(
-            "SELECT * FROM proposal_opportunities "
-            "WHERE id = ?",
+            "SELECT * FROM proposal_opportunities WHERE id = ?",
             (opportunity_id,),
         ).fetchone()
         if opp_row:
@@ -684,18 +660,11 @@ def screen_oci(opportunity_id, partner_name):
         if opp and opp.get("solicitation_number"):
             sol = opp["solicitation_number"]
             irow = conn.execute(
-                "SELECT COUNT(*) as cnt "
-                "FROM govcon_awards "
-                "WHERE awardee_name LIKE ? "
-                "AND solicitation_number LIKE ?",
+                "SELECT COUNT(*) as cnt FROM govcon_awards WHERE awardee_name LIKE ? AND solicitation_number LIKE ?",
                 (f"%{partner_name}%", f"%{sol}%"),
             ).fetchone()
             if irow:
-                cnt = (
-                    irow["cnt"]
-                    if isinstance(irow, dict)
-                    else irow[0]
-                )
+                cnt = irow["cnt"] if isinstance(irow, dict) else irow[0]
                 if cnt > 0:
                     is_incumbent = True
 
@@ -713,32 +682,22 @@ def screen_oci(opportunity_id, partner_name):
                 ),
             ).fetchone()
             if arow:
-                cnt = (
-                    arow["cnt"]
-                    if isinstance(arow, dict)
-                    else arow[0]
-                )
+                cnt = arow["cnt"] if isinstance(arow, dict) else arow[0]
                 if cnt > 0:
                     is_incumbent = True
     except Exception:
         pass
 
     if is_incumbent:
-        oci_factors.append({
-            "type": "unequal_access",
-            "description": (
-                f"{partner_name} appears to be "
-                "incumbent or holds related contract"
-            ),
-            "severity": "high",
-        })
-        mitigations.append(
-            "Implement information barrier (firewall) plan"
+        oci_factors.append(
+            {
+                "type": "unequal_access",
+                "description": (f"{partner_name} appears to be incumbent or holds related contract"),
+                "severity": "high",
+            }
         )
-        mitigations.append(
-            "Document prior contract deliverables "
-            "as publicly available"
-        )
+        mitigations.append("Implement information barrier (firewall) plan")
+        mitigations.append("Document prior contract deliverables as publicly available")
 
     # 2. Advisory OCI
     try:
@@ -758,21 +717,15 @@ def screen_oci(opportunity_id, partner_name):
             ).fetchall()
             if adv:
                 agency = opp.get("agency", "agency")
-                oci_factors.append({
-                    "type": "biased_ground_rules",
-                    "description": (
-                        f"{partner_name} has advisory "
-                        f"contracts with {agency}"
-                    ),
-                    "severity": "medium",
-                })
-                mitigations.append(
-                    "Obtain CO waiver for advisory OCI"
+                oci_factors.append(
+                    {
+                        "type": "biased_ground_rules",
+                        "description": (f"{partner_name} has advisory contracts with {agency}"),
+                        "severity": "medium",
+                    }
                 )
-                mitigations.append(
-                    "Demonstrate advisory work is "
-                    "unrelated to this procurement"
-                )
+                mitigations.append("Obtain CO waiver for advisory OCI")
+                mitigations.append("Demonstrate advisory work is unrelated to this procurement")
     except Exception:
         pass
 
@@ -794,24 +747,17 @@ def screen_oci(opportunity_id, partner_name):
 
         for c in competing:
             cd = row_to_dict(c)
-            oci_factors.append({
-                "type": "impaired_objectivity",
-                "description": (
-                    f"{partner_name} teamed on "
-                    f"{cd.get('opportunity_id')}: "
-                    f"{cd.get('title', 'N/A')}"
-                ),
-                "severity": "medium",
-            })
+            oci_factors.append(
+                {
+                    "type": "impaired_objectivity",
+                    "description": (f"{partner_name} teamed on {cd.get('opportunity_id')}: {cd.get('title', 'N/A')}"),
+                    "severity": "medium",
+                }
+            )
         if len(competing) > 1:
-            mitigations.append(
-                "Require exclusivity agreement"
-            )
+            mitigations.append("Require exclusivity agreement")
         if competing:
-            mitigations.append(
-                "Document team arrangements "
-                "and non-compete boundaries"
-            )
+            mitigations.append("Document team arrangements and non-compete boundaries")
     except Exception:
         pass
 
@@ -846,7 +792,8 @@ def screen_oci(opportunity_id, partner_name):
         pass
 
     _audit(
-        conn, "teaming.oci_screen",
+        conn,
+        "teaming.oci_screen",
         f"OCI screen {partner_name}: risk={risk}",
         {
             "opportunity_id": opportunity_id,
@@ -911,21 +858,19 @@ def get_team_status(opportunity_id):
         if rel is not None:
             composites.append(float(rel))
 
-        members.append({
-            "partner_id": p.get("partner_id"),
-            "partner_name": p.get("name"),
-            "partner_type": p.get("partner_type"),
-            "socioeconomic_status": (
-                p.get("socioeconomic_status")
-            ),
-            "workshare_pct": ws,
-            "reliability_score": (
-                float(rel) if rel is not None else None
-            ),
-            "ta_status": p.get("ta_status", "none"),
-            "ta_expiry_date": p.get("ta_expiry_date"),
-            "oci_risk": p.get("oci_risk", "none"),
-        })
+        members.append(
+            {
+                "partner_id": p.get("partner_id"),
+                "partner_name": p.get("name"),
+                "partner_type": p.get("partner_type"),
+                "socioeconomic_status": (p.get("socioeconomic_status")),
+                "workshare_pct": ws,
+                "reliability_score": (float(rel) if rel is not None else None),
+                "ta_status": p.get("ta_status", "none"),
+                "ta_expiry_date": p.get("ta_expiry_date"),
+                "oci_risk": p.get("oci_risk", "none"),
+            }
+        )
 
         ta = p.get("ta_status", "none")
         if ta in ("none", "expired"):
@@ -940,41 +885,25 @@ def get_team_status(opportunity_id):
             issues.append(f"{name}: No workshare")
 
     if total_ws > 0 and abs(total_ws - 100.0) > 2.0:
-        issues.append(
-            f"Total workshare {total_ws:.1f}% "
-            "(should be ~100%)"
-        )
+        issues.append(f"Total workshare {total_ws:.1f}% (should be ~100%)")
 
     # Team health components
-    avg_comp = (
-        sum(composites) / len(composites)
-        if composites else 0.5
-    )
+    avg_comp = sum(composites) / len(composites) if composites else 0.5
     if 98.0 <= total_ws <= 102.0:
         ws_h = 1.0
     else:
         ws_h = max(
-            0.0, 1.0 - abs(total_ws - 100.0) / 50.0,
+            0.0,
+            1.0 - abs(total_ws - 100.0) / 50.0,
         )
 
-    ta_ok = sum(
-        1 for p in partners
-        if p.get("ta_status") == "executed"
-    )
+    ta_ok = sum(1 for p in partners if p.get("ta_status") == "executed")
     ta_h = ta_ok / len(partners) if partners else 0.0
 
-    oci_ok = sum(
-        1 for p in partners
-        if p.get("oci_risk") in ("none", "low")
-    )
+    oci_ok = sum(1 for p in partners if p.get("oci_risk") in ("none", "low"))
     oci_h = oci_ok / len(partners) if partners else 1.0
 
-    health = (
-        avg_comp * 0.30
-        + ws_h * 0.20
-        + ta_h * 0.25
-        + oci_h * 0.25
-    )
+    health = avg_comp * 0.30 + ws_h * 0.20 + ta_h * 0.25 + oci_h * 0.25
 
     return {
         "status": "ok",
@@ -996,37 +925,41 @@ def get_team_status(opportunity_id):
 
 # ── CLI ───────────────────────────────────────────────────────
 
+
 def _build_parser():
     p = argparse.ArgumentParser(
         prog="teaming_hub",
-        description=(
-            "Teaming Coordination Hub -- partner "
-            "scoring, workshare, TA/NDA, OCI"
-        ),
+        description=("Teaming Coordination Hub -- partner scoring, workshare, TA/NDA, OCI"),
     )
     g = p.add_mutually_exclusive_group(required=True)
     g.add_argument(
-        "--add-partner", action="store_true",
+        "--add-partner",
+        action="store_true",
         help="Register a teaming partner",
     )
     g.add_argument(
-        "--score", action="store_true",
+        "--score",
+        action="store_true",
         help="Score a partner",
     )
     g.add_argument(
-        "--workshare", action="store_true",
+        "--workshare",
+        action="store_true",
         help="Validate workshare allocation",
     )
     g.add_argument(
-        "--ta-lifecycle", action="store_true",
+        "--ta-lifecycle",
+        action="store_true",
         help="Check TA/NDA lifecycle",
     )
     g.add_argument(
-        "--oci-screen", action="store_true",
+        "--oci-screen",
+        action="store_true",
         help="OCI risk screening",
     )
     g.add_argument(
-        "--team-status", action="store_true",
+        "--team-status",
+        action="store_true",
         help="Full team status",
     )
 
@@ -1034,7 +967,8 @@ def _build_parser():
     p.add_argument("--partner-id", help="Partner ID")
     p.add_argument("--partner-name", help="Partner name")
     p.add_argument(
-        "--partner-type", choices=PARTNER_TYPES,
+        "--partner-type",
+        choices=PARTNER_TYPES,
         help="Partner type",
     )
     p.add_argument(
@@ -1042,7 +976,8 @@ def _build_parser():
         help="Socioeconomic status",
     )
     p.add_argument(
-        "--workshare-pct", type=float,
+        "--workshare-pct",
+        type=float,
         help="Workshare percentage",
     )
     p.add_argument("--cage", help="CAGE code")
@@ -1057,16 +992,8 @@ def main():
     result = {}
 
     if args.add_partner:
-        if (
-            not args.opportunity_id
-            or not args.partner_name
-            or not args.partner_type
-        ):
-            parser.error(
-                "--add-partner requires "
-                "--opportunity-id, --partner-name, "
-                "--partner-type"
-            )
+        if not args.opportunity_id or not args.partner_name or not args.partner_type:
+            parser.error("--add-partner requires --opportunity-id, --partner-name, --partner-type")
         result = add_partner(
             opportunity_id=args.opportunity_id,
             partner_name=args.partner_name,
@@ -1083,33 +1010,25 @@ def main():
 
     elif args.workshare:
         if not args.opportunity_id:
-            parser.error(
-                "--workshare requires --opportunity-id"
-            )
+            parser.error("--workshare requires --opportunity-id")
         result = track_workshare(args.opportunity_id)
 
     elif args.ta_lifecycle:
         if not args.opportunity_id:
-            parser.error(
-                "--ta-lifecycle requires --opportunity-id"
-            )
+            parser.error("--ta-lifecycle requires --opportunity-id")
         result = manage_ta_lifecycle(args.opportunity_id)
 
     elif args.oci_screen:
         if not args.opportunity_id or not args.partner_name:
-            parser.error(
-                "--oci-screen requires "
-                "--opportunity-id and --partner-name"
-            )
+            parser.error("--oci-screen requires --opportunity-id and --partner-name")
         result = screen_oci(
-            args.opportunity_id, args.partner_name,
+            args.opportunity_id,
+            args.partner_name,
         )
 
     elif args.team_status:
         if not args.opportunity_id:
-            parser.error(
-                "--team-status requires --opportunity-id"
-            )
+            parser.error("--team-status requires --opportunity-id")
         result = get_team_status(args.opportunity_id)
 
     if args.json:

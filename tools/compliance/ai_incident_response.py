@@ -31,9 +31,14 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 VALID_INCIDENT_TYPES = (
-    "confabulation", "bias_detected", "unauthorized_access",
-    "model_drift", "data_breach", "safety_violation",
-    "appeal_escalation", "other",
+    "confabulation",
+    "bias_detected",
+    "unauthorized_access",
+    "model_drift",
+    "data_breach",
+    "safety_violation",
+    "appeal_escalation",
+    "other",
 )
 VALID_SEVERITIES = ("critical", "high", "medium", "low")
 VALID_STATUSES = ("open", "investigating", "mitigated", "resolved", "closed")
@@ -87,8 +92,7 @@ def log_incident(
                (project_id, incident_type, ai_system, severity,
                 description, status, reported_by)
                VALUES (?, ?, ?, ?, ?, 'open', ?)""",
-            (project_id, incident_type, ai_system, severity,
-             description, reported_by),
+            (project_id, incident_type, ai_system, severity, description, reported_by),
         )
         conn.commit()
         incident_id = cur.lastrowid
@@ -99,11 +103,14 @@ def log_incident(
                 """INSERT INTO audit_trail
                    (project_id, event_type, actor, action, details, classification)
                    VALUES (?, ?, ?, ?, ?, ?)""",
-                (project_id, "ai_incident_logged",
-                 reported_by or "icdev-compliance-engine",
-                 f"AI incident logged: {incident_type} ({severity})",
-                 json.dumps({"incident_id": incident_id, "type": incident_type, "severity": severity}),
-                 "CUI"),
+                (
+                    project_id,
+                    "ai_incident_logged",
+                    reported_by or "icdev-compliance-engine",
+                    f"AI incident logged: {incident_type} ({severity})",
+                    json.dumps({"incident_id": incident_id, "type": incident_type, "severity": severity}),
+                    "CUI",
+                ),
             )
             conn.commit()
         except Exception:
@@ -168,7 +175,9 @@ def update_incident(
 
 
 def get_open_incidents(
-    project_id: str, severity: str = "", db_path: Path = DB_PATH,
+    project_id: str,
+    severity: str = "",
+    db_path: Path = DB_PATH,
 ) -> Dict:
     """List open incidents, optionally filtered by severity."""
     conn = _get_connection(db_path)
@@ -266,14 +275,19 @@ def main():
                 print("ERROR: --description required", file=sys.stderr)
                 sys.exit(1)
             result = log_incident(
-                args.project_id, args.incident_type, args.description,
-                args.ai_system, args.severity, args.reported_by, db)
+                args.project_id,
+                args.incident_type,
+                args.description,
+                args.ai_system,
+                args.severity,
+                args.reported_by,
+                db,
+            )
         elif args.update:
             if not args.incident_id:
                 print("ERROR: --incident-id required", file=sys.stderr)
                 sys.exit(1)
-            result = update_incident(
-                args.incident_id, args.corrective_action, args.status, db)
+            result = update_incident(args.incident_id, args.corrective_action, args.status, db)
         elif args.open:
             result = get_open_incidents(args.project_id, db_path=db)
         else:
@@ -287,7 +301,9 @@ def main():
                 for inc in result["incidents"]:
                     print(f"  [{inc['severity']}] {inc['incident_type']}: {inc['description'][:80]}")
             elif "total" in result and "by_type" in result:
-                print(f"Incident Stats: {result['total']} total, {result['open']} open, {result['critical_unresolved']} critical")
+                print(
+                    f"Incident Stats: {result['total']} total, {result['open']} open, {result['critical_unresolved']} critical"
+                )
             else:
                 print(json.dumps(result, indent=2))
     except Exception as e:

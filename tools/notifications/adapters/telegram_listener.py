@@ -21,6 +21,7 @@ Usage:
     python tools/notifications/adapters/telegram_listener.py --poll
     python tools/notifications/adapters/telegram_listener.py --health
 """
+
 from __future__ import annotations
 
 import json
@@ -48,6 +49,7 @@ def _load_env():
     """Load .env if not already loaded."""
     try:
         from dotenv import load_dotenv
+
         load_dotenv(BASE_DIR / ".env")
     except ImportError:
         pass
@@ -63,9 +65,7 @@ def _get_chat_id() -> str:
     return os.getenv("TELEGRAM_CHAT_ID", "")
 
 
-def _api_call(
-    method: str, params: Optional[Dict] = None
-) -> Dict[str, Any]:
+def _api_call(method: str, params: Optional[Dict] = None) -> Dict[str, Any]:
     """Call Telegram Bot API."""
     token = _get_token()
     if not token:
@@ -75,7 +75,8 @@ def _api_call(
     if params:
         data = json.dumps(params).encode("utf-8")
         req = urllib.request.Request(
-            url, data=data,
+            url,
+            data=data,
             headers={"Content-Type": "application/json"},
             method="POST",
         )
@@ -91,12 +92,15 @@ def _api_call(
 
 def _reply(chat_id: int, text: str):
     """Send a reply message."""
-    _api_call("sendMessage", {
-        "chat_id": chat_id,
-        "text": text,
-        "parse_mode": "HTML",
-        "disable_web_page_preview": True,
-    })
+    _api_call(
+        "sendMessage",
+        {
+            "chat_id": chat_id,
+            "text": text,
+            "parse_mode": "HTML",
+            "disable_web_page_preview": True,
+        },
+    )
 
 
 def _load_offset() -> int:
@@ -130,7 +134,7 @@ COMMAND_MAP = {
 }
 
 HELP_TEXT = (
-    "\U0001F4CB <b>ICDEV\u2122 Task Bot Commands</b>\n\n"
+    "\U0001f4cb <b>ICDEV\u2122 Task Bot Commands</b>\n\n"
     "/build &lt;description&gt; \u2014 Build task (high)\n"
     "/run &lt;description&gt; \u2014 Run task\n"
     "/fix &lt;description&gt; \u2014 Fix task (high)\n"
@@ -171,8 +175,15 @@ def _create_task(
             "status, scheduled_at, created_at, updated_at) "
             "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (
-                task_id, title, description, task_type,
-                priority, status, scheduled_at, now, now,
+                task_id,
+                title,
+                description,
+                task_type,
+                priority,
+                status,
+                scheduled_at,
+                now,
+                now,
             ),
         )
         conn.commit()
@@ -187,24 +198,19 @@ def _get_board_summary() -> str:
 
     conn = get_connection()
     try:
-        rows = conn.execute(
-            "SELECT status, COUNT(*) as cnt "
-            "FROM kanban_tasks GROUP BY status"
-        ).fetchall()
+        rows = conn.execute("SELECT status, COUNT(*) as cnt FROM kanban_tasks GROUP BY status").fetchall()
         counts = {r["status"]: r["cnt"] for r in rows}
         total = sum(counts.values())
         token_line = ""
         token_count = counts.get("token_exhausted", 0)
         if token_count:
-            token_line = (
-                f"\u23F3 Token Exhausted (waiting): {token_count}\n"
-            )
+            token_line = f"\u23f3 Token Exhausted (waiting): {token_count}\n"
         return (
-            "\U0001F4CA <b>Task Board</b>\n\n"
-            f"\U0001F4E5 Backlog: {counts.get('backlog', 0)}\n"
-            f"\U0001F4C5 Scheduled: "
+            "\U0001f4ca <b>Task Board</b>\n\n"
+            f"\U0001f4e5 Backlog: {counts.get('backlog', 0)}\n"
+            f"\U0001f4c5 Scheduled: "
             f"{counts.get('scheduled', 0)}\n"
-            f"\u25B6 In Progress: "
+            f"\u25b6 In Progress: "
             f"{counts.get('in_progress', 0)}\n"
             f"{token_line}"
             f"\u2705 Done: {counts.get('done', 0)}\n"
@@ -234,17 +240,20 @@ def _get_task_list() -> str:
             return "\u2705 No pending tasks!"
 
         icons = {
-            "build": "\U0001F528", "run": "\u25B6",
-            "fix": "\U0001F41B", "research": "\U0001F50D",
-            "deploy": "\U0001F680", "test": "\u2705",
-            "chore": "\U0001F9F9",
+            "build": "\U0001f528",
+            "run": "\u25b6",
+            "fix": "\U0001f41b",
+            "research": "\U0001f50d",
+            "deploy": "\U0001f680",
+            "test": "\u2705",
+            "chore": "\U0001f9f9",
         }
         status_icons = {
-            "backlog": "\U0001F4E5",
-            "scheduled": "\U0001F4C5",
-            "in_progress": "\u25B6",
+            "backlog": "\U0001f4e5",
+            "scheduled": "\U0001f4c5",
+            "in_progress": "\u25b6",
         }
-        lines = ["\U0001F4CB <b>Active Tasks</b>\n"]
+        lines = ["\U0001f4cb <b>Active Tasks</b>\n"]
         for r in rows:
             icon = icons.get(r["task_type"], "\u2022")
             si = status_icons.get(r["status"], "")
@@ -253,13 +262,10 @@ def _get_task_list() -> str:
                 try:
                     dt = r["scheduled_at"]
                     if hasattr(dt, "strftime"):
-                        sched = f" \u23F0 {dt.strftime('%b %d %I:%M%p')}"
+                        sched = f" \u23f0 {dt.strftime('%b %d %I:%M%p')}"
                 except Exception:
                     pass
-            lines.append(
-                f"{si} {icon} {r['title'][:50]}"
-                f" <i>({r['priority']})</i>{sched}"
-            )
+            lines.append(f"{si} {icon} {r['title'][:50]} <i>({r['priority']})</i>{sched}")
         return "\n".join(lines)
     finally:
         conn.close()
@@ -277,9 +283,7 @@ def _parse_priority(text: str) -> Tuple[str, str]:
     ]:
         if tag in text.lower():
             priority = pri
-            clean = text.replace(tag, "").replace(
-                tag.upper(), ""
-            ).strip()
+            clean = text.replace(tag, "").replace(tag.upper(), "").strip()
             break
     return clean, priority
 
@@ -316,11 +320,7 @@ def process_message(
         # Task creation commands
         if cmd in COMMAND_MAP:
             if not body.strip():
-                return (
-                    f"\u26A0 Please provide a description.\n"
-                    f"Example: <code>{cmd} Fix login "
-                    f"timeout</code>"
-                )
+                return f"\u26a0 Please provide a description.\nExample: <code>{cmd} Fix login timeout</code>"
 
             task_type, default_priority = COMMAND_MAP[cmd]
             body, priority_override = _parse_priority(body)
@@ -333,23 +333,16 @@ def process_message(
                 description=f"Created via Telegram: {text}",
             )
 
-            status_label = (
-                "Scheduled"
-                if result["status"] == "scheduled"
-                else "Added to Backlog"
-            )
+            status_label = "Scheduled" if result["status"] == "scheduled" else "Added to Backlog"
             return (
                 f"\u2705 <b>Task Created</b>\n\n"
-                f"\U0001F4DD {body.strip()}\n"
+                f"\U0001f4dd {body.strip()}\n"
                 f"Type: {task_type} | Priority: {priority}\n"
                 f"Status: {status_label}\n"
                 f"ID: <code>{result['id']}</code>"
             )
 
-        return (
-            f"\u2753 Unknown command: {cmd}\n"
-            f"Send /help for options."
-        )
+        return f"\u2753 Unknown command: {cmd}\nSend /help for options."
 
     # Free-text instruction (not a slash command)
     # Create as a task with the full text as title/description
@@ -361,7 +354,7 @@ def process_message(
     )
     return (
         f"\u2705 <b>Task Created from Instruction</b>\n\n"
-        f"\U0001F4DD {text[:80]}\n"
+        f"\U0001f4dd {text[:80]}\n"
         f"Type: chore | Priority: medium\n"
         f"Status: Added to Backlog\n"
         f"ID: <code>{result['id']}</code>\n\n"
@@ -398,18 +391,19 @@ def poll_updates() -> List[Dict[str, Any]]:
             if chat_id:
                 _reply(
                     chat_id,
-                    f"\u26a0\ufe0f Task creation failed (will retry): "
-                    f"{type(exc).__name__}: {exc}",
+                    f"\u26a0\ufe0f Task creation failed (will retry): {type(exc).__name__}: {exc}",
                 )
             continue
 
         if reply and chat_id:
             _reply(chat_id, reply)
-            results.append({
-                "update_id": update_id,
-                "text": message.get("text", ""),
-                "reply": reply[:100],
-            })
+            results.append(
+                {
+                    "update_id": update_id,
+                    "text": message.get("text", ""),
+                    "reply": reply[:100],
+                }
+            )
 
         _save_offset(update_id)
 
@@ -421,15 +415,15 @@ def poll_updates() -> List[Dict[str, Any]]:
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(
-        description="Telegram Bot Listener"
-    )
+    parser = argparse.ArgumentParser(description="Telegram Bot Listener")
     parser.add_argument(
-        "--poll", action="store_true",
+        "--poll",
+        action="store_true",
         help="Poll once for new messages",
     )
     parser.add_argument(
-        "--health", action="store_true",
+        "--health",
+        action="store_true",
         help="Check bot health",
     )
     parser.add_argument("--json", action="store_true")
@@ -442,20 +436,19 @@ if __name__ == "__main__":
         else:
             if data.get("ok"):
                 bot = data["result"]
-                print(
-                    f"Bot: @{bot['username']} "
-                    f"({bot['first_name']})"
-                )
+                print(f"Bot: @{bot['username']} ({bot['first_name']})")
             else:
                 print(f"Error: {data}")
 
     elif args.poll:
         results = poll_updates()
         if args.json:
-            print(json.dumps(
-                {"processed": len(results), "results": results},
-                indent=2,
-            ))
+            print(
+                json.dumps(
+                    {"processed": len(results), "results": results},
+                    indent=2,
+                )
+            )
         else:
             print(f"Processed {len(results)} messages")
             for r in results:

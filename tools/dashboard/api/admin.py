@@ -103,15 +103,15 @@ def api_create_key(user_id):
     expires_at = data.get("expires_at")
 
     admin_user = getattr(g, "current_user", {})
-    key_info = create_api_key_for_user(
-        user_id, label=label, created_by=admin_user.get("id"), expires_at=expires_at
-    )
-    return jsonify({
-        "key_id": key_info["key_id"],
-        "raw_key": key_info["raw_key"],
-        "prefix": key_info["prefix"],
-        "message": "Save this key now — it will not be shown again.",
-    }), 201
+    key_info = create_api_key_for_user(user_id, label=label, created_by=admin_user.get("id"), expires_at=expires_at)
+    return jsonify(
+        {
+            "key_id": key_info["key_id"],
+            "raw_key": key_info["raw_key"],
+            "prefix": key_info["prefix"],
+            "message": "Save this key now — it will not be shown again.",
+        }
+    ), 201
 
 
 @admin_api.route("/api/keys/<key_id>/revoke", methods=["POST"])
